@@ -2,13 +2,13 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+from dbml_sharepoint.analysis.phases import phase_number as pn
+from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
-from dbml_sharepoint.jsgen import generate_deploy_js
-from dbml_sharepoint.mapping_loader import CrossSiteRef, MappingBundle, load_mapping
-from dbml_sharepoint.parser import Column, Reference, Schema, parse_dbml
-from dbml_sharepoint.phases import phase_number as pn
-from dbml_sharepoint.release import load_release
-from dbml_sharepoint.validator import validate_all
+from dbml_sharepoint.generators.jsgen import generate_deploy_js
+from dbml_sharepoint.model.mapping_loader import CrossSiteRef, MappingBundle, load_mapping
+from dbml_sharepoint.model.parser import Column, Reference, Schema, parse_dbml
+from dbml_sharepoint.model.release import load_release
 
 FIXTURES = Path(__file__).parent / "fixtures"
 EXPECTED = FIXTURES / "expected"
@@ -48,10 +48,10 @@ def test_simple_deploy_js_matches_golden() -> None:
         # from the repository root
         python -c "
         from pathlib import Path
-        from dbml_sharepoint.jsgen import generate_deploy_js
-        from dbml_sharepoint.mapping_loader import load_mapping
-        from dbml_sharepoint.parser import parse_dbml
-        from dbml_sharepoint.release import load_release
+        from dbml_sharepoint.generators.jsgen import generate_deploy_js
+        from dbml_sharepoint.model.mapping_loader import load_mapping
+        from dbml_sharepoint.model.parser import parse_dbml
+        from dbml_sharepoint.model.release import load_release
         FIXTURES = Path('test/fixtures')
         js = generate_deploy_js(
             schema=parse_dbml(FIXTURES / 'simple.dbml'),
@@ -81,7 +81,7 @@ def test_list_creation_applies_enable_minor_versions() -> None:
     """Regression: enable_minor_versions from the mapping versioning config
     was loaded but never applied. It must reach both the schema-json list
     entry and the rendered SP.List creation body."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -95,7 +95,7 @@ def test_list_creation_applies_enable_minor_versions() -> None:
 
 def test_schema_declares_content_type_setting_for_shape_reconciliation() -> None:
     """The resume gate needs an explicit desired value, not a JS default."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -107,8 +107,8 @@ def test_schema_declares_content_type_setting_for_shape_reconciliation() -> None
 
 def test_document_library_template_101_reaches_shape_gate() -> None:
     """Libraries must be distinguished from same-title generic lists."""
-    from dbml_sharepoint.jsgen import build_schema_json
-    from dbml_sharepoint.mapping_loader import EntityMapping
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_loader import EntityMapping
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -133,7 +133,7 @@ def test_boolean_default_only_emitted_when_declared() -> None:
     silently forcing optional booleans to default to false and erasing the
     null-vs-false distinction downstream flows may rely on.
     """
-    from dbml_sharepoint.jsgen import _field_body
+    from dbml_sharepoint.generators.jsgen import _field_body
 
     no_default = _field_body(Column(name="QuorumMet", type="boolean"), {}, "APP_")
     assert no_default is not None
@@ -162,7 +162,7 @@ def test_text_default_is_emitted_when_declared() -> None:
     create, so a build can stamp organisation constants
     without an after-create flow on every list.
     """
-    from dbml_sharepoint.jsgen import _field_body
+    from dbml_sharepoint.generators.jsgen import _field_body
 
     field = _field_body(
         Column(name="OrgUnitCode", type="nvarchar", default="UNIT-A"),
@@ -175,7 +175,7 @@ def test_text_default_is_emitted_when_declared() -> None:
 
 def test_number_default_is_string_in_create_and_merge_shapes() -> None:
     """SP.Field.DefaultValue is String even when the field is numeric."""
-    from dbml_sharepoint.jsgen import _field_body, build_schema_json
+    from dbml_sharepoint.generators.jsgen import _field_body, build_schema_json
 
     field = _field_body(Column(name="SortOrder", type="int", default=0), {}, "APP_")
     assert field is not None
@@ -208,7 +208,7 @@ def test_longtext_emits_plain_multiline_note_field() -> None:
     ``longtext`` must therefore emit a plain multi-line Note field without
     silently enabling rich text or append-only history.
     """
-    from dbml_sharepoint.jsgen import _field_body
+    from dbml_sharepoint.generators.jsgen import _field_body
 
     field = _field_body(Column(name="JoinWebUrl", type="longtext"), {}, "APP_")
 
@@ -225,7 +225,7 @@ def test_longtext_emits_plain_multiline_note_field() -> None:
 
 def test_hyperlink_emits_field_url_display_format() -> None:
     """SP.FieldUrl writes DisplayFormat; UrlFormat is not a REST property."""
-    from dbml_sharepoint.jsgen import _field_body
+    from dbml_sharepoint.generators.jsgen import _field_body
 
     field = _field_body(Column(name="TermsOfReference", type="hyperlink"), {}, "APP_")
 
@@ -240,7 +240,7 @@ def test_hyperlink_emits_field_url_display_format() -> None:
 
 def test_declared_defaults_are_reconciled_on_existing_fields() -> None:
     """A skipped existing field must still receive its declared default."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -262,8 +262,8 @@ def test_lookup_uses_target_display_column() -> None:
     """A1: a lookup into a target whose mapping declares display_column emits
     that field in both the desired field shape and AddField parameters, not the
     (possibly empty) built-in Title."""
-    from dbml_sharepoint.jsgen import _field_body
-    from dbml_sharepoint.mapping_loader import EntityMapping
+    from dbml_sharepoint.generators.jsgen import _field_body
+    from dbml_sharepoint.model.mapping_loader import EntityMapping
 
     col = Column(name="Chair", type="int", ref=Reference("Membership", "Id"))
     entities = {
@@ -288,7 +288,7 @@ def test_lookup_uses_target_display_column() -> None:
 def test_lookup_defaults_to_title_without_display_column() -> None:
     """A1: with no display_column on the target, the lookup falls back to the
     built-in Title (backward-compatible default)."""
-    from dbml_sharepoint.jsgen import _field_body
+    from dbml_sharepoint.generators.jsgen import _field_body
 
     col = Column(name="Project", type="int", ref=Reference("Project", "Id"))
     field = _field_body(col, {}, "APP_", {})
@@ -299,7 +299,7 @@ def test_lookup_defaults_to_title_without_display_column() -> None:
 
 def test_immediate_lookup_uses_addfield_creation_information() -> None:
     """A normal Phase-1 lookup uses FieldCollection.AddField's exact shape."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -331,7 +331,7 @@ def test_deferred_circular_lookup_uses_addfield_creation_information(
     tmp_path: Path,
 ) -> None:
     """A circular dependency deferred to the deferred-lookups phase uses the same AddField API."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "mapping.yaml").write_text(
         'prefix: "APP_"\n'
@@ -377,7 +377,7 @@ def test_deferred_circular_lookup_uses_addfield_creation_information(
 
 def test_self_lookup_is_deferred_with_addfield_parameters(tmp_path: Path) -> None:
     """A self-reference remains deferred and carries a complete lookup spec."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "mapping.yaml").write_text(
         'prefix: "APP_"\n'
@@ -459,7 +459,7 @@ def test_tojson_escapes_injection_chars(tmp_path: Path) -> None:
     tojson htmlsafe escaping, so <, >, & and </script> are unicode-escaped and
     cannot break out of the generated JS. Locks the invariant against a future
     refactor reintroducing a raw interpolation."""
-    from dbml_sharepoint.mapping_loader import load_mapping
+    from dbml_sharepoint.model.mapping_loader import load_mapping
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -503,7 +503,7 @@ def test_generated_js_aborts_when_sp_page_context_missing() -> None:
 def test_schema_json_has_permission_keys() -> None:
     """SCHEMA literal in generated JS must include permission_levels, groups,
     list_assignments keys (R5)."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
@@ -638,7 +638,7 @@ def test_mutable_list_and_field_shape_is_reconciled_and_read_back() -> None:
 
 def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:
     """Choice adoption cannot silently accept extra/reordered free-form values."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -683,8 +683,8 @@ def test_role_assignment_reads_use_positional_getbyprincipalid() -> None:
 def test_no_title_list_gets_required_false_title_patch(tmp_path: Path) -> None:
     """A4: a list with no DBML Title column gets its built-in Title patched
     Required:false so programmatic inserts / manual entry aren't blocked."""
-    from dbml_sharepoint.jsgen import build_schema_json
-    from dbml_sharepoint.mapping_loader import load_mapping
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_loader import load_mapping
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -902,8 +902,8 @@ def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
     """Regression: with a role-scoped default policy, a build for another role
     must emit NO list_assignments for that role's lists (previously the default fell
     back onto every entity, re-ACLing them with the other role's groups)."""
-    from dbml_sharepoint.jsgen import build_schema_json
-    from dbml_sharepoint.mapping_loader import EntityMapping
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_loader import EntityMapping
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -927,7 +927,7 @@ def test_seed_items_empty_with_null_extension() -> None:
     """With no extension (NullExtension default), the schema
     view exposes an empty ``seed_items`` list and carries NO organisation-specific
     keys — seeding belongs to extensions."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -959,7 +959,7 @@ def test_stub_extension_seed_rendered_in_generic_phase_5() -> None:
     ``seed_items`` element and drives the generic Phase 5.1 loop: the rendered
     deploy.js contains the list title, the field payload, and fetches
     ``ListItemEntityTypeFullName`` (no hardcoded ``SP.Data.*`` literal)."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -1055,7 +1055,7 @@ def test_calculated_fields_are_created_after_referenced_columns(
     declaration order (which drives form order; calculated fields never
     appear on entry forms) and move calculated fields after them,
     topologically ordered among themselves for calc-on-calc chains."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1268,8 +1268,8 @@ def test_group_management_automation_rendered(tmp_path: Path) -> None:
 
 
 def _caml(view_kwargs: dict[str, Any], column_types: dict[str, str] | None = None) -> str:
-    from dbml_sharepoint.jsgen import _view_caml_query
-    from dbml_sharepoint.mapping_loader import ViewDef
+    from dbml_sharepoint.generators.jsgen import _view_caml_query
+    from dbml_sharepoint.model.mapping_loader import ViewDef
 
     return _view_caml_query(
         ViewDef(title="V", fields=["Title"], **view_kwargs),
@@ -1278,7 +1278,7 @@ def _caml(view_kwargs: dict[str, Any], column_types: dict[str, str] | None = Non
 
 
 def test_view_caml_condition_sort_and_group() -> None:
-    from dbml_sharepoint.mapping_loader import ViewCondition, ViewGroupBy, ViewSort
+    from dbml_sharepoint.model.mapping_loader import ViewCondition, ViewGroupBy, ViewSort
 
     caml = _caml(
         dict(
@@ -1297,7 +1297,7 @@ def test_view_caml_condition_sort_and_group() -> None:
 
 
 def test_view_caml_ands_multiple_conditions() -> None:
-    from dbml_sharepoint.mapping_loader import ViewCondition
+    from dbml_sharepoint.model.mapping_loader import ViewCondition
 
     caml = _caml(
         dict(where=[
@@ -1318,7 +1318,7 @@ def test_view_caml_ands_multiple_conditions() -> None:
 
 
 def test_view_caml_today_offsets_and_ascending_sort() -> None:
-    from dbml_sharepoint.mapping_loader import ViewCondition, ViewSort
+    from dbml_sharepoint.model.mapping_loader import ViewCondition, ViewSort
 
     caml = _caml(
         dict(
@@ -1345,7 +1345,7 @@ def test_view_caml_today_offsets_and_ascending_sort() -> None:
 
 
 def test_view_caml_escapes_values_and_maps_boolean() -> None:
-    from dbml_sharepoint.mapping_loader import ViewCondition
+    from dbml_sharepoint.model.mapping_loader import ViewCondition
 
     caml = _caml(
         dict(where=[ViewCondition(field="Name", op="eq", value='A & B < "C"')]),
@@ -1360,7 +1360,7 @@ def test_view_caml_escapes_values_and_maps_boolean() -> None:
 
 
 def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1417,7 +1417,7 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
     names are accepted but silently reset widths), so the generator rewrites
     widths keys with display_name_for — the same generation-time rewrite
     calculated formulas and form bodies use."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1450,7 +1450,7 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
 
 
 def test_schema_json_views_empty_without_declarations() -> None:
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "calculated.dbml")
     bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
@@ -1605,7 +1605,7 @@ def test_fields_carry_display_titles_and_create_with_internal_name(
     (locking a clean InternalName), while display_title carries the desired
     human-readable Title that reconciliation MERGEs afterwards. Overrides win
     over the auto split; with the feature off display_title == title."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = _display_names_inputs(tmp_path)
     risk = next(
@@ -1633,7 +1633,7 @@ def test_formula_references_rewritten_to_display_names(tmp_path: Path) -> None:
     saying [MatrixVersion] fails to create. Authors keep internal names;
     the build rewrites refs to display names — outside string literals only
     (bracket text inside a quoted constant is data)."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = _display_names_inputs(tmp_path)
     risk = next(
@@ -1699,7 +1699,7 @@ def _formatting_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
 
 
 def test_fields_carry_compact_custom_formatter(tmp_path: Path) -> None:
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = _formatting_inputs(tmp_path)
     risk = next(
@@ -1748,7 +1748,7 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
     """Row formatting is a declared view setting: SCHEMA carries the compact
     JSON; Phase 3.1 compares canonically, MERGEs CustomFormatter, verifies by
     readback; views without a declaration are never touched."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1834,7 +1834,7 @@ def test_date_default_today_reaches_field_defaults(tmp_path: Path) -> None:
     """A DBML date default (notably the dynamic '[today]') must land on the
     SP.FieldDateTime body and in SCHEMA.field_defaults — previously the
     DateTime branch silently dropped defaults the typemap carried."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1872,7 +1872,7 @@ def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:
     map; only declared parts appear."""
     import json as jsonlib
 
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = _form_formatting_inputs(tmp_path)
     rows = build_schema_json(schema, bundle, "default")["form_formatting"]
@@ -1935,7 +1935,7 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
     """ValidationFormula/Message ride the declared list settings: rewritten
     to display names, probed in readListShape, compared via canonicalFormula
     and reconciled by the existing narrow list MERGE."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -2003,7 +2003,7 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
 
 
 def test_hidden_on_forms_flows_to_schema_and_template(tmp_path: Path) -> None:
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -2103,7 +2103,7 @@ def _hardening_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
 
 
 def test_hardening_flags_flow_to_schema(tmp_path: Path) -> None:
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = _hardening_inputs(tmp_path)
     risk = next(
@@ -2169,7 +2169,7 @@ def test_hidden_on_display_flows_to_schema_and_template(tmp_path: Path) -> None:
     """The register use case: CALCULATED system scores hidden from the display
     form. The flag must ride the field into deploy.js and the template must
     carry the display setter."""
-    from dbml_sharepoint.jsgen import build_schema_json
+    from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"

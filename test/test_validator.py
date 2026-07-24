@@ -2,8 +2,14 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+from dbml_sharepoint.analysis.validator import (
+    Finding,
+    validate,
+    validate_against_mapping,
+    validate_all,
+)
 from dbml_sharepoint.extension import BaseExtension
-from dbml_sharepoint.mapping_loader import (
+from dbml_sharepoint.model.mapping_loader import (
     CrossSiteRef,
     CustomPermissionLevel,
     EntityMapping,
@@ -16,8 +22,7 @@ from dbml_sharepoint.mapping_loader import (
     Versioning,
     load_mapping,
 )
-from dbml_sharepoint.parser import Column, EnumDef, Reference, Schema, Table, parse_dbml
-from dbml_sharepoint.validator import Finding, validate, validate_against_mapping, validate_all
+from dbml_sharepoint.model.parser import Column, EnumDef, Reference, Schema, Table, parse_dbml
 
 
 def test_style_map_keys_must_be_enum_members(tmp_path: Path) -> None:
@@ -1090,7 +1095,7 @@ def test_display_names_must_be_unique_and_bounded(tmp_path: Path) -> None:
 
 
 def test_formatter_field_refs_walks_nested_structures() -> None:
-    from dbml_sharepoint.validator import formatter_field_refs
+    from dbml_sharepoint.analysis.validator import formatter_field_refs
 
     refs = formatter_field_refs({
         "elmType": "div",

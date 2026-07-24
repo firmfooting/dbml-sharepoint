@@ -1,8 +1,8 @@
 # test/test_typemap.py
 import pytest
 
-from dbml_sharepoint.parser import Column, Reference
-from dbml_sharepoint.typemap import map_column
+from dbml_sharepoint.analysis.typemap import map_column
+from dbml_sharepoint.model.parser import Column, Reference
 
 ENUM_NAMES = {"status", "topic"}
 

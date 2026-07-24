@@ -1,7 +1,7 @@
 # test/test_release.py
 from pathlib import Path
 
-from dbml_sharepoint.release import load_release, snapshot_hashes
+from dbml_sharepoint.model.release import load_release, snapshot_hashes
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

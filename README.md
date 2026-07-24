@@ -107,8 +107,8 @@ Phased, logged (`[SP-DEPLOY]`), each phase fail-closed:
 5. Optional seed rows (via the extension protocol).
 
 Phases are numbered from the phases manifest
-(`src/dbml_sharepoint/phases.py`) — reference steps by name; numbers
-renumber automatically when the structure changes.
+(`src/dbml_sharepoint/analysis/phases.py`) — reference steps by name;
+numbers renumber automatically when the structure changes.
 
 `rollback.js` deletes the declared lists. It exists for one case: a failed
 **first** provision on a site with no real data. Never run it against real
@@ -168,14 +168,15 @@ the composition points).
 
 ## Repository map
 
-Flat, one module per concern — role is readable from the name:
+One module per concern, grouped into layer packages; the packaging
+spine sits at the package root:
 
 | Layer | Modules | Responsibility |
 |---|---|---|
-| Model | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
-| Analysis | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
-| Generators (`*gen`) | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
-| Packaging | `bundle` · `templating` · `cli` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, the extension protocol |
+| `model/` | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
+| `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
+| `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
+| root | `bundle` · `templating` · `cli` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, the extension protocol |
 
 Templates mirror that: `templates/*.js.j2` are the four pasteable scripts;
 `templates/_*.js.j2` are shared partials (provenance header, site guard +

@@ -1,5 +1,5 @@
 # test/test_permissions.py
-from dbml_sharepoint.permissions import (
+from dbml_sharepoint.analysis.permissions import (
     BUILT_IN_LEVELS,
     base_permissions_to_high_low,
 )

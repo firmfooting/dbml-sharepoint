@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from dbml_sharepoint.styles import TOKENS, StyleToken, expand_style, parse_theme
+from dbml_sharepoint.analysis.styles import TOKENS, StyleToken, expand_style, parse_theme
 
 
 def test_tokens_are_the_documented_severity_set() -> None:

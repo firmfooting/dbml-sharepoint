@@ -28,7 +28,7 @@ from types import ModuleType
 import pytest
 from jinja2 import Environment, TemplateSyntaxError, meta, nodes
 
-from dbml_sharepoint.phases import DEPLOY_GROUPS
+from dbml_sharepoint.analysis.phases import DEPLOY_GROUPS
 from dbml_sharepoint.templating import TEMPLATES_DIR, script_env
 
 SRC_DIR = TEMPLATES_DIR.parent
@@ -145,7 +145,7 @@ def test_no_orphan_templates(env: Environment) -> None:
     by another template, or declared by the phases manifest — anything
     else is dead code that generator tests would never catch rotting."""
     referenced: set[str] = set()
-    for py in sorted(SRC_DIR.glob("*.py")):
+    for py in sorted(SRC_DIR.rglob("*.py")):
         referenced.update(
             re.findall(r'"([\w./-]+\.j2)"', py.read_text(encoding="utf-8")),
         )

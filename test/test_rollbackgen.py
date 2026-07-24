@@ -3,11 +3,11 @@ import re
 from pathlib import Path
 from typing import Any
 
-from dbml_sharepoint.jsgen import generate_deploy_js
-from dbml_sharepoint.mapping_loader import MappingBundle, load_mapping
-from dbml_sharepoint.parser import Schema, parse_dbml
-from dbml_sharepoint.release import Release, load_release
-from dbml_sharepoint.rollbackgen import generate_rollback_js
+from dbml_sharepoint.generators.jsgen import generate_deploy_js
+from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
+from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.release import Release, load_release
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

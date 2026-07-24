@@ -1,7 +1,7 @@
 # test/test_phases.py
 from pathlib import Path
 
-from dbml_sharepoint.phases import (
+from dbml_sharepoint.analysis.phases import (
     DEPLOY_GROUPS,
     phase_number,
     phase_numbers,

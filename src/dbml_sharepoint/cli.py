@@ -7,14 +7,12 @@ from urllib.parse import urlparse
 
 import typer
 
+from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import SeedRequiresDemoItems, clear_generated, emit_bundle
 from dbml_sharepoint.extension import SiteContext, resolve_extension
-from dbml_sharepoint.jsgen import build_schema_json
-from dbml_sharepoint.manifestgen import generate_manifest
-from dbml_sharepoint.mapping_loader import load_mapping
-from dbml_sharepoint.parser import parse_dbml
-from dbml_sharepoint.release import load_release
-from dbml_sharepoint.reportgen import (
+from dbml_sharepoint.generators.jsgen import build_schema_json
+from dbml_sharepoint.generators.manifestgen import generate_manifest
+from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
     generate_dictionary_powerquery,
     generate_dictionary_sql,
@@ -22,7 +20,9 @@ from dbml_sharepoint.reportgen import (
     generate_reporting_md,
     generate_sql_views,
 )
-from dbml_sharepoint.validator import validate_all
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.parser import parse_dbml
+from dbml_sharepoint.model.release import load_release
 
 app = typer.Typer(
     name="dbml-sharepoint",

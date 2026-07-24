@@ -1,12 +1,12 @@
 # test/test_assessgen.py
 from pathlib import Path
 
-from dbml_sharepoint.assessgen import (
+from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
 )
-from dbml_sharepoint.mapping_loader import MappingBundle, load_mapping
-from dbml_sharepoint.parser import Schema, parse_dbml
+from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -91,8 +91,8 @@ def test_styled_pack_requirements(tmp_path: Path) -> None:
 
 
 def _assess_js() -> str:
-    from dbml_sharepoint.assessgen import generate_assess_js
-    from dbml_sharepoint.release import load_release
+    from dbml_sharepoint.generators.assessgen import generate_assess_js
+    from dbml_sharepoint.model.release import load_release
     schema, bundle = _simple()
     return generate_assess_js(
         schema=schema, bundle=bundle,
@@ -141,7 +141,7 @@ def test_assess_verdict_line() -> None:
 
 
 def test_assess_manifest_lists_requirements_and_honesty() -> None:
-    from dbml_sharepoint.assessgen import generate_assess_manifest
+    from dbml_sharepoint.generators.assessgen import generate_assess_manifest
     schema, bundle = _simple()
     md = generate_assess_manifest(
         schema=schema, bundle=bundle,

@@ -1,7 +1,7 @@
 # test/test_parser.py
 from pathlib import Path
 
-from dbml_sharepoint.parser import parse_dbml
+from dbml_sharepoint.model.parser import parse_dbml
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

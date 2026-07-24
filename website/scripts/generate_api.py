@@ -27,6 +27,7 @@ import dataclasses
 import importlib
 import inspect
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -38,28 +39,37 @@ OUT_DIR = REPO_ROOT / "website" / "docs" / "api"
 
 sys.path.insert(0, str(SRC))
 
-# Layer order mirrors the README repository map; sidebar order follows it.
+# Dotted module paths mirror the package layout (model/, analysis/,
+# generators/ layer packages; the packaging spine at the root); sidebar
+# order follows this list.
 MODULES: list[tuple[str, str]] = [
-    ("parser", "Model — parse DBML into the in-memory schema"),
-    ("mapping_loader", "Model — load mapping.yaml and referenced config"),
-    ("release", "Model — load release.yaml provenance"),
-    ("validator", "Analysis — fail-closed build-time rules"),
-    ("ordering", "Analysis — dependency ordering and site filtering"),
-    ("typemap", "Analysis — DBML types to SharePoint field descriptors"),
-    ("phases", "Analysis — the deploy-phase manifest"),
-    ("permissions", "Analysis — SP base-permission bitmask helpers"),
-    ("styles", "Analysis — the fleet style standard"),
-    ("jsgen", "Generator — deploy.js"),
-    ("rollbackgen", "Generator — rollback.js"),
-    ("assessgen", "Generator — assess.js and assess-manifest.md"),
-    ("demogen", "Generator — demo-data.js"),
-    ("manifestgen", "Generator — deploy-manifest.md"),
-    ("reportgen", "Generator — Power Query / SQL reporting pack"),
+    ("model.parser", "parse DBML into the in-memory schema"),
+    ("model.mapping_loader", "load mapping.yaml and referenced config"),
+    ("model.release", "load release.yaml provenance"),
+    ("analysis.validator", "fail-closed build-time rules"),
+    ("analysis.ordering", "dependency ordering and site filtering"),
+    ("analysis.typemap", "DBML types to SharePoint field descriptors"),
+    ("analysis.phases", "the deploy-phase manifest"),
+    ("analysis.permissions", "SP base-permission bitmask helpers"),
+    ("analysis.styles", "the fleet style standard"),
+    ("generators.jsgen", "deploy.js"),
+    ("generators.rollbackgen", "rollback.js"),
+    ("generators.assessgen", "assess.js and assess-manifest.md"),
+    ("generators.demogen", "demo-data.js"),
+    ("generators.manifestgen", "deploy-manifest.md"),
+    ("generators.reportgen", "Power Query / SQL reporting pack"),
     ("bundle", "Packaging — the one emission sequence"),
     ("templating", "Packaging — the shared Jinja environment"),
     ("extension", "Packaging — the extension protocol"),
     ("cli", "Packaging — the command-line interface"),
 ]
+
+# Sub-package sidebar categories, in layout order.
+LAYERS: dict[str, str] = {
+    "model": "model — inputs to typed objects",
+    "analysis": "analysis — rules and projections",
+    "generators": "generators — one artifact family each",
+}
 
 _CODE_SPAN = re.compile(r"(`[^`]*`)")
 
@@ -80,7 +90,8 @@ def docstring_block(obj: object) -> str:
 
 def public_definitions(module_name: str) -> list[tuple[str, str]]:
     """Ordered (kind, name) of top-level public defs actually in the module."""
-    source = (PACKAGE_DIR / f"{module_name}.py").read_text(encoding="utf-8")
+    source_path = PACKAGE_DIR / (module_name.replace(".", "/") + ".py")
+    source = source_path.read_text(encoding="utf-8")
     tree = ast.parse(source)
     defs: list[tuple[str, str]] = []
     for node in tree.body:
@@ -194,14 +205,25 @@ def render_constant(name: str, obj: object) -> str:
 
 def generate_python_pages() -> None:
     out_dir = OUT_DIR / "python"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Self-cleaning: a module that moves or disappears must not leave a
+    # stale page behind (same rule bundle emission applies to artifacts).
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
     (out_dir / "_category_.json").write_text(
         '{\n  "label": "Python modules",\n  "position": 2\n}\n', encoding="utf-8",
     )
+    for layer_position, (layer, label) in enumerate(LAYERS.items(), start=1):
+        (out_dir / layer).mkdir()
+        (out_dir / layer / "_category_.json").write_text(
+            f'{{\n  "label": "{label}",\n  "position": {layer_position}\n}}\n',
+            encoding="utf-8",
+        )
     for position, (module_name, role) in enumerate(MODULES, start=1):
         module = importlib.import_module(f"dbml_sharepoint.{module_name}")
         page = (
-            f"---\ntitle: {module_name}\nsidebar_position: {position}\n---\n\n"
+            f"---\ntitle: {module_name.rsplit('.', 1)[-1]}\n"
+            f"sidebar_position: {position}\n---\n\n"
             f"# `dbml_sharepoint.{module_name}`\n\n"
             f"*{md_escape(role)}*\n\n"
         )
@@ -216,7 +238,8 @@ def generate_python_pages() -> None:
                 page += render_class(name, obj)
             else:
                 page += render_constant(name, obj)
-        (out_dir / f"{module_name}.md").write_text(page, encoding="utf-8")
+        page_path = out_dir / (module_name.replace(".", "/") + ".md")
+        page_path.write_text(page, encoding="utf-8")
 
 
 _CONTRACT_COMMENT = re.compile(r"^\{#(.*?)#\}", re.DOTALL)
@@ -271,7 +294,7 @@ def template_contract(path: Path) -> str:
 
 
 def generate_templates_page() -> None:
-    from dbml_sharepoint.phases import phases_context
+    from dbml_sharepoint.analysis.phases import phases_context
 
     includers: dict[str, list[str]] = {}
     all_templates = sorted(TEMPLATES_DIR.rglob("*.j2"))
@@ -335,7 +358,8 @@ def generate_index() -> None:
         "| Module | Role |\n|---|---|\n"
     )
     for module_name, role in MODULES:
-        page += f"| [`{module_name}`](python/{module_name}.md) | {md_escape(role)} |\n"
+        page_ref = "python/" + module_name.replace(".", "/") + ".md"
+        page += f"| [`{module_name}`]({page_ref}) | {md_escape(role)} |\n"
     page += "\nTemplates: see the [template reference](templates.md).\n"
     (OUT_DIR / "index.md").write_text(page, encoding="utf-8")
 
@@ -344,5 +368,5 @@ if __name__ == "__main__":
     generate_index()
     generate_python_pages()
     generate_templates_page()
-    count = len(list((OUT_DIR / "python").glob("*.md"))) + 2
+    count = len(list((OUT_DIR / "python").rglob("*.md"))) + 2
     print(f"Generated {count} API reference page(s) under {OUT_DIR}")

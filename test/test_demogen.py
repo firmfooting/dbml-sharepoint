@@ -3,10 +3,10 @@
 
 from pathlib import Path
 
-from dbml_sharepoint.demogen import generate_demo_js
-from dbml_sharepoint.mapping_loader import MappingBundle, load_mapping
-from dbml_sharepoint.parser import Schema, parse_dbml
-from dbml_sharepoint.release import load_release
+from dbml_sharepoint.generators.demogen import generate_demo_js
+from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.release import load_release
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

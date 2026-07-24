@@ -78,22 +78,22 @@ uv run j2lint --ignore jinja-statements-indentation single-statement-per-line --
 
 ## Adding things
 
-**A deploy phase:** add a `PhaseStep` to `DEPLOY_GROUPS` in `phases.py`
+**A deploy phase:** add a `PhaseStep` to `DEPLOY_GROUPS` in `analysis/phases.py`
 and create its `templates/deploy/_<name>.js.j2` body (open with a
 contract comment). Numbers renumber automatically; reference the step
 by name/key in tests, never by number. Regenerate the golden.
 
-**A column type:** extend `typemap.py` (DBML type → SP field
-descriptor), teach `validator.py` its rules, and add the reconcile
+**A column type:** extend `analysis/typemap.py` (DBML type → SP field
+descriptor), teach `analysis/validator.py` its rules, and add the reconcile
 handling for its mutable settings. New immutable properties must join
 the shape verification, not bypass it.
 
-**A style:** add the expander to `styles.py` using documented SP
+**A style:** add the expander to `analysis/styles.py` using documented SP
 formatting classes only, validate its parameters, and document it in
 the [mapping reference](../reference/mapping.md#column_formatting).
 
-**A mapping key:** parse it into a typed object in `mapping_loader.py`,
-validate it in `validator.py` (fail closed on nonsense), consume it in
+**A mapping key:** parse it into a typed object in `model/mapping_loader.py`,
+validate it in `analysis/validator.py` (fail closed on nonsense), consume it in
 the relevant generator, and document it in the mapping reference.
 
 ## Conventions

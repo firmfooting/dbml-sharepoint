@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from dbml_sharepoint.extension import DeploymentExtension, SiteContext
-    from dbml_sharepoint.mapping_loader import MappingBundle
-    from dbml_sharepoint.parser import Schema
-    from dbml_sharepoint.release import Release
+    from dbml_sharepoint.model.mapping_loader import MappingBundle
+    from dbml_sharepoint.model.parser import Schema
+    from dbml_sharepoint.model.release import Release
 
 
 class SeedRequiresDemoItems(ValueError):
@@ -165,11 +165,11 @@ def emit_bundle(
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure
     # packaging helpers without pulling the whole generation stack.
-    from dbml_sharepoint.assessgen import generate_assess_js, generate_assess_manifest
-    from dbml_sharepoint.demogen import generate_demo_js
-    from dbml_sharepoint.jsgen import generate_deploy_js
-    from dbml_sharepoint.reportgen import emit_reporting
-    from dbml_sharepoint.rollbackgen import generate_rollback_js
+    from dbml_sharepoint.generators.assessgen import generate_assess_js, generate_assess_manifest
+    from dbml_sharepoint.generators.demogen import generate_demo_js
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js
+    from dbml_sharepoint.generators.reportgen import emit_reporting
+    from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 
     if seed and not mapping_bundle.mapping.demo_items:
         raise SeedRequiresDemoItems(

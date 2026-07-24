@@ -1,10 +1,7 @@
 # test/test_reportgen.py
 from pathlib import Path
 
-from dbml_sharepoint.mapping_loader import MappingBundle, load_mapping
-from dbml_sharepoint.parser import Schema, parse_dbml
-from dbml_sharepoint.release import load_release
-from dbml_sharepoint.reportgen import (
+from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
     generate_dictionary_powerquery,
     generate_dictionary_sql,
@@ -12,6 +9,9 @@ from dbml_sharepoint.reportgen import (
     generate_reporting_md,
     generate_sql_views,
 )
+from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.release import load_release
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -376,7 +376,7 @@ def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> No
     """Both CLIs ship reporting through this one helper, so the artifact
     set cannot drift between them. It returns the exact relpaths written,
     POSIX separators, for checksums.txt."""
-    from dbml_sharepoint.reportgen import emit_reporting
+    from dbml_sharepoint.generators.reportgen import emit_reporting
     schema, bundle = _simple()
     release = load_release(FIXTURES / "release.yaml")
 
