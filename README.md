@@ -21,6 +21,11 @@ schema.dbml + mapping.yaml + release.yaml
    SharePoint Online lists, ready to use
 ```
 
+**Documentation: [shauneccles.github.io/dbml-sharepoint](https://shauneccles.github.io/dbml-sharepoint/)** —
+getting started, concepts, per-artifact contracts, the full mapping /
+DBML / CLI reference, a generated API reference, and the development
+philosophy.
+
 ## Why
 
 - **Design as code.** Your list schema lives in DBML — reviewable, diffable,
@@ -182,10 +187,10 @@ imported across modules is public and unprefixed. Extension CLIs
 compose `clear_generated` → validate → manifest → `emit_bundle` rather
 than re-implementing emission.
 
-Full documentation (concepts, artifact contracts, mapping/DBML/CLI
-reference, generated API reference, development philosophy) lives in
-[`website/`](website) — a Docusaurus site; `cd website && npm install
-&& npm start` to browse it locally.
+Full documentation lives at
+[shauneccles.github.io/dbml-sharepoint](https://shauneccles.github.io/dbml-sharepoint/),
+built from [`website/`](website) — a Docusaurus site; `cd website &&
+npm install && npm start` to browse it locally.
 
 ## Development
 

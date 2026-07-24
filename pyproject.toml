@@ -36,6 +36,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/shauneccles/dbml-sharepoint"
+Documentation = "https://shauneccles.github.io/dbml-sharepoint/"
 Repository = "https://github.com/shauneccles/dbml-sharepoint"
 Issues = "https://github.com/shauneccles/dbml-sharepoint/issues"
 
