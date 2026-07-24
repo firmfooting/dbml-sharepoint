@@ -1,0 +1,42 @@
+  // === Maintenance unseal (declared-seal columns) ===
+  // Sealed columns reject UI schema edits even for site admins; the ONLY
+  // legitimate maintenance path is this script. Unseal declared fields so
+  // the run's write phases work unchanged; Phase 4.1 re-seals and
+  // verifies after every field write is done.
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  invalidateFieldShapes();  // probes reflect phase-start state
+  {
+    const sealDeclared = [];
+    for (const list of SCHEMA.lists) {
+      for (const col of list.fields_phase1) {
+        if (col.seal) sealDeclared.push([list.title, col.title]);
+      }
+    }
+    for (const lookup of SCHEMA.phase2_lookups) {
+      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
+    }
+    if (sealDeclared.length > 0) {
+      log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
+      let unsealedCount = 0;
+      // One lane per list: same-list field MERGEs race into save conflicts;
+      // different lists unseal concurrently.
+      await mapLanes(sealDeclared, ([listTitle]) => listTitle, async ([listTitle, columnTitle]) => {
+        try {
+          const shape = await readFieldShape(listTitle, columnTitle, null);
+          if (shape && shape.Sealed) {
+            const unsealDigest = await getDigest();
+            await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
+            unsealedCount += 1;
+          }
+        } catch (err) {
+          log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
+          summary.errors.push({ phase: '{{ phase.number }}', list: listTitle, column: columnTitle, error: err.message });
+        }
+      }, 4);
+      log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
+    }
+  }
+

@@ -1,0 +1,13 @@
+{# Shared provenance header fields — rendered INSIDE each script's leading
+   block comment. Expects: source_dbml, site_url, release, generated_at;
+   optional: source_mtime, site_role. comment_safe (A5) guards every raw
+   interpolation against a crafted `*/`. #}
+ * Generated from: {{ source_dbml | comment_safe }}{{ ' (mtime: ' + (source_mtime | comment_safe) + ')' if source_mtime is defined else '' }}
+ * Target site:  {{ site_url | comment_safe }}
+{% if site_role is defined %}
+ * Site role:    {{ site_role | comment_safe }}
+{% endif %}
+ * Release tag:  {{ release.release_tag | comment_safe }}
+ * Schema:       v{{ release.schema_version | comment_safe }}
+ * Deployer:     v{{ release.deployer_version | comment_safe }}
+ * Generated at: {{ generated_at | comment_safe }}

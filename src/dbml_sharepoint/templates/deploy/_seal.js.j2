@@ -1,0 +1,70 @@
+  // === Phase {{ phase.number }}: seal declared columns ===
+  // Re-seal after every field write (1/2/3/3b/3d): sealed columns block UI
+  // schema edits and deletion even for site admins — the strongest defense
+  // when team owners are unavoidably site collection admins. Friction, not
+  // enforcement: an admin can unseal via API, which is deliberate work, not
+  // an accident.
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  invalidateFieldShapes();  // probes reflect phase-start state
+  {
+    const sealDeclared = [];
+    for (const list of SCHEMA.lists) {
+      for (const col of list.fields_phase1) {
+        if (col.seal) sealDeclared.push([list.title, col.title]);
+      }
+    }
+    for (const lookup of SCHEMA.phase2_lookups) {
+      if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
+    }
+    let sealedCount = 0;
+    // One lane per list (field MERGEs on the same list race into save
+    // conflicts; lists are independent). After a lane's writes, ONE fresh
+    // per-list enumeration serves every column's verify readback — the
+    // per-field fresh GETs paid ~one round-trip per column for the same
+    // server evidence (live DEBUG timing: this phase alone was 13.3s of a
+    // 52s run). Verification still never trusts phase-start state: the
+    // per-list invalidation forces a post-write re-enumeration.
+    const sealByList = new Map();
+    for (const [listTitle, columnTitle] of sealDeclared) {
+      if (!sealByList.has(listTitle)) sealByList.set(listTitle, []);
+      sealByList.get(listTitle).push(columnTitle);
+    }
+    await mapLanes([...sealByList.entries()], ([listTitle]) => listTitle, async ([listTitle, columns]) => {
+      const failed = new Set();
+      for (const columnTitle of columns) {
+        try {
+          const shape = await readFieldShape(listTitle, columnTitle, null);
+          if (!shape) throw new Error('declared column missing at seal time');
+          if (!shape.Sealed) {
+            const sealDigest = await getDigest();
+            await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, sealDigest);
+            sealedCount += 1;
+          }
+        } catch (err) {
+          failed.add(columnTitle);
+          log('ERROR', `Phase {{ phase.number }} seal '${listTitle}.${columnTitle}': ${err.message}`);
+          summary.errors.push({ phase: '{{ phase.number }}', list: listTitle, column: columnTitle, error: err.message });
+        }
+      }
+      invalidateFieldShapes(listTitle);  // verify from post-write state
+      for (const columnTitle of columns) {
+        if (failed.has(columnTitle)) continue;
+        try {
+          const verify = await readFieldShape(listTitle, columnTitle, null);
+          if (!verify || verify.Sealed !== true) {
+            throw new Error(`did not retain sealed state (readback ${verify && verify.Sealed})`);
+          }
+        } catch (err) {
+          log('ERROR', `Phase {{ phase.number }} seal '${listTitle}.${columnTitle}': ${err.message}`);
+          summary.errors.push({ phase: '{{ phase.number }}', list: listTitle, column: columnTitle, error: err.message });
+        }
+      }
+    }, 4);
+    if (sealDeclared.length > 0) {
+      log('INFO', `Phase {{ phase.number }} complete: ${sealDeclared.length} column(s) sealed and verified (${sealedCount} newly sealed).`);
+    }
+  }
+

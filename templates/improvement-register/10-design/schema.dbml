@@ -1,0 +1,52 @@
+// ============================================================================
+// Improvement register — ideas through test cycles to adoption, measured.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project improvement_register { database_type: 'SharePoint Online Lists' }
+
+Enum improvement_source {
+  "Staff idea"
+  "Complaint / feedback"
+  "Incident"
+  "Audit / review"
+  "Data / measures"
+  "Process inventory"
+  "Other"
+}
+
+Enum improvement_stage {
+  "Idea"
+  "Planned"
+  "Testing"
+  "Adopted"
+  "Abandoned"
+}
+
+Enum benefit_type {
+  "Time saved"
+  "Quality / safety"
+  "Cost"
+  "Staff or customer experience"
+  "Compliance"
+}
+
+Table Improvement {
+  Id                int                 [pk, increment]
+  Title             nvarchar            [not null, note: 'The change, as a change: "Pre-fill the referral form from the booking record"']
+  Source            improvement_source  [not null, default: 'Staff idea']
+  SourceRef         nvarchar            [note: 'Pointer to the origin: complaint ID, incident ID, audit recommendation, measure name']
+  Owner             person              [not null, note: 'Who is running this improvement']
+  RaisedDate        date                [not null]
+  Problem           richtext            [note: 'The problem in the words of the people who have it — with the number that shows it, if one exists']
+  ChangeIdea        richtext            [note: 'The change to test, and the prediction: "if we do X, we expect Y to drop"']
+  Stage             improvement_stage   [not null, default: 'Idea']
+  BenefitType       benefit_type        [note: 'Primary benefit claimed — set when Planned']
+  // When "none available" is acceptable — see governance.
+  MeasureBefore     nvarchar            [not null, note: 'The baseline number and its unit, captured BEFORE testing: "34 min average", "12 errors/month". Write "none available" only if truly none']
+  MeasureAfter      nvarchar            [note: 'The same measure after the test period']
+  TestNotes         richtext            [note: 'What was tried, what happened, what was learned — dated entries, newest first']
+  AdoptedDate       date                [note: 'When the change became the standard way (or the abandon decision date)']
+  // calculated_number — formula in mapping.yaml (RaisedDate -> AdoptedDate); the improvement system watching itself.
+  DaysIdeaToOutcome calculated_number   [note: 'Calculated automatically from the raised date and the adopted/abandoned date: how many days the improvement took from idea to outcome. Blank until both dates are set.']
+}

@@ -1,0 +1,7 @@
+release: "0.1.0-test"
+date: "2026-01-01"
+deployer_version: "dbml-sharepoint/0.1.0"
+schema_version: "0.8"
+flow_package_version: "none"
+notes: |
+  Test fixture release.

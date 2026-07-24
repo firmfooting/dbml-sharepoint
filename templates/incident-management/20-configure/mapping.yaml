@@ -1,0 +1,100 @@
+# Incident management — physical mapping.
+prefix: "IN_"
+
+entities:
+  Incident:         { kind: List, base_template: 100, site_role: default }
+  CorrectiveAction: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+indexed_columns:
+  Incident: [Status, Severity, Category, ReportedDate]
+  CorrectiveAction: [Status, Incident, DueDate]
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+calculated_formulas:
+  Incident:
+    DaysToResolve: '=IF(OR(ISBLANK([ReportedDate]),ISBLANK([ResolvedDate])),"",DATEDIF([ReportedDate],[ResolvedDate],"d"))'
+
+# Security model:
+#   - ALL staff (Members) hold the custom "IN Report Only" level on both
+#     lists: they can submit incidents and read everything, but cannot edit
+#     or delete anything — including their own report after submission
+#     (SharePoint levels cannot scope "own items"; see 50-govern).
+#   - IN Incident Handlers hold Contribute: triage, update, resolve, and
+#     maintain corrective actions.
+#   - Full Control confined to the empty-by-default admin group.
+groups:
+  - name: "IN Incident Handlers"
+    description: "The response team: triage, manage and resolve incidents; maintain corrective actions."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "IN List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+
+permission_levels:
+  - name: "IN Report Only"
+    description: "Submit new items and read everything; no editing or deleting, no schema rights."
+    base_permissions:
+      - AddListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "IN Incident Handlers" }
+        level: "Contribute"
+      - principal: { kind: group, name: "IN List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "IN Report Only"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible — drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement — see
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# docs/STYLE-GUIDE.md) — status columns render as SharePoint's own
+# severity boxes with icons, consistent across every template.
+column_formatting:
+  Incident:
+    Status: { style: severity, map: { Reported: warning, Triaged: low, "In progress": low, Resolved: good, Closed: good } }
+  CorrectiveAction:
+    Status: { style: severity, map: { Open: low, "In progress": low, Done: good, Cancelled: muted } }

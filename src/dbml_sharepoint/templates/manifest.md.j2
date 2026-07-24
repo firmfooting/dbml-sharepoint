@@ -1,0 +1,296 @@
+{# src/dbml_sharepoint/templates/manifest.md.j2 #}
+{# The operator-facing deploy manifest: supported mode, step-by-step run
+   instructions, validation findings (must be zero errors), and the full
+   deployment inventory - list creation order, deferred lookups, indexes,
+   views, formatting, permissions - with phase numbers taken from the
+   phases manifest. #}
+# SharePoint deployment manifest
+
+**Source:** {{ source_dbml }} (modified {{ source_mtime }})
+**Target:** {{ site_url }}
+**Site role:** {{ site_role }}
+**Release tag:** {{ release.release_tag }}
+**Schema version:** {{ release.schema_version }}
+**Deployer version:** {{ release.deployer_version }}
+**Generated:** {{ generated_at }}
+
+## Supported deployment mode
+
+This browser script supports a **clean first provision** and resuming the
+**same generated release** after a partial failure. It is not evidence of a
+general in-place schema upgrade. Before writing, it proves list template plus
+field internal name/type/writability and lookup target, then narrowly reconciles
+and reads back the declared mutable list/field settings—including required,
+unique/indexed, default, Choice members and type-specific display/storage
+properties. An unsupported or unproven shape aborts for explicit migration.
+
+> **Fail closed:** if a declared list/library already exists from another
+> release or its provenance is unknown, do not run this script. Keep the site
+> inactive and use an approved versioned migration/rebuild procedure. Never use
+> generated rollback against a site containing real records.
+
+## How to run this deployment
+
+1. **Assess the site first** — paste `assess.js` (read-only — it makes no
+   changes) into the target site's browser console and read
+   `assess-manifest.md`. The final `[SP-ASSESS] [DONE]` verdict must be
+   **COMPATIBLE**, or a **DEGRADED** whose warnings you have reviewed and
+   accepted. Resolve **BLOCKED** before going further.
+2. **Review this manifest** — the Summary below must show 0 validation
+   errors, and the lists/ACLs must be what you intend to provision.
+3. **Open a CLASSIC page of the target site**, signed in as a Site Owner:
+   `{{ site_url }}/_layouts/15/settings.aspx`
+   (modern pages may not expose `_spPageContextInfo`, which the script's
+   wrong-site safety check requires; it aborts anywhere but the target site).
+4. **Open the browser console** (F12 → Console). If the browser blocks the
+   paste, type `allow pasting` and press Enter first.
+5. **Paste the entire contents of `deploy.js`** and press Enter. (If a run
+   feels slow, flip `const DEBUG = false` to `true` near the top of the
+   pasted script before running: every REST call logs its timing and a
+   per-phase seconds table prints before DONE. No rebuild needed.)
+6. **Watch the `[SP-DEPLOY]` log lines.** The script runs read-only preflights
+   (permissions, existing-schema shapes), then Phase {{ phase_num['security'] }} permission levels and
+   groups, then lists → columns → lookups → indexes → ACLs → seeds, and prints
+   a summary object: `listsCreated`, `columnsCreated`, `columnsSkipped`,
+   `errors`. Success is `errors: []`.
+7. **On any `[ERROR]`**, stop and read it — the script fails closed rather
+   than guessing. Fix the stated cause, then paste the SAME script again:
+   reruns are safe for this release (completed work is verified and skipped).
+   Only `[SP-DEPLOY] [ERROR]` lines and a non-empty `errors` array are
+   failures — the browser may paint stray read-probe requests red; those
+   are absence checks the script handles.
+8. **Verify** — run the pack's verification checklist (its DEPLOY.md /
+   runbook) before handing the site over.
+9. **`rollback.js` is ONLY for abandoning a failed FIRST provision on an
+   empty site** — never against a site containing real records (see the
+   fail-closed note above).
+
+Required rights: **Manage Lists**{% if schema_json.permission_levels or schema_json.groups or schema_json.list_assignments %} plus **Manage Permissions** (this
+deployment declares permission levels / groups / list ACLs){% endif %} on the target site.
+
+Group ownership is corrected automatically where possible: on an owner
+mismatch the script sets the declared owner via the documented CSOM
+`ProcessQuery` protocol and re-verifies through the read-only `/owner`
+resource; only if that fails does it stop with a manual instruction to set
+the owner in **Site permissions** and rerun.
+{% if schema_json.groups | selectattr("enroll_operator_during_deploy") | list %}
+Operator self-enrolment: for the groups flagged below, the script adds YOU
+(the running operator) to the group after Phase {{ phase_num['security'] }} so later phases hold that
+group's list grants, and you are removed automatically at the end of the run
+— on success or abort. If you were already a member, your membership is left
+untouched. If an unexpected crash strands the enrolment, remove yourself in
+**Site permissions → Groups**.
+{% endif %}
+
+## Summary
+
+- Lists to provision: {{ counts.lists }}
+- Non-lookup columns to create: {{ counts.fields_phase1 }}
+- Phase-2 lookup columns: {{ counts.phase2_lookups }}
+- Indexed columns: {{ counts.indexed }}
+- Views to provision: {{ counts.views }}
+- Formatted columns: {{ counts.formatted_columns }}
+- Validation errors: {{ counts.errors }}
+- Validation warnings: {{ counts.warnings }}
+
+## Validation findings
+
+{% for f in findings %}
+- **[{{ f.severity | upper }}]** {{ f.message }}
+{% else %}
+- (no findings)
+{% endfor %}
+
+## Polymorphic columns (referential integrity NOT enforced by SP)
+
+{% for p in polymorphic %}
+- {{ p.list }}.{{ p.field }} (discriminated by {{ p.discriminator }})
+{% else %}
+- (none)
+{% endfor %}
+
+Power Automate flows must validate these at write time.
+
+## Phase {{ phase_num['lists'] }}: list creation order
+
+{% for l in lists %}
+{{ loop.index }}. **{{ l.title }}** ({{ l.kind }})
+   - Description: {{ l.description }}
+   - Versioning: {% if l.enable_versioning %}enabled, {{ l.major_version_limit }} major versions{% else %}disabled{% endif %}
+   - Phase {{ phase_num['lists'] }} fields: {{ l.fields_phase1 | length }}
+
+{% endfor %}
+
+## Phase {{ phase_num['lookups'] }}: deferred lookups
+
+{% if phase2 %}
+| List | Column | Target |
+|------|--------|--------|
+{% for p in phase2 %}
+| {{ p.list }} | {{ p.field.title }} | {{ p.target_list }} |
+{% endfor %}
+{% else %}
+_(none — all lookups resolved in phase 1)_
+{% endif %}
+
+## Phase {{ phase_num['indexes'] }}: indexed columns
+
+{% if indexed %}
+{% for i in indexed %}
+- {{ i.list }}.{{ i.field }}
+{% endfor %}
+{% else %}
+_(none configured)_
+{% endif %}
+
+## Phase {{ phase_num['views'] }}: views
+
+{% if views %}
+{% for v in views %}
+- **{{ v.title }}** on {{ v.list }}{{ ' (default)' if v.set_default else '' }}{{ ' [row-formatted]' if v.formatting else '' }}: {{ v.view_fields | join(', ') }}{{ ' — ' + v.summary if v.summary else '' }}
+{% endfor %}
+
+Declared views are created or reconciled exactly (columns, order, query,
+row limit, default flag); undeclared views are never modified.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## Column formatting
+
+{% if formatted_columns %}
+{% for fc in formatted_columns %}
+- {{ fc.list }}.{{ fc.column }}
+{% endfor %}
+
+Declared column formats (SP CustomFormatter JSON) are reconciled with the
+field; columns without a declaration keep any hand-applied format.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## Form formatting
+
+{% if form_formatting %}
+{% for ff in form_formatting %}
+- {{ ff.list }}: {{ ff.parts }}
+{% endfor %}
+
+Declared form layouts are reconciled onto the list's default item content
+type (Phase {{ phase_num['forms'] }}); lists without a declaration are never touched.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## Permissions
+
+### Custom permission levels
+{% if schema_json.permission_levels %}
+| Name | Permissions |
+|------|-------------|
+{% for lvl in schema_json.permission_levels %}
+| {{ lvl.name }} | High={{ lvl.base_permissions.high }}, Low={{ lvl.base_permissions.low }} |
+{% endfor %}
+{% else %}
+_(none declared)_
+{% endif %}
+
+### Site groups
+{% if schema_json.groups %}
+| Name | Required owner | Must be empty at deploy | Operator self-enrol | Description |
+|------|----------------|-------------------------|---------------------|-------------|
+{% for grp in schema_json.groups %}
+| {{ grp.name }} | {{ grp.owner_group }} | {{ "yes" if grp.require_empty_at_deploy else "no" }} | {{ "yes — removed automatically at the end of the run" if grp.enroll_operator_during_deploy else "no" }} | {{ grp.description }} |
+{% endfor %}
+{% else %}
+_(none declared)_
+{% endif %}
+
+Group settings are reconciled automatically. Ownership is verified through the
+documented read-only `/owner` resource; on a mismatch (e.g. a clean first run
+where SharePoint made the deploying user the owner) the script first attempts
+the documented CSOM `ProcessQuery` owner assignment and re-verifies. Only if
+the correction does not take effect does Phase {{ phase_num['security'] }} stop before list creation
+with an instruction to set the required owner in **Site permissions** and
+rerun the same generated script.
+
+Groups marked **yes** are read and fully paginated after settings reconciliation
+and owner verification. Any existing member aborts Phase {{ phase_num['security'] }} before list creation;
+the deployer never removes membership automatically.
+
+### Per-list assignments (inheritance broken)
+{% if schema_json.list_assignments %}
+| List | Principal | Level |
+|------|-----------|-------|
+{% for la in schema_json.list_assignments %}
+{% for a in la.assignments %}
+| {{ la.list }} | {% if a.principal.kind == 'group' %}{{ a.principal.name }} (group){% elif a.principal.kind == 'associated_owner_group' %}Site Owners (associated owner){% elif a.principal.kind == 'associated_member_group' %}Site Members (associated member){% else %}Site Visitors (associated visitor){% endif %} | {{ a.level }} |
+{% endfor %}
+{% endfor %}
+{% else %}
+_(no per-list assignments configured)_
+{% endif %}
+
+Lists using `break_inheritance: true` with `reconcile: exact` are isolated as
+soon as each list is created or probed in Phase {{ phase_num['lists'] }}, with
+`copyRoleAssignments=false` and `clearSubscopes=false`. Phase {{ phase_num['acls'] }} still performs
+the complete allowlist reconciliation and its descendant-scope checks.
+
+## Seed items
+
+{% if seed_items %}
+{% for seed in seed_items %}
+### {{ seed.title }}{% if seed.skip_if_has_rows %} (existing singleton must match exactly){% endif %}
+
+
+| Field | Value |
+|-------|-------|
+{% for key, value in seed.fields.items() %}
+| `{{ key }}` | {{ value }} |
+{% endfor %}
+
+{% endfor %}
+
+For singleton seeds, Phase {{ phase_num['seeds'] }} reads up to two rows and every declared field. An
+existing row is accepted only when it is the sole row and all declared values
+match exactly (allowing only SharePoint REST's `null`/empty-text equivalence);
+mismatches or duplicates fail closed. A newly inserted seed is re-read and
+verified to detect a concurrent insert.
+{% else %}
+_(no seed items — the active extension provides none)_
+{% endif %}
+{% if extra_sections %}
+{% for heading, body in extra_sections.items() %}
+## {{ heading }}
+
+{{ body }}
+
+{% endfor %}
+{% endif %}
+{% if extra_warnings %}
+## Extension warnings
+
+{% for warning in extra_warnings %}
+- {{ warning }}
+{% endfor %}
+{% endif %}
+{% if retention %}
+## Retention policy mapping (desired state only)
+
+**No retention labels are applied by `deploy.js` or by this browser deployer.**
+The policy mapping below is desired-state deployment evidence only; it is not
+evidence that a Microsoft Purview or SharePoint retention label is active.
+
+| List | Desired policy |
+|------|----------------|
+{% for entity, policy in retention.items() %}
+| {{ entity }} | {{ policy }} |
+{% endfor %}
+
+> **Conditional live-data gate:** this mapping is not proof that the named
+> controls are licensed, supported or effective. In particular, do not infer
+> generic-list-item retention from a site policy or document-library default.
+> Where the records schedule is mandatory, a tenant administrator and records
+> owner must prove the approved per-library and per-item mechanism end-to-end
+> before live data; otherwise record a scoped exception/alternative process.
+{% endif %}

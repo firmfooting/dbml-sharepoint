@@ -1,0 +1,20 @@
+# The smallest useful mapping: one entity, no ACL work.
+prefix: "APP_"
+
+entities:
+  Ticket: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+indexed_columns:
+  Ticket: [Status]
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 100
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []

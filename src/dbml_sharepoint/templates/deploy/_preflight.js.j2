@@ -1,0 +1,65 @@
+  // === Preflight: fail-closed adoption of existing schema objects ===
+  // A matching display name is not proof that an existing list or field was
+  // created from this schema. Validate every immutable identity before Phase 1.2
+  // performs its first write. Mutable declared settings are reconciled and
+  // read back in Phase 2.1, but a wrong template/type/internal-name/lookup target
+  // always requires an explicit migration.
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  invalidateFieldShapes();  // probes reflect phase-start state
+  // Read-only, so lanes are free of write races — but the field wave still
+  // waits for ALL list shapes: lookup fields validate against their target
+  // list's GUID, which another lane may still be reading.
+  const preflightListShapes = {};
+  await mapLanes(SCHEMA.lists, (list) => list.title, async (list) => {
+    try {
+      const actual = await readListShape(list.title);
+      if (!actual) return;
+      assertListImmutableShape(list, actual);
+      // readListShape also fail-closes malformed or omitted mutable settings;
+      // drift itself is safe to repair later and is reported for visibility.
+      if (listSettingsMismatch(actual, desiredListSettings(list))) {
+        log('INFO', `Existing list '${list.title}' has mutable versioning/content-type drift; Phase 2.1 will reconcile it.`);
+      }
+      preflightListShapes[list.title] = actual;
+    } catch (err) {
+      log('ERROR', `Existing-schema list '${list.title}': ${err.message}`);
+      summary.errors.push({ phase: 'preflight', list: list.title, error: err.message });
+    }
+  }, 4);
+
+  await mapLanes(
+    SCHEMA.lists.filter((list) => preflightListShapes[list.title]),
+    (list) => list.title,
+    async (list) => {
+    for (const field of declaredFieldsForList(list)) {
+      try {
+        const actual = await readFieldShape(
+          list.title,
+          field.title,
+          field,
+        );
+        if (!actual) continue;
+        const targetGuid = field.target_list
+          ? preflightListShapes[field.target_list]?.Id
+          : null;
+        await assertFieldImmutableShape(list.title, field, actual, targetGuid);
+        // Force evaluation of every declared mutable expectation during the
+        // read-only preflight; Phase 2.1 performs and verifies any safe MERGE.
+        declaredFieldState(list.title, field);
+      } catch (err) {
+        log('ERROR', `Existing-schema field '${list.title}.${field.title}': ${err.message}`);
+        summary.errors.push({
+          phase: 'preflight', list: list.title, column: field.title, error: err.message,
+        });
+      }
+    }
+  }, 4);
+
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Existing-schema shape preflight failed; no deployment writes were attempted.');
+    return { ...summary, aborted: 'existing-schema-shape-errors' };
+  }
+

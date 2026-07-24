@@ -1,0 +1,29 @@
+// test/fixtures/simple.dbml
+Project simple_test {
+  database_type: 'SharePoint Online'
+  Note: 'Two-table fixture for parser unit tests.'
+}
+
+Enum status {
+  "Open"
+  "Closed"
+}
+
+Table Project {
+  Id        int        [pk, increment]
+  Title     nvarchar   [not null, note: 'Project name.']
+  Status    status     [not null, default: 'Open']
+  SortOrder int        [not null, default: 0]
+}
+
+Table Task {
+  Id        int        [pk, increment]
+  Title     nvarchar   [not null]
+  Project   int        [ref: > Project.Id, not null]
+  DueDate   date       [note: 'Optional due date.']
+}
+
+Table AppSettings {
+  Id        int        [pk, increment]
+  Title     nvarchar   [not null, note: 'App Settings singleton.']
+}

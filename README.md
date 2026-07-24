@@ -1,0 +1,202 @@
+# dbml-sharepoint
+
+Turn a [DBML](https://dbml.dbdiagram.io/docs/) schema plus a YAML mapping into
+an **idempotent, fail-closed, browser-console `deploy.js`** that provisions
+SharePoint Online lists, columns, lookups, indexes, permission levels, groups
+and ACLs — with **no tenant admin rights, no premium licence, and nothing
+installed on the target**. If you can open the site and press F12, you can
+deploy.
+
+```
+schema.dbml + mapping.yaml + release.yaml
+        │
+        ▼   dbml-sharepoint build
+┌──────────────────────────────┐
+│ deploy-manifest.md  ← read   │
+│ deploy.js           ← paste  │
+│ rollback.js         ← escape │
+└──────────────────────────────┘
+        │
+        ▼   paste into the site's browser console (F12)
+   SharePoint Online lists, ready to use
+```
+
+## Why
+
+- **Design as code.** Your list schema lives in DBML — reviewable, diffable,
+  renderable as an ERD on [dbdiagram.io](https://dbdiagram.io). The physical
+  mapping (prefixes, templates, versioning, indexes, ACLs) lives in YAML next
+  to it.
+- **Deploy with nothing but a browser.** The generated script runs in the
+  site's own console under your own login, calling only documented SharePoint
+  REST/CSOM endpoints. No PnP, no CSOM installs, no app registrations, no
+  Graph consent.
+- **Fail closed, rerun safely.** Every write is preceded by read-only
+  preflights: wrong site aborts, existing lists/fields are adopted only when
+  their immutable shape provably matches, mutable drift is narrowly
+  reconciled and read back. Reruns of the same release skip verified work.
+- **Real column support.** Text, note, choice (+ defaults), person, date,
+  number, boolean, hyperlink, same-site lookups (including deferred circular
+  and self-lookups), **calculated columns** (formulas in the mapping),
+  indexes, and unique constraints.
+- **Security is part of the schema.** Custom permission levels, site groups
+  (with automated owner assignment via CSOM and optional run-scoped operator
+  self-enrolment), broken-inheritance list ACLs with an exact allowlist
+  reconciliation mode that removes undeclared grants.
+
+## Install
+
+```bash
+uv tool install dbml-sharepoint     # or: pip install dbml-sharepoint
+```
+
+## Quickstart
+
+A complete worked example lives in [`examples/project-tracker`](examples/project-tracker):
+
+```bash
+dbml-sharepoint build \
+  --schema examples/project-tracker/schema.dbml \
+  --mapping examples/project-tracker/mapping.yaml \
+  --release examples/project-tracker/release.yaml \
+  --site-url https://yourtenant.sharepoint.com/sites/your-site \
+  --site-role default \
+  --out ./build
+```
+
+Then:
+
+1. Read `build/deploy-manifest.md` — it opens with step-by-step run
+   instructions and must show **0 validation errors**. (`build/INDEX.md`
+   lists every artifact, including the `reporting/` queries.)
+2. Open `https://yourtenant.sharepoint.com/sites/your-site/_layouts/15/settings.aspx`
+   (a classic page; the script's wrong-site guard needs `_spPageContextInfo`)
+   signed in as a Site Owner.
+3. F12 → Console → paste the whole of `build/deploy.js` → Enter.
+4. Watch the `[SP-DEPLOY]` lines; success ends with a summary and `errors: []`.
+
+## The three inputs
+
+| File | Owns |
+|---|---|
+| `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), notes (→ column descriptions) |
+| `mapping.yaml` | List prefix, entity kind/template/site-role, indexed columns, versioning, calculated-column formulas, permission levels, groups, per-list ACLs |
+| `release.yaml` | Release tag + schema version stamped into every artefact for provenance |
+
+See [`examples/project-tracker/README.md`](examples/project-tracker/README.md)
+for a guided tour of all three.
+
+## What the generated script does
+
+Phased, logged (`[SP-DEPLOY]`), each phase fail-closed:
+
+0. Read-only preflights (site identity, rights, existing-schema shape), then
+   permission levels and site groups (settings reconciled; owner corrected
+   via CSOM where possible; optional operator self-enrolment).
+1. Lists and non-lookup columns (existing fields verified immutable-shape,
+   mutable settings reconciled and read back).
+2. Deferred lookups (circular/self references).
+3. Indexes and field defaults.
+4. Broken-inheritance ACL assignment; `reconcile: exact` removes undeclared
+   direct grants.
+5. Optional seed rows (via the extension protocol).
+
+Phases are numbered from the phases manifest
+(`src/dbml_sharepoint/phases.py`) — reference steps by name; numbers
+renumber automatically when the structure changes.
+
+`rollback.js` deletes the declared lists. It exists for one case: a failed
+**first** provision on a site with no real data. Never run it against real
+records.
+
+Styling: every mapping inherits the fleet style standard — semantic
+severity tokens, icons and shapes on SharePoint's own formatting classes;
+see the [style guide](website/docs/reference/style-guide.md).
+
+Assessment: every build emits a **read-only** `assess.js` (+
+`assess-manifest.md`) that probes a target site's capabilities across
+three tiers — always-run enumerations (permissions, list templates,
+lock state, retention labels, locale, features), pack-driven
+attempt-probes (sealed/AllowDeletion/formatter surfaces, list
+collisions, version-trim, CSOM availability), and a printed
+not-assessable honesty block — then prints a
+`COMPATIBLE / DEGRADED / BLOCKED` verdict for the pack. It makes no
+changes; paste it in the site's console before a first deploy.
+
+Reporting: every build also ships `build/reporting/` — one Power Query
+(M) file per list (plus dictionary, model-info and user-added-column
+audit queries), a SQLCMD views script for warehouse-landed copies,
+`REPORTING.md` with the Power BI relationship table, and
+`data-dictionary.md`. Point the queries' `SiteUrl` parameter at the
+deployed site. `dbml-sharepoint report` emits the same queries without
+needing a site URL (schema-only layout: `powerquery/`, `sql/`,
+`REPORTING.md`, `DATA-DICTIONARY.md`).
+
+## Extension protocol
+
+Organisation-specific behaviour (identity seeding, classification projection,
+per-site policy) stays out of the core. Implement `DeploymentExtension`
+(hooks: `expand_column`, `seed_lists`, `extra_validators`, `manifest_extras`)
+in your own package and register it under the `dbml_sharepoint.extensions`
+entry-point group:
+
+```toml
+[project.entry-points."dbml_sharepoint.extensions"]
+my_org = "my_org_deployer.extension:MyOrgExtension"
+```
+
+The core CLI resolves `--extension my_org`; or ship your own thin CLI that
+composes the core pipeline programmatically (see `dbml_sharepoint.cli` for
+the composition points).
+
+## Limitations (honest ones)
+
+- SharePoint **Online** only, same-site lookups only (SharePoint cannot span
+  webs with a lookup).
+- Clean first provision + same-release resume. A schema *upgrade* whose
+  immutable shapes changed (field types, lookup targets, list templates)
+  fails closed for explicit migration rather than guessing.
+- Calculated columns can't reference Lookup/Person columns or `[Today]` —
+  SharePoint's rules, surfaced at build time by the validator.
+- The browser-paste model means an interactive operator; that is the point
+  (no stored credentials, no app principal), but it is not unattended CI.
+
+## Repository map
+
+Flat, one module per concern — role is readable from the name:
+
+| Layer | Modules | Responsibility |
+|---|---|---|
+| Model | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
+| Analysis | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
+| Generators (`*gen`) | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
+| Packaging | `bundle` · `templating` · `cli` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, the extension protocol |
+
+Templates mirror that: `templates/*.js.j2` are the four pasteable scripts;
+`templates/_*.js.j2` are shared partials (provenance header, site guard +
+`apiUrl`/`odataName`, cached digest) included by all of them;
+`templates/deploy/_*.js.j2` are deploy.js's phase bodies.
+
+Conventions: underscore-prefixed names are module-private — anything
+imported across modules is public and unprefixed. Extension CLIs
+compose `clear_generated` → validate → manifest → `emit_bundle` rather
+than re-implementing emission.
+
+Full documentation (concepts, artifact contracts, mapping/DBML/CLI
+reference, generated API reference, development philosophy) lives in
+[`website/`](website) — a Docusaurus site; `cd website && npm install
+&& npm start` to browse it locally.
+
+## Development
+
+```bash
+uv sync
+uv run pytest                               # full suite (incl. the semantic Jinja template lint)
+uv run ruff check src test website/scripts  # lint
+uv run mypy                                 # strict typing: src, test, website/scripts
+uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
+```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

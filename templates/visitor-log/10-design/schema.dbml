@@ -1,0 +1,31 @@
+// ============================================================================
+// Visitor log — one list; the On-site-now view is the muster list.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project visitor_log { database_type: 'SharePoint Online Lists' }
+
+Enum visitor_type {
+  "Visitor"
+  "Contractor"
+  "Student / placement"
+  "Volunteer"
+  "Delivery"
+  "Other"
+}
+
+Table Visit {
+  Id               int          [pk, increment]
+  Title            nvarchar     [not null, note: 'Visitor name']
+  Organisation     nvarchar     [note: 'Who they are from, if anyone']
+  VisitorType      visitor_type [not null, default: 'Visitor']
+  Host             person       [note: 'The staff member responsible for them while on site']
+  Purpose          nvarchar     [note: 'Why they are here, in a few words']
+  VisitLocation    nvarchar     [note: 'Site/building for multi-site organisations']
+  SignedInAt       datetime     [not null]
+  // Design note: THE column paper sign-in books never capture; blank rows drive the On-site-now view.
+  SignedOutAt      datetime     [note: 'When they signed out. Blank means they are still on site']
+  // Governance sets the induction requirement for contractors and students.
+  InductionSighted boolean      [default: false, note: 'Contractors and students: tick once their site induction has been confirmed, before any work starts']
+  BadgeRef         nvarchar     [note: 'Visitor badge number if you issue them']
+}

@@ -1,0 +1,194 @@
+{# Shared read-only shape probes: readListShape / readFieldShape with
+   per-list caching and invalidateFieldShapes(listName?) so concurrent
+   lanes never thrash each other's caches. Absence answers (404 and the
+   documented absent-field 400) return null rather than throwing. #}
+  async function readListShape(name) {
+    const select = [
+      'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
+      'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit', 'ValidationFormula', 'ValidationMessage',
+    ].join(',');
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=${select}`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`List '${name}' shape probe failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    const shape = j && j.d;
+    if (!shape
+        || typeof shape.Id !== 'string'
+        || typeof shape.Title !== 'string'
+        || !Number.isInteger(shape.BaseTemplate)
+        || typeof shape.ContentTypesEnabled !== 'boolean'
+        || typeof shape.EnableVersioning !== 'boolean'
+        || typeof shape.EnableMinorVersions !== 'boolean'
+        || !Number.isInteger(shape.MajorVersionLimit)
+        || !(shape.ValidationFormula == null || typeof shape.ValidationFormula === 'string')
+        || !(shape.ValidationMessage == null || typeof shape.ValidationMessage === 'string')) {
+      throw new Error(`List '${name}' shape probe returned an invalid response`);
+    }
+    return shape;
+  }
+
+  // SharePoint's by-name getters do not uniformly 404 for a missing item:
+  // fields/getbyinternalnameortitle ("Column 'X' does not exist") and
+  // views/getbytitle ("The specified view is invalid.") both throw
+  // System.ArgumentException as HTTP 400 with locale-invariant code
+  // -2147024809. Exactly that shape means "absent"; anything else stays
+  // fatal in the caller.
+  const isAbsent400 = (status, text) => {
+    if (status !== 400) return false;
+    let code = '';
+    try { code = String(JSON.parse(text)?.error?.code || ''); } catch { return false; }
+    return code.includes('-2147024809') && code.includes('System.ArgumentException');
+  };
+
+  // Base field shapes come from ONE fields enumeration per list, cached in a
+  // name -> shape map (keyed by InternalName AND display Title, matching
+  // getbyinternalnameortitle semantics). Two problems solved at once: the
+  // by-name getter answers HTTP 400 for an absent field, which browsers
+  // paint red and operators read as failures (seen live, twice); and bulk
+  // probe loops (preflight / unseal / reconcile / seal over ~52 columns)
+  // were paying one GET per column per phase. Freshness contract: probes
+  // reflect PHASE-START state — each field-touching phase opens with
+  // invalidateFieldShapes(); verify-after-write reads pass fresh=true and
+  // bypass the cache entirely (verification never trusts a cache). An
+  // absent LIST yields an uncached empty result — the list may be created
+  // later in this same run.
+  const _FIELD_SHAPE_SELECT = [
+    'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
+    'EnforceUniqueValues', 'Indexed', 'ReadOnlyField', 'Sealed', 'DefaultValue', 'CustomFormatter',
+  ].join(',');
+  let fieldShapesByList = {};
+  // No argument: full reset (phase starts). With a list name: drop only
+  // that list's snapshot — lanes refresh their own list after writes
+  // without thrashing the other lanes' caches.
+  const invalidateFieldShapes = (listName) => {
+    if (listName == null) { fieldShapesByList = {}; return; }
+    delete fieldShapesByList[listName];
+  };
+  async function listFieldShapes(listName) {
+    if (listName in fieldShapesByList) return fieldShapesByList[listName];
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      if (r.status === 404 || isAbsent400(r.status, text)) return new Map();
+      throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    const shapes = new Map();
+    for (const f of (j && j.d && j.d.results) || []) {
+      if (f.InternalName && !shapes.has(f.InternalName)) shapes.set(f.InternalName, f);
+      if (f.Title && !shapes.has(f.Title)) shapes.set(f.Title, f);
+    }
+    fieldShapesByList[listName] = shapes;
+    return shapes;
+  }
+
+  async function readFieldShape(listName, columnName, declaredField = null, fresh = false) {
+    // getbyinternalnameortitle makes a renamed display Title repairable while
+    // still letting the immutable InternalName check below reject a same-title
+    // impostor field.
+    const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
+    let shape;
+    if (!fresh) {
+      shape = (await listFieldShapes(listName)).get(columnName) || null;
+      if (!shape) return null;
+      // Cached entries were validated at enumeration time by the same checks
+      // below; re-validate anyway — one shared gate for both paths.
+    } else {
+      const r = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${_FIELD_SHAPE_SELECT}`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (r.status === 404) return null;
+      if (!r.ok) {
+        const text = await r.text();
+        if (isAbsent400(r.status, text)) return null;
+        throw new Error(`Field '${listName}.${columnName}' shape probe failed: HTTP ${r.status} ${text}`);
+      }
+      const j = await r.json();
+      shape = j && j.d;
+    }
+    if (!shape
+        || typeof shape.Id !== 'string'
+        || typeof shape.InternalName !== 'string'
+        || typeof shape.Title !== 'string'
+        || typeof shape.TypeAsString !== 'string'
+        || !(shape.Description === null || typeof shape.Description === 'string')
+        || typeof shape.Required !== 'boolean'
+        || typeof shape.EnforceUniqueValues !== 'boolean'
+        || typeof shape.Indexed !== 'boolean'
+        || typeof shape.ReadOnlyField !== 'boolean'
+        || typeof shape.Sealed !== 'boolean'
+        || !(shape.DefaultValue === null || typeof shape.DefaultValue === 'string')
+        || !(shape.CustomFormatter == null || typeof shape.CustomFormatter === 'string')) {
+      throw new Error(`Field '${listName}.${columnName}' shape probe returned an invalid response`);
+    }
+    if (declaredField && declaredField.target_list) {
+      const lookupResp = await fetchWithRetry(apiUrl(`${fieldPath}?$select=LookupList,LookupField`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!lookupResp.ok) {
+        const text = await lookupResp.text();
+        throw new Error(`Lookup field '${listName}.${columnName}' target probe failed: HTTP ${lookupResp.status} ${text}`);
+      }
+      const lookupJson = await lookupResp.json();
+      const lookupShape = lookupJson && lookupJson.d;
+      if (!lookupShape
+          || typeof lookupShape.LookupList !== 'string'
+          || typeof lookupShape.LookupField !== 'string') {
+        throw new Error(`Lookup field '${listName}.${columnName}' target probe returned an invalid response`);
+      }
+      shape.LookupList = lookupShape.LookupList;
+      shape.LookupField = lookupShape.LookupField;
+    }
+
+    // Derived field properties are not safely selectable from every SP.Field
+    // subtype. Query only the properties this declaration actually owns, then
+    // reconcile/read them back with the matching concrete metadata type.
+    const body = (declaredField && declaredField.body) || {};
+    const derivedSelect = [
+      'MaxLength', 'RichText', 'NumberOfLines', 'AppendOnly', 'Choices',
+      'FillInChoice', 'DisplayFormat', 'SelectionMode',
+      'Formula', 'OutputType',
+    ].filter(name => Object.prototype.hasOwnProperty.call(body, name));
+    if (derivedSelect.length > 0) {
+      const derivedResp = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${derivedSelect.join(',')}`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!derivedResp.ok) {
+        const text = await derivedResp.text();
+        throw new Error(`Field '${listName}.${columnName}' derived-shape probe failed: HTTP ${derivedResp.status} ${text}`);
+      }
+      const derivedJson = await derivedResp.json();
+      const derived = derivedJson && derivedJson.d;
+      if (!derived) {
+        throw new Error(`Field '${listName}.${columnName}' derived-shape probe returned an invalid response`);
+      }
+      for (const name of derivedSelect) {
+        const value = derived[name];
+        if (name === 'Choices') {
+          if (!value || !Array.isArray(value.results) || value.results.some(item => typeof item !== 'string')) {
+            throw new Error(`Field '${listName}.${columnName}' Choices probe returned an invalid response`);
+          }
+        } else if (name === 'RichText' || name === 'AppendOnly' || name === 'FillInChoice') {
+          if (typeof value !== 'boolean') {
+            throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
+          }
+        } else if (name === 'Formula') {
+          if (typeof value !== 'string') {
+            throw new Error(`Field '${listName}.${columnName}' Formula probe returned an invalid response`);
+          }
+        } else if (!Number.isInteger(value)) {
+          throw new Error(`Field '${listName}.${columnName}' ${name} probe returned an invalid response`);
+        }
+        shape[name] = value;
+      }
+    }
+    return shape;
+  }
+

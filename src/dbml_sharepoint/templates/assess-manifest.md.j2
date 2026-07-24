@@ -1,0 +1,45 @@
+{# src/dbml_sharepoint/templates/assess-manifest.md.j2 #}
+{# Companion manifest for assess.js: how to run the read-only assessment,
+   what each tier probes (always-run enumerations, pack-driven
+   attempt-probes, the printed not-assessable honesty block), and how to
+   read the COMPATIBLE / DEGRADED / BLOCKED verdict. #}
+# Site assessment — `{{ prefix }}` pack
+
+**Target site:** {{ site_url }}
+
+Run `assess.js` (generated beside this file) from the target site's browser
+console: open the site, press F12 → Console, paste the whole script, press
+Enter. It is **read-only** — it makes no changes. Read the final
+`[SP-ASSESS] [DONE]` line for the verdict:
+
+- **COMPATIBLE** — no blocking or degrading findings; deploy.
+- **DEGRADED (n warnings)** — deployable, but review each `WARN` finding
+  above the DONE line first.
+- **BLOCKED (reason)** — a hard requirement is unmet; fix the site (or
+  the operator's rights) before deploying.
+
+## Requirements this pack checks
+
+| Requirement | On failure | What it means |
+|---|---|---|
+{% for r in requirements %}
+| `{{ r.key }}` | {{ r.level_on_fail }} | {{ r.description }} |
+{% endfor %}
+
+## Lists this pack provisions
+
+{% for title in targets.list_titles %}
+- `{{ title }}`
+{% endfor %}
+
+Base templates required: {{ targets.base_templates | join(', ') }}.
+
+## Not assessable
+
+These cannot be determined from the operator's site context (they need
+tenant-admin surfaces, live behaviour, or platforms outside SharePoint).
+`assess.js` prints them too, so nothing is silently assumed:
+
+{% for item in not_assessable %}
+- {{ item }}
+{% endfor %}

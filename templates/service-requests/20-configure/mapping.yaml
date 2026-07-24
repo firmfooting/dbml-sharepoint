@@ -1,0 +1,91 @@
+# Service requests — physical mapping.
+prefix: "SR_"
+
+entities:
+  Request: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+indexed_columns:
+  Request: [Status, Category, Priority, RequestedDate]
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 100
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+calculated_formulas:
+  Request:
+    DaysToComplete: '=IF(OR(ISBLANK([RequestedDate]),ISBLANK([CompletedDate])),"",DATEDIF([RequestedDate],[CompletedDate],"d"))'
+
+# Security: everyone submits and watches (submit-only keeps the request as
+# asked intact); service teams work the queues; Full Control confined to
+# the empty-by-default admin group.
+groups:
+  - name: "SR Service Teams"
+    description: "The people who work the queues: facilities, IT, admin, grounds."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "SR List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+
+permission_levels:
+  - name: "SR Submit Only"
+    description: "Submit new requests and read everything; no editing or deleting, no schema rights."
+    base_permissions:
+      - AddListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "SR Service Teams" }
+        level: "Contribute"
+      - principal: { kind: group, name: "SR List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "SR Submit Only"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible — drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement — see
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# docs/STYLE-GUIDE.md) — status columns render as SharePoint's own
+# severity boxes with icons, consistent across every template.
+column_formatting:
+  Request:
+    Status: { style: severity, map: { Submitted: low, Accepted: good, "In progress": low, "Waiting - parts or approval": neutral, Completed: good, Declined: muted } }

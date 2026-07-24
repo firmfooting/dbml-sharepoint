@@ -1,0 +1,238 @@
+{# src/dbml_sharepoint/templates/rollback.js.j2 #}
+/**
+ * dbml-sharepoint ROLLBACK script.
+{% include "_provenance.js.j2" %}
+ *
+ * DELETES every list declared by this schema at this site. Refuses non-empty lists
+ * unless the user types DELETE NON-EMPTY at the second prompt.
+ * Deletion-blocked lists (AllowDeletion = false) are unlocked per list
+ * after confirmation and re-locked if their delete fails.
+ */
+(async () => {
+  const SITE_URL  = {{ site_url | tojson }};
+  const SITE_PATH_LEAF = SITE_URL.replace(/\/$/, '').split('/').pop();
+  const TARGET_LISTS = {{ target_lists | tojson(indent=2) }};
+
+  const log = (level, msg) => console.log(`[SP-ROLLBACK] [${level}] ${msg}`);
+  const summary = { deleted: [], skipped: [], errors: [] };
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+
+{% include "_http_write.js.j2" %}
+
+{% include "_digest_cached.js.j2" %}
+  log('WARN', 'Rollback deletes lists BY TITLE. A pre-existing non-deploy list whose title collides with a APP_ list would be deleted — verify the target list is deploy-owned before confirming.');
+
+  const typed = prompt(`Type the site leaf path to confirm rollback (${SITE_PATH_LEAF}):`);
+  if (typed !== SITE_PATH_LEAF) {
+    log('INFO', 'Aborted by user (typed value did not match site leaf).');
+    return { aborted: 'user-cancelled' };
+  }
+
+  // === Preflight: ManageLists + ManagePermissions ===
+  // Rollback deletes lists which may have broken inheritance; ManagePermissions
+  // is required to reassign or remove unique role assignments on those lists.
+  // ManageLists is Low bit 0x800; ManagePermissions is Low bit 0x2000000.
+  const permsResp = await fetchWithRetry(apiUrl('web?$select=EffectiveBasePermissions'), {
+    headers: { 'Accept': 'application/json;odata=verbose' },
+  });
+  const permsJson = await permsResp.json();
+  const requiredLow = 0x800 | 0x2000000;  // ManageLists | ManagePermissions
+  const haveLow = Number(permsJson?.d?.EffectiveBasePermissions?.Low || 0);
+  if ((haveLow & requiredLow) !== requiredLow) {
+    log('ERROR', 'Current user lacks ManageLists+ManagePermissions on this site.');
+    return { aborted: 'insufficient-permissions' };
+  }
+
+  // One lists enumeration serves every existence + count check: a
+  // by-title GET on an absent list answers 404, which the browser paints
+  // red and operators read as a failure (same live finding as deploy.js's
+  // absence probes; seen on this script 2026-07-24). The enumeration is
+  // always HTTP 200. Counts are a start-of-run snapshot — classification
+  // and recycling read live items anyway.
+  let listCountsByTitle = null;
+  async function itemCount(name) {
+    if (listCountsByTitle === null) {
+      const r = await fetchWithRetry(apiUrl('web/lists?$select=Title,ItemCount'), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) {
+        throw new Error(`list enumeration failed: HTTP ${r.status} ${spError(await r.text())}`);
+      }
+      const j = await r.json();
+      listCountsByTitle = {};
+      for (const l of ((j && j.d && j.d.results) || [])) {
+        listCountsByTitle[l.Title] = Number.isInteger(l.ItemCount) ? l.ItemCount : 0;
+      }
+    }
+    return (name in listCountsByTitle) ? listCountsByTitle[name] : null;
+  }
+
+  // Demo-aware non-empty gate: rows seeded by demo-data.js all carry the
+  // '[DEMO] ' Title marker. A list whose items are ALL demo rows is
+  // demo-only content — deleting the list deletes them, so it proceeds
+  // without the DELETE NON-EMPTY prompt (deploy, demonstrate, delete).
+  // ANY item without the marker keeps the refusal, and anything
+  // unreadable or larger than a demo could ever be is treated as real.
+  const DEMO_PREFIX = '[DEMO] ';
+  async function allItemsAreDemo(name, count) {
+    if (count > 100) return false;  // a demo never seeds this many rows
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Title&$top=200`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) return false;
+    const j = await r.json();
+    const rows = (j && j.d && j.d.results) || [];
+    if (j?.d?.__next || rows.length === 0) return false;
+    return rows.every((row) => typeof row.Title === 'string' && row.Title.startsWith(DEMO_PREFIX));
+  }
+
+  // Recycle a list's items BEFORE deleting the list. Live findings
+  // 2026-07-24 (two teardowns on a retention-governed site): SharePoint
+  // refuses to delete a list that still CONTAINS items ("List cannot be
+  // deleted while on hold or retention policy"), while an emptied list
+  // deletes fine and item recycling is always allowed — the policy keeps
+  // its copies in the Preservation Hold Library
+  // (https://learn.microsoft.com/purview/retention-policies-sharepoint).
+  // recycle(), never a permanent DELETE: nothing this script does is
+  // unrestorable. Demo-only lists require the '[DEMO] ' marker on every
+  // row at the moment of recycling (an unmarked item aborts, fail
+  // closed); the DELETE NON-EMPTY override path recycles EVERY item —
+  // the operator just authorised deleting the list including its
+  // contents, and emptying it first is what makes that delete actually
+  // succeed under retention.
+  async function recycleItems(name, requireDemoMarker) {
+    let total = 0;
+    for (;;) {
+      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items?$select=Id,Title&$top=200`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) throw new Error(`item read failed: HTTP ${r.status}`);
+      const rows = ((await r.json()).d || {}).results || [];
+      if (rows.length === 0) break;
+      const digest = await getDigest();
+      for (const row of rows) {
+        if (requireDemoMarker && (typeof row.Title !== 'string' || !row.Title.startsWith(DEMO_PREFIX))) {
+          throw new Error(`unmarked item (Id ${row.Id}) appeared during teardown; refusing to continue with '${name}'`);
+        }
+        const rec = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')/items(${row.Id})/recycle()`), {
+          method: 'POST',
+          headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest },
+        });
+        if (!rec.ok) {
+          throw new Error(`recycle of item ${row.Id} failed: HTTP ${rec.status} ${spError(await rec.text())}`);
+        }
+        total += 1;
+      }
+      if (total > 5000) throw new Error(`recycled ${total} items without draining '${name}'; aborting as a safety stop`);
+    }
+    log('INFO', `'${name}': recycled ${total} item(s) (restorable from the recycle bin).`);
+  }
+
+  // AllowDeletion=false (deployed via prevent_list_deletion, or set by
+  // hand) rejects list DELETE on EVERY surface — UI, CSOM and this
+  // script's REST call all get "This list cannot be deleted." Rollback
+  // probes the ACTUAL state once deletion is authorised for a list,
+  // unlocks it, and re-locks on a failed delete. Sealed COLUMNS need no
+  // counterpart here: SP.Field.Sealed guards the field object (its
+  // schema edits and its own deletion), and list deletion never consults
+  // per-field Sealed — every out-of-the-box list carries built-in sealed
+  // fields and deletes fine. Do NOT add an unseal pass.
+  async function readAllowDeletion(name) {
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=AllowDeletion`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return (j && j.d && typeof j.d.AllowDeletion === 'boolean') ? j.d.AllowDeletion : null;
+  }
+
+  async function setAllowDeletion(name, value) {
+    const digest = await getDigest();
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')`), {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify({ __metadata: { type: 'SP.List' }, AllowDeletion: value }),
+    });
+    return r.ok;
+  }
+
+  for (const name of TARGET_LISTS) {
+    try {
+      const count = await itemCount(name);
+      if (count === null) { summary.skipped.push({ list: name, reason: 'not-found' }); continue; }
+      if (count > 0) {
+        if (await allItemsAreDemo(name, count)) {
+          log('INFO', `'${name}': ${count} item(s), all '[DEMO] '-marked — demo-only content; recycling the demo rows, then deleting the list.`);
+          await recycleItems(name, true);
+        } else {
+          // Re-prompt PER non-empty list (A6): the old single global unlock made
+          // one DELETE NON-EMPTY authorise deleting every remaining non-empty list
+          // — too coarse for a live site. Each non-empty list is now
+          // confirmed on its own.
+          const override = prompt(`'${name}' has ${count} items. Type DELETE NON-EMPTY to delete THIS list AND its items (recycled first, restorable; you will be asked again for each non-empty list), or anything else to skip:`);
+          if (override !== 'DELETE NON-EMPTY') {
+            summary.skipped.push({ list: name, reason: 'non-empty', items: count });
+            continue;
+          }
+          // Authorised: empty the list first so the delete succeeds under
+          // retention; recycle() keeps every item restorable.
+          await recycleItems(name, false);
+        }
+      }
+      // Unlock only once deletion is authorised for THIS list; skipped
+      // lists keep their protection untouched.
+      let unlockedForDelete = false;
+      const allowDeletion = await readAllowDeletion(name);
+      if (allowDeletion === null) {
+        log('WARN', `${name}: AllowDeletion probe failed; attempting delete anyway.`);
+      } else if (allowDeletion === false) {
+        if (!(await setAllowDeletion(name, true))) {
+          throw new Error('deletion-block unlock MERGE failed');
+        }
+        if ((await readAllowDeletion(name)) !== true) {
+          throw new Error('deletion-block unlock did not take effect');
+        }
+        unlockedForDelete = true;
+        log('INFO', `${name}: deletion block cleared for this delete (AllowDeletion = true).`);
+      }
+      // Fetch a fresh digest per delete: FormDigestValue expires (~30 min), so
+      // confirmation-prompt pauses or many-list runs can otherwise 403 mid-run
+      // and leave the site partially rolled back.
+      const digest = await getDigest();
+      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')`), {
+        method: 'POST',
+        headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
+      });
+      if (!r.ok) {
+        // Surface SharePoint's actual reason (live finding 2026-07-24: a
+        // bare 'HTTP 500' left a blocked teardown undiagnosable).
+        const detail = spError(await r.text());
+        if (/hold or retention policy/i.test(detail)) {
+          // Live-confirmed 2026-07-24: retention blocks deleting a list
+          // that still CONTAINS items; an emptied list deletes fine. If
+          // an EMPTY list is still refused, a site-level hold applies —
+          // compliance enforcement this script will never bypass.
+          log('WARN', `${name}: SharePoint refused the LIST delete under a retention policy or hold. Rollback empties lists before deleting (demo-only lists automatically; others after your DELETE NON-EMPTY confirmation) — if this list was emptied and is STILL refused, a site-level hold applies and a compliance admin must release it (a delay hold can persist after release) before rollback can proceed.`);
+        }
+        if (unlockedForDelete) {
+          // Best-effort re-lock: this run removed the protection and the
+          // delete did not go through — never strand the list unprotected.
+          const relocked = await setAllowDeletion(name, false).catch(() => false);
+          log(relocked ? 'INFO' : 'ERROR', `${name}: deletion block ${relocked ? 'restored' : 'could NOT be restored'} after failed delete.`);
+        }
+        throw new Error(`HTTP ${r.status}${detail ? ` — ${detail}` : ''}`);
+      }
+      summary.deleted.push(name);
+      log('INFO', `Deleted ${name}.`);
+    } catch (err) {
+      summary.errors.push({ list: name, error: err.message });
+      log('ERROR', `${name}: ${err.message}`);
+    }
+  }
+  log('DONE', `Deleted ${summary.deleted.length}, skipped ${summary.skipped.length}, errors ${summary.errors.length}.`);
+  console.log(summary);
+  return summary;
+})();

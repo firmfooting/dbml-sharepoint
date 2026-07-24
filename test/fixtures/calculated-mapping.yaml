@@ -1,0 +1,28 @@
+# test/fixtures/calculated-mapping.yaml
+# Minimal mapping exercising calculated_formulas (SP.FieldCalculated).
+prefix: "APP_"
+prefix_owner: "Test"
+prefix_registry: "test/registry.md"
+
+entities:
+  Risk: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+indexed_columns: {}
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 500
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+
+watched_lists: []
+
+calculated_formulas:
+  Risk:
+    RiskScore: '=IF([Severity]="High",10,1)'
+    RiskBand: '=IF([Severity]="High","Red","Green")'

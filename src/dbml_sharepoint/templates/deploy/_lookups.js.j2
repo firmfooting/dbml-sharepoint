@@ -1,0 +1,48 @@
+{# Phase body: add the deferred lookup columns — self-references and
+   members of reference cycles — now that every target list exists. #}
+  // === Phase {{ phase.number }}: deferred lookups ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  invalidateFieldShapes();  // probes reflect phase-start state
+  digest = await getDigest();
+  for (const lookup of SCHEMA.phase2_lookups) {
+    try {
+      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      const targetGuid = listGuids[lookup.target_list];
+      if (!targetGuid) throw new Error(`Lookup target ${lookup.target_list} missing.`);
+      if (await reconcileDeclaredField(
+        lookup.list, lookup.field, targetGuid, digest, true,
+      )) {
+        summary.columnsSkipped += 1;
+        continue;
+      }
+      const parameters = {
+        ...lookup.field.lookup_creation_parameters,
+        LookupListId: targetGuid,
+      };
+      await postJson(
+        apiUrl(`web/lists/getbytitle('${odataName(lookup.list)}')/fields/addfield`),
+        { parameters },
+        digest,
+      );
+      invalidateFieldShapes();  // new field: next probe re-enumerates
+      await reconcileDeclaredField(
+        lookup.list, lookup.field, targetGuid, digest, false,
+      );
+      summary.columnsCreated += 1;
+    } catch (err) {
+      log('ERROR', `Phase {{ phase.number }} ${lookup.list}.${lookup.field.title}: ${err.message}`);
+      summary.errors.push({
+        phase: '{{ phase.number }}', list: lookup.list, column: lookup.field.title, error: err.message,
+      });
+    }
+  }
+
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Phase {{ phase.number }} lookup reconciliation failed; aborting before indexes and ACL work.');
+    await removeSelfEnrollments();
+    return { ...summary, aborted: 'phase-2-schema-errors' };
+  }
+

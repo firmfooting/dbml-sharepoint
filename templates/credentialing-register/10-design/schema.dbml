@@ -1,0 +1,69 @@
+// ============================================================================
+// Credentialing register — practitioners + their credentials and scope.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project credentialing_register { database_type: 'SharePoint Online Lists' }
+
+Enum discipline {
+  "Medical"
+  "Nursing"
+  "Midwifery"
+  "Allied health"
+  "Dental"
+  "Other credentialed role"
+}
+
+Enum practitioner_status {
+  "Current"
+  "Under review"
+  "Lapsed"
+  "Ceased"
+}
+
+Enum credential_type {
+  "Professional registration"
+  "Qualification"
+  "Certification"
+  "Clinical privilege"
+  "Background check"
+}
+
+Enum credential_status {
+  "Current"
+  "Expiring"
+  "Expired"
+  "Withdrawn"
+}
+
+Table Practitioner {
+  Id                 int                 [pk, increment]
+  Title              nvarchar            [not null, note: 'Practitioner name']
+  Discipline         discipline          [not null]
+  Role               nvarchar            [not null, note: 'Position / designation']
+  RegistrationNumber nvarchar            [unique, note: 'Professional registration number (e.g. AHPRA); blank for non-registered credentialed roles']
+  // The renewal sweep works this column.
+  RegistrationExpiry date                [note: 'When the current registration period ends']
+  ScopeSummary       richtext            [note: 'The APPROVED scope of practice, as decided — what this person is credentialed to do here, including any conditions or exclusions']
+  ScopeApprovedDate  date                [note: 'When the current scope was decided']
+  // The governance review cycle runs on this date.
+  ScopeReviewDate    date                [not null, note: 'Next scheduled credentialing review']
+  Status             practitioner_status [not null, default: 'Current']
+  Notes              richtext            [note: 'Committee references, conditions history — professional facts only']
+}
+
+Table Credential {
+  Id             int               [pk, increment]
+  Title          nvarchar          [not null, note: 'The credential: "Advanced Life Support", "MBBS", "Working with Children Check"']
+  // Lookup to Practitioner.
+  Practitioner   int               [not null, ref: > Practitioner.Id, note: 'The practitioner this credential belongs to']
+  CredentialType credential_type   [not null]
+  IssuedBy       nvarchar          [note: 'Issuing body']
+  IssuedDate     date
+  ExpiryDate     date              [note: 'Blank for non-expiring credentials']
+  // Maintained by the coordinator expiry sweep.
+  Status         credential_status [not null, default: 'Current', note: 'Usually left at Current when adding a credential; the coordinator updates it during the expiry sweep']
+  // Design stance: the register indexes, the records system holds.
+  EvidenceUrl    hyperlink         [note: 'Link to the sighted evidence in your records system']
+  Notes          nvarchar
+}

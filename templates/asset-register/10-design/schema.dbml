@@ -1,0 +1,49 @@
+// ============================================================================
+// Asset register — a reference list (Location) plus the register (Asset).
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project asset_register { database_type: 'SharePoint Online Lists' }
+
+Enum asset_category {
+  "Laptop"
+  "Desktop"
+  "Monitor"
+  "Phone / tablet"
+  "AV equipment"
+  "Furniture"
+  "Vehicle"
+  "Other"
+}
+
+Enum asset_status {
+  "In service"
+  "Assigned"
+  "In storage"
+  "Under repair"
+  "Retired"
+  "Disposed"
+}
+
+Table Location {
+  Id       int      [pk, increment]
+  Title    nvarchar [not null, note: 'Location name (building/room/site)']
+  Notes    nvarchar [note: 'Access notes, floor, etc.']
+}
+
+Table Asset {
+  Id             int             [pk, increment]
+  Title          nvarchar        [not null, note: 'What the asset is, plainly ("Dell XPS 15 laptop")']
+  AssetTag       nvarchar        [not null, unique, note: 'The physical tag / serial you actually track — must be unique']
+  Category       asset_category  [not null]
+  Status         asset_status    [not null, default: 'In service']
+  // Lookup to Location.
+  Location       int             [ref: > Location.Id, note: 'Where this asset normally lives']
+  AssignedTo     person          [note: 'Who currently holds it — blank when unassigned']
+  PurchaseDate   date
+  PurchaseCost   number          [note: 'In your base currency']
+  WarrantyExpiry date
+  // Calculated column; formula in mapping.yaml.
+  WarrantyMonths calculated_number [note: 'Calculated automatically: whole months of warranty from the purchase date. Blank until Purchase Date and Warranty Expiry are set.']
+  Notes          richtext        [note: 'Condition, repairs, anything the next holder should know']
+}

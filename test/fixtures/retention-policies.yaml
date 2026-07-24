@@ -1,0 +1,11 @@
+# test/fixtures/retention-policies.yaml
+policies:
+  Standard7Y:
+    description: "Default 7 years from last modification."
+    sp_label: "GH-Standard-7Y"
+    retain_years: 7
+    trigger: "lastModified"
+list_defaults:
+  Project: Standard7Y
+  Task: Standard7Y
+  APP_AppSettings: Standard7Y

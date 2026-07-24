@@ -1,0 +1,84 @@
+# Equipment maintenance — physical mapping.
+prefix: "EM_"
+
+entities:
+  Equipment:        { kind: List, base_template: 100, site_role: default }
+  MaintenanceEvent: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+indexed_columns:
+  Equipment: [NextDueDate, Status, EquipmentType, EquipmentTag]
+  MaintenanceEvent: [Equipment, EventDate, Result]
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 100
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# No calculated columns: "next due" cannot be derived across lists (an
+# event cannot read its equipment's frequency), and overdue-vs-today is
+# banned in SP calculated columns. The record-then-reschedule habit in
+# 40-adopt carries the discipline; NextDueDate is indexed to keep the
+# overdue view instant.
+
+# Security: the maintenance team maintains; everyone reads (staff must be
+# able to check an item's status); Full Control confined to the
+# empty-by-default admin group.
+groups:
+  - name: "EM Maintenance Team"
+    description: "Record maintenance events and keep the schedule (NextDueDate) current."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "EM List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "EM Maintenance Team" }
+        level: "Contribute"
+      - principal: { kind: group, name: "EM List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Read"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible — drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement — see
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# docs/STYLE-GUIDE.md) — status columns render as SharePoint's own
+# severity boxes with icons, consistent across every template.
+column_formatting:
+  Equipment:
+    Status: { style: severity, map: { "In service": low, "Out of service - awaiting maintenance": neutral, Retired: muted } }

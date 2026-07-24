@@ -1,0 +1,44 @@
+{# Shared SharePoint HTTP transport + request diagnostics. Expects `log`
+   to be defined. Every script's REST traffic rides fetchWithRetry:
+   SharePoint Online throttles bursts (HTTP 429) and sheds load (503),
+   and a teardown or demo seed deserves the same Retry-After handling as
+   a deployment. READ-SAFE by construction — write helpers live in
+   _http_write.js.j2 so the read-only assess script never carries them. #}
+  // Flip to true for per-request timing diagnostics (method, URL, status,
+  // ms). Default false keeps the console readable; edit in the pasted
+  // script — no rebuild needed. deploy.js additionally prints a per-phase
+  // seconds table before DONE when this is on.
+  const DEBUG = false;
+  const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
+  let requestCount = 0;
+  const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+  // SharePoint's REST error body carries the human-readable reason at
+  // error.message.value; fall back to (bounded) raw text — a bare HTTP
+  // status left a blocked run undiagnosable (live finding 2026-07-24).
+  const spError = (text) => {
+    try {
+      return JSON.parse(text)?.error?.message?.value || String(text).slice(0, 300);
+    } catch {
+      return String(text).slice(0, 300);
+    }
+  };
+
+  // Retry-After-aware fetch. Honour the server's Retry-After (seconds),
+  // else back off exponentially (capped), up to `attempts` before
+  // returning the final response to the caller's own error handling.
+  async function fetchWithRetry(url, opts, attempts = 5) {
+    const t0 = Date.now();
+    for (let i = 0; ; i++) {
+      const r = await fetch(url, opts);
+      requestCount += 1;
+      if ((r.status === 429 || r.status === 503) && i < attempts) {
+        const ra = Number(r.headers.get('Retry-After')) || Math.min(2 ** i, 30);
+        log('INFO', `Throttled (HTTP ${r.status}); retry ${i + 1}/${attempts} in ${ra}s.`);
+        await sleep(ra * 1000);
+        continue;
+      }
+      dbg(`${(opts && opts.method) || 'GET'} ${url.length > 160 ? `${url.slice(0, 160)}…` : url} → ${r.status} in ${Date.now() - t0}ms${i > 0 ? ` (${i} throttle retries)` : ''}`);
+      return r;
+    }
+  }

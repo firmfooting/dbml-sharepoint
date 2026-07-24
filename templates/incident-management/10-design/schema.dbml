@@ -1,0 +1,65 @@
+// ============================================================================
+// Incident management — the incident, and the fixes linked to it.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project incident_management { database_type: 'SharePoint Online Lists' }
+
+Enum incident_severity {
+  "Minor"
+  "Moderate"
+  "Major"
+  "Critical"
+}
+
+Enum incident_category {
+  "Safety"
+  "Security"
+  "IT / systems"
+  "Facilities"
+  "Process failure"
+  "Other"
+}
+
+Enum incident_status {
+  "Reported"
+  "Triaged"
+  "In progress"
+  "Resolved"
+  "Closed"
+}
+
+Enum action_status {
+  "Open"
+  "In progress"
+  "Done"
+  "Cancelled"
+}
+
+Table Incident {
+  Id            int                [pk, increment]
+  Title         nvarchar           [not null, note: 'One line: what happened']
+  Category      incident_category  [not null]
+  Severity      incident_severity  [not null, default: 'Minor']
+  Status        incident_status    [not null, default: 'Reported']
+  ReportedBy    person             [note: 'Who reported it (defaults to you — leave it)']
+  ReportedDate  date               [not null, note: 'When it was reported']
+  OccurredDate  date               [note: 'When it actually happened, if different']
+  Detail        richtext           [note: 'What happened, where, who was involved, immediate action taken']
+  Handler       person             [note: 'Set at triage: who is running this incident']
+  ResolvedDate  date               [note: 'Set when Status moves to Resolved']
+  // Calculated column; formula in mapping.yaml.
+  DaysToResolve calculated_number  [note: 'Calculated automatically: days from the reported date to the resolved date. Blank until the incident is resolved.']
+}
+
+Table CorrectiveAction {
+  Id          int            [pk, increment]
+  Title       nvarchar       [not null, note: 'The fix, stated as an action']
+  // Lookup to Incident.
+  Incident    int            [not null, ref: > Incident.Id, note: 'The incident this action addresses']
+  Status      action_status  [not null, default: 'Open']
+  AssignedTo  person         [not null]
+  DueDate     date           [not null]
+  DoneDate    date
+  Notes       richtext       [note: 'Evidence of completion / why cancelled']
+}

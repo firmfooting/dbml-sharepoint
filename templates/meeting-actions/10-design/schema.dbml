@@ -1,0 +1,51 @@
+// ============================================================================
+// Meeting actions — meetings, decisions, actions; both children link back.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project meeting_actions { database_type: 'SharePoint Online Lists' }
+
+Enum meeting_type {
+  "Team meeting"
+  "Leadership / board"
+  "Project meeting"
+  "Working group"
+  "One-off"
+}
+
+Enum action_status {
+  "Open"
+  "In progress"
+  "Done"
+  "Dropped"
+}
+
+Table Meeting {
+  Id          int           [pk, increment]
+  Title       nvarchar      [not null, note: 'Forum + date is the convention: "Ops team — 2026-08-04"']
+  MeetingType meeting_type  [not null, default: 'Team meeting']
+  MeetingDate date          [not null]
+  Chair       person
+  MinutesUrl  hyperlink     [note: 'Link to the minutes document, if you keep one']
+  Notes       richtext
+}
+
+Table Decision {
+  Id       int      [pk, increment]
+  Title    nvarchar [not null, note: 'The decision, stated as a decision: "We will adopt X from 1 September"']
+  // Lookup to Meeting.
+  Meeting  int      [not null, ref: > Meeting.Id, note: 'The meeting where this was decided']
+  Detail   richtext [note: 'Context, options considered, who dissented — enough to not relitigate']
+}
+
+Table ActionItem {
+  Id            int           [pk, increment]
+  Title         nvarchar      [not null, note: 'The action, stated as a verb: "Draft the rollout comms"']
+  // Lookup to Meeting.
+  Meeting       int           [not null, ref: > Meeting.Id, note: 'The meeting where this action was raised']
+  AssignedTo    person        [not null]
+  DueDate       date          [not null]
+  Status        action_status [not null, default: 'Open']
+  CompletedDate date
+  Notes         nvarchar
+}

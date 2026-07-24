@@ -1,0 +1,59 @@
+// ============================================================================
+// Risk register — one list; the 5x5 matrix is calculated (formulas in
+// mapping.yaml). Render the ERD by pasting this file into dbdiagram.io
+// ============================================================================
+
+Project risk_register { database_type: 'SharePoint Online Lists' }
+
+Enum risk_category {
+  "Strategic"
+  "Operational"
+  "Financial"
+  "Compliance / legal"
+  "Reputational"
+  "Safety"
+  "Information / cyber"
+}
+
+Enum risk_likelihood {
+  "Rare"
+  "Unlikely"
+  "Possible"
+  "Likely"
+  "Almost certain"
+}
+
+Enum risk_consequence {
+  "Insignificant"
+  "Minor"
+  "Moderate"
+  "Major"
+  "Severe"
+}
+
+Enum risk_status {
+  "Open"
+  "Treating"
+  "Accepted"
+  "Closed"
+}
+
+Table Risk {
+  Id          int              [pk, increment]
+  Title       nvarchar         [not null, note: 'The risk, stated as an uncertain event: "Key supplier fails mid-contract"']
+  Category    risk_category    [not null]
+  Detail      richtext         [note: 'Cause -> event -> consequence. What could trigger it, what happens if it does']
+  Likelihood  risk_likelihood  [note: 'How likely, given current controls']
+  Consequence risk_consequence [note: 'Worst credible impact, given current controls']
+  // Calculated column — the 5x5 matrix formula lives in mapping.yaml so the
+  // rating cannot drift from the governance matrix. Matrix cells are under
+  // change control: read 50-govern/GOVERNANCE.md before editing them.
+  RiskRating  calculated_text  [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme. Blank until both are set']
+  // Calculated column — formula in mapping.yaml; score = likelihood index (1-5) x consequence index (1-5).
+  RiskScore   calculated_number [note: 'Calculated automatically from Likelihood and Consequence: a score from 1 to 25, useful for sorting. Blank until both are set']
+  Owner       person           [not null, note: 'Who is accountable for managing this risk']
+  Status      risk_status      [not null, default: 'Open']
+  Controls    richtext         [note: 'What is currently in place that keeps the rating where it is']
+  Treatment   richtext         [note: 'Planned actions to reduce likelihood or consequence, with owners and dates']
+  ReviewDate  date             [not null, note: 'Next scheduled review — cadence by rating, see governance']
+}

@@ -1,0 +1,101 @@
+{# src/dbml_sharepoint/templates/demo.js.j2 #}
+/**
+ * dbml-sharepoint DEMO DATA script (built with --seed).
+{% include "_provenance.js.j2" %}
+ *
+ * Paste AFTER deploy.js has finished with errors: []. Creates the declared
+ * demo/sample rows. Every Title starts with '[DEMO] ' — visible in every
+ * view and form, and the marker rollback.js trusts — and each row's text
+ * identifies it as demonstration data to delete before active use.
+ * Re-pasting is safe: rows that already exist (matched by Title) are
+ * skipped, never duplicated. rollback.js deletes lists whose items are ALL
+ * demo rows without the non-empty refusal prompt — deploy, demonstrate,
+ * delete.
+ */
+(async () => {
+  const SITE_URL  = {{ site_url | tojson }};
+  const DEMO_PLAN = {{ demo_plan | tojson(indent=2) }};
+
+  const log = (level, msg) => console.log(`[SP-DEMO] [${level}] ${msg}`);
+  const summary = { created: [], skipped: [], errors: [] };
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+
+{% include "_http_write.js.j2" %}
+
+{% include "_digest_cached.js.j2" %}
+
+  const entityTypes = {};
+  async function entityTypeFor(listTitle) {
+    if (!(listTitle in entityTypes)) {
+      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')?$select=ListItemEntityTypeFullName`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) throw new Error(`cannot resolve ListItemEntityTypeFullName for '${listTitle}' (HTTP ${r.status})`);
+      entityTypes[listTitle] = (await r.json()).d.ListItemEntityTypeFullName;
+    }
+    return entityTypes[listTitle];
+  }
+
+  async function findByTitle(listTitle, title) {
+    const filter = encodeURIComponent(`Title eq '${String(title).replace(/'/g, "''")}'`);
+    const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id&$filter=${filter}&$top=1`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) throw new Error(`existence probe on '${listTitle}' failed (HTTP ${r.status})`);
+    const rows = (await r.json()).d.results || [];
+    return rows.length > 0 ? rows[0].Id : null;
+  }
+
+  const createdIds = {};
+  for (const item of DEMO_PLAN) {
+    try {
+      const digest = await getDigest();
+      const titleField = item.fields.find((f) => f.name === 'Title');
+      const existingId = await findByTitle(item.list, titleField.value);
+      if (existingId != null) {
+        createdIds[item.key] = existingId;  // later demo_refs still resolve
+        summary.skipped.push({ list: item.list, key: item.key, id: existingId });
+        log('INFO', `'${item.list}': demo row '${item.key}' already exists (Id ${existingId}); skipped.`);
+        continue;
+      }
+      const body = { __metadata: { type: await entityTypeFor(item.list) } };
+      for (const f of item.fields) {
+        if (f.kind === 'literal') {
+          body[f.name] = f.value;
+        } else if (f.kind === 'me') {
+          // Person columns write <Name>Id; the demo owner is the operator.
+          body[`${f.name}Id`] = _spPageContextInfo.userId;
+        } else if (f.kind === 'ref') {
+          const refId = createdIds[f.value];
+          if (refId == null) throw new Error(`demo_ref '${f.value}' has no created item`);
+          body[`${f.name}Id`] = refId;
+        } else if (f.kind === 'date_offset') {
+          // Resolved at RUN time so cadence-derived surfaces (Reviews due,
+          // overdue, Tolerance expiring) land on whatever day the demo runs.
+          body[f.name] = new Date(Date.now() + f.value * 86400000).toISOString();
+        }
+      }
+      const createResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(item.list)}')/items`), {
+        method: 'POST', headers: spHeaders(digest), body: JSON.stringify(body),
+      });
+      if (!createResp.ok) {
+        throw new Error(spError(await createResp.text()) || `item create failed (HTTP ${createResp.status})`);
+      }
+      const createdId = (await createResp.json()).d.Id;
+      createdIds[item.key] = createdId;
+      summary.created.push({ list: item.list, key: item.key, id: createdId });
+      log('INFO', `'${item.list}': created demo row '${item.key}' (Id ${createdId}).`);
+    } catch (err) {
+      log('ERROR', `'${item.list}' demo row '${item.key}': ${err.message}`);
+      summary.errors.push({ list: item.list, key: item.key, error: err.message });
+    }
+  }
+
+  log('DONE', `Demo data complete. Created ${summary.created.length}, skipped ${summary.skipped.length} existing, errors ${summary.errors.length}.`);
+  log('INFO', 'Every demo row is marked "[DEMO] ". Delete before active use — rollback.js removes demo-only lists without the non-empty prompt.');
+  console.log(summary);
+  return summary;
+})();

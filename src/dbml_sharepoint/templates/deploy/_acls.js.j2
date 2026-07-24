@@ -1,0 +1,280 @@
+{# Phase body: break role inheritance and reconcile declared role
+   assignments per list. 'configured' mode asserts the declared grants;
+   'exact' additionally removes undeclared direct grants (an allowlist).
+   Principals resolve by name: site groups and the web's associated
+   Owner/Member/Visitor groups; levels by role-definition name. #}
+  // === Phase {{ phase.number }}: break inheritance + role assignments ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  {
+    let digest4 = await getDigest();
+
+    // Cache resolved IDs across assignments to avoid redundant fetches.
+    const principalIdCache = {};
+    const roleDefIdCache = {};
+
+    async function resolvePrincipalId(principal) {
+      const cacheKey = JSON.stringify(principal);
+      if (principalIdCache[cacheKey] !== undefined) return principalIdCache[cacheKey];
+      let id;
+      if (principal.kind === 'group') {
+        const r = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(principal.name)}')?$select=Id`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) throw new Error(`Group '${principal.name}' not found (HTTP ${r.status})`);
+        const j = await r.json();
+        id = j.d.Id;
+      } else if (principal.kind === 'associated_owner_group') {
+        const r = await fetchWithRetry(apiUrl('web/AssociatedOwnerGroup?$select=Id'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) throw new Error(`AssociatedOwnerGroup not found (HTTP ${r.status})`);
+        const j = await r.json();
+        id = j.d.Id;
+      } else if (principal.kind === 'associated_member_group') {
+        const r = await fetchWithRetry(apiUrl('web/AssociatedMemberGroup?$select=Id'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) throw new Error(`AssociatedMemberGroup not found (HTTP ${r.status})`);
+        const j = await r.json();
+        id = j.d.Id;
+      } else if (principal.kind === 'associated_visitor_group') {
+        const r = await fetchWithRetry(apiUrl('web/AssociatedVisitorGroup?$select=Id'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!r.ok) throw new Error(`AssociatedVisitorGroup not found (HTTP ${r.status})`);
+        const j = await r.json();
+        id = j.d.Id;
+      } else {
+        throw new Error(`Unknown principal kind: ${principal.kind}`);
+      }
+      principalIdCache[cacheKey] = id;
+      return id;
+    }
+
+    async function resolveRoleDefId(levelName) {
+      if (roleDefIdCache[levelName] !== undefined) return roleDefIdCache[levelName];
+      const r = await fetchWithRetry(apiUrl(`web/roledefinitions/getbyname('${odataName(levelName)}')?$select=Id`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) throw new Error(`Role definition '${levelName}' not found (HTTP ${r.status})`);
+      const j = await r.json();
+      const id = j.d.Id;
+      roleDefIdCache[levelName] = id;
+      return id;
+    }
+
+    async function findDescendantUniqueScopeIds(listTitle) {
+      const uniqueScopeIds = [];
+      let itemsUrl = apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/items?$select=Id,HasUniqueRoleAssignments&$top=5000`);
+      while (itemsUrl) {
+        const itemsResp = await fetchWithRetry(itemsUrl, {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!itemsResp.ok) {
+          const text = await itemsResp.text();
+          throw new Error(`item/folder permission-scope enumeration failed: HTTP ${itemsResp.status} ${text}`);
+        }
+        const itemsJson = await itemsResp.json();
+        for (const item of ((itemsJson.d && itemsJson.d.results) || [])) {
+          if (item.HasUniqueRoleAssignments) uniqueScopeIds.push(item.Id);
+        }
+        itemsUrl = (itemsJson.d && itemsJson.d.__next) || null;
+      }
+      return uniqueScopeIds;
+    }
+
+    function assertNoDescendantUniqueScopes(listTitle, uniqueScopeIds) {
+      if (uniqueScopeIds.length === 0) return;
+      const sample = uniqueScopeIds.slice(0, 10).join(', ');
+      throw new Error(`${uniqueScopeIds.length} item/folder unique permission scope(s) remain (item IDs: ${sample}${uniqueScopeIds.length > 10 ? ', ...' : ''}); review and remove or explicitly migrate them before rerunning; the deployer will never erase descendant scopes`);
+    }
+
+    for (const la of SCHEMA.list_assignments) {
+      log('INFO', `[Phase {{ phase.number }}] Processing role assignments for '${la.list}'...`);
+      try {
+        // Probe before *any* list ACL mutation. breakroleinheritance with
+        // clearSubscopes=true would silently erase descendant exceptions on an
+        // adopted/populated inheriting list before the old post-check saw them.
+        // Exact mode always fails closed and leaves those scopes untouched.
+        if (la.reconcile_mode === 'exact') {
+          assertNoDescendantUniqueScopes(
+            la.list,
+            await findDescendantUniqueScopeIds(la.list),
+          );
+        }
+        if (la.break_inheritance) {
+          const checkResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')?$select=HasUniqueRoleAssignments`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (!checkResp.ok) {
+            const text = await checkResp.text();
+            throw new Error(`HasUniqueRoleAssignments probe failed: HTTP ${checkResp.status} ${text}`);
+          }
+          const checkJson = await checkResp.json();
+          if (!checkJson.d.HasUniqueRoleAssignments) {
+            digest4 = await getDigest();
+            const breakResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=false)`), {
+              method: 'POST',
+              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            });
+            if (!breakResp.ok) {
+              const text = await breakResp.text();
+              throw new Error(`breakroleinheritance failed: HTTP ${breakResp.status} ${text}`);
+            }
+            log('INFO', `[Phase {{ phase.number }}] Broke inheritance on '${la.list}'.`);
+          } else {
+            log('INFO', `[Phase {{ phase.number }}] '${la.list}' already has unique role assignments, reconciling existing bindings.`);
+          }
+        }
+
+        // Resolve the complete desired state before removing anything. If a
+        // principal or role cannot be resolved, fail closed without partially
+        // applying an allowlist that could lock out the intended administrators.
+        const resolvedAssignments = [];
+        for (const assignment of la.assignments) {
+          try {
+            const principalId = await resolvePrincipalId(assignment.principal);
+            const roleDefId = await resolveRoleDefId(assignment.level);
+            resolvedAssignments.push({ assignment, principalId, roleDefId });
+          } catch (err) {
+            throw new Error(`cannot resolve desired assignment principal=${JSON.stringify(assignment.principal)}, level=${assignment.level}: ${err.message}`);
+          }
+        }
+
+        const removeBinding = async (principalId, roleDefId, reason) => {
+          digest4 = await getDigest();
+          const rmResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/removeroleassignment(principalid=${principalId},roleDefId=${roleDefId})`), {
+            method: 'POST',
+            headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+          });
+          if (!rmResp.ok) {
+            const text = await rmResp.text();
+            throw new Error(`removeroleassignment (${reason}, principal ${principalId}, binding ${roleDefId}) failed: HTTP ${rmResp.status} ${text}`);
+          }
+          log('INFO', `[Phase {{ phase.number }}] '${la.list}' removed ${reason} binding ${roleDefId} for principal ${principalId}.`);
+        };
+
+        // Establish every desired grant before pruning. This keeps at least the
+        // declared owner path in place when breakroleinheritance(false) has
+        // temporarily granted the current operator direct Full Control. Any add
+        // failure aborts the list before exact mode removes a single binding.
+        // GetByPrincipalId is positional in SharePoint REST; add/remove role
+        // assignment methods below use their documented named parameters.
+        for (const resolved of resolvedAssignments) {
+          const desiredResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          let desiredPresent = false;
+          if (desiredResp.ok) {
+            const desiredJson = await desiredResp.json();
+            const desiredBindings = (desiredJson.d && desiredJson.d.RoleDefinitionBindings && desiredJson.d.RoleDefinitionBindings.results) || [];
+            desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
+          } else if (desiredResp.status !== 404) {
+            const text = await desiredResp.text();
+            throw new Error(`desired binding probe failed: HTTP ${desiredResp.status} ${text}`);
+          }
+          if (!desiredPresent) {
+            digest4 = await getDigest();
+            const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
+              method: 'POST',
+              headers: { 'Accept': 'application/json;odata=verbose', 'X-RequestDigest': digest4 },
+            });
+            if (!assignResp.ok) {
+              const text = await assignResp.text();
+              throw new Error(`addroleassignment (principal ${resolved.principalId}, binding ${resolved.roleDefId}) failed before reconciliation: HTTP ${assignResp.status} ${text}`);
+            }
+          }
+        }
+
+        if (la.reconcile_mode === 'exact') {
+          // Exact mode treats the mapping as an allowlist. Enumerate every
+          // direct role binding, including principals absent from the mapping,
+          // and remove all non-declared pairs. SharePoint's derived "Limited
+          // Access" binding is protected: it is created to support lower-scope
+          // access and is not a direct permission grant at this list scope.
+          const expected = new Set(resolvedAssignments.map(
+            x => `${x.principalId}:${x.roleDefId}`,
+          ));
+          const existingAssignments = [];
+          let assignmentsUrl = apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
+          while (assignmentsUrl) {
+            const allResp = await fetchWithRetry(assignmentsUrl, {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (!allResp.ok) {
+              const text = await allResp.text();
+              throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
+            }
+            const allJson = await allResp.json();
+            existingAssignments.push(...((allJson.d && allJson.d.results) || []));
+            assignmentsUrl = (allJson.d && allJson.d.__next) || null;
+          }
+          for (const existing of existingAssignments) {
+            const principalId = existing.Member && existing.Member.Id;
+            if (principalId == null) {
+              throw new Error('role assignment enumeration returned an entry without Member.Id');
+            }
+            const bindings = (existing.RoleDefinitionBindings && existing.RoleDefinitionBindings.results) || [];
+            for (const binding of bindings) {
+              if (binding.Name === 'Limited Access') {
+                continue;
+              }
+              if (!expected.has(`${principalId}:${binding.Id}`)) {
+                await removeBinding(principalId, binding.Id, 'unlisted');
+              }
+            }
+          }
+        } else {
+          // Backward-compatible configured-principal mode: remove stale levels
+          // for declared principals but leave unrelated principals untouched.
+          for (const resolved of resolvedAssignments) {
+            const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (raResp.ok) {
+              const raJson = await raResp.json();
+              const bindings = (raJson.d && raJson.d.RoleDefinitionBindings && raJson.d.RoleDefinitionBindings.results) || [];
+              for (const binding of bindings) {
+                if (binding.Name !== 'Limited Access' && binding.Id !== resolved.roleDefId) {
+                  await removeBinding(resolved.principalId, binding.Id, 'stale');
+                }
+              }
+            } else if (raResp.status !== 404) {
+              const text = await raResp.text();
+              throw new Error(`role assignment probe failed: HTTP ${raResp.status} ${text}`);
+            }
+          }
+        }
+
+        if (la.reconcile_mode === 'exact') {
+          // List-level exact reconciliation is insufficient when a prior run
+          // or manual change left item/folder scopes behind. SharePoint does
+          // not clear descendant scopes when BreakRoleInheritance is called
+          // again on a list that is already unique. Detect those scopes and
+          // fail closed for operator review; never erase a potentially
+          // deliberate exception automatically.
+          assertNoDescendantUniqueScopes(
+            la.list,
+            await findDescendantUniqueScopeIds(la.list),
+          );
+        }
+
+      } catch (err) {
+        log('ERROR', `[Phase {{ phase.number }}] '${la.list}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', list: la.list, error: err.message });
+      }
+    }
+  }
+
+  // A partial schema or ACL deployment must never be made to look activated
+  // by seeding AppSettings. The error summary remains the operator's
+  // repair checklist and the rerunnable deployment can be attempted again.
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Deployment has unresolved schema or ACL errors; aborting before seed items.');
+    await removeSelfEnrollments();
+    return { ...summary, aborted: 'pre-seed-errors' };
+  }
+

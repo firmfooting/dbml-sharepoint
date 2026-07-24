@@ -1,0 +1,57 @@
+// ============================================================================
+// Stakeholder contacts — organisations, their people, and the interaction log.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project stakeholder_contacts { database_type: 'SharePoint Online Lists' }
+
+Enum org_type {
+  "Government"
+  "Supplier / vendor"
+  "Partner"
+  "Community group"
+  "Media"
+  "Peak body / industry"
+  "Other"
+}
+
+Enum interaction_type {
+  "Meeting"
+  "Call"
+  "Email"
+  "Event"
+  "Site visit"
+  "Other"
+}
+
+Table Organisation {
+  Id       int       [pk, increment]
+  Title    nvarchar  [not null, note: 'Organisation name']
+  OrgType  org_type  [not null]
+  Website  hyperlink
+  Owner    person    [note: 'Who owns this relationship overall']
+  Notes    richtext  [note: 'What they do, why they matter to us, sensitivities']
+}
+
+Table Contact {
+  Id           int      [pk, increment]
+  Title        nvarchar [not null, note: 'Full name']
+  // Lookup to Organisation.
+  Organisation int      [not null, ref: > Organisation.Id, note: 'The organisation they work for']
+  Role         nvarchar [note: 'Their position']
+  Email        nvarchar
+  Phone        nvarchar
+  IsActive     boolean  [default: true, note: 'Uncheck when they move on — do not delete (see governance)']
+  Notes        nvarchar [note: 'Preferences worth knowing (e.g. "prefers phone"). Professional facts only — see privacy rules']
+}
+
+Table Interaction {
+  Id              int              [pk, increment]
+  Title           nvarchar         [not null, note: 'One line: "Quarterly review — funding timeline discussed"']
+  // Lookup to Contact.
+  Contact         int              [not null, ref: > Contact.Id, note: 'The person this interaction was with']
+  InteractionDate date             [not null]
+  InteractionType interaction_type [not null, default: 'Meeting']
+  RecordedBy      person           [note: 'Who from our side (defaults to you)']
+  Summary         richtext         [note: 'What was discussed, agreed or promised — enough for a colleague to pick up the thread']
+}

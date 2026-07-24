@@ -1,0 +1,12 @@
+// test/fixtures/circular.dbml
+Project circ_test { database_type: 'SharePoint Online' }
+
+Table A {
+  Id     int       [pk, increment]
+  BRef   int       [ref: > B.Id]
+}
+
+Table B {
+  Id     int       [pk, increment]
+  ARef   int       [ref: > A.Id]
+}

@@ -1,0 +1,64 @@
+// ============================================================================
+// Equipment maintenance — maintained items + the event history with evidence.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project equipment_maintenance { database_type: 'SharePoint Online Lists' }
+
+Enum equipment_type {
+  "Biomedical / clinical"
+  "Electrical - test and tag"
+  "Fire and emergency"
+  "Plant - HVAC / utilities"
+  "Vehicle"
+  "Other maintained item"
+}
+
+Enum equipment_status {
+  "In service"
+  "Out of service - awaiting maintenance"
+  "Retired"
+}
+
+Enum event_type {
+  "Preventive maintenance"
+  "Corrective repair"
+  "Test and tag"
+  "Calibration"
+  "Inspection"
+}
+
+Enum event_result {
+  "Passed"
+  "Passed with actions"
+  "Failed - removed from service"
+}
+
+Table Equipment {
+  Id              int              [pk, increment]
+  Title           nvarchar         [not null, note: 'The item, plainly: "Infusion pump - ward 2 north"']
+  // unique — enforced by the column constraint.
+  EquipmentTag    nvarchar         [not null, unique, note: 'Asset/serial tag physically on the item — no two items share a tag']
+  EquipmentType   equipment_type   [not null]
+  EquipLocation   nvarchar         [not null, note: 'Where it lives']
+  ServiceProvider nvarchar         [note: 'Who maintains it: internal team or contractor']
+  // Interval class defaults live in governance.
+  FrequencyMonths number           [not null, note: 'Maintenance interval in months']
+  // THE column the schedule runs on — record-then-reschedule: updated every time an event is recorded.
+  NextDueDate     date             [not null, note: 'When the next maintenance is due. Set a new due date each time a maintenance event is recorded.']
+  Status          equipment_status [not null, default: 'In service']
+  Notes           richtext
+}
+
+Table MaintenanceEvent {
+  Id          int          [pk, increment]
+  Title       nvarchar     [not null, note: 'What was done, in one line']
+  // Lookup to Equipment.
+  Equipment   int          [not null, ref: > Equipment.Id, note: 'The equipment this service record belongs to']
+  EventType   event_type   [not null]
+  EventDate   date         [not null]
+  PerformedBy nvarchar     [not null, note: 'Technician / contractor who did the work']
+  Result      event_result [not null]
+  EvidenceUrl hyperlink    [note: 'Service report / test certificate in your records system']
+  Notes       nvarchar     [note: 'Actions arising, parts replaced, readings']
+}

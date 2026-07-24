@@ -1,0 +1,277 @@
+{# Phase body: create/reconcile custom permission levels (base-permission
+   bitmasks) and site groups (settings reconciled; owner corrected via a
+   CSOM ProcessQuery where the REST surface cannot). #}
+  // === Phase {{ phase.number }}: custom permission levels + site groups ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  {
+    let digest0 = await getDigest();
+
+    for (const lvl of SCHEMA.permission_levels) {
+      try {
+        // Existence probe via $filter: getbyname returns HTTP 500 (not 404)
+        // for a missing role definition, so a getbyname probe cannot
+        // distinguish "absent" from a real failure. The filter form returns
+        // 200 with empty results when absent. getbyname is still used below
+        // for the MERGE, where the level is known to exist.
+        const checkResp = await fetchWithRetry(apiUrl(`web/roledefinitions?$select=Id&$filter=Name eq '${odataName(lvl.name)}'`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!checkResp.ok) {
+          const text = await checkResp.text();
+          throw new Error(`Probe for permission level '${lvl.name}' failed: HTTP ${checkResp.status} ${text}`);
+        }
+        const checkJson = await checkResp.json();
+        const existingLevels = checkJson?.d?.results;
+        if (!Array.isArray(existingLevels)) {
+          throw new Error(`Probe for permission level '${lvl.name}' returned an invalid response`);
+        }
+        if (existingLevels.length === 0) {
+          log('INFO', `Creating permission level '${lvl.name}'...`);
+          await postJson(apiUrl('web/roledefinitions'), {
+            __metadata: { type: 'SP.RoleDefinition' },
+            Name: lvl.name,
+            Description: lvl.description,
+            BasePermissions: {
+              __metadata: { type: 'SP.BasePermissions' },
+              High: lvl.base_permissions.high,
+              Low: lvl.base_permissions.low,
+            },
+            Order: 100,
+          }, digest0);
+          log('INFO', `Permission level '${lvl.name}' created.`);
+        } else {
+          // A same-name role definition is not proof that its permissions are
+          // still the declared permissions. Reconcile the security-sensitive
+          // fields on every run so a drifted level cannot silently retain
+          // edit/delete rights.
+          digest0 = await getDigest();
+          const mergeResp = await fetchWithRetry(apiUrl(`web/roledefinitions/getbyname('${odataName(lvl.name)}')`), {
+            method: 'POST',
+            headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+            body: JSON.stringify({
+              __metadata: { type: 'SP.RoleDefinition' },
+              Description: lvl.description,
+              BasePermissions: {
+                __metadata: { type: 'SP.BasePermissions' },
+                High: lvl.base_permissions.high,
+                Low: lvl.base_permissions.low,
+              },
+            }),
+          });
+          if (!mergeResp.ok) {
+            const text = await mergeResp.text();
+            throw new Error(`Permission level '${lvl.name}' MERGE failed: HTTP ${mergeResp.status} ${text}`);
+          }
+          log('INFO', `Permission level '${lvl.name}' already exists; declared permissions reconciled.`);
+        }
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} permission level '${lvl.name}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', permissionLevel: lvl.name, error: err.message });
+      }
+    }
+
+    for (const grp of SCHEMA.groups) {
+      try {
+        const checkResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (checkResp.status === 404) {
+          log('INFO', `Creating site group '${grp.name}'...`);
+          await postJson(apiUrl('web/sitegroups'), {
+            __metadata: { type: 'SP.Group' },
+            Title: grp.name,
+            Description: grp.description,
+            AllowMembersEditMembership: grp.allow_members_edit_membership,
+            AllowRequestToJoinLeave: grp.allow_request_to_join_leave,
+            AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
+            OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
+          }, digest0);
+          log('INFO', `Site group '${grp.name}' created.`);
+        } else if (checkResp.ok) {
+          // Group membership controls are part of the security boundary. A
+          // pre-existing group with the right name but permissive flags must
+          // not be accepted as compliant.
+          digest0 = await getDigest();
+          const mergeResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+            method: 'POST',
+            headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+            body: JSON.stringify({
+              __metadata: { type: 'SP.Group' },
+              Description: grp.description,
+              AllowMembersEditMembership: grp.allow_members_edit_membership,
+              AllowRequestToJoinLeave: grp.allow_request_to_join_leave,
+              AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
+              OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
+            }),
+          });
+          if (!mergeResp.ok) {
+            const text = await mergeResp.text();
+            throw new Error(`Group '${grp.name}' settings MERGE failed: HTTP ${mergeResp.status} ${text}`);
+          }
+          log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
+        } else {
+          throw new Error(`Probe for site group '${grp.name}' failed: HTTP ${checkResp.status}`);
+        }
+
+        // Owner verification, with automated correction. Plain REST cannot
+        // MERGE Group.Owner (read-only through that surface), but the
+        // documented CSOM protocol (MS-CSOM ProcessQuery, the same mechanism
+        // PnP's Set-PnPGroup uses) can set it. On mismatch the script
+        // attempts the CSOM set, then re-verifies through the documented
+        // read-only /owner resource, and fails closed with the manual-action
+        // instruction only if the owner still mismatches.
+        let targetOwnerResp;
+        if (grp.owner_group === 'Site Owners') {
+          targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedOwnerGroup?$select=Id,Title,PrincipalType'), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+        } else if (grp.owner_group === 'Site Members') {
+          targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedMemberGroup?$select=Id,Title,PrincipalType'), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+        } else if (grp.owner_group === 'Site Visitors') {
+          targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedVisitorGroup?$select=Id,Title,PrincipalType'), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+        } else {
+          targetOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.owner_group)}')?$select=Id,Title,PrincipalType`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+        }
+        if (!targetOwnerResp.ok) {
+          throw new Error(`Cannot resolve declared owner group '${grp.owner_group}' for '${grp.name}' (HTTP ${targetOwnerResp.status})`);
+        }
+        const targetOwner = (await targetOwnerResp.json()).d;
+
+        const governedGroupResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!governedGroupResp.ok) {
+          throw new Error(`Cannot resolve governed group '${grp.name}' for owner verification (HTTP ${governedGroupResp.status})`);
+        }
+        const governedGroup = (await governedGroupResp.json()).d;
+        const currentOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!currentOwnerResp.ok) {
+          throw new Error(`Cannot read owner for group '${grp.name}' (HTTP ${currentOwnerResp.status})`);
+        }
+        const currentOwner = (await currentOwnerResp.json()).d;
+        const ownerShapeValid = Number.isInteger(targetOwner.Id)
+          && Number.isInteger(targetOwner.PrincipalType)
+          && typeof targetOwner.Title === 'string'
+          && Number.isInteger(currentOwner.Id)
+          && Number.isInteger(currentOwner.PrincipalType)
+          && typeof currentOwner.Title === 'string';
+        if (!ownerShapeValid) {
+          throw new Error(`Owner verification for group '${grp.name}' returned an invalid principal response`);
+        }
+        if (currentOwner.Id !== targetOwner.Id
+            || currentOwner.PrincipalType !== targetOwner.PrincipalType) {
+          let ownerCorrected = false;
+          // Automated correction only targets site-group owners (type 8) —
+          // every declared owner_group resolves to a site group.
+          if (targetOwner.PrincipalType === 8) {
+            log('INFO', `Group '${grp.name}' owner is '${currentOwner.Title}'; attempting automated correction to '${targetOwner.Title}' via CSOM ProcessQuery...`);
+            digest0 = await getDigest();
+            const csomXml =
+              '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="dbml-sharepoint">'
+              + '<Actions>'
+              + '<SetProperty Id="10" ObjectPathId="3" Name="Owner"><Parameter ObjectPathId="5" /></SetProperty>'
+              + '<Method Name="Update" Id="11" ObjectPathId="3" />'
+              + '</Actions>'
+              + '<ObjectPaths>'
+              + '<StaticProperty Id="0" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" />'
+              + '<Property Id="1" ParentId="0" Name="Web" />'
+              + '<Property Id="2" ParentId="1" Name="SiteGroups" />'
+              + `<Method Id="3" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${governedGroup.Id}</Parameter></Parameters></Method>`
+              + `<Method Id="5" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${targetOwner.Id}</Parameter></Parameters></Method>`
+              + '</ObjectPaths>'
+              + '</Request>';
+            const pqResp = await fetchWithRetry(apiUrl('ProcessQuery'), {
+              method: 'POST',
+              headers: {
+                'Accept': 'application/json;odata=verbose',
+                'Content-Type': 'text/xml',
+                'X-RequestDigest': digest0,
+              },
+              body: csomXml,
+            });
+            if (pqResp.ok) {
+              let pqJson = null;
+              try { pqJson = await pqResp.json(); } catch { pqJson = null; }
+              const pqError = Array.isArray(pqJson) && pqJson.length > 0 && pqJson[0] && pqJson[0].ErrorInfo;
+              if (!pqError) {
+                // Re-verify through the same documented read-only probe —
+                // the CSOM response alone is not trusted as success evidence.
+                const reReadResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
+                  headers: { 'Accept': 'application/json;odata=verbose' },
+                });
+                if (reReadResp.ok) {
+                  const reRead = (await reReadResp.json()).d;
+                  ownerCorrected = reRead
+                    && reRead.Id === targetOwner.Id
+                    && reRead.PrincipalType === targetOwner.PrincipalType;
+                }
+              } else {
+                log('INFO', `CSOM owner set for '${grp.name}' reported: ${pqError.ErrorMessage || 'unknown error'}.`);
+              }
+            }
+          }
+          if (!ownerCorrected) {
+            throw new Error(
+              `Manual owner action required for group '${grp.name}': current owner '${currentOwner.Title}' `
+              + `(Id ${currentOwner.Id}, type ${currentOwner.PrincipalType}) does not match declared owner `
+              + `'${targetOwner.Title}' (Id ${targetOwner.Id}, type ${targetOwner.PrincipalType}) and automated `
+              + `correction did not take effect. Set the group owner in SharePoint Site permissions, then rerun `
+              + `this same script; Phase 2.1 will not start while this mismatch exists.`,
+            );
+          }
+          log('INFO', `Site group '${grp.name}' owner corrected to '${targetOwner.Title}'.`);
+        } else {
+          log('INFO', `Site group '${grp.name}' owner verified as '${targetOwner.Title}'.`);
+        }
+
+        // Optional clean-provision/activation gate. Membership remains an
+        // operator-owned concern: enumerate every page and fail closed rather
+        // than silently removing an unexpected user or directory group.
+        if (grp.require_empty_at_deploy) {
+          let memberCount = 0;
+          let membersUrl = apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')/users?$select=Id&$top=5000`);
+          while (membersUrl) {
+            const membersResp = await fetchWithRetry(membersUrl, {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (!membersResp.ok) {
+              const text = await membersResp.text();
+              throw new Error(`Group '${grp.name}' membership enumeration failed: HTTP ${membersResp.status} ${text}`);
+            }
+            const membersJson = await membersResp.json();
+            if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
+              throw new Error(`Group '${grp.name}' membership enumeration returned an invalid response`);
+            }
+            memberCount += membersJson.d.results.length;
+            membersUrl = membersJson.d.__next || null;
+          }
+          if (memberCount > 0) {
+            throw new Error(`Group '${grp.name}' requires empty membership at deploy, but contains ${memberCount} member(s); remove them or use a mapping that does not declare the clean-provision gate`);
+          }
+          log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
+        }
+      } catch (err) {
+        log('ERROR', `Phase {{ phase.number }} site group '${grp.name}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });
+      }
+    }
+  }
+
+  // Permission-level or group failures make every later ACL assertion
+  // untrustworthy. Stop before creating content-bearing lists or seed rows.
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Phase {{ phase.number }} security reconciliation failed; aborting before list creation.');
+    return { ...summary, aborted: 'phase-0-security-errors' };
+  }
+

@@ -1,0 +1,57 @@
+{# src/dbml_sharepoint/templates/deploy.js.j2 #}
+/**
+ * dbml-sharepoint deployment script.
+{% include "_provenance.js.j2" %}
+ *
+ * Paste into the SharePoint browser console and press Enter.
+ * Wait for the [SP-DEPLOY] [DONE] log line.
+ */
+(async () => {
+  const SITE_URL  = {{ site_url | tojson }};
+  const SITE_ROLE = {{ site_role | tojson }};
+  const RELEASE_TAG = {{ release.release_tag | tojson }};
+  const SCHEMA_VERSION = {{ release.schema_version | tojson }};
+
+  const log = (level, msg) => console.log(`[SP-DEPLOY] [${level}] ${msg}`);
+  const RUN_STARTED_AT = Date.now();
+  // Phase timings record on every run (cheap); they only PRINT under
+  // DEBUG (declared in the shared HTTP partial included below).
+  const phaseTimings = {};
+  let currentPhaseLabel = null;
+  let currentPhaseT0 = 0;
+  const markPhase = (label) => {
+    if (currentPhaseLabel) {
+      phaseTimings[currentPhaseLabel] = (phaseTimings[currentPhaseLabel] || 0) + (Date.now() - currentPhaseT0);
+    }
+    currentPhaseLabel = label;
+    currentPhaseT0 = Date.now();
+  };
+  const summary = {
+    listsCreated: [],
+    listsSkipped: [],
+    columnsCreated: 0,
+    columnsSkipped: 0,
+    errors: [],
+    releaseTag: RELEASE_TAG,
+    schemaVersion: SCHEMA_VERSION,
+  };
+
+
+{% include "_site_guard.js.j2" %}
+
+{% include "_http.js.j2" %}
+
+{% include "_http_write.js.j2" %}
+
+{% include "_digest_cached.js.j2" %}
+
+{% include "deploy/_shape_probes.js.j2" %}
+{% include "deploy/_helpers.js.j2" %}
+{% include "deploy/_field_reconcile.js.j2" %}
+{% for group in phases %}
+{% for step in group.steps %}
+{% set phase = step %}
+  markPhase('Phase {{ step.number }} — {{ step.name }}');
+{% include step.template %}
+{% endfor %}
+{% endfor %}

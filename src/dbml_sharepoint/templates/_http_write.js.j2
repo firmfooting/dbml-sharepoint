@@ -1,0 +1,12 @@
+{# Shared SP WRITE-request headers. Included only by scripts that make
+   writes (deploy, rollback, demo) — the read-only assess script includes
+   the transport partial alone, keeping its no-write property auditable
+   from its text. #}
+  // Verbose-OData headers for SP writes; `extra` carries method overrides
+  // such as { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }.
+  const spHeaders = (digest, extra = {}) => ({
+    'Accept': 'application/json;odata=verbose',
+    'Content-Type': 'application/json;odata=verbose',
+    'X-RequestDigest': digest,
+    ...extra,
+  });

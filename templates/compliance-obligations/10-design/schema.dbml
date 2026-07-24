@@ -1,0 +1,37 @@
+// ============================================================================
+// Compliance obligations — one register: obligation, owner, status, evidence.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project compliance_obligations { database_type: 'SharePoint Online Lists' }
+
+Enum source_type {
+  "Legislation / regulation"
+  "Accreditation standard"
+  "Funding agreement / contract"
+  "Industrial instrument"
+  "Formal commitment / policy"
+}
+
+Enum compliance_status {
+  "Not assessed"
+  "Compliant"
+  "Partially compliant"
+  "Non-compliant"
+  "Not applicable"
+}
+
+Table Obligation {
+  Id               int               [pk, increment]
+  Title            nvarchar          [not null, note: 'The obligation as a duty: "Report notifiable incidents to the regulator within 24 hours"']
+  SourceInstrument nvarchar          [not null, note: 'Where it comes from, precisely: act + section, standard + action number, agreement + clause']
+  SourceType       source_type       [not null]
+  ObligationDetail richtext          [note: 'What compliance actually requires in practice — the obligation translated into our operations']
+  Owner            person            [not null, note: 'The person accountable for this obligation being met']
+  ComplianceStatus compliance_status [not null, default: 'Not assessed']
+  EvidenceUrl      hyperlink         [note: 'The primary evidence of compliance, linked from your records system']
+  EvidenceNotes    nvarchar          [note: 'What the evidence is and where more lives']
+  LastAssessedDate date              [note: 'When the status was last verified against evidence']
+  ReviewDate       date              [not null, note: 'Next scheduled assessment']
+  Notes            richtext          [note: 'Gaps, remediation pointers (link change-register/improvement items), history']
+}

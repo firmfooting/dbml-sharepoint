@@ -1,0 +1,60 @@
+// ============================================================================
+// Audit actions — audits/reviews, and their recommendations tracked to closure.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project audit_actions { database_type: 'SharePoint Online Lists' }
+
+Enum audit_type {
+  "Internal audit"
+  "External audit"
+  "Accreditation / certification"
+  "Regulator review"
+  "Self-assessment"
+}
+
+Enum finding_rating {
+  "Low"
+  "Moderate"
+  "High"
+  "Critical"
+}
+
+Enum rec_status {
+  "Open"
+  "In progress"
+  "Implemented - awaiting evidence"
+  "Closed"
+  "Risk accepted"
+}
+
+Table Audit {
+  Id          int         [pk, increment]
+  Title       nvarchar    [not null, note: 'The review: "Internal audit - payroll controls 2026"']
+  AuditType   audit_type  [not null]
+  Auditor     nvarchar    [note: 'Who performed it (firm / team / body)']
+  ReportDate  date        [not null, note: 'Date of the final report']
+  ReportUrl   hyperlink   [note: 'Link to the report in its document store']
+  Sponsor     person      [note: 'Executive accountable for responding to this audit']
+  Notes       richtext
+}
+
+Table Recommendation {
+  Id            int            [pk, increment]
+  Title         nvarchar       [not null, note: 'The recommendation, as worded in the report (abbreviate, do not paraphrase away the substance)']
+  // Lookup to the Audit list.
+  Audit         int            [not null, ref: > Audit.Id, note: 'The audit or review this recommendation came from']
+  FindingRating finding_rating [not null, note: 'The rating the report itself gave the underlying finding']
+  AgreedAction  richtext       [not null, note: 'The agreed management action, as formally responded']
+  Owner         person         [not null, note: 'Who delivers the agreed action']
+  DueDate       date           [not null, note: 'The committed date from the management response']
+  RevisedDue    date           [note: 'Current committed date if formally extended — see governance for who may extend']
+  Status        rec_status     [not null, default: 'Open']
+  ClosedDate    date
+  // Calculated — formula in mapping.yaml. Guarded against early closure because
+  // DATEDIF rejects negative ranges: closed on/before the committed date -> 0.
+  // Committed date = RevisedDue when set, else DueDate.
+  DaysLate      calculated_number [note: 'How many days past the committed date this was closed. Shows 0 when closed on time or early. Fills itself in once the closed date is entered.']
+  EvidenceUrl   hyperlink      [note: 'The closure evidence — what proves the action happened (required to close; see governance)']
+  Notes         richtext       [note: 'Progress updates, dated, newest first']
+}

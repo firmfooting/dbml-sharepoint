@@ -1,0 +1,90 @@
+// ============================================================================
+// Switchboard log — code events, the message book, and the key register.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project switchboard_log { database_type: 'SharePoint Online Lists' }
+
+// AS 4083 (Australia) — replace with your jurisdiction's code set.
+Enum code_type {
+  "Code Blue - medical emergency"
+  "Code Red - fire / smoke"
+  "Code Black - personal threat"
+  "Code Grey - unarmed threat"
+  "Code Yellow - internal emergency"
+  "Code Purple - bomb threat"
+  "Code Orange - evacuation"
+  "Code Brown - external emergency"
+  "Other / local code"
+}
+
+Enum message_urgency {
+  "Routine"
+  "Urgent"
+  "Emergency"
+}
+
+Enum message_status {
+  "Pending relay"
+  "Relayed"
+  "Closed - no relay needed"
+}
+
+Enum key_status {
+  "Out"
+  "Returned"
+}
+
+Table CodeEvent {
+  Id              int       [pk, increment]
+  Title           nvarchar  [not null, note: 'Code + location in one line: "Code Blue - Ward 2 North"']
+  CodeType        code_type [not null]
+  CodeLocation    nvarchar  [not null, note: 'Where, precisely — building, ward, room']
+  IsDrill         boolean   [default: false, note: 'Drills are logged exactly like real events — that is the point of drills']
+  AnnouncedAt     datetime  [not null, note: 'When the code was announced — logged live, not reconstructed']
+  AllClearAt      datetime  [note: 'When stand-down was announced']
+  // calculated_number — formula in mapping.yaml (AnnouncedAt to AllClearAt, in minutes).
+  DurationMinutes calculated_number [note: 'Calculated automatically from the announced and all-clear times: how long the code ran, in minutes. Blank until both times are entered']
+  AnnouncedBy     person    [note: 'The operator who made the announcement (defaults to you)']
+  InitiatedBy     nvarchar  [note: 'Who called it in: role/extension/name as known at the time']
+  EventNotes      richtext  [note: 'What the switchboard did and observed: pages sent, services called, instructions received. Operational facts only — clinical detail belongs in clinical systems']
+}
+
+Table MessageLog {
+  Id             int             [pk, increment]
+  Title          nvarchar        [not null, note: 'One line: "Locum agency - replacement for night shift"']
+  TakenAt        datetime        [not null]
+  CallerName     nvarchar        [not null, note: 'Who called (name and organisation as given)']
+  CallerContact  nvarchar        [note: 'Number to call back']
+  ForWhom        nvarchar        [not null, note: 'Who the message is for: role first ("On-call engineer"), name if known']
+  MessageDetail  richtext        [not null, note: 'The message as taken. Read it back to the caller before saving']
+  Urgency        message_urgency [not null, default: 'Routine']
+  Status         message_status  [not null, default: 'Pending relay']
+  RelayedTo      nvarchar        [note: 'Who actually received it (name), and how (phone/page/in person)']
+  RelayedAt      datetime
+  // calculated_number — formula in mapping.yaml (TakenAt to RelayedAt, in minutes).
+  MinutesToRelay calculated_number [note: 'Calculated automatically from the taken and relayed times: how long the message waited, in minutes. Blank until both times are entered']
+  TakenBy        person          [note: 'The operator (defaults to you)']
+}
+
+Table Key {
+  Id           int      [pk, increment]
+  Title        nvarchar [not null, note: 'The key/card as labelled: "Pharmacy main", "Master - admin wing"']
+  KeyRef       nvarchar [not null, unique, note: 'The tag number physically on the key — unique']
+  Covers       nvarchar [note: 'What it opens']
+  Restrictions nvarchar [note: 'Who may take it, per your procedure: "Pharmacist or director on-call only"']
+  Active       boolean  [default: true, note: 'Uncheck for retired/lost keys — history stays']
+}
+
+Table KeyMovement {
+  Id         int        [pk, increment]
+  Title      nvarchar   [note: 'Optional note; movements are identified by key + time']
+  // Lookup to Key.
+  Key        int        [not null, ref: > Key.Id, note: 'The key this movement is for']
+  IssuedTo   nvarchar   [not null, note: 'Who took it — name AND role/company; sight ID for non-staff']
+  IssuedAt   datetime   [not null]
+  Status     key_status [not null, default: 'Out']
+  ReturnedAt datetime
+  IssuedBy   person     [note: 'The operator (defaults to you)']
+  Notes      nvarchar
+}

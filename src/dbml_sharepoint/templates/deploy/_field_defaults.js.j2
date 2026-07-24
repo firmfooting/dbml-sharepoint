@@ -1,0 +1,36 @@
+  // === Phase {{ phase.number }}: reconcile declared field defaults ===
+  // Defaults are included in create-field bodies, but existing columns are
+  // skipped in Phase 2.1. Re-applying the declared value makes upgrades
+  // idempotent and lets a provisioned constant replace after-create flows.
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  for (const fieldDefault of SCHEMA.field_defaults) {
+    try {
+      digest = await getDigest();
+      await patchField(
+        fieldDefault.list,
+        fieldDefault.field,
+        {
+          __metadata: { type: fieldDefault.metadata_type },
+          DefaultValue: fieldDefault.default_value,
+        },
+        digest,
+      );
+      const actual = await readFieldShape(fieldDefault.list, fieldDefault.field, null, true);
+      if (!actual
+          || normalizeDefaultValue(actual.DefaultValue)
+             !== normalizeDefaultValue(fieldDefault.default_value)) {
+        throw new Error('DefaultValue readback did not match the declared value');
+      }
+    } catch (err) {
+      log('ERROR', `Default ${fieldDefault.list}.${fieldDefault.field}: ${err.message}`);
+      summary.errors.push({
+        list: fieldDefault.list,
+        column: fieldDefault.field,
+        error: err.message,
+      });
+    }
+  }
+

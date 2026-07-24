@@ -1,0 +1,51 @@
+// ============================================================================
+// Grants register — submissions + the post-award obligations that outlive
+// the celebration. Render the ERD on https://dbdiagram.io
+// ============================================================================
+
+Project grants_register { database_type: 'SharePoint Online Lists' }
+
+Enum submission_outcome {
+  "In preparation"
+  "Submitted"
+  "Successful"
+  "Unsuccessful"
+  "Withdrawn"
+}
+
+Enum acquittal_status {
+  "Upcoming"
+  "In preparation"
+  "Submitted"
+  "Accepted by funder"
+  "Overdue"
+}
+
+Table Submission {
+  Id             int                [pk, increment]
+  Title          nvarchar           [not null, note: 'Program/round + what for: "Regional Health Infrastructure Fund - theatre upgrade"']
+  Funder         nvarchar           [not null, note: 'Who the money comes from']
+  GrantOwner     person             [not null, note: 'Who owns this bid and, if won, its delivery obligations']
+  AmountSought   number             [note: 'In your base currency']
+  DueDate        date               [note: 'Submission deadline for the round']
+  SubmittedDate  date
+  Outcome        submission_outcome [not null, default: 'In preparation']
+  AmountAwarded  number             [note: 'On success — as per the agreement, not the press release']
+  AgreementUrl   hyperlink          [note: 'The signed funding agreement in your records system']
+  // Governance: unsuccessful bids get a debrief — the lessons learned land in this column.
+  ProjectSummary richtext           [note: 'What was bid, in two paragraphs. Once the outcome is known, add what was learned']
+  ProjectEndDate date               [note: 'When funded activity ends — obligations usually trail this']
+}
+
+Table Acquittal {
+  Id            int              [pk, increment]
+  Title         nvarchar         [not null, note: 'The obligation: "Mid-term progress report", "Audited financial acquittal"']
+  // Lookup to Submission.
+  Submission    int              [not null, ref: > Submission.Id, note: 'The grant this obligation belongs to']
+  DueDate       date             [not null, note: 'From the funding agreement — loaded the day the agreement is signed']
+  AcqStatus     acquittal_status [not null, default: 'Upcoming']
+  ResponsibleTo nvarchar         [note: 'Where it goes: funder portal, contract manager email']
+  SubmittedDate date
+  EvidenceUrl   hyperlink        [note: 'The submitted report/acquittal as filed in your records system']
+  Notes         nvarchar
+}

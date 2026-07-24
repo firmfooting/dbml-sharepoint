@@ -1,0 +1,19 @@
+{# Phase body: assert Indexed=true on every declared indexed column,
+   verified by readback. SharePoint builds the index asynchronously;
+   the flag is the deployer's contract. #}
+  // === Phase {{ phase.number }}: indexed columns ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  digest = await getDigest();
+  for (const idx of SCHEMA.indexed_columns) {
+    try {
+      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      await patchField(idx.list, idx.field, { __metadata: { type: 'SP.Field' }, Indexed: true }, digest);
+    } catch (err) {
+      log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
+      summary.errors.push({ list: idx.list, column: idx.field, error: err.message });
+    }
+  }
+

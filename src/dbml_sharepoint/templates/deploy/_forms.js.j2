@@ -1,0 +1,74 @@
+  // === Phase {{ phase.number }}: form formatting ===
+  // Declared list-form layouts (header/body/footer JSON) live on the list's
+  // default item content type as ClientFormCustomFormatter — a JSON string
+  // whose *JSONFormatter keys hold part OBJECTS (the pane-native encoding;
+  // the Format pane displays string-encoded parts escaped). Lists without
+  // a declaration are never touched.
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  const canonicalFormFormatter = (value) => {
+    if (value == null || value === '') return null;
+    let outer = value;
+    if (typeof outer === 'string') {
+      try { outer = JSON.parse(outer); } catch { return value; }
+    }
+    const canon = {};
+    for (const key of Object.keys(outer).sort()) {
+      // Encoding-agnostic: pre-pane-native deployments stored part values
+      // as JSON STRINGS; parse before canonicalising so both encodings of
+      // the same layout compare equal.
+      let part = outer[key];
+      if (typeof part === 'string' && part !== '') {
+        try { part = JSON.parse(part); } catch { /* raw string stays */ }
+      }
+      canon[key] = canonicalJson(part);
+    }
+    return JSON.stringify(canon);
+  };
+  for (const form of SCHEMA.form_formatting) {
+    try {
+      digest = await getDigest();
+      const listPath = `web/lists/getbytitle('${odataName(form.list)}')`;
+      const ctResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes?$select=Name,StringId,ClientFormCustomFormatter`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!ctResp.ok) {
+        const text = await ctResp.text();
+        throw new Error(`content type enumeration failed: HTTP ${ctResp.status} ${text}`);
+      }
+      const ctJson = await ctResp.json();
+      const contentTypes = (ctJson.d && ctJson.d.results) || [];
+      const target = contentTypes.find((ct) => ct.StringId && ct.StringId.startsWith('0x01') && !ct.StringId.startsWith('0x0120'));
+      if (!target) throw new Error('no default item content type found on the list');
+      if (canonicalFormFormatter(target.ClientFormCustomFormatter) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+        const r = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')`), {
+          method: 'POST',
+          headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+          body: JSON.stringify({ __metadata: { type: 'SP.ContentType' }, ClientFormCustomFormatter: form.client_form_custom_formatter }),
+        });
+        if (!r.ok) {
+          const text = await r.text();
+          throw new Error(`form formatter MERGE failed: HTTP ${r.status} ${text}`);
+        }
+      }
+      const verifyResp = await fetchWithRetry(apiUrl(`${listPath}/contenttypes('${target.StringId}')?$select=ClientFormCustomFormatter`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!verifyResp.ok) {
+        const text = await verifyResp.text();
+        throw new Error(`form formatter readback failed: HTTP ${verifyResp.status} ${text}`);
+      }
+      const verifyJson = await verifyResp.json();
+      const readback = verifyJson.d && verifyJson.d.ClientFormCustomFormatter;
+      if (canonicalFormFormatter(readback) !== canonicalFormFormatter(form.client_form_custom_formatter)) {
+        throw new Error(`did not retain declared form formatting (declared ${JSON.stringify(form.client_form_custom_formatter)}; readback ${JSON.stringify(readback)})`);
+      }
+      log('INFO', `[Phase {{ phase.number }}] Form formatting on '${form.list}' verified.`);
+    } catch (err) {
+      log('ERROR', `Phase {{ phase.number }} form '${form.list}': ${err.message}`);
+      summary.errors.push({ phase: '{{ phase.number }}', list: form.list, error: err.message });
+    }
+  }
+

@@ -1,0 +1,54 @@
+// ============================================================================
+// Routine checks — the checkpoint catalogue + every check performed.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project routine_checks { database_type: 'SharePoint Online Lists' }
+
+Enum check_type {
+  "Temperature - cold chain"
+  "Cleaning / environment"
+  "Safety equipment"
+  "Security round"
+  "Other routine check"
+}
+
+Enum check_frequency {
+  "Twice daily"
+  "Daily"
+  "Weekly"
+  "Monthly"
+}
+
+Enum check_result {
+  "In range - OK"
+  "Out of range - action taken"
+  "Out of range - escalated"
+  "Unable to check"
+}
+
+Table CheckPoint {
+  Id              int             [pk, increment]
+  Title           nvarchar        [not null, note: 'The thing checked: "Pharmacy vaccine fridge", "Resus trolley - ED"']
+  CheckType       check_type      [not null]
+  CheckLocation   nvarchar        [not null]
+  Frequency       check_frequency [not null]
+  AcceptableRange nvarchar        [note: 'What in-range means, exactly: "2 to 8 degrees C", "all seals intact, contents per list"']
+  // Out-of-range steps should mirror the escalation in governance.
+  Instructions    richtext        [note: 'How to perform the check, and what to do if the result is out of range']
+  Owner           person          [not null, note: 'Who is accountable for this checkpoint being checked']
+  Active          boolean         [default: true, note: 'Uncheck to retire a checkpoint without losing its history']
+}
+
+Table CheckEntry {
+  Id          int          [pk, increment]
+  // Title deliberately optional — entries are identified by checkpoint + time.
+  Title       nvarchar     [note: 'Optional short note — fine to leave blank']
+  // Lookup to CheckPoint.
+  CheckPoint  int          [not null, ref: > CheckPoint.Id, note: 'The checkpoint that was checked']
+  CheckedAt   datetime     [not null, note: 'When the check was actually performed — entered at the time, not reconstructed']
+  Reading     nvarchar     [not null, note: 'What was observed: "4.2 C", "all present", "door found unlocked"']
+  Result      check_result [not null]
+  ActionTaken nvarchar     [note: 'REQUIRED in practice for any out-of-range result: what you did, who you told']
+  CheckedBy   person       [note: 'Who performed the check (defaults to you)']
+}

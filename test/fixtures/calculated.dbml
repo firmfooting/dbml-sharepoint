@@ -1,0 +1,17 @@
+// test/fixtures/calculated.dbml
+// Fixture for SP.FieldCalculated support: calculated_number / calculated_text
+// columns whose formulas live in calculated-mapping.yaml.
+Project calc_test { database_type: 'SharePoint Online' }
+
+Enum severity {
+  "Low"
+  "High"
+}
+
+Table Risk {
+  Id        int       [pk, increment]
+  Title     nvarchar  [not null]
+  Severity  severity
+  RiskScore calculated_number [note: 'Derived from Severity; formula in mapping.']
+  RiskBand  calculated_text   [note: 'Derived from Severity; formula in mapping.']
+}

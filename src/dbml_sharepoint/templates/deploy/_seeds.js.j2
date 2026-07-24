@@ -1,0 +1,167 @@
+{# Phase body: extension-provided seed rows for singleton lists.
+   Idempotent: existing rows are matched and verified value-by-value
+   (exactSeedValueEqual), missing rows created, drift reported. #}
+  // === Phase {{ phase.number }}: seed singleton list items (extension-provided) ===
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+
+  function exactSeedValueEqual(actual, expected) {
+    if (Object.is(actual, expected)) return true;
+    // SharePoint REST serialises an empty single-line value as null even when
+    // the create payload declared "". Treat only that storage-level empty-text
+    // equivalence as canonical; do not coerce any other scalar values.
+    if ((actual === null && expected === '') || (actual === '' && expected === null)) {
+      return true;
+    }
+    if (Array.isArray(actual) || Array.isArray(expected)) {
+      return Array.isArray(actual) && Array.isArray(expected)
+        && actual.length === expected.length
+        && actual.every((value, index) => exactSeedValueEqual(value, expected[index]));
+    }
+    if (actual && expected && typeof actual === 'object' && typeof expected === 'object') {
+      // __metadata is a verbose-REST transport annotation, not stored field
+      // state. Compare every logical key and value exactly, independent of
+      // object-property order.
+      const actualKeys = Object.keys(actual).filter(key => key !== '__metadata').sort();
+      const expectedKeys = Object.keys(expected).filter(key => key !== '__metadata').sort();
+      return actualKeys.length === expectedKeys.length
+        && actualKeys.every((key, index) => key === expectedKeys[index])
+        && actualKeys.every(key => exactSeedValueEqual(actual[key], expected[key]));
+    }
+    return false;
+  }
+
+  async function readSeedSingleton(seed) {
+    const selectFields = ['Id', ...Object.keys(seed.fields)]
+      .map(field => encodeURIComponent(field))
+      .join(',');
+    const existResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')/items?$top=2&$select=${selectFields}`), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!existResp.ok) {
+      const text = await existResp.text();
+      throw new Error(`Cannot inspect singleton seed target '${seed.title}': HTTP ${existResp.status} ${text}`);
+    }
+    const existJson = await existResp.json();
+    if (!existJson.d || !Array.isArray(existJson.d.results)) {
+      throw new Error(`Singleton seed target '${seed.title}' returned an invalid response`);
+    }
+    return {
+      rows: existJson.d.results,
+      hasMore: Boolean(existJson.d.__next),
+    };
+  }
+
+  function assertSeedSingletonMatches(seed, singleton) {
+    if (singleton.hasMore || singleton.rows.length > 1) {
+      throw new Error(`Singleton seed target '${seed.title}' contains multiple rows`);
+    }
+    if (singleton.rows.length !== 1) {
+      throw new Error(`Singleton seed target '${seed.title}' does not contain exactly one row`);
+    }
+    const existing = singleton.rows[0];
+    const mismatchedFields = Object.entries(seed.fields)
+      .filter(([field, expected]) => (
+        !Object.prototype.hasOwnProperty.call(existing, field)
+        || !exactSeedValueEqual(existing[field], expected)
+      ))
+      .map(([field]) => field);
+    if (mismatchedFields.length > 0) {
+      throw new Error(`Existing singleton seed row in '${seed.title}' does not exactly match declared field(s): ${mismatchedFields.join(', ')}`);
+    }
+  }
+
+  for (const seed of SCHEMA.seed_items) {
+    // Fresh digest per seed: FormDigestValue expires (~30 min), so a
+    // long run must not reuse one digest across every POST (rollback.js
+    // per-operation getDigest pattern).
+    const digest5 = await getDigest();
+    try {
+      // Idempotent only when the existing singleton is the declared singleton.
+      // An arbitrary, mismatched or duplicate row must never suppress seeding
+      // and make a partial/hostile deployment look activated.
+      if (seed.skip_if_has_rows) {
+        const singleton = await readSeedSingleton(seed);
+        if (singleton.hasMore || singleton.rows.length > 1) {
+          throw new Error(`Singleton seed target '${seed.title}' contains multiple rows`);
+        }
+        if (singleton.rows.length === 1) {
+          assertSeedSingletonMatches(seed, singleton);
+          log('INFO', `Verified existing singleton row in '${seed.title}' exactly matches the declared seed.`);
+          continue;
+        }
+      }
+      // Fetch the list's ListItemEntityTypeFullName so __metadata.type is
+      // correct for ANY list title — SharePoint encodes non-alphanumeric
+      // characters (e.g. '_') in the entity type name, so a hardcoded
+      // 'SP.Data.<Title>ListItem' literal is wrong for underscore-containing
+      // titles.
+      const typeResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')?$select=ListItemEntityTypeFullName`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!typeResp.ok) {
+        throw new Error(`Cannot resolve ListItemEntityTypeFullName for '${seed.title}' (HTTP ${typeResp.status})`);
+      }
+      const entityType = (await typeResp.json()).d.ListItemEntityTypeFullName;
+
+      const body = { __metadata: { type: entityType }, ...seed.fields };
+      await postJson(apiUrl(`web/lists/getbytitle('${odataName(seed.title)}')/items`), body, digest5);
+      if (seed.skip_if_has_rows) {
+        // Re-read after creation to detect a concurrent insert between the
+        // empty probe and POST. A mismatch or second row is an activation
+        // failure; it is never auto-deleted.
+        assertSeedSingletonMatches(seed, await readSeedSingleton(seed));
+      }
+      log('INFO', `Seeded and verified '${seed.title}'.`);
+    } catch (err) {
+      log('ERROR', `Phase {{ phase.number }} seed '${seed.title}': ${err.message}`);
+      summary.errors.push({ phase: '{{ phase.number }}', list: seed.title, error: err.message });
+    }
+  }
+
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Singleton seed verification failed; deployment is not activation-ready.');
+    await removeSelfEnrollments();
+    return { ...summary, aborted: 'phase-5-seed-errors' };
+  }
+
+  await removeSelfEnrollments();
+
+  // Operator-perspective diagnostic (after enrolment cleanup, so the
+  // run-scoped admin membership does not inflate the numbers): list ACLs
+  // can LOOK correct while the signed-in account still deletes happily —
+  // site collection administrators and Full Control holders bypass list
+  // ACLs entirely. Member-level behaviour must be verified with an
+  // ordinary member account.
+  for (const listTitle of [...new Set(SCHEMA.list_assignments.map((la) => la.list))]) {
+    try {
+      const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')/effectivebasepermissions`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) {
+        log('INFO', `Operator effective rights on '${listTitle}': probe returned HTTP ${r.status}.`);
+        continue;
+      }
+      const j = await r.json();
+      const low = Number((j && j.d && j.d.EffectiveBasePermissions && j.d.EffectiveBasePermissions.Low) || 0);
+      const canDelete = (low & 8) === 8;          // DeleteListItems
+      const canManage = (low & 2048) === 2048;    // ManageLists
+      const isSiteAdmin = typeof _spPageContextInfo !== 'undefined' && _spPageContextInfo.isSiteAdmin === true;
+      log('INFO', `Operator effective rights on '${listTitle}': delete items = ${canDelete}, manage list = ${canManage}, site collection admin = ${isSiteAdmin}. Site collection admins and Full Control holders bypass list ACLs (owners of a group-connected site are site collection admins, invisible in Check Permissions) — verify member behaviour with an ordinary member account.`);
+    } catch (err) {
+      log('INFO', `Operator effective rights on '${listTitle}': probe failed (${err.message}).`);
+    }
+  }
+
+  markPhase(null);  // close the last phase's timing window
+  summary.elapsedSeconds = Math.round((Date.now() - RUN_STARTED_AT) / 1000);
+  if (DEBUG) {
+    console.table(Object.entries(phaseTimings).map(([phase, ms]) => ({ phase, seconds: Math.round(ms / 100) / 10 })));
+    dbg(`${requestCount} REST requests in ${summary.elapsedSeconds}s.`);
+  }
+  log('DONE', `Deployment complete. Lists +${summary.listsCreated.length}, columns +${summary.columnsCreated}, skipped ${summary.columnsSkipped}, errors ${summary.errors.length}. Elapsed ${summary.elapsedSeconds}s (${requestCount} requests).`);
+  console.log(summary);
+  return summary;
+})();

@@ -1,0 +1,36 @@
+// ============================================================================
+// Delegations register — authorities by role, searchable.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project delegations_register { database_type: 'SharePoint Online Lists' }
+
+Enum delegation_area {
+  "Financial - expenditure"
+  "Financial - contracts and procurement"
+  "Human resources"
+  "Clinical / operational"
+  "Information and records"
+  "Other"
+}
+
+Enum delegation_status {
+  "Current"
+  "Superseded"
+}
+
+// Doctrine: the register transcribes delegations from approved instruments — it never
+// creates them. Every row must trace back to an instrument clause (SourceInstrument).
+Table Delegation {
+  Id               int               [pk, increment]
+  Title            nvarchar          [not null, note: 'The authority as an action: "Approve operating expenditure", "Sign employment contracts"']
+  DelegationArea   delegation_area   [not null]
+  RoleHolder       nvarchar          [not null, note: 'The ROLE that holds it — "Director of Nursing", never a person name; roles survive people']
+  DelegationLimit  nvarchar          [note: 'The limit in the instrument wording: "up to $50,000 per transaction", "within approved budget", "no limit"']
+  Conditions       nvarchar          [note: 'Conditions attached: "two signatories above $20,000", "excludes own directorate"']
+  SourceInstrument nvarchar          [not null, note: 'The instrument and clause this entry comes from: "Instrument of Delegation v4.2, s3.1(b)". Copy the wording exactly from the instrument']
+  ApprovedDate     date              [note: 'When the current instrument (or this delegation) was approved by the delegating authority']
+  ReviewDate       date              [not null, note: 'Next scheduled review — delegations drift when nobody looks']
+  Status           delegation_status [not null, default: 'Current']
+  Notes            nvarchar          [note: 'Supersession trail, interpretation rulings']
+}

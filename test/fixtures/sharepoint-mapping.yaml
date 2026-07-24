@@ -1,0 +1,97 @@
+# test/fixtures/sharepoint-mapping.yaml
+# Generic-core fixture: no `extension:` selector, so the deployer resolves to
+# NullExtension. The core knows nothing about any organisation's registers or
+# extension config (organisation extensions ship their own fixtures).
+prefix: "APP_"
+prefix_owner: "Test"
+prefix_registry: "test/registry.md"
+
+entities:
+  Project:           { kind: List, base_template: 100, site_role: default }
+  Task:              { kind: List, base_template: 100, site_role: default }
+  AppSettings: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+indexed_columns:
+  Task: [DueDate]
+
+display_names:
+  mode: auto
+
+column_formatting:
+  Project:
+    Status: formatting/status-pill.json
+
+form_formatting:
+  Project:
+    body: { sections: [ { displayname: "Project", fields: [Title, Status, SortOrder] } ] }
+
+list_validation:
+  Project:
+    formula: '=IF([Status]="Closed",[SortOrder]>=0,TRUE)'
+    message: "A closed project needs a non-negative sort order."
+
+views:
+  Project:
+    - title: "Open projects"
+      default: true
+      fields: [Title, Status, SortOrder]
+      formatting: { additionalRowClass: "=if([$Status] == 'Closed', 'sp-css-backgroundColor-BgLightGray', '')" }
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: SortOrder, direction: asc }
+      row_limit: 100
+  Task:
+    - title: "Due soon"
+      fields: [Title, Project, DueDate]
+      where:
+        - { field: DueDate, op: leq, value: today+30 }
+      sort:
+        - { field: DueDate, direction: asc }
+      group_by: { field: Project, collapsed: false }
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 500
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources:
+  topic: topics.yaml#topics
+retention_policies_source: retention-policies.yaml
+
+watched_lists: []
+
+permission_levels:
+  - name: "Schema Manager"
+    description: "Test permission level."
+    base_permissions:
+      - ViewListItems
+      - ManageLists
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    require_empty_at_deploy: true
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Schema Manager"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: associated_visitor_group }
+        level: "Read"
+  overrides: {}

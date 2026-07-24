@@ -1,0 +1,282 @@
+  // === Phase {{ phase.number }}: declared views ===
+  // Fields created through the REST field collection join no view, so a
+  // fresh list shows a Title-only default view. Declared views are part of
+  // the physical shape and reconcile like fields. Undeclared views are user
+  // content and are never touched (unlike exact-mode ACLs).
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  // Readback normalization: SP collapses nothing between tags but DOES write
+  // self-closing tags with a space (`<FieldRef Name="X" />`); compare both
+  // sides with inter-tag whitespace and the pre-`/>` space collapsed.
+  const normalizeViewQuery = (value) => xmlDecode(String(value || '')).replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim();
+  // The view CustomFormatter is stored in the view schema XML like
+  // ViewQuery, so its readback is XML-entity-encoded ('>=' returns as
+  // '&gt;='): decode before the canonical JSON comparison, both sides.
+  const canonicalViewFormatter = (value) => canonicalJson(typeof value === 'string' ? xmlDecode(value) : value);
+  async function mergeView(viewUrl, body, viewDigest) {
+    const r = await fetchWithRetry(viewUrl, {
+      method: 'POST',
+      headers: spHeaders(viewDigest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`view MERGE failed: HTTP ${r.status} ${text}`);
+    }
+  }
+  async function readViewShape(viewUrl) {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (r.status === 404) return null;
+    if (!r.ok) {
+      const text = await r.text();
+      if (isAbsent400(r.status, text)) return null;
+      throw new Error(`view shape probe failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    return j && j.d;
+  }
+  // Existence checks read ONE enumeration per list: views/getbytitle on an
+  // absent view answers HTTP 400, which the browser console paints red even
+  // though isAbsent400 handles it — operators read those lines as failures.
+  const viewShapesByList = {};
+  async function listViewShapes(listPath) {
+    if (!(listPath in viewShapesByList)) {
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`view enumeration failed: HTTP ${r.status} ${text}`);
+      }
+      const j = await r.json();
+      viewShapesByList[listPath] = (j && j.d && j.d.results) || [];
+    }
+    return viewShapesByList[listPath];
+  }
+  async function readViewFieldNames(viewUrl) {
+    const r = await fetchWithRetry(`${viewUrl}/viewfields`, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`view fields read failed: HTTP ${r.status} ${text}`);
+    }
+    const j = await r.json();
+    return (j && j.d && j.d.Items && j.d.Items.results) || [];
+  }
+  const deployView = async (view) => {
+    try {
+      let viewDigest = await getDigest();
+      const listPath = `web/lists/getbytitle('${odataName(view.list)}')`;
+      const viewUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.title)}')`);
+      const slugUrl = apiUrl(`${listPath}/views/getbytitle('${odataName(view.url_slug)}')`);
+      const desiredBasename = `${view.url_slug}.aspx`;
+      const urlBasename = (v) => String(v && v.ServerRelativeUrl || '').split('/').pop();
+      // A view's .aspx name is fixed at creation from its Title, so creating
+      // with a spaced display title bakes %20 into the URL forever, while a
+      // Title rename never touches the URL. Create under the URL slug, then
+      // rename to the declared title (same trick as field display titles).
+      const createViewWithCleanUrl = async () => {
+        const createBody = {
+          __metadata: { type: 'SP.View' },
+          Title: view.url_slug,
+          PersonalView: false,
+          Paged: true,
+          ViewQuery: view.caml_query,
+        };
+        if (view.row_limit != null) createBody.RowLimit = view.row_limit;
+        await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
+      };
+      let existing = (await listViewShapes(listPath)).find((v) => v.Title === view.title) || null;
+      // A slug-titled view already sitting on the clean URL is our own
+      // half-finished migration (we only ever create with Title=slug):
+      // adopt it instead of creating a second page. A FOREIGN view on that
+      // URL is never touched — the create below would get a suffixed .aspx
+      // and the URL drift gate fails the view closed.
+      const halfMigrated = (await listViewShapes(listPath)).find(
+        (v) => v.Title === view.url_slug && urlBasename(v) === desiredBasename,
+      ) || null;
+      if (!existing) {
+        if (halfMigrated) {
+          log('INFO', `[Phase {{ phase.number }}] Adopting half-migrated view '${view.url_slug}' on '${view.list}' as '${view.title}'.`);
+        } else {
+          log('INFO', `[Phase {{ phase.number }}] Creating view '${view.title}' on '${view.list}' at ${desiredBasename}...`);
+          await createViewWithCleanUrl();
+        }
+        if (view.url_slug !== view.title) {
+          await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, Title: view.title }, viewDigest);
+        }
+      } else {
+        if (existing.PersonalView) {
+          throw new Error(`existing view '${view.title}' is a personal view; declared views must be public`);
+        }
+        if (urlBasename(existing) !== desiredBasename) {
+          // URL migration to the clean URL: renames cannot change the .aspx
+          // name, so the escaped-URL view is recreated. Declared views are
+          // deployer-owned — every setting is reasserted below; only
+          // bookmarks to the old URL break (one-time, noted in DEPLOY.md).
+          log('INFO', `[Phase {{ phase.number }}] Migrating view '${view.title}' on '${view.list}' from ${urlBasename(existing)} to ${desiredBasename}...`);
+          if (!halfMigrated) await createViewWithCleanUrl();
+          if (existing.DefaultView) {
+            // Transfer the flag first: SP refuses to delete a default view.
+            await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, DefaultView: true }, viewDigest);
+          }
+          const delResp = await fetchWithRetry(apiUrl(`${listPath}/views('${existing.Id}')`), {
+            method: 'POST',
+            headers: spHeaders(viewDigest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' }),
+          });
+          if (!delResp.ok) {
+            const text = await delResp.text();
+            throw new Error(`old view delete during URL migration failed: HTTP ${delResp.status} ${text}`);
+          }
+          if (view.url_slug !== view.title) {
+            await mergeView(slugUrl, { __metadata: { type: 'SP.View' }, Title: view.title }, viewDigest);
+          }
+          existing = await readViewShape(viewUrl);
+          if (!existing) throw new Error('view disappeared during URL migration');
+        }
+        // Narrow MERGE: send only drifted declared settings.
+        const patchBody = { __metadata: { type: 'SP.View' } };
+        if (normalizeViewQuery(existing.ViewQuery) !== normalizeViewQuery(view.caml_query)) {
+          patchBody.ViewQuery = view.caml_query;
+        }
+        if (view.row_limit != null && existing.RowLimit !== view.row_limit) {
+          patchBody.RowLimit = view.row_limit;
+        }
+        if (Object.keys(patchBody).length > 1) {
+          await mergeView(viewUrl, patchBody, viewDigest);
+        }
+      }
+      // Declared column set and order, reconciled exactly when drifted.
+      // The initial read rides the enumeration ($expand=ViewFields); every
+      // read after a write stays live.
+      const actualFields = (existing && existing.ViewFields && existing.ViewFields.Items && existing.ViewFields.Items.results)
+        ? existing.ViewFields.Items.results
+        : await readViewFieldNames(viewUrl);
+      const sameFields = actualFields.length === view.view_fields.length
+        && actualFields.every((name, index) => name === view.view_fields[index]);
+      if (!sameFields) {
+        await postJson(`${viewUrl}/viewfields/removeallviewfields`, {}, viewDigest);
+        for (const name of view.view_fields) {
+          await postJson(`${viewUrl}/viewfields/addviewfield('${odataName(name)}')`, {}, viewDigest);
+        }
+      }
+      // Row formatting is a declared view setting; views without a
+      // declaration keep any hand-applied format.
+      if (view.formatting != null) {
+        // Phase-start shape decides (our own writes so far never touch
+        // CustomFormatter); the fail-closed verify below always reads fresh.
+        const current = existing || await readViewShape(viewUrl);
+        if (!current) throw new Error('view disappeared before formatting reconciliation');
+        if (canonicalViewFormatter(current.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
+          await mergeView(viewUrl, { __metadata: { type: 'SP.View' }, CustomFormatter: view.formatting }, viewDigest);
+        }
+      }
+      // Default flag last: SharePoint un-defaults the previous default view
+      // automatically, and only a declared default may claim it. The
+      // phase-start shape decides — nothing this lane writes clears a
+      // DefaultView (only ONE declared default exists per list, validated),
+      // and the fresh verify below fail-closes any surprise.
+      const preFlag = existing || await readViewShape(viewUrl);
+      if (!preFlag) throw new Error('view disappeared during reconciliation');
+      if (view.set_default && !preFlag.DefaultView) {
+        await mergeView(viewUrl, { __metadata: { type: 'SP.View' }, DefaultView: true }, viewDigest);
+      }
+      // Read back every declared setting and fail closed on any miss. The
+      // readback rides ONE fresh GET: ViewFields is $expanded on the shape.
+      const actual = await readViewShape(viewUrl);
+      if (!actual) throw new Error('view readback failed after reconciliation');
+      const readbackFields = (actual.ViewFields && actual.ViewFields.Items && actual.ViewFields.Items.results)
+        || await readViewFieldNames(viewUrl);
+      const drifted = [];
+      if (normalizeViewQuery(actual.ViewQuery) !== normalizeViewQuery(view.caml_query)) {
+        drifted.push(`ViewQuery (declared ${JSON.stringify(view.caml_query)}; readback ${JSON.stringify(actual.ViewQuery)})`);
+      }
+      if (view.row_limit != null && actual.RowLimit !== view.row_limit) {
+        drifted.push(`RowLimit (declared ${view.row_limit}; readback ${actual.RowLimit})`);
+      }
+      if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
+      if (view.formatting != null
+          && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
+        drifted.push(`CustomFormatter (declared ${JSON.stringify(view.formatting)}; readback ${JSON.stringify(actual.CustomFormatter)})`);
+      }
+      const fieldsMatch = readbackFields.length === view.view_fields.length
+        && readbackFields.every((name, index) => name === view.view_fields[index]);
+      if (!fieldsMatch) {
+        drifted.push(`ViewFields (declared ${JSON.stringify(view.view_fields)}; readback ${JSON.stringify(readbackFields)})`);
+      }
+      // Also catches SP auto-suffixing the .aspx name when a foreign view
+      // occupies the clean URL.
+      if (urlBasename(actual) !== desiredBasename) {
+        drifted.push(`Url (declared ${desiredBasename}; readback ${urlBasename(actual)})`);
+      }
+      if (drifted.length > 0) {
+        throw new Error(`did not retain declared view setting(s): ${drifted.join(', ')}`);
+      }
+      // Declared column widths ride SP's whole-document SetViewXml()
+      // surface — the call the modern Lists UI makes when saving a dragged
+      // width (live capture 2026-07-24). ColumnWidth FieldRefs bind by
+      // DISPLAY name; internal names are accepted and silently reset the
+      // widths. A property MERGE of ListViewXml is DESTRUCTIVE (treats the
+      // fragment as the whole definition), so the only safe shape is:
+      // read the server's full serialization, splice ONLY the ColumnWidth
+      // block, refuse the write if anything else would change, write the
+      // whole document back, and fail closed on readback drift. Runs after
+      // the reconcile above because ViewFields changes reset widths.
+      if (view.widths != null) {
+        const readListViewXml = async () => {
+          const r = await fetchWithRetry(`${viewUrl}?$select=ListViewXml`, {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
+          if (!r.ok) {
+            const text = await r.text();
+            throw new Error(`view ListViewXml read failed: HTTP ${r.status} ${text}`);
+          }
+          const j = await r.json();
+          return String((j && j.d && j.d.ListViewXml) || '');
+        };
+        const xmlAttr = (value) => String(value)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        const columnWidthBlock = '<ColumnWidth>' + Object.entries(view.widths)
+          .map(([name, px]) => `<FieldRef Name="${xmlAttr(name)}" width="${px}"/>`).join('')
+          + '</ColumnWidth>';
+        const stripColumnWidth = (xml) => xml.replace(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/, '');
+        const normalizeXml = (xml) => xml.replace(/>\s+</g, '><').replace(/\s+\/>/g, '/>').trim();
+        const currentXml = await readListViewXml();
+        if (!currentXml.includes('</View>')) {
+          throw new Error('view ListViewXml readback has no </View>; refusing widths write');
+        }
+        const nextXml = currentXml.includes('<ColumnWidth>')
+          ? currentXml.replace(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/, columnWidthBlock)
+          : currentXml.replace('</View>', `${columnWidthBlock}</View>`);
+        if (stripColumnWidth(nextXml) !== stripColumnWidth(currentXml)) {
+          throw new Error('widths splice guard tripped: non-ColumnWidth content would change; refusing SetViewXml');
+        }
+        if (nextXml !== currentXml) {
+          viewDigest = await getDigest();
+          await postJson(`${viewUrl}/setviewxml()`, { viewXml: nextXml }, viewDigest);
+          const afterXml = await readListViewXml();
+          if (normalizeXml(stripColumnWidth(afterXml)) !== normalizeXml(stripColumnWidth(currentXml))) {
+            throw new Error('widths write altered view content beyond ColumnWidth; inspect the view before re-running');
+          }
+          const afterBlock = afterXml.match(/<ColumnWidth>[\s\S]*?<\/ColumnWidth>/);
+          if (!afterBlock || normalizeXml(afterBlock[0]) !== normalizeXml(columnWidthBlock)) {
+            throw new Error(`did not retain declared column widths (readback ${JSON.stringify(afterBlock ? afterBlock[0] : null)})`);
+          }
+        }
+      }
+      log('INFO', `[Phase {{ phase.number }}] View '${view.title}' on '${view.list}' verified.`);
+    } catch (err) {
+      log('ERROR', `Phase {{ phase.number }} view '${view.list}'.'${view.title}': ${err.message}`);
+      summary.errors.push({ phase: '{{ phase.number }}', list: view.list, view: view.title, error: err.message });
+    }
+  };
+  // One lane per list: views live in the list schema, and concurrent schema
+  // writes to the same list race into save conflicts — different lists are
+  // independent, so their lanes run concurrently.
+  await mapLanes(SCHEMA.views, (view) => view.list, deployView, 4);
+

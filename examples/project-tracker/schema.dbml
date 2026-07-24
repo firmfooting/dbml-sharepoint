@@ -1,0 +1,72 @@
+// ============================================================================
+// dbml-sharepoint example: Project Tracker
+// ============================================================================
+// Exercises most of the supported surface: every scalar type, Choice enums
+// with defaults, a same-site Lookup chain (TimeLog -> Task -> Project), a
+// SELF-lookup (Task.ParentTask, deferred to Phase 2 automatically), a unique
+// column, and two calculated columns whose formulas live in mapping.yaml.
+// Paste this file into https://dbdiagram.io to render the ERD.
+// ============================================================================
+
+Project project_tracker { database_type: 'SharePoint Online Lists' }
+
+Enum project_status {
+  "Proposed"
+  "Active"
+  "On Hold"
+  "Closed"
+}
+
+Enum task_status {
+  "Backlog"
+  "In Progress"
+  "Blocked"
+  "Done"
+}
+
+Enum task_priority {
+  "Low"
+  "Medium"
+  "High"
+}
+
+Table Project {
+  Id            int             [pk, increment]
+  Title         nvarchar        [not null, note: 'Project name']
+  Code          nvarchar        [unique, note: 'Short unique project code, e.g. PT-001']
+  Summary       richtext        [note: 'What and why']
+  Status        project_status  [not null, default: 'Proposed']
+  Sponsor       person          [note: 'Accountable sponsor']
+  StartDate     date
+  Budget        number          [note: 'Approved budget']
+  Spent         number          [note: 'Actuals to date']
+  // Calculated column; formula lives in mapping.yaml. Not editable by users.
+  BudgetHealth  calculated_text [note: 'Calculated automatically from Budget and Spent. Blank until both are set.']
+  // Informational flag only; not an ACL.
+  IsConfidential boolean        [default: false, note: 'Tick if this project should not be shared widely. Does not restrict who can open the item by itself.']
+  CharterUrl    hyperlink       [note: 'Link to the project charter']
+}
+
+Table Task {
+  Id          int            [pk, increment]
+  Title       nvarchar       [not null, note: 'What must be done']
+  // Same-site lookup to Project.
+  Project     int            [not null, ref: > Project.Id, note: 'The project this task belongs to']
+  // Self-lookup; created in Phase 2 automatically.
+  ParentTask  int            [ref: > Task.Id, note: 'The parent task, if this is a subtask. Leave blank for top-level tasks.']
+  Status      task_status    [not null, default: 'Backlog']
+  Priority    task_priority  [not null, default: 'Medium']
+  AssignedTo  person
+  DueDate     date
+  Estimate    number         [note: 'Estimated hours']
+}
+
+Table TimeLog {
+  Id        int      [pk, increment]
+  // SharePoint always creates Title; declared optional so entries do not demand one.
+  Title     nvarchar [note: 'Optional note about this time entry']
+  Task      int      [not null, ref: > Task.Id, note: 'The task the time was spent on']
+  Worker    person   [not null]
+  WorkDate  date     [not null]
+  Hours     number   [not null]
+}

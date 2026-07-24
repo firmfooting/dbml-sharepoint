@@ -1,0 +1,52 @@
+// ============================================================================
+// Policy library — a controlled-documents library + the review register.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project policy_library { database_type: 'SharePoint Online Lists' }
+
+Enum policy_area {
+  "Governance"
+  "People / HR"
+  "Finance"
+  "Operations"
+  "Information & IT"
+  "Health & safety"
+}
+
+Enum policy_status {
+  "Draft"
+  "In review"
+  "Approved"
+  "Published"
+  "Superseded"
+  "Withdrawn"
+}
+
+// The document library: the files themselves. Minor versions (drafts) are
+// enabled in the mapping — authors iterate 1.1, 1.2…; publishing promotes
+// to the next major version.
+Table PolicyDocuments {
+  Id          int          [pk, increment]
+  PolicyArea  policy_area  [note: 'Which domain of the policy framework this document belongs to']
+  DocStatus   policy_status [not null, default: 'Draft', note: 'Lifecycle state of THIS document']
+  OwnerRole   nvarchar     [note: 'The accountable role (not person) — roles outlive people, e.g. "Finance Manager"']
+}
+
+// The register: one row per policy, whether or not its document is drafted
+// yet. This is where review discipline lives.
+Table PolicyRegister {
+  Id           int           [pk, increment]
+  Title        nvarchar      [not null, note: 'Policy name']
+  PolicyArea   policy_area   [not null]
+  Status       policy_status [not null, default: 'Draft']
+  Owner        person        [not null, note: 'The person currently accountable']
+  ApprovedDate date          [note: 'When the current published version was approved']
+  // Review discipline is what this register exists for.
+  ReviewDate   date          [not null, note: 'When this policy is next due for review']
+  // Calculated column; formula in mapping.yaml.
+  ReviewMonths calculated_number [note: 'Calculated automatically: months between the approval date and the next review. Blank until both dates are set.']
+  // Points at the current published file in the PL_PolicyDocuments library.
+  DocumentUrl  hyperlink     [note: 'Link to the current published version of this policy']
+  Notes        richtext      [note: 'Approval body, consultation notes, supersession trail']
+}

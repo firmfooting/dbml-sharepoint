@@ -1,0 +1,16 @@
+// test/fixtures/circular-multi.dbml
+// Two tables in a cycle, with the EARLIER-placed side carrying TWO lookups
+// to the later-placed side. Exercises the regression: cycle deferral must
+// move ALL matching columns to phase 2, not just the first.
+Project circ_multi_test { database_type: 'SharePoint Online' }
+
+Table A {
+  Id     int       [pk, increment]
+  BRef1  int       [ref: > B.Id]
+  BRef2  int       [ref: > B.Id]
+}
+
+Table B {
+  Id     int       [pk, increment]
+  ARef   int       [ref: > A.Id]
+}

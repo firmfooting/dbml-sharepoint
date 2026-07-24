@@ -1,0 +1,28 @@
+# Dependabot: keep the SHA-pinned actions and both dependency trees
+# fresh, with a cooldown so brand-new releases soak before landing here
+# (supply-chain prudence: most malicious releases are caught within
+# days of publication).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+
+  - package-ecosystem: "npm"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30

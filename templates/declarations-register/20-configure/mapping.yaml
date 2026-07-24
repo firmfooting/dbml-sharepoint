@@ -1,0 +1,94 @@
+# Declarations register — physical mapping.
+prefix: "DR_"
+
+entities:
+  Interest:    { kind: List, base_template: 100, site_role: default }
+  GiftBenefit: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+indexed_columns:
+  Interest: [Status, DeclaredBy, ReviewDate]
+  GiftBenefit: [Decision, OfferedTo, OfferedDate]
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# Security: declarations are evidential — staff submit and read but never
+# edit after submission; the compliance coordinators assess and maintain;
+# Full Control confined to the empty-by-default admin group.
+# NOTE on visibility: this default lets all site members read all
+# declarations (many public-sector codes expect exactly that). If your
+# context requires a confidential register, scope the SITE membership to
+# the compliance function and take staff declarations via the coordinators
+# — record the decision in 50-govern.
+groups:
+  - name: "DR Compliance Coordinators"
+    description: "Assess declarations, record management plans and decisions, run the review cadence."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "DR List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+
+permission_levels:
+  - name: "DR Declare Only"
+    description: "Submit declarations and read; no editing or deleting, no schema rights."
+    base_permissions:
+      - AddListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "DR Compliance Coordinators" }
+        level: "Contribute"
+      - principal: { kind: group, name: "DR List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "DR Declare Only"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible — drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement — see
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# docs/STYLE-GUIDE.md) — status columns render as SharePoint's own
+# severity boxes with icons, consistent across every template.
+column_formatting:
+  Interest:
+    Status: { style: severity, map: { Declared: low, "Assessed - no action": good, "Assessed - managed": good, Ceased: muted } }

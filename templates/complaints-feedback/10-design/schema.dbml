@@ -1,0 +1,57 @@
+// ============================================================================
+// Complaints & feedback — one register with two calculated response clocks.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project complaints_feedback { database_type: 'SharePoint Online Lists' }
+
+Enum feedback_type {
+  "Complaint"
+  "Compliment"
+  "Suggestion"
+  "Enquiry"
+}
+
+Enum feedback_severity {
+  "Standard"
+  "Serious"
+  "Critical"
+}
+
+Enum feedback_status {
+  "Received"
+  "Acknowledged"
+  "Investigating"
+  "Responded"
+  "Closed"
+}
+
+Enum feedback_outcome {
+  "Resolved - upheld"
+  "Resolved - partially upheld"
+  "Resolved - not upheld"
+  "Referred externally"
+  "Withdrawn"
+  "No response required"
+}
+
+Table Feedback {
+  Id               int               [pk, increment]
+  Title            nvarchar          [not null, note: 'One neutral line: "Complaint - waiting time at reception, 14 July"']
+  FeedbackType     feedback_type     [not null, default: 'Complaint']
+  Severity         feedback_severity [not null, default: 'Standard', note: 'Set/confirmed at triage against the governance definitions']
+  Status           feedback_status   [not null, default: 'Received']
+  ReceivedDate     date              [not null]
+  Channel          nvarchar          [note: 'How it arrived: phone, email, in person, survey, web form']
+  Detail           richtext          [note: 'What was raised, in substance. Use initials or role for third parties; see privacy rules']
+  RecordedBy       person            [note: 'Staff member who recorded it']
+  Handler          person            [note: 'Set at triage: who owns the response']
+  AcknowledgedDate date              [note: 'When the person was told we have it and who is handling it']
+  // Calculated column — formula in mapping.yaml (ReceivedDate -> AcknowledgedDate).
+  DaysToAcknowledge calculated_number [note: 'How many days it took to acknowledge this item. Calculated automatically from the received and acknowledged dates. Blank until both are set.']
+  ClosedDate       date
+  // Calculated column — formula in mapping.yaml (ReceivedDate -> ClosedDate).
+  DaysToClose      calculated_number [note: 'How many days it took to close this item. Calculated automatically from the received and closed dates. Blank until both are set.']
+  Outcome          feedback_outcome  [note: 'Required at closure']
+  Learning         richtext          [note: 'What changes because of this item — the point of the register']
+}

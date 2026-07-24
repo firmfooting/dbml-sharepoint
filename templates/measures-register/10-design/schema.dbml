@@ -1,0 +1,42 @@
+// ============================================================================
+// Measures register — the KPI catalogue with definition discipline.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project measures_register { database_type: 'SharePoint Online Lists' }
+
+Enum measure_frequency {
+  "Weekly"
+  "Monthly"
+  "Quarterly"
+  "Annually"
+}
+
+Enum measure_direction {
+  "Higher is better"
+  "Lower is better"
+  "Within range"
+}
+
+Enum measure_status {
+  "Active"
+  "Under development"
+  "Retired"
+}
+
+Table Measure {
+  Id          int                [pk, increment]
+  Title       nvarchar           [not null, note: 'The measure name as reported: "Complaints acknowledged within 2 days (%)"']
+  MeasureArea nvarchar           [not null, note: 'Function or theme it belongs to: Quality, Finance, People, Service']
+  Owner       person             [not null, note: 'Who is accountable for this number being right and reported']
+  // Definition discipline is expanded in the adoption guide.
+  Definition  richtext           [not null, note: 'Numerator, denominator, inclusions/exclusions, date anchors. Written so two strangers would compute the same number']
+  DataSource  nvarchar           [not null, note: 'Where the raw data comes from: system, list, extract']
+  Frequency   measure_frequency  [not null, default: 'Monthly']
+  Direction   measure_direction  [not null, note: 'Which way is good']
+  Target      nvarchar           [note: 'The target and its unit: "95%", "under 10 days", "between 85 and 100". Blank = monitored, not targeted']
+  ReportedTo  nvarchar           [not null, note: 'The forum(s) that see it: team meeting, executive, board, regulator']
+  Status      measure_status     [not null, default: 'Active']
+  ReviewDate  date               [note: 'Next definition/usefulness review — at least annual']
+  Notes       richtext           [note: 'Definition change history (dated), known data caveats']
+}

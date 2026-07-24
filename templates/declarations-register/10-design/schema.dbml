@@ -1,0 +1,63 @@
+// ============================================================================
+// Declarations register — two standalone compliance lists (no links between
+// them by design). Render the ERD by pasting this file into dbdiagram.io
+// ============================================================================
+
+Project declarations_register { database_type: 'SharePoint Online Lists' }
+
+Enum interest_type {
+  "Financial interest"
+  "Secondary employment"
+  "Board / committee role"
+  "Close personal relationship"
+  "Supplier relationship"
+  "Other"
+}
+
+Enum interest_status {
+  "Declared"
+  "Assessed - no action"
+  "Assessed - managed"
+  "Ceased"
+}
+
+Enum gift_category {
+  "Gift"
+  "Hospitality"
+  "Travel / accommodation"
+  "Prize / honorarium"
+  "Other benefit"
+}
+
+Enum gift_decision {
+  "Declared - retained"
+  "Declared - surrendered"
+  "Declined"
+  "Pending decision"
+}
+
+Table Interest {
+  Id             int             [pk, increment]
+  Title          nvarchar        [not null, note: 'The interest in one neutral line: "Director of family company that supplies stationery"']
+  InterestType   interest_type   [not null]
+  DeclaredBy     person          [not null, note: 'Who holds the interest']
+  DeclaredDate   date            [not null]
+  Detail         richtext        [note: 'The nature of the interest and where it could intersect with duties. Facts, not self-judgement']
+  Status         interest_status [not null, default: 'Declared']
+  ManagementPlan richtext        [note: 'Set at assessment: how the conflict is managed (recusal, reallocation, information barriers)']
+  ReviewDate     date            [note: 'Next review — at least annual while the interest is live']
+  CeasedDate     date
+}
+
+Table GiftBenefit {
+  Id            int           [pk, increment]
+  Title         nvarchar      [not null, note: 'What was offered, in one line: "Dinner invitation from vendor X"']
+  GiftCategory  gift_category [not null]
+  OfferedTo     person        [not null, note: 'The staff member offered the gift or benefit']
+  OfferedBy     nvarchar      [not null, note: 'Who offered it (person and organisation)']
+  OfferedDate   date          [not null]
+  EstimatedValue number       [note: 'Best estimate in your base currency — thresholds live in governance']
+  Decision      gift_decision [not null, default: 'Pending decision']
+  DecisionBy    person        [note: 'Who decided (per the threshold rules)']
+  Detail        nvarchar      [note: 'Context: occasion, whether others attended, anything relevant to perception']
+}

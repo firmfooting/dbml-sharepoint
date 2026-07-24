@@ -1,0 +1,28 @@
+{# Shared web-context resolution for every pasteable script. Expects a
+   `log` function and SITE_URL const to be defined already; emits the
+   site-match guard, WEB, apiUrl, odataName, and the operator-identity
+   line. #}
+  // === Preflight: site match ===
+  // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
+  // '/_api/web/...' targets the tenant root web — NOT the sub-site or site
+  // collection you're viewing. Every API call is prefixed with the current
+  // web's server-relative URL so calls hit the web the operator is on.
+  const expectedOrigin = new URL(SITE_URL).origin;
+  const expectedPath = new URL(SITE_URL).pathname.replace(/\/$/, '');
+  const actualOrigin = window.location.origin;
+  if (typeof _spPageContextInfo === 'undefined') {
+    log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the SharePoint web context. Aborting.');
+    return { aborted: 'no-sp-page-context' };
+  }
+  const actualPath = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
+  if (actualOrigin !== expectedOrigin || actualPath !== expectedPath) {
+    log('ERROR', `Site mismatch. Expected ${expectedOrigin}${expectedPath}, found ${actualOrigin}${actualPath}.`);
+    return { aborted: 'site-mismatch', expected: SITE_URL, actual: `${actualOrigin}${actualPath}` };
+  }
+  const WEB = actualPath;  // '' for the tenant root, '/sites/foo' for a site collection, etc.
+  const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
+  // OData string-literal encoder: SharePoint getbytitle/getbyname take a
+  // single-quoted OData literal, where an embedded apostrophe must be
+  // DOUBLED (`''`); encodeURIComponent alone does not escape `'` (A5).
+  const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+  log('INFO', `Running as ${(_spPageContextInfo.userLoginName) || '(unknown)'} on web '${WEB || '(root)'}'.`);

@@ -1,0 +1,422 @@
+{# Shared field machinery for the structure phases: immutable-shape
+   verification (type kind, lookup target, formula) before an existing
+   field is adopted, and narrow MERGE reconciliation of mutable settings
+   (title, description, required, choices, defaults) with readback
+   verification. Fail closed: shape mismatch aborts the field, never
+   mutates it. #}
+  const TYPE_AS_STRING_BY_KIND = new Map([
+    [2, 'Text'], [3, 'Note'], [4, 'DateTime'], [6, 'Choice'],
+    [7, 'Lookup'], [8, 'Boolean'], [9, 'Number'], [11, 'URL'], [20, 'User'],
+    [17, 'Calculated'],
+  ]);
+  const indexedFieldKeys = new Set(
+    SCHEMA.indexed_columns.map(idx => `${idx.list}\u0000${idx.field}`),
+  );
+  const normalizeGuid = (value) => String(value).replace(/[{}]/g, '').toLowerCase();
+  const normalizeDescription = (value) => value == null ? '' : String(value);
+  const normalizeDefaultValue = (value) => value == null || value === '' ? null : String(value);
+  const DERIVED_FIELD_PROPERTIES = [
+    'MaxLength', 'RichText', 'NumberOfLines', 'AppendOnly', 'Choices',
+    'FillInChoice', 'DisplayFormat', 'SelectionMode',
+    'Formula', 'OutputType',
+  ];
+
+  // SharePoint stores a calculated field's Formula in the field schema XML
+  // and returns it with XML character entities intact (`<>` reads back as
+  // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
+  // rewrites the identical formula and the readback still "differs". Compare
+  // formulas on their XML-decoded canonical form — both sides, so encoded
+  // and decoded readbacks both match. `&amp;` decodes LAST: decoding it
+  // earlier would corrupt double-encoded text (`&amp;lt;` must yield the
+  // literal `&lt;`, not `<`).
+  const xmlDecode = (value) => String(value)
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+
+  // A second storage canonicalisation (PnP provisioning documents the same
+  // trap): SharePoint strips square brackets from column references that do
+  // not need delimiting — `[Likelihood]` is stored and read back as
+  // `Likelihood`; names with spaces keep their brackets. Strip removable
+  // brackets on both sides, but only OUTSIDE string literals (split keeps
+  // `"..."` tokens, with `""` as the escaped quote, at odd indices):
+  // bracket text inside a quoted constant is data, not a reference.
+  const canonicalFormula = (value) => xmlDecode(value)
+    .split(/("(?:""|[^"])*")/)
+    .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
+    .join('');
+
+  function normalizeDerivedValue(name, value) {
+    if (name === 'Choices') return value.results;
+    if (name === 'Formula') return canonicalFormula(value);
+    return value;
+  }
+
+  function sameDerivedValue(name, actual, desired) {
+    const a = normalizeDerivedValue(name, actual);
+    const d = normalizeDerivedValue(name, desired);
+    if (name !== 'Choices') return a === d;
+    return a.length === d.length && a.every((value, index) => value === d[index]);
+  }
+
+  function declaredFieldState(listName, field) {
+    const typeAsString = TYPE_AS_STRING_BY_KIND.get(field.body.FieldTypeKind);
+    if (!typeAsString) {
+      throw new Error(`Field '${listName}.${field.title}' has unsupported declared FieldTypeKind ${field.body.FieldTypeKind}`);
+    }
+    const enforceUniqueValues = field.body.EnforceUniqueValues === true;
+    const derived = Object.fromEntries(
+      DERIVED_FIELD_PROPERTIES
+        .filter(name => Object.prototype.hasOwnProperty.call(field.body, name))
+        .map(name => [name, field.body[name]]),
+    );
+    return {
+      typeAsString,
+      description: normalizeDescription(field.body.Description),
+      required: field.body.Required === true,
+      enforceUniqueValues,
+      indexed: enforceUniqueValues || indexedFieldKeys.has(`${listName}\u0000${field.title}`),
+      defaultValue: normalizeDefaultValue(field.body.DefaultValue),
+      derived,
+    };
+  }
+
+  function declaredFieldsForList(list) {
+    const titleField = {
+      title: 'Title',
+      body: { ...list.title_patch, FieldTypeKind: 2 },
+    };
+    const deferred = SCHEMA.phase2_lookups
+      .filter(lookup => lookup.list === list.title)
+      .map(lookup => lookup.field);
+    return [titleField, ...list.fields_phase1, ...deferred];
+  }
+
+  function assertListImmutableShape(list, actual) {
+    if (actual.BaseTemplate !== list.base_template) {
+      throw new Error(
+        `Existing '${list.title}' has BaseTemplate ${actual.BaseTemplate}; expected ${list.base_template} for declared kind '${list.kind}'. `
+        + 'SharePoint list/library templates are immutable; provision a clean object or perform an explicit migration.',
+      );
+    }
+  }
+
+  function desiredListSettings(list) {
+    return {
+      ContentTypesEnabled: list.content_types_enabled,
+      EnableVersioning: list.enable_versioning,
+      EnableMinorVersions: list.enable_minor_versions,
+      MajorVersionLimit: list.major_version_limit,
+    };
+  }
+
+  function listSettingsMismatch(actual, desired) {
+    return Object.entries(desired).some(([key, value]) => actual[key] !== value);
+  }
+
+  // List validation reconciles AFTER the list's fields exist: the formula
+  // references columns (by display name) that the same run may be creating
+  // and renaming — merging it with the pre-field list settings fails with
+  // "The formula refers to a column that does not exist". Declared-null
+  // means "never touch" (a hand-set validation survives).
+  async function reconcileListValidation(list, digest) {
+    if (list.validation_formula == null) return;
+    const actual = await readListShape(list.title);
+    if (!actual) throw new Error(`Declared list '${list.title}' disappeared before validation reconcile`);
+    const formulaSame = canonicalFormula(actual.ValidationFormula || '') === canonicalFormula(list.validation_formula);
+    const messageSame = (actual.ValidationMessage || '') === (list.validation_message || '');
+    if (formulaSame && messageSame) return;
+    await patchList(list.title, {
+      __metadata: { type: 'SP.List' },
+      ValidationFormula: list.validation_formula,
+      ValidationMessage: list.validation_message,
+    }, digest);
+    const verify = await readListShape(list.title);
+    if (!verify
+        || canonicalFormula(verify.ValidationFormula || '') !== canonicalFormula(list.validation_formula)
+        || (verify.ValidationMessage || '') !== (list.validation_message || '')) {
+      throw new Error(`List '${list.title}' did not retain declared validation (declared ${JSON.stringify(list.validation_formula)}; readback ${JSON.stringify(verify && verify.ValidationFormula)})`);
+    }
+    log('INFO', `List '${list.title}' declared validation reconciled.`);
+  }
+
+  // Declared list-deletion block: AllowDeletion=false rejects UI deletion
+  // of the LIST object even for admins (friction, not enforcement — an
+  // admin can flip it back via API). Isolated probe/MERGE so an
+  // unsupported tenant surface fails only this step.
+  async function reconcileListDeletionBlock(list, digest) {
+    if (!list.prevent_deletion) return;
+    const adUrl = apiUrl(`web/lists/getbytitle('${odataName(list.title)}')?$select=AllowDeletion`);
+    const adResp = await fetchWithRetry(adUrl, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    if (!adResp.ok) {
+      const text = await adResp.text();
+      throw new Error(`AllowDeletion probe failed: HTTP ${adResp.status} ${text}`);
+    }
+    const adJson = await adResp.json();
+    if (adJson && adJson.d && adJson.d.AllowDeletion === false) return;
+    await patchList(list.title, { __metadata: { type: 'SP.List' }, AllowDeletion: false }, digest);
+    const verifyResp = await fetchWithRetry(adUrl, {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    const verifyJson = verifyResp.ok ? await verifyResp.json() : null;
+    if (!verifyJson || !verifyJson.d || verifyJson.d.AllowDeletion !== false) {
+      throw new Error(`List '${list.title}' did not retain AllowDeletion = false`);
+    }
+    log('INFO', `List '${list.title}' deletion block applied (AllowDeletion = false).`);
+  }
+
+  async function reconcileListShape(list, digest) {
+    let actual = await readListShape(list.title);
+    if (!actual) throw new Error(`Declared list '${list.title}' disappeared during deployment`);
+    assertListImmutableShape(list, actual);
+    const desired = desiredListSettings(list);
+    if (listSettingsMismatch(actual, desired)) {
+      await patchList(list.title, {
+        __metadata: { type: 'SP.List' },
+        ...desired,
+      }, digest);
+      actual = await readListShape(list.title);
+      if (!actual) throw new Error(`Declared list '${list.title}' disappeared after settings MERGE`);
+      assertListImmutableShape(list, actual);
+      if (listSettingsMismatch(actual, desired)) {
+        const drifted = Object.keys(desired).filter(key => actual[key] !== desired[key]);
+        throw new Error(`List '${list.title}' did not retain declared setting(s): ${drifted.join(', ')}`);
+      }
+      log('INFO', `List '${list.title}' declared versioning/content-type settings reconciled.`);
+    } else {
+      log('INFO', `List '${list.title}' immutable template and declared settings verified.`);
+    }
+    await reconcileListDeletionBlock(list, digest);
+    return actual;
+  }
+
+  async function expectedLookupFieldInternalName(listName, field) {
+    const targetDisplay = await readFieldShape(
+      field.target_list,
+      field.body.LookupField,
+      null,
+    );
+    if (!targetDisplay) {
+      throw new Error(
+        `Lookup '${listName}.${field.title}' target display field '${field.target_list}.${field.body.LookupField}' does not exist`,
+      );
+    }
+    if (targetDisplay.InternalName !== field.body.LookupField) {
+      throw new Error(
+        `Lookup '${listName}.${field.title}' target display field resolves to immutable InternalName '${targetDisplay.InternalName}'; expected '${field.body.LookupField}'`,
+      );
+    }
+    return targetDisplay.InternalName;
+  }
+
+  async function assertFieldImmutableShape(listName, field, actual, targetGuid) {
+    const desired = declaredFieldState(listName, field);
+    if (actual.InternalName !== field.title) {
+      throw new Error(
+        `Existing field '${listName}.${field.title}' resolves to immutable InternalName '${actual.InternalName}'; expected '${field.title}'`,
+      );
+    }
+    if (actual.TypeAsString !== desired.typeAsString) {
+      throw new Error(
+        `Existing field '${listName}.${field.title}' has immutable TypeAsString '${actual.TypeAsString}'; expected '${desired.typeAsString}'`,
+      );
+    }
+    // SP.FieldCalculated is intrinsically ReadOnlyField=true (users never
+    // write it); on every other declared type read-only means an impostor.
+    const expectReadOnly = desired.typeAsString === 'Calculated';
+    if (actual.ReadOnlyField !== expectReadOnly) {
+      throw new Error(
+        `Existing field '${listName}.${field.title}' ReadOnlyField is ${actual.ReadOnlyField}; expected ${expectReadOnly} for declared type '${desired.typeAsString}'`,
+      );
+    }
+    // Declared-seal fields are legitimately sealed between runs (the
+    // maintenance unseal opens them for this run's writes; Phase 4.1
+    // re-seals). Sealed WITHOUT a declaration still means an impostor.
+    if (actual.Sealed && !field.seal) {
+      throw new Error(
+        `Existing field '${listName}.${field.title}' is sealed; expected an unsealed declared field`,
+      );
+    }
+    if (field.target_list) {
+      if (!targetGuid) {
+        throw new Error(
+          `Existing lookup '${listName}.${field.title}' cannot be adopted because declared target list '${field.target_list}' does not yet exist`,
+        );
+      }
+      const expectedLookupField = await expectedLookupFieldInternalName(listName, field);
+      if (normalizeGuid(actual.LookupList) !== normalizeGuid(targetGuid)
+          || actual.LookupField !== expectedLookupField) {
+        throw new Error(
+          `Existing lookup '${listName}.${field.title}' targets list '${actual.LookupList}' field '${actual.LookupField}'; `
+          + `expected list '${targetGuid}' field '${expectedLookupField}'. Lookup targets are immutable; recreate through an explicit migration.`,
+        );
+      }
+    }
+  }
+
+  // Declared form visibility: auto-stamped columns are removed from the NEW
+  // and EDIT forms (the display form keeps them for audit). SP exposes this
+  // through POST setter methods, not writable properties; a null read means
+  // "shown".
+  async function enforceFormVisibility(listName, field, digest) {
+    const visUrl = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
+    // ShowInNewForm/ShowInEditForm are NOT projected by the REST field
+    // resource ($select returns neither); the readable source of truth is
+    // the SchemaXml attribute — absent means "shown".
+    const readVisibility = async () => {
+      const r = await fetchWithRetry(`${visUrl}?$select=SchemaXml`, {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!r.ok) {
+        const text = await r.text();
+        throw new Error(`form visibility probe failed: HTTP ${r.status} ${text}`);
+      }
+      const j = await r.json();
+      const xml = String((j && j.d && j.d.SchemaXml) || '');
+      return {
+        shownOnNew: !/ShowInNewForm="FALSE"/i.test(xml),
+        shownOnEdit: !/ShowInEditForm="FALSE"/i.test(xml),
+        shownOnDisplay: !/ShowInDisplayForm="FALSE"/i.test(xml),
+      };
+    };
+    const current = await readVisibility();
+    const setters = [];
+    if (field.hide_on_forms) {
+      setters.push([current.shownOnNew, 'setshowinnewform'], [current.shownOnEdit, 'setshowineditform']);
+    }
+    if (field.hide_on_display) {
+      setters.push([current.shownOnDisplay, 'setshowindisplayform']);
+    }
+    for (const [shown, method] of setters) {
+      if (shown) {
+        const r = await fetchWithRetry(`${visUrl}/${method}(false)`, {
+          method: 'POST', headers: spHeaders(digest),
+        });
+        if (!r.ok) {
+          const text = await r.text();
+          throw new Error(`${method}(false) failed: HTTP ${r.status} ${text}`);
+        }
+      }
+    }
+    const verify = await readVisibility();
+    const stillShown = [];
+    if (field.hide_on_forms && verify.shownOnNew) stillShown.push('new form');
+    if (field.hide_on_forms && verify.shownOnEdit) stillShown.push('edit form');
+    if (field.hide_on_display && verify.shownOnDisplay) stillShown.push('display form');
+    if (stillShown.length > 0) {
+      throw new Error(`did not retain form visibility (still shown on: ${stillShown.join(', ')})`);
+    }
+  }
+
+  async function reconcileDeclaredField(listName, field, targetGuid, digest, allowMissing) {
+    let actual = await readFieldShape(listName, field.title, field);
+    if (!actual) {
+      if (allowMissing) return false;
+      throw new Error(`Declared field '${listName}.${field.title}' is missing after creation`);
+    }
+    await assertFieldImmutableShape(listName, field, actual, targetGuid);
+    const desired = declaredFieldState(listName, field);
+    // Desired display Title is display_title (rename-after-create): fields
+    // are created titled with their internal name, then renamed. Synthetic
+    // callers (the built-in Title patch) carry no display_title.
+    const desiredTitle = field.display_title != null ? field.display_title : field.title;
+    const derivedMismatch = Object.entries(desired.derived)
+      .some(([name, value]) => !sameDerivedValue(name, actual[name], value));
+    const mutableMismatch = (
+      actual.Title !== desiredTitle
+      || normalizeDescription(actual.Description) !== desired.description
+      || actual.Required !== desired.required
+      || actual.EnforceUniqueValues !== desired.enforceUniqueValues
+      || actual.Indexed !== desired.indexed
+      || normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue
+      // Declared-null means "never touch": a hand-applied format survives.
+      || (field.custom_formatter != null
+          && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter))
+      || derivedMismatch
+    );
+    if (mutableMismatch) {
+      // Send only drifted writable properties. Some derived field types reject
+      // an otherwise harmless no-op property from SP.Field (for example an
+      // indexing flag on Note); a narrow MERGE is both safer and auditable.
+      const patchBody = { __metadata: field.body.__metadata };
+      if (actual.Title !== desiredTitle) patchBody.Title = desiredTitle;
+      if (normalizeDescription(actual.Description) !== desired.description) {
+        patchBody.Description = desired.description;
+      }
+      if (actual.Required !== desired.required) patchBody.Required = desired.required;
+      if (actual.EnforceUniqueValues !== desired.enforceUniqueValues) {
+        patchBody.EnforceUniqueValues = desired.enforceUniqueValues;
+      }
+      if (actual.Indexed !== desired.indexed) patchBody.Indexed = desired.indexed;
+      if (normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue) {
+        patchBody.DefaultValue = desired.defaultValue;
+      }
+      if (field.custom_formatter != null
+          && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
+        patchBody.CustomFormatter = field.custom_formatter;
+      }
+      for (const [name, value] of Object.entries(desired.derived)) {
+        if (!sameDerivedValue(name, actual[name], value)) patchBody[name] = value;
+      }
+      await patchField(listName, field.title, patchBody, digest);
+      actual = await readFieldShape(listName, field.title, field, true);
+      if (!actual) throw new Error(`Field '${listName}.${field.title}' disappeared after reconciliation`);
+      await assertFieldImmutableShape(listName, field, actual, targetGuid);
+    }
+    // Name each surviving drift WITH both values: a setting that will not
+    // reconcile is diagnosable from the console log alone, without another
+    // paste round-trip.
+    const drifted = [];
+    const drift = (name, declaredValue, actualValue) => drifted.push(
+      `${name} (declared ${JSON.stringify(declaredValue)}; readback ${JSON.stringify(actualValue)})`,
+    );
+    if (actual.Title !== desiredTitle) drift('Title', desiredTitle, actual.Title);
+    if (normalizeDescription(actual.Description) !== desired.description) drift('Description', desired.description, actual.Description);
+    if (actual.Required !== desired.required) drift('Required', desired.required, actual.Required);
+    if (actual.EnforceUniqueValues !== desired.enforceUniqueValues) drift('EnforceUniqueValues', desired.enforceUniqueValues, actual.EnforceUniqueValues);
+    if (actual.Indexed !== desired.indexed) drift('Indexed', desired.indexed, actual.Indexed);
+    if (normalizeDefaultValue(actual.DefaultValue) !== desired.defaultValue) drift('DefaultValue', desired.defaultValue, actual.DefaultValue);
+    if (field.custom_formatter != null
+        && canonicalJson(actual.CustomFormatter) !== canonicalJson(field.custom_formatter)) {
+      drift('CustomFormatter', field.custom_formatter, actual.CustomFormatter);
+    }
+    for (const [name, value] of Object.entries(desired.derived)) {
+      if (!sameDerivedValue(name, actual[name], value)) drift(name, value, actual[name]);
+    }
+    if (drifted.length > 0) {
+      throw new Error(`Field '${listName}.${field.title}' did not retain declared mutable setting(s): ${drifted.join(', ')}`);
+    }
+    if (field.hide_on_forms || field.hide_on_display) {
+      await enforceFormVisibility(listName, field, digest);
+    }
+    return true;
+  }
+
+  // === Preflight: ManageLists (+ ManagePermissions when the schema has ACL work) ===
+  // ManageLists is Low bit 0x800; ManagePermissions is Low bit 0x2000000.
+  // (Previous check incorrectly tested High; ManageLists lives in Low.)
+  // ManagePermissions is only demanded when the schema actually performs
+  // Phase 1.2/4 permission work, so an operator who can manage lists but not
+  // ACLs is not rejected on a list-only deployment.
+  const needsPermissions = (
+    SCHEMA.permission_levels.length > 0 ||
+    SCHEMA.groups.length > 0 ||
+    SCHEMA.list_assignments.length > 0
+  );
+  const permsResp = await fetchWithRetry(apiUrl('web?$select=EffectiveBasePermissions'), {
+    headers: { 'Accept': 'application/json;odata=verbose' },
+  });
+  const permsJson = await permsResp.json();
+  const requiredLow = needsPermissions ? (0x800 | 0x2000000) : 0x800;
+  const haveLow = Number(permsJson?.d?.EffectiveBasePermissions?.Low || 0);
+  if ((haveLow & requiredLow) !== requiredLow) {
+    log('ERROR', needsPermissions
+      ? 'Current user lacks ManageLists+ManagePermissions on this site.'
+      : 'Current user lacks ManageLists on this site.');
+    return { aborted: 'insufficient-permissions' };
+  }
+

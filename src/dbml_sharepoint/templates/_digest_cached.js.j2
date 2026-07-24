@@ -1,0 +1,19 @@
+{# Shared cached request digest. Expects apiUrl to be defined. The digest
+   is valid for FormDigestTimeoutSeconds (~30 min); callers fetch per use
+   for lifetime safety and the cache refreshes 60s before expiry — same
+   safety as per-call contextinfo POSTs at ~one POST per run. #}
+  let cachedDigest = null;
+  let digestExpiresAt = 0;
+  async function getDigest() {
+    if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;
+    const r = await fetchWithRetry(apiUrl('contextinfo'), {
+      method: 'POST',
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    const j = await r.json();
+    const info = j.d.GetContextWebInformation;
+    cachedDigest = info.FormDigestValue;
+    const timeoutSeconds = Number(info.FormDigestTimeoutSeconds) || 1800;
+    digestExpiresAt = Date.now() + Math.max(timeoutSeconds - 60, 60) * 1000;
+    return cachedDigest;
+  }

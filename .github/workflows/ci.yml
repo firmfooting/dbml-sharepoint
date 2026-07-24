@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions: {}
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Sync dependencies
+        run: uv sync
+      - name: Lint
+        run: uv run ruff check src test website/scripts
+      - name: Jinja lint (j2lint; indentation/single-line rules are house-style exceptions)
+        run: uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
+      - name: Type-check
+        run: uv run mypy
+      - name: Tests
+        run: uv run pytest
+      - name: Build both examples end-to-end
+        run: |
+          uv run dbml-sharepoint build --schema examples/minimal/schema.dbml --mapping examples/minimal/mapping.yaml --release examples/minimal/release.yaml --site-url https://example.sharepoint.com/sites/ci --site-role default --out examples/minimal/build
+          uv run dbml-sharepoint build --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-url https://example.sharepoint.com/sites/ci --site-role default --out examples/project-tracker/build
+      - name: Syntax-check the generated scripts
+        shell: bash
+        run: |
+          for f in examples/minimal/build/*.js examples/project-tracker/build/*.js; do
+            node --check "$f"
+          done
+      - name: Generate reporting queries end-to-end
+        run: uv run dbml-sharepoint report --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-role default --out examples/project-tracker/reports
+      - name: Build every solution template end-to-end
+        shell: bash
+        run: |
+          for t in contract-register asset-register incident-management policy-library training-register meeting-actions risk-register onboarding-tracker change-register stakeholder-contacts complaints-feedback audit-actions declarations-register service-requests project-pipeline process-register improvement-register measures-register credentialing-register equipment-maintenance routine-checks compliance-obligations volunteer-register grants-register switchboard-log visitor-log vehicle-log delegations-register; do
+            uv run dbml-sharepoint build \
+              --schema "templates/$t/10-design/schema.dbml" \
+              --mapping "templates/$t/20-configure/mapping.yaml" \
+              --release "templates/$t/20-configure/release.yaml" \
+              --site-url https://example.sharepoint.com/sites/ci \
+              --site-role default \
+              --out "templates/$t/build"
+          done
+
+  docs:
+    # onBrokenLinks/onBrokenMarkdownLinks are 'throw', so this build is
+    # the cross-link integrity gate for the whole docs site.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - name: Build docs site
+        working-directory: website
+        run: |
+          npm ci
+          npm run build

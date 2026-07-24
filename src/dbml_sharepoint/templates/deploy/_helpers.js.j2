@@ -1,0 +1,89 @@
+  // Bounded per-lane parallelism. SharePoint stores fields and views in the
+  // list schema, and concurrent schema writes to the SAME list race into
+  // save conflicts — but different lists are fully independent. So the unit
+  // of parallelism is the list: items are grouped into lanes by key, items
+  // within a lane run strictly sequentially, lanes run concurrently up to
+  // `limit`. Workers keep their own per-item try/catch, so error
+  // attribution and summary.errors are unchanged.
+  async function mapLanes(items, laneKey, worker, limit = 4) {
+    const lanes = new Map();
+    for (const item of items) {
+      const key = laneKey(item);
+      if (!lanes.has(key)) lanes.set(key, []);
+      lanes.get(key).push(item);
+    }
+    const queues = [...lanes.values()];
+    let next = 0;
+    const runners = Array.from({ length: Math.min(limit, queues.length) }, async () => {
+      for (;;) {
+        if (next >= queues.length) return;
+        const mine = queues[next];
+        next += 1;
+        for (const item of mine) await worker(item);
+      }
+    });
+    await Promise.all(runners);
+  }
+
+  async function postJson(url, body, digest) {
+    const r = await fetchWithRetry(url, {
+      method: 'POST', headers: spHeaders(digest), body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      throw new Error(spError(await r.text()) || `HTTP ${r.status}`);
+    }
+    return r.json();
+  }
+
+  async function patchField(listName, columnName, body, digest) {
+    // Callers pass the declared immutable field name. Resolve by internal name
+    // or title so a safe display-title drift can be repaired instead of making
+    // the preflight discover the field and the subsequent MERGE miss it.
+    const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`);
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`PATCH ${columnName} failed: HTTP ${r.status} ${text}`);
+    }
+  }
+
+  async function patchList(listName, body, digest) {
+    const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')`);
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text();
+      throw new Error(`List '${listName}' settings MERGE failed: HTTP ${r.status} ${text}`);
+    }
+  }
+
+  // Canonical JSON for declared-vs-readback comparison of formatter blobs
+  // (CustomFormatter and friends): parse strings, sort object keys
+  // recursively, stringify — whitespace and key order differences are not
+  // drift. A non-JSON string compares as itself (fail closed via mismatch).
+  const canonicalJson = (value) => {
+    if (value == null || value === '') return null;
+    const sortKeys = (node) => {
+      if (Array.isArray(node)) return node.map(sortKeys);
+      if (node && typeof node === 'object') {
+        return Object.fromEntries(Object.keys(node).sort().map((key) => [key, sortKeys(node[key])]));
+      }
+      return node;
+    };
+    let parsed = value;
+    if (typeof value === 'string') {
+      try { parsed = JSON.parse(value); } catch { return value; }
+    }
+    return JSON.stringify(sortKeys(parsed));
+  };
+
+  // === Schema definition (rendered from DBML + mapping) ===
+  const SCHEMA = {{ schema_json | tojson(indent=2) }};
+

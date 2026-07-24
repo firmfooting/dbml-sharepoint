@@ -1,0 +1,47 @@
+// ============================================================================
+// Training register — the catalogue (Course) and completions (TrainingRecord).
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project training_register { database_type: 'SharePoint Online Lists' }
+
+Enum course_category {
+  "Induction"
+  "Health & safety"
+  "Clinical / professional"
+  "Systems & IT"
+  "Leadership"
+  "Compliance"
+}
+
+Enum record_status {
+  "Current"
+  "Expiring"
+  "Expired"
+  "Not required"
+}
+
+Table Course {
+  Id             int              [pk, increment]
+  Title          nvarchar         [not null, note: 'Course / certification name']
+  Category       course_category  [not null]
+  ValidityMonths number           [note: 'How long a completion remains valid; blank = never expires']
+  Mandatory      boolean          [default: false, note: 'Required for all staff (role-specific requirements live in the governance matrix)']
+  Provider       nvarchar         [note: 'Who delivers it (internal team / external provider)']
+  Notes          richtext         [note: 'Content summary, booking instructions']
+}
+
+Table TrainingRecord {
+  Id            int            [pk, increment]
+  Title         nvarchar       [note: 'Optional note; records are identified by person + course']
+  Person        person         [not null, note: 'Who completed the training']
+  // Lookup to Course (the catalogue list).
+  Course        int            [not null, ref: > Course.Id, note: 'The course they completed']
+  CompletedDate date           [not null]
+  // Expiry = CompletedDate + Course.ValidityMonths; entered manually, not calculated.
+  ExpiryDate    date           [note: 'When this completion lapses: the completed date plus the course validity period. Leave blank for courses that never expire']
+  // Maintained by the coordinator expiry sweep — procedure in governance.
+  Status        record_status  [not null, default: 'Current', note: 'Whether this completion is still current. The training coordinator keeps this up to date as expiry dates approach — leave as Current for a new record']
+  EvidenceUrl   hyperlink      [note: 'Link to the certificate / attendance evidence in its document store']
+  Notes         nvarchar       [note: 'Score, trainer, anything auditors ask about']
+}

@@ -1,0 +1,48 @@
+// ============================================================================
+// Contract register — one list, deliberately flat.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project contract_register { database_type: 'SharePoint Online Lists' }
+
+Enum contract_type {
+  "Supply of goods"
+  "Services"
+  "Lease"
+  "Licence"
+  "Employment-adjacent"
+  "Other"
+}
+
+Enum contract_status {
+  "Draft"
+  "Active"
+  "Expiring"
+  "In renewal"
+  "Exited"
+}
+
+Enum renewal_type {
+  "Auto-renews"
+  "Manual renewal"
+  "Fixed term — no renewal"
+}
+
+Table Contract {
+  Id              int              [pk, increment]
+  Title           nvarchar         [not null, note: 'Contract name as commonly referred to']
+  Counterparty    nvarchar         [not null, note: 'The other party (supplier/customer/landlord)']
+  ContractRef     nvarchar         [unique, note: 'Your internal reference number, if used']
+  ContractType    contract_type    [not null]
+  Status          contract_status  [not null, default: 'Active']
+  Owner           person           [note: 'The person accountable for this contract']
+  StartDate       date             [not null]
+  EndDate         date             [not null, note: 'Expiry / end of current term']
+  // Calculated column; formula in mapping.yaml. Not editable.
+  TermMonths      calculated_number [note: 'Calculated automatically: whole months between the start and end dates. Blank until both are set.']
+  RenewalType     renewal_type     [not null, default: 'Manual renewal']
+  NoticePeriodDays number          [note: 'Days of notice required to exit or prevent auto-renewal']
+  AnnualValue     number           [note: 'Approximate annual value in your base currency']
+  Summary         richtext         [note: 'What the contract covers, key obligations']
+  DocumentUrl     hyperlink        [note: 'Link to the signed contract in its system of record']
+}

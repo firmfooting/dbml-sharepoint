@@ -1,0 +1,54 @@
+// ============================================================================
+// Change register — one intake list with a calculated decision-time metric.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project change_register { database_type: 'SharePoint Online Lists' }
+
+Enum change_type {
+  "IT system"
+  "Process / procedure"
+  "Document / policy"
+  "Organisational"
+  "Facility / physical"
+  "Other"
+}
+
+Enum change_impact {
+  "Low"
+  "Medium"
+  "High"
+}
+
+Enum change_urgency {
+  "Routine"
+  "Priority"
+  "Emergency"
+}
+
+Enum change_status {
+  "Submitted"
+  "Under review"
+  "Approved"
+  "Rejected"
+  "Implemented"
+  "Closed"
+}
+
+Table ChangeRequest {
+  Id             int            [pk, increment]
+  Title          nvarchar       [not null, note: 'The change, in one line: "Move invoice approvals from paper to Teams"']
+  ChangeType     change_type    [not null]
+  RequestedBy    person         [note: 'Who is asking (defaults to you)']
+  RequestedDate  date           [not null]
+  Description    richtext       [note: 'What changes, why, who is affected, what happens if we do nothing']
+  Impact         change_impact  [not null, default: 'Low', note: 'Assessed at triage against the governance definitions']
+  Urgency        change_urgency [not null, default: 'Routine']
+  Status         change_status  [not null, default: 'Submitted']
+  Approver       person         [note: 'Who holds decision authority for this change (set at triage)']
+  DecisionDate   date           [note: 'When Approved or Rejected was decided']
+  // Calculated column — formula in mapping.yaml.
+  DaysToDecision calculated_number [note: 'Calculated automatically: the number of days from the requested date to the decision date. Blank until the decision date is entered']
+  DecisionNotes  richtext       [note: 'The reasoning — conditions of approval, or why rejected']
+  ImplementedDate date          [note: 'When the change actually landed']
+}

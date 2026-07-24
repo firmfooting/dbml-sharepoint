@@ -1,0 +1,55 @@
+// ============================================================================
+// Project pipeline — one funnel list with a calculated priority score.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project project_pipeline { database_type: 'SharePoint Online Lists' }
+
+Enum proposal_stage {
+  "Idea"
+  "Scoping"
+  "Ready for decision"
+  "Approved"
+  "In delivery"
+  "Delivered"
+  "Declined"
+  "Parked"
+}
+
+Enum benefit_rating {
+  "Low"
+  "Medium"
+  "High"
+}
+
+Enum feasibility_rating {
+  "Hard"
+  "Moderate"
+  "Easy"
+}
+
+Enum cost_band {
+  "Minimal - existing resources"
+  "Small - under 10k"
+  "Medium - 10k to 100k"
+  "Large - over 100k"
+}
+
+Table Proposal {
+  Id            int                [pk, increment]
+  Title         nvarchar           [not null, note: 'The project, outcome first: "Digitise visitor sign-in across all sites"']
+  Stage         proposal_stage     [not null, default: 'Idea']
+  ProposedBy    person             [note: 'Who suggested it (defaults to you)']
+  ProposedDate  date               [not null]
+  Sponsor       person             [note: 'Set at scoping: the executive who wants this enough to own it']
+  Problem       richtext           [note: 'The problem or opportunity, in the words of the people who have it']
+  Outcome       richtext           [note: 'What will be different if this succeeds — measurable where possible']
+  Benefit       benefit_rating     [note: 'Set at scoping, against the governance definitions']
+  Feasibility   feasibility_rating [note: 'Set at scoping: effort, dependencies, capability on hand']
+  // Calculated — formula in mapping.yaml. Sort the pipeline by this score, then argue.
+  PriorityScore calculated_number  [note: 'Priority score from 1 to 9: benefit multiplied by feasibility. Higher means a stronger case to do it sooner. Calculates itself once Benefit and Feasibility are both set.']
+  CostBand      cost_band          [note: 'Set at scoping — order-of-magnitude, not a quote']
+  DecisionDate  date               [note: 'When the gate decision (Approved/Declined/Parked) was made']
+  DecisionNotes richtext           [note: 'Who decided and why — especially for Declined and Parked']
+  DeliveredDate date
+}
