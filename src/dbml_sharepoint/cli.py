@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 import typer
 
 from dbml_sharepoint.analysis.validator import validate_all
-from dbml_sharepoint.bundle import SeedRequiresDemoItems, clear_generated, emit_bundle
+from dbml_sharepoint.bundle import SeedRequiresDemoItemsError, clear_generated, emit_bundle
 from dbml_sharepoint.extension import SiteContext, resolve_extension
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
@@ -188,7 +188,7 @@ def build(
             extension=ext,
             site_context=site_context,
         )
-    except SeedRequiresDemoItems as exc:
+    except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(message)

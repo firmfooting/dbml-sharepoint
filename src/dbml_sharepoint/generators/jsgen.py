@@ -39,7 +39,7 @@ def _resolve_site_context(
         site_url=site_url,
         site_role=site_role,
         release=release,
-        output_dir=Path("."),
+        output_dir=Path(),
         extension_args={},
     )
 
@@ -589,7 +589,11 @@ def _field_body(
             body["NumberOfLines"] = sp.number_of_lines
             body["AppendOnly"] = False
         case "Choice":
-            assert sp.choices_enum is not None
+            if sp.choices_enum is None:
+                raise ValueError(
+                    f"Choice field {sp.name!r} has no backing enum "
+                    "(typemap invariant violated)",
+                )
             members = enums_by_name[sp.choices_enum].members
             body["Choices"] = {"results": list(members)}
             body["FillInChoice"] = False

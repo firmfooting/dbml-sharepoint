@@ -66,6 +66,20 @@ def formatter_field_refs(node: object) -> frozenset[str]:
 
 # Declared-view DSL operators. is_null/is_not_null take no value; the rest
 # require one. Date/datetime values additionally accept the today sentinel.
+# List validation: SP resolves ValidationFormula references at MERGE
+# time and silently rejects unsupported column types — fail at build.
+_VALIDATION_FORBIDDEN_TYPES = {
+    "person": "a person column",
+    "richtext": "a multi-line column",
+    "longtext": "a multi-line column",
+}
+
+# Built-in SP groups a declared group's owner_group may reference.
+_BUILTIN_SP_GROUPS = frozenset({
+    "Site Owners", "Site Members", "Site Visitors",
+    "Owners", "Members", "Visitors",
+})
+
 VIEW_OPERATORS = frozenset({
     "eq", "neq", "lt", "leq", "gt", "geq", "is_null", "is_not_null",
 })
@@ -763,13 +777,6 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                                 f"column of {entity_name}.",
                             ))
 
-    # List validation: SP resolves ValidationFormula references at MERGE
-    # time and silently rejects unsupported column types — fail at build.
-    _VALIDATION_FORBIDDEN_TYPES = {
-        "person": "a person column",
-        "richtext": "a multi-line column",
-        "longtext": "a multi-line column",
-    }
     for entity_name, rule in bundle.mapping.list_validation.items():
         rule_table = tables_by_name.get(entity_name)
         if rule_table is None or entity_name not in bundle.mapping.entities:
@@ -1091,10 +1098,6 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
             seen_group_names.add(grp.name)
 
         # groups[*].owner_group must be a built-in SP group or a declared custom group.
-        _BUILTIN_SP_GROUPS = frozenset({
-            "Site Owners", "Site Members", "Site Visitors",
-            "Owners", "Members", "Visitors",
-        })
         for grp in perms.groups:
             owner_ok = (
                 grp.owner_group in _BUILTIN_SP_GROUPS

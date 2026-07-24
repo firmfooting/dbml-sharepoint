@@ -20,7 +20,7 @@ on Windows and LF elsewhere, so raw-byte hashes would differ by build
 platform. Normalising ``\r\n`` to ``\n`` first makes the digests
 stable — the same discipline as the release.yaml config_snapshot pins.
 
-### `SeedRequiresDemoItems`
+### `SeedRequiresDemoItemsError`
 
 --seed was requested but the mapping declares no demo_items.
 
@@ -82,6 +82,6 @@ Emit the full post-validation bundle; returns the success message.
 The one emission sequence — deploy.js, rollback.js, assess.js and its
 manifest, the seed-gated demo-data.js, reporting, INDEX.md and
 checksums.txt — previously duplicated across the core CLI and every
-extension CLI. Raises :class:`SeedRequiresDemoItems` before writing
+extension CLI. Raises :class:`SeedRequiresDemoItemsError` before writing
 anything when ``seed`` is set but the mapping declares no demo rows.
 

@@ -1,0 +1,49 @@
+# Pre-commit hooks. Runs under `prek` (the fast Rust runner) or classic
+# `pre-commit` — same config. Install once with `prek install`; pre-push
+# additionally runs the full test suite.
+#
+# The lint/type/template/test hooks are LOCAL and shell out to the
+# project's own pinned tools via `uv run`, so a hook can never drift from
+# the version CI uses — the pre-commit gates ARE the CI gates. Line
+# endings are governed by .gitattributes (eol=lf) and Python whitespace
+# by ruff's W-rules, so no mutating hygiene hooks are needed (they would
+# only churn a Windows CRLF working tree); the remote hooks below are
+# all non-mutating structure checks.
+minimum_pre_commit_version: "3.0.0"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1500]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff (lint)
+        entry: uv run ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: j2lint
+        name: j2lint
+        entry: uv run j2lint --ignore jinja-statements-indentation single-statement-per-line --
+        language: system
+        files: '\.j2$'
+      - id: pytest
+        name: pytest (full suite)
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

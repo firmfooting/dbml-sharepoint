@@ -932,8 +932,10 @@ def _render_user_added_columns_sql(plans: list[_ListPlan], prefix: str) -> str:
             expected_rows.append(
                 f"    ({_sql_string(plan.list_title)}, {_sql_string(name)})",
             )
+    # Emitting SQL text is this generator's purpose; identifiers come
+    # from the validated schema, never from runtime user input.
     return (
-        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{prefix}UserAddedColumns] AS\n"
+        f"CREATE OR ALTER VIEW [$(ReportSchema)].[vw_{prefix}UserAddedColumns] AS\n"  # noqa: S608
         "-- Drift audit: landed columns the schema does not declare. Expected\n"
         "-- EMPTY. Only sees columns the extract process lands.\n"
         "SELECT c.TABLE_NAME AS [List], c.COLUMN_NAME AS [Column],\n"

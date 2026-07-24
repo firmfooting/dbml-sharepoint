@@ -27,10 +27,13 @@ def comment_safe(value: object) -> str:
 
 def script_env() -> Environment:
     """Environment for every generated artifact (scripts and manifests)."""
+    # No autoescape by design: these templates emit JavaScript and
+    # markdown, not HTML. Interpolations are guarded individually
+    # (tojson for values, comment_safe for comment text).
     env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
         undefined=StrictUndefined,
-        autoescape=False,
+        autoescape=False,  # noqa: S701 — see comment above
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,

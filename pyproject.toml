@@ -68,8 +68,18 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
-ignore = ["B008"]
+select = [
+  "A", "B", "C4", "DTZ", "E", "F", "FURB", "I", "ISC", "N", "PIE",
+  "PTH", "RET", "RUF", "S", "SIM", "T20", "UP", "W",
+]
+ignore = [
+  "B008",  # typer.Option in defaults is the framework idiom
+  "C408",  # dict(key=...) literals are deliberate where used
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = ["S101"]           # pytest asserts
+"website/scripts/**" = ["T20"] # generator scripts report via print
 
 [tool.mypy]
 python_version = "3.13"

@@ -92,7 +92,7 @@ def _to_column(raw: Any) -> Column:
     """Convert a pydbml column object into our Column dataclass."""
     type_name = raw.type.name if hasattr(raw.type, "name") else str(raw.type)
     ref: Reference | None = None
-    for raw_ref in getattr(raw, "get_refs", lambda: [])():
+    for raw_ref in getattr(raw, "get_refs", list)():
         # pydbml exposes refs from the column side; first one wins for our subset.
         target = raw_ref.table2.name if raw_ref.col1[0] is raw else raw_ref.table1.name
         target_col = raw_ref.col2[0].name if raw_ref.col1[0] is raw else raw_ref.col1[0].name

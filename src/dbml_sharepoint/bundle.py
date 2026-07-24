@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from dbml_sharepoint.model.release import Release
 
 
-class SeedRequiresDemoItems(ValueError):
+class SeedRequiresDemoItemsError(ValueError):
     """--seed was requested but the mapping declares no demo_items."""
 
 GENERATED_FILES: tuple[str, ...] = (
@@ -159,7 +159,7 @@ def emit_bundle(
     The one emission sequence — deploy.js, rollback.js, assess.js and its
     manifest, the seed-gated demo-data.js, reporting, INDEX.md and
     checksums.txt — previously duplicated across the core CLI and every
-    extension CLI. Raises :class:`SeedRequiresDemoItems` before writing
+    extension CLI. Raises :class:`SeedRequiresDemoItemsError` before writing
     anything when ``seed`` is set but the mapping declares no demo rows.
     """
     # Imports here, not module top: the generators import mapping_loader /
@@ -172,7 +172,7 @@ def emit_bundle(
     from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 
     if seed and not mapping_bundle.mapping.demo_items:
-        raise SeedRequiresDemoItems(
+        raise SeedRequiresDemoItemsError(
             "--seed requested but the mapping declares no demo_items.",
         )
 

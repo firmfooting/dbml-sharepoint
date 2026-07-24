@@ -67,7 +67,7 @@ def generate_manifest(
     # schema_json rows carry generated CAML, which is not review material).
     def _view_summary(list_title: str, view_title: str) -> str:
         prefix = bundle.mapping.prefix
-        entity = list_title[len(prefix):] if list_title.startswith(prefix) else list_title
+        entity = list_title.removeprefix(prefix)
         for declared in bundle.mapping.views.get(entity, []):
             if declared.title != view_title:
                 continue

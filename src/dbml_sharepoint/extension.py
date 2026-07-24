@@ -88,7 +88,7 @@ class BaseExtension:
     def cli_subcommands(self, app: typer.Typer) -> None:
         """Register wholly-new extension-owned subcommands on the core app.
         Must never alter core command signatures."""
-        return None
+        return
 
 
 class NullExtension(BaseExtension):
@@ -103,7 +103,6 @@ def resolve_extension(name: str | None) -> BaseExtension:
     eps = entry_points(group="dbml_sharepoint.extensions")
     for ep in eps:
         if ep.name == name:
-            ext = ep.load()()
-            return ext  # type: ignore[no-any-return]
+            return ep.load()()  # type: ignore[no-any-return]
     installed = sorted(ep.name for ep in eps)
     raise ValueError(f"Unknown extension {name!r}; installed: {installed or 'none'}")
