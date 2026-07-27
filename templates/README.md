@@ -92,6 +92,28 @@ Work the folders in order: **design** what you're deploying (rename columns,
 prune what you don't need), **configure** it for your site (prefix, security),
 **deploy** it (administrator), **adopt** it (staff), **govern** it (owners).
 
+**Column titles deploy as the internal name.** No template sets
+`display_names:`, so a column declared `ReceivedDate` appears on the form,
+in views and in the reporting bundle as exactly `ReceivedDate` — not
+"Received Date". The staff guides write field names in prose ("set the
+received date"), so read those as pointing at the run-together column
+beside them. If you want spaced titles, add one section to `mapping.yaml`
+and redeploy:
+
+```yaml
+display_names:
+  mode: auto              # ReceivedDate -> "Received Date"
+  overrides:
+    Contract:
+      DocumentUrl: "Document link"   # where auto-splitting reads badly
+```
+
+Internal names stay authoritative either way — the schema, lookups and
+reporting all bind to them — so this changes only what people see. Do it
+before first deploy if you are going to: a rename afterwards is drift the
+next re-paste reverts, and the DEPLOY.md checklists all name columns by
+their internal name.
+
 **Notes are form text.** A column's `note:` deploys as the SharePoint column
 Description, which the modern list form shows as help text under the input at
 data-entry time — so every note is written as a plain-language hint for the
