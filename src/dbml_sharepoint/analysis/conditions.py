@@ -186,15 +186,37 @@ _UNSUPPORTED_PROPERTY: dict[str, str] = {
 # Operand types a target refuses outright. SharePoint validation formulas
 # cannot read a person, a multi-line column or a calculated column, and
 # reject the rule at save — so the build refuses first.
+#
+# Conditional show/hide is worse, and that is why it is listed here too:
+# Microsoft documents calculated columns as unsupported, but the formula
+# stays SYNTACTICALLY valid, so it saves, the read-back compares equal and
+# the phase passes. The failure is invisible from the deploy side
+# entirely — a green build, a green manifest, and a form that never
+# reacts. The most natural rule in the shipped risk register ("show
+# Treatment only when the calculated RiskRating is High or Extreme") is
+# exactly this shape.
+#
+# The same Learn page lists Currency, Location, Managed Metadata and the
+# multi-select Person/Choice/Lookup variants as unsupported. None of them
+# has a DBML type in this tool, so there is nothing here to reject — the
+# omission is considered, not missed. Time-of-day comparisons on Date and
+# Time are likewise unreachable: `today` is already refused for this
+# target (the client-side equivalent is @now, with datetime rather than
+# date semantics).
+# https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-conditional-show-hide
+_CALCULATED_OPERAND = {
+    "calculated_text": "a calculated column",
+    "calculated_number": "a calculated column",
+    "calculated_date": "a calculated column",
+}
 _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
     VALIDATION: {
         "person": "a person column",
         "richtext": "a multi-line column",
         "longtext": "a multi-line column",
-        "calculated_text": "a calculated column",
-        "calculated_number": "a calculated column",
-        "calculated_date": "a calculated column",
+        **_CALCULATED_OPERAND,
     },
+    EXPRESSION: dict(_CALCULATED_OPERAND),
 }
 
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})

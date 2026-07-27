@@ -605,3 +605,25 @@ def test_describe_keeps_the_negation_of_a_single_child_group() -> None:
         {"none_of": [{"field": "Status", "op": "eq", "value": "Closed"}]}, "w",
     )
     assert describe(condition) == "NOT(Status eq 'Closed')"
+
+
+def test_calculated_columns_are_refused_as_expression_operands() -> None:
+    """Microsoft documents calculated columns as unsupported in conditional
+    show/hide formulas. The formula is syntactically valid, so it saves and
+    the read-back passes — a green deploy and a form that never reacts. The
+    most natural rule in the shipped risk register ("show Treatment only
+    when the calculated RiskRating is High") was exactly this."""
+    types = {**TYPES, "Score": "calculated_number", "Band": "calculated_text",
+             "Reviewed": "calculated_date"}
+    for field in ("Score", "Band", "Reviewed"):
+        condition = parse_condition([{"field": field, "op": "is_not_null"}], "w")
+        with pytest.raises(ValueError, match="calculated"):
+            to_expression(condition, types)
+
+
+def test_calculated_operands_are_still_fine_in_caml() -> None:
+    """A view CAN filter on a calculated column; only the two formula
+    targets cannot. The rejection must not spread to CAML."""
+    types = {**TYPES, "Score": "calculated_number"}
+    condition = parse_condition([{"field": "Score", "op": "gt", "value": 3}], "w")
+    assert "Score" in to_caml(condition, types)
