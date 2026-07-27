@@ -13,6 +13,7 @@ from dbml_sharepoint.analysis.conditions import (
     validate_condition,
 )
 from dbml_sharepoint.analysis.forms import validate_form_visibility
+from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS, BUILT_IN_LEVELS
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, MappingBundle, view_url_slug
@@ -459,6 +460,13 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                 f"defaults.",
             ))
 
+    # Lookups the deploy plan defers to Phase 2 — self-references and one
+    # side of every cycle. They exist by the end of the run but not when
+    # Phase 1 fields are created.
+    deferred_by_entity: dict[str, set[str]] = {}
+    for entity_name, col_name in compute_phases(schema).phase2_lookups:
+        deferred_by_entity.setdefault(entity_name, set()).add(col_name)
+
     # Calculated columns (SP.FieldCalculated): every calculated_* column must
     # have a formula in the mapping, every mapping formula must target a
     # calculated_* column, formulas must satisfy SP's constraints, and
@@ -497,7 +505,16 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
             # CREATED and rejects the POST (HTTP 500, "The formula refers to
             # a column that does not exist") on any miss — fail at build, not
             # at paste.
-            declared = {c.name for c in table.columns}
+            #
+            # Checked against the RENDERED columns, not the declared ones.
+            # `Id int [pk, increment]` is skipped at render time and a
+            # cross-site column is expanded into <col>Abbreviation and
+            # <col>SiteUrl, so both are names the deploy never creates while
+            # sitting in table.columns — and a formula naming either passed
+            # this very check before dying at paste time.
+            declared = _rendered_columns(
+                table, cross_site_by_entity.get(table.name, set()),
+            )
             refs = formula_column_refs(formula)
             if col.name in refs:
                 findings.append(Finding(
@@ -509,9 +526,26 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                 findings.append(Finding(
                     "error",
                     f"{table.name}.{col.name}: calculated formula references "
-                    f"[{ref}], which is not a column of {table.name} — "
-                    f"SharePoint would reject the field creation at deploy "
-                    f"time.",
+                    f"[{ref}], which is not a rendered column of "
+                    f"{table.name} — SharePoint would reject the field "
+                    f"creation at deploy time.",
+                ))
+            # A DEFERRED lookup exists by the end of the deploy but not when
+            # this field is created. jsgen orders calculated fields only
+            # within fields_phase1 and never consults phase2_lookups, so the
+            # formula is posted in Phase 1 against a column Phase 2 has not
+            # added yet. Rejected rather than deferred: moving the calculated
+            # field into Phase 2 would mean a second creation path for
+            # calculated columns, and the declaration has a cheap rewrite —
+            # compute from the column the lookup mirrors, or drop it.
+            for ref in sorted(refs & deferred_by_entity.get(table.name, set())):
+                findings.append(Finding(
+                    "error",
+                    f"{table.name}.{col.name}: calculated formula references "
+                    f"[{ref}], a lookup deferred to Phase 2 because its "
+                    f"target is created later (a self-reference or a "
+                    f"circular one). The calculated field is created in "
+                    f"Phase 1, so the column does not exist yet.",
                 ))
     for entity_name, cols in bundle.mapping.calculated_formulas.items():
         for col_name in cols:

@@ -140,6 +140,28 @@ def _schema(*tables: Table, enums: list[EnumDef] | None = None) -> Schema:
     return Schema(tables=list(tables), enums=enums or [])
 
 
+def _bundle_with_formulas(
+    formulas: dict[str, dict[str, str]], *entity_names: str,
+) -> MappingBundle:
+    """A minimal bundle declaring the named entities plus calculated formulas."""
+    mapping = Mapping(
+        prefix="APP_", prefix_owner="", prefix_registry="",
+        entities={
+            name: EntityMapping(
+                name=name, kind="List", base_template=100, site_role="default",
+            )
+            for name in entity_names
+        },
+        cross_site_reference_columns=[], indexed_columns={},
+        versioning_default=Versioning(True, 500, False), versioning_overrides={},
+        enum_sources={}, watched_lists=[], calculated_formulas=formulas,
+    )
+    return MappingBundle(
+        mapping=mapping, enum_choices={}, retention_policies={},
+        retention_list_defaults={},
+    )
+
+
 def test_unknown_ref_target_is_error() -> None:
     table = Table(name="Task", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
@@ -1366,3 +1388,53 @@ def test_column_named_id_that_is_not_the_identity_is_rejected() -> None:
     assert any(
         f.severity == "error" and "Id" in f.message for f in findings
     ), findings
+
+
+def test_calculated_formula_referencing_id_is_rejected() -> None:
+    """The reference check compared against the raw DBML column set rather
+    than the RENDERED one. `Id int [pk, increment]` is skipped at render
+    time — typemap returns Skip and jsgen continues — so a formula naming
+    [Id] passed validation and was posted against a column the deploy never
+    creates. SharePoint answers HTTP 500 mid-paste, which is exactly what
+    this check's own comment says it exists to prevent."""
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Ref", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Ref": '=CONCATENATE("R-",[Id])'}}, "Risk")
+    findings = validate_against_mapping(_schema(table), bundle)
+    assert any(
+        f.severity == "error" and "[Id]" in f.message for f in findings
+    ), findings
+
+
+def test_calculated_formula_referencing_a_phase_two_lookup_is_rejected() -> None:
+    """jsgen orders calculated fields only within fields_phase1 and ignores
+    phase2_lookups, so a formula naming a DEFERRED lookup was emitted in
+    Phase 1 — before the column it references exists. A self-referencing
+    lookup is always deferred, so this is reachable from any hierarchy."""
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Parent", type="int", ref=Reference(target_table="Risk", target_column="Id")),
+        Column(name="Label", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Label": '=CONCATENATE([Title],[Parent])'}}, "Risk")
+    findings = validate_against_mapping(_schema(table), bundle)
+    assert any(
+        f.severity == "error" and "Parent" in f.message and "Label" in f.message
+        for f in findings
+    ), findings
+
+
+def test_calculated_formula_referencing_a_phase_one_column_is_fine() -> None:
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Label", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Label": "=CONCATENATE([Title])"}}, "Risk")
+    assert [
+        f for f in validate_against_mapping(_schema(table), bundle) if f.severity == "error"
+    ] == []
