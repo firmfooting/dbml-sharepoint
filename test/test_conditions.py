@@ -4,6 +4,7 @@
 import pytest
 
 from dbml_sharepoint.analysis.conditions import (
+    CAPABILITIES,
     NEGATION,
     measure_tree,
     normalise,
@@ -314,3 +315,121 @@ def test_operators_pending_probe_are_disabled_for_the_expression_target() -> Non
     assert "<Contains>" in to_caml(condition, TYPES)
     with pytest.raises(ValueError, match="not yet verified"):
         to_expression(condition, TYPES)
+
+
+# === Hardening from the adversarial review ==================================
+
+def test_negation_table_covers_every_renderable_operator() -> None:
+    """The original form of this test asserted only that NEGATION is
+    self-inverse — a property of the dict restated. It did not assert
+    COVERAGE, so an operator added to a capability set without a negation
+    passed the suite and crashed at render time with a bare KeyError."""
+    renderable = set().union(*CAPABILITIES.values())
+    assert renderable <= set(NEGATION), (
+        f"operators with no negation: {sorted(renderable - set(NEGATION))}"
+    )
+
+
+def test_unknown_operator_under_none_of_is_a_named_error() -> None:
+    condition = parse_condition(
+        {"none_of": [{"field": "A", "op": "startswith", "value": "x"}]}, "c",
+    )
+    with pytest.raises(ValueError, match="cannot negate unknown operator"):
+        normalise(condition)
+
+
+def test_length_measure_is_refused_by_the_expression_target() -> None:
+    """list formatting's length() counts ARRAY items and returns 1/0 for
+    anything else — it does not measure a string. Rendering it would give a
+    formula that is false for every value, hiding the column
+    unconditionally, and saving cleanly."""
+    condition = parse_condition(
+        [{"field": "Note", "measure": "length", "op": "gt", "value": 3}], "c",
+    )
+    assert to_validation(condition, TYPES) == "LEN([Note])>3"
+    for renderer in (to_caml, to_expression):
+        with pytest.raises(ValueError, match="measure"):
+            renderer(condition, TYPES)
+
+
+def test_property_is_refused_rather_than_silently_dropped_by_caml() -> None:
+    """Rendering the accessor away compares a person's display name to an
+    email address — a view that returns the wrong rows with a clean build."""
+    condition = parse_condition(
+        [{"field": "Owner", "property": "email", "op": "eq", "value": "a@b.com"}], "c",
+    )
+    with pytest.raises(ValueError, match="sub-propert"):
+        to_caml(condition, TYPES)
+
+
+def test_empty_in_list_is_an_error_in_every_target() -> None:
+    condition = parse_condition([{"field": "Status", "op": "in", "value": []}], "c")
+    for renderer in (to_caml, to_expression, to_validation):
+        with pytest.raises(ValueError, match="empty list"):
+            renderer(condition, TYPES)
+
+
+def test_today_on_a_text_column_is_the_literal_word() -> None:
+    """One authored condition must not mean three different things. Gated
+    on the column type, `today` on a text column is just text."""
+    condition = parse_condition([{"field": "Status", "op": "eq", "value": "today"}], "c")
+    assert to_validation(condition, TYPES) == '[Status]="today"'
+    assert to_expression(condition, TYPES) == "[$Status] == 'today'"
+    assert '<Value Type="Text">today</Value>' in to_caml(condition, TYPES)
+
+
+def test_numeric_column_ignores_yaml_quoting() -> None:
+    """The declared type is authoritative. Quoted '5' rendered as a string
+    made '10' > '5' false — and quoting a number is the cautious thing to
+    do, so it punished the careful author."""
+    condition = parse_condition([{"field": "Count", "op": "gt", "value": "5"}], "c")
+    assert to_expression(condition, TYPES) == "[$Count] > 5"
+    assert to_validation(condition, TYPES) == "[Count]>5"
+
+
+def test_non_numeric_value_on_a_numeric_column_is_an_error() -> None:
+    condition = parse_condition([{"field": "Count", "op": "gt", "value": "many"}], "c")
+    with pytest.raises(ValueError, match="not a number"):
+        to_expression(condition, TYPES)
+
+
+def test_boolean_coercion_is_two_sided() -> None:
+    """A one-sided truthy test silently INVERTED the condition for anyone
+    who quoted the value."""
+    truthy = parse_condition([{"field": "Flag", "op": "eq", "value": "true"}], "c")
+    assert to_expression(truthy, TYPES) == "[$Flag] == true"
+    with pytest.raises(ValueError, match="not a boolean"):
+        to_expression(
+            parse_condition([{"field": "Flag", "op": "eq", "value": "maybe"}], "c"), TYPES,
+        )
+
+
+def test_unknown_column_type_is_an_error_not_a_text_default() -> None:
+    """Defaulting an unknown column to text renders a date comparison as
+    <Value Type="Text">, which SharePoint accepts and answers with the
+    wrong rows."""
+    condition = parse_condition([{"field": "Created", "op": "lt", "value": "today-30"}], "c")
+    with pytest.raises(ValueError, match="no declared type"):
+        to_caml(condition, TYPES)
+
+
+def test_missing_value_is_an_error() -> None:
+    condition = parse_condition([{"field": "Status", "op": "eq"}], "c")
+    with pytest.raises(ValueError, match="needs a 'value'"):
+        to_expression(condition, TYPES)
+
+
+def test_in_expansion_counts_toward_the_leaf_bound() -> None:
+    """One authored leaf renders N comparisons; counting it as one let a
+    tree inside the cap render far past the length the cap protects."""
+    condition = parse_condition([{"field": "Status", "op": "in", "value": ["a", "b", "c"]}], "c")
+    assert measure_tree(condition) == (1, 3)
+
+
+def test_validation_renders_text_operators() -> None:
+    condition = parse_condition([{"field": "Note", "op": "contains", "value": "x"}], "c")
+    assert to_validation(condition, TYPES) == 'ISNUMBER(FIND("x",[Note]))'
+    negated = parse_condition(
+        {"none_of": [{"field": "Note", "op": "begins_with", "value": "ab"}]}, "c",
+    )
+    assert to_validation(negated, TYPES) == 'NOT(LEFT([Note],2)="ab")'

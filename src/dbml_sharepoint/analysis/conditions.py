@@ -60,6 +60,14 @@ def _push(node: Condition, *, negate: bool) -> Condition:
     if isinstance(node, Leaf):
         if not negate:
             return node
+        if node.op not in NEGATION:
+            # Reached before the renderer's capability check, so an
+            # unknown operator under none_of would otherwise surface as a
+            # bare KeyError rather than a build error naming it.
+            raise ValueError(
+                f"cannot negate unknown operator {node.op!r} on {node.field!r}; "
+                f"known operators: {', '.join(sorted(NEGATION))}",
+            )
         return Leaf(node.field, NEGATION[node.op], node.value, node.property, node.measure)
 
     if node.kind == "none_of":
@@ -75,8 +83,15 @@ def _push(node: Condition, *, negate: bool) -> Condition:
 
 
 def measure_tree(node: Condition) -> tuple[int, int]:
-    """`(group depth, leaf count)` for the bounds checks."""
+    """`(group depth, leaf count)` for the bounds checks.
+
+    Counts POST-expansion: `in` with twenty values renders twenty
+    comparisons, so counting the authored leaf as one would let a tree
+    inside the cap render far past the formula length the cap exists to
+    protect."""
     if isinstance(node, Leaf):
+        if node.op in ("in", "not_in") and isinstance(node.value, list):
+            return (0, max(len(node.value), 1))
         return (0, 1)
     measured = [measure_tree(child) for child in node.children]
     return (1 + max(depth for depth, _ in measured), sum(count for _, count in measured))
@@ -84,9 +99,9 @@ def measure_tree(node: Condition) -> tuple[int, int]:
 
 # === Rendering ==============================================================
 # Three targets, three syntaxes, none of them the author's problem. Every
-# rule encoded below was established by running it against a live tenant
-# and is recorded in the form_visibility spec; the differences are not
-# stylistic and must not be harmonised.
+# rule below was established by running it against a live tenant and is
+# recorded in the form_visibility spec; the differences are not stylistic
+# and must not be harmonised.
 #
 #            reference        string literal          booleans
 #   caml     <FieldRef/>      typed <Value>           <And>/<Or>
@@ -109,26 +124,57 @@ _VALIDATION_OPS: dict[str, str] = {
     "eq": "=", "neq": "<>", "lt": "<", "leq": "<=", "gt": ">", "geq": ">=",
 }
 
+_TEXT_OPS = frozenset({"contains", "not_contains", "begins_with", "not_begins_with"})
+
 # Operators each target can render. A miss is a build error naming the
 # target — never a formula emitted in hope.
 CAPABILITIES: dict[str, frozenset[str]] = {
+    # CAML has Contains/BeginsWith but no negation of either.
     CAML: frozenset(_CAML_OP_TAGS) | {"in", "not_in"},
     EXPRESSION: frozenset(_EXPR_OPS) | {"is_null", "is_not_null", "in", "not_in"},
-    VALIDATION: frozenset(_VALIDATION_OPS) | {"is_null", "is_not_null", "in", "not_in"},
+    VALIDATION: frozenset(_VALIDATION_OPS) | {"is_null", "is_not_null", "in", "not_in"} | _TEXT_OPS,
 }
 
 # Plausible from the documented syntax, never observed in a formula
 # harvested from a live tenant. Being wrong about unexercised expression
-# syntax has already happened twice in this work — once in the spec's own
-# composition formulas — so unverified is treated as unknown, and the
-# evidence probe is named in the error.
+# syntax has already happened twice in this work, so unverified is treated
+# as unknown and the evidence probe is named in the error.
 DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {
-    EXPRESSION: frozenset({"contains", "not_contains", "begins_with", "not_begins_with"}),
+    EXPRESSION: _TEXT_OPS,
+}
+
+# Transforms a target cannot express at all, as opposed to merely unproven.
+#
+# `measure: length` on the expression target is the important one, and it is
+# not an omission: list formatting's `length` returns an ARRAY's item count,
+# and 1 or 0 for anything else — it does not measure a string. Rendering
+# `length([$Note]) > 3` would therefore be false for every possible value,
+# hiding the column unconditionally, with a formula that saves cleanly. The
+# documented idiom is a sentinel trick (`indexOf([$Note] + '^', '^')`), which
+# is not enabled here because it has not been run against a tenant.
+_UNSUPPORTED_MEASURE: dict[str, str] = {
+    CAML: "CAML has no LEN",
+    EXPRESSION: (
+        "list formatting's length() counts array items and returns 1/0 for other "
+        "types — it does not measure a string, so the formula would be false for "
+        "every value"
+    ),
+}
+# CAML reaches a lookup's id via FieldRef LookupId, and a person's email not
+# at all. Rendering the accessor away — comparing a display name to an email
+# address — is a view that silently returns the wrong rows, so it is refused.
+_UNSUPPORTED_PROPERTY: dict[str, str] = {
+    CAML: "CAML cannot reach person or lookup sub-properties",
+    VALIDATION: "person and lookup operands are unsupported in validation formulas",
 }
 
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
 _TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
+# True == 1 and False == 0 in Python, so the bare ints cover the bools.
+_TRUTHY = frozenset({1, "1", "true", "True", "TRUE", "yes", "Yes", "YES"})
+_FALSY = frozenset({0, "0", "false", "False", "FALSE", "no", "No", "NO"})
+_VALUELESS_OPS = frozenset({"is_null", "is_not_null"})
 
 
 def _reject(target: str, reason: str, context: str) -> ValueError:
@@ -146,16 +192,23 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         )
     if leaf.op not in CAPABILITIES[target]:
         raise _reject(target, f"operator {leaf.op!r} has no rendering", context)
-    if leaf.measure and target == CAML:
-        raise _reject(target, "CAML has no LEN, so 'measure' cannot be rendered", context)
-    if leaf.property and target == VALIDATION:
+    if leaf.measure and target in _UNSUPPORTED_MEASURE:
         raise _reject(
-            target, "person and lookup operands are unsupported in validation formulas", context,
+            target, f"'measure' cannot be rendered: {_UNSUPPORTED_MEASURE[target]}", context,
         )
-
-
-def _is_today(value: object) -> bool:
-    return isinstance(value, str) and bool(_TODAY.match(value))
+    if leaf.property and target in _UNSUPPORTED_PROPERTY:
+        raise _reject(target, _UNSUPPORTED_PROPERTY[target], context)
+    if leaf.op not in _VALUELESS_OPS and leaf.value is None:
+        raise _reject(target, f"operator {leaf.op!r} needs a 'value'", context)
+    if leaf.op in ("in", "not_in") and not isinstance(leaf.value, list):
+        raise _reject(target, f"operator {leaf.op!r} needs a list 'value'", context)
+    if leaf.op in ("in", "not_in") and not leaf.value:
+        raise _reject(
+            target,
+            f"operator {leaf.op!r} has an empty list, which is a constant — say what "
+            f"you mean with a condition rather than an empty set",
+            context,
+        )
 
 
 def _xml_escape(text: str, extra: dict[str, str] | None = None) -> str:
@@ -165,21 +218,34 @@ def _xml_escape(text: str, extra: dict[str, str] | None = None) -> str:
     return out
 
 
-def _caml_value(column_type: str, value: object) -> str:
-    if column_type == "boolean":
-        return f'<Value Type="Integer">{"1" if value in (True, 1, "1") else "0"}</Value>'
-    if column_type in _NUMBER_TYPES:
-        return f'<Value Type="Number">{_xml_escape(str(value))}</Value>'
-    if column_type in _DATE_TYPES:
-        match = _TODAY.match(value) if isinstance(value, str) else None
-        if match:
-            sign, days = match.group(1), match.group(2)
-            if days is None:
-                return '<Value Type="DateTime"><Today/></Value>'
-            offset = days if sign == "+" else f"-{days}"
-            return f'<Value Type="DateTime"><Today OffsetDays="{offset}"/></Value>'
-        return f'<Value Type="DateTime">{_xml_escape(str(value))}</Value>'
-    return f'<Value Type="Text">{_xml_escape(str(value), {chr(34): "&quot;"})}</Value>'
+def _is_today(value: object, column_type: str) -> bool:
+    """A `today` sentinel only means a date on a DATE column. On a text
+    column it is the literal word, and reading it as TODAY() would give one
+    authored condition three different meanings across the three targets."""
+    return column_type in _DATE_TYPES and isinstance(value, str) and bool(_TODAY.match(value))
+
+
+def _number(value: object, context: str, target: str) -> str:
+    """A numeric column's operand is emitted bare. The declared type is
+    authoritative: a value that is not a number on a numeric column is a
+    build error, not a silent string comparison where '10' < '5'."""
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise _reject(target, f"{value!r} is not a number", context)
+    try:
+        return str(int(value)) if float(value).is_integer() else str(float(value))
+    except ValueError:
+        raise _reject(target, f"{value!r} is not a number on a numeric column", context) from None
+
+
+def _boolean(value: object, context: str, target: str) -> bool:
+    """Coercion is two-sided. A one-sided test silently inverts the
+    condition for the author who quotes 'true', which is the cautious
+    thing to do and so exactly the author who should not be punished."""
+    if value in _TRUTHY:
+        return True
+    if value in _FALSY:
+        return False
+    raise _reject(target, f"{value!r} is not a boolean", context)
 
 
 def to_caml(condition: Condition, column_types: dict[str, str]) -> str:
@@ -201,10 +267,10 @@ def _render(node: Condition, types: dict[str, str], target: str, context: str) -
     if isinstance(node, Leaf):
         return _leaf(node, types, target, context)
     parts = [_render(child, types, target, context) for child in node.children]
-    return _combine(parts, node.kind == "all_of", target)
+    return _combine(parts, conjunction=node.kind == "all_of", target=target)
 
 
-def _combine(parts: list[str], conjunction: bool, target: str) -> str:
+def _combine(parts: list[str], *, conjunction: bool, target: str) -> str:
     if len(parts) == 1:
         return parts[0]
     if target == CAML:
@@ -221,71 +287,112 @@ def _combine(parts: list[str], conjunction: bool, target: str) -> str:
     return f"{'AND' if conjunction else 'OR'}({','.join(parts)})"
 
 
+def _column_type(field: str, types: dict[str, str], target: str, context: str) -> str:
+    """The declared type drives literal rendering, so an unknown column is
+    an error rather than a silent 'nvarchar'. A date column defaulting to
+    text renders `<Value Type="Text">today-30</Value>`, which SharePoint
+    accepts and answers with the wrong rows."""
+    if field not in types:
+        raise _reject(target, f"no declared type for column {field!r}", context)
+    return types[field]
+
+
 def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
-    _check(leaf, target, f"{context}.{leaf.field}")
-    # A measure changes what is being compared: LEN(x) is a number
-    # whatever x is, so the operand must not be quoted as the column
-    # type would be.
-    column_type = "number" if leaf.measure == "length" else types.get(leaf.field, "nvarchar")
-    if _is_today(leaf.value) and target == EXPRESSION:
+    where = f"{context}.{leaf.field}"
+    _check(leaf, target, where)
+    # A measure changes what is compared: LEN(x) is a number whatever x is.
+    column_type = (
+        "number" if leaf.measure == "length" else _column_type(leaf.field, types, target, where)
+    )
+
+    if leaf.op in ("in", "not_in"):
+        op = "eq" if leaf.op == "in" else "neq"
+        parts = [
+            _leaf(Leaf(leaf.field, op, item, leaf.property, leaf.measure), types, target, context)
+            for item in leaf.value
+        ]
+        return _combine(parts, conjunction=leaf.op == "not_in", target=target)
+
+    if _is_today(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
             target,
             "the 'today' sentinel has no verified client-side equivalent "
             "(@now carries datetime rather than date semantics)",
-            f"{context}.{leaf.field}",
+            where,
         )
-    if leaf.op in ("in", "not_in"):
-        values = leaf.value if isinstance(leaf.value, list) else [leaf.value]
-        op = "eq" if leaf.op == "in" else "neq"
-        parts = [
-            _leaf(Leaf(leaf.field, op, v, leaf.property, leaf.measure), types, target, context)
-            for v in values
-        ]
-        return _combine(parts, leaf.op == "not_in", target)
+
     if target == CAML:
         ref = f'<FieldRef Name="{leaf.field}"/>'
         tag = _CAML_OP_TAGS[leaf.op]
-        if leaf.op in ("is_null", "is_not_null"):
+        if leaf.op in _VALUELESS_OPS:
             return f"<{tag}>{ref}</{tag}>"
-        return f"<{tag}>{ref}{_caml_value(column_type, leaf.value)}</{tag}>"
+        return f"<{tag}>{ref}{_caml_value(column_type, leaf.value, where)}</{tag}>"
+
     if target == EXPRESSION:
         ref = f"[${leaf.field}{'.' + leaf.property if leaf.property else ''}]"
-        if leaf.measure == "length":
-            ref = f"length({ref})"
         if leaf.op == "is_null":
             return f"{ref} == ''"
         if leaf.op == "is_not_null":
             return f"{ref} != ''"
-        return f"{ref} {_EXPR_OPS[leaf.op]} {_expr_literal(column_type, leaf.value)}"
-    ref = f"[{leaf.field}]"
-    if leaf.measure == "length":
-        ref = f"LEN({ref})"
+        return f"{ref} {_EXPR_OPS[leaf.op]} {_expr_literal(column_type, leaf.value, where)}"
+
+    return _validation_leaf(leaf, column_type, where)
+
+
+def _validation_leaf(leaf: Leaf, column_type: str, where: str) -> str:
+    ref = f"LEN([{leaf.field}])" if leaf.measure == "length" else f"[{leaf.field}]"
     if leaf.op == "is_null":
         return f"ISBLANK({ref})"
     if leaf.op == "is_not_null":
         return f"NOT(ISBLANK({ref}))"
-    return f"{ref}{_VALIDATION_OPS[leaf.op]}{_validation_literal(column_type, leaf.value)}"
+    literal = _validation_literal(column_type, leaf.value, where)
+    if leaf.op in ("contains", "not_contains"):
+        rendered = f"ISNUMBER(FIND({literal},{ref}))"
+        return f"NOT({rendered})" if leaf.op == "not_contains" else rendered
+    if leaf.op in ("begins_with", "not_begins_with"):
+        rendered = f"LEFT({ref},{len(str(leaf.value))})={literal}"
+        return f"NOT({rendered})" if leaf.op == "not_begins_with" else rendered
+    return f"{ref}{_VALIDATION_OPS[leaf.op]}{literal}"
 
 
-def _expr_literal(column_type: str, value: object) -> str:
+def _caml_value(column_type: str, value: object, where: str) -> str:
     if column_type == "boolean":
-        return "true" if value in (True, 1, "1") else "false"
-    if column_type in _NUMBER_TYPES and isinstance(value, (int, float)):
-        return str(value)
+        return f'<Value Type="Integer">{"1" if _boolean(value, where, CAML) else "0"}</Value>'
+    if column_type in _NUMBER_TYPES:
+        return f'<Value Type="Number">{_number(value, where, CAML)}</Value>'
+    if column_type in _DATE_TYPES:
+        match = _TODAY.match(value) if isinstance(value, str) else None
+        if match:
+            sign, days = match.group(1), match.group(2)
+            if days is None:
+                return '<Value Type="DateTime"><Today/></Value>'
+            offset = days if sign == "+" else f"-{days}"
+            return f'<Value Type="DateTime"><Today OffsetDays="{offset}"/></Value>'
+        return f'<Value Type="DateTime">{_xml_escape(str(value))}</Value>'
+    return f'<Value Type="Text">{_xml_escape(str(value), {chr(34): "&quot;"})}</Value>'
+
+
+def _expr_literal(column_type: str, value: object, where: str) -> str:
+    if column_type == "boolean":
+        return "true" if _boolean(value, where, EXPRESSION) else "false"
+    if column_type in _NUMBER_TYPES:
+        return _number(value, where, EXPRESSION)
     # Verified live: apostrophes escape by DOUBLING, not by backslash.
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _validation_literal(column_type: str, value: object) -> str:
-    today = _TODAY.match(str(value)) if isinstance(value, str) else None
-    if today:
-        sign, days = today.group(1), today.group(2)
+def _validation_literal(column_type: str, value: object, where: str) -> str:
+    if _is_today(value, column_type):
+        match = _TODAY.match(str(value))
+        sign, days = (match.group(1), match.group(2)) if match else (None, None)
         return "TODAY()" if days is None else f"TODAY(){sign}{days}"
     if column_type == "boolean":
-        return "TRUE" if value in (True, 1, "1") else "FALSE"
-    if column_type in _NUMBER_TYPES and isinstance(value, (int, float)):
-        return str(value)
-    # Verified live: validation literals are DOUBLE-quoted; single quotes
-    # are rejected outright by SharePoint, the reverse of the expression
-    # target three lines up.
+        return "TRUE" if _boolean(value, where, VALIDATION) else "FALSE"
+    if column_type in _NUMBER_TYPES:
+        return _number(value, where, VALIDATION)
+    # Verified live: validation literals are DOUBLE-quoted; single quotes are
+    # rejected outright by SharePoint, the reverse of the expression target.
+    # The doubling escape for an embedded double quote is the Excel
+    # convention but was NOT among the harvested formulas — see the spec's
+    # open items.
     return '"' + str(value).replace('"', '""') + '"'
