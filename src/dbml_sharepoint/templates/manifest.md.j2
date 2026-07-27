@@ -169,6 +169,24 @@ field; columns without a declaration keep any hand-applied format.
 _(none declared)_
 {% endif %}
 
+{% if retired_columns %}
+## Retired columns
+
+Declared in `retired_columns:`. These columns keep their data and stay
+declared, sealed and deployer-managed - so the `_UserAddedColumns.pq` drift
+audit stays clean - but they are hidden from the New form, dropped from every
+declared view and from any form body section, and their display title carries
+a `(retired)` suffix. **Never delete them from the DBML:** deleting the
+declaration does not delete anything on the site, it leaves a live, visible,
+deletable column the schema no longer declares.
+
+| List | Column | Display title | Retired | Superseded by | Reason |
+|------|--------|---------------|---------|---------------|--------|
+{% for r in retired_columns %}
+| {{ r.list }} | {{ r.column }} | {{ r.display }} | {{ r.retired }} | {{ r.superseded_by }} | {{ r.reason }} |
+{% endfor %}
+
+{% endif %}
 ## Form visibility
 
 {% if form_visibility %}

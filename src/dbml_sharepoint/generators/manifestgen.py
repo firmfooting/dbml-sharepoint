@@ -155,6 +155,20 @@ def generate_manifest(
         {**view, "summary": _view_summary(view["list"], view["title"])}
         for view in schema_json["views"]
     ]
+    # Retirement is a load-time mutation of the author's own declarations;
+    # the manifest is where the operator sees what was rewritten and why.
+    retired_columns = [
+        {
+            "list": bundle.mapping.prefix + entity,
+            "column": column,
+            "display": bundle.mapping.display_name_for(entity, column),
+            "retired": spec.retired or "—",
+            "superseded_by": spec.superseded_by or "—",
+            "reason": spec.reason or "—",
+        }
+        for entity, cols in bundle.mapping.retired_columns.items()
+        for column, spec in cols.items()
+    ]
     # Polymorphic patterns are data-driven: unprefixed entity names in the mapping, rendered
     # with the prefix so the manifest names the physical SP list.
     polymorphic = [
@@ -182,6 +196,7 @@ def generate_manifest(
         indexed=schema_json["indexed_columns"],
         views=views,
         formatted_columns=formatted_columns,
+        retired_columns=retired_columns,
         form_visibility=form_visibility,
         column_validation=column_validation,
         reconcile_modes=reconcile_modes,

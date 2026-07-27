@@ -461,3 +461,77 @@ def test_manifest_has_a_list_validation_section(tmp_path: Path) -> None:
     assert "## List validation" in md
     assert "A status is required." in md
     assert "Status is_not_null" in md
+
+
+def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
+    """The operator must be able to see, from the manifest alone, which
+    columns are retired and why — retirement is a silent mutation of the
+    author's own declarations."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Enum rag {\n"
+        '  "Green"\n'
+        '  "Amber"\n'
+        "}\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "  OperationsStatus rag\n"
+        "  SiteServicesStatus rag\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "display_names:\n"
+        "  mode: auto\n"
+        "retired_columns:\n"
+        "  Board:\n"
+        "    OperationsStatus:\n"
+        "      retired: 2026-09-01\n"
+        "      superseded_by: SiteServicesStatus\n"
+        '      reason: "Merged into Site Services"\n',
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-07-27T00:00:00Z",
+        generated_at="2026-07-27T00:00:00Z",
+    )
+
+    assert "## Retired columns" in md
+    assert (
+        "| APP_Board | OperationsStatus | Operations Status (retired) | "
+        "2026-09-01 | SiteServicesStatus | Merged into Site Services |"
+    ) in md
+    assert "Never delete them from the DBML" in md
+
+
+def test_manifest_omits_retired_section_when_nothing_is_retired() -> None:
+    """Absent entirely, not an empty table — the manifest is read by
+    operators, not diffed by machines."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-07-27T00:00:00Z",
+        generated_at="2026-07-27T00:00:00Z",
+    )
+    assert "Retired columns" not in md
