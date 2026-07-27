@@ -151,8 +151,22 @@ def generate_manifest(
             return "; ".join(parts)
         return ""
 
+    def _view_expanded_from(list_title: str, view_title: str) -> str:
+        """The field sets a view's column list was expanded from. The
+        manifest prints the RESOLVED fields, so without this the operator
+        cannot see the indirection that produced them."""
+        entity = list_title.removeprefix(bundle.mapping.prefix)
+        for declared in bundle.mapping.views.get(entity, []):
+            if declared.title == view_title:
+                return ", ".join(declared.expanded_sets)
+        return ""
+
     views = [
-        {**view, "summary": _view_summary(view["list"], view["title"])}
+        {
+            **view,
+            "summary": _view_summary(view["list"], view["title"]),
+            "expanded_from": _view_expanded_from(view["list"], view["title"]),
+        }
         for view in schema_json["views"]
     ]
     # Retirement is a load-time mutation of the author's own declarations;

@@ -535,3 +535,55 @@ def test_manifest_omits_retired_section_when_nothing_is_retired() -> None:
         generated_at="2026-07-27T00:00:00Z",
     )
     assert "Retired columns" not in md
+
+
+def test_manifest_prints_resolved_view_fields_with_set_footnote(tmp_path: Path) -> None:
+    """A view declared with "@setname" must still show its RESOLVED columns
+    in the manifest, plus which sets produced them — the operator reviews the
+    manifest, not the mapping, and nothing may hide behind an indirection."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  BoardDate date\n"
+        "  OperationsStatus nvarchar\n"
+        "  WorkforceStatus nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "field_sets:\n"
+        "  Board:\n"
+        "    header:   [Title, BoardDate]\n"
+        "    statuses: [OperationsStatus, WorkforceStatus]\n"
+        "views:\n"
+        "  Board:\n"
+        "    - title: Heat grid\n"
+        '      fields: ["@header", "@statuses"]\n'
+        "    - title: Plain\n"
+        "      fields: [Title]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert "Title, BoardDate, OperationsStatus, WorkforceStatus" in md
+    assert "expanded from field sets: header, statuses" in md
+    assert "@header" not in md
+    # A view that named its columns directly carries no footnote.
+    assert "**Plain** on APP_Board: Title\n" in md
+    assert "Field lists are shown RESOLVED" in md

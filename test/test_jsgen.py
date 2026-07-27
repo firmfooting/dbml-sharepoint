@@ -2295,3 +2295,45 @@ def test_retired_columns_leave_views_but_stay_deployed() -> None:
 
     view = next(v for v in schema_json["views"] if v["title"] == "Heat grid")
     assert view["view_fields"] == ["BoardDate", "SiteServicesStatus"]
+
+
+def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
+    """jsgen has no field-set awareness by design: ViewDef.fields is always
+    already a flat, resolved, de-duplicated list of internal column names by
+    the time build_schema_json reads it. A failure here means expansion has
+    leaked past the loader."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  BoardDate date\n"
+        "  OperationsStatus nvarchar\n"
+        "  WorkforceStatus nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "field_sets:\n"
+        "  Board:\n"
+        "    header:   [Title, BoardDate]\n"
+        "    statuses: [OperationsStatus, WorkforceStatus]\n"
+        "views:\n"
+        "  Board:\n"
+        "    - title: Heat grid\n"
+        '      fields: ["@header", "@statuses", BoardDate]\n',
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    schema_json = build_schema_json(schema, bundle, "default")
+    view_fields = schema_json["views"][0]["view_fields"]
+    assert view_fields == [
+        "Title", "BoardDate", "OperationsStatus", "WorkforceStatus",
+    ]
+    assert not any(name.startswith("@") for name in view_fields)
