@@ -747,6 +747,11 @@
     'Formula', 'OutputType',
   ];
 
+  // Distinguishes "clear this value" from "not managed here". Declared
+  // before any consumer: the synthetic Title patch in _lists.js.j2 needs it
+  // too, and a caller that omits it is treated as managed.
+  const UNMANAGED = "__dbmlsp_unmanaged__";
+
   // SharePoint stores a calculated field's Formula in the field schema XML
   // and returns it with XML character entities intact (`<>` reads back as
   // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
@@ -769,7 +774,7 @@
   // brackets on both sides, but only OUTSIDE string literals (split keeps
   // `"..."` tokens, with `""` as the escaped quote, at odd indices):
   // bracket text inside a quoted constant is data, not a reference.
-  const canonicalFormula = (value) => xmlDecode(value)
+  const canonicalFormula = (value) => xmlDecode(typeof value === 'string' ? value : '')
     .split(/("(?:""|[^"])*")/)
     .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
     .join('');
@@ -999,8 +1004,6 @@
   // hides a column from EVERY form and is not writable over REST — so a
   // per-form declaration would silently become hide-everywhere the first
   // time anyone opened the designer.
-  const UNMANAGED = "__dbmlsp_unmanaged__";
-
   async function enforceDeclaredFormulas(listName, field, digest) {
     const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
     const read = async () => {
@@ -1801,6 +1804,14 @@
         const titleField = {
           title: 'Title',
           body: { ...list.title_patch, FieldTypeKind: 2 },
+          // Synthetic caller: Title is not a declared field, so it carries
+          // no declared formulas. Both sentinels are explicit — omitting
+          // them made `undefined !== UNMANAGED` read as "managed", which
+          // MERGEd an empty message onto the built-in Title column and then
+          // aborted the phase on every list, every run.
+          client_validation_formula: UNMANAGED,
+          validation_formula: UNMANAGED,
+          validation_message: UNMANAGED,
         };
         await reconcileDeclaredField(list.title, titleField, null, laneDigest, false);
       }

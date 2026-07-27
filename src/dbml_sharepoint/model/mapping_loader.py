@@ -445,6 +445,24 @@ class MappingBundle:
         return self.extension_configs.get(name, {})
 
 
+# Every top-level key load_mapping understands. A misspelling must fail
+# rather than be ignored: `form_visibilty:` used to build clean, report
+# "(none declared)" and deploy nothing at all.
+KNOWN_SECTIONS = frozenset({
+    "prefix", "prefix_owner", "prefix_registry", "entities",
+    "cross_site_reference_columns", "indexed_columns", "versioning",
+    "enum_sources", "watched_lists", "polymorphic_patterns", "retention_policies",
+    "retention_policies_source",
+    "extension", "extensions", "calculated_formulas", "views", "display_names",
+    "column_formatting", "form_formatting", "list_validation", "form_visibility",
+    "style_theme",
+    "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
+    "permissions", "groups", "permission_levels", "list_permissions",
+    # Rejected explicitly, with a migration message, further down.
+    "hidden_on_forms", "hidden_on_display",
+})
+
+
 def load_mapping(mapping_path: Path) -> MappingBundle:
     """Load the mapping YAML and the referenced configs into a single bundle."""
     mapping_path = mapping_path.resolve()
@@ -523,6 +541,13 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             else:
                 expanded = _load_json_value(base_dir, cf_value, cf_ctx)
             column_formatting.setdefault(cf_entity, {})[cf_col] = expanded
+
+    unknown_sections = set(raw) - KNOWN_SECTIONS
+    if unknown_sections:
+        raise ValueError(
+            f"unknown mapping section(s) {sorted(unknown_sections)}. Unknown keys used to be "
+            f"ignored, so a misspelled section silently deployed nothing.",
+        )
 
     for removed, replacement in (
         ("hidden_on_forms", "form_visibility, e.g. `Column: hidden`"),

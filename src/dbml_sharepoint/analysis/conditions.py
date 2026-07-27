@@ -331,14 +331,17 @@ def _column_type(field: str, types: dict[str, str], target: str, context: str) -
 def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     where = f"{context}.{leaf.field}"
     _check(leaf, target, where)
-    # A measure changes what is compared: LEN(x) is a number whatever x is.
-    column_type = (
-        "number" if leaf.measure == "length" else _column_type(leaf.field, types, target, where)
-    )
-
+    # Gate on the REAL column type first. Substituting "number" for a
+    # measure before this check let LEN([MultiLine]) past a rule that
+    # is_not_null on the same column hits — the tool contradicting itself
+    # and routing the author to whichever spelling the guard missed.
+    declared_type = _column_type(leaf.field, types, target, where)
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
-    if column_type in forbidden:
-        raise _reject(target, f"{leaf.field!r} is {forbidden[column_type]}", where)
+    if declared_type in forbidden:
+        raise _reject(target, f"{leaf.field!r} is {forbidden[declared_type]}", where)
+    # Only then: a measure changes what is compared — LEN(x) is a number
+    # whatever x is — so the operand must not be quoted as the column would be.
+    column_type = "number" if leaf.measure == "length" else declared_type
 
     if leaf.op in ("in", "not_in"):
         op = "eq" if leaf.op == "in" else "neq"

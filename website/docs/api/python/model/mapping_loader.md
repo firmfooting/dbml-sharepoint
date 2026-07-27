@@ -436,6 +436,12 @@ mapping declares no block for it. Extensions should call this with
 their own ``name`` so config selection always matches the extension
 actually running, regardless of how it was resolved.
 
+### `KNOWN_SECTIONS`
+
+```python
+KNOWN_SECTIONS = frozenset({'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'display_names', 'entities', 'enum_sources', 'extension', 'extensions', 'form_…
+```
+
 ### `load_mapping`
 
 ```python
