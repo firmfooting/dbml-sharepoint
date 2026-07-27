@@ -100,6 +100,29 @@
     return r.ok ? { ok: true, status: r.status } : { ok: false, status: r.status, error: spError(await r.text()) };
   }
 
+  // CSOM ProcessQuery — the same mechanism deploy.js already uses to set a
+  // site group's Owner, which plain REST also refuses. Response is a JSON
+  // array whose [0].ErrorInfo is non-null on failure; a 200 alone is not
+  // evidence of success.
+  const xmlEsc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
+  async function csom(actionsXml, objectPathsXml) {
+    const d = await getDigest();
+    const body = '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009"'
+      + ' SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="dbml-sharepoint-probe">'
+      + `<Actions>${actionsXml}</Actions><ObjectPaths>${objectPathsXml}</ObjectPaths></Request>`;
+    const r = await fetchWithRetry(apiUrl('ProcessQuery'), {
+      method: 'POST',
+      headers: { Accept: 'application/json;odata=verbose', 'Content-Type': 'text/xml', 'X-RequestDigest': d },
+      body,
+    });
+    if (!r.ok) return { ok: false, error: `HTTP ${r.status} ${spError(await r.text())}` };
+    let j = null;
+    try { j = await r.json(); } catch { return { ok: false, error: 'ProcessQuery returned a non-JSON body' }; }
+    const err = Array.isArray(j) && j.length && j[0] && j[0].ErrorInfo;
+    return err ? { ok: false, error: `${err.ErrorTypeName || 'CSOM error'}: ${err.ErrorMessage || '(no message)'}` } : { ok: true };
+  }
+
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
   const fieldPath = (n) => `${listPath}/fields/getbyinternalnameortitle('${odataName(n)}')`;
   const base = `${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`;
@@ -287,21 +310,41 @@
   await setVis('BothWay', 'setshowinnewform', false);
   await post(fieldPath('SealedF'), { __metadata: { type: 'SP.Field' }, Sealed: true }, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
 
-  // KNOWN LIMITATION, established by running this: SharePoint refuses this
-  // write outright — "The type SP.FieldLink does not support HTTP PATCH
-  // method". FieldLink.Hidden is the store the modern "Edit columns" panel
-  // writes, and it is NOT reachable over REST at all; repairing UI drift
-  // needs CSOM ProcessQuery (as deploy.js already uses for group ownership).
-  // Kept as-is so the refusal is visible in the transcript rather than
-  // hidden behind an assumption.
+  // FieldLink.Hidden is the store the modern "Edit columns" panel writes,
+  // and REST refuses it outright ("The type SP.FieldLink does not support
+  // HTTP PATCH method"). CSOM reaches it:
+  //   ClientContext.Current.Web.Lists.GetByTitle(list)
+  //     .ContentTypes.GetById(ctId).FieldLinks.GetById(guid).Hidden = value
+  //   then ContentType.Update(false)
+  // The Update call is required — without it the SetProperty is discarded.
+  // REST_FIRST re-runs the refused MERGE before the CSOM attempt, so both
+  // outcomes appear side by side in the transcript.
+  const REST_FIRST = true;
   const setLinkHidden = async (name, hidden) => {
     const s = (await readStores()).get(name);
     if (!s || !s.linkId) return 'no FieldLink found';
-    const r = await post(`${listPath}/contenttypes('${encodeURIComponent(s.ctId)}')/fieldlinks('${s.linkId}')`,
-      { __metadata: { type: 'SP.FieldLink' }, Hidden: hidden }, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
-    if (!r.ok) return `MERGE rejected: HTTP ${r.status} ${r.error}`;
+    let restNote = '';
+    if (REST_FIRST) {
+      const r = await post(`${listPath}/contenttypes('${encodeURIComponent(s.ctId)}')/fieldlinks('${s.linkId}')`,
+        { __metadata: { type: 'SP.FieldLink' }, Hidden: hidden }, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+      restNote = r.ok ? 'REST MERGE accepted (unexpected); ' : `REST MERGE refused (${r.error}); `;
+    }
+    const actions = `<SetProperty Id="20" ObjectPathId="7" Name="Hidden"><Parameter Type="Boolean">${hidden}</Parameter></SetProperty>`
+      + '<Method Name="Update" Id="21" ObjectPathId="5"><Parameters><Parameter Type="Boolean">false</Parameter></Parameters></Method>';
+    const paths = '<StaticProperty Id="0" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" />'
+      + '<Property Id="1" ParentId="0" Name="Web" />'
+      + '<Property Id="2" ParentId="1" Name="Lists" />'
+      + `<Method Id="3" ParentId="2" Name="GetByTitle"><Parameters><Parameter Type="String">${xmlEsc(PROBE_LIST)}</Parameter></Parameters></Method>`
+      + '<Property Id="4" ParentId="3" Name="ContentTypes" />'
+      + `<Method Id="5" ParentId="4" Name="GetById"><Parameters><Parameter Type="String">${xmlEsc(s.ctId)}</Parameter></Parameters></Method>`
+      + '<Property Id="6" ParentId="5" Name="FieldLinks" />'
+      + `<Method Id="7" ParentId="6" Name="GetById"><Parameters><Parameter Type="Guid">{${String(s.linkId).replace(/[{}]/g, '')}}</Parameter></Parameters></Method>`;
+    const c = await csom(actions, paths);
+    if (!c.ok) return `${restNote}CSOM rejected: ${c.error}`;
     const after = (await readStores()).get(name);
-    return after.linkHidden === hidden ? `FieldLink.Hidden set to ${hidden}` : 'MERGE returned OK but the value did not change (silent no-op)';
+    return after.linkHidden === hidden
+      ? `${restNote}CSOM set FieldLink.Hidden to ${hidden}, read back confirmed`
+      : `${restNote}CSOM returned OK but the value did not change (silent no-op)`;
   };
   const bothWayNote = await setLinkHidden('BothWay', false);
   log(`BothWay: ${bothWayNote}`);
@@ -347,11 +390,14 @@
 
   // === Round 3 ============================================================
   rule();
-  bold('ROUND 3 of 3 — can the API undo a UI hide?');
+  bold('ROUND 3 of 3 — can CSOM undo a UI hide?');
+  say('REST cannot write FieldLink.Hidden. This tries CSOM ProcessQuery on');
+  say('BOTH columns you just hid — one ordinary, one SEALED — so we learn');
+  say('whether sealing the FIELD also protects its content-type FieldLink.');
   const undoNote = await setLinkHidden('Ctl', false);
-  log(`Un-hiding Ctl via FieldLink.Hidden=false → ${undoNote}`);
-  const sealedUndo = await setVis('SealedF', 'setshowinnewform', true);
-  log(`setshowinnewform(true) on the sealed column → HTTP ${sealedUndo.status}${sealedUndo.ok ? '' : ` ${sealedUndo.error}`}`);
+  log(`Ctl (ordinary)  → ${undoNote}`);
+  const undoSealedNote = await setLinkHidden('SealedF', false);
+  log(`SealedF (sealed) → ${undoSealedNote}`);
   stores = await readStores();
   showTable('After the API tried to undo');
   await instruct(['Reload the NEW form.']);
@@ -367,10 +413,11 @@
     'FieldLink agrees': `${r.linkHits}/${r.n}`,
     'both agree': `${r.andHits}/${r.n}`,
   })));
-  log(`BothWay setup: ${bothWayNote}`);
-  log(`Undo a UI hide: ${undoNote}`);
+  log(`BothWay setup:            ${bothWayNote}`);
+  log(`Undo a UI hide (ordinary): ${undoNote}`);
+  log(`Undo a UI hide (sealed):   ${undoSealedNote}`);
   rule();
   say('Copy this whole console back. When finished, run:');
   console.log('%c  cleanup()', 'color:#06c;font-weight:bold');
-  return { observations, bothWayNote, undoNote };
+  return { observations, bothWayNote, undoNote, undoSealedNote };
 })();
