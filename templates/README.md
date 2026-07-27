@@ -159,8 +159,12 @@ columns are sealed** (SharePoint refuses UI schema edits and deletion of
 sealed columns, even for site admins — the deploy script unseals for its
 own run and re-seals, with verification, in Phase 4.1) and **every list
 carries `AllowDeletion = false`** ("Delete this list" disappears for
-everyone). Display-name renames remain possible on sealed columns;
-they are drift, reverted and reported on the next re-paste. `rollback.js` stays usable: it clears the deletion block per
+everyone). Two things remain possible on a sealed column: **display-name
+renames**, and **hiding it from the forms** via "Edit form → Edit
+columns". The second is not a sealing bug — that toggle writes the
+content type's `FieldLink.Hidden`, not the field, so field-level sealing
+never covered it. Both are drift; renames are reverted and reported on
+the next re-paste. `rollback.js` stays usable: it clears the deletion block per
 list only after you confirm that list's deletion, and restores the block
 if a delete fails. This is friction + tamper-evidence, not enforcement —
 a site collection admin can flip both back via API, and a redeploy
