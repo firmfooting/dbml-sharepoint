@@ -870,6 +870,25 @@ def test_form_formatting_parsed_and_requires_a_part(tmp_path: Path) -> None:
         load_mapping(tmp_path / "m2.yaml")
 
 
+def test_a_declared_footer_reaches_the_parsed_form(tmp_path: Path) -> None:
+    """Regression: footer was allow-listed, loaded, then dropped by the
+    FormFormatting constructor. The declaration validated clean, reported no
+    findings and deployed nothing, and a footer-only declaration passed the
+    "at least one part" check above and then emitted an empty formatter."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "form_formatting:\n"
+            "  Project:\n"
+            "    footer: { elmType: div, txtContent: signed }\n",
+        ),
+        encoding="utf-8",
+    )
+    form = load_mapping(tmp_path / "m.yaml").mapping.form_formatting["Project"]
+    assert form.footer == {"elmType": "div", "txtContent": "signed"}
+    assert form.header is None
+    assert form.body is None
+
+
 def test_form_formatting_absent_defaults_empty() -> None:
     bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
     assert bundle.mapping.form_formatting == {}

@@ -480,9 +480,15 @@ def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormForm
     }
     if not loaded:
         raise ValueError(f"{context}: declare at least one of header/body/footer")
+    # Every accepted part must be carried. Dropping one here is invisible:
+    # `footer` was allow-listed, loaded and then discarded, so a declaration
+    # validated clean, reported no findings and deployed nothing — and a
+    # footer-only declaration passed the "at least one part" check above and
+    # then emitted an empty formatter.
     return FormFormatting(
         header=loaded.get("header"),
         body=loaded.get("body"),
+        footer=loaded.get("footer"),
     )
 
 

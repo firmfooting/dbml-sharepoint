@@ -100,7 +100,16 @@ def check(vc: ValidationContext) -> list[Finding]:
         xcols = cross_site_by_entity.get(entity_name, set())
         # The built-in Title always exists on a provisioned list, declared or not.
         view_rendered = _rendered_columns(view_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        # The type map must cover everything view_rendered admits, or a
+        # column that IS filterable reports "no declared type" and aborts the
+        # build. Two are rendered without being DBML columns: the built-in
+        # Title, which every provisioned list has, and the Choice+URL pair a
+        # cross-site reference expands into. Both are text.
         types_by_col = {c.name: c.type for c in view_table.columns}
+        types_by_col.setdefault("Title", "nvarchar")
+        for xcol in xcols:
+            types_by_col.setdefault(f"{xcol}Abbreviation", "nvarchar")
+            types_by_col.setdefault(f"{xcol}SiteUrl", "nvarchar")
         titles = [v.title for v in views]
         for title in sorted({t for t in titles if titles.count(t) > 1}):
             findings.append(Finding(
