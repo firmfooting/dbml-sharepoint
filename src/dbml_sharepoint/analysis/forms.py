@@ -15,8 +15,14 @@ the obvious mechanism and are not: saving the designer migrates them into
 undone over REST. See the form_visibility spec.
 """
 
+from typing import Literal
+
 from dbml_sharepoint.analysis.conditions import EXPRESSION, to_expression, validate_condition
 from dbml_sharepoint.model.conditions import Condition
+
+# Mirrors validator.Severity; declared here so the module that decides a
+# severity is the module that types it.
+type Severity = Literal["error", "warning"]
 
 # Empty on the New form, populated on Edit and Display. Verified live.
 _NEW_ONLY = "[$ID] == ''"
@@ -77,43 +83,60 @@ def validate_form_visibility(
     types: dict[str, str],
     lookups: set[str],
     context: str,
-) -> list[str]:
-    """Semantic problems with one column's declaration, as messages."""
-    problems: list[str] = []
+) -> list[tuple[Severity, str]]:
+    """Semantic problems with one column's declaration, as
+    (severity, message) pairs.
+
+    The severity is carried structurally rather than described in the
+    prose. Every message used to be returned as a bare string and wrapped
+    by the caller as an error, including the one case the spec makes a
+    WARNING — a required column that a `when` predicate *may* hide at
+    creation. Its text said "(warning: …)" while it failed the build, so
+    the one genuinely conditional declaration the feature exists to
+    express could not be deployed at all.
+    """
+    problems: list[tuple[Severity, str]] = []
     if is_calculated:
-        problems.append(
+        problems.append((
+            "error",
             f"{context}: {column!r} is a calculated column — calculated columns never "
             f"appear on entry forms, so declaring their visibility is a mistake",
-        )
+        ))
     if not new and not existing and when is not None:
-        problems.append(
+        problems.append((
+            "error",
             f"{context}: {column!r} is hidden on every form, so 'when' can never be "
             f"reached — drop one or the other",
-        )
+        ))
     if not new and required and not has_default:
         # Statically provable: the gate is false on the New form whatever
         # `when` says, so every create would fail its required check. The
         # equivalent hidden_on_forms case is only a warning today; this is
         # an error because the build can prove it.
-        problems.append(
+        problems.append((
+            "error",
             f"{context}: {column!r} is required with no default and hidden from the New "
             f"form, so every save would fail",
-        )
+        ))
     elif when is not None and required and not has_default:
-        problems.append(
+        # NOT provable: whether the predicate holds on the New form depends
+        # on what the person types. A warning, per the spec.
+        problems.append((
+            "warning",
             f"{context}: {column!r} is required with no default and 'when' may hide it "
-            f"at creation, which would fail the save (warning: conditional, so this "
-            f"cannot be decided at build time)",
-        )
+            f"at creation, which would fail the save — this cannot be decided at "
+            f"build time",
+        ))
     if when is not None:
         problems.extend(
-            validate_condition(
+            ("error", message)
+            for message in validate_condition(
                 when,
                 target=EXPRESSION,
                 rendered=rendered,
                 types=types,
                 lookups=lookups,
                 context=f"{context}.{column}.when",
-            ),
+            )
         )
     return problems

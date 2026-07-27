@@ -55,7 +55,7 @@ your own schema for the worst ones → define how you'll know it worked
 | [equipment-maintenance](equipment-maintenance/) | Testing / preventive maintenance | Next-due schedule with evidence-linked history; the Overdue view's target is empty |
 | [routine-checks](routine-checks/) | Digitised paper checklists | Fridge temps, trolley checks, rounds — timestamped, attributed, acted on |
 | [switchboard-log](switchboard-log/) | Switchboard / after-hours desk | The three paper books digitised: code log (calculated duration), message book (relay times), key register |
-| [visitor-log](visitor-log/) | Front-desk sign-in | The On-site-now view IS the evacuation muster list; contractor induction flag |
+| [visitor-log](visitor-log/) | Front-desk sign-in | An On-site-now view (which you create — see its DEPLOY.md) becomes the evacuation muster list; contractor induction flag |
 | [vehicle-log](vehicle-log/) | Pool-car log books | Calculated kilometres from odometer readings; the Purpose column is your FBT substantiation |
 
 ## Theme: People & relationships
@@ -140,6 +140,17 @@ dbml-sharepoint build \
    error: read it, fix the stated cause, paste the same script again —
    reruns verify-and-skip completed work.
 5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
+6. Create the views listed under **Recommended views** in that DEPLOY.md.
+
+**Recommended views are not deployed — you create them.** No template
+declares a `views:` block, so a fresh deploy gives each list SharePoint's
+default *All Items* view and nothing else. Every "Recommended views" table
+is a specification for views you build in the SharePoint UI (or add to
+`mapping.yaml` under [`views:`](../website/docs/reference/mapping.md#views)
+and redeploy, which is the reproducible option). Nothing in a template's
+DEPLOY, STAFF-GUIDE or GOVERNANCE file will work until you have made them —
+so make them before you hand the list to anyone, and treat any document
+that names a view as depending on that step.
 
 ## The shared security model
 
@@ -159,16 +170,48 @@ columns are sealed** (SharePoint refuses UI schema edits and deletion of
 sealed columns, even for site admins — the deploy script unseals for its
 own run and re-seals, with verification, in Phase 4.1) and **every list
 carries `AllowDeletion = false`** ("Delete this list" disappears for
-everyone). Two things remain possible on a sealed column: **display-name
-renames**, and **hiding it from the forms** via "Edit form → Edit
-columns". The second is not a sealing bug — that toggle writes the
-content type's `FieldLink.Hidden`, not the field, so field-level sealing
-never covered it. Both are drift; renames are reverted and reported on
-the next re-paste. `rollback.js` stays usable: it clears the deletion block per
+everyone). `rollback.js` stays usable: it clears the deletion block per
 list only after you confirm that list's deletion, and restores the block
 if a delete fails. This is friction + tamper-evidence, not enforcement —
 a site collection admin can flip both back via API, and a redeploy
-re-asserts and reports the drift.
+re-asserts sealing and the deletion block and reports having done so.
+
+Two things remain possible on a sealed column, and the deployer treats
+them very differently:
+
+- **Display-name renames.** Detected: reverted and reported on the next
+  re-paste.
+- **Hiding it from the forms** via "Edit form → Edit columns". **Not
+  detected and not repaired.** That toggle writes the content type's
+  `FieldLink.Hidden` rather than anything on the field, so field-level
+  sealing never covered it — and nothing in the deployer reads, writes,
+  probes or reports that property. A redeploy runs clean and says nothing.
+  The repair is manual: re-tick the column in the same "Edit columns"
+  panel. It cannot be scripted through the REST surface these scripts
+  use — `FieldLink.Hidden` is writable only through CSOM, which is why
+  declared form behaviour deliberately uses a different mechanism (see
+  below).
+
+**Declared form visibility is detected.** `form_visibility:` and
+`column_validation:` in `mapping.yaml` write field properties, not field
+links, and those *are* read back, compared and reverted on every deploy.
+So a column whose visibility you declared is protected; a column somebody
+hid by hand through the designer is not. The two states look identical to
+someone filling in the form, which is the argument for declaring the
+behaviour you want rather than leaving it to whoever last opened the
+designer. See
+[the mapping reference](../website/docs/reference/mapping.md#form_visibility).
+
+**One open question, recorded rather than answered.** A site that was
+deployed by an older version of this tool using the removed
+`hidden_on_forms:` key has SchemaXml `ShowIn*Form` attributes that the
+current deployer neither writes nor clears. A column can therefore stay
+hidden because of a setting no current declaration mentions, while the
+manifest reports its formula as cleared. Whether the deployer should clear
+those attributes once on migration is a real decision — it is a write to a
+property the tool has otherwise stopped touching, on sites whose operators
+did not ask for it — and it has not been made. If you are migrating such a
+site, check the affected columns in the form designer by hand.
 
 Detection is continuous on the reporting side: every generated reporting
 bundle ships `_UserAddedColumns.pq` (reads each list's live field

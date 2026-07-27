@@ -906,8 +906,8 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                 continue
             col = by_name.get(column)
             findings.extend(
-                Finding("error", message)
-                for message in validate_form_visibility(
+                Finding(severity, message)
+                for severity, message in validate_form_visibility(
                     column=column,
                     new=fv_declared.new,
                     existing=fv_declared.existing,

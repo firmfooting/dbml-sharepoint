@@ -15,6 +15,20 @@ Shared procedure: [`templates/README.md`](../../README.md) with
 - [ ] `AU_Audit` and `AU_Recommendation` exist (Audit first).
 - [ ] Create a test audit, then a recommendation against it (the Audit
       lookup offers it); AgreedAction/Owner/DueDate are required.
+- [ ] **Form behaviour** (declared in `mapping.yaml` under
+      `form_visibility:` — this is the one template that demonstrates it):
+      on the *New* form, RevisedDue, ClosedDate and EvidenceUrl are all
+      absent. Save the row, reopen it for edit: RevisedDue is now there;
+      ClosedDate and EvidenceUrl are still hidden. Set Status to
+      *Implemented - awaiting evidence* — EvidenceUrl appears as you
+      change the value, without saving. Set it to *Closed* — ClosedDate
+      appears too.
+- [ ] **Closure evidence is enforced, not just asked for** (`list_validation:`):
+      with Status *Closed* and EvidenceUrl empty, saving is refused with
+      the declared message. Fill EvidenceUrl; it saves.
+- [ ] Hidden ≠ inaccessible. Confirm a hidden column still holds its value:
+      the reporting bundle's data dictionary lists all three, and a view
+      can show them. `form_visibility` governs forms only.
 - [ ] DaysLate spot-checks: Due `2026-07-01` + Closed `2026-07-10` → **9**;
       Closed `2026-06-28` (early) → **0**; add RevisedDue `2026-07-15`,
       Closed `2026-07-20` → **5**.

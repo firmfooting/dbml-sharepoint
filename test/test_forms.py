@@ -5,7 +5,11 @@ from typing import cast
 
 import pytest
 
-from dbml_sharepoint.analysis.forms import compose_visibility, validate_form_visibility
+from dbml_sharepoint.analysis.forms import (
+    Severity,
+    compose_visibility,
+    validate_form_visibility,
+)
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 
 TYPES = {"Status": "nvarchar", "Count": "number", "Note": "nvarchar"}
@@ -68,13 +72,17 @@ def test_condition_is_parenthesised_inside_the_gate() -> None:
     )
 
 
-def _problems(**kwargs: object) -> list[str]:
+def _findings(**kwargs: object) -> list[tuple[Severity, str]]:
     base = dict(
         column="Note", new=True, existing=True, when=None, required=False,
         has_default=False, is_calculated=False, rendered={"Status", "Count", "Note"},
         types=TYPES, lookups=set(), context="form_visibility[X]",
     )
     return validate_form_visibility(**{**base, **kwargs})  # type: ignore[arg-type]
+
+
+def _problems(**kwargs: object) -> list[str]:
+    return [message for _, message in _findings(**kwargs)]
 
 
 def test_required_and_hidden_from_new_is_an_error() -> None:
@@ -93,6 +101,28 @@ def test_hidden_everywhere_with_a_condition_is_an_error() -> None:
 
 def test_calculated_columns_cannot_declare_visibility() -> None:
     assert "calculated" in _problems(is_calculated=True)[0]
+
+
+def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> None:
+    """The spec makes this a warning precisely because it cannot be decided
+    statically. Every message came back as an "error", with the word
+    "warning" buried in the prose — so the one genuinely conditional case
+    the feature exists to express failed the build."""
+    findings = _findings(when=WHEN, required=True)
+    assert [severity for severity, _ in findings] == ["warning"]
+    # And the severity is carried structurally, not spelled out in the text.
+    assert "warning" not in findings[0][1]
+
+
+def test_statically_provable_cases_stay_errors() -> None:
+    for kwargs in (
+        {"new": False, "required": True},
+        {"new": False, "existing": False, "when": WHEN},
+        {"is_calculated": True},
+    ):
+        findings = _findings(**kwargs)
+        assert findings, kwargs
+        assert all(severity == "error" for severity, _ in findings), kwargs
 
 
 def test_condition_problems_are_reported_through_the_shared_validator() -> None:

@@ -38,8 +38,17 @@ cannot change what the author declared.
 ### `validate_form_visibility`
 
 ```python
-def validate_form_visibility(*, column: str, new: bool, existing: bool, when: Condition | None, required: bool, has_default: bool, is_calculated: bool, rendered: set[str], types: dict[str, str], lookups: set[str], context: str) -> list[str]
+def validate_form_visibility(*, column: str, new: bool, existing: bool, when: Condition | None, required: bool, has_default: bool, is_calculated: bool, rendered: set[str], types: dict[str, str], lookups: set[str], context: str) -> list[tuple[Severity, str]]
 ```
 
-Semantic problems with one column's declaration, as messages.
+Semantic problems with one column's declaration, as
+(severity, message) pairs.
+
+The severity is carried structurally rather than described in the
+prose. Every message used to be returned as a bare string and wrapped
+by the caller as an error, including the one case the spec makes a
+WARNING — a required column that a `when` predicate *may* hide at
+creation. Its text said "(warning: …)" while it failed the build, so
+the one genuinely conditional declaration the feature exists to
+express could not be deployed at all.
 

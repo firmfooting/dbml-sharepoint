@@ -26,10 +26,11 @@ notes: |
 | `flow_package_version` | no | Defaults to `"none"`; for organisations pairing the lists with a Power Automate package |
 | `notes` | no | Defaults to `""` |
 
-The four required keys are required literally: `release.yaml` is read with
-plain dictionary access, so a missing one raises `KeyError` at load rather
-than producing a partly-stamped bundle. Every `release.yaml` under
-`templates/` and `examples/` is a working example of the shape.
+The key set is closed. A missing required key and an unrecognised key are
+both load errors naming the file — including a near-miss like
+`schema_verison:`, which would otherwise stamp the bundle with the wrong
+schema version and report nothing. Every `release.yaml` under `templates/`
+and `examples/` is a working example of the shape.
 
 `release` is the key, not `release_tag` — `release_tag` is the name the
 loaded object carries in Python, and the two are deliberately allowed to

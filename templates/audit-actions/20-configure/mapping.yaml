@@ -85,3 +85,44 @@ prevent_list_deletion: true
 column_formatting:
   Recommendation:
     Status: { style: severity, map: { Open: low, "In progress": low, "Implemented - awaiting evidence": good, Closed: good, "Risk accepted": good } }
+
+# Form visibility: the closure columns only exist as questions once there
+# is something to close, so they are off the New form and appear as the
+# status moves. Nothing here restricts access — a hidden column is still
+# populated, still queryable, still in the reporting bundle; this is about
+# not asking someone raising a recommendation to fill in how it ended.
+#
+# `reconcile: exact` (the default) makes this block authoritative for the
+# whole Recommendation list: every column NOT listed here has its
+# conditional-visibility formula cleared on every deploy. That is what you
+# want on a template — deployed state matches the file — but read the
+# "Reconciliation" section of the mapping reference before you copy this
+# pattern onto a list someone has configured by hand.
+form_visibility:
+  Recommendation:
+    reconcile: exact
+    columns:
+      # A formal extension is something that happens to an existing
+      # recommendation; there is nothing to extend at intake.
+      RevisedDue:
+        new: false
+      ClosedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Closed", "Risk accepted"] }
+      EvidenceUrl:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Implemented - awaiting evidence", "Closed"] }
+
+# The closure-evidence standard, enforced at save rather than by reminder.
+# Cross-column, so it belongs here and not in column_validation, which may
+# only reference the column being validated. Read as an implication: EITHER
+# it is not closed, OR there is evidence.
+list_validation:
+  Recommendation:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Closed" }
+        - { field: EvidenceUrl, op: is_not_null }
+    message: "Closing a recommendation needs closure evidence — record the EvidenceUrl link before setting Status to Closed."

@@ -63,8 +63,13 @@ views:
         RiskScore: 140
 ```
 
-- `where` supports typed operators (`eq`, `neq`, `leq`, `geq`, ...) and
-  date sentinels such as `today+30`.
+- `where` takes the shared [condition grammar](../api/conditions.md):
+  typed operators (`eq`, `neq`, `leq`, `geq`, `in`, `contains`, ...), date
+  sentinels such as `today+30`, and nesting through `all_of` / `any_of` /
+  `none_of`. A bare list means `all_of`, so every view written before
+  nesting existed keeps working unchanged. The same grammar drives
+  `form_visibility.when`, `column_validation.when` and
+  `list_validation.when` — nobody writes CAML, or a formula, by hand.
 - `formatting` points at a view-level (row) formatter JSON file.
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
@@ -124,26 +129,267 @@ Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
 
-## `hidden_on_forms` / `hidden_on_display`
+## `form_visibility`
+
+Which columns appear on which forms, and under what conditions.
 
 ```yaml
-hidden_on_forms:
-  Risk: [ResidualRiskRating]     # calculated; hidden on new/edit forms
-hidden_on_display:
-  Risk: [SortOrder]
+form_visibility:
+  Risk:
+    reconcile: exact            # the default — read Reconciliation below
+    columns:
+      SortOrder:     hidden     # never on any form
+      InternalScore: hidden
+      ClosureStatement:
+        new: false              # not at creation…
+        when:                   # …and only once it is being closed
+          - { field: Status, op: eq, value: "Closed" }
+      Rationale:
+        when:                   # a bare list is all_of
+          - { field: Decision, op: eq,  value: "Rejected" }
+          - { field: Stage,    op: neq, value: "Draft" }
+      Escalated:
+        when:                   # groups nest
+          any_of:
+            - { field: Priority, op: eq,          value: "Critical" }
+            - all_of:
+                - { field: Priority, op: eq,          value: "High" }
+                - { field: DueDate,  op: is_not_null }
 ```
 
+**The `columns:` level is mandatory.** `form_visibility` → *entity* →
+`columns:` → *column* → declaration. Nothing may sit beside `columns:`
+except `reconcile:`; anything else is a load error. (The migration error
+you get from a leftover `hidden_on_forms:` suggests `Column: hidden`
+without showing the two levels above it — follow the shape here, not that
+message.)
+
+Per column, either the string `hidden` or `visible`, or a mapping:
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `new` | bool | `true` | Show on the **New** form |
+| `existing` | bool | `true` | Show on **existing items** |
+| `when` | list or group | — | A condition tree; the column shows only when it holds |
+
+**`existing:` governs the Display form as well as the Edit form, and the
+two cannot be separated.** The modern Display form reads `ShowInEditForm`
+and ignores `ShowInDisplayForm` entirely, so "readable on Display but not
+editable" is not a state SharePoint has. The key is named `existing:`
+rather than `edit:` for exactly that reason — a key that misleads is not
+fixed by a footnote. If you need a column retired from new records but
+still correctable on old ones, that is `{new: false}`, and its history
+stays visible in views, item version history and the reporting bundle
+regardless.
+
+`hidden` is shorthand for `{new: false, existing: false}`. `visible` is
+shorthand for everything default, and is only meaningful under
+`reconcile: declared`, where it is how you clear a formula you previously
+declared.
+
+`when` uses the shared [condition grammar](../api/conditions.md) —
+the same one as `views[].where`. A bare list means `all_of`; `all_of`,
+`any_of` and `none_of` nest to a depth of 4 and 32 leaves.
+
+### How it is carried
+
+One property does all of it: `Field.ClientValidationFormula`. Per-form
+gating and the `when` tree are composed into a single formula at build
+time, because SharePoint gives a column exactly one of these — declaring
+both without composing them would silently destroy one. The composed
+formula for each column is printed in `deploy-manifest.md`, so you can read
+what will be written before you paste anything.
+
+SchemaXml's `ShowInNewForm` / `ShowInEditForm` attributes look like the
+obvious mechanism and are deliberately never written. Saving the form
+designer migrates them into the content type's `FieldLink.Hidden`, which
+hides a column from *every* form, permanently, and is not writable over
+REST — so a per-form declaration would silently become hide-everywhere the
+first time anyone opened the designer. A conditional formula leaves the
+SchemaXml saying "shown", so the designer never touches the field link.
+
+Because every deployed column is sealed, conditional visibility **cannot be
+configured by hand** on anything this tool deploys — a sealed column
+discards the write silently. Declaring it is the supported route, and it is
+the reproducible one.
+
+### What the build refuses
+
+- An unknown entity, or a column that is not a rendered column of it.
+- A **calculated** column — calculated columns never appear on entry forms,
+  so declaring their visibility is a mistake.
+- `new: false` *and* `existing: false` combined with `when` — the column is
+  hidden everywhere, so the condition can never be reached.
+- A **required column with no default hidden from the New form** (`hidden`,
+  or `new: false`). Every save would fail, and the build can prove it.
+- A quoted boolean: `new: "false"` is a load error, not `True`.
+- An operator the expression target cannot render — `measure: length`, the
+  `today` sentinel, and the text operators that have not been confirmed
+  against a live tenant. The
+  [condition grammar reference](../api/conditions.md) has the exact
+  per-target matrix, generated by running the renderers.
+
+It **warns** — without refusing the build — when a required column with no
+default carries a `when` that *may* hide it at creation. Whether the
+predicate holds on the New form depends on what the person types, so the
+build cannot decide it; if it can be false there, every save under that
+branch fails. Give the column a default, or make the condition one that is
+always true on a new item.
+
+**Never declare `Title`.** SharePoint's built-in Title column is
+provisioned through its own separate patch and never receives these
+properties, so a declaration on it deploys nothing. Rename it with
+`display_names` and leave its visibility alone.
+
+## `column_validation`
+
+Per-column save-time validation, with the message that column's author
+actually wants shown.
+
+```yaml
+column_validation:
+  Risk:
+    reconcile: exact            # the default — read Reconciliation below
+    columns:
+      Mitigation:
+        when:
+          - { field: Mitigation, measure: length, op: gt, value: 10 }
+        message: "Give at least a sentence — one word is not a mitigation."
+      Priority:
+        when:
+          - { field: Priority, op: neq, value: "Unset" }
+        message: "Choose a priority before saving."
+```
+
+Same two-level shape as `form_visibility`, and both `when` and `message`
+are required. A rule with no message fails the save with SharePoint's
+generic text, which tells the person filling in the form nothing — the
+message is the feature.
+
+`when` here states **what must be true to save**, which is the inverse of
+`form_visibility.when` stating what must be true to *show*. Same grammar,
+opposite polarity.
+
+**Self-reference only.** SharePoint permits a column validation formula to
+reference only the column being validated. A condition naming any other
+column is a build error pointing at `list_validation:`, which is the
+cross-column surface and takes the identical `when` + `message` shape.
+
+This lands on `Field.ValidationFormula` — a different property from the
+visibility formula, in a different expression language, so the two never
+interfere and a column may carry both. Person, lookup, rich-text and
+multi-line columns cannot be operands in a validation formula; those are
+build errors naming the target.
+
+One interaction to keep in mind: a validation rule on a column that
+`form_visibility` hides from the New form still runs on create. If the rule
+cannot pass with the column empty, every create fails and nobody ever sees
+the message.
+
+`Title` carries the same caveat as above — never declare it.
+
 ## `list_validation`
+
+The cross-column sibling. Identical `when` + `message` shape, but the
+condition may name any column on the list.
 
 ```yaml
 list_validation:
   Risk:
-    formula: '=IF([Status]="Closed",NOT(ISBLANK([ClosureStatement])),TRUE)'
+    when:                       # if it is closed, say how it was closed
+      any_of:
+        - { field: Status, op: neq, value: "Closed" }
+        - { field: ClosureStatement, op: is_not_null }
     message: "Closing a risk needs a closure statement."
 ```
 
-Save-time enforcement, reconciled with the list like any other declared
-setting.
+That is the shape most validation rules take: an implication. *If closed,
+then a closure statement is required* has no `implies` operator because it
+does not need one — `if A then B` is `any_of[not A, B]`, which the grammar
+already expresses.
+
+One entity, one rule; there is no `reconcile:` here because there is
+nothing to reconcile against — a list has a single `ValidationFormula`.
+
+The raw `formula:` key is **gone**, not deprecated. It was the last place
+an author wrote SharePoint syntax by hand, and so the last place the
+quoting and operator differences between targets could bite them: single
+quotes are rejected here and required in a visibility formula, booleans are
+`AND(...)` here and `&&` there, references are `[Col]` here and `[$Col]`
+there. Under the grammar none of those is an expressible mistake. Replace
+a `formula:` with the equivalent `when:` tree — the loader refuses to load
+the old key rather than reinterpreting it.
+
+## Reconciliation — `reconcile:` on `form_visibility` and `column_validation`
+
+:::danger `reconcile:` defaults to `exact`, and `exact` deletes
+
+Per entity, `reconcile` takes `exact` (**the default**) or `declared`.
+
+- **`exact`** — the declaration is authoritative for the **whole entity**.
+  Every rendered column of that list with no entry in `columns:` has its
+  formula **cleared**. Deployed state becomes a function of the
+  declaration rather than of declaration history: delete an entry and the
+  next deploy reverts it.
+- **`declared`** — only the listed columns are touched. Anything else is
+  left exactly as it is.
+
+This is destructive by default and it is not scoped to what you declared.
+The `column_validation` example above declares **two** columns of a
+13-column list and clears the formula on the other **ten**.
+`deploy-manifest.md` lists every one as `— cleared` before you paste
+anything; read that section.
+
+**The same key means the opposite thing under
+`list_permissions`.** There, the default is `configured` — assert the
+declared grants and leave everything else alone — and `exact` is the
+strict mode you opt into. Here `exact` is already on. The value
+vocabularies differ too (`exact` / `declared` versus `exact` /
+`configured`), so nothing carries across between the two sections but the
+word.
+
+:::
+
+`exact` is the default deliberately: every deployed column is sealed, so an
+operator cannot hand-set a conditional formula on one, and the usual fear —
+that exact reconciliation destroys hand-tuned configuration — is largely
+fictional here. `declared` exists for mappings running
+`seal_columns: false`, where that fear is real.
+
+An entity block with an empty `columns: {}` under `exact` is legal and
+meaningful: *nothing on this list is conditional* — clear every declared
+column's formula.
+
+"Every rendered column" means every column **declared in the DBML for that
+entity**, not every field on the live list. Built-ins other than `Title`
+(`ContentType`, `Attachments`, `Author`, `Editor` and the rest) are never
+touched, and neither is any column of an entity with no block at all.
+`form_visibility` also skips calculated columns, since declaring one is an
+error; `column_validation` currently includes them, so a calculated column
+picks up a `— cleared` line in the manifest.
+
+One thing `exact` does **not** reach: a **deferred lookup** — a circular or
+self-referencing lookup created in Phase 2 rather than Phase 1. A
+declaration on one deploys correctly, but it is absent from the manifest's
+Form visibility section, so the manifest under-reports what will be written.
+Check the declaration itself for those columns rather than the manifest.
+
+## Migrating from `hidden_on_forms` / `hidden_on_display`
+
+Both keys are removed, and both are now load errors rather than silent
+no-ops — a removal that failed open would have quietly made hidden columns
+visible.
+
+- `hidden_on_forms: {Risk: [SortOrder]}` becomes
+  `form_visibility: {Risk: {columns: {SortOrder: hidden}}}`. Note the
+  `columns:` level; the error message does not show it.
+- `hidden_on_display:` has **no replacement**, because it never did
+  anything on a modern list. The modern Display form reads `ShowInEditForm`
+  and ignores `ShowInDisplayForm`, so the old key wrote a setting, verified
+  it stuck, reported success, and changed nothing anyone saw. If you meant
+  "hide it from people looking at existing records", that is
+  `{existing: false}` — and it hides the column from the Edit form too,
+  which is the only behaviour SharePoint offers.
 
 ## `calculated_formulas`
 
@@ -192,36 +438,79 @@ its own maintenance runs and re-seals in the protection phase. Rollback
 [handles both](../artifacts/rollback.md#protection-handling) without
 ever stranding a lock.
 
-## `permissions`
+## Security: `permission_levels`, `groups`, `list_permissions`
+
+Three **top-level** sections, not one nested `permissions:` block. All
+three are optional; declare none of them and every list simply inherits the
+site's permissions.
 
 ```yaml
-permissions:
-  levels:
-    - name: "Contribute No Delete"
-      description: "Add and edit without delete"
-      base_permissions: [ViewListItems, AddListItems, EditListItems, ...]
-  groups:
-    - name: "Register Editors"
-      description: "..."
-      owner_group: "Site Owners"
-      allow_members_edit_membership: false
-      allow_request_to_join_leave: false
-      auto_accept_request_to_join_leave: false
-      only_allow_members_view_membership: true
-      require_empty_at_deploy: true        # optional
-      enroll_operator_during_deploy: true  # optional, run-scoped
-  default_policy:
+permission_levels:
+  - name: "Contribute No Delete"
+    description: "Add and edit without delete"
+    base_permissions: [ViewListItems, AddListItems, EditListItems]
+
+groups:
+  - name: "Register Editors"
+    description: "People who maintain the register."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    require_empty_at_deploy: true        # optional
+    enroll_operator_during_deploy: true  # optional, run-scoped
+
+list_permissions:
+  default:
+    site_role: default        # which site role this default policy applies to
     break_inheritance: true
-    reconcile: exact          # or configured (default)
+    reconcile: exact          # or configured (the default)
     assignments:
-      - { principal: { kind: group, name: "Register Editors" }, level: "Contribute No Delete" }
-      - { principal: { kind: associated_owner_group }, level: "Full Control" }
-  overrides: {}               # per-entity ListPermissionPolicy
+      - principal: { kind: group, name: "Register Editors" }
+        level: "Contribute No Delete"
+      - principal: { kind: associated_owner_group }
+        level: "Full Control"
+  overrides:                  # per entity; same policy shape as default
+    Policy:
+      break_inheritance: true
+      reconcile: configured
+      assignments:
+        - principal: { kind: associated_member_group }
+          level: "Read"
 ```
 
-`configured` mode asserts the declared grants; `exact` additionally
-removes undeclared direct grants (an allowlist). Group owner assignment
-uses CSOM where REST cannot express it.
+A `principal` is `{kind: group, name: "..."}`, or one of the three
+site-relative kinds — `associated_owner_group`,
+`associated_member_group`, `associated_visitor_group` — which take no
+name. Every assignment needs a `level`.
+
+`configured` mode asserts the declared grants and leaves anything else
+alone; `exact` additionally **removes undeclared direct grants**, making
+the declaration an allowlist. `exact` requires `break_inheritance: true` —
+an inherited ACL cannot be reconciled as a list-scoped allowlist, and the
+loader refuses the combination. Group owner assignment uses CSOM where REST
+cannot express it.
+
+`site_role:` is read on `list_permissions.default` only. Setting it inside
+an `overrides:` entry is accepted by the loader and then discarded — an
+override applies to its entity wherever that entity deploys.
+
+:::note There was never a nested `permissions:` block
+
+Earlier versions of this page documented `permissions:` with `levels:`,
+`groups:`, `default_policy:` and `overrides:` nested underneath. Nothing in
+the code ever read that key. A mapping using it built successfully and
+produced a bundle byte-identical to one with no security declared at
+all — inherited permissions, no group, no level, no reconciliation, and a
+clean build report. It was documentation describing a design that was never
+implemented.
+
+`permissions:` is now rejected at load rather than ignored, so the failure
+is loud. The keys above are the real ones, and are what every shipped
+template and example uses.
+
+:::
 
 ## `demo_items`
 
