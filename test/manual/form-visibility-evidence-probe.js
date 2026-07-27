@@ -111,14 +111,14 @@
     return { aborted: 'fields-read-failed' };
   }
   const all = fieldsResp.d.results || [];
-  // Author-relevant fields only: skip the built-ins nobody configures.
-  const BUILTIN = /^(ContentType|Attachments|Author|Editor|Created|Modified|_|App|Compliance|ID|GUID|FileLeafRef|FolderChildCount|ItemChildCount|_ComplianceFlags|_ComplianceTag)/;
-  const fields = all.filter((f) => !BUILTIN.test(f.InternalName));
-
   const parseXml = (x) => new DOMParser().parseFromString(String(x || '<Field/>'), 'application/xml');
   const isFalse = (el, n) => (el.getAttribute(n) || '').toUpperCase() === 'FALSE';
 
   // === Content type field links (order + Hidden) ==========================
+  // Read BEFORE filtering: the content type's field link set is the honest
+  // definition of "a column on this form". A name-prefix denylist is not —
+  // an earlier version of this probe used one and the table came back with
+  // fifty rows of owshiddenversion, LinkTitle2, MetaInfo and friends.
   const ctResp = await get(`${listPath}/contenttypes?$select=Name,StringId`);
   const cts = ctResp.ok ? (ctResp.d.results || []).filter((c) => c.Name !== 'Folder') : [];
   const linkByName = new Map();
@@ -131,13 +131,25 @@
     for (const l of links) if (!linkByName.has(l.Name)) linkByName.set(l.Name, l);
   }
 
+  // Show a field if the content type links it (it can reach a form), or if
+  // it carries evidence (never hide a formula from the harvest), or if it is
+  // this probe's own scratch column.
+  const relevant = (f) => linkByName.has(f.InternalName)
+    || f.ValidationFormula || f.ClientValidationFormula || f.ClientValidationMessage
+    || f.InternalName === 'ZZEvidence';
+  const fields = all.filter(relevant);
+  if (all.length !== fields.length) {
+    log(`Showing ${fields.length} of ${all.length} fields — the rest are list plumbing `
+      + 'the content type does not link.');
+  }
+
   // === 1. Field order =====================================================
   rule();
   bold('1 — FIELD ORDER');
   say('List field collection:');
   say(`  ${fields.map((f) => f.InternalName).join(' → ')}`);
   say('Content type FieldLink order (what the form follows, absent body sections):');
-  say(`  ${linkOrder.filter((n) => !BUILTIN.test(n)).join(' → ')}`);
+  say(`  ${linkOrder.join(' → ')}`);
 
   // === 2. The full store map ==============================================
   rule();
@@ -230,24 +242,40 @@
     log(`Round-trip: ${writeResults.roundTrip}`);
 
     // D — length limit, by binary search on accepted-and-retained length.
+    // ~13 write+read pairs, so it logs each step: a silent 30 seconds is
+    // indistinguishable from a hang.
     const build = (n) => {
       const head = "=if([$Title] == '";
       const tail = "', 'true', 'false')";
       return head + 'a'.repeat(Math.max(n - head.length - tail.length, 1)) + tail;
     };
-    let lo = 100; let hi = 8192; let best = 0;
-    while (lo <= hi) {
-      const mid = Math.floor((lo + hi) / 2);
-      const f = build(mid);
+    const accepts = async (n) => {
+      const f = build(n);
       const w = await setFormula(f);
-      const rb = w.ok ? await readFormula() : null;
-      if (w.ok && rb === f) { best = f.length; lo = mid + 1; } else { hi = mid - 1; }
+      if (!w.ok) return { ok: false, why: `HTTP ${w.status} ${w.error}` };
+      const rb = await readFormula();
+      return rb === f ? { ok: true, len: f.length } : { ok: false, why: 'written but not retained' };
+    };
+    const floor = await accepts(100);
+    if (!floor.ok) {
+      writeResults.maxLength = null;
+      log(`Length limit: INCONCLUSIVE — even a 100-char formula failed (${floor.why}).`);
+    } else {
+      let lo = 100; let hi = 8192; let best = floor.len;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const r = await accepts(mid);
+        log(`  probing ${String(mid).padStart(4)} chars → ${r.ok ? 'accepted' : `rejected (${r.why})`}`);
+        if (r.ok) { best = r.len; lo = mid + 1; } else { hi = mid - 1; }
+      }
+      writeResults.maxLength = best;
+      log(`Length limit: longest formula written AND read back intact = ${best} chars`
+        + `${best < 1024 ? ' — BELOW the assumed 1024; the spec must be corrected' : ''}`);
     }
-    writeResults.maxLength = best;
-    log(`Length limit: longest formula written AND read back intact = ${best} chars`
-      + `${best && best < 1024 ? ' — BELOW the assumed 1024; the spec must be corrected' : ''}`);
     await setFormula('');
-    log(`Cleared ${COL}. Delete it with:  await fetch('${apiUrl(fieldPath('ZZEvidence'))}',{method:'POST',headers:{'X-RequestDigest':'<digest>','IF-MATCH':'*','X-HTTP-Method':'DELETE'}})`);
+    const gone = await post(fieldPath(COL), undefined, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' });
+    log(gone.ok ? `Removed the throwaway column ${COL}.`
+      : `Could not remove ${COL} (HTTP ${gone.status} ${gone.error}) — delete it in list settings.`);
   } else {
     rule();
     log('Write tests skipped (ALLOW_WRITES = false). Round-trip fidelity and the '
