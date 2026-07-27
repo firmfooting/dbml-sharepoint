@@ -1013,6 +1013,24 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                     f"{ctx}.{col_name}: superseded_by {superseded!r} is "
                     f"itself retired.",
                 ))
+        for indexed_col in bundle.mapping.indexed_columns.get(entity_name, []):
+            if indexed_col in retired_cols:
+                findings.append(Finding(
+                    "warning",
+                    f"{ctx}: {indexed_col!r} is still in indexed_columns — a "
+                    f"list's index budget is finite and this one is now dead "
+                    f"weight.",
+                ))
+        # _parse_view rejects an empty fields list, so a view can only reach
+        # zero fields by having every one of them retired.
+        for retired_view in bundle.mapping.views.get(entity_name, []):
+            if not retired_view.fields:
+                findings.append(Finding(
+                    "warning",
+                    f"views[{entity_name}].{retired_view.title}: retirement "
+                    f"stripped every declared field; the view would be "
+                    f"created with no columns.",
+                ))
         # A LIVE formula referencing a retired column still runs against a
         # column that has left the forms and every view. A calculated column
         # that is itself retired is dead and is not reported.
@@ -1036,6 +1054,26 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                     f"list_validation[{entity_name}]: condition references "
                     f"{ref}, which is retired.",
                 ))
+
+    # Declarations the load-time fold rewrote. The structures no longer
+    # carry the reference, so the record on the mapping is the only source.
+    findings.extend(
+        Finding(
+            "warning",
+            f"retired_columns[{strip.entity}]: {strip.column!r} is still "
+            f"named in {strip.context}; retirement stripped it and the build "
+            f"continues.",
+        )
+        for strip in bundle.mapping.retirement_strips
+    )
+    if bundle.mapping.retired_columns and bundle.mapping.display_name_mode is None:
+        findings.append(Finding(
+            "warning",
+            "retired_columns are declared but display_names is not enabled, "
+            "so the ' (retired)' display-title suffix never reaches "
+            "SharePoint. Add `display_names: {mode: auto}` to surface "
+            "retirement on the list itself.",
+        ))
 
     # form_visibility / column_validation. Without this the declarations
     # reach the generator unchecked and surface as a traceback carrying an

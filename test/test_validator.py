@@ -1733,3 +1733,153 @@ def test_retired_calculated_column_without_a_formula_reports_only_root_cause(
     assert len(errors) == 1, [f.message for f in errors]
     assert "Board.Route" in errors[0].message
     assert "calculated_formulas.Board.Route" in errors[0].message
+
+
+def test_retired_columns_warnings(tmp_path: Path) -> None:
+    """Warn where a retirement mistake only wastes something. Retirement
+    must never break a build: a stale view or width reference is stripped
+    and reported, not rejected. A column_formatting entry on a retired
+    column is KEPT deliberately — historical values still render with their
+    severity colours wherever the column is still shown."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Enum rag {\n"
+        '  "Green"\n'
+        '  "Amber"\n'
+        "}\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "  OperationsStatus rag\n"
+        "  Stamp nvarchar [not null, default: 'x']\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "display_names:\n"
+        "  mode: auto\n"
+        "indexed_columns:\n"
+        "  Board: [OperationsStatus]\n"
+        "column_formatting:\n"
+        "  Board:\n"
+        "    OperationsStatus: { style: severity, map: { Green: good } }\n"
+        "form_formatting:\n"
+        "  Board:\n"
+        "    body:\n"
+        "      sections:\n"
+        '        - displayname: "Header"\n'
+        "          fields: [BoardDate, OperationsStatus]\n"
+        "views:\n"
+        "  Board:\n"
+        '    - title: "Heat grid"\n'
+        "      fields: [BoardDate, OperationsStatus]\n"
+        "      widths: { OperationsStatus: 120 }\n"
+        '    - title: "Statuses only"\n'
+        "      fields: [OperationsStatus]\n"
+        "retired_columns:\n"
+        "  Board:\n"
+        "    OperationsStatus:\n"
+        "      retired: 2026-09-01\n"
+        "    Stamp:\n"
+        "      retired: 2026-09-01\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    findings = validate_against_mapping(schema, bundle)
+    warnings = [f for f in findings if f.severity == "warning"]
+
+    def warned(*needles: str) -> bool:
+        return any(all(n in f.message for n in needles) for f in warnings)
+
+    # not null WITH a default: saves succeed, the default is stamped forever.
+    assert warned("retired_columns[Board]", "'Stamp'", "stamped with")
+    # A dead index is dead weight against a finite per-list budget.
+    assert warned("retired_columns[Board]", "'OperationsStatus'", "indexed_columns")
+    # Stripped view field, width and form-section references — reported,
+    # never rejected. One generic loop over retirement_strips covers all
+    # three; the context string is what distinguishes them.
+    assert warned("views[Board].Heat grid fields", "stripped it")
+    assert warned("views[Board].Heat grid widths", "stripped it")
+    assert warned("form_formatting[Board].body sections", "stripped it")
+    # A view left with no fields at all.
+    assert warned("views[Board].Statuses only", "every declared field")
+    # Never an error: retirement must not break a build.
+    assert not [f for f in findings if f.severity == "error"]
+    # column_formatting on a retired column is kept, not flagged.
+    assert not warned("column_formatting")
+
+
+def test_retirement_without_display_names_warns_the_suffix_is_inert(
+    tmp_path: Path,
+) -> None:
+    """display_name_for ignores overrides unless mode is auto, so without a
+    display_names section the ' (retired)' suffix never reaches SharePoint."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  OldColumn nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "retired_columns:\n"
+        "  Board: [OldColumn]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    warnings = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "warning"
+    ]
+    assert any(
+        "display_names is not enabled" in f.message and "(retired)" in f.message
+        for f in warnings
+    )
+
+
+def test_retirement_replacing_a_form_visibility_declaration_warns(
+    tmp_path: Path,
+) -> None:
+    """The fold overwrites a hand-written declaration for a retired column.
+    Silent mutation of the author's own YAML is exactly what the strip
+    record exists to surface."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  OldColumn nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "form_visibility:\n"
+        "  Board:\n"
+        "    columns:\n"
+        "      OldColumn: visible\n"
+        "retired_columns:\n"
+        "  Board: [OldColumn]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "warning"
+        and "form_visibility[Board].columns" in f.message
+        and "stripped it" in f.message
+        for f in findings
+    )
