@@ -1,6 +1,7 @@
 # src/dbml_sharepoint/analysis/validator.py
 """Validation rules for the parsed schema."""
 
+import datetime as dt
 import re
 from dataclasses import dataclass
 from typing import Literal
@@ -942,6 +943,100 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
         )
 
 
+    # Retired columns. The declaration is folded into form_visibility, the
+    # display titles, the view field lists and the form body sections at
+    # LOAD time, so these checks run against the authoritative record
+    # retained on the mapping. Fail closed where a mistake would break the
+    # list; warn where it would only waste something.
+    #
+    # The one check NOT here is "required with no default": the fold makes
+    # that a form_visibility declaration, and the rule already lives beside
+    # the mechanism in analysis/forms.py. The loop below re-labels it so it
+    # names retirement rather than a section the author never wrote.
+    for entity_name, retired_cols in bundle.mapping.retired_columns.items():
+        retired_table = tables_by_name.get(entity_name)
+        if retired_table is None or entity_name not in bundle.mapping.entities:
+            findings.append(Finding(
+                "error", f"retired_columns[{entity_name}]: unknown entity.",
+            ))
+            continue
+        ctx = f"retired_columns[{entity_name}]"
+        xcols = cross_site_by_entity.get(entity_name, set())
+        rendered = _rendered_columns(retired_table, xcols)
+        cols_by_name = {c.name: c for c in retired_table.columns}
+        for col_name, retired_spec in retired_cols.items():
+            if col_name not in rendered:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: {col_name!r} is not a rendered column of "
+                    f"{entity_name}. Retire the column the DBML declares — "
+                    f"never delete the declaration, or the column stays live "
+                    f"on the site and drifts the _UserAddedColumns audit on "
+                    f"every refresh, forever.",
+                ))
+                continue
+            if retired_spec.retired:
+                try:
+                    dt.date.fromisoformat(retired_spec.retired)
+                except ValueError:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}.{col_name}: retired {retired_spec.retired!r} is not "
+                        f"an ISO date (YYYY-MM-DD).",
+                    ))
+            col = cols_by_name.get(col_name)
+            if col is not None and col.required and col.default is not None:
+                findings.append(Finding(
+                    "warning",
+                    f"{ctx}: {col_name!r} is required with a declared "
+                    f"default — saves succeed, but every new row is stamped "
+                    f"with {col.default!r} forever.",
+                ))
+            superseded = retired_spec.superseded_by
+            if superseded is None:
+                continue
+            if superseded == col_name:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}.{col_name}: superseded_by names the retired "
+                    f"column itself.",
+                ))
+            elif superseded not in rendered:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}.{col_name}: superseded_by {superseded!r} is not "
+                    f"a rendered column of {entity_name}.",
+                ))
+            elif superseded in retired_cols:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}.{col_name}: superseded_by {superseded!r} is "
+                    f"itself retired.",
+                ))
+        # A LIVE formula referencing a retired column still runs against a
+        # column that has left the forms and every view. A calculated column
+        # that is itself retired is dead and is not reported.
+        for calc_col, formula in bundle.mapping.calculated_formulas.get(
+            entity_name, {},
+        ).items():
+            if calc_col in retired_cols:
+                continue
+            for ref in sorted(formula_column_refs(formula) & set(retired_cols)):
+                findings.append(Finding(
+                    "error",
+                    f"calculated_formulas[{entity_name}].{calc_col}: formula "
+                    f"references [{ref}], which is retired.",
+                ))
+        retirement_rule = bundle.mapping.list_validation.get(entity_name)
+        if retirement_rule is not None:
+            retired_refs = {leaf.field for leaf in leaves(retirement_rule.when)} & set(retired_cols)
+            for ref in sorted(retired_refs):
+                findings.append(Finding(
+                    "error",
+                    f"list_validation[{entity_name}]: condition references "
+                    f"{ref}, which is retired.",
+                ))
+
     # form_visibility / column_validation. Without this the declarations
     # reach the generator unchecked and surface as a traceback carrying an
     # internal context string instead of a Finding naming the mapping key.
@@ -959,14 +1054,25 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
         calculated = set(bundle.mapping.calculated_formulas.get(fv_entity, {}))
         by_name = {c.name: c for c in section_table.columns}
         ctx = f"form_visibility[{fv_entity}]"
+        # _apply_retirement synthesises an entry here for every retired
+        # column, so a problem with one is a problem with the retirement
+        # declaration the author actually wrote. Re-labelling rather than
+        # restating keeps one copy of each rule.
+        retired_here = bundle.mapping.retired_columns.get(fv_entity, {})
         for column, fv_declared in fv_section.columns.items():
+            col_ctx = f"retired_columns[{fv_entity}]" if column in retired_here else ctx
             if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
-                findings.append(Finding("error", _undeployable(ctx, column)))
+                findings.append(Finding("error", _undeployable(col_ctx, column)))
                 continue
             if column not in rendered:
-                findings.append(Finding(
-                    "error", f"{ctx}: {column!r} is not a rendered column of {fv_entity}.",
-                ))
+                # A retired column that names nothing is already reported
+                # by the retirement block, with the consequence of deleting
+                # the DBML declaration spelled out.
+                if column not in retired_here:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: {column!r} is not a rendered column of {fv_entity}.",
+                    ))
                 continue
             col = by_name.get(column)
             findings.extend(
@@ -982,7 +1088,7 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                     rendered=rendered,
                     types=types,
                     lookups=lookups,
-                    context=ctx,
+                    context=col_ctx,
                 )
             )
 
