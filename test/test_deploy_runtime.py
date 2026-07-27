@@ -160,13 +160,16 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       userLoginName: 'probe@example.com',
       userId: 1,
     };
-    let titleSealed = true;
-    const titleField = () => ({
+    // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
+    const titles = {};
+    const titleState = (listTitle) => (titles[listTitle] ||= {
+      Sealed: true, Required: true, Description: '', DefaultValue: null,
+    });
+    const titleField = (listTitle) => ({
       Id: '11111111-1111-1111-1111-111111111111',
       InternalName: 'Title', Title: 'Title', TypeAsString: 'Text',
-      Description: '', Required: true, EnforceUniqueValues: false,
-      Indexed: false, ReadOnlyField: false, Sealed: titleSealed,
-      DefaultValue: null, CustomFormatter: null,
+      EnforceUniqueValues: false, Indexed: false, ReadOnlyField: false,
+      CustomFormatter: null, ...titleState(listTitle),
     });
     // Created fields persist, so the run converges instead of failing
     // "missing after creation" and aborting before PROTECTION. Without
@@ -188,6 +191,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       Sealed: false,
       DefaultValue: b.DefaultValue == null ? null : b.DefaultValue,
       CustomFormatter: b.CustomFormatter == null ? null : b.CustomFormatter,
+      __body: b,
     });
     const body = (url, opts) => {
       if (url.includes('contextinfo')) {
@@ -213,15 +217,20 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
             ValidationMessage: f.__vm == null ? null : f.__vm } };
         }
         const named = (url.match(/getbyinternalnameortitle\('([^']+)'\)/) || [])[1];
-        if (named === 'Title') return { d: titleField() };
+        if (named === 'Title') return { d: titleField(listTitle) };
         if (named) {
           const f = created[`${listTitle} ${named}`];
-          return f ? { d: f } : { error: { code: '-2147024809, System.ArgumentException' } };
+          if (!f) return { error: { code: '-2147024809, System.ArgumentException' } };
+          // A derived-property probe (MaxLength, Choices, DisplayFormat...)
+          // names none of the shape columns; echo what the field was
+          // created with, which is what the declaration asked for.
+          if (!url.includes('InternalName')) return { d: f.__body };
+          return { d: f };
         }
         const own = Object.entries(created)
           .filter(([k]) => k.startsWith(`${listTitle} `))
           .map(([, v]) => v);
-        return { d: { results: [titleField(), ...own] } };
+        return { d: { results: [titleField(listTitle), ...own] } };
       }
       // Principals: enough shape to get PREPARE past 1.2/1.3 and reach the
       // maintenance unseal at 1.4. Before this, the runtime test had never
@@ -258,8 +267,9 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         const listTitle = listOf(u);
         const named = (u.match(/getbyinternalnameortitle\('([^']+)'\)/) || [])[1];
         if (named === 'Title') {
-          if (parsed.Sealed === false) titleSealed = false;
-          if (parsed.Sealed === true) titleSealed = true;
+          for (const k of ['Sealed', 'Required', 'Description', 'DefaultValue']) {
+            if (parsed[k] !== undefined) titleState(listTitle)[k] = parsed[k];
+          }
         } else if (named) {
           const key = `${listTitle} ${named}`;
           const f = created[key];
@@ -364,25 +374,64 @@ def test_the_adopted_run_reaches_the_write_phases() -> None:
         assert phase in reached, f"phase {phase} not reached: {reached}"
 
 
-def test_protection_restores_only_the_titles_prepare_unsealed() -> None:
-    """Restoration is verified by construction, not by execution.
-
-    The tool does not own Title's seal state, so a run that unseals one
-    must hand back what it found — it must neither seal a Title it found
-    unsealed nor leave one it opened. PROTECTION therefore re-seals
-    exactly the set PREPARE recorded.
-
-    This is a text assertion because the mock cannot yet reach PROTECTION:
-    Phase 2.1 needs derived-property probes (Choices, DisplayFormat) and
-    lookup creation before the run converges. That is the remaining gap in
-    this harness, and it is the reason this one claim is checked on the
-    generated source rather than on a run.
-    """
-    js = _deploy_js()
-    assert "titlesUnsealedForRun.add(" in js, "PREPARE records nothing to restore"
-    assert "of titlesUnsealedForRun" in js, (
-        "PROTECTION does not re-seal the Titles PREPARE unsealed"
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) -> None:
+    """The tool does not own Title's seal state, so a run that unseals one
+    must hand back what it found: it must neither seal a Title it found
+    unsealed nor leave open one it opened to write."""
+    js = _declared_deploy_js(
+        tmp_path,
+        "form_visibility:\n  Escalation:\n    columns:\n      Note: hidden\n",
     )
+    script = _ADOPTED_HARNESS + "\n" + js.replace(
+        "})();", "}))().then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    line = next(
+        (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert line is not None, "harness produced no call log"
+    calls = json.loads(line.removeprefix("__CALLS__"))
+    seal_writes = [
+        json.loads(c["body"])["Sealed"]
+        for c in calls
+        if c["method"] == "POST" and c.get("body")
+        and "getbyinternalnameortitle('Title')" in c["url"]
+        and "Sealed" in c["body"]
+    ]
+    assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
+    assert seal_writes[-1] is True, f"the run left Title unsealed: {seal_writes}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
+    """The end-to-end guard, and the one that gives the others their value.
+
+    The original mock aborted in the read-only preflight, so no phase past
+    1.1 had ever executed in a test — which is how a bug in the Phase 2.1
+    field reconcile shipped in a green suite. This run adopts an existing
+    site, unseals, creates, reconciles declared formulas, seals and seeds,
+    and must finish with no errors and no abort. If a future change
+    shortens it, the coverage disappears silently unless this fails.
+    """
+    js = _declared_deploy_js(
+        tmp_path,
+        "form_visibility:\n  Escalation:\n    columns:\n      Note: hidden\n",
+    )
+    script = _ADOPTED_HARNESS + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(line.removeprefix("__RESULT__"))
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
+               if "Starting Phase " in ln]
+    for phase in ("1.1", "1.4", "2.1", "3.1", "4.1", "5.1"):
+        assert phase in reached, f"phase {phase} not reached: {reached}"
 
 
 def test_generated_deploy_js_carries_no_control_characters() -> None:
@@ -400,3 +449,71 @@ def test_generated_deploy_js_carries_no_control_characters() -> None:
         if ord(ch) < 32 and ch not in "\n\r\t"
     })
     assert not stray, f"control characters in generated deploy.js: {[hex(ord(c)) for c in stray]}"
+
+
+def _declared_deploy_js(tmp_path: Path, section: str) -> str:
+    """deploy.js for an all-text schema that actually declares a formula.
+
+    The shipped fixture declares none, so enforceDeclaredFormulas returns
+    before doing anything and cannot be exercised through it. All-Text
+    columns keep the run clear of the derived-property probes the mock does
+    not answer.
+    """
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+    from dbml_sharepoint.model.release import load_release
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Note nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n" + section,
+        encoding="utf-8",
+    )
+    return generate_deploy_js(
+        schema=parse_dbml(tmp_path / "s.dbml"),
+        bundle=load_mapping(tmp_path / "m.yaml"),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_overwriting_a_declared_formula_logs_the_prior_value(tmp_path: Path) -> None:
+    """`before` was read, compared and discarded; on success nothing was
+    logged, so a deploy that removed or rewrote an existing formula left no
+    record of what had been there. Under `reconcile: exact` an undeclared
+    column's formula is cleared outright — exactly the case where the prior
+    value is the only thing anyone would want back."""
+    harness = _ADOPTED_HARNESS.replace(
+        "ClientValidationFormula: f.__cvf == null ? null : f.__cvf,",
+        "ClientValidationFormula: f.__cvf == null ? "
+        "\"=if([$WasHere] != '', 'true', 'false')\" : f.__cvf,",
+    )
+    js = _declared_deploy_js(
+        tmp_path,
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note: hidden\n",
+    )
+    script = harness + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    replaced = [ln for ln in output.splitlines() if "declared formulas" in ln]
+    assert replaced, f"no prior value logged:\n{output[-2500:]}"
+    assert any("WasHere" in ln for ln in replaced), replaced

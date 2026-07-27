@@ -375,3 +375,89 @@ def test_manifest_run_order_puts_assessment_first() -> None:
     assert "verification checklist" in run
     assert run.index("[SP-DEPLOY]") < run.index("rollback.js")
     assert "failed FIRST provision" in run
+
+
+# --- The manifest's three blind spots ---------------------------------------
+
+
+def _manifest_for(tmp_path: Path, section: str) -> str:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Note nvarchar\n"
+        "  Status nvarchar\n"
+        "  Parent int [ref: > Escalation.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n" + section,
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    return generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/t",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+
+def test_manifest_reports_a_declaration_on_a_deferred_lookup(tmp_path: Path) -> None:
+    """The sections iterated fields_phase1 only, while jsgen puts the same
+    keys on phase2_lookups and deploy.js writes them. So a declaration on a
+    self-referencing lookup deployed and the review artefact denied it —
+    the inverse of the silent-drop bug, and just as misleading."""
+    md = _manifest_for(
+        tmp_path,
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    reconcile: declared\n"
+        "    columns:\n"
+        "      Parent: hidden\n",
+    )
+    assert "APP_Escalation.Parent" in md
+
+
+def test_manifest_reports_the_column_validation_reconcile_mode(tmp_path: Path) -> None:
+    """reconcile was reported for form_visibility only, so a
+    column_validation block running the default `exact` cleared every
+    undeclared column's rule with no mode shown anywhere."""
+    md = _manifest_for(
+        tmp_path,
+        "column_validation:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        "          - { field: Note, op: is_not_null }\n"
+        "        message: Say something.\n",
+    )
+    section = md.split("## Column validation")[1].split("##")[0]
+    assert "exact" in section, section
+
+
+def test_manifest_has_a_list_validation_section(tmp_path: Path) -> None:
+    """Both siblings had a section; the cross-column one had none, so a
+    save rule governing the whole list was deployed unannounced."""
+    md = _manifest_for(
+        tmp_path,
+        "list_validation:\n"
+        "  Escalation:\n"
+        "    when:\n"
+        "      - { field: Status, op: is_not_null }\n"
+        "    message: A status is required.\n",
+    )
+    assert "## List validation" in md
+    assert "A status is required." in md
+    assert "Status is_not_null" in md

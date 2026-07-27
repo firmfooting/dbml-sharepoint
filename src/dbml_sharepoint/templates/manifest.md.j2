@@ -177,8 +177,8 @@ _(none declared)_
   `{{ fv.formula }}`{% endif %}
 
 {% endfor %}
-{% if reconcile_modes %}
-Reconcile: {% for list_title, mode in reconcile_modes.items() %}{{ list_title }} `{{ mode }}`{% if not loop.last %}, {% endif %}{% endfor %}.
+{% if reconcile_modes.form_visibility %}
+Reconcile: {% for list_title, mode in reconcile_modes.form_visibility.items() %}{{ list_title }} `{{ mode }}`{% if not loop.last %}, {% endif %}{% endfor %}. `exact` CLEARS the formula on every declared column of that list without an entry.
 {% endif %}
 
 Per-form and conditional visibility ride a single field property
@@ -201,11 +201,31 @@ _(none declared)_
   message: {{ cv.message }}{% endif %}
 
 {% endfor %}
+{% if reconcile_modes.column_validation %}
+Reconcile: {% for list_title, mode in reconcile_modes.column_validation.items() %}{{ list_title }} `{{ mode }}`{% if not loop.last %}, {% endif %}{% endfor %}. `exact` CLEARS the rule on every declared column of that list without an entry.
+{% endif %}
 
 Save-time rules on the field (ValidationFormula/ValidationMessage), a
 different property from the visibility formula above, so the two do not
 interfere. SharePoint normalises these on save, so the deploy compares
 them canonically.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## List validation
+
+{% if list_validation %}
+{% for lv in list_validation %}
+- {{ lv.list }} — {{ lv.described }}
+  message: {{ lv.message }}
+
+{% endfor %}
+The cross-column sibling of the per-column rules above, stored on the
+LIST (ValidationFormula/ValidationMessage) rather than on a field, so it
+may reference any column. Shown as the declared condition rather than the
+rendered formula: the condition is what was authored, and the SharePoint
+syntax carrying it is a renderer detail.
 {% else %}
 _(none declared)_
 {% endif %}

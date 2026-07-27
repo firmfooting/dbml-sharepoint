@@ -1083,6 +1083,36 @@
             && same(before.ValidationMessage, field.validation_message)));
     if (alreadyRight) return;
 
+    // Log what is being REPLACED before replacing it. `before` was read,
+    // compared and discarded, and on success nothing was logged at all —
+    // so a deploy that removed or rewrote an existing formula left no
+    // record of what had been there. Under `reconcile: exact` an
+    // undeclared column's formula is cleared outright, which is precisely
+    // the case where the prior value is the only thing anyone would want
+    // back. Only non-empty priors are logged: a first-time write has
+    // nothing to say.
+    const replaced = [];
+    if (field.client_validation_formula !== UNMANAGED
+        && (before.ClientValidationFormula || '') !== ''
+        && !same(before.ClientValidationFormula, field.client_validation_formula)) {
+      replaced.push(`ClientValidationFormula was ${JSON.stringify(before.ClientValidationFormula)}`);
+    }
+    if (field.validation_formula !== UNMANAGED
+        && (before.ValidationFormula || '') !== ''
+        && canonicalFormula(before.ValidationFormula || '') !== canonicalFormula(field.validation_formula)) {
+      replaced.push(`ValidationFormula was ${JSON.stringify(before.ValidationFormula)}`);
+    }
+    if (field.validation_formula !== UNMANAGED
+        && (before.ValidationMessage || '') !== ''
+        && !same(before.ValidationMessage, field.validation_message)) {
+      replaced.push(`ValidationMessage was ${JSON.stringify(before.ValidationMessage)}`);
+    }
+    if (replaced.length > 0) {
+      const action = field.client_validation_formula === '' && field.validation_formula === ''
+        ? 'clearing' : 'overwriting';
+      log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas — ${replaced.join('; ')}`);
+    }
+
     const r = await fetchWithRetry(url, {
       method: 'POST',
       headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),

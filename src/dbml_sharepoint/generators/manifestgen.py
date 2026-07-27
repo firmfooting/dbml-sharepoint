@@ -52,6 +52,21 @@ def generate_manifest(
         if f.get("custom_formatter") is not None
     ]
 
+    # Every field the deploy actually writes, per list. Iterating
+    # fields_phase1 alone made the manifest blind to deferred lookups:
+    # jsgen puts the identical keys on phase2_lookups and deploy.js writes
+    # them, so a declaration on a self-referencing or circular lookup
+    # deployed while the review artefact reported "(none declared)" — the
+    # inverse of a silent drop, and just as misleading to the person
+    # signing off the run.
+    def _written_fields(lst: dict[str, Any]) -> list[dict[str, Any]]:
+        deferred = [
+            lookup["field"]
+            for lookup in schema_json["phase2_lookups"]
+            if lookup["list"] == lst["title"]
+        ]
+        return [*lst["fields_phase1"], *deferred]
+
     # Form behaviour, per list. The composed formula is printed in full:
     # an operator reading the manifest should be able to see what will be
     # written without inferring it from a declaration two files away.
@@ -63,7 +78,7 @@ def generate_manifest(
             "cleared": f["client_validation_formula"] == "",
         }
         for lst in schema_json["lists"]
-        for f in lst["fields_phase1"]
+        for f in _written_fields(lst)
         if f.get("client_validation_formula", UNMANAGED) != UNMANAGED
     ]
     column_validation = [
@@ -75,13 +90,33 @@ def generate_manifest(
             "cleared": f["validation_formula"] == "",
         }
         for lst in schema_json["lists"]
-        for f in lst["fields_phase1"]
+        for f in _written_fields(lst)
         if f.get("validation_formula", UNMANAGED) != UNMANAGED
     ]
+    # Both sections reconcile, and both default to `exact` — which CLEARS
+    # every undeclared column of that list. Reporting the mode for
+    # form_visibility only meant a column_validation block silently running
+    # exact wiped rules with no mode shown anywhere in the artefact.
     reconcile_modes = {
-        f"{bundle.mapping.prefix}{entity}": section.reconcile
-        for entity, section in bundle.mapping.form_visibility.items()
+        "form_visibility": {
+            f"{bundle.mapping.prefix}{entity}": section.reconcile
+            for entity, section in bundle.mapping.form_visibility.items()
+        },
+        "column_validation": {
+            f"{bundle.mapping.prefix}{entity}": section.reconcile
+            for entity, section in bundle.mapping.column_validation.items()
+        },
     }
+    # The cross-column sibling had no section at all, so a save rule
+    # governing the whole list deployed unannounced.
+    list_validation = [
+        {
+            "list": f"{bundle.mapping.prefix}{entity}",
+            "described": describe(rule.when),
+            "message": rule.message,
+        }
+        for entity, rule in bundle.mapping.list_validation.items()
+    ]
 
     def _form_parts(client_formatter: str) -> str:
         keys = list(json.loads(client_formatter))
@@ -150,6 +185,7 @@ def generate_manifest(
         form_visibility=form_visibility,
         column_validation=column_validation,
         reconcile_modes=reconcile_modes,
+        list_validation=list_validation,
         form_formatting=form_formatting,
         retention=bundle.retention_list_defaults,
         prefix=bundle.mapping.prefix,
