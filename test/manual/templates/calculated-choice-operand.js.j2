@@ -414,8 +414,10 @@
 
   // ---- P / L: person and lookup, in all three formula stores ----------
   // The tool's own rules here are uneven, and none of them were evidenced:
-  //   analysis/conditions.py forbids `person` in a VALIDATION formula but
-  //   permits `lookup` there, and permits BOTH in an EXPRESSION
+  //   analysis/conditions.py forbids `person` in a VALIDATION formula via
+  //   _FORBIDDEN_OPERAND_TYPES, and forbids `lookup` there via a SEPARATE
+  //   guard (_lookup_problem) — a lookup is int-typed in DBML, so the type
+  //   map alone cannot see it. Both are permitted in an EXPRESSION
   //   (conditional visibility) formula.
   // A rule that forbids something SharePoint allows is merely restrictive.
   // A rule that PERMITS something SharePoint refuses fails at deploy time,
@@ -481,7 +483,7 @@
      'the tool FORBIDS this today'],
     ['L2', 'A Lookup column in a COLUMN VALIDATION formula', 'ProbeLookup',
      { ValidationFormula: '=NOT(ISBLANK([ProbeLookup]))' }, 'ValidationFormula',
-     'the tool PERMITS this today'],
+     'the tool FORBIDS this today, via _lookup_problem rather than the type map'],
     ['P2', 'A Person column in a CONDITIONAL VISIBILITY formula', 'ProbeOwner',
      { ClientValidationFormula: "=if([$ProbeOwner] != '', 'true', 'false')" },
      'ClientValidationFormula', 'the tool PERMITS this today'],
