@@ -16,9 +16,10 @@
  * Nothing else is touched. cleanup() removes it.
  *
  * HOW TO RUN
- *   1. Set SITE_URL below.
- *   2. Open that site's /_layouts/15/settings.aspx as a Site Owner.
- *   3. F12 -> Console -> `allow pasting` if asked -> paste -> Enter.
+ *   1. Open the target site's /_layouts/15/settings.aspx as a Site Owner.
+ *   2. F12 -> Console -> `allow pasting` if asked -> paste -> Enter.
+ *   3. It prints the web it would write to and stops. Check that, then set
+ *      CONFIRMED = true at the top and paste again.
  *
  * ANSWERING — just type the word and press Enter. No brackets, no quotes.
  *   y          yes, I can see that column on this form
@@ -34,7 +35,11 @@
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
-  const SITE_URL = '';
+  // Deliberately NOT a site URL. The web is read from _spPageContextInfo and
+  // printed back for you to check; you confirm by flipping this flag. That
+  // gives the same "don't run it on the wrong site" protection as pasting a
+  // URL, without ever putting a tenant address into a tracked file.
+  const CONFIRMED = false;
   const PROBE_LIST = 'zzz dbmlsp form visibility interactive';
   // ------------------------------------------------------------------------
 
@@ -43,22 +48,15 @@
   const rule = () => console.log('%c' + '─'.repeat(66), 'color:#888');
   const bold = (m) => console.log(`%c${m}`, 'font-weight:bold;font-size:13px');
 
-  if (!SITE_URL) {
-    const guess = (typeof _spPageContextInfo !== 'undefined')
-      ? `${window.location.origin}${_spPageContextInfo.webServerRelativeUrl || ''}` : '(unknown)';
-    console.error(`[PROBE] Set SITE_URL at the top of this script. This web looks like: ${guess}`);
-    return { aborted: 'site-url-unset' };
-  }
   if (typeof _spPageContextInfo === 'undefined') {
     console.error('[PROBE] _spPageContextInfo unavailable. Open /_layouts/15/settings.aspx and retry.');
     return { aborted: 'no-sp-page-context' };
   }
-  const expOrigin = new URL(SITE_URL).origin;
-  const expPath = new URL(SITE_URL).pathname.replace(/\/$/, '');
   const actPath = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
-  if (window.location.origin !== expOrigin || actPath !== expPath) {
-    console.error(`[PROBE] Site mismatch. Expected ${expOrigin}${expPath}, found ${window.location.origin}${actPath}.`);
-    return { aborted: 'site-mismatch' };
+  if (!CONFIRMED) {
+    console.error(`[PROBE] This will create a list on:  ${window.location.origin}${actPath}`);
+    console.error('[PROBE] If that is the site you want, set CONFIRMED = true at the top and paste again.');
+    return { aborted: 'not-confirmed' };
   }
   const WEB = actPath;
   const apiUrl = (s) => `${WEB}/_api/${s}`;
