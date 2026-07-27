@@ -34,11 +34,11 @@
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
-  const CONFIRMED = false;
+  const CONFIRMED = true;
   const PROBE_LIST = 'zzz dbmlsp form visibility interactive';
   // Columns to compare. Put the one WITH a conditional formula first.
-  const WITH_FORMULA = 'SealedF';
-  const WITHOUT_FORMULA = 'Ctl';
+  const WITH_FORMULA = 'Ctl';
+  const WITHOUT_FORMULA = 'NewOff';
   // ------------------------------------------------------------------------
 
   const log = (m) => console.log(`%c[ORDER] ${m}`, 'color:#0a7');
