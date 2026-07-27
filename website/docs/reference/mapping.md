@@ -200,10 +200,12 @@ what will be written before you paste anything.
 SchemaXml's `ShowInNewForm` / `ShowInEditForm` attributes look like the
 obvious mechanism and are deliberately never written. Saving the form
 designer migrates them into the content type's `FieldLink.Hidden`, which
-hides a column from *every* form, permanently, and is not writable over
-REST — so a per-form declaration would silently become hide-everywhere the
-first time anyone opened the designer. A conditional formula leaves the
-SchemaXml saying "shown", so the designer never touches the field link.
+hides a column from *every* form and which REST refuses to write (*"The
+type SP.FieldLink does not support HTTP PATCH method"*) — so a per-form
+declaration would silently become hide-everywhere the first time anyone
+opened the designer, and undoing it would need CSOM. A conditional formula
+leaves the SchemaXml saying "shown", so the designer sees a ticked column
+and never touches the field link.
 
 Because every deployed column is sealed, conditional visibility **cannot be
 configured by hand** on anything this tool deploys — a sealed column
