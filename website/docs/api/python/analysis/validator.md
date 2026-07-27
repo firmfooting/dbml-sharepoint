@@ -98,7 +98,7 @@ def validate(schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoin
 ### `validate_against_mapping`
 
 ```python
-def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle) -> list[dbml_sharepoint.analysis.validator.Finding]
+def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle) -> list[dbml_sharepoint.analysis.validator.Finding]
 ```
 
 Cross-check the mapping against the schema.
@@ -110,7 +110,7 @@ Order is part of the contract — see that package's docstring.
 ### `validate_all`
 
 ```python
-def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.validator.Finding]
+def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.validator.Finding]
 ```
 
 Run every validation stage: core schema rules, mapping cross-checks,
