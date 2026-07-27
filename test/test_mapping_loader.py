@@ -1,8 +1,11 @@
 # test/test_mapping_loader.py
+import ast
+import inspect
 from pathlib import Path
 
 import pytest
 
+from dbml_sharepoint.model import mapping_loader
 from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, load_mapping
 
 
@@ -895,6 +898,132 @@ def test_list_validation_parsed(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="message"):
         load_mapping(tmp_path / "m2.yaml")
 
+
+
+# --- The top-level allow-list -----------------------------------------------
+
+
+def test_unknown_top_level_section_is_a_load_error(tmp_path: Path) -> None:
+    """The guard itself had no test. A misspelled section used to be
+    ignored outright: `form_visibilty:` built clean, the manifest reported
+    "(none declared)" and nothing deployed."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml("form_visibilty:\n  Project:\n    columns: {}\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown mapping section") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "form_visibilty" in str(err.value)
+
+
+def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) -> None:
+    """`permissions:` was allow-listed and never read. A build of the
+    documented block was byte-identical to a mapping with no permissions at
+    all: no group, no level, no broken inheritance, no allowlist
+    reconciliation — and a green build. The reader lives at the top level,
+    under permission_levels / groups / list_permissions."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "permissions:\n"
+            "  levels:\n"
+            '    - name: "Contribute No Delete"\n'
+            "      base_permissions: [ViewListItems, AddListItems]\n"
+            "  groups:\n"
+            '    - name: "Register Editors"\n'
+            "  default_policy:\n"
+            "    break_inheritance: true\n"
+            "    reconcile: exact\n"
+            "    assignments: []\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown mapping section") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "permissions" in str(err.value)
+
+
+def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: Path) -> None:
+    """Same shape as `permissions:` — allow-listed, never read. Policies are
+    loaded from the file named by `retention_policies_source`."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "retention_policies:\n"
+            "  Standard7Y:\n"
+            "    sp_label: Standard 7 Year\n"
+            "    retain_years: 7\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown mapping section") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "retention_policies" in str(err.value)
+
+
+_TOP_LEVEL_READERS = ("load_mapping", "_parse_permissions")
+
+
+def _sections_read_by_the_loader() -> set[str]:
+    """Every top-level mapping key the loader actually reads, derived from
+    the loader's own source.
+
+    Derived rather than restated, because restating it is how two dead keys
+    got whitelisted: KNOWN_SECTIONS was populated by reading the reference
+    docs, and neither `permissions:` nor `retention_policies:` has ever had
+    a reader.
+    """
+    tree = ast.parse(inspect.getsource(mapping_loader))
+    keys: set[str] = set(mapping_loader._REMOVED_SECTIONS)
+    for func in ast.walk(tree):
+        if not isinstance(func, ast.FunctionDef) or func.name not in _TOP_LEVEL_READERS:
+            continue
+        for node in ast.walk(func):
+            # raw["key"]
+            if (
+                isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "raw"
+                and isinstance(node.slice, ast.Constant)
+                and isinstance(node.slice.value, str)
+            ):
+                keys.add(node.slice.value)
+            if not isinstance(node, ast.Call):
+                continue
+            called = node.func
+            # raw.get("key")
+            if (
+                isinstance(called, ast.Attribute)
+                and isinstance(called.value, ast.Name)
+                and called.value.id == "raw"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                keys.add(node.args[0].value)
+            # helper(raw, "key", ...) — _optional_bool and friends
+            if (
+                len(node.args) >= 2
+                and isinstance(node.args[0], ast.Name)
+                and node.args[0].id == "raw"
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            ):
+                keys.add(node.args[1].value)
+    return keys
+
+
+def test_every_allow_listed_section_has_a_reader() -> None:
+    """KNOWN_SECTIONS is an admission gate, so an entry with no reader is
+    worse than no gate: it makes a section that deploys nothing look
+    supported. `permissions:` and `retention_policies:` were both
+    allow-listed from the reference docs and read by nothing."""
+    read = _sections_read_by_the_loader()
+    # Sanity: the derivation must actually find the loader's readers.
+    assert {"prefix", "entities", "form_visibility", "list_permissions"} <= read
+    orphans = mapping_loader.KNOWN_SECTIONS - read
+    assert not orphans, (
+        f"allow-listed with no reader: {sorted(orphans)} — either wire a reader "
+        f"or drop the entry; an allow-listed key that nothing reads deploys nothing"
+    )
 
 
 def test_hardening_flags_parsed(tmp_path: Path) -> None:

@@ -445,21 +445,42 @@ class MappingBundle:
         return self.extension_configs.get(name, {})
 
 
+# Sections that once existed and are now rejected by name, so a mapping
+# carrying one gets a migration message instead of the generic unknown-key
+# error. Kept as data because the allow-list is asserted against the
+# loader's readers, and these have no reader by design.
+_REMOVED_SECTIONS: dict[str, str] = {
+    "hidden_on_forms": "form_visibility, e.g. `Column: hidden`",
+    "hidden_on_display": (
+        "nothing — it never worked on modern lists, which read ShowInEditForm and "
+        "ignore ShowInDisplayForm; hide from the Edit form instead"
+    ),
+}
+
 # Every top-level key load_mapping understands. A misspelling must fail
 # rather than be ignored: `form_visibilty:` used to build clean, report
 # "(none declared)" and deploy nothing at all.
+#
+# EVERY entry here must have a reader in load_mapping or _parse_permissions
+# (or be a _REMOVED_SECTIONS name), and a test asserts it. The first draft
+# of this set was written from website/docs/reference/mapping.md rather than
+# from the code, which allow-listed `permissions:` and `retention_policies:`
+# — two keys nothing has ever read. An allow-listed key with no reader is
+# worse than no allow-list: it makes a section that deploys nothing look
+# supported, and the build reports success.
 KNOWN_SECTIONS = frozenset({
     "prefix", "prefix_owner", "prefix_registry", "entities",
     "cross_site_reference_columns", "indexed_columns", "versioning",
-    "enum_sources", "watched_lists", "polymorphic_patterns", "retention_policies",
+    "enum_sources", "watched_lists", "polymorphic_patterns",
     "retention_policies_source",
     "extension", "extensions", "calculated_formulas", "views", "display_names",
     "column_formatting", "form_formatting", "list_validation", "form_visibility",
     "style_theme",
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
-    "permissions", "groups", "permission_levels", "list_permissions",
-    # Rejected explicitly, with a migration message, further down.
-    "hidden_on_forms", "hidden_on_display",
+    # Permissions are declared as three top-level sections, not one nested
+    # `permissions:` block — see _parse_permissions.
+    "groups", "permission_levels", "list_permissions",
+    *_REMOVED_SECTIONS,
 })
 
 
@@ -549,14 +570,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             f"ignored, so a misspelled section silently deployed nothing.",
         )
 
-    for removed, replacement in (
-        ("hidden_on_forms", "form_visibility, e.g. `Column: hidden`"),
-        (
-            "hidden_on_display",
-            "nothing — it never worked on modern lists, which read ShowInEditForm and "
-            "ignore ShowInDisplayForm; hide from the Edit form instead",
-        ),
-    ):
+    for removed, replacement in _REMOVED_SECTIONS.items():
         if removed in raw:
             raise ValueError(f"{removed!r} has been replaced by {replacement}")
 
