@@ -356,3 +356,118 @@ def test_manifest_shows_the_composed_formula_and_reconcile_mode(tmp_path: object
     # Undeclared columns under exact are shown as cleared, so the operator
     # can see what the deploy will remove rather than discovering it live.
     assert "cleared" in manifest
+
+
+# --- Title and system columns -----------------------------------------------
+
+
+def _forms_inputs(tmp_path: object, section: str) -> tuple[object, object]:
+    """(schema, bundle) for a one-table fixture plus a mapping section."""
+    from pathlib import Path
+
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    base = Path(str(tmp_path))
+    # Title is deliberately NOT required here: a required column hidden from
+    # the New form is already an error, which would mask the silent drop
+    # this exercises.
+    (base / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Note nvarchar\n"
+        "  Other nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (base / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n" + section,
+        encoding="utf-8",
+    )
+    return parse_dbml(base / "s.dbml"), load_mapping(base / "m.yaml")
+
+
+def _errors(tmp_path: object, section: str) -> list[str]:
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+
+    schema, bundle = _forms_inputs(tmp_path, section)
+    return [
+        f.message
+        for f in validate_against_mapping(schema, bundle)  # type: ignore[arg-type]
+        if f.severity == "error"
+    ]
+
+
+def test_title_form_visibility_is_rejected_not_silently_dropped(tmp_path: object) -> None:
+    """jsgen routes Title through `title_patch` and continues before the
+    formula keys are attached, so a declaration on it validated clean, the
+    manifest reported "(none declared)", and nothing deployed. An asserted,
+    validated, silently unenforced data-quality guarantee is the worst
+    shape available — fail closed instead."""
+    messages = _errors(
+        tmp_path,
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Title: hidden\n",
+    )
+    assert any("Title" in m for m in messages), messages
+
+
+def test_title_column_validation_is_rejected(tmp_path: object) -> None:
+    messages = _errors(
+        tmp_path,
+        "column_validation:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Title:\n"
+        "        when:\n"
+        "          - { field: Title, measure: length, op: geq, value: 5 }\n"
+        "        message: Titles must be at least 5 characters.\n",
+    )
+    assert any("Title" in m for m in messages), messages
+
+
+def test_title_column_formatting_is_rejected(tmp_path: object) -> None:
+    """The untouched sibling: the formatter is looked up from the same
+    fields_phase1 loop Title never enters, so it validated clean and
+    deployed nothing either."""
+    messages = _errors(
+        tmp_path,
+        "column_formatting:\n"
+        "  Escalation:\n"
+        "    Title: { elmType: div }\n",
+    )
+    assert any("Title" in m for m in messages), messages
+
+
+def test_system_column_formatting_is_rejected(tmp_path: object) -> None:
+    """System columns are not DBML columns, so they never reach
+    fields_phase1 either — the validator allow-listed them and the
+    generator dropped them."""
+    messages = _errors(
+        tmp_path,
+        "column_formatting:\n"
+        "  Escalation:\n"
+        "    Created: { elmType: div }\n",
+    )
+    assert any("Created" in m for m in messages), messages
+
+
+def test_declarations_on_ordinary_columns_still_validate_clean(tmp_path: object) -> None:
+    """The rejections must be scoped to columns the generator drops."""
+    messages = _errors(
+        tmp_path,
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note: hidden\n"
+        "column_formatting:\n"
+        "  Escalation:\n"
+        "    Other: { elmType: div }\n",
+    )
+    assert messages == []

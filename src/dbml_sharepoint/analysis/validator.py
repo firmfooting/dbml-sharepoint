@@ -33,6 +33,36 @@ RESERVED_NAMES = frozenset({
 # for system columns there is not relied on — fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 
+# Columns that never reach the per-field deploy loop, so a per-field
+# declaration on one is validated, reported and never written.
+#
+# The built-in Title is provisioned through its own patch object — jsgen
+# routes it there and continues BEFORE the formula and formatter keys are
+# attached — and the system columns are not DBML columns, so they are
+# never in the field list at all. A declaration on any of them validated
+# clean, the manifest reported "(none declared)", and the deploy wrote
+# nothing: an asserted, validated, silently unenforced guarantee, which is
+# the worst shape a data-quality rule can take.
+#
+# Supporting Title properly means threading the formulas through the patch
+# path, a larger change than these sections warrant. Fail closed instead,
+# and say why.
+_UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({"Title"}) | SYSTEM_COLUMNS
+
+
+def _undeployable(context: str, column: str) -> str:
+    """The message for a declaration on a column the deploy never writes."""
+    reason = (
+        "the built-in Title column is provisioned through its own patch"
+        if column == "Title"
+        else f"{column} is a SharePoint system column, not a deployed field"
+    )
+    return (
+        f"{context}: {column!r} cannot carry a per-column declaration — "
+        f"{reason}, so it never receives these properties. Declaring it here "
+        f"would validate clean and deploy nothing."
+    )
+
 # DBML scalar types that we recognise. Anything else must be an enum.
 KNOWN_SCALARS = frozenset({
     "int", "number", "nvarchar", "longtext", "richtext", "person", "date", "datetime",
@@ -706,6 +736,9 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
         rendered = _rendered_columns(fmt_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         for col_name, formatter in fmt_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
+            if col_name in _UNDEPLOYABLE_DECLARATION_COLUMNS:
+                findings.append(Finding("error", _undeployable(ctx, col_name)))
+                continue
             if col_name not in rendered:
                 findings.append(Finding(
                     "error",
@@ -863,6 +896,9 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
         by_name = {c.name: c for c in section_table.columns}
         ctx = f"form_visibility[{fv_entity}]"
         for column, fv_declared in fv_section.columns.items():
+            if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
+                findings.append(Finding("error", _undeployable(ctx, column)))
+                continue
             if column not in rendered:
                 findings.append(Finding(
                     "error", f"{ctx}: {column!r} is not a rendered column of {fv_entity}.",
@@ -899,6 +935,9 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
         lookups = {c.name for c in section_table.columns if c.ref is not None}
         ctx = f"column_validation[{cv_entity}]"
         for column, cv_rule in cv_section.columns.items():
+            if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
+                findings.append(Finding("error", _undeployable(ctx, column)))
+                continue
             if column not in rendered:
                 findings.append(Finding(
                     "error", f"{ctx}: {column!r} is not a rendered column of {cv_entity}.",
