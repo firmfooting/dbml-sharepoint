@@ -164,7 +164,7 @@ queries and keep it on the report's documentation page.
 
 Status columns across the templates render as SharePoint's own severity
 boxes with icons per the deployer's style standard (see
-[docs/STYLE-GUIDE.md](../docs/STYLE-GUIDE.md)) — consistent colours and
+[the style guide](../website/docs/reference/style-guide.md)) — consistent colours and
 iconography fleet-wide, using only Microsoft's documented formatting
 classes.
 
