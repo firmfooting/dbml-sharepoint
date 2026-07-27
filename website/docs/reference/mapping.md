@@ -43,6 +43,48 @@ entities:
 Site roles are the multi-site story: one schema, several mappings of
 entities to site types, one build per site.
 
+## `field_sets`
+
+Named, reusable column lists per entity. A view's `fields` entry beginning
+with `@` names a set on the same entity; anything else is a column name.
+
+```yaml
+field_sets:
+  Board:
+    header:   [BoardDate, Chair, HuddleHeld, OverallStatus]
+    statuses: [OperationsStatus, WorkforceStatus, QualitySafetyStatus]
+    notes:    [OperationsNote, WorkforceNote, QualitySafetyNote]
+
+views:
+  Board:
+    - title: "Last 14 days"
+      fields: ["@header", "@statuses"]
+    - title: "Today"
+      fields: ["@header", "@statuses", "@notes"]
+```
+
+- Sets expand **in declaration order**, and **duplicates are removed keeping
+  first position** — so `["@header", BoardDate]` is a no-op, not an error.
+- Sets **do not nest**: one level only, deliberately. A member that looks
+  like `@other` stays literal and fails validation.
+- Expansion applies to `views[].fields` **only**. `widths`, `sort`,
+  `group_by` and `where` continue to name columns directly; a set has no
+  meaningful expansion there.
+- Expansion happens at load, before [retirement](#retired_columns) filters
+  the list, so a set containing a retired column drops it from every view
+  that uses the set.
+- Globs (`"*Status"`) were considered and rejected: a glob silently absorbs
+  any future column matching the pattern, and the failure is invisible.
+  Named sets are explicit, greppable, and the resolved list is auditable.
+
+Errors: an unknown entity; a set referencing an undeclared column; a
+`@name` with no matching set on that entity; a set name containing `@`; an
+empty set. Warnings: a declared set no view references, and a retired
+column still listed in a set.
+
+`deploy-manifest.md` prints each view's **resolved** field list, footnoted
+with the sets it expanded from — nothing hides behind the indirection.
+
 ## `views`
 
 ```yaml
