@@ -51,6 +51,7 @@
           throw new Error(`List '${list.title}' create returned an invalid response`);
         }
         createdThisRun = true;
+        invalidateListShapes();  // the enumeration no longer knows every list
         summary.listsCreated.push(list.title);
       }
       listShape = await reconcileListShape(list, digest);

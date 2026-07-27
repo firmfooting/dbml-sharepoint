@@ -166,7 +166,7 @@
       ValidationFormula: list.validation_formula,
       ValidationMessage: list.validation_message,
     }, digest);
-    const verify = await readListShape(list.title);
+    const verify = await readListShape(list.title, true);
     if (!verify
         || canonicalFormula(verify.ValidationFormula || '') !== canonicalFormula(list.validation_formula)
         || (verify.ValidationMessage || '') !== (list.validation_message || '')) {
@@ -212,7 +212,7 @@
         __metadata: { type: 'SP.List' },
         ...desired,
       }, digest);
-      actual = await readListShape(list.title);
+      actual = await readListShape(list.title, true);
       if (!actual) throw new Error(`Declared list '${list.title}' disappeared after settings MERGE`);
       assertListImmutableShape(list, actual);
       if (listSettingsMismatch(actual, desired)) {

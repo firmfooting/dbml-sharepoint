@@ -131,7 +131,36 @@
     return cachedDigest;
   }
 
-  async function readListShape(name) {
+  // Which list titles exist, from ONE enumeration. A by-title GET for a list
+  // that is not there answers 404, which the browser paints red and an
+  // operator reads as a failure — on a first deploy EVERY list probe is that
+  // 404. Enumerating once tells us absence locally, so a clean run stays
+  // clean. Null means "not yet known"; invalidateListShapes() after any
+  // list create or delete.
+  let knownListTitles = null;
+  const invalidateListShapes = () => { knownListTitles = null; };
+  async function ensureKnownListTitles() {
+    if (knownListTitles) return knownListTitles;
+    const r = await fetchWithRetry(apiUrl('web/lists?$select=Title&$top=5000'), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    // Deliberately not fatal: if the enumeration is refused we fall back to
+    // per-list probing, which is noisier but still correct.
+    if (!r.ok) return null;
+    const j = await r.json();
+    knownListTitles = new Set(
+      ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
+    );
+    return knownListTitles;
+  }
+
+  async function readListShape(name, fresh = false) {
+    // Verification after a write passes fresh=true and always asks the
+    // server: a cache must never be able to confirm our own write.
+    if (!fresh) {
+      const titles = await ensureKnownListTitles();
+      if (titles && !titles.has(name)) return null;
+    }
     const select = [
       'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
       'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit', 'ValidationFormula', 'ValidationMessage',
@@ -205,7 +234,18 @@
     });
     if (!r.ok) {
       const text = await r.text();
-      if (r.status === 404 || isAbsent400(r.status, text)) return new Map();
+      if (r.status === 404 || isAbsent400(r.status, text)) {
+        // Cache the ABSENCE too. Leaving it uncached made every column in a
+        // bulk loop re-enumerate an absent list: a first deploy paid one
+        // 404 per declared column per phase — 88 red console lines in
+        // maintenance unseal alone — which is the exact cost this cache
+        // exists to remove. Safe because every field-touching phase opens
+        // with invalidateFieldShapes(), so a list created later in the run
+        // is re-read at the next phase boundary rather than staying absent.
+        const empty = new Map();
+        fieldShapesByList[listName] = empty;
+        return empty;
+      }
       throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
@@ -892,7 +932,7 @@
       ValidationFormula: list.validation_formula,
       ValidationMessage: list.validation_message,
     }, digest);
-    const verify = await readListShape(list.title);
+    const verify = await readListShape(list.title, true);
     if (!verify
         || canonicalFormula(verify.ValidationFormula || '') !== canonicalFormula(list.validation_formula)
         || (verify.ValidationMessage || '') !== (list.validation_message || '')) {
@@ -938,7 +978,7 @@
         __metadata: { type: 'SP.List' },
         ...desired,
       }, digest);
-      actual = await readListShape(list.title);
+      actual = await readListShape(list.title, true);
       if (!actual) throw new Error(`Declared list '${list.title}' disappeared after settings MERGE`);
       assertListImmutableShape(list, actual);
       if (listSettingsMismatch(actual, desired)) {
@@ -1748,6 +1788,7 @@
           throw new Error(`List '${list.title}' create returned an invalid response`);
         }
         createdThisRun = true;
+        invalidateListShapes();  // the enumeration no longer knows every list
         summary.listsCreated.push(list.title);
       }
       listShape = await reconcileListShape(list, digest);

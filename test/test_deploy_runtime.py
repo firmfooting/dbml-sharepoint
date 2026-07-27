@@ -71,7 +71,10 @@ _HARNESS = textwrap.dedent("""
       return { d: { results: [] } };
     };
     globalThis.fetch = async (url, opts = {}) => {
-      calls.push({ url: String(url), method: opts.method || 'GET', body: opts.body });
+      // body is null, never absent: JSON.stringify drops an undefined key,
+      // and the Python side reads c['body'] unconditionally.
+      calls.push({ url: String(url), method: opts.method || 'GET',
+                   body: opts.body === undefined ? null : opts.body });
       return {
         ok: true, status: 200,
         headers: { get: () => null },
@@ -248,6 +251,12 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           OnlyAllowMembersViewMembership: false } };
       }
       if (url.includes('roledefinitions')) return { d: { results: [{ Id: 1 }] } };
+      // The single list ENUMERATION. This mock's fiction is "any list probe
+      // succeeds", which an enumeration cannot express — it would have to
+      // know the declared names. Refusing it exercises the documented
+      // fallback in ensureKnownListTitles: enumeration unavailable, probe
+      // per list. The fast path itself is NOT covered here.
+      if (url.includes('web/lists?')) return { error: { code: 'enumeration-not-mocked' } };
       // A list probe: the list exists, matching the declared shape.
       if (url.includes('getbytitle') && url.includes('BaseTemplate')) {
         return { d: {
