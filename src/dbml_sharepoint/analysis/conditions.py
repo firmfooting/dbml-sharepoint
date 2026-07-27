@@ -411,3 +411,123 @@ def _validation_literal(column_type: str, value: object, where: str) -> str:
     # convention but was NOT among the harvested formulas — see the spec's
     # open items.
     return '"' + str(value).replace('"', '""') + '"'
+
+
+# === Semantic validation ====================================================
+# Types for the columns SharePoint provides but DBML never declares. Views
+# may reference these, and without them a date comparison on Created would
+# render as Type="Text" — which SharePoint accepts and answers with the
+# wrong rows.
+SYSTEM_COLUMN_TYPES: dict[str, str] = {
+    "ID": "int",
+    "Created": "datetime",
+    "Modified": "datetime",
+    "Author": "person",
+    "Editor": "person",
+}
+
+# There is no defensible default between a person's display name, their
+# email and their id, so the accessor is declared rather than guessed.
+PROPERTY_ACCESSORS: dict[str, frozenset[str]] = {
+    "person": frozenset({"title", "email", "id"}),
+    "lookup": frozenset({"lookupValue", "lookupId"}),
+}
+_MEASURABLE_TYPES = frozenset({"nvarchar", "longtext", "richtext", "calculated_text"})
+
+_RENDERERS = {CAML: to_caml, EXPRESSION: to_expression, VALIDATION: to_validation}
+
+
+def leaves(node: Condition) -> list[Leaf]:
+    """Every leaf of a tree, in declaration order."""
+    if isinstance(node, Leaf):
+        return [node]
+    return [leaf for child in node.children for leaf in leaves(child)]
+
+
+def validate_condition(
+    condition: Condition,
+    *,
+    target: str,
+    rendered: set[str],
+    types: dict[str, str],
+    lookups: set[str],
+    context: str,
+) -> list[str]:
+    """Semantic problems with a declared condition, as messages.
+
+    Returns rather than raises, and keeps going after the first problem, so
+    one build reports every broken leaf instead of one per run. Messages are
+    wrapped into Findings by the caller — this module stays free of a
+    validator import, which would be a cycle.
+    """
+    problems: list[str] = []
+    depth, leaf_count = measure_tree(condition)
+    if depth > MAX_DEPTH:
+        problems.append(f"{context}: nested {depth} groups deep; the limit is {MAX_DEPTH}")
+    if leaf_count > MAX_LEAVES:
+        problems.append(
+            f"{context}: {leaf_count} conditions after expanding any 'in' lists; "
+            f"the limit is {MAX_LEAVES}",
+        )
+
+    for leaf in leaves(condition):
+        where = f"{context}.{leaf.field}"
+        if leaf.field not in rendered:
+            problems.append(f"{where}: not a rendered column")
+            continue
+        if leaf.op not in NEGATION:
+            problems.append(
+                f"{where}: unknown operator {leaf.op!r}; "
+                f"known operators: {', '.join(sorted(NEGATION))}",
+            )
+            continue
+        problems.extend(_operand_problems(leaf, where, types=types, lookups=lookups))
+
+    if problems:
+        # Rendering a leaf whose operands are already wrong would report the
+        # same fault twice in different words.
+        return problems
+    return _render_problems(condition, target, types, context)
+
+
+def _operand_problems(
+    leaf: Leaf, where: str, *, types: dict[str, str], lookups: set[str],
+) -> list[str]:
+    column_type = types.get(leaf.field, "")
+    kind = "lookup" if leaf.field in lookups else column_type
+    problems: list[str] = []
+    if kind in PROPERTY_ACCESSORS:
+        allowed = PROPERTY_ACCESSORS[kind]
+        if not leaf.property:
+            problems.append(
+                f"{where}: a {kind} column needs 'property' "
+                f"(one of {', '.join(sorted(allowed))})",
+            )
+        elif leaf.property not in allowed:
+            problems.append(
+                f"{where}: {leaf.property!r} is not a {kind} accessor; "
+                f"use one of {', '.join(sorted(allowed))}",
+            )
+    elif leaf.property:
+        problems.append(f"{where}: 'property' applies to person and lookup columns only")
+    if leaf.measure and leaf.measure != "length":
+        problems.append(f"{where}: unknown measure {leaf.measure!r}; only 'length' is supported")
+    if leaf.measure and column_type not in _MEASURABLE_TYPES:
+        problems.append(f"{where}: 'measure: length' applies to text columns only")
+    return problems
+
+
+def _render_problems(
+    condition: Condition, target: str, types: dict[str, str], context: str,
+) -> list[str]:
+    """Reuse the renderer as the capability oracle, one leaf at a time, so a
+    second copy of the capability rules cannot drift from the first."""
+    problems: list[str] = []
+    for leaf in leaves(normalise(condition)):
+        try:
+            _RENDERERS[target](leaf, types)
+        except ValueError as exc:
+            message = str(exc).replace("conditions.", f"{context}.", 1)
+            if message not in problems:
+                problems.append(message)
+    return problems

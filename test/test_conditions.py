@@ -5,12 +5,17 @@ import pytest
 
 from dbml_sharepoint.analysis.conditions import (
     CAPABILITIES,
+    EXPRESSION,
+    MAX_LEAVES,
     NEGATION,
+    SYSTEM_COLUMN_TYPES,
+    VALIDATION,
     measure_tree,
     normalise,
     to_caml,
     to_expression,
     to_validation,
+    validate_condition,
 )
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
 
@@ -481,3 +486,82 @@ def test_negated_measure_needs_no_null_arm() -> None:
 def test_negated_null_test_stays_a_single_leaf() -> None:
     condition = parse_condition({"none_of": [{"field": "Note", "op": "is_null"}]}, "c")
     assert to_validation(condition, TYPES) == "NOT(ISBLANK([Note]))"
+
+
+# === Semantic validation ====================================================
+
+RENDERED = {"Status", "Count", "Owner", "Note", "Parent", "Due", "Flag"}
+LOOKUPS = {"Parent"}
+
+
+def _problems(condition_raw: object, target: str = EXPRESSION) -> list[str]:
+    return validate_condition(
+        parse_condition(condition_raw, "when"),
+        target=target, rendered=RENDERED, types=TYPES, lookups=LOOKUPS, context="when",
+    )
+
+
+def test_valid_condition_has_no_problems() -> None:
+    assert _problems([{"field": "Status", "op": "eq", "value": "Open"}]) == []
+
+
+def test_unknown_column_is_reported() -> None:
+    assert "not a rendered column" in _problems([{"field": "Nope", "op": "eq", "value": 1}])[0]
+
+
+def test_person_column_requires_an_accessor() -> None:
+    """No defensible default exists between a person's name, email and id,
+    so it is declared rather than guessed."""
+    assert "needs 'property'" in _problems([{"field": "Owner", "op": "neq", "value": ""}])[0]
+    bad = _problems([{"field": "Owner", "property": "nickname", "op": "neq", "value": ""}])
+    assert "not a person accessor" in bad[0]
+
+
+def test_lookup_column_requires_a_lookup_accessor() -> None:
+    assert "needs 'property'" in _problems([{"field": "Parent", "op": "eq", "value": 1}])[0]
+
+
+def test_property_on_a_plain_column_is_reported() -> None:
+    bad = _problems([{"field": "Status", "property": "title", "op": "eq", "value": "x"}])
+    assert "person and lookup columns only" in bad[0]
+
+
+def test_measure_on_a_non_text_column_is_reported() -> None:
+    bad = _problems([{"field": "Count", "measure": "length", "op": "gt", "value": 1}])
+    assert "text columns only" in bad[0]
+
+
+def test_every_broken_leaf_is_reported_not_just_the_first() -> None:
+    """One build should name every fault. Reporting one per run turns a
+    five-mistake mapping into five paste-and-wait cycles."""
+    problems = _problems(
+        [
+            {"field": "Nope", "op": "eq", "value": 1},
+            {"field": "Alsonope", "op": "eq", "value": 2},
+        ],
+    )
+    assert len(problems) == 2
+
+
+def test_capability_violations_come_from_the_renderer() -> None:
+    """The renderer is the single capability oracle; a second copy of the
+    rules in the validator would drift from it."""
+    problems = _problems(
+        [{"field": "Note", "measure": "length", "op": "gt", "value": 3}], target=EXPRESSION,
+    )
+    assert any("length()" in p for p in problems)
+    assert _problems([{"field": "Note", "measure": "length", "op": "gt", "value": 3}],
+                     target=VALIDATION) == []
+
+
+def test_bounds_are_reported_with_the_actual_numbers() -> None:
+    wide = [{"field": "Status", "op": "eq", "value": str(i)} for i in range(MAX_LEAVES + 1)]
+    assert "the limit is" in _problems(wide)[0]
+
+
+def test_system_columns_have_declared_types() -> None:
+    """Views may reference these and DBML never declares them. Without a
+    type, a date comparison on Created renders as Type="Text", which
+    SharePoint accepts and answers with the wrong rows."""
+    assert SYSTEM_COLUMN_TYPES["Created"] == "datetime"
+    assert set(SYSTEM_COLUMN_TYPES) == {"ID", "Created", "Modified", "Author", "Editor"}
