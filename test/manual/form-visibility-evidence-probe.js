@@ -218,7 +218,40 @@
   const writeResults = {};
   if (ALLOW_WRITES) {
     rule();
-    bold('5 — WRITE TESTS  (round-trip fidelity and length limit)');
+    bold('5 — SEEDING  (typed columns the checklist needs to reference)');
+    // The interactive probe's matrix is all Text plus one Calculated, so
+    // there is nothing to write a date/person/lookup condition against.
+    // These exist purely to be REFERENCED by the formulas you type in the
+    // UI; their own visibility is irrelevant.
+    const listId = (await get(`${listPath}?$select=Id`)).d?.Id;
+    const seed = async (label, body) => {
+      if (all.some((f) => f.InternalName === body.Title)) { log(`  ${label} already exists.`); return; }
+      const r = await post(`${listPath}/fields`, body);
+      log(`  ${label}: ${r.ok ? 'created' : `FAILED HTTP ${r.status} ${r.error}`}`);
+    };
+    await seed('ZZDate   (Date and Time)', { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'ZZDate' });
+    await seed('ZZNumber (Number)', { __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9, Title: 'ZZNumber' });
+    await seed('ZZPerson (Person)', { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20, Title: 'ZZPerson' });
+    await seed('ZZChoice (Choice, one value contains an apostrophe)', {
+      __metadata: { type: 'SP.FieldChoice' }, FieldTypeKind: 6, Title: 'ZZChoice',
+      Choices: { results: ['Normal', "O'Brien"] },
+    });
+    if (listId && !all.some((f) => f.InternalName === 'ZZLookup')) {
+      // Self-lookup: avoids creating a second list just to have a target.
+      const r = await post(`${listPath}/fields/createfieldasxml`, {
+        parameters: {
+          __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' },
+          SchemaXml: `<Field Type='Lookup' DisplayName='ZZLookup' Name='ZZLookup' List='{${String(listId).replace(/[{}]/g, '')}}' ShowField='Title'/>`,
+          Options: 9,
+        },
+      });
+      log(`  ZZLookup (Lookup, self-referencing): ${r.ok ? 'created' : `FAILED HTTP ${r.status} ${r.error}`}`);
+    } else if (listId) {
+      log('  ZZLookup already exists.');
+    }
+
+    rule();
+    bold('6 — WRITE TESTS  (round-trip fidelity and length limit)');
     const COL = 'ZZEvidence';
     if (!fields.some((f) => f.InternalName === COL)) {
       const made = await post(`${listPath}/fields`, { __metadata: { type: 'SP.Field' }, FieldTypeKind: 2, Title: COL });
@@ -284,25 +317,64 @@
 
   // === CHECKLIST ==========================================================
   rule();
-  bold('CHECKLIST — configure these in the UI, then paste this script again');
-  say('Each line fills a gap the spec currently guesses at. Use UNSEALED columns:');
-  say('a sealed column discards writes silently, so nothing you set will persist.');
+  bold('CHECKLIST — exactly what to set, and where');
   say('');
-  say('  1. COLLISION (the blocking one)');
-  say('     Pick one column. Set a COLUMN VALIDATION rule on it (list settings ->');
-  say('     the column -> Column validation). Re-run: section 3 should show it under');
-  say('     ValidationFormula and NOT under ClientValidationFormula.');
-  say('  2. Then add CONDITIONAL VISIBILITY to that SAME column. Re-run: it should');
-  say('     appear in the BOTH row, proving the two coexist.');
+  say('Never use SealedF. A sealed column accepts the write, reports success and');
+  say('discards it, so anything you configure there measures nothing.');
   say('');
-  say('  3. DATE operand    — conditional visibility comparing a date column');
-  say('  4. PERSON operand  — conditional visibility referencing a person column');
-  say('  5. LOOKUP operand  — conditional visibility referencing a lookup column');
-  say('  6. OR / nesting    — a formula combining conditions with or()');
-  say('  7. AWKWARD VALUE   — a text value containing an apostrophe');
+  console.log('%cWHERE THE TWO DIALOGS LIVE', 'font-weight:bold');
+  say('  COLUMN VALIDATION  — gear icon -> List settings -> click the column name');
+  say('                       -> "Column Validation" -> Formula + User message -> OK');
+  say('  CONDITIONAL VISIBILITY — open any item -> Edit all -> "Edit form" (top');
+  say('                       right) -> "Edit columns" -> hover the column -> the');
+  say('                       "..." -> "Edit conditional formula" -> paste -> Save');
   say('');
-  say('Sections 3 and 4 then carry the evidence. Anything still absent stays a');
-  say('rejected operand class in the spec — which is the correct outcome, not a gap.');
+  say('The conditional formula box VALIDATES as you save. A rejection is itself a');
+  say('result worth reporting — it tells us that operand class is unusable.');
+  say('');
+  console.log('%cSTEP 1 — THE BLOCKING TEST (do this one first)', 'font-weight:bold;color:#c30');
+  say('  1a. Column VALIDATION on  Ctl');
+  console.log("%c        =[Ctl] <> 'forbidden'", 'color:#06c');
+  say('      Message: anything, e.g.  no');
+  say('      Re-run this script. Section 3 must show Ctl under ValidationFormula');
+  say('      and NOT under ClientValidationFormula.');
+  say('');
+  say('  1b. Then CONDITIONAL VISIBILITY on the SAME column  Ctl');
+  console.log("%c        =if([$Title] != '', 'true', 'false')", 'color:#06c');
+  say('      Re-run. Ctl must now appear in the BOTH row. That is the proof the two');
+  say('      features occupy different properties and cannot destroy each other.');
+  say('');
+  console.log('%cSTEP 2 — CANONICAL SYNTAX (one holder column each)', 'font-weight:bold');
+  say('  Set CONDITIONAL VISIBILITY on each holder below, pasting the formula shown.');
+  say('  Each references one of the ZZ* columns seeded in section 5.');
+  say('');
+  say('  DispOff   — DATE operand');
+  console.log("%c        =if([$ZZDate] > '2026-01-01', 'true', 'false')", 'color:#06c');
+  say('      If rejected, try:');
+  console.log("%c        =if(Number([$ZZDate]) > Number('2026-01-01'), 'true', 'false')", 'color:#06c');
+  say('');
+  say('  EditOff   — PERSON operand');
+  console.log("%c        =if([$ZZPerson.title] != '', 'true', 'false')", 'color:#06c');
+  say('      If rejected, try  [$ZZPerson.email]  or bare  [$ZZPerson]');
+  say('');
+  say('  NewOff    — LOOKUP operand');
+  console.log("%c        =if([$ZZLookup.lookupValue] != '', 'true', 'false')", 'color:#06c');
+  say('      If rejected, try  [$ZZLookup.lookupId]  or bare  [$ZZLookup]');
+  say('');
+  say("  BothWay   — APOSTROPHE in a value (ZZChoice offers Normal and O'Brien)");
+  console.log("%c        =if([$ZZChoice] == 'O''Brien', 'true', 'false')", 'color:#06c');
+  say("      If rejected, try a backslash:  'O\\'Brien'");
+  say('      This decides how the tool must escape apostrophes, or whether it must');
+  say('      keep refusing them.');
+  say('');
+  say('  DeclOff   — OR and NESTING');
+  console.log("%c        =if(or([$Title] == 'x', and([$ZZNumber] > 5, [$Ctl] != '')), 'true', 'false')",
+    'color:#06c');
+  say('      Confirms and()/or() nest, which the shared condition grammar assumes.');
+  say('');
+  say('Then paste this script again. Section 4 prints each stored formula verbatim.');
+  say('Anything you could not set stays a rejected operand class in the spec — that');
+  say('is a correct, evidenced outcome, not a gap.');
   rule();
   return { fields: fields.map((f) => f.InternalName), linkOrder, writeResults };
 })();
