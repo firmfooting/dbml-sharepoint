@@ -35,13 +35,16 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
-  const spPost = async (path, payload, digest) => {
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
     const res = await fetch(`${WEB}/_api/${path}`, {
       method: 'POST',
       headers: {
         Accept: 'application/json;odata=nometadata',
         'Content-Type': 'application/json;odata=nometadata',
         'X-RequestDigest': digest,
+        ...extraHeaders,
       },
       body: JSON.stringify(payload),
     });

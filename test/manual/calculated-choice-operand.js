@@ -21,7 +21,33 @@
  *   C3  what does SharePoint store in Formula, versus what was sent?
  *   C4  does a Choice value containing & " < survive concatenation?
  *   C5  what happens when one operand is blank?
+ *
+ *   D1  the same, but referencing operands by DISPLAY name WITH SPACES.
+ *   D2  what is stored for that form? A bracketed name containing spaces
+ *   D3  cannot have its brackets stripped without becoming ambiguous, so
+ *       it may store and compare differently to C1/C3. This is the shape
+ *       the tool actually emits: the build rewrites [RaisedAtTier] to
+ *       [Raised At Tier] before deploying, so C1 alone tests a formula
+ *       deploy.js never sends.
+ *
+ *   NUM1  ResultType Number over a Choice operand — accepted?
+ *   NUM2  ...and does it compute the branch the Choice selects?
+ *   DAT1  ResultType DateTime over Choice + Date operands — accepted?
+ *   DAT2  ...and does the date offset compute?
+ *       Both are declarable today (calculated_number, calculated_date) and
+ *       are where this template goes next: a priority that sets a response
+ *       time, or an escalation score derived from a choice.
+ *
+ *   R1  the retirement fold appends " (retired)" to a column's DISPLAY
+ *   R2  title, and calculated formulas resolve operands BY display title.
+ *       Does an existing formula survive that rename, and can a new one
+ *       reference a title containing parentheses at all?
+ *
  *   N1  NEGATIVE CONTROL — is a Person operand refused?
+ *
+ * FOR A CLEAN RUN, delete the list first if a previous run left one: a
+ * column that already exists is reported as PASS "already present", which
+ * is weaker evidence than actually creating it.
  *
  * READ N1 FIRST. It is the only row that establishes this probe can tell
  * acceptance from refusal. If a Person operand is ACCEPTED, the probe is
@@ -70,13 +96,16 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
-  const spPost = async (path, payload, digest) => {
+  // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
+  // both through POST rather than accepting them as real verbs.
+  const spPost = async (path, payload, digest, extraHeaders = {}) => {
     const res = await fetch(`${WEB}/_api/${path}`, {
       method: 'POST',
       headers: {
         Accept: 'application/json;odata=nometadata',
         'Content-Type': 'application/json;odata=nometadata',
         'X-RequestDigest': digest,
+        ...extraHeaders,
       },
       body: JSON.stringify(payload),
     });
@@ -130,6 +159,7 @@
 
   const LIST = 'dbmlsp Probe CalcChoice';
   const TIERS = ['Tier 1', 'Tier 2', 'Tier 3'];
+  const PRIORITIES = ['High', 'Medium', 'Low'];
   // Deliberately awkward: & is SharePoint's concatenation operator, "
   // delimits its string literals, and < is significant in SchemaXml. If
   // concatenation mangles a Choice value, it mangles it here.
@@ -159,6 +189,15 @@
   expect('C3', 'Formula as SharePoint stored it');
   expect('C4', 'Renders a Choice value containing & " <');
   expect('C5', 'Behaviour when one operand is blank');
+  expect('D1', 'Accepts operands referenced by DISPLAY name containing spaces');
+  expect('D2', 'Spaced display-name formula as SharePoint stored it');
+  expect('D3', 'Renders a value through spaced display-name operands');
+  expect('NUM1', 'ResultType Number over a Choice operand is accepted');
+  expect('NUM2', 'Number result computes the branch the Choice selects');
+  expect('DAT1', 'ResultType DateTime over Choice + Date operands is accepted');
+  expect('DAT2', 'Date result computes the offset the Choice selects');
+  expect('R1', 'An existing calculated column survives its operand being re-titled "(retired)"');
+  expect('R2', 'A NEW calculated column can reference a display name containing "(retired)"');
   expect('N1', 'NEGATIVE CONTROL: a Person operand is refused');
 
   let digest = await getDigest();
@@ -203,25 +242,40 @@
   const fieldExists = async (name) =>
     (await spGet(`${fieldsPath}/getbyinternalnameortitle('${name}')`)).ok;
 
-  const choiceXml = (name) =>
-    `<Field Type="Choice" DisplayName="${name}" Name="${name}" Format="Dropdown">` +
-    `<CHOICES>${[...TIERS, NASTY].map((c) => `<CHOICE>${xmlAttr(c)}</CHOICE>`).join('')}` +
+  // DisplayName and Name differ deliberately on the spaced columns. The
+  // build rewrites [InternalName] to [Display Name] before deploying, and
+  // auto_display_name turns RaisedAtTier into "Raised At Tier" — so the
+  // formula SharePoint actually receives references a name with SPACES.
+  // Columns whose display and internal names match cannot exercise that.
+  const choiceXml = (internal, display, choices) =>
+    `<Field Type="Choice" DisplayName="${xmlAttr(display)}" Name="${internal}" Format="Dropdown">` +
+    `<CHOICES>${choices.map((c) => `<CHOICE>${xmlAttr(c)}</CHOICE>`).join('')}` +
     `</CHOICES></Field>`;
 
-  for (const name of ['RaisedAtTier', 'TargetTier']) {
-    if (!(await fieldExists(name))) {
-      const made = await addField(choiceXml(name));
+  const bootstrap = [
+    ['RaisedAtTier', 'RaisedAtTier', choiceXml('RaisedAtTier', 'RaisedAtTier', [...TIERS, NASTY])],
+    ['TargetTier', 'TargetTier', choiceXml('TargetTier', 'TargetTier', [...TIERS, NASTY])],
+    // Spaced display names — the shape the tool actually emits.
+    ['SpacedFrom', 'Spaced From Tier', choiceXml('SpacedFrom', 'Spaced From Tier', TIERS)],
+    ['SpacedTo', 'Spaced To Tier', choiceXml('SpacedTo', 'Spaced To Tier', TIERS)],
+    // Drives a numeric score and a date offset, the two future shapes.
+    ['ProbePriority', 'Probe Priority', choiceXml('ProbePriority', 'Probe Priority', PRIORITIES)],
+    ['ProbeRaised', 'Probe Raised',
+     '<Field Type="DateTime" DisplayName="Probe Raised" Name="ProbeRaised" Format="DateOnly"/>'],
+    ['ProbeOwner', 'ProbeOwner',
+     '<Field Type="User" DisplayName="ProbeOwner" Name="ProbeOwner" UserSelectionMode="PeopleOnly"/>'],
+    // Retitled later to "Retire Me (retired)" to mimic the retirement fold.
+    ['RetireMe', 'Retire Me', choiceXml('RetireMe', 'Retire Me', TIERS)],
+  ];
+  for (const [internal, , xml] of bootstrap) {
+    if (!(await fieldExists(internal))) {
+      const made = await addField(xml);
       if (!made.ok) {
-        record('BOOT', `Create Choice column ${name}`, 'FAIL',
+        record('BOOT', `Create column ${internal}`, 'FAIL',
                `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
         return report();
       }
     }
-  }
-  if (!(await fieldExists('ProbeOwner'))) {
-    await addField(
-      '<Field Type="User" DisplayName="ProbeOwner" Name="ProbeOwner" ' +
-      'UserSelectionMode="PeopleOnly"/>');
   }
 
   // ---- C1: the direct question ---------------------------------------
@@ -229,8 +283,9 @@
   // needs no rewrite. jsgen does that display-name translation in a real
   // build; here it would only add a second variable to a single question.
   const ROUTE_FORMULA = '=[RaisedAtTier]&" -> "&[TargetTier]';
-  const calcXml = (name, formula, refs) =>
-    `<Field Type="Calculated" DisplayName="${name}" Name="${name}" ResultType="Text">` +
+  const calcXml = (name, formula, refs, resultType = 'Text', extra = '') =>
+    `<Field Type="Calculated" DisplayName="${name}" Name="${name}" ` +
+    `ResultType="${resultType}"${extra}>` +
     `<Formula>${xmlAttr(formula)}</Formula>` +
     `<FieldRefs>${refs.map((r) => `<FieldRef Name="${r}"/>`).join('')}</FieldRefs>` +
     `</Field>`;
@@ -292,6 +347,126 @@
                `expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
       }
     }
+  }
+
+  // ---- D: the shape the tool ACTUALLY emits ---------------------------
+  // deploy.js carries =[Raised At Tier]&" -> "&[Target Tier], not the
+  // internal-name form C1 tested. A bracketed name containing spaces
+  // cannot have its brackets stripped without becoming ambiguous, so both
+  // acceptance AND the stored form may differ from C1/C3.
+  const SPACED_FORMULA = '=[Spaced From Tier]&" -> "&[Spaced To Tier]';
+  if (!(await fieldExists('SpacedRoute'))) {
+    const made = await addField(
+      calcXml('SpacedRoute', SPACED_FORMULA, ['SpacedFrom', 'SpacedTo']));
+    record('D1', 'Accepts operands referenced by DISPLAY name containing spaces',
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
+  } else {
+    record('D1', 'Accepts operands referenced by DISPLAY name containing spaces',
+           'PASS', 'already present from an earlier run');
+  }
+  const spaced = await spGet(`${fieldsPath}/getbyinternalnameortitle('SpacedRoute')`);
+  if (spaced.ok) {
+    record('D2', 'Spaced display-name formula as SharePoint stored it', 'INFO',
+           `sent ${JSON.stringify(SPACED_FORMULA)} / stored ${JSON.stringify(spaced.body.Formula)}`);
+  }
+
+  // ---- NUM / DAT: a Choice driving a score and a due date -------------
+  // Both are declarable today (calculated_number, calculated_date) and are
+  // the natural next step for this template: a priority that sets a
+  // response time, or an escalation score.
+  const NUM_FORMULA = '=IF([Probe Priority]="High",3,IF([Probe Priority]="Medium",2,1))';
+  if (!(await fieldExists('ProbeScore'))) {
+    const made = await addField(
+      calcXml('ProbeScore', NUM_FORMULA, ['ProbePriority'], 'Number'));
+    record('NUM1', 'ResultType Number over a Choice operand is accepted',
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
+  } else {
+    record('NUM1', 'ResultType Number over a Choice operand is accepted', 'PASS',
+           'already present from an earlier run');
+  }
+
+  const DATE_FORMULA = '=[Probe Raised]+IF([Probe Priority]="High",1,7)';
+  if (!(await fieldExists('ProbeDue'))) {
+    const made = await addField(
+      calcXml('ProbeDue', DATE_FORMULA, ['ProbeRaised', 'ProbePriority'], 'DateTime',
+              ' Format="DateOnly"'));
+    record('DAT1', 'ResultType DateTime over Choice + Date operands is accepted',
+           made.ok ? 'PASS' : 'FAIL',
+           made.ok ? `HTTP ${made.status}` : `HTTP ${made.status}: ${made.text.slice(0, 400)}`);
+  } else {
+    record('DAT1', 'ResultType DateTime over Choice + Date operands is accepted', 'PASS',
+           'already present from an earlier run');
+  }
+
+  // One item exercises D3, NUM2 and DAT2 together.
+  digest = await getDigest();
+  const combo = await spPost(itemsPath, {
+    Title: 'combo',
+    SpacedFrom: 'Tier 1', SpacedTo: 'Tier 3',
+    ProbePriority: 'High', ProbeRaised: '2026-03-02T00:00:00Z',
+  }, digest);
+  if (!combo.ok) {
+    for (const id of ['D3', 'NUM2', 'DAT2']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'FAIL',
+             `item create HTTP ${combo.status}: ${combo.text.slice(0, 300)}`);
+    }
+  } else {
+    const read = await spGet(
+      `${itemsPath}(${combo.body.Id})?$select=SpacedRoute,ProbeScore,ProbeDue`);
+    const got = read.ok ? read.body : {};
+    record('D3', 'Renders a value through spaced display-name operands',
+           got.SpacedRoute === 'Tier 1 -> Tier 3' ? 'PASS' : 'FAIL',
+           `expected "Tier 1 -> Tier 3", got ${JSON.stringify(got.SpacedRoute)}`);
+    record('NUM2', 'Number result computes the branch the Choice selects',
+           Number(got.ProbeScore) === 3 ? 'PASS' : 'FAIL',
+           `Priority "High" should score 3, got ${JSON.stringify(got.ProbeScore)}`);
+    // Compared on the date part only: the stored value carries a timezone
+    // and an exact-string match would fail for a reason that is not the
+    // question being asked.
+    const due = String(got.ProbeDue || '').slice(0, 10);
+    record('DAT2', 'Date result computes the offset the Choice selects',
+           due === '2026-03-03' ? 'PASS' : 'FAIL',
+           `raised 2026-03-02 + High(1 day) should be 2026-03-03, got ` +
+           `${JSON.stringify(got.ProbeDue)} (date part ${JSON.stringify(due)})`);
+  }
+
+  // ---- R: retirement re-titles an operand -----------------------------
+  // The retirement fold appends " (retired)" to a column's DISPLAY title,
+  // and calculated formulas resolve operands BY display title. Two
+  // separate questions: does the existing formula survive the rename, and
+  // can a new formula reference a title containing parentheses at all?
+  if (!(await fieldExists('RetireRoute'))) {
+    await addField(calcXml('RetireRoute', '=[Retire Me]&" fixed"', ['RetireMe']));
+  }
+  digest = await getDigest();
+  const retitle = await spPost(
+    `${fieldsPath}/getbyinternalnameortitle('RetireMe')`,
+    { Title: 'Retire Me (retired)' },
+    digest,
+    { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+  );
+  if (!retitle.ok) {
+    record('R1', 'An existing calculated column survives its operand being re-titled "(retired)"',
+           'NOT ESTABLISHED', `could not re-title: HTTP ${retitle.status}`);
+  } else {
+    digest = await getDigest();
+    const row = await spPost(itemsPath, { Title: 'retire', RetireMe: 'Tier 2' }, digest);
+    const readBack = row.ok
+      ? await spGet(`${itemsPath}(${row.body.Id})?$select=RetireRoute`)
+      : { ok: false };
+    const after = await spGet(`${fieldsPath}/getbyinternalnameortitle('RetireRoute')`);
+    record('R1', 'An existing calculated column survives its operand being re-titled "(retired)"',
+           readBack.ok && readBack.body.RetireRoute === 'Tier 2 fixed' ? 'PASS' : 'FAIL',
+           `after rename the stored formula is ${JSON.stringify(after.ok ? after.body.Formula : null)}; ` +
+           `computed value ${JSON.stringify(readBack.ok ? readBack.body.RetireRoute : null)}`);
+
+    const newRef = await addField(
+      calcXml('RetiredRef', '=[Retire Me (retired)]&" x"', ['RetireMe']));
+    record('R2', 'A NEW calculated column can reference a display name containing "(retired)"',
+           newRef.ok ? 'PASS' : 'FAIL',
+           newRef.ok ? `HTTP ${newRef.status}` : `HTTP ${newRef.status}: ${newRef.text.slice(0, 300)}`);
   }
 
   // ---- N1: NEGATIVE CONTROL -------------------------------------------
