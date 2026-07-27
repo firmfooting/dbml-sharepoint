@@ -184,13 +184,21 @@ them very differently:
 - **Hiding it from the forms** via "Edit form → Edit columns". **Not
   detected and not repaired.** That toggle writes the content type's
   `FieldLink.Hidden` rather than anything on the field, so field-level
-  sealing never covered it — and nothing in the deployer reads, writes,
-  probes or reports that property. A redeploy runs clean and says nothing.
-  The repair is manual: re-tick the column in the same "Edit columns"
-  panel. It cannot be scripted through the REST surface these scripts
-  use — `FieldLink.Hidden` is writable only through CSOM, which is why
-  declared form behaviour deliberately uses a different mechanism (see
-  below).
+  sealing never covered it — a live probe confirmed an operator can untick
+  a **sealed** column this way. Nothing in the deployer reads, writes,
+  probes or reports that property today: a redeploy runs clean and says
+  nothing about it. Re-tick the column in the same "Edit columns" panel to
+  put it back.
+
+  Being unrepaired here is an implementation gap, not a limit. REST refuses
+  the write outright (*"The type SP.FieldLink does not support HTTP PATCH
+  method"*), but the CSOM path —
+  `ContentTypes.GetById(...).FieldLinks.GetById(...).Hidden = false` then
+  `ContentType.Update(false)` — was validated end to end on a live tenant
+  against an ordinary column, a UI-hidden column and a UI-hidden sealed
+  column, each with a confirming read-back. `deploy.js` already uses CSOM
+  `ProcessQuery` for site-group ownership, so the mechanism is established.
+  It simply is not wired to this property yet.
 
 **Declared form visibility is detected.** `form_visibility:` and
 `column_validation:` in `mapping.yaml` write field properties, not field

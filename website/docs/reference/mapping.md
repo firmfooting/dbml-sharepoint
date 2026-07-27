@@ -159,10 +159,7 @@ form_visibility:
 
 **The `columns:` level is mandatory.** `form_visibility` → *entity* →
 `columns:` → *column* → declaration. Nothing may sit beside `columns:`
-except `reconcile:`; anything else is a load error. (The migration error
-you get from a leftover `hidden_on_forms:` suggests `Column: hidden`
-without showing the two levels above it — follow the shape here, not that
-message.)
+except `reconcile:`; anything else is a load error.
 
 Per column, either the string `hidden` or `visible`, or a mapping:
 
@@ -236,10 +233,35 @@ build cannot decide it; if it can be false there, every save under that
 branch fails. Give the column a default, or make the condition one that is
 always true on a new item.
 
-**Never declare `Title`.** SharePoint's built-in Title column is
-provisioned through its own separate patch and never receives these
-properties, so a declaration on it deploys nothing. Rename it with
-`display_names` and leave its visibility alone.
+### Columns you cannot declare on
+
+`Title` and the SharePoint system columns (`Created`, `Modified`,
+`Author`, `Editor`, `ID`) are rejected by `form_visibility`,
+`column_validation` and `column_formatting` alike:
+
+```
+form_visibility[Risk]: 'Title' cannot carry a per-column declaration — the
+built-in Title column is provisioned through its own patch, so it never
+receives these properties. Declaring it here would validate clean and
+deploy nothing.
+```
+
+The rule is **"you cannot patch a field the deployer does not own"**, not
+"system columns are off limits". Title is provisioned through its own
+separate patch and the system columns are not deployed fields at all, so
+in both cases the property write has nowhere to land — which used to
+produce the worst available outcome: a clean build, a manifest reporting
+"(none declared)", and an author believing a rule was in force.
+
+Two places still take these columns, correctly, because they address a
+field by name rather than patching a field object:
+
+- `views[].fields` and `form_formatting` body sections.
+- A `column_formatting` formatter body may **reference** `[$Created]` —
+  SharePoint resolves that at render time. It just cannot be the column
+  being formatted.
+
+To change Title's label, use `display_names`.
 
 ## `column_validation`
 
@@ -286,7 +308,8 @@ One interaction to keep in mind: a validation rule on a column that
 cannot pass with the column empty, every create fails and nobody ever sees
 the message.
 
-`Title` carries the same caveat as above — never declare it.
+`Title` and the system columns are rejected here too — see
+[Columns you cannot declare on](#columns-you-cannot-declare-on).
 
 ## `list_validation`
 
@@ -380,16 +403,28 @@ Both keys are removed, and both are now load errors rather than silent
 no-ops — a removal that failed open would have quietly made hidden columns
 visible.
 
-- `hidden_on_forms: {Risk: [SortOrder]}` becomes
-  `form_visibility: {Risk: {columns: {SortOrder: hidden}}}`. Note the
-  `columns:` level; the error message does not show it.
+Each error prints the replacement block, indented and complete, including
+the `columns:` level. Substitute your entity and column and it loads.
+
+- `hidden_on_forms: {Risk: [SortOrder]}` becomes:
+
+  ```yaml
+  form_visibility:
+    Risk:
+      columns:
+        SortOrder: hidden
+  ```
+
 - `hidden_on_display:` has **no replacement**, because it never did
   anything on a modern list. The modern Display form reads `ShowInEditForm`
   and ignores `ShowInDisplayForm`, so the old key wrote a setting, verified
-  it stuck, reported success, and changed nothing anyone saw. If you meant
-  "hide it from people looking at existing records", that is
-  `{existing: false}` — and it hides the column from the Edit form too,
-  which is the only behaviour SharePoint offers.
+  it stuck, reported success, and changed nothing anyone saw. The error
+  suggests `hidden`, which removes the column from every form. If you want
+  it kept on the New form, `{existing: false}` is the narrower move — and
+  it still hides the column from Edit as well as Display, because those two
+  cannot be separated.
+- `list_validation`'s `formula:` becomes a `when:` tree; see
+  [`list_validation`](#list_validation) above.
 
 ## `calculated_formulas`
 
