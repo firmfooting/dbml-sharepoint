@@ -5,8 +5,8 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from xml.sax.saxutils import escape as _xml_escape
 
+from dbml_sharepoint.analysis.conditions import SYSTEM_COLUMN_TYPES, to_caml
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import base_permissions_to_high_low
 from dbml_sharepoint.analysis.phases import phases_context
@@ -110,38 +110,10 @@ def _rewrite_formula_refs(formula: str, display_by_col: dict[str, str]) -> str:
 
 # CAML fragments for the declared-view DSL. Operators/columns are validated
 # at build time (validate_against_mapping), so rendering can be direct.
-_CAML_OP_TAGS = {
-    "eq": "Eq", "neq": "Neq", "lt": "Lt", "leq": "Leq",
-    "gt": "Gt", "geq": "Geq", "is_null": "IsNull", "is_not_null": "IsNotNull",
-}
-_CAML_NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
-_CAML_DATE_TYPES = frozenset({"date", "datetime"})
-_TODAY_VALUE = re.compile(r"^today(?:([+-])(\d+))?$")
-
-
-def _caml_value(column_type: str, value: Any) -> str:
-    if column_type == "boolean":
-        truthy = value in (True, 1, "1")
-        return f'<Value Type="Integer">{"1" if truthy else "0"}</Value>'
-    if column_type in _CAML_NUMBER_TYPES:
-        return f'<Value Type="Number">{_xml_escape(str(value))}</Value>'
-    if column_type in _CAML_DATE_TYPES:
-        match = _TODAY_VALUE.match(value) if isinstance(value, str) else None
-        if match:
-            sign, days = match.group(1), match.group(2)
-            if days is None:
-                return '<Value Type="DateTime"><Today/></Value>'
-            offset = days if sign == "+" else f"-{days}"
-            return f'<Value Type="DateTime"><Today OffsetDays="{offset}"/></Value>'
-        return f'<Value Type="DateTime">{_xml_escape(str(value))}</Value>'
-    escaped = _xml_escape(str(value), {'"': "&quot;"})
-    return f'<Value Type="Text">{escaped}</Value>'
-
-
 def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
-    """Render a declared view's ViewQuery inner XML: <GroupBy> then <Where>
-    (conditions folded left-associatively into binary <And>) then <OrderBy>
-    (ascending is CAML's default; only descending carries the attribute)."""
+    """Render a declared view's ViewQuery inner XML: <GroupBy>, then <Where>
+    from the shared condition grammar, then <OrderBy> (ascending is CAML's
+    default; only descending carries the attribute)."""
     parts: list[str] = []
     if view.group_by is not None:
         collapse = "TRUE" if view.group_by.collapsed else "FALSE"
@@ -149,20 +121,12 @@ def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
             f'<GroupBy Collapse="{collapse}">'
             f'<FieldRef Name="{view.group_by.field}"/></GroupBy>',
         )
-    if view.where:
-        rendered: list[str] = []
-        for cond in view.where:
-            tag = _CAML_OP_TAGS[cond.op]
-            field_ref = f'<FieldRef Name="{cond.field}"/>'
-            if cond.op in ("is_null", "is_not_null"):
-                rendered.append(f"<{tag}>{field_ref}</{tag}>")
-            else:
-                value = _caml_value(column_types.get(cond.field, ""), cond.value)
-                rendered.append(f"<{tag}>{field_ref}{value}</{tag}>")
-        combined = rendered[0]
-        for nxt in rendered[1:]:
-            combined = f"<And>{combined}{nxt}</And>"
-        parts.append(f"<Where>{combined}</Where>")
+    if view.where is not None:
+        # System columns are renderable in a view but never declared in
+        # DBML; without their types a Created comparison would render as
+        # Type="Text" and the view would answer with the wrong rows.
+        types = {**SYSTEM_COLUMN_TYPES, **column_types}
+        parts.append(f"<Where>{to_caml(view.where, types)}</Where>")
     if view.sort:
         refs = "".join(
             f'<FieldRef Name="{entry.field}"/>' if entry.direction == "asc"

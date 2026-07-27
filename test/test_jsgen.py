@@ -1278,11 +1278,12 @@ def _caml(view_kwargs: dict[str, Any], column_types: dict[str, str] | None = Non
 
 
 def test_view_caml_condition_sort_and_group() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition, ViewGroupBy, ViewSort
+    from dbml_sharepoint.model.conditions import parse_condition
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy, ViewSort
 
     caml = _caml(
         dict(
-            where=[ViewCondition(field="Status", op="neq", value="Closed")],
+            where=parse_condition([{"field": "Status", "op": "neq", "value": "Closed"}], "w"),
             sort=[ViewSort(field="RiskScore", direction="desc")],
             group_by=ViewGroupBy(field="Impact", collapsed=True),
         ),
@@ -1297,14 +1298,17 @@ def test_view_caml_condition_sort_and_group() -> None:
 
 
 def test_view_caml_ands_multiple_conditions() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition
+    from dbml_sharepoint.model.conditions import parse_condition
 
     caml = _caml(
-        dict(where=[
-            ViewCondition(field="Status", op="eq", value="Open"),
-            ViewCondition(field="SortOrder", op="geq", value=5),
-            ViewCondition(field="Owner", op="is_not_null"),
-        ]),
+        dict(where=parse_condition(
+            [
+                {"field": "Status", "op": "eq", "value": "Open"},
+                {"field": "SortOrder", "op": "geq", "value": 5},
+                {"field": "Owner", "op": "is_not_null"},
+            ],
+            "w",
+        )),
         {"Status": "status_enum", "SortOrder": "int", "Owner": "person"},
     )
     assert caml == (
@@ -1318,11 +1322,12 @@ def test_view_caml_ands_multiple_conditions() -> None:
 
 
 def test_view_caml_today_offsets_and_ascending_sort() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition, ViewSort
+    from dbml_sharepoint.model.conditions import parse_condition
+    from dbml_sharepoint.model.mapping_loader import ViewSort
 
     caml = _caml(
         dict(
-            where=[ViewCondition(field="DueDate", op="leq", value="today+30")],
+            where=parse_condition([{"field": "DueDate", "op": "leq", "value": "today+30"}], "w"),
             sort=[ViewSort(field="DueDate", direction="asc")],
         ),
         {"DueDate": "date"},
@@ -1333,27 +1338,27 @@ def test_view_caml_today_offsets_and_ascending_sort() -> None:
         '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
     )
     bare = _caml(
-        dict(where=[ViewCondition(field="DueDate", op="eq", value="today")]),
+        dict(where=parse_condition([{"field": "DueDate", "op": "eq", "value": "today"}], "w")),
         {"DueDate": "datetime"},
     )
     assert '<Value Type="DateTime"><Today/></Value>' in bare
     minus = _caml(
-        dict(where=[ViewCondition(field="DueDate", op="gt", value="today-7")]),
+        dict(where=parse_condition([{"field": "DueDate", "op": "gt", "value": "today-7"}], "w")),
         {"DueDate": "date"},
     )
     assert '<Today OffsetDays="-7"/>' in minus
 
 
 def test_view_caml_escapes_values_and_maps_boolean() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition
+    from dbml_sharepoint.model.conditions import parse_condition
 
     caml = _caml(
-        dict(where=[ViewCondition(field="Name", op="eq", value='A & B < "C"')]),
+        dict(where=parse_condition([{"field": "Name", "op": "eq", "value": 'A & B < "C"'}], "w")),
         {"Name": "nvarchar"},
     )
     assert '<Value Type="Text">A &amp; B &lt; &quot;C&quot;</Value>' in caml
     flag = _caml(
-        dict(where=[ViewCondition(field="Active", op="eq", value=True)]),
+        dict(where=parse_condition([{"field": "Active", "op": "eq", "value": True}], "w")),
         {"Active": "boolean"},
     )
     assert '<Value Type="Integer">1</Value>' in flag

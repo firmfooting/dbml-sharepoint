@@ -21,6 +21,7 @@ from typing import Any, Literal, cast, get_args
 import yaml
 
 from dbml_sharepoint.analysis import styles
+from dbml_sharepoint.model.conditions import Condition, parse_condition
 
 # Closed vocabularies as Literal types: the loader is the ONE gate that
 # admits these strings, so everything downstream (generators, reporting,
@@ -116,20 +117,6 @@ class WatchedList:
 
 
 @dataclass(frozen=True)
-class ViewCondition:
-    """One <Where> condition of a declared view. Conditions are ANDed.
-
-    `op` is validated against the DSL allowlist by validate_against_mapping;
-    `value` is absent for is_null/is_not_null and may be the `today`,
-    `today+N` or `today-N` sentinel on date/datetime columns.
-    """
-
-    field: str
-    op: str
-    value: Any = None
-
-
-@dataclass(frozen=True)
 class ViewSort:
     """One <OrderBy> entry of a declared view."""
 
@@ -152,7 +139,8 @@ class ViewDef:
     title: str
     fields: list[str]
     default: bool = False
-    where: list[ViewCondition] = field(default_factory=list)
+    # A condition tree from the shared grammar; None when undeclared.
+    where: Condition | None = None
     sort: list[ViewSort] = field(default_factory=list)
     group_by: ViewGroupBy | None = None
     row_limit: int | None = None
@@ -695,12 +683,8 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     fields = raw_view.get("fields")
     if not isinstance(fields, list) or not fields or not all(isinstance(f, str) for f in fields):
         raise ValueError(f"{context}: view 'fields' must be a non-empty list of column names")
-    where = [
-        ViewCondition(
-            field=str(cond["field"]), op=str(cond.get("op", "")), value=cond.get("value"),
-        )
-        for cond in (raw_view.get("where") or [])
-    ]
+    raw_where = raw_view.get("where")
+    where = parse_condition(raw_where, f"{context}.where") if raw_where else None
     sort: list[ViewSort] = []
     for entry in raw_view.get("sort") or []:
         direction = str(entry.get("direction", "asc"))

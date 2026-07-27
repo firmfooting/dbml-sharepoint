@@ -215,6 +215,8 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         raise _reject(target, _UNSUPPORTED_PROPERTY[target], context)
     if leaf.op not in _VALUELESS_OPS and leaf.value is None:
         raise _reject(target, f"operator {leaf.op!r} needs a 'value'", context)
+    if leaf.op in _VALUELESS_OPS and leaf.value is not None:
+        raise _reject(target, f"operator {leaf.op!r} takes no 'value'", context)
     if leaf.op in ("in", "not_in") and not isinstance(leaf.value, list):
         raise _reject(target, f"operator {leaf.op!r} needs a list 'value'", context)
     if leaf.op in ("in", "not_in") and not leaf.value:
@@ -531,3 +533,23 @@ def _render_problems(
             if message not in problems:
                 problems.append(message)
     return problems
+
+
+def describe(node: Condition) -> str:
+    """A human-readable summary for manifests and documentation.
+
+    Deliberately not any target's syntax: an operator reads as its declared
+    name, so an operator a reader does not recognise sends them to the
+    grammar reference rather than to a SharePoint dialect they would then
+    have to identify.
+    """
+    if isinstance(node, Leaf):
+        subject = f"{node.field}.{node.property}" if node.property else node.field
+        if node.measure:
+            subject = f"{node.measure}({subject})"
+        if node.op in _NULL_TESTS:
+            return f"{subject} {node.op}"
+        return f"{subject} {node.op} {node.value!r}"
+    joiner = {"all_of": " AND ", "any_of": " OR ", "none_of": " NOR "}[node.kind]
+    inner = joiner.join(describe(child) for child in node.children)
+    return inner if len(node.children) == 1 else f"({inner})"

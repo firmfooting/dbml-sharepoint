@@ -4,6 +4,7 @@
 import json
 from typing import Any
 
+from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.analysis.validator import Finding
 from dbml_sharepoint.extension import ManifestExtras
@@ -72,12 +73,8 @@ def generate_manifest(
             if declared.title != view_title:
                 continue
             parts: list[str] = []
-            if declared.where:
-                parts.append("filter: " + " AND ".join(
-                    f"{cond.field} {cond.op}"
-                    + ("" if cond.op in ("is_null", "is_not_null") else f" {cond.value}")
-                    for cond in declared.where
-                ))
+            if declared.where is not None:
+                parts.append(f"filter: {describe(declared.where)}")
             if declared.sort:
                 parts.append("sort: " + ", ".join(
                     f"{entry.field} {entry.direction}" for entry in declared.sort

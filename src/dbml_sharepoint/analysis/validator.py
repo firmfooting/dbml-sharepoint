@@ -5,6 +5,11 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from dbml_sharepoint.analysis.conditions import (
+    CAML,
+    SYSTEM_COLUMN_TYPES,
+    validate_condition,
+)
 from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS, BUILT_IN_LEVELS
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, MappingBundle, view_url_slug
@@ -487,7 +492,6 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
             ctx = f"views[{entity_name}].{view.title}"
             referenced = (
                 [("fields", name) for name in view.fields]
-                + [("where", cond.field) for cond in view.where]
                 + [("sort", sort.field) for sort in view.sort]
                 + ([("group_by", view.group_by.field)] if view.group_by else [])
             )
@@ -498,34 +502,22 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                         f"{ctx}: {part} references {name!r}, which is not a "
                         f"rendered column of {entity_name}.",
                     ))
-            for cond in view.where:
-                if cond.op not in VIEW_OPERATORS:
-                    findings.append(Finding(
-                        "error",
-                        f"{ctx}: unknown where op {cond.op!r}; allowed: "
-                        f"{', '.join(sorted(VIEW_OPERATORS))}.",
-                    ))
-                    continue
-                if cond.op in _VIEW_VALUELESS_OPERATORS:
-                    if cond.value is not None:
-                        findings.append(Finding(
-                            "error", f"{ctx}: op {cond.op!r} takes no value.",
-                        ))
-                elif cond.value is None:
-                    findings.append(Finding(
-                        "error", f"{ctx}: op {cond.op!r} requires a value.",
-                    ))
-                elif (
-                    isinstance(cond.value, str)
-                    and _TODAY_SENTINEL.match(cond.value)
-                    and types_by_col.get(cond.field) not in _DATE_TYPES
-                ):
-                    findings.append(Finding(
-                        "error",
-                        f"{ctx}: 'today' offsets apply only to date/datetime "
-                        f"columns; {cond.field!r} is "
-                        f"{types_by_col.get(cond.field)!r}.",
-                    ))
+            if view.where is not None:
+                # The shared grammar owns operator, operand and capability
+                # rules for every conditional surface; duplicating them here
+                # is how the two would drift.
+                lookup_cols = {c.name for c in view_table.columns if c.ref is not None}
+                findings.extend(
+                    Finding("error", message)
+                    for message in validate_condition(
+                        view.where,
+                        target=CAML,
+                        rendered=view_rendered,
+                        types={**SYSTEM_COLUMN_TYPES, **types_by_col},
+                        lookups=lookup_cols,
+                        context=f"{ctx}.where",
+                    )
+                )
             if view.row_limit is not None and not 1 <= view.row_limit <= 5000:
                 findings.append(Finding(
                     "error", f"{ctx}: row_limit must be between 1 and 5000.",

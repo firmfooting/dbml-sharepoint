@@ -497,7 +497,8 @@ def _views_yaml(views_block: str) -> str:
 
 
 def test_views_section_parsed(tmp_path: Path) -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition, ViewGroupBy, ViewSort
+    from dbml_sharepoint.model.conditions import Group, Leaf
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy, ViewSort
 
     (tmp_path / "m.yaml").write_text(
         _views_yaml(
@@ -522,7 +523,7 @@ def test_views_section_parsed(tmp_path: Path) -> None:
     assert view.title == "Open projects"
     assert view.default is True
     assert view.fields == ["Title", "Status"]
-    assert view.where == [ViewCondition(field="Status", op="neq", value="Closed")]
+    assert view.where == Group("all_of", (Leaf("Status", "neq", "Closed"),))
     assert view.sort == [ViewSort(field="SortOrder", direction="asc")]
     assert view.group_by == ViewGroupBy(field="Status", collapsed=True)
     assert view.row_limit == 100
@@ -541,7 +542,7 @@ def test_views_optional_parts_default(tmp_path: Path) -> None:
     bundle = load_mapping(tmp_path / "m.yaml")
     view = bundle.mapping.views["Project"][0]
     assert view.default is False
-    assert view.where == []
+    assert view.where is None
     assert view.sort == []
     assert view.group_by is None
     assert view.row_limit is None
