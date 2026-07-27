@@ -12,7 +12,7 @@
  * cleanup fails it says so loudly and prints the URL to delete by hand.
  *
  * HOW TO RUN
- *   1. Set SITE_URL below to the site you are testing (it aborts unset).
+ *   1. Paste it once: it prints the web and stops. Set CONFIRMED = true.
  *   2. Open that site's classic settings page — /_layouts/15/settings.aspx —
  *      signed in as a Site Owner. The site guard needs _spPageContextInfo.
  *   3. F12 -> Console -> type `allow pasting` if the browser objects ->
@@ -29,7 +29,14 @@
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
-  const SITE_URL = '';            // REQUIRED, e.g. 'https://contoso.sharepoint.com/sites/ops'
+  // Deliberately NOT a site URL. The web is read from _spPageContextInfo and
+  // printed back for you to check; you confirm by flipping this flag. That
+  // gives the same "don't run it on the wrong site" protection as pasting a
+  // URL, without ever putting a tenant address into a tracked file.
+  // One gate, not two: CONFIRMED returns before anything below runs, so a
+  // second ALLOW_WRITES flag here would gate nothing and imply a protection
+  // that does not exist.
+  const CONFIRMED = false;
   const PROBE_LIST = 'zzz dbmlsp form visibility probe';
   const CLEANUP = false;           // false keeps the list for the manual UI step
   const RECHECK_ONLY = true;     // true = read current state only; no setup, no writes
@@ -42,31 +49,20 @@
     log('INFO', `${id}: ${observed}${detail ? ` — ${detail}` : ''}`);
   };
 
-  if (!SITE_URL) {
-    const guess = (typeof _spPageContextInfo !== 'undefined')
-      ? `${window.location.origin}${_spPageContextInfo.webServerRelativeUrl || ''}`
-      : '(could not detect)';
-    log('ERROR', `Set SITE_URL at the top of this script first. This web looks like: ${guess}`);
-    return { aborted: 'site-url-unset' };
-  }
-
-  // === Preflight: site match ===
+  // === Preflight: confirm the site ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
   // '/_api/web/...' targets the tenant root web — NOT the sub-site you are
   // viewing. Prefix every call with the current web's server-relative URL.
-  const expectedOrigin = new URL(SITE_URL).origin;
-  const expectedPath = new URL(SITE_URL).pathname.replace(/\/$/, '');
   if (typeof _spPageContextInfo === 'undefined') {
     log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the web context. Open /_layouts/15/settings.aspx and retry.');
     return { aborted: 'no-sp-page-context' };
   }
-  const actualOrigin = window.location.origin;
-  const actualPath = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
-  if (actualOrigin !== expectedOrigin || actualPath !== expectedPath) {
-    log('ERROR', `Site mismatch. Expected ${expectedOrigin}${expectedPath}, found ${actualOrigin}${actualPath}.`);
-    return { aborted: 'site-mismatch' };
+  const WEB = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
+  if (!CONFIRMED) {
+    log('INFO', `This page is ${window.location.origin}${WEB || '/'}.`);
+    log('INFO', 'If that is the site you want, set CONFIRMED = true and paste again.');
+    return { aborted: 'unconfirmed' };
   }
-  const WEB = actualPath;
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   // SP getbytitle/getbyname take a single-quoted OData literal, where an
   // embedded apostrophe must be DOUBLED; encodeURIComponent does not do it.

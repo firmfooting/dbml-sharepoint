@@ -39,7 +39,7 @@
   // printed back for you to check; you confirm by flipping this flag. That
   // gives the same "don't run it on the wrong site" protection as pasting a
   // URL, without ever putting a tenant address into a tracked file.
-  const CONFIRMED = true;
+  const CONFIRMED = false;
   const PROBE_LIST = 'zzz dbmlsp form visibility interactive';
   // ------------------------------------------------------------------------
 
