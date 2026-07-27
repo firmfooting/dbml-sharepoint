@@ -89,6 +89,7 @@ def generate_deploy_js(
         generated_at=generated_at,
         schema_json=schema_json,
         phases=phases_context(),
+        unmanaged_sentinel=UNMANAGED,
     )
 
 

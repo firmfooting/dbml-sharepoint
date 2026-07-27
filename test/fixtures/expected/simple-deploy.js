@@ -984,57 +984,87 @@
     }
   }
 
-  // Declared form visibility: auto-stamped columns are removed from the NEW
-  // and EDIT forms (the display form keeps them for audit). SP exposes this
-  // through POST setter methods, not writable properties; a null read means
-  // "shown".
-  async function enforceFormVisibility(listName, field, digest) {
-    const visUrl = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
-    // ShowInNewForm/ShowInEditForm are NOT projected by the REST field
-    // resource ($select returns neither); the readable source of truth is
-    // the SchemaXml attribute — absent means "shown".
-    const readVisibility = async () => {
-      const r = await fetchWithRetry(`${visUrl}?$select=SchemaXml`, {
+  // Declared form behaviour. Two properties, opposite round-trip
+  // behaviour, both verified against a live tenant:
+  //
+  //   ClientValidationFormula  conditional + per-form visibility.
+  //                            Reads back BYTE-IDENTICAL, so compare raw.
+  //   ValidationFormula        save-time rule. NORMALISED on save (brackets
+  //                            stripped, whitespace removed), so compare
+  //                            canonically or every redeploy reports drift
+  //                            that is not there.
+  //
+  // SchemaXml's ShowInNewForm/ShowInEditForm are deliberately NOT written.
+  // Saving the form designer migrates them into FieldLink.Hidden, which
+  // hides a column from EVERY form and is not writable over REST — so a
+  // per-form declaration would silently become hide-everywhere the first
+  // time anyone opened the designer.
+  const UNMANAGED = "__dbmlsp_unmanaged__";
+
+  async function enforceDeclaredFormulas(listName, field, digest) {
+    const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
+    const read = async () => {
+      const r = await fetchWithRetry(`${url}?$select=ClientValidationFormula,ClientValidationMessage,ValidationFormula,ValidationMessage`, {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(`form visibility probe failed: HTTP ${r.status} ${text}`);
-      }
-      const j = await r.json();
-      const xml = String((j && j.d && j.d.SchemaXml) || '');
-      return {
-        shownOnNew: !/ShowInNewForm="FALSE"/i.test(xml),
-        shownOnEdit: !/ShowInEditForm="FALSE"/i.test(xml),
-        shownOnDisplay: !/ShowInDisplayForm="FALSE"/i.test(xml),
-      };
+      if (!r.ok) throw new Error(`formula probe failed: HTTP ${r.status} ${await r.text()}`);
+      return (await r.json()).d;
     };
-    const current = await readVisibility();
-    const setters = [];
-    if (field.hide_on_forms) {
-      setters.push([current.shownOnNew, 'setshowinnewform'], [current.shownOnEdit, 'setshowineditform']);
+
+    const body = { '__metadata': { 'type': 'SP.Field' } };
+    let wanted = false;
+    if (field.client_validation_formula !== UNMANAGED) {
+      body.ClientValidationFormula = field.client_validation_formula;
+      // Cleared alongside: a message beside a visibility formula is a
+      // property whose interaction with it was never observed, and leaving
+      // one in an unknown state next to a repurposed property is how a
+      // surprise arrives later.
+      body.ClientValidationMessage = '';
+      wanted = true;
     }
-    if (field.hide_on_display) {
-      setters.push([current.shownOnDisplay, 'setshowindisplayform']);
+    if (field.validation_formula !== UNMANAGED) {
+      body.ValidationFormula = field.validation_formula;
+      body.ValidationMessage = field.validation_message;
+      wanted = true;
     }
-    for (const [shown, method] of setters) {
-      if (shown) {
-        const r = await fetchWithRetry(`${visUrl}/${method}(false)`, {
-          method: 'POST', headers: spHeaders(digest),
-        });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(`${method}(false) failed: HTTP ${r.status} ${text}`);
-        }
-      }
+    if (!wanted) return;
+
+    const before = await read();
+    const same = (a, b) => (a || '') === (b || '');
+    const alreadyRight =
+      (field.client_validation_formula === UNMANAGED
+        || (same(before.ClientValidationFormula, field.client_validation_formula)
+            && same(before.ClientValidationMessage, '')))
+      && (field.validation_formula === UNMANAGED
+        || (canonicalFormula(before.ValidationFormula || '') === canonicalFormula(field.validation_formula)
+            && same(before.ValidationMessage, field.validation_message)));
+    if (alreadyRight) return;
+
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${await r.text()}`);
+
+    // A SEALED column accepts the write, reports success and discards it,
+    // so the read-back is the only evidence the change landed.
+    const after = await read();
+    if (field.client_validation_formula !== UNMANAGED
+        && !same(after.ClientValidationFormula, field.client_validation_formula)) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ClientValidationFormula `
+        + `(declared ${JSON.stringify(field.client_validation_formula)}; readback ${JSON.stringify(after.ClientValidationFormula)})`,
+      );
     }
-    const verify = await readVisibility();
-    const stillShown = [];
-    if (field.hide_on_forms && verify.shownOnNew) stillShown.push('new form');
-    if (field.hide_on_forms && verify.shownOnEdit) stillShown.push('edit form');
-    if (field.hide_on_display && verify.shownOnDisplay) stillShown.push('display form');
-    if (stillShown.length > 0) {
-      throw new Error(`did not retain form visibility (still shown on: ${stillShown.join(', ')})`);
+    if (field.validation_formula !== UNMANAGED
+        && canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(field.validation_formula)) {
+      // Both values are logged: SharePoint's normalisation may do more than
+      // has been observed, and a bare failure would need another probe.
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ValidationFormula `
+        + `(declared ${JSON.stringify(field.validation_formula)}; readback ${JSON.stringify(after.ValidationFormula)})`,
+      );
     }
   }
 
@@ -1116,9 +1146,7 @@
     if (drifted.length > 0) {
       throw new Error(`Field '${listName}.${field.title}' did not retain declared mutable setting(s): ${drifted.join(', ')}`);
     }
-    if (field.hide_on_forms || field.hide_on_display) {
-      await enforceFormVisibility(listName, field, digest);
-    }
+    await enforceDeclaredFormulas(listName, field, digest);
     return true;
   }
 

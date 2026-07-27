@@ -46,6 +46,10 @@ KNOWN_CONTEXT = {
     "site_url", "site_role", "release", "source_dbml", "source_mtime", "generated_at",
     # jsgen (deploy.js)
     "schema_json", "phases",
+    # The marker distinguishing "clear this value" from "not managed here".
+    # Passed in rather than hard-coded on both sides so the two can never
+    # disagree about what unmanaged looks like.
+    "unmanaged_sentinel",
     # demogen
     "demo_plan", "demo_title_prefix",
     # rollbackgen

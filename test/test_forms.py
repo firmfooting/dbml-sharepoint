@@ -1,6 +1,8 @@
 # test/test_forms.py
 """form_visibility and column_validation: parsing, composition, validation."""
 
+from typing import cast
+
 import pytest
 
 from dbml_sharepoint.analysis.forms import compose_visibility, validate_form_visibility
@@ -204,3 +206,109 @@ def test_empty_when_is_an_error_not_an_absence(tmp_path: object) -> None:
             "form_visibility:\n  Escalation:\n    columns:\n"
             "      Note: { new: false, when: [] }\n"
         ))
+
+
+# === Deploy-side: the sentinel and reconcile modes ==========================
+
+def _schema_json(tmp_path: object, section: str) -> dict[str, object]:
+    from pathlib import Path
+
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    base = Path(str(tmp_path))
+    (base / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Note nvarchar\n"
+        "  Other nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (base / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n" + section,
+        encoding="utf-8",
+    )
+    return build_schema_json(
+        parse_dbml(base / "s.dbml"), load_mapping(base / "m.yaml"), "default",
+        site_url="https://example.sharepoint.com/sites/t",
+    )
+
+
+def _field(schema: dict[str, object], name: str) -> dict[str, object]:
+    lists = cast("list[dict[str, object]]", schema["lists"])
+    fields = cast("list[dict[str, object]]", lists[0]["fields_phase1"])
+    return next(f for f in fields if f["title"] == name)
+
+
+def test_undeclared_section_leaves_every_column_unmanaged(tmp_path: object) -> None:
+    """No declaration must mean 'do not touch', never 'clear it' — a deploy
+    that blanked formulas nobody declared would erase configuration it does
+    not own."""
+    from dbml_sharepoint.generators.jsgen import UNMANAGED
+
+    schema = _schema_json(tmp_path, "")
+    assert _field(schema, "Note")["client_validation_formula"] == UNMANAGED
+
+
+def test_exact_clears_undeclared_columns_but_declared_wins(tmp_path: object) -> None:
+    """Under exact the declaration is authoritative for the whole entity,
+    so deleting an entry reverts that column on the next deploy."""
+    schema = _schema_json(tmp_path, (
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note: hidden\n"
+    ))
+    assert _field(schema, "Note")["client_validation_formula"] == "=if(false, 'true', 'false')"
+    assert _field(schema, "Other")["client_validation_formula"] == ""
+
+
+def test_declared_mode_leaves_undeclared_columns_alone(tmp_path: object) -> None:
+    from dbml_sharepoint.generators.jsgen import UNMANAGED
+
+    schema = _schema_json(tmp_path, (
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    reconcile: declared\n"
+        "    columns:\n"
+        "      Note: hidden\n"
+    ))
+    assert _field(schema, "Other")["client_validation_formula"] == UNMANAGED
+
+
+def test_the_sentinel_never_reaches_a_formula_position(tmp_path: object) -> None:
+    """The highest-risk item in the feature: if the marker leaked, SharePoint
+    would receive the literal string as a formula. The deploy script must
+    compare against it, never write it."""
+    from pathlib import Path
+
+    from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+    from dbml_sharepoint.model.release import load_release
+
+    base = Path(str(tmp_path))
+    _schema_json(tmp_path, "form_visibility:\n  Escalation:\n    columns:\n      Note: hidden\n")
+    js = generate_deploy_js(
+        schema=parse_dbml(base / "s.dbml"),
+        bundle=load_mapping(base / "m.yaml"),
+        release=load_release(Path("test/fixtures") / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/t",
+        site_role="default", source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z", generated_at="2026-05-04T00:00:00Z",
+    )
+    # It appears as the comparison constant and as data, never assigned into
+    # ClientValidationFormula or ValidationFormula.
+    assert f'const UNMANAGED = "{UNMANAGED}"' in js
+    assert f'"ClientValidationFormula": "{UNMANAGED}"' not in js
+    assert f'"ValidationFormula": "{UNMANAGED}"' not in js
+    # And the SchemaXml writer that provokes the unrepairable FieldLink
+    # migration is gone, not merely unreachable.
+    assert "setshowinnewform" not in js
+    assert "enforceFormVisibility" not in js
