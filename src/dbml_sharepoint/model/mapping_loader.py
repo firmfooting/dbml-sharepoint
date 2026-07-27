@@ -393,6 +393,12 @@ class Mapping:
     # {entity: [ViewDef]} — declared list views. Semantic rules (field
     # existence, operator allowlist, single default) live in the validator.
     views: dict[str, list[ViewDef]] = field(default_factory=dict)
+    # {entity: {set name: [columns]}} — named, reusable column lists that a
+    # view's `fields` pulls in with "@setname". Expanded into ViewDef.fields
+    # at load time (see _expand_field_sets); retained here as the
+    # authoritative declaration for the manifest footnote and the
+    # validator's unreferenced-set warning.
+    field_sets: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     # {entity: [DemoItem]} — declared demo/sample rows, emitted as
     # demo-data.js ONLY when the build passes --seed. Empty = feature off.
     demo_items: dict[str, list[DemoItem]] = field(default_factory=dict)
@@ -552,7 +558,7 @@ KNOWN_SECTIONS = frozenset({
     "retention_policies_source",
     "extension", "extensions", "calculated_formulas", "views", "display_names",
     "column_formatting", "form_formatting", "list_validation", "form_visibility",
-    "retired_columns",
+    "retired_columns", "field_sets",
     "style_theme",
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
     # Permissions are declared as three top-level sections, not one nested
@@ -714,6 +720,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
                 expanded = _load_json_value(base_dir, cf_value, cf_ctx)
             column_formatting.setdefault(cf_entity, {})[cf_col] = expanded
 
+    field_sets = _parse_field_sets(raw.get("field_sets"))
+
     unknown_sections = set(raw) - KNOWN_SECTIONS
     if unknown_sections:
         raise ValueError(
@@ -759,6 +767,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             ]
             for entity, items in (raw.get("views") or {}).items()
         },
+        field_sets=field_sets,
         demo_items={
             entity: [
                 _parse_demo_item(item, f"demo_items.{entity}[{i}]")
@@ -1342,6 +1351,34 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         ),
         widths=widths,
     )
+
+
+def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
+    """Structural parse of the `field_sets:` section.
+
+    Shape only — an unknown entity, an undeclared column, an '@' in a set
+    name and an empty set are semantic and live in the validator, which
+    reports them as findings beside the view checks. A declaration mistake
+    should hand the operator a manifest full of findings, not a traceback.
+    """
+    parsed: dict[str, dict[str, list[str]]] = {}
+    for entity, sets in (raw_sets or {}).items():
+        if not isinstance(sets, dict):
+            raise ValueError(
+                f"field_sets.{entity}: expected a mapping of set name to "
+                f"column list, got {type(sets).__name__}",
+            )
+        parsed[str(entity)] = {}
+        for set_name, columns in sets.items():
+            if not isinstance(columns, list) or not all(
+                isinstance(col, str) for col in columns
+            ):
+                raise ValueError(
+                    f"field_sets.{entity}.{set_name}: expected a list of "
+                    f"column names",
+                )
+            parsed[str(entity)][str(set_name)] = [str(col) for col in columns]
+    return parsed
 
 
 def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:

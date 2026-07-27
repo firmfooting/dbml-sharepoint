@@ -409,6 +409,7 @@ class Mapping:
     form_visibility: dict[str, dbml_sharepoint.model.mapping_loader.EntitySection[dbml_sharepoint.model.mapping_loader.FormVisibility]] = dict()
     column_validation: dict[str, dbml_sharepoint.model.mapping_loader.EntitySection[dbml_sharepoint.model.mapping_loader.ColumnValidation]] = dict()
     views: dict[str, list[dbml_sharepoint.model.mapping_loader.ViewDef]] = dict()
+    field_sets: dict[str, dict[str, list[str]]] = dict()
     demo_items: dict[str, list[dbml_sharepoint.model.mapping_loader.DemoItem]] = dict()
     display_name_mode: str | None = None
     display_name_overrides: dict[str, dict[str, str]] = dict()
@@ -504,7 +505,7 @@ actually running, regardless of how it was resolved.
 ### `KNOWN_SECTIONS`
 
 ```python
-KNOWN_SECTIONS = frozenset({'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'display_names', 'entities', 'enum_sources', 'extension', 'extensions', 'form_…
+KNOWN_SECTIONS = frozenset({'calculated_formulas', 'column_formatting', 'column_validation', 'cross_site_reference_columns', 'demo_items', 'display_names', 'entities', 'enum_sources', 'extension', 'extensions', 'field…
 ```
 
 ### `load_mapping`

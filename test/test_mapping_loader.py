@@ -1515,10 +1515,10 @@ def test_site_role_on_the_default_policy_is_still_accepted(tmp_path: Path) -> No
     assert perms.default_policy_site_role == "default"
 
 
-# --- Retired columns --------------------------------------------------------
+# --- Retired columns and field sets ------------------------------------------
 
 
-def _retired_yaml(block: str) -> str:
+def _board_yaml(block: str) -> str:
     return (
         'prefix: "APP_"\n'
         "entities:\n"
@@ -1566,7 +1566,7 @@ def test_retired_columns_parse_both_declaration_forms(tmp_path: Path) -> None:
 def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
     """Structural mistakes fail at load with a message naming the exact
     declaration — the same fail-closed contract as every other section."""
-    header = _retired_yaml("retired_columns:\n  Board:\n")
+    header = _board_yaml("retired_columns:\n  Board:\n")
     (tmp_path / "no-date.yaml").write_text(
         header + '    OperationsStatus:\n      reason: "gone"\n', encoding="utf-8",
     )
@@ -1589,7 +1589,7 @@ def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
         load_mapping(tmp_path / "bad-bool.yaml")
 
     (tmp_path / "bad-list.yaml").write_text(
-        _retired_yaml("retired_columns:\n  Board: [123]\n"), encoding="utf-8",
+        _board_yaml("retired_columns:\n  Board: [123]\n"), encoding="utf-8",
     )
     with pytest.raises(ValueError, match="bare-list entries must be column names"):
         load_mapping(tmp_path / "bad-list.yaml")
@@ -1601,7 +1601,7 @@ def test_apply_retirement_folds_into_every_target_structure(tmp_path: Path) -> N
     is the carve-out — it must NEVER reach form_visibility, which the
     validator rejects for calculated columns."""
     (tmp_path / "m.yaml").write_text(
-        _retired_yaml(
+        _board_yaml(
             "display_names:\n"
             "  mode: auto\n"
             "  overrides:\n"
@@ -1673,7 +1673,7 @@ def test_apply_retirement_replaces_a_declared_form_visibility_entry(
     replacement is recorded so the validator can say so.
     """
     (tmp_path / "m.yaml").write_text(
-        _retired_yaml(
+        _board_yaml(
             "form_visibility:\n"
             "  Board:\n"
             "    reconcile: exact\n"
@@ -1721,7 +1721,7 @@ def test_apply_retirement_strips_retired_fields_from_form_sections(
     clean up, and dropping it would be a second-order rewrite of their JSON.
     """
     (tmp_path / "m.yaml").write_text(
-        _retired_yaml(
+        _board_yaml(
             "form_formatting:\n"
             "  Board:\n"
             "    body:\n"
@@ -1755,3 +1755,45 @@ def test_apply_retirement_strips_retired_fields_from_form_sections(
         (s.column, s.context) for s in mapping.retirement_strips
         if "form_formatting" in s.context
     ] == [("OperationsStatus", "form_formatting[Board].body sections")]
+
+
+def test_field_sets_section_parsed(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "field_sets:\n"
+            "  Board:\n"
+            "    header:   [BoardDate, Chair]\n"
+            "    statuses: [OperationsStatus, WorkforceStatus]\n",
+        ),
+        encoding="utf-8",
+    )
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.field_sets == {
+        "Board": {
+            "header": ["BoardDate", "Chair"],
+            "statuses": ["OperationsStatus", "WorkforceStatus"],
+        },
+    }
+
+
+def test_field_sets_absent_defaults_empty(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(_board_yaml(""), encoding="utf-8")
+    assert load_mapping(tmp_path / "m.yaml").mapping.field_sets == {}
+
+
+def test_field_sets_entity_block_must_be_a_mapping(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml("field_sets:\n  Board: [BoardDate, Chair]\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"field_sets\.Board"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_field_set_must_be_a_list_of_column_names(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml("field_sets:\n  Board:\n    header: BoardDate\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"field_sets\.Board\.header"):
+        load_mapping(tmp_path / "m.yaml")
