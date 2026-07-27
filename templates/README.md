@@ -79,6 +79,7 @@ your own schema for the worst ones → define how you'll know it worked
   20-configure/        The physical and release configuration
       mapping.yaml       — prefix, indexes, versioning, formulas, security model
       release.yaml       — the version stamped into every deployed artefact
+      formatting/        — optional; formatter JSON referenced by mapping.yaml
   30-deploy/           Administrator guidance
       DEPLOY.md          — build, paste, verify; template-specific checks
   40-adopt/            Staff education
@@ -99,6 +100,16 @@ automatically: … Leave as-is."). Design rationale and mechanics live in `//`
 comments beside the columns, which never deploy. When you customise a
 template, keep that split: if it isn't something a staff member should read
 on the form, it belongs in a comment, not a note.
+
+**Formatter JSON: inline or referenced.** Anywhere `mapping.yaml` takes a
+formatter object — `column_formatting` overrides, `views[].formatting`, and
+each `form_formatting` part — it accepts either an inline mapping or a
+relative path to a `.json` file, resolved against `20-configure/`. Keep short
+formatters inline where they read as part of the declaration; put long ones
+(a multi-section form body, a bespoke row formatter) in
+`20-configure/formatting/` so `mapping.yaml` stays readable. Both forms
+deploy identically. The directory is optional — omit it when every formatter
+is inline.
 
 ## Deploying any template (shared procedure)
 
