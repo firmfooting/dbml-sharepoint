@@ -44,16 +44,27 @@ jobs:
         run: uv run dbml-sharepoint report --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-role default --out examples/project-tracker/reports
       - name: Build every solution template end-to-end
         shell: bash
+        # Discovered, never listed. A hardcoded roster fails open: a new
+        # template is simply never built, and CI stays green saying so.
         run: |
-          for t in contract-register asset-register incident-management policy-library training-register meeting-actions risk-register onboarding-tracker change-register stakeholder-contacts complaints-feedback audit-actions declarations-register service-requests project-pipeline process-register improvement-register measures-register credentialing-register equipment-maintenance routine-checks compliance-obligations volunteer-register grants-register switchboard-log visitor-log vehicle-log delegations-register tiered-huddle; do
+          set -euo pipefail
+          found=0
+          for schema in templates/*/10-design/schema.dbml; do
+            t="$(basename "$(dirname "$(dirname "$schema")")")"
+            found=$((found + 1))
+            echo "::group::$t"
             uv run dbml-sharepoint build \
-              --schema "templates/$t/10-design/schema.dbml" \
+              --schema "$schema" \
               --mapping "templates/$t/20-configure/mapping.yaml" \
               --release "templates/$t/20-configure/release.yaml" \
               --site-url https://example.sharepoint.com/sites/ci \
               --site-role default \
               --out "templates/$t/build"
+            echo "::endgroup::"
           done
+          echo "Built $found template(s)."
+          # A glob that matches nothing would otherwise pass silently.
+          test "$found" -gt 0
       - name: Build the seeded bundle (tiered-huddle is the library's only demo_items consumer)
         shell: bash
         run: |
