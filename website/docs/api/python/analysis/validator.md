@@ -101,6 +101,12 @@ def validate(schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoin
 def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle) -> list[dbml_sharepoint.analysis.validator.Finding]
 ```
 
+Cross-check the mapping against the schema.
+
+Each family of rules lives in its own module under analysis.checks;
+this walks them in declared order and concatenates what they report.
+Order is part of the contract — see that package's docstring.
+
 ### `validate_all`
 
 ```python
