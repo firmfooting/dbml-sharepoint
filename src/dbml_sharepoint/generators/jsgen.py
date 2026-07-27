@@ -125,6 +125,35 @@ def _rewrite_formula_refs(formula: str, display_by_col: dict[str, str]) -> str:
 UNMANAGED = "__dbmlsp_unmanaged__"
 
 
+def _section_target[T](
+    section: EntitySection[T] | None,
+    column: str,
+    *,
+    is_calculated: bool,
+) -> tuple[T, bool] | tuple[None, bool]:
+    """What a per-column section wants done to one column.
+
+    Returns (declaration, clear):
+      (None, False)  — not managed here; the live value is never touched
+      (None, True)   — `reconcile: exact` with no entry, so CLEAR it
+      (decl, False)  — render the declaration
+
+    Shared by both sections deliberately. The calculated-column exclusion
+    lived on the form_visibility path only, so `column_validation` with
+    `reconcile: exact` emitted a clear for a calculated column. The write
+    is a no-op — a calculated column never reaches an entry form, which is
+    why declaring one is a build error — but the manifest reported a clear
+    that never happened, and two siblings disagreeing about the same rule
+    is how the wrong one gets "fixed" later.
+    """
+    if section is None or is_calculated:
+        return None, False
+    declared = section.columns.get(column)
+    if declared is None:
+        return None, section.reconcile == "exact"
+    return declared, False
+
+
 def _visibility_formula(
     section: "EntitySection[FormVisibility] | None",
     column: str,
@@ -138,11 +167,9 @@ def _visibility_formula(
     left alone, so deployed state follows the declaration rather than the
     history of edits to it.
     """
-    if section is None or is_calculated:
-        return UNMANAGED
-    declared = section.columns.get(column)
+    declared, clear = _section_target(section, column, is_calculated=is_calculated)
     if declared is None:
-        return "" if section.reconcile == "exact" else UNMANAGED
+        return "" if clear else UNMANAGED
     return compose_visibility(
         new=declared.new, existing=declared.existing, when=declared.when, types=types,
     )
@@ -153,12 +180,12 @@ def _column_validation(
     column: str,
     types: dict[str, str],
     display_map: dict[str, str],
+    *,
+    is_calculated: bool = False,
 ) -> tuple[str, str]:
-    if section is None:
-        return (UNMANAGED, UNMANAGED)
-    declared = section.columns.get(column)
+    declared, clear = _section_target(section, column, is_calculated=is_calculated)
     if declared is None:
-        return ("", "") if section.reconcile == "exact" else (UNMANAGED, UNMANAGED)
+        return ("", "") if clear else (UNMANAGED, UNMANAGED)
     # SP resolves validation formulas by DISPLAY name, exactly as it does
     # for the list-level rule and for calculated columns.
     rendered = _rewrite_formula_refs(f"={to_validation(declared.when, types)}", display_map)
@@ -372,14 +399,16 @@ def build_schema_json(
         visibility = bundle.mapping.form_visibility.get(table_name)
         validation = bundle.mapping.column_validation.get(table_name)
         col_types = {c.name: c.type for c in table.columns}
+        calculated_here = bundle.mapping.calculated_formulas.get(table_name, {})
         for f in fields_phase1:
             f["display_title"] = display_map[f["title"]]
+            is_calculated = f["title"] in calculated_here
             f["client_validation_formula"] = _visibility_formula(
-                visibility, f["title"], col_types,
-                is_calculated=f["title"] in bundle.mapping.calculated_formulas.get(table_name, {}),
+                visibility, f["title"], col_types, is_calculated=is_calculated,
             )
             f["validation_formula"], f["validation_message"] = _column_validation(
                 validation, f["title"], col_types, display_map,
+                is_calculated=is_calculated,
             )
             f["seal"] = bundle.mapping.seal_columns
             if "Formula" in f["body"]:
@@ -401,14 +430,17 @@ def build_schema_json(
                     if deferred_formatter is not None
                     else None
                 )
+                deferred_calculated = deferred["field"]["title"] in calculated_here
                 deferred["field"]["client_validation_formula"] = _visibility_formula(
                     visibility, deferred["field"]["title"], col_types,
+                    is_calculated=deferred_calculated,
                 )
                 (
                     deferred["field"]["validation_formula"],
                     deferred["field"]["validation_message"],
                 ) = _column_validation(
                     validation, deferred["field"]["title"], col_types, display_map,
+                    is_calculated=deferred_calculated,
                 )
                 deferred["field"]["seal"] = bundle.mapping.seal_columns
 

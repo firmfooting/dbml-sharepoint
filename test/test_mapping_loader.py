@@ -1465,3 +1465,46 @@ def test_list_validation_formula_message_offers_an_example_that_loads(
     )
     rule = load_mapping(tmp_path / "fixed.yaml").mapping.list_validation["Project"]
     assert rule.message
+
+
+def test_site_role_on_a_permission_override_is_rejected(tmp_path: Path) -> None:
+    """`site_role` scopes the DEFAULT policy — which entities it applies to
+    — and is read only there. On an override it was parsed and silently
+    discarded, so an author who had seen it work on the default reasonably
+    expected it to narrow an override too, and got a list that was not
+    scoped at all. On the security surface, believing a policy is scoped
+    when it is not is the wrong direction to be wrong in.
+
+    Rejected rather than implemented: an override is already per-entity, so
+    a site-role scope on one is either redundant or contradicts the entity
+    it is keyed by."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "list_permissions:\n"
+            "  overrides:\n"
+            "    Project:\n"
+            "      break_inheritance: true\n"
+            "      site_role: default\n"
+            "      assignments: []\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="site_role") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "list_permissions.overrides.Project" in str(err.value)
+
+
+def test_site_role_on_the_default_policy_is_still_accepted(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "list_permissions:\n"
+            "  default:\n"
+            "    break_inheritance: true\n"
+            "    site_role: default\n"
+            "    assignments: []\n",
+        ),
+        encoding="utf-8",
+    )
+    perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
+    assert perms is not None
+    assert perms.default_policy_site_role == "default"

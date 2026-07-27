@@ -516,7 +516,14 @@ _GROUP_KEYS = frozenset({
     "only_allow_members_view_membership", "require_empty_at_deploy",
     "enroll_operator_during_deploy",
 })
-_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments", "site_role"})
+# `site_role` scopes the DEFAULT policy — which entities it applies to — and
+# is read only there. On an override it was parsed and silently discarded,
+# so an author who had seen it work on the default reasonably expected it to
+# narrow an override too and got a list that was not scoped at all. Rejected
+# rather than implemented: an override is already keyed BY entity, so a
+# site-role scope on one is either redundant or contradicts its own key.
+_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments"})
+_DEFAULT_POLICY_KEYS = _POLICY_KEYS | {"site_role"}
 
 
 def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context: str) -> None:
@@ -1081,9 +1088,15 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
     )
 
 
-def _parse_policy(raw_policy: Any, context: str) -> ListPermissionPolicy:
+def _parse_policy(
+    raw_policy: Any, context: str, *, allow_site_role: bool = False,
+) -> ListPermissionPolicy:
     """Parse a list permission policy dict."""
-    _reject_unknown_keys(raw_policy, _POLICY_KEYS, context)
+    _reject_unknown_keys(
+        raw_policy,
+        _DEFAULT_POLICY_KEYS if allow_site_role else _POLICY_KEYS,
+        context,
+    )
     # Read STRICTLY, and before the reconcile guard below: bool("false") is
     # True, so the quoted spelling used to coerce to True, the guard tested
     # the coerced value, and the deploy broke inheritance the author had
@@ -1180,7 +1193,9 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
     default_policy_site_role: str | None = None
     raw_default = raw_list_perms.get("default")
     if raw_default is not None:
-        default_policy = _parse_policy(raw_default, "list_permissions.default")
+        default_policy = _parse_policy(
+            raw_default, "list_permissions.default", allow_site_role=True,
+        )
         raw_scope = raw_default.get("site_role")
         default_policy_site_role = str(raw_scope) if raw_scope is not None else None
 

@@ -501,3 +501,69 @@ def test_declarations_on_ordinary_columns_still_validate_clean(tmp_path: object)
         "    Other: { elmType: div }\n",
     )
     assert messages == []
+
+
+def _calculated_schema_json(tmp_path: object, section: str) -> dict[str, object]:
+    """Escalation with a calculated column, plus a mapping section."""
+    from pathlib import Path
+
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    base = Path(str(tmp_path))
+    (base / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Note nvarchar\n"
+        "  Band calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (base / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Escalation:\n"
+        '    Band: \'=IF([Note]="","low","high")\'\n' + section,
+        encoding="utf-8",
+    )
+    return build_schema_json(
+        parse_dbml(base / "s.dbml"), load_mapping(base / "m.yaml"), "default",
+        site_url="https://example.sharepoint.com/sites/t",
+    )
+
+
+def test_exact_reconcile_never_touches_a_calculated_column(tmp_path: object) -> None:
+    """Both sections exclude calculated columns — they never reach an entry
+    form, and declaring one is a build error. form_visibility carried the
+    exclusion and column_validation did not, so `reconcile: exact` cleared
+    a calculated column's rule. The write is a no-op, but the asymmetry is
+    the hazard: two siblings disagreeing is how someone later "fixes" the
+    wrong one, and meanwhile the manifest reports a clear that never
+    happens."""
+    from dbml_sharepoint.generators.jsgen import UNMANAGED
+
+    schema = _calculated_schema_json(tmp_path, (
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note: hidden\n"
+        "column_validation:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        "          - { field: Note, op: is_not_null }\n"
+        "        message: Say something.\n"
+    ))
+    band = _field(schema, "Band")
+    assert band["client_validation_formula"] == UNMANAGED
+    assert band["validation_formula"] == UNMANAGED
+    assert band["validation_message"] == UNMANAGED
+    # The ordinary column beside it is still cleared/declared as usual.
+    note = _field(schema, "Note")
+    assert note["validation_formula"] != UNMANAGED
