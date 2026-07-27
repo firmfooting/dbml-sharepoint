@@ -21,14 +21,22 @@
  *      spec assumes 1024 by analogy; assumptions in formula limits have
  *      already bitten once.
  *
- * A and B are READ-ONLY: you configure things in the UI, this reads what
- * SharePoint stored. C and D require writes and are OFF by default.
+ * SELF-CONTAINED. With ALLOW_WRITES on it builds its own list, the
+ * visibility matrix and the typed columns the checklist references, so no
+ * other script is needed. Every bootstrap step checks first, so re-running
+ * adds what is missing rather than rebuilding. Analysis (A, B) is read-only
+ * once the list exists; the write tests (C, D) need ALLOW_WRITES.
  *
  * HOW TO RUN
  *   1. Open the target site's /_layouts/15/settings.aspx as a Site Owner.
  *   2. F12 -> Console -> paste -> Enter. It prints the web and stops.
- *   3. Set CONFIRMED = true, paste again.
- *   4. Work through the CHECKLIST it prints, then paste again to harvest.
+ *   3. Set CONFIRMED = true and ALLOW_WRITES = true, paste again. It builds
+ *      the list and prints the CHECKLIST.
+ *   4. Work through the checklist in the SharePoint UI.
+ *   5. Paste again to harvest. ALLOW_WRITES can go back to false for this —
+ *      sections 1-4 only read.
+ *
+ * WHEN FINISHED: delete the list in the UI. Everything lives in it.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -92,9 +100,99 @@
     return { ok: false, status: r.status, error: e };
   }
 
-  if (!(await get(`${listPath}?$select=Title`)).ok) {
-    console.error(`[EVIDENCE] List '${PROBE_LIST}' not found. Set PROBE_LIST at the top.`);
+  // === 0. Bootstrap =======================================================
+  // Self-contained: builds the list, the visibility matrix and the typed
+  // columns the checklist references. Safe to re-run — every step checks
+  // first, so an existing list is added to rather than rebuilt.
+  const listExists = async () => (await get(`${listPath}?$select=Title`)).ok;
+  const existedAtStart = await listExists();
+  if (!existedAtStart && !ALLOW_WRITES) {
+    console.error(`[EVIDENCE] List '${PROBE_LIST}' does not exist and ALLOW_WRITES is false.`);
+    console.error('[EVIDENCE] Set ALLOW_WRITES = true and this script will build it, or point');
+    console.error('[EVIDENCE] PROBE_LIST at a list you already have.');
     return { aborted: 'no-list' };
+  }
+
+  if (ALLOW_WRITES) {
+    rule();
+    bold('0 — BOOTSTRAP');
+    if (!existedAtStart) {
+      const made = await post('web/lists', {
+        __metadata: { type: 'SP.List' }, BaseTemplate: 100, Title: PROBE_LIST,
+        Description: 'Throwaway list from dbml-sharepoint form-visibility-evidence-probe.js. Safe to delete.',
+      });
+      if (!made.ok) {
+        console.error(`[EVIDENCE] Could not create the list: HTTP ${made.status} ${made.error}`);
+        return { aborted: 'list-create-failed' };
+      }
+      log(`Created list '${PROBE_LIST}'.`);
+    } else {
+      log(`List '${PROBE_LIST}' already exists — adding anything missing.`);
+    }
+
+    const seen = await get(`${listPath}/fields?$select=InternalName&$top=500`);
+    const have = new Set((seen.ok ? seen.d.results || [] : []).map((f) => f.InternalName));
+    const listId = (await get(`${listPath}?$select=Id`)).d?.Id;
+    const made = [];
+    const addField = async (name, body) => {
+      if (have.has(name)) return;
+      const r = await post(`${listPath}/fields`, body);
+      made.push(`${name}${r.ok ? '' : ` (FAILED HTTP ${r.status} ${r.error})`}`);
+    };
+    const addXml = async (name, xml) => {
+      if (have.has(name)) return;
+      const r = await post(`${listPath}/fields/createfieldasxml`, {
+        parameters: { __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' }, SchemaXml: xml, Options: 9 },
+      });
+      made.push(`${name}${r.ok ? '' : ` (FAILED HTTP ${r.status} ${r.error})`}`);
+    };
+    const text = (n) => ({ __metadata: { type: 'SP.Field' }, FieldTypeKind: 2, Title: n });
+
+    // The visibility matrix — holders for the checklist's formulas.
+    for (const n of ['Ctl', 'NewOff', 'EditOff', 'DispOff', 'BothWay', 'SealedF']) await addField(n, text(n));
+    await addXml('DeclOff', "<Field Type='Text' DisplayName='DeclOff' Name='DeclOff' ShowInNewForm='FALSE'/>");
+    await addXml('Calc', "<Field Type='Calculated' DisplayName='Calc' Name='Calc' ResultType='Number' ReadOnly='TRUE'><Formula>=1+1</Formula></Field>");
+
+    // Typed columns, seeded only to be REFERENCED by the checklist's
+    // formulas. The matrix is all Text, so without these there is nothing
+    // to write a date, person or lookup condition against.
+    await addField('ZZDate', { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'ZZDate' });
+    await addField('ZZNumber', { __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9, Title: 'ZZNumber' });
+    await addField('ZZPerson', { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20, Title: 'ZZPerson' });
+    await addField('ZZChoice', {
+      __metadata: { type: 'SP.FieldChoice' }, FieldTypeKind: 6, Title: 'ZZChoice',
+      Choices: { results: ['Normal', "O'Brien"] },
+    });
+    if (listId) {
+      // Self-lookup: a target without a second list to create or clean up.
+      await addXml('ZZLookup', `<Field Type='Lookup' DisplayName='ZZLookup' Name='ZZLookup' List='{${String(listId).replace(/[{}]/g, '')}}' ShowField='Title'/>`);
+    }
+    log(made.length ? `Added: ${made.join(', ')}` : 'All expected columns already present.');
+
+    // SchemaXml visibility states, so the matrix means something. Idempotent.
+    const setVis = (n, m, v) => post(`${fieldPath(n)}/${m}(${v})`);
+    await setVis('NewOff', 'setshowinnewform', false);
+    await setVis('BothWay', 'setshowinnewform', false);
+    await setVis('EditOff', 'setshowineditform', false);
+    await setVis('DispOff', 'setshowindisplayform', false);
+    // Seal LAST: a sealed field discards later writes silently.
+    await post(fieldPath('SealedF'), { __metadata: { type: 'SP.Field' }, Sealed: true },
+      { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
+    log('Applied the visibility matrix and sealed SealedF.');
+
+    // One item, so the Edit and Display forms are reachable.
+    const items = await get(`${listPath}/items?$select=Id&$top=1`);
+    if (items.ok && !(items.d.results || []).length) {
+      const et = await get(`${listPath}?$select=ListItemEntityTypeFullName`);
+      if (et.ok) {
+        await post(`${listPath}/items`, { __metadata: { type: et.d.ListItemEntityTypeFullName }, Title: 'probe row' });
+        log('Created one item so the Edit and Display forms are reachable.');
+      }
+    }
+    const base = `${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`;
+    say(`  NEW form      ${base}/NewForm.aspx`);
+    say(`  EDIT form     ${base}/EditForm.aspx?ID=1`);
+    say(`  DISPLAY form  ${base}/DispForm.aspx?ID=1`);
   }
 
   // Every property that could plausibly carry visibility or validation.
@@ -218,40 +316,8 @@
   const writeResults = {};
   if (ALLOW_WRITES) {
     rule();
-    bold('5 — SEEDING  (typed columns the checklist needs to reference)');
-    // The interactive probe's matrix is all Text plus one Calculated, so
-    // there is nothing to write a date/person/lookup condition against.
-    // These exist purely to be REFERENCED by the formulas you type in the
-    // UI; their own visibility is irrelevant.
-    const listId = (await get(`${listPath}?$select=Id`)).d?.Id;
-    const seed = async (label, body) => {
-      if (all.some((f) => f.InternalName === body.Title)) { log(`  ${label} already exists.`); return; }
-      const r = await post(`${listPath}/fields`, body);
-      log(`  ${label}: ${r.ok ? 'created' : `FAILED HTTP ${r.status} ${r.error}`}`);
-    };
-    await seed('ZZDate   (Date and Time)', { __metadata: { type: 'SP.FieldDateTime' }, FieldTypeKind: 4, Title: 'ZZDate' });
-    await seed('ZZNumber (Number)', { __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9, Title: 'ZZNumber' });
-    await seed('ZZPerson (Person)', { __metadata: { type: 'SP.FieldUser' }, FieldTypeKind: 20, Title: 'ZZPerson' });
-    await seed('ZZChoice (Choice, one value contains an apostrophe)', {
-      __metadata: { type: 'SP.FieldChoice' }, FieldTypeKind: 6, Title: 'ZZChoice',
-      Choices: { results: ['Normal', "O'Brien"] },
-    });
-    if (listId && !all.some((f) => f.InternalName === 'ZZLookup')) {
-      // Self-lookup: avoids creating a second list just to have a target.
-      const r = await post(`${listPath}/fields/createfieldasxml`, {
-        parameters: {
-          __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' },
-          SchemaXml: `<Field Type='Lookup' DisplayName='ZZLookup' Name='ZZLookup' List='{${String(listId).replace(/[{}]/g, '')}}' ShowField='Title'/>`,
-          Options: 9,
-        },
-      });
-      log(`  ZZLookup (Lookup, self-referencing): ${r.ok ? 'created' : `FAILED HTTP ${r.status} ${r.error}`}`);
-    } else if (listId) {
-      log('  ZZLookup already exists.');
-    }
+    bold('5 — WRITE TESTS  (round-trip fidelity and length limit)')
 
-    rule();
-    bold('6 — WRITE TESTS  (round-trip fidelity and length limit)');
     const COL = 'ZZEvidence';
     if (!fields.some((f) => f.InternalName === COL)) {
       const made = await post(`${listPath}/fields`, { __metadata: { type: 'SP.Field' }, FieldTypeKind: 2, Title: COL });
