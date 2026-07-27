@@ -588,6 +588,72 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                     f"columns.",
                 ))
 
+    # Field sets: named column lists a view's `fields` pulls in with
+    # "@setname". The loader expands them into ViewDef.fields before
+    # anything downstream reads a view, so what is checked here is the
+    # DECLARATION — otherwise a bad set surfaces as a confusing error about
+    # the expanded columns, or (for an unresolved @name) as a CAML field
+    # reference SharePoint rejects live in the browser.
+    for entity_name, entity_sets in bundle.mapping.field_sets.items():
+        set_table = tables_by_name.get(entity_name)
+        if set_table is None or entity_name not in bundle.mapping.entities:
+            findings.append(Finding(
+                "error", f"field_sets[{entity_name}]: unknown entity.",
+            ))
+            continue
+        set_rendered = (
+            _rendered_columns(set_table, cross_site_by_entity.get(entity_name, set()))
+            | {"Title"} | SYSTEM_COLUMNS
+        )
+        # A set is "referenced" if some view on this entity actually
+        # expanded it — ViewDef.expanded_sets is the loader's record of
+        # that, since the "@name" tokens themselves are gone by the time we
+        # see fields.
+        referenced_sets = {
+            name
+            for view in bundle.mapping.views.get(entity_name, [])
+            for name in view.expanded_sets
+        }
+        set_retired = bundle.mapping.retired_columns.get(entity_name, {})
+        for set_name, set_columns in entity_sets.items():
+            ctx = f"field_sets[{entity_name}].{set_name}"
+            if "@" in set_name:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: a field set name cannot contain '@' — that is "
+                    f"the marker a view's fields uses to reference a set.",
+                ))
+            if not set_columns:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: field set is empty; declare at least one column "
+                    f"or remove the set.",
+                ))
+            for col_name in set_columns:
+                if col_name not in set_rendered:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: references {col_name!r}, which is not a "
+                        f"rendered column of {entity_name}.",
+                    ))
+                elif col_name in set_retired:
+                    # Expansion runs first, so the strip is recorded against
+                    # each VIEW; without this the only report points at a
+                    # view whose fields no longer mention the column, and
+                    # the set is where the author fixes it.
+                    findings.append(Finding(
+                        "warning",
+                        f"{ctx}: {col_name!r} is retired; retirement stripped "
+                        f"it from every view that expands this set, and the "
+                        f"build continues.",
+                    ))
+            if set_name not in referenced_sets:
+                findings.append(Finding(
+                    "warning",
+                    f"{ctx}: declared but no {entity_name} view references "
+                    f"'@{set_name}'.",
+                ))
+
     # Declared views: everything checkable at build time IS checked at build
     # time — a deploy-time CAML rejection in the browser console is exactly
     # the failure class this tool exists to prevent.
@@ -637,8 +703,20 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                 slugs_seen[slug] = view.title
         for view in views:
             ctx = f"views[{entity_name}].{view.title}"
+            # Any "@name" still in fields is one the loader could not
+            # resolve; report it as the field-set reference it is rather
+            # than as a column that does not exist.
+            findings.extend(
+                Finding(
+                    "error",
+                    f"{ctx}: fields references field set {name!r}, but "
+                    f"{entity_name} declares no field set named {name[1:]!r}.",
+                )
+                for name in view.fields
+                if name.startswith("@")
+            )
             referenced = (
-                [("fields", name) for name in view.fields]
+                [("fields", name) for name in view.fields if not name.startswith("@")]
                 + [("sort", sort.field) for sort in view.sort]
                 + ([("group_by", view.group_by.field)] if view.group_by else [])
             )

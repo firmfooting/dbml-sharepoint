@@ -1883,3 +1883,143 @@ def test_retirement_replacing_a_form_visibility_declaration_warns(
         and "stripped it" in f.message
         for f in findings
     )
+
+
+# --- Field sets -------------------------------------------------------------
+
+
+def test_field_set_on_unknown_entity_is_error(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Widget:\n    header: [Title]\n",
+    )
+    assert any(
+        "field_sets" in f.message
+        and "Widget" in f.message
+        and "unknown entity" in f.message
+        for f in errors
+    )
+
+
+def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
+    """The declaration message is the one that says where to fix it."""
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: [Title, Nope]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header"]\n',
+    )
+    assert any(
+        "field_sets[Project].header" in f.message and "Nope" in f.message
+        for f in errors
+    )
+    assert not any("'Title'" in f.message for f in errors)
+
+
+def test_view_referencing_an_undeclared_field_set_is_error(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: [Title]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@headr"]\n',
+    )
+    assert any("@headr" in f.message and "field set" in f.message for f in errors)
+    # One precise error, not that plus a confusing "not a rendered column".
+    assert not any(
+        "rendered column" in f.message and "headr" in f.message for f in errors
+    )
+
+
+def test_field_set_name_cannot_contain_the_reference_marker(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        'field_sets:\n  Project:\n    "hea@der": [Title]\n',
+    )
+    assert any(
+        "field_sets[Project].hea@der" in f.message and "'@'" in f.message
+        for f in errors
+    )
+
+
+def test_empty_field_set_is_error(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: []\n",
+    )
+    assert any(
+        "field_sets[Project].header" in f.message and "empty" in f.message
+        for f in errors
+    )
+
+
+def test_valid_field_set_produces_no_errors(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: [Title, Status]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header", DueDate]\n',
+    )
+    assert errors == []
+
+
+def test_unreferenced_field_set_is_a_warning(tmp_path: Path) -> None:
+    """Dead config wastes nothing but the reader's time, so it warns rather
+    than failing the build — the fail-closed line is drawn at declarations
+    that would break the list."""
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "field_sets:\n"
+        "  Project:\n"
+        "    header: [Title]\n"
+        "    orphan: [Status]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header"]\n',
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "warning"
+        and "field_sets[Project].orphan" in f.message
+        and "@orphan" in f.message
+        for f in findings
+    )
+    assert not any("field_sets[Project].header" in f.message for f in findings)
+
+
+def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
+    """Expansion runs first, so the column is stripped from every view that
+    pulls the set in and the strip is recorded against the VIEW. The set
+    itself is where the author fixes it, so it gets its own warning naming
+    the set — otherwise the only report points at a view that no longer
+    mentions the column."""
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "field_sets:\n"
+        "  Project:\n"
+        "    header: [Title, Status]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header"]\n'
+        "retired_columns:\n"
+        "  Project:\n"
+        "    Status:\n"
+        "      retired: 2026-09-01\n",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert bundle.mapping.views["Project"][0].fields == ["Title"]
+    assert any(
+        f.severity == "warning"
+        and "field_sets[Project].header" in f.message
+        and "'Status'" in f.message
+        and "retired" in f.message
+        for f in findings
+    )
+    assert not [f for f in findings if f.severity == "error"]
