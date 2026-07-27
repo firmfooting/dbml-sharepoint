@@ -45,7 +45,7 @@ jobs:
       - name: Build every solution template end-to-end
         shell: bash
         run: |
-          for t in contract-register asset-register incident-management policy-library training-register meeting-actions risk-register onboarding-tracker change-register stakeholder-contacts complaints-feedback audit-actions declarations-register service-requests project-pipeline process-register improvement-register measures-register credentialing-register equipment-maintenance routine-checks compliance-obligations volunteer-register grants-register switchboard-log visitor-log vehicle-log delegations-register; do
+          for t in contract-register asset-register incident-management policy-library training-register meeting-actions risk-register onboarding-tracker change-register stakeholder-contacts complaints-feedback audit-actions declarations-register service-requests project-pipeline process-register improvement-register measures-register credentialing-register equipment-maintenance routine-checks compliance-obligations volunteer-register grants-register switchboard-log visitor-log vehicle-log delegations-register tiered-huddle; do
             uv run dbml-sharepoint build \
               --schema "templates/$t/10-design/schema.dbml" \
               --mapping "templates/$t/20-configure/mapping.yaml" \
@@ -54,6 +54,18 @@ jobs:
               --site-role default \
               --out "templates/$t/build"
           done
+      - name: Build the seeded bundle (tiered-huddle is the library's only demo_items consumer)
+        shell: bash
+        run: |
+          uv run dbml-sharepoint build \
+            --schema templates/tiered-huddle/10-design/schema.dbml \
+            --mapping templates/tiered-huddle/20-configure/mapping.yaml \
+            --release templates/tiered-huddle/20-configure/release.yaml \
+            --site-url https://example.sharepoint.com/sites/ci \
+            --site-role default \
+            --seed \
+            --out build/tiered-huddle-seed
+          node --check build/tiered-huddle-seed/demo-data.js
 
   docs:
     # onBrokenLinks/onBrokenMarkdownLinks are 'throw', so this build is

@@ -1,0 +1,723 @@
+# Tiered huddle — physical mapping.
+prefix: "TH_"
+
+entities:
+  Tier1Board: { kind: List, base_template: 100, site_role: default }
+  Tier2Board: { kind: List, base_template: 100, site_role: default }
+  Tier3Board: { kind: List, base_template: 100, site_role: default }
+  Escalation: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+# Boards are filtered by date and headline status on every view; Escalation
+# by queue state, due date, both tier ends and owner. BoardDate is also
+# unique, which SharePoint indexes as a side effect — declared here anyway
+# so the intent is visible in the manifest.
+indexed_columns:
+  Tier1Board: [BoardDate, OverallStatus, HuddleHeld]
+  Tier2Board: [BoardDate, OverallStatus, HuddleHeld]
+  Tier3Board: [BoardDate, OverallStatus, HuddleHeld]
+  Escalation: [Status, DueDate, RaisedAtTier, TargetTier, Owner]
+
+# House default, with the boards trimmed: a daily record edited several
+# times a day burns versions fast, and old versions of a huddle board are
+# worthless.
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 100
+    enable_minor_versions: false
+  overrides:
+    Tier1Board: { major_version_limit: 50 }
+    Tier2Board: { major_version_limit: 50 }
+    Tier3Board: { major_version_limit: 50 }
+
+enum_sources: {}
+watched_lists: []
+
+# Auto mode splits PascalCase into readable titles ("BoardDate" -> "Board
+# Date"). Overrides only where the split reads wrong; internal names stay
+# authoritative for views, formulas and reporting. Auto mode is also what
+# carries the " (retired)" suffix onto a retired column's title.
+display_names:
+  mode: auto
+  overrides:
+    Tier2Board:
+      DemandCapacityStatus: "Demand & Capacity Status"
+      DemandCapacityNote: "Demand & Capacity Note"
+    Tier3Board:
+      QualitySafetyStatus: "Quality & Safety Status"
+      QualitySafetyNote: "Quality & Safety Note"
+
+# Named column lists, referenced from views with "@name". Adding or retiring
+# a stream is edited HERE, once, and every view that uses the set picks it
+# up. This is also why the heat grid can hold every status column and no
+# note column — "fields: all" could not express that.
+field_sets:
+  Tier1Board:
+    header:   [BoardDate, Chair, HuddleHeld, OverallStatus]
+    statuses: [SafetyStatus, PeopleStatus, WorkloadStatus, EquipmentStatus, QualityStatus, ImprovementStatus]
+    notes:    [SafetyNote, PeopleNote, WorkloadNote, EquipmentNote, QualityNote, ImprovementNote]
+    wrapup:   [Recognition, OtherUpdates]
+  Tier2Board:
+    header:   [BoardDate, Chair, HuddleHeld, OverallStatus]
+    statuses: [SafetyStatus, QualityStatus, WorkforceStatus, DemandCapacityStatus, EquipmentStatus, SuppliesStatus, FinanceStatus, ImprovementStatus]
+    notes:    [SafetyNote, QualityNote, WorkforceNote, DemandCapacityNote, EquipmentNote, SuppliesNote, FinanceNote, ImprovementNote]
+    wrapup:   [Recognition, OtherUpdates]
+  Tier3Board:
+    header:   [BoardDate, Chair, HuddleHeld, OverallStatus]
+    statuses: [OperationsStatus, WorkforceStatus, QualitySafetyStatus, FacilitiesStatus, TechnologyStatus, FinanceStatus, SupplyChainStatus, ServiceDeliveryStatus, ComplianceStatus, CommunicationsStatus]
+    notes:    [OperationsNote, WorkforceNote, QualitySafetyNote, FacilitiesNote, TechnologyNote, FinanceNote, SupplyChainNote, ServiceDeliveryNote, ComplianceNote, CommunicationsNote]
+    wrapup:   [Recognition, OtherUpdates]
+
+# Four views per board, identical everywhere. "Last 14 days" IS the wall
+# chart: statuses only, newest first, so the fortnight reads as a grid.
+# "Attention" filters on OverallStatus and not on the stream columns because
+# view conditions are ANDed — "any stream amber or red" is not expressible,
+# which is the reason OverallStatus exists as a chair-set headline.
+views:
+  Tier1Board:
+    - title: "Last 14 days"
+      default: true
+      fields: ["@header", "@statuses"]
+      where:
+        - { field: BoardDate, op: geq, value: today-14 }
+      sort:
+        - { field: BoardDate, direction: desc }
+    - title: "Today"
+      fields: ["@header", "@statuses", "@notes", "@wrapup"]
+      where:
+        - { field: BoardDate, op: eq, value: today }
+    - title: "Attention"
+      fields: ["@header", "@statuses", "@notes"]
+      where:
+        - { field: BoardDate, op: geq, value: today-30 }
+        - { field: OverallStatus, op: neq, value: "Green" }
+      sort:
+        - { field: BoardDate, direction: desc }
+    - title: "Not held"
+      fields: [BoardDate, Chair, HuddleHeld, StoodDownReason]
+      where:
+        - { field: HuddleHeld, op: neq, value: "Held" }
+      sort:
+        - { field: BoardDate, direction: desc }
+  Tier2Board:
+    - title: "Last 14 days"
+      default: true
+      fields: ["@header", "@statuses"]
+      where:
+        - { field: BoardDate, op: geq, value: today-14 }
+      sort:
+        - { field: BoardDate, direction: desc }
+    - title: "Today"
+      fields: ["@header", "@statuses", "@notes", "@wrapup"]
+      where:
+        - { field: BoardDate, op: eq, value: today }
+    - title: "Attention"
+      fields: ["@header", "@statuses", "@notes"]
+      where:
+        - { field: BoardDate, op: geq, value: today-30 }
+        - { field: OverallStatus, op: neq, value: "Green" }
+      sort:
+        - { field: BoardDate, direction: desc }
+    - title: "Not held"
+      fields: [BoardDate, Chair, HuddleHeld, StoodDownReason]
+      where:
+        - { field: HuddleHeld, op: neq, value: "Held" }
+      sort:
+        - { field: BoardDate, direction: desc }
+  Tier3Board:
+    - title: "Last 14 days"
+      default: true
+      fields: ["@header", "@statuses"]
+      where:
+        - { field: BoardDate, op: geq, value: today-14 }
+      sort:
+        - { field: BoardDate, direction: desc }
+    - title: "Today"
+      fields: ["@header", "@statuses", "@notes", "@wrapup"]
+      where:
+        - { field: BoardDate, op: eq, value: today }
+    - title: "Attention"
+      fields: ["@header", "@statuses", "@notes"]
+      where:
+        - { field: BoardDate, op: geq, value: today-30 }
+        - { field: OverallStatus, op: neq, value: "Green" }
+      sort:
+        - { field: BoardDate, direction: desc }
+    - title: "Not held"
+      fields: [BoardDate, Chair, HuddleHeld, StoodDownReason]
+      where:
+        - { field: HuddleHeld, op: neq, value: "Held" }
+      sort:
+        - { field: BoardDate, direction: desc }
+  Escalation:
+    - title: "Open"
+      default: true
+      fields: [Title, RaisedDate, RaisedAtTier, Stream, Direction, TargetTier, Owner, DueDate, Priority, Status]
+      where:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+      sort:
+        - { field: DueDate, direction: asc }
+    - title: "Overdue"
+      fields: [Title, RaisedDate, RaisedAtTier, Stream, Direction, TargetTier, Owner, DueDate, Priority, Status]
+      where:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+        - { field: DueDate, op: leq, value: today }
+      sort:
+        - { field: DueDate, direction: asc }
+    - title: "Due next 7 days"
+      fields: [Title, RaisedDate, RaisedAtTier, Stream, Direction, TargetTier, Owner, DueDate, Priority, Status]
+      where:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+        - { field: DueDate, op: leq, value: today+7 }
+      sort:
+        - { field: DueDate, direction: asc }
+    - title: "Escalated up"
+      fields: [Title, RaisedDate, RaisedAtTier, Stream, TargetTier, Owner, DueDate, Priority, Status]
+      where:
+        - { field: Direction, op: eq, value: "Escalated up" }
+      sort:
+        - { field: RaisedDate, direction: desc }
+    - title: "Delegated down"
+      fields: [Title, RaisedDate, RaisedAtTier, Stream, TargetTier, Owner, DueDate, Priority, Status]
+      where:
+        - { field: Direction, op: eq, value: "Delegated down" }
+      sort:
+        - { field: RaisedDate, direction: desc }
+    - title: "By route"
+      fields: [Title, Route, Stream, Direction, Owner, DueDate, Priority, Status]
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+      group_by: { field: Route, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+
+# Route exists to group the escalation queue by where things travel. Both
+# operands are single-select Choice and both are declared BEFORE Route in
+# the DBML. ASCII arrow so the generated formula carries no encoding
+# question. Verify it renders after the first paste — see the checklist in
+# 30-deploy/DEPLOY.md.
+calculated_formulas:
+  Escalation:
+    Route: '=[RaisedAtTier]&" -> "&[TargetTier]'
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# website/docs/reference/style-guide.md) — status columns render as
+# SharePoint's own severity boxes with icons, consistent across every
+# template. Blank stays blank and renders grey: that grey cell is the
+# unreported-stream signal the whole board design exists to give you.
+# ADDING A STREAM: add its *Status column here too, or it renders as plain
+# text in the grid. RETIRING one: leave the entry, so the history still
+# renders in colour wherever the column is still shown.
+column_formatting:
+  Tier1Board:
+    OverallStatus:     { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    SafetyStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    PeopleStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    WorkloadStatus:    { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    EquipmentStatus:   { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    QualityStatus:     { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    ImprovementStatus: { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+  Tier2Board:
+    OverallStatus:        { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    SafetyStatus:         { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    QualityStatus:        { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    WorkforceStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    DemandCapacityStatus: { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    EquipmentStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    SuppliesStatus:       { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    FinanceStatus:        { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    ImprovementStatus:    { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+  Tier3Board:
+    OverallStatus:         { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    OperationsStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    WorkforceStatus:       { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    QualitySafetyStatus:   { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    FacilitiesStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    EnvironmentStatus:     { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    TechnologyStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    FinanceStatus:         { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    SupplyChainStatus:     { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    ServiceDeliveryStatus: { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    ComplianceStatus:      { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+    CommunicationsStatus:  { style: severity, map: { Green: good, Amber: warning, Red: severe, "Not applicable": muted } }
+  Escalation:
+    Status:   { style: severity, map: { Open: low, "In progress": low, Resolved: good, "Returned to tier": warning, Closed: muted } }
+    Priority: { style: pill, map: { Low: neutral, Medium: low, High: warning, Critical: blocked } }
+    DueDate:  { style: overdue-date, guard: { field: Status, not: [Resolved, Closed] } }
+
+# Form sections: a 20-to-30 column form is otherwise one flat scroll, and
+# the chair fills it in daily. Header / Streams / Wrap-up mirrors how the
+# huddle actually runs. The bodies live in formatting/ rather than inline
+# because a multi-section body is long enough to drown this file. Field
+# lists inside those files use INTERNAL names; the deployer rewrites them
+# to display titles.
+# ADDING A STREAM: add its pair to the Streams section of the matching file.
+form_formatting:
+  Tier1Board:
+    body: formatting/tier1-form-body.json
+  Tier2Board:
+    body: formatting/tier2-form-body.json
+  Tier3Board:
+    body: formatting/tier3-form-body.json
+
+# Ask for the stood-down reason only when there is one to give. Every other
+# day the chair never sees the field, which is the whole point: the form is
+# filled in daily and every avoidable question is a daily cost.
+# reconcile: exact makes this file authoritative for the whole list — every
+# other column's conditional formula is cleared on each deploy. That is what
+# you want on a template; read the Reconciliation section of the mapping
+# reference before copying the pattern onto a hand-configured list.
+form_visibility:
+  Tier1Board:
+    reconcile: exact
+    columns:
+      StoodDownReason:
+        when:
+          - { field: HuddleHeld, op: neq, value: "Held" }
+  Tier2Board:
+    reconcile: exact
+    columns:
+      StoodDownReason:
+        when:
+          - { field: HuddleHeld, op: neq, value: "Held" }
+  Tier3Board:
+    reconcile: exact
+    columns:
+      StoodDownReason:
+        when:
+          - { field: HuddleHeld, op: neq, value: "Held" }
+
+# Save-time enforcement, written as conditions rather than SharePoint
+# syntax. Read each as an implication.
+#   Boards: EITHER the huddle was held, OR there is a reason. A stood-down
+#   day with no reason turns the Not held view into a list of dates with no
+#   explanation, which is worse than no view at all. StoodDownReason is
+#   nvarchar precisely because a validation rule cannot reference a
+#   multi-line column.
+#   Escalation: EITHER it is not finished, OR it says what was done and
+#   when. Same constraint drives Resolution being nvarchar; the long-form
+#   narrative lives in Notes.
+list_validation:
+  Tier1Board:
+    when:
+      any_of:
+        - { field: HuddleHeld, op: eq, value: "Held" }
+        - { field: StoodDownReason, op: is_not_null }
+    message: "A huddle that was stood down or cancelled needs a reason."
+  Tier2Board:
+    when:
+      any_of:
+        - { field: HuddleHeld, op: eq, value: "Held" }
+        - { field: StoodDownReason, op: is_not_null }
+    message: "A huddle that was stood down or cancelled needs a reason."
+  Tier3Board:
+    when:
+      any_of:
+        - { field: HuddleHeld, op: eq, value: "Held" }
+        - { field: StoodDownReason, op: is_not_null }
+    message: "A huddle that was stood down or cancelled needs a reason."
+  Escalation:
+    when:
+      any_of:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+        - all_of:
+            - { field: Resolution, op: is_not_null }
+            - { field: ResolvedDate, op: is_not_null }
+    message: "Resolving or closing an escalation needs a resolution and a resolved date."
+
+# A worked, live example of the stream lifecycle: Environment folded into
+# Facilities. One entry per column is the whole edit — the pair leaves every
+# view and the New form, its titles gain " (retired)", and every value ever
+# recorded stays readable and stays in the reporting bundle. The DBML
+# declaration stays put; deleting it is the trap 30-deploy/DEPLOY.md spells
+# out.
+# Deploying this template for the first time and you never ran an
+# Environment stream? Then nothing exists to preserve: delete this block and
+# the two columns from schema.dbml before the first paste.
+retired_columns:
+  Tier3Board:
+    EnvironmentStatus:
+      retired: "2026-07-01"
+      superseded_by: FacilitiesStatus
+      reason: "Environment folded into Facilities at the July board review"
+    EnvironmentNote:
+      retired: "2026-07-01"
+      superseded_by: FacilitiesNote
+      reason: "Environment folded into Facilities at the July board review"
+
+# Demo rows (emitted as demo-data.js only when the build runs with --seed).
+# The heat grid is invisible on an empty list, so the template ships a
+# fortnight of Tier 3 boards and six escalations: every declared view has
+# content on the day you demonstrate it. Dates are today-relative sentinels.
+# Two stream columns are omitted DELIBERATELY (ComplianceStatus on th3-d03,
+# SupplyChainStatus on th3-d01) so the unreported-grey cell is visible — do
+# not fill them in. Every Title carries the [DEMO] marker: rows are matched
+# by Title on re-paste, and rollback treats an all-demo list as removable.
+demo_items:
+  Tier3Board:
+    - key: th3-d13
+      values:
+        Title: "[DEMO] Site board — 13 days ago"
+        BoardDate: "today-13"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d12
+      values:
+        Title: "[DEMO] Site board — 12 days ago"
+        BoardDate: "today-12"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Amber"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Amber"
+        WorkforceNote: "Two unfilled shifts tomorrow. Cover being sought; escalate at midday if unresolved."
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d11
+      values:
+        Title: "[DEMO] Site board — 11 days ago"
+        BoardDate: "today-11"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d10
+      values:
+        Title: "[DEMO] Site board — 10 days ago"
+        BoardDate: "today-10"
+        Chair: "@me"
+        HuddleHeld: "Stood down"
+        StoodDownReason: "Public holiday — no huddle scheduled."
+    - key: th3-d09
+      values:
+        Title: "[DEMO] Site board — 9 days ago"
+        BoardDate: "today-9"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Amber"
+        OperationsStatus: "Amber"
+        OperationsNote: "Backlog building after the shutdown day. Recovery plan agreed."
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d08
+      values:
+        Title: "[DEMO] Site board — 8 days ago"
+        BoardDate: "today-8"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d07
+      values:
+        Title: "[DEMO] Site board — 7 days ago"
+        BoardDate: "today-7"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Red"
+        OperationsStatus: "Red"
+        OperationsNote: "Demand well above plan for a third day. Recovery plan not holding."
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Amber"
+        ServiceDeliveryNote: "Two scheduled activities deferred to next week."
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d06
+      values:
+        Title: "[DEMO] Site board — 6 days ago"
+        BoardDate: "today-6"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Red"
+        OperationsStatus: "Red"
+        OperationsNote: "Escalated to the governance committee. Additional cover requested for the weekend."
+        WorkforceStatus: "Amber"
+        WorkforceNote: "Weekend roster still short by two."
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Red"
+        ServiceDeliveryNote: "Scheduled activity suspended until the backlog clears."
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d05
+      values:
+        Title: "[DEMO] Site board — 5 days ago"
+        BoardDate: "today-5"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Amber"
+        OperationsStatus: "Amber"
+        OperationsNote: "Backlog reducing. Additional weekend cover approved."
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Amber"
+        ServiceDeliveryNote: "Deferred activity being rebooked."
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d04
+      values:
+        Title: "[DEMO] Site board — 4 days ago"
+        BoardDate: "today-4"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Amber"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Amber"
+        TechnologyNote: "Overnight platform outage. Vendor engaged, workaround in place."
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d03
+      values:
+        Title: "[DEMO] Site board — 3 days ago"
+        BoardDate: "today-3"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        CommunicationsStatus: "Green"
+        OtherUpdates: "Compliance did not report today — chased for tomorrow. The blank cell in the grid is the record of that."
+    - key: th3-d02
+      values:
+        Title: "[DEMO] Site board — 2 days ago"
+        BoardDate: "today-2"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Not applicable"
+        FinanceNote: "Period closed; nothing to report until the new one opens."
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+    - key: th3-d01
+      values:
+        Title: "[DEMO] Site board — 1 day ago"
+        BoardDate: "today-1"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Green"
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        ServiceDeliveryStatus: "Green"
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+        OtherUpdates: "Supply chain representative on leave, no delegate named — second unreported cell this fortnight."
+    - key: th3-d00
+      values:
+        Title: "[DEMO] Site board — today"
+        BoardDate: "today"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Amber"
+        OperationsStatus: "Green"
+        WorkforceStatus: "Amber"
+        WorkforceNote: "One vacancy still awaiting recruitment approval — escalated to Tier 3."
+        QualitySafetyStatus: "Green"
+        FacilitiesStatus: "Green"
+        TechnologyStatus: "Green"
+        FinanceStatus: "Green"
+        SupplyChainStatus: "Green"
+        ServiceDeliveryStatus: "Amber"
+        ServiceDeliveryNote: "Rebooked activity runs this afternoon; confirm completion at tomorrow's huddle."
+        ComplianceStatus: "Green"
+        CommunicationsStatus: "Green"
+        Recognition: "The weekend recovery plan cleared the backlog a day early. Called out to the whole site."
+  Escalation:
+    - key: esc-outage
+      values:
+        Title: "[DEMO] Overnight platform outage needs vendor escalation"
+        RaisedDate: "today-1"
+        RaisedAtTier: "Tier 2"
+        Stream: "Technology"
+        Direction: "Escalated up"
+        TargetTier: "Tier 3"
+        Owner: "@me"
+        DueDate: "today+3"
+        Priority: "High"
+        Status: "Open"
+        Notes: "Workaround in place but not sustainable past the end of the week. Needs a contract-level conversation with the vendor."
+    - key: esc-vacancy
+      values:
+        Title: "[DEMO] Two vacancies waiting on recruitment approval"
+        RaisedDate: "today-9"
+        RaisedAtTier: "Tier 1"
+        Stream: "Workforce"
+        Direction: "Escalated up"
+        TargetTier: "Tier 2"
+        Owner: "@me"
+        DueDate: "today-2"
+        Priority: "Medium"
+        Status: "In progress"
+        Notes: "Approval paperwork submitted; chasing a decision date."
+    - key: esc-access
+      values:
+        Title: "[DEMO] Contractor access passes still not issued"
+        RaisedDate: "today-12"
+        RaisedAtTier: "Tier 2"
+        Stream: "Facilities"
+        Direction: "Escalated up"
+        TargetTier: "Tier 3"
+        Owner: "@me"
+        DueDate: "today-6"
+        Priority: "High"
+        Status: "Open"
+        Notes: "Work cannot start without passes. Third time raised — overdue and going nowhere."
+    - key: esc-stock
+      values:
+        Title: "[DEMO] Daily stock count to move to team level"
+        RaisedDate: "today-4"
+        RaisedAtTier: "Tier 3"
+        Stream: "Supply chain"
+        Direction: "Delegated down"
+        TargetTier: "Tier 2"
+        Owner: "@me"
+        DueDate: "today+5"
+        Priority: "Low"
+        Status: "Open"
+        Notes: "Counting at site level duplicates what teams already do. Delegated with the count sheet attached."
+    - key: esc-briefing
+      values:
+        Title: "[DEMO] Refresher briefing to run in every team huddle"
+        RaisedDate: "today-3"
+        RaisedAtTier: "Tier 2"
+        Stream: "Quality & safety"
+        Direction: "Delegated down"
+        TargetTier: "Tier 1"
+        Owner: "@me"
+        DueDate: "today+2"
+        Priority: "Medium"
+        Status: "In progress"
+        Notes: "Two-minute briefing script circulated. Teams confirm delivery in their own board note."
+    - key: esc-backlog
+      values:
+        Title: "[DEMO] Weekend backlog cleared under the recovery plan"
+        RaisedDate: "today-8"
+        RaisedAtTier: "Tier 2"
+        Stream: "Operations"
+        Direction: "Escalated up"
+        TargetTier: "Tier 3"
+        Owner: "@me"
+        DueDate: "today-4"
+        Priority: "Critical"
+        Status: "Resolved"
+        Resolution: "Additional weekend cover approved; backlog cleared a day early."
+        ResolvedDate: "today-5"
+        Notes: "Kept open until the Tier 2 board confirmed the backlog had actually cleared, not just that cover was approved."
+
+# Security: house standard, no deviation. Recording the huddle is everyone's
+# job — Members and Owners hold Contribute; Full Control is confined to the
+# empty-by-default admin group the deploy script enrols the operator into
+# for the duration of its own run.
+groups:
+  - name: "TH List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "TH List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Contribute"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible — drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement — see
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
