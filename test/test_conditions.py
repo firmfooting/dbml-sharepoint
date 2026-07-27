@@ -3,7 +3,8 @@
 
 import pytest
 
-from dbml_sharepoint.model.conditions import Group, Leaf, parse_condition
+from dbml_sharepoint.analysis.conditions import NEGATION, measure_tree, normalise
+from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
 
 
 def test_bare_list_is_all_of() -> None:
@@ -76,3 +77,99 @@ def test_unknown_leaf_key_is_rejected() -> None:
     not repeated here."""
     with pytest.raises(ValueError, match="unknown key"):
         parse_condition([{"field": "A", "op": "eq", "vaule": 1}], "ctx")
+
+
+# === Normalisation ==========================================================
+
+def test_every_operator_has_an_exact_negation() -> None:
+    """De Morgan is what lets one grammar serve a CAML target with no
+    group-level NOT: negation is pushed to the leaves and each operator
+    flips. An operator added without an inverse would silently break
+    none_of, so the involution is asserted rather than assumed."""
+    for op, negated in NEGATION.items():
+        assert NEGATION[negated] == op, f"{op}/{negated} is not an involution"
+
+
+def test_none_of_becomes_negated_leaves() -> None:
+    condition = parse_condition({"none_of": [{"field": "A", "op": "eq", "value": 1}]}, "ctx")
+    assert normalise(condition) == Group("all_of", (Leaf("A", "neq", 1),))
+
+
+def test_nested_negation_flips_group_kind() -> None:
+    """not(any_of[X, Y]) is all_of[not X, not Y]."""
+    condition = parse_condition(
+        {
+            "none_of": [
+                {
+                    "any_of": [
+                        {"field": "A", "op": "eq", "value": 1},
+                        {"field": "B", "op": "gt", "value": 2},
+                    ],
+                },
+            ],
+        },
+        "ctx",
+    )
+    assert normalise(condition) == Group(
+        "all_of", (Group("all_of", (Leaf("A", "neq", 1), Leaf("B", "leq", 2))),),
+    )
+
+
+def test_double_negation_restores_the_original() -> None:
+    """none_of[none_of[A]] is A. A normaliser that does not round-trip here
+    is flipping something it should not."""
+    condition = parse_condition(
+        {"none_of": [{"none_of": [{"field": "A", "op": "eq", "value": 1}]}]}, "ctx",
+    )
+    assert normalise(condition) == Group("all_of", (Group("any_of", (Leaf("A", "eq", 1),)),))
+
+
+def _kinds(node: Condition) -> list[str]:
+    if isinstance(node, Group):
+        return [node.kind, *[k for child in node.children for k in _kinds(child)]]
+    return []
+
+
+def test_normalise_leaves_no_none_of() -> None:
+    """The renderers' contract: they never meet a negated group, which is
+    why CAML — which cannot express one — is a viable target."""
+    condition = parse_condition(
+        {
+            "any_of": [
+                {"none_of": [{"field": "A", "op": "is_null"}]},
+                {"field": "B", "op": "eq", "value": 1},
+            ],
+        },
+        "ctx",
+    )
+    assert "none_of" not in _kinds(normalise(condition))
+
+
+def test_normalise_preserves_operand_transforms() -> None:
+    condition = parse_condition(
+        {"none_of": [{"field": "Owner", "property": "title", "op": "eq", "value": "x"}]}, "ctx",
+    )
+    normalised = normalise(condition)
+    assert isinstance(normalised, Group)
+    leaf = normalised.children[0]
+    assert isinstance(leaf, Leaf)
+    assert leaf.property == "title"
+    assert leaf.op == "neq"
+
+
+def test_measure_tree_counts_depth_and_leaves() -> None:
+    condition = parse_condition(
+        {
+            "any_of": [
+                {"field": "A", "op": "eq", "value": 1},
+                {
+                    "all_of": [
+                        {"field": "B", "op": "eq", "value": 2},
+                        {"field": "C", "op": "eq", "value": 3},
+                    ],
+                },
+            ],
+        },
+        "ctx",
+    )
+    assert measure_tree(condition) == (2, 3)
