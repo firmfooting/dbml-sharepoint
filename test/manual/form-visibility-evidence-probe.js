@@ -40,11 +40,11 @@
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
-  const CONFIRMED = false;
+  const CONFIRMED = true;
   const PROBE_LIST = 'zzz dbmlsp form visibility interactive';
   // Writes! Creates one throwaway column and writes formulas to it to
   // answer C and D. Leave false for a purely read-only run.
-  const ALLOW_WRITES = false;
+  const ALLOW_WRITES = true;
   // ------------------------------------------------------------------------
 
   const log = (m) => console.log(`%c[EVIDENCE] ${m}`, 'color:#0a7');
