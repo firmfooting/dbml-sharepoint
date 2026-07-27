@@ -273,3 +273,109 @@ def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
         assert not (out / name).exists(), name
     assert not (out / "reporting").exists()
     assert (out / "deploy-manifest.md").exists()
+
+
+# --- Config errors are messages, not crashes --------------------------------
+
+
+def _cli(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run the real CLI in a subprocess.
+
+    CliRunner CATCHES the exception and stores it on the result, so a
+    traceback never reaches its stdout — a test written against it passes
+    whether or not the operator sees 20 lines of loader internals. Only a
+    real process shows what the person running the tool actually gets.
+    """
+    return subprocess.run(  # noqa: S603 - args are literals from this module
+        [sys.executable, "-m", "dbml_sharepoint.cli", *args],
+        capture_output=True, text=True, check=False,
+    )
+
+
+def _bad_mapping(tmp_path: Path, section: str) -> Path:
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n" + section,
+        encoding="utf-8",
+    )
+    return tmp_path / "m.yaml"
+
+
+def test_a_wrong_mapping_key_is_a_message_not_a_traceback(tmp_path: Path) -> None:
+    """A wrong key printed ~20 lines of mapping_loader internals before the
+    one useful sentence. The person who hits this is a SharePoint admin
+    editing YAML; they cannot act on a single frame of it, and will paste
+    the whole thing into a support channel. Semantic errors are already
+    clean single lines, so the contrast made a config typo look like a
+    crash in the tool."""
+    mapping = _bad_mapping(
+        tmp_path,
+        "form_visibility:\n"
+        "  Project:\n"
+        "    columns:\n"
+        "      Status: { new: false, edit: false }\n",
+    )
+    result = _cli(
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(mapping),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Traceback" not in output, output
+    assert "mapping_loader.py" not in output, output
+    # The useful sentence survives, and names the offending key.
+    assert "edit" in output
+    assert "form_visibility.Project.columns.Status" in output
+    # One line for the operator, not a stack.
+    assert len([ln for ln in output.splitlines() if ln.strip()]) <= 2, output
+
+
+def test_a_malformed_release_file_is_a_message_not_a_traceback(tmp_path: Path) -> None:
+    (tmp_path / "release.yaml").write_text('date: "2026-01-01"\n', encoding="utf-8")
+    result = _cli(
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(tmp_path / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Traceback" not in output, output
+    assert "release" in output
+
+
+def test_a_missing_mapping_file_is_a_message_not_a_traceback(tmp_path: Path) -> None:
+    result = _cli(
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(tmp_path / "nope.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Traceback" not in output, output
+    assert "nope.yaml" in output
+
+
+def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
+    """`report` loads the same three files and had the same behaviour."""
+    mapping = _bad_mapping(tmp_path, "versioning:\n  default:\n    enable_versionin: false\n")
+    result = _cli(
+        "report",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(mapping),
+        "--out", str(tmp_path / "reports"),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode != 0
+    assert "Traceback" not in output, output
+    assert "enable_versionin" in output
