@@ -117,6 +117,46 @@ class WatchedList:
 
 
 @dataclass(frozen=True)
+class FormVisibility:
+    """One column's declared form behaviour.
+
+    `existing` covers the Edit form AND the Display form, which SharePoint
+    does not let us separate — the modern Display form reads ShowInEditForm
+    and ignores ShowInDisplayForm entirely. The key is named for what it
+    does rather than for the form an author might expect.
+    """
+
+    new: bool = True
+    existing: bool = True
+    when: "Condition | None" = None
+
+
+@dataclass(frozen=True)
+class ColumnValidation:
+    """One column's save-time rule. The message is the feature: without it
+    a failed save shows SharePoint's generic text, which tells the person
+    filling in the form nothing."""
+
+    when: "Condition"
+    message: str
+
+
+@dataclass(frozen=True)
+class EntitySection[T]:
+    """A per-entity block of column declarations plus its reconcile mode.
+
+    `exact` (the default) makes the declaration authoritative for the whole
+    entity: a column with no entry has its value cleared, so deployed state
+    is a function of the declaration rather than of declaration history.
+    `declared` touches only what is listed, for mappings running
+    seal_columns: false where an operator may have set something by hand.
+    """
+
+    reconcile: str = "exact"
+    columns: dict[str, T] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ViewSort:
     """One <OrderBy> entry of a declared view."""
 
@@ -289,6 +329,12 @@ class Mapping:
     # columns (SP.FieldCalculated). Formulas stay out of DBML (pydbml has no
     # attribute to carry them); the validator enforces the pairing.
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
+    # {entity: EntitySection[FormVisibility]} — declared form behaviour.
+    form_visibility: dict[str, EntitySection[FormVisibility]] = field(default_factory=dict)
+    # {entity: EntitySection[ColumnValidation]} — per-column save rules.
+    column_validation: dict[str, EntitySection[ColumnValidation]] = field(
+        default_factory=dict,
+    )
     # {entity: [ViewDef]} — declared list views. Semantic rules (field
     # existence, operator allowlist, single default) live in the validator.
     views: dict[str, list[ViewDef]] = field(default_factory=dict)
@@ -496,6 +542,14 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             entity: {col: str(formula) for col, formula in (cols or {}).items()}
             for entity, cols in (raw.get("calculated_formulas") or {}).items()
         },
+        form_visibility={
+            entity: _parse_form_visibility(block, f"form_visibility.{entity}")
+            for entity, block in (raw.get("form_visibility") or {}).items()
+        },
+        column_validation={
+            entity: _parse_column_validation(block, f"column_validation.{entity}")
+            for entity, block in (raw.get("column_validation") or {}).items()
+        },
         views={
             entity: [
                 _parse_view(item, f"views.{entity}[{i}]", base_dir)
@@ -669,6 +723,73 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
             f"display_names section to leave display titles untouched",
         )
     return "auto"
+
+
+
+def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
+    if not isinstance(block, dict):
+        raise ValueError(f"{context}: expected a mapping with 'columns'")
+    unknown = set(block) - {"reconcile", "columns"}
+    if unknown:
+        raise ValueError(f"{context}: unknown key(s) {sorted(unknown)}")
+    reconcile = str(block.get("reconcile", "exact"))
+    if reconcile not in ("exact", "declared"):
+        raise ValueError(
+            f"{context}.reconcile: expected 'exact' or 'declared', got {reconcile!r}",
+        )
+    columns = block.get("columns") or {}
+    if not isinstance(columns, dict):
+        raise ValueError(f"{context}.columns: expected a mapping of column name to declaration")
+    return reconcile, columns
+
+
+def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibility]:
+    reconcile, raw_columns = _entity_section(block, context)
+    columns: dict[str, FormVisibility] = {}
+    for name, raw in raw_columns.items():
+        where = f"{context}.columns.{name}"
+        if isinstance(raw, str):
+            if raw not in ("hidden", "visible"):
+                raise ValueError(
+                    f"{where}: expected 'hidden', 'visible' or a mapping, got {raw!r}",
+                )
+            columns[name] = FormVisibility(new=raw == "visible", existing=raw == "visible")
+            continue
+        if not isinstance(raw, dict):
+            raise ValueError(f"{where}: expected 'hidden', 'visible' or a mapping")
+        unknown = set(raw) - {"new", "existing", "when"}
+        if unknown:
+            raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
+        raw_when = raw.get("when")
+        columns[name] = FormVisibility(
+            new=bool(raw.get("new", True)),
+            existing=bool(raw.get("existing", True)),
+            when=parse_condition(raw_when, f"{where}.when") if raw_when else None,
+        )
+    return EntitySection(reconcile=reconcile, columns=columns)
+
+
+def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnValidation]:
+    reconcile, raw_columns = _entity_section(block, context)
+    columns: dict[str, ColumnValidation] = {}
+    for name, raw in raw_columns.items():
+        where = f"{context}.columns.{name}"
+        if not isinstance(raw, dict):
+            raise ValueError(f"{where}: expected a mapping with 'when' and 'message'")
+        unknown = set(raw) - {"when", "message"}
+        if unknown:
+            raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
+        for key in ("when", "message"):
+            if not raw.get(key):
+                raise ValueError(
+                    f"{where}: {key!r} is required — a rule with no message fails the save "
+                    f"with SharePoint's generic text, which tells the author nothing",
+                )
+        columns[name] = ColumnValidation(
+            when=parse_condition(raw["when"], f"{where}.when"),
+            message=str(raw["message"]),
+        )
+    return EntitySection(reconcile=reconcile, columns=columns)
 
 
 def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
