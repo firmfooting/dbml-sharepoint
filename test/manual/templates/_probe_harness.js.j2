@@ -1,0 +1,82 @@
+{# test/manual/templates/_probe_harness.js.j2 #}
+{# Shared prelude for every probe. Included, never pasted separately: the
+   operator pastes exactly one self-contained file. #}
+  // ---- Operator gate -------------------------------------------------
+  // Both default false. Pasting an unedited probe prints its plan and
+  // stops; nothing touches the tenant until the operator opts in.
+  const CONFIRMED = false;
+  const ALLOW_WRITES = false;
+
+  // No SITE_URL constant, deliberately. The probe reads the site it was
+  // pasted into. A tenant URL committed to this repo has leaked twice, and
+  // the field was the vector both times.
+  const pageCtx = window._spPageContextInfo;
+  if (!pageCtx) {
+    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    return;
+  }
+  const WEB = pageCtx.webAbsoluteUrl;
+
+  const log = (level, msg) => console.log(`[${level}] ${msg}`);
+
+  const getDigest = async () => {
+    const res = await fetch(`${WEB}/_api/contextinfo`, {
+      method: 'POST', headers: { Accept: 'application/json;odata=verbose' },
+    });
+    if (!res.ok) throw new Error(`contextinfo failed: HTTP ${res.status}`);
+    const body = await res.json();
+    return body.d.GetContextWebInformation.FormDigestValue;
+  };
+
+  const spGet = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=nometadata' },
+    });
+    return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
+  };
+
+  const spPost = async (path, payload, digest) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json;odata=nometadata',
+        'Content-Type': 'application/json;odata=nometadata',
+        'X-RequestDigest': digest,
+      },
+      body: JSON.stringify(payload),
+    });
+    // The interesting result is often the REFUSAL, so the response text is
+    // returned rather than thrown: a 400 here is the finding, not a crash.
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Result table --------------------------------------------------
+  // A probe answers questions. Outcome and EVIDENCE are recorded
+  // separately so a run cannot be summarised as a verdict with nothing
+  // behind it. NOT ESTABLISHED is a first-class outcome: a question the
+  // run did not reach must never be reported as a pass.
+  const RESULTS = [];
+  const record = (id, question, outcome, evidence) => {
+    RESULTS.push({ id, question, outcome, evidence });
+    const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
+    log(level, `${id}: ${outcome} — ${question}`);
+    if (evidence) console.log(`      evidence: ${evidence}`);
+  };
+
+  const report = () => {
+    console.log('\n==================== RESULTS ====================');
+    for (const r of RESULTS) {
+      console.log(`${r.id.padEnd(6)} ${r.outcome.padEnd(16)} ${r.question}`);
+      if (r.evidence) console.log(`       ${r.evidence}`);
+    }
+    console.log('=================================================');
+    const open = RESULTS.filter((r) => r.outcome === 'NOT ESTABLISHED').length;
+    console.log(`${RESULTS.length} question(s) asked; ${open} not established.`);
+    if (open) {
+      console.log('A question with no observation is NOT a pass. Report it as open.');
+    }
+    console.log('Copy this whole block back verbatim.');
+  };
