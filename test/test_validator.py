@@ -1251,3 +1251,77 @@ def test_today_offset_valid_on_calculated_date(tmp_path: Path) -> None:
     assert not any(
         "offsets apply only" in f.message for f in findings if f.severity == "error"
     )
+
+
+def test_watched_list_column_must_exist() -> None:
+    """watched_lists is validated nowhere: a misspelled column simply
+    never fires the status capture it was declared for."""
+    from dbml_sharepoint.model.mapping_loader import WatchedList
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.watched_lists = [WatchedList(entity="Task", column="NoSuchColumn")]
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "NoSuchColumn" in f.message and "watched_lists" in f.message
+        for f in findings
+    )
+
+
+def test_polymorphic_pattern_columns_must_exist() -> None:
+    """The manifest surfaces these so downstream flows validate the logical
+    FK. A misspelled field or discriminator publishes a contract against a
+    column that does not exist."""
+    from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.polymorphic_patterns = [
+        PolymorphicPattern(list="Task", field="NoSuchField", discriminator="NoSuchType"),
+    ]
+    findings = validate_against_mapping(schema, bundle)
+    messages = [f.message for f in findings if f.severity == "error"]
+    assert any("NoSuchField" in m and "polymorphic_patterns" in m for m in messages)
+    assert any("NoSuchType" in m for m in messages)
+
+
+def test_watched_list_entity_must_exist() -> None:
+    from dbml_sharepoint.model.mapping_loader import WatchedList
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.watched_lists = [WatchedList(entity="Tsak", column="Status")]
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "Tsak" in f.message and "watched_lists" in f.message
+        for f in findings
+    )
+
+
+def test_polymorphic_pattern_entity_must_exist() -> None:
+    from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.polymorphic_patterns = [
+        PolymorphicPattern(list="Tsak", field="Status", discriminator="Status"),
+    ]
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "Tsak" in f.message and "polymorphic_patterns" in f.message
+        for f in findings
+    )
+
+
+def test_versioning_override_entity_must_exist() -> None:
+    """A misspelled entity under `versioning.overrides` leaves the real
+    list on the defaults — versioning ON when the author turned it off —
+    and nothing reads the orphan block, so nothing reported it."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.versioning_overrides["Tsak"] = {"enable_versioning": False}
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "Tsak" in f.message and "versioning" in f.message
+        for f in findings
+    )

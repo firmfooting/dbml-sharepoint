@@ -350,6 +350,55 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                     f"rendered column of {entity_name}{hint}.",
                 ))
 
+    # watched_lists, polymorphic_patterns and versioning.overrides were the
+    # three entity-keyed sections nothing validated at all. Every other
+    # section names its unknown entities; these three silently dropped a
+    # typo — the versioning one in the fail-open direction, leaving a list
+    # with versioning ON when the author declared it off.
+    for i, watched in enumerate(bundle.mapping.watched_lists):
+        watched_table = tables_by_name.get(watched.entity)
+        if watched_table is None:
+            findings.append(Finding(
+                "error",
+                f"watched_lists[{i}]: unknown entity {watched.entity!r}.",
+            ))
+            continue
+        watched_cols = _rendered_columns(
+            watched_table, cross_site_by_entity.get(watched.entity, set()),
+        )
+        if watched.column not in watched_cols:
+            findings.append(Finding(
+                "error",
+                f"watched_lists[{i}]: {watched.column!r} is not a rendered "
+                f"column of {watched.entity}.",
+            ))
+    for i, pattern in enumerate(bundle.mapping.polymorphic_patterns):
+        pattern_table = tables_by_name.get(pattern.list)
+        if pattern_table is None:
+            findings.append(Finding(
+                "error",
+                f"polymorphic_patterns[{i}]: unknown entity {pattern.list!r}.",
+            ))
+            continue
+        pattern_cols = _rendered_columns(
+            pattern_table, cross_site_by_entity.get(pattern.list, set()),
+        )
+        for role, col_name in (("field", pattern.field), ("discriminator", pattern.discriminator)):
+            if col_name not in pattern_cols:
+                findings.append(Finding(
+                    "error",
+                    f"polymorphic_patterns[{i}]: {role} {col_name!r} is not a "
+                    f"rendered column of {pattern.list}.",
+                ))
+    for entity_name in bundle.mapping.versioning_overrides:
+        if entity_name not in tables_by_name:
+            findings.append(Finding(
+                "error",
+                f"versioning.overrides: unknown entity {entity_name!r} — the "
+                f"override is read by nobody, so the real list keeps the "
+                f"defaults.",
+            ))
+
     # Calculated columns (SP.FieldCalculated): every calculated_* column must
     # have a formula in the mapping, every mapping formula must target a
     # calculated_* column, formulas must satisfy SP's constraints, and

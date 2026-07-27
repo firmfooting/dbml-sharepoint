@@ -900,6 +900,260 @@ def test_list_validation_parsed(tmp_path: Path) -> None:
 
 
 
+# --- Nested unknown keys ----------------------------------------------------
+#
+# The top-level guard covers exactly one level. Every case below was
+# verified fail-open: a typo'd build was byte-identical to one with the key
+# deleted, and reported zero findings.
+
+
+def test_entity_sub_keys_are_checked(tmp_path: Path) -> None:
+    """`display_colum` — one character — silently fell back to
+    LookupField: "Title", so every lookup into that list renders blank. The
+    validator has a dedicated guard for exactly that, and it never fired
+    because the key was never seen."""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Membership: { kind: List, base_template: 100, site_role: default, "
+        "display_colum: DisplayName }\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"entities\.Membership") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "display_colum" in str(err.value)
+
+
+def test_versioning_sub_keys_are_checked(tmp_path: Path) -> None:
+    """A typo'd `enable_versioning: false` deploys versioning ON — the
+    opposite of the declaration, on a list the author meant to keep flat."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml("versioning:\n  default:\n    enable_versionin: false\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"versioning\.default") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "enable_versionin" in str(err.value)
+
+    (tmp_path / "m2.yaml").write_text(
+        _views_yaml("versioning:\n  overides:\n    Project: {}\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="overides"):
+        load_mapping(tmp_path / "m2.yaml")
+
+    (tmp_path / "m3.yaml").write_text(
+        _views_yaml(
+            "versioning:\n  overrides:\n    Project:\n      enable_versionin: false\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"versioning\.overrides\.Project"):
+        load_mapping(tmp_path / "m3.yaml")
+
+
+def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
+    """`deafult` never becomes the default view; a filter under `wheres:`
+    deploys an UNFILTERED view, which is the one that leaks rows."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      fields: [Title]\n"
+            "      deafult: true\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="deafult"):
+        load_mapping(tmp_path / "m.yaml")
+
+    (tmp_path / "m2.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      fields: [Title]\n"
+            "      wheres:\n"
+            "        - { field: Status, op: neq, value: Closed }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="wheres"):
+        load_mapping(tmp_path / "m2.yaml")
+
+    (tmp_path / "m3.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      fields: [Title]\n"
+            "      sort:\n"
+            "        - { field: Title, dirction: desc }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="dirction"):
+        load_mapping(tmp_path / "m3.yaml")
+
+    (tmp_path / "m4.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      fields: [Title]\n"
+            "      group_by: { field: Status, colapsed: true }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="colapsed"):
+        load_mapping(tmp_path / "m4.yaml")
+
+
+def test_group_sub_keys_are_checked(tmp_path: Path) -> None:
+    """A misspelled `require_empty_at_deploy` disables the clean-provision
+    gate — the check that proves a reconciled group has no members before
+    list creation."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "groups:\n"
+            "  - name: Register Editors\n"
+            "    require_empty_at_deployy: true\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"groups\[0\]") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "require_empty_at_deployy" in str(err.value)
+
+
+def test_permission_level_sub_keys_are_checked(tmp_path: Path) -> None:
+    """A misspelled `base_permissions` yields a custom level with NO bits —
+    created, granted, and permitting nothing."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "permission_levels:\n"
+            "  - name: Contribute No Delete\n"
+            "    base_permission: [ViewListItems]\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="base_permission"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
+    """A typo in a policy degrades the list to inherited permissions with
+    an empty allowlist — the fail-open direction on the security surface."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "list_permissions:\n"
+            "  default:\n"
+            "    break_inheritence: true\n"
+            "    assignments: []\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="break_inheritence"):
+        load_mapping(tmp_path / "m.yaml")
+
+    (tmp_path / "m2.yaml").write_text(
+        _views_yaml(
+            "list_permissions:\n"
+            "  defualt:\n"
+            "    break_inheritance: true\n"
+            "    assignments: []\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="defualt"):
+        load_mapping(tmp_path / "m2.yaml")
+
+    (tmp_path / "m3.yaml").write_text(
+        _views_yaml(
+            "list_permissions:\n"
+            "  default:\n"
+            "    break_inheritance: true\n"
+            "    assignments:\n"
+            "      - principal: { kind: group, nmae: Register Editors }\n"
+            "        level: Contribute\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="nmae"):
+        load_mapping(tmp_path / "m3.yaml")
+
+    (tmp_path / "m4.yaml").write_text(
+        _views_yaml(
+            "list_permissions:\n"
+            "  default:\n"
+            "    break_inheritance: true\n"
+            "    assignments:\n"
+            "      - principal: { kind: associated_owner_group }\n"
+            "        levl: Contribute\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="levl"):
+        load_mapping(tmp_path / "m4.yaml")
+
+
+def test_demo_item_sub_keys_are_checked(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "demo_items:\n"
+            "  Project:\n"
+            "    - key: p1\n"
+            "      values: { Title: '[DEMO] x' }\n"
+            "      colums: [Title]\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"demo_items\.Project\[0\]") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "colums" in str(err.value)
+
+
+def test_watched_lists_and_polymorphic_patterns_are_checked(tmp_path: Path) -> None:
+    """Neither section is validated anywhere downstream, so a typo'd key
+    was simply dropped. (The entity and column NAMES are checked against
+    the schema in the validator, alongside every other section's.)"""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml("watched_lists:\n  - { entity: Project, colum: Status }\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="colum"):
+        load_mapping(tmp_path / "m.yaml")
+
+    (tmp_path / "m3.yaml").write_text(
+        _views_yaml(
+            "polymorphic_patterns:\n"
+            "  - { list: Project, field: EntityId, discriminater: EntityType }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="discriminater"):
+        load_mapping(tmp_path / "m3.yaml")
+
+    (tmp_path / "m4.yaml").write_text(
+        _views_yaml(
+            "cross_site_reference_columns:\n  - { entity: Project, colmn: OrgUnit }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="colmn"):
+        load_mapping(tmp_path / "m4.yaml")
+
+
+def test_display_names_sub_keys_are_checked(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml("display_names:\n  mode: auto\n  overides:\n    Project: {}\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="overides"):
+        load_mapping(tmp_path / "m.yaml")
+
+
 # --- The top-level allow-list -----------------------------------------------
 
 

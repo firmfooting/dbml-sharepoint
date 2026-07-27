@@ -7,8 +7,26 @@ sidebar_position: 2
 
 ## Install
 
+**Not on PyPI yet.** Install from the repository:
+
 ```bash
-uv tool install dbml-sharepoint     # or: pip install dbml-sharepoint
+uv tool install git+https://github.com/shauneccles/dbml-sharepoint
+# or, into an existing environment:
+pip install git+https://github.com/shauneccles/dbml-sharepoint
+```
+
+Either puts the `dbml-sharepoint` command on your path. Check it with
+`dbml-sharepoint version`.
+
+Working from a clone instead — which you want if you are also using the
+[templates](https://github.com/shauneccles/dbml-sharepoint/tree/main/templates),
+since they ship as files rather than as part of the package:
+
+```bash
+git clone https://github.com/shauneccles/dbml-sharepoint
+cd dbml-sharepoint
+uv sync
+uv run dbml-sharepoint version
 ```
 
 ## The three inputs

@@ -484,6 +484,47 @@ KNOWN_SECTIONS = frozenset({
 })
 
 
+_ENTITY_KEYS = frozenset({
+    "kind", "base_template", "site_role", "singleton", "display_column",
+})
+_VERSIONING_KEYS = frozenset({
+    "enable_versioning", "major_version_limit", "enable_minor_versions",
+})
+_VIEW_KEYS = frozenset({
+    "title", "fields", "default", "where", "sort", "group_by", "row_limit",
+    "formatting", "widths",
+})
+_GROUP_KEYS = frozenset({
+    "name", "description", "owner_group", "allow_members_edit_membership",
+    "allow_request_to_join_leave", "auto_accept_request_to_join_leave",
+    "only_allow_members_view_membership", "require_empty_at_deploy",
+    "enroll_operator_during_deploy",
+})
+_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments", "site_role"})
+
+
+def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context: str) -> None:
+    """Fail on any key the loader does not read.
+
+    The top-level guard covers one level, and every level below it was
+    fail-open: a typo'd build was byte-identical to one with the key
+    deleted, so `deafult:` never made a view the default, a filter under
+    `wheres:` deployed an unfiltered view, and a misspelled
+    `break_inheritance` left a list on inherited permissions — all with
+    zero findings.
+    """
+    if not isinstance(block, dict):
+        raise ValueError(
+            f"{context}: expected a mapping, got {type(block).__name__}",
+        )
+    unknown = set(block) - set(allowed)
+    if unknown:
+        raise ValueError(
+            f"{context}: unknown key(s) {sorted(unknown)} "
+            f"(known: {sorted(allowed)})",
+        )
+
+
 def load_mapping(mapping_path: Path) -> MappingBundle:
     """Load the mapping YAML and the referenced configs into a single bundle."""
     mapping_path = mapping_path.resolve()
@@ -491,8 +532,10 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
 
     base_dir = mapping_path.parent
 
-    entities = {
-        name: EntityMapping(
+    entities = {}
+    for name, spec in raw["entities"].items():
+        _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
+        entities[name] = EntityMapping(
             name=name,
             kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
             base_template=int(spec["base_template"]),
@@ -500,35 +543,41 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             singleton=bool(spec.get("singleton", False)),
             display_column=spec.get("display_column"),
         )
-        for name, spec in raw["entities"].items()
-    }
 
-    cross_site = [
-        CrossSiteRef(entity=item["entity"], column=item["column"])
-        for item in raw.get("cross_site_reference_columns", [])
-    ]
+    cross_site = []
+    for i, item in enumerate(raw.get("cross_site_reference_columns") or []):
+        _reject_unknown_keys(item, {"entity", "column"}, f"cross_site_reference_columns[{i}]")
+        cross_site.append(CrossSiteRef(entity=item["entity"], column=item["column"]))
 
-    polymorphic = [
-        PolymorphicPattern(
+    polymorphic = []
+    for i, item in enumerate(raw.get("polymorphic_patterns") or []):
+        _reject_unknown_keys(
+            item, {"list", "field", "discriminator"}, f"polymorphic_patterns[{i}]",
+        )
+        polymorphic.append(PolymorphicPattern(
             list=item["list"],
             field=item["field"],
             discriminator=item["discriminator"],
-        )
-        for item in raw.get("polymorphic_patterns", [])
-    ]
+        ))
 
     versioning = raw.get("versioning") or {}
+    _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
     default_v = versioning.get("default") or {}
+    _reject_unknown_keys(default_v, _VERSIONING_KEYS, "versioning.default")
     versioning_default = Versioning(
         enable_versioning=bool(default_v.get("enable_versioning", True)),
         major_version_limit=int(default_v.get("major_version_limit", 500)),
         enable_minor_versions=bool(default_v.get("enable_minor_versions", False)),
     )
+    for override_entity, override in (versioning.get("overrides") or {}).items():
+        _reject_unknown_keys(
+            override or {}, _VERSIONING_KEYS, f"versioning.overrides.{override_entity}",
+        )
 
-    watched = [
-        WatchedList(entity=item["entity"], column=item["column"])
-        for item in raw.get("watched_lists", [])
-    ]
+    watched = []
+    for i, item in enumerate(raw.get("watched_lists") or []):
+        _reject_unknown_keys(item, {"entity", "column"}, f"watched_lists[{i}]")
+        watched.append(WatchedList(entity=item["entity"], column=item["column"]))
 
     enum_choices, enum_source_paths = _load_enum_choices(
         base_dir, raw.get("enum_sources") or {},
@@ -767,6 +816,7 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
     section = raw.get("display_names")
     if section is None:
         return None
+    _reject_unknown_keys(section, {"mode", "overrides"}, "display_names")
     mode = section.get("mode")
     if mode != "auto":
         raise ValueError(
@@ -863,6 +913,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     validate_against_mapping."""
     if not isinstance(raw_view, dict):
         raise ValueError(f"{context}: view must be a mapping, got {type(raw_view).__name__}")
+    _reject_unknown_keys(raw_view, _VIEW_KEYS, context)
     title = raw_view.get("title")
     if not title:
         raise ValueError(f"{context}: view 'title' is required")
@@ -872,7 +923,8 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     raw_where = raw_view.get("where")
     where = parse_condition(raw_where, f"{context}.where") if raw_where else None
     sort: list[ViewSort] = []
-    for entry in raw_view.get("sort") or []:
+    for i, entry in enumerate(raw_view.get("sort") or []):
+        _reject_unknown_keys(entry, {"field", "direction"}, f"{context}.sort[{i}]")
         direction = str(entry.get("direction", "asc"))
         if direction not in {"asc", "desc"}:
             raise ValueError(
@@ -880,6 +932,8 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             )
         sort.append(ViewSort(field=str(entry["field"]), direction=cast("SortDirection", direction)))
     raw_group = raw_view.get("group_by")
+    if raw_group is not None:
+        _reject_unknown_keys(raw_group, {"field", "collapsed"}, f"{context}.group_by")
     group_by = (
         ViewGroupBy(
             field=str(raw_group["field"]),
@@ -929,6 +983,7 @@ def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:
         raise ValueError(
             f"{context}: demo item must be a mapping, got {type(raw_item).__name__}",
         )
+    _reject_unknown_keys(raw_item, {"key", "values"}, context)
     key = raw_item.get("key")
     if not key or not isinstance(key, str):
         raise ValueError(f"{context}: demo item 'key' is required (a string)")
@@ -968,6 +1023,7 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
             f"{context}: principal must be a mapping, "
             f"got {type(raw_principal).__name__}",
         )
+    _reject_unknown_keys(raw_principal, {"kind", "name"}, context)
     kind = raw_principal.get("kind")
     if kind not in _PRINCIPAL_KINDS:
         raise ValueError(
@@ -986,6 +1042,7 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
 
 def _parse_policy(raw_policy: Any, context: str) -> ListPermissionPolicy:
     """Parse a list permission policy dict."""
+    _reject_unknown_keys(raw_policy, _POLICY_KEYS, context)
     break_inheritance = bool(raw_policy.get("break_inheritance", True))
     reconcile_mode = cast("ReconcileMode", str(raw_policy.get("reconcile", "configured")))
     if reconcile_mode not in {"configured", "exact"}:
@@ -1000,7 +1057,10 @@ def _parse_policy(raw_policy: Any, context: str) -> ListPermissionPolicy:
         )
     assignments: list[RoleAssignment] = []
     for i, raw_a in enumerate(raw_policy.get("assignments", [])):
-        principal = _parse_principal(raw_a.get("principal", {}), f"{context}.assignments[{i}]")
+        _reject_unknown_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
+        principal = _parse_principal(
+            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal",
+        )
         level = raw_a.get("level")
         if not level:
             raise ValueError(f"{context}.assignments[{i}]: 'level' is required")
@@ -1026,6 +1086,14 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
     raw_levels = raw.get("permission_levels", [])
     raw_groups = raw.get("groups", [])
     raw_list_perms = raw.get("list_permissions") or {}
+    _reject_unknown_keys(raw_list_perms, {"default", "overrides"}, "list_permissions")
+
+    for i, lvl in enumerate(raw_levels):
+        _reject_unknown_keys(
+            lvl, {"name", "description", "base_permissions"}, f"permission_levels[{i}]",
+        )
+    for i, grp in enumerate(raw_groups):
+        _reject_unknown_keys(grp, _GROUP_KEYS, f"groups[{i}]")
 
     levels = [
         CustomPermissionLevel(

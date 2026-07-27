@@ -162,11 +162,14 @@ Lookup/Person references, no `[Today]`) are enforced at build time.
 indexed_columns:
   Risk: [Status]
 
-versioning_default:
-  enable_versioning: true
-  major_version_limit: 50
-  enable_minor_versions: false
-versioning_overrides: {}
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 50
+    enable_minor_versions: false
+  overrides:
+    Issue:                  # per entity; unlisted keys inherit the default
+      major_version_limit: 25
 
 enum_sources:            # shared enum vocabularies loaded from YAML
   risk_rating: enums/risk-rating.yaml
