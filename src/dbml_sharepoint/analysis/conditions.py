@@ -48,6 +48,9 @@ NEGATION: dict[str, str] = {
 MAX_DEPTH = 4
 MAX_LEAVES = 32
 
+# Their own inverses, and never null-ambiguous.
+_NULL_TESTS = frozenset({"is_null", "is_not_null"})
+
 _FLIP: dict[str, str] = {"all_of": "any_of", "any_of": "all_of"}
 
 
@@ -61,14 +64,26 @@ def _push(node: Condition, *, negate: bool) -> Condition:
         if not negate:
             return node
         if node.op not in NEGATION:
-            # Reached before the renderer's capability check, so an
-            # unknown operator under none_of would otherwise surface as a
-            # bare KeyError rather than a build error naming it.
+            # Reached before the renderer's capability check, so an unknown
+            # operator under none_of would otherwise surface as a bare
+            # KeyError rather than a build error naming it.
             raise ValueError(
                 f"cannot negate unknown operator {node.op!r} on {node.field!r}; "
                 f"known operators: {', '.join(sorted(NEGATION))}",
             )
-        return Leaf(node.field, NEGATION[node.op], node.value, node.property, node.measure)
+        flipped = Leaf(node.field, NEGATION[node.op], node.value, node.property, node.measure)
+        if node.op in _NULL_TESTS or node.measure:
+            # A null test is its own inverse, and a measure is never null —
+            # LEN(blank) is 0, so the flipped comparison already matches.
+            return flipped
+        # SharePoint comparisons are three-valued: CAML's Neq and Leq do NOT
+        # match rows where the column is empty, so a bare operator flip would
+        # make "none of the items where Count > 5" exclude items with no
+        # Count at all — which is the opposite of what the words say, and
+        # disagrees with the expression target, where a blank coerces and is
+        # included. Negation therefore admits the empty case explicitly, so
+        # all three targets answer alike.
+        return Group("any_of", (Leaf(node.field, "is_null", None, node.property), flipped))
 
     if node.kind == "none_of":
         # none_of[C] == all_of[!C];  !none_of[C] == any_of[C].

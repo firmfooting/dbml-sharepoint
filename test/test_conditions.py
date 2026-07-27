@@ -98,9 +98,15 @@ def test_every_operator_has_an_exact_negation() -> None:
         assert NEGATION[negated] == op, f"{op}/{negated} is not an involution"
 
 
-def test_none_of_becomes_negated_leaves() -> None:
+def test_none_of_admits_the_empty_case() -> None:
+    """SharePoint comparisons are three-valued: CAML's Neq does not match an
+    empty column, so a bare flip would make "none of the items where A is 1"
+    exclude items with no A at all — the opposite of the plain reading, and
+    a disagreement with the expression target, where a blank coerces in."""
     condition = parse_condition({"none_of": [{"field": "A", "op": "eq", "value": 1}]}, "ctx")
-    assert normalise(condition) == Group("all_of", (Leaf("A", "neq", 1),))
+    assert normalise(condition) == Group(
+        "all_of", (Group("any_of", (Leaf("A", "is_null"), Leaf("A", "neq", 1))),),
+    )
 
 
 def test_nested_negation_flips_group_kind() -> None:
@@ -119,7 +125,16 @@ def test_nested_negation_flips_group_kind() -> None:
         "ctx",
     )
     assert normalise(condition) == Group(
-        "all_of", (Group("all_of", (Leaf("A", "neq", 1), Leaf("B", "leq", 2))),),
+        "all_of",
+        (
+            Group(
+                "all_of",
+                (
+                    Group("any_of", (Leaf("A", "is_null"), Leaf("A", "neq", 1))),
+                    Group("any_of", (Leaf("B", "is_null"), Leaf("B", "leq", 2))),
+                ),
+            ),
+        ),
     )
 
 
@@ -159,10 +174,14 @@ def test_normalise_preserves_operand_transforms() -> None:
     )
     normalised = normalise(condition)
     assert isinstance(normalised, Group)
-    leaf = normalised.children[0]
-    assert isinstance(leaf, Leaf)
-    assert leaf.property == "title"
-    assert leaf.op == "neq"
+    admitted = normalised.children[0]
+    assert isinstance(admitted, Group)
+    # Both arms keep the accessor: a null test on a person column must test
+    # the same sub-property the comparison reads.
+    arms = [leaf for leaf in admitted.children if isinstance(leaf, Leaf)]
+    assert [(leaf.op, leaf.property) for leaf in arms] == [
+        ("is_null", "title"), ("neq", "title"),
+    ]
 
 
 def test_measure_tree_counts_depth_and_leaves() -> None:
@@ -432,4 +451,33 @@ def test_validation_renders_text_operators() -> None:
     negated = parse_condition(
         {"none_of": [{"field": "Note", "op": "begins_with", "value": "ab"}]}, "c",
     )
-    assert to_validation(negated, TYPES) == 'NOT(LEFT([Note],2)="ab")'
+    assert to_validation(negated, TYPES) == (
+        'OR(ISBLANK([Note]),NOT(LEFT([Note],2)="ab"))'
+    )
+
+
+def test_negation_agrees_across_targets_about_blanks() -> None:
+    """The point of admitting the empty case: all three targets answer the
+    same question. Before this, CAML excluded blank rows and the expression
+    target included them, from one authored condition."""
+    condition = parse_condition({"none_of": [{"field": "Count", "op": "gt", "value": 5}]}, "c")
+    assert to_caml(condition, TYPES) == (
+        '<Or><IsNull><FieldRef Name="Count"/></IsNull>'
+        '<Leq><FieldRef Name="Count"/><Value Type="Number">5</Value></Leq></Or>'
+    )
+    assert to_expression(condition, TYPES) == "([$Count] == '' || [$Count] <= 5)"
+    assert to_validation(condition, TYPES) == "OR(ISBLANK([Count]),[Count]<=5)"
+
+
+def test_negated_measure_needs_no_null_arm() -> None:
+    """LEN(blank) is 0, so the flipped comparison already matches an empty
+    column — a null arm would be noise that consumes the leaf bound."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "measure": "length", "op": "gt", "value": 3}]}, "c",
+    )
+    assert to_validation(condition, TYPES) == "LEN([Note])<=3"
+
+
+def test_negated_null_test_stays_a_single_leaf() -> None:
+    condition = parse_condition({"none_of": [{"field": "Note", "op": "is_null"}]}, "c")
+    assert to_validation(condition, TYPES) == "NOT(ISBLANK([Note]))"
