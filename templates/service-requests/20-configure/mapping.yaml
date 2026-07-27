@@ -84,8 +84,9 @@ seal_columns: true
 prevent_list_deletion: true
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# docs/STYLE-GUIDE.md) — status columns render as SharePoint's own
-# severity boxes with icons, consistent across every template.
+# website/docs/reference/style-guide.md) — status columns render as
+# SharePoint's own severity boxes with icons, consistent across every
+# template.
 column_formatting:
   Request:
     Status: { style: severity, map: { Submitted: low, Accepted: good, "In progress": low, "Waiting - parts or approval": neutral, Completed: good, Declined: muted } }

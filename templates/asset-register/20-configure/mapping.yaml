@@ -64,8 +64,9 @@ seal_columns: true
 prevent_list_deletion: true
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# docs/STYLE-GUIDE.md) — status columns render as SharePoint's own
-# severity boxes with icons, consistent across every template.
+# website/docs/reference/style-guide.md) — status columns render as
+# SharePoint's own severity boxes with icons, consistent across every
+# template.
 column_formatting:
   Asset:
     Status: { style: severity, map: { "In service": low, Assigned: low, "In storage": neutral, "Under repair": warning, Retired: muted, Disposed: muted } }
