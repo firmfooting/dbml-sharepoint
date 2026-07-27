@@ -3,7 +3,14 @@
 
 import pytest
 
-from dbml_sharepoint.analysis.conditions import NEGATION, measure_tree, normalise
+from dbml_sharepoint.analysis.conditions import (
+    NEGATION,
+    measure_tree,
+    normalise,
+    to_caml,
+    to_expression,
+    to_validation,
+)
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf, parse_condition
 
 
@@ -173,3 +180,137 @@ def test_measure_tree_counts_depth_and_leaves() -> None:
         "ctx",
     )
     assert measure_tree(condition) == (2, 3)
+
+
+# === Rendering ==============================================================
+# Every expectation below is a live-verified fact from the form_visibility
+# spec, not a stylistic preference. Changing one means SharePoint rejected
+# something, not that the renderer got tidier.
+
+TYPES = {
+    "Status": "nvarchar", "Count": "number", "Owner": "person",
+    "Note": "nvarchar", "Parent": "int", "Due": "date", "Flag": "boolean",
+}
+
+
+def test_expression_uses_single_quotes_and_doubles_apostrophes() -> None:
+    """Verified live: expression literals are single-quoted, and an
+    apostrophe is escaped by doubling."""
+    condition = parse_condition([{"field": "Status", "op": "eq", "value": "O'Brien"}], "ctx")
+    assert to_expression(condition, TYPES) == "[$Status] == 'O''Brien'"
+
+
+def test_expression_uses_operators_not_functions() -> None:
+    """Verified live: the conditional-formula dialog REJECTS and()/or().
+    This assertion is the guard against someone 'tidying' it back."""
+    condition = parse_condition(
+        {
+            "any_of": [
+                {"field": "Status", "op": "eq", "value": "x"},
+                {"field": "Count", "op": "gt", "value": 5},
+            ],
+        },
+        "ctx",
+    )
+    rendered = to_expression(condition, TYPES)
+    assert rendered == "([$Status] == 'x' || [$Count] > 5)"
+    assert "or(" not in rendered
+    assert "and(" not in rendered
+
+
+def test_expression_renders_null_as_empty_string_comparison() -> None:
+    condition = parse_condition([{"field": "Note", "op": "is_null"}], "ctx")
+    assert to_expression(condition, TYPES) == "[$Note] == ''"
+
+
+def test_validation_uses_double_quotes_and_functions() -> None:
+    """Verified live: validation literals are DOUBLE-quoted — single quotes
+    are rejected outright, the exact reverse of the expression target."""
+    condition = parse_condition(
+        {
+            "all_of": [
+                {"field": "Status", "op": "neq", "value": "forbidden"},
+                {"field": "Note", "op": "is_not_null"},
+            ],
+        },
+        "ctx",
+    )
+    assert to_validation(condition, TYPES) == 'AND([Status]<>"forbidden",NOT(ISBLANK([Note])))'
+
+
+def test_person_property_renders_the_accessor() -> None:
+    condition = parse_condition(
+        [{"field": "Owner", "property": "title", "op": "neq", "value": ""}], "ctx",
+    )
+    assert to_expression(condition, TYPES) == "[$Owner.title] != ''"
+
+
+def test_caml_matches_the_previous_hand_rolled_fold() -> None:
+    """The migration's acceptance criterion: identical output to the
+    left-associative fold this replaces."""
+    condition = parse_condition(
+        [
+            {"field": "Status", "op": "eq", "value": "Open"},
+            {"field": "Count", "op": "gt", "value": 5},
+        ],
+        "ctx",
+    )
+    assert to_caml(condition, TYPES) == (
+        '<And><Eq><FieldRef Name="Status"/><Value Type="Text">Open</Value></Eq>'
+        '<Gt><FieldRef Name="Count"/><Value Type="Number">5</Value></Gt></And>'
+    )
+
+
+def test_caml_renders_or() -> None:
+    """The capability views gain from this change."""
+    condition = parse_condition(
+        {
+            "any_of": [
+                {"field": "Status", "op": "eq", "value": "A"},
+                {"field": "Status", "op": "eq", "value": "B"},
+            ],
+        },
+        "ctx",
+    )
+    assert to_caml(condition, TYPES).startswith("<Or>")
+
+
+def test_in_expands_per_target() -> None:
+    condition = parse_condition(
+        [{"field": "Status", "op": "in", "value": ["A", "B"]}], "ctx",
+    )
+    assert to_expression(condition, TYPES) == "([$Status] == 'A' || [$Status] == 'B')"
+    assert to_validation(condition, TYPES) == 'OR([Status]="A",[Status]="B")'
+
+
+def test_measure_length_has_no_caml_rendering() -> None:
+    """CAML has no LEN. The failure must name the target rather than emit
+    something that cannot work."""
+    condition = parse_condition(
+        [{"field": "Note", "measure": "length", "op": "gt", "value": 3}], "ctx",
+    )
+    assert to_validation(condition, TYPES) == "LEN([Note])>3"
+    with pytest.raises(ValueError, match="caml"):
+        to_caml(condition, TYPES)
+
+
+def test_today_sentinel_is_rejected_by_the_expression_target() -> None:
+    """CAML and validation have a today; the client-side equivalent is
+    @now with datetime rather than date semantics and was never verified."""
+    condition = parse_condition([{"field": "Due", "op": "lt", "value": "today"}], "ctx")
+    assert "<Today/>" in to_caml(condition, TYPES)
+    assert to_validation(condition, TYPES) == "[Due]<TODAY()"
+    with pytest.raises(ValueError, match="expression"):
+        to_expression(condition, TYPES)
+
+
+def test_operators_pending_probe_are_disabled_for_the_expression_target() -> None:
+    """Plausible from documentation, never run against a tenant. This
+    project has twice been wrong about unexercised expression syntax, so
+    unverified is treated as unknown."""
+    condition = parse_condition(
+        [{"field": "Status", "op": "contains", "value": "x"}], "ctx",
+    )
+    assert "<Contains>" in to_caml(condition, TYPES)
+    with pytest.raises(ValueError, match="not yet verified"):
+        to_expression(condition, TYPES)
