@@ -4,12 +4,14 @@
 import pytest
 
 from dbml_sharepoint.analysis.conditions import (
+    CAML,
     CAPABILITIES,
     EXPRESSION,
     MAX_LEAVES,
     NEGATION,
     SYSTEM_COLUMN_TYPES,
     VALIDATION,
+    describe,
     measure_tree,
     normalise,
     to_caml,
@@ -565,3 +567,41 @@ def test_system_columns_have_declared_types() -> None:
     SharePoint accepts and answers with the wrong rows."""
     assert SYSTEM_COLUMN_TYPES["Created"] == "datetime"
     assert set(SYSTEM_COLUMN_TYPES) == {"ID", "Created", "Modified", "Author", "Editor"}
+
+
+def test_unknown_operator_under_none_of_reports_rather_than_raises() -> None:
+    """A typo in a view's operator must stay a Finding. normalise() needs a
+    negation for every operator, so running it over an unknown one raised —
+    turning a shipped, working surface into a traceback."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Status", "op": "equals", "value": "x"}]}, "w",
+    )
+    problems = validate_condition(
+        condition, target=CAML, rendered={"Status"}, types=TYPES, lookups=set(), context="w",
+    )
+    assert any("unknown operator" in p for p in problems)
+
+
+def test_two_faults_on_one_column_are_both_reported() -> None:
+    """Suppression keyed on the column name dropped the second fault."""
+    condition = parse_condition(
+        [
+            {"field": "Owner", "op": "eq", "value": "x"},
+            {"field": "Owner", "property": "nickname", "op": "eq", "value": "y"},
+        ],
+        "w",
+    )
+    problems = validate_condition(
+        condition, target=EXPRESSION, rendered={"Owner"}, types=TYPES,
+        lookups=set(), context="w",
+    )
+    assert len(problems) == 2
+
+
+def test_describe_keeps_the_negation_of_a_single_child_group() -> None:
+    """none_of with one child is the canonical implication idiom, and
+    dropping its NOT made the manifest state the opposite of the rule."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Status", "op": "eq", "value": "Closed"}]}, "w",
+    )
+    assert describe(condition) == "NOT(Status eq 'Closed')"

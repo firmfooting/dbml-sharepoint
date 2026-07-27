@@ -9,8 +9,10 @@ from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,
     VALIDATION,
+    leaves,
     validate_condition,
 )
+from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS, BUILT_IN_LEVELS
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, MappingBundle, view_url_slug
@@ -792,6 +794,92 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                 context=f"{ctx}.when",
             )
         )
+
+
+    # form_visibility / column_validation. Without this the declarations
+    # reach the generator unchecked and surface as a traceback carrying an
+    # internal context string instead of a Finding naming the mapping key.
+    for fv_entity, fv_section in bundle.mapping.form_visibility.items():
+        section_table = tables_by_name.get(fv_entity)
+        if section_table is None or fv_entity not in bundle.mapping.entities:
+            findings.append(Finding(
+                "error", f"form_visibility[{fv_entity}]: unknown entity.",
+            ))
+            continue
+        xcols = cross_site_by_entity.get(fv_entity, set())
+        rendered = _rendered_columns(section_table, xcols) | {"Title"}
+        types = {c.name: c.type for c in section_table.columns}
+        lookups = {c.name for c in section_table.columns if c.ref is not None}
+        calculated = set(bundle.mapping.calculated_formulas.get(fv_entity, {}))
+        by_name = {c.name: c for c in section_table.columns}
+        ctx = f"form_visibility[{fv_entity}]"
+        for column, fv_declared in fv_section.columns.items():
+            if column not in rendered:
+                findings.append(Finding(
+                    "error", f"{ctx}: {column!r} is not a rendered column of {fv_entity}.",
+                ))
+                continue
+            col = by_name.get(column)
+            findings.extend(
+                Finding("error", message)
+                for message in validate_form_visibility(
+                    column=column,
+                    new=fv_declared.new,
+                    existing=fv_declared.existing,
+                    when=fv_declared.when,
+                    required=bool(col is not None and col.required),
+                    has_default=bool(col is not None and col.default is not None),
+                    is_calculated=column in calculated,
+                    rendered=rendered,
+                    types=types,
+                    lookups=lookups,
+                    context=ctx,
+                )
+            )
+
+    for cv_entity, cv_section in bundle.mapping.column_validation.items():
+        section_table = tables_by_name.get(cv_entity)
+        if section_table is None or cv_entity not in bundle.mapping.entities:
+            findings.append(Finding(
+                "error", f"column_validation[{cv_entity}]: unknown entity.",
+            ))
+            continue
+        xcols = cross_site_by_entity.get(cv_entity, set())
+        rendered = _rendered_columns(section_table, xcols) | {"Title"}
+        types = {c.name: c.type for c in section_table.columns}
+        lookups = {c.name for c in section_table.columns if c.ref is not None}
+        ctx = f"column_validation[{cv_entity}]"
+        for column, cv_rule in cv_section.columns.items():
+            if column not in rendered:
+                findings.append(Finding(
+                    "error", f"{ctx}: {column!r} is not a rendered column of {cv_entity}.",
+                ))
+                continue
+            if len(cv_rule.message) > 1024:
+                findings.append(Finding(
+                    "error", f"{ctx}.{column}: message must be ≤1024 characters.",
+                ))
+            # SharePoint permits a column validation formula to reference
+            # ONLY the column being validated; a cross-column rule belongs
+            # in list_validation, and the error says so.
+            others = sorted({leaf.field for leaf in leaves(cv_rule.when)} - {column})
+            if others:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}.{column}: references {others} — column validation may only "
+                    f"reference its own column; use list_validation for a cross-column rule.",
+                ))
+            findings.extend(
+                Finding("error", message)
+                for message in validate_condition(
+                    cv_rule.when,
+                    target=VALIDATION,
+                    rendered=rendered,
+                    types=types,
+                    lookups=lookups,
+                    context=f"{ctx}.{column}.when",
+                )
+            )
 
     # Display names: overrides must target rendered columns, and the resolved
     # display titles (auto + overrides) must be non-empty, within SharePoint's

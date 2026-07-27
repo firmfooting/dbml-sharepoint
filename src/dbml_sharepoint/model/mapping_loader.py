@@ -755,6 +755,19 @@ def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
     return reconcile, columns
 
 
+def _strict_bool(raw: dict[str, Any], key: str, context: str) -> bool:
+    """Read a boolean without truthiness-coercing malformed YAML.
+
+    `bool("false")` is True, so a quoted boolean would silently mean its
+    opposite — and a visibility flag reading backwards hides nothing while
+    reporting success.
+    """
+    value = raw.get(key, True)
+    if not isinstance(value, bool):
+        raise ValueError(f"{context}.{key}: expected true or false, got {value!r}")
+    return value
+
+
 def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibility]:
     reconcile, raw_columns = _entity_section(block, context)
     columns: dict[str, FormVisibility] = {}
@@ -772,11 +785,12 @@ def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibi
         unknown = set(raw) - {"new", "existing", "when"}
         if unknown:
             raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
-        raw_when = raw.get("when")
         columns[name] = FormVisibility(
-            new=bool(raw.get("new", True)),
-            existing=bool(raw.get("existing", True)),
-            when=parse_condition(raw_when, f"{where}.when") if raw_when else None,
+            new=_strict_bool(raw, "new", where),
+            existing=_strict_bool(raw, "existing", where),
+            # M13: an empty `when` is a mistake, not an absence — the same
+            # declaration errors in column_validation and as an empty group.
+            when=parse_condition(raw["when"], f"{where}.when") if "when" in raw else None,
         )
     return EntitySection(reconcile=reconcile, columns=columns)
 

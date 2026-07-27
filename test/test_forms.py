@@ -183,3 +183,24 @@ def test_list_validation_formula_key_names_its_replacement(tmp_path: object) -> 
             "    formula: '=TRUE'\n"
             "    message: nope\n"
         ))
+
+
+# === Regressions from the second adversarial review ========================
+
+def test_boolean_flags_reject_quoted_yaml(tmp_path: object) -> None:
+    """bool("false") is True, so a quoted boolean meant its opposite: the
+    author writing `new: "false"` to hide a column got it shown."""
+    for value in ('"false"', "'no'", '"0"'):
+        with pytest.raises(ValueError, match="expected true or false"):
+            _load(tmp_path, (
+                "form_visibility:\n  Escalation:\n    columns:\n"
+                f"      Note: {{ new: {value} }}\n"
+            ))
+
+
+def test_empty_when_is_an_error_not_an_absence(tmp_path: object) -> None:
+    with pytest.raises(ValueError, match="empty"):
+        _load(tmp_path, (
+            "form_visibility:\n  Escalation:\n    columns:\n"
+            "      Note: { new: false, when: [] }\n"
+        ))

@@ -125,7 +125,11 @@ UNMANAGED = "__dbmlsp_unmanaged__"
 
 
 def _visibility_formula(
-    section: "EntitySection[FormVisibility] | None", column: str, types: dict[str, str],
+    section: "EntitySection[FormVisibility] | None",
+    column: str,
+    types: dict[str, str],
+    *,
+    is_calculated: bool = False,
 ) -> str:
     """The composed formula for a column, "" to clear it, or UNMANAGED.
 
@@ -133,7 +137,7 @@ def _visibility_formula(
     left alone, so deployed state follows the declaration rather than the
     history of edits to it.
     """
-    if section is None:
+    if section is None or is_calculated:
         return UNMANAGED
     declared = section.columns.get(column)
     if declared is None:
@@ -144,14 +148,20 @@ def _visibility_formula(
 
 
 def _column_validation(
-    section: "EntitySection[ColumnValidation] | None", column: str, types: dict[str, str],
+    section: "EntitySection[ColumnValidation] | None",
+    column: str,
+    types: dict[str, str],
+    display_map: dict[str, str],
 ) -> tuple[str, str]:
     if section is None:
         return (UNMANAGED, UNMANAGED)
     declared = section.columns.get(column)
     if declared is None:
         return ("", "") if section.reconcile == "exact" else (UNMANAGED, UNMANAGED)
-    return (f"={to_validation(declared.when, types)}", declared.message)
+    # SP resolves validation formulas by DISPLAY name, exactly as it does
+    # for the list-level rule and for calculated columns.
+    rendered = _rewrite_formula_refs(f"={to_validation(declared.when, types)}", display_map)
+    return (rendered, declared.message)
 
 
 
@@ -365,9 +375,10 @@ def build_schema_json(
             f["display_title"] = display_map[f["title"]]
             f["client_validation_formula"] = _visibility_formula(
                 visibility, f["title"], col_types,
+                is_calculated=f["title"] in bundle.mapping.calculated_formulas.get(table_name, {}),
             )
             f["validation_formula"], f["validation_message"] = _column_validation(
-                validation, f["title"], col_types,
+                validation, f["title"], col_types, display_map,
             )
             f["seal"] = bundle.mapping.seal_columns
             if "Formula" in f["body"]:
@@ -395,7 +406,9 @@ def build_schema_json(
                 (
                     deferred["field"]["validation_formula"],
                     deferred["field"]["validation_message"],
-                ) = _column_validation(validation, deferred["field"]["title"], col_types)
+                ) = _column_validation(
+                    validation, deferred["field"]["title"], col_types, display_map,
+                )
                 deferred["field"]["seal"] = bundle.mapping.seal_columns
 
         if title_patch is None:

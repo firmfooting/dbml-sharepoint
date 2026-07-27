@@ -481,8 +481,15 @@ def validate_condition(
     validator import, which would be a cycle.
     """
     problems: list[str] = []
-    already_reported: set[str] = set()
-    depth, leaf_count = measure_tree(condition)
+    # Keyed by identity, not by field name: two leaves on one column can
+    # fail for different reasons, and reporting only the first costs the
+    # author another build.
+    suppressed: set[int] = set()
+    unknown_ops = {leaf.op for leaf in leaves(condition) if leaf.op not in NEGATION}
+    # Bounds are measured after normalisation, since negation expands each
+    # leaf into any_of[is_null, flipped] and `in` into one leaf per value.
+    # Skipped when an operator is unknown, because normalise cannot run.
+    depth, leaf_count = measure_tree(condition if unknown_ops else normalise(condition))
     if depth > MAX_DEPTH:
         problems.append(f"{context}: nested {depth} groups deep; the limit is {MAX_DEPTH}")
     if leaf_count > MAX_LEAVES:
@@ -509,13 +516,19 @@ def validate_condition(
         if operand:
             # Rendering a leaf whose operands are already wrong would report
             # the same fault twice in different words — but only THAT leaf is
-            # suppressed, so one bad operand cannot mask every other fault in
-            # the tree.
+            # suppressed, so one bad operand cannot mask any other fault.
             problems.extend(operand)
-            already_reported.add(leaf.field)
+            suppressed.add(id(leaf))
 
-    for leaf in leaves(normalise(condition)):
-        if leaf.field in already_reported or leaf.field not in rendered:
+    if unknown_ops:
+        # normalise() needs a negation for every operator, so it cannot run
+        # over a tree containing one it does not know. The unknown operator
+        # is already reported above; raising here instead would turn a typo
+        # into a traceback.
+        return _dedupe(problems)
+
+    for original, leaf in zip(leaves(condition), leaves(condition), strict=True):
+        if id(original) in suppressed or leaf.field not in rendered:
             continue
         problems.extend(_render_problems(leaf, target, types, context))
     return _dedupe(problems)
@@ -590,6 +603,11 @@ def describe(node: Condition) -> str:
         if node.op in _NULL_TESTS:
             return f"{subject} {node.op}"
         return f"{subject} {node.op} {node.value!r}"
-    joiner = {"all_of": " AND ", "any_of": " OR ", "none_of": " NOR "}[node.kind]
+    joiner = {"all_of": " AND ", "any_of": " OR ", "none_of": " OR "}[node.kind]
     inner = joiner.join(describe(child) for child in node.children)
+    if node.kind == "none_of":
+        # NOT must survive a single child: `none_of[A]` is the canonical
+        # implication idiom, and dropping the negation made the manifest
+        # state the opposite of the rule it described.
+        return f"NOT({inner})"
     return inner if len(node.children) == 1 else f"({inner})"
