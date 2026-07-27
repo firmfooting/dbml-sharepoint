@@ -345,6 +345,98 @@ there. Under the grammar none of those is an expressible mistake. Replace
 a `formula:` with the equivalent `when:` tree — the loader refuses to load
 the old key rather than reinterpreting it.
 
+## `retired_columns`
+
+A column that has stopped being used must **stay declared in the DBML**.
+Deleting the declaration does not delete anything on the site: it leaves a
+live, visible, deletable column the schema no longer knows about, which
+`_UserAddedColumns.pq` reports as user-added drift on every refresh,
+forever. `retired_columns:` makes the correct thing the easy thing.
+
+```yaml
+retired_columns:
+  Tier3Board:
+    OperationsStatus:
+      retired: 2026-09-01                 # ISO date, required
+      superseded_by: SiteServicesStatus   # optional; same entity
+      reason: "Merged into Site Services" # optional free text
+      hide_existing: false                # optional, default false
+```
+
+A bare list is accepted for the minimal case:
+
+```yaml
+retired_columns:
+  Tier3Board: [OperationsStatus, OperationsNote]
+```
+
+One declaration resolves at build time into mechanisms the deployer
+already implements — no new deploy-time capability, no new API surface:
+
+| Declared | Resolves to | Existing mechanism |
+|---|---|---|
+| retired | hidden on the New form | `form_visibility` `{new: false}` |
+| retired | readable on Edit and Display (history) | default; `hide_existing: true` opts out |
+| retired | display title suffixed `" (retired)"` | `display_names` |
+| retired | dropped from every declared view | the view `fields` projection |
+| retired | dropped from `form_formatting` body sections | `sections[].fields` |
+| retired | still declared, sealed, deployer-managed | unchanged — keeps the drift audit clean |
+
+**Why the New form only.** The modern Display form reads `ShowInEditForm`,
+so hiding a column from Edit also hides it from Display — the two cannot be
+separated, which is why [`hidden_on_display:`](#migrating-from-hidden_on_forms--hidden_on_display)
+was removed rather than replaced. "Leaves the entry forms but stays
+readable for history" is therefore not buildable, and retirement keeps the
+half that serves the reason it exists: the values stay visible. Declare
+`hide_existing: true` when the column should disappear from Edit *and*
+Display as well.
+
+The synthesised `form_visibility` section reconciles as `declared`, not the
+section default `exact` — retiring one column must not start clearing every
+other column's formula on that list. If you already declare
+`form_visibility` for the entity, your `reconcile:` mode stands, and
+retirement **replaces** any entry you wrote for the retired column (with a
+build warning saying so).
+
+Only `sections[].fields` is touched in a form body — the rest of the
+formatter JSON is left exactly as authored, and a section left with no
+fields is kept for you to clean up rather than removed for you.
+
+The suffix is a constant, not configurable. An explicit
+`display_names.overrides` entry for the same column still wins and the
+suffix is appended to it, so the result participates in the per-entity
+display-title uniqueness check like any other title — a retired column and
+its replacement are distinguishable by construction. The suffix only
+reaches SharePoint when `display_names: {mode: auto}` is declared; the
+build warns if it is not.
+
+**Retired calculated columns are not given a form declaration.**
+SharePoint never renders calculated columns on entry forms, and declaring
+one's visibility is rejected — so a retired calculated column gets the
+display suffix and the view removal only.
+
+Validation fails the build for: an unknown entity or a column the DBML does
+not declare; a column the deploy can never write to (the built-in `Title`,
+the system columns); a retired `not null` column with **no** default (it is
+hidden from the New form, so every save would fail); a `superseded_by`
+naming the column itself, a column that does not exist, or another retired
+column; a live `calculated_formulas` formula or `list_validation` condition
+referencing a retired column; and a `retired` value that is not an ISO date.
+
+It warns — never breaks the build — for: a retired `not null` column
+**with** a default (saves succeed, but the default is stamped into every
+new row forever); a retired column still in `indexed_columns` (a finite
+budget spent on dead weight); a view left with no fields at all; and every
+reference the fold rewrote — a view's `fields` or `widths`, a
+`form_formatting` body section, a replaced `form_visibility` entry. A
+`column_formatting` entry on a retired column is **kept** deliberately:
+historical values still render with their severity colours wherever the
+column is still shown.
+
+Retired columns stay in `_UserAddedColumns.pq`'s expected-column list and
+are still selected by the generated list queries — history is the entire
+point — and `deploy-manifest.md` and the data dictionary both surface them.
+
 ## Reconciliation — `reconcile:` on `form_visibility` and `column_validation`
 
 :::danger `reconcile:` defaults to `exact`, and `exact` deletes

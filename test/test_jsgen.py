@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
-from dbml_sharepoint.generators.jsgen import generate_deploy_js
+from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import CrossSiteRef, MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Column, Reference, Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
@@ -48,7 +48,7 @@ def test_simple_deploy_js_matches_golden() -> None:
         # from the repository root
         python -c "
         from pathlib import Path
-        from dbml_sharepoint.generators.jsgen import generate_deploy_js
+        from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
         from dbml_sharepoint.model.mapping_loader import load_mapping
         from dbml_sharepoint.model.parser import parse_dbml
         from dbml_sharepoint.model.release import load_release
@@ -2266,3 +2266,32 @@ def test_widths_apply_via_guarded_setviewxml(tmp_path: Path) -> None:
     assert "stripColumnWidth" in js
     assert "widths splice guard" in js
     assert "did not retain declared column widths" in js
+
+
+def test_retired_columns_leave_views_but_stay_deployed() -> None:
+    """The end-to-end proof that retirement needs no jsgen change: the
+    column is still created and still deployer-managed (so the drift audit
+    stays clean) but it is hidden from the New form, carries the retired
+    suffix, and has left every declared view."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema = parse_dbml(FIXTURES / "retired.dbml")
+    bundle = load_mapping(FIXTURES / "retired-mapping.yaml")
+
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    board = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Board")
+    ops = next(f for f in board["fields_phase1"] if f["title"] == "OperationsStatus")
+    # Present on the Edit and Display forms, absent from New: [$ID] is empty
+    # only while the item is being created.
+    assert ops["client_validation_formula"] == "=if([$ID] != '', 'true', 'false')"
+    assert ops["display_title"] == "Operations Status (retired)"
+    live = next(
+        f for f in board["fields_phase1"] if f["title"] == "SiteServicesStatus"
+    )
+    # `declared` reconcile: a live column of the same list is untouched.
+    assert live["client_validation_formula"] == UNMANAGED
+    assert live["display_title"] == "Site Services Status"
+
+    view = next(v for v in schema_json["views"] if v["title"] == "Heat grid")
+    assert view["view_fields"] == ["BoardDate", "SiteServicesStatus"]
