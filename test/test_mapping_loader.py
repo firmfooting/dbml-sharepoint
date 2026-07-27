@@ -1293,3 +1293,119 @@ def test_hardening_flags_parsed(tmp_path: Path) -> None:
     assert off.prevent_list_deletion is False
 
 
+
+
+# --- Quoted booleans --------------------------------------------------------
+#
+# `bool("false")` is True. Every site below read the value with bool()
+# BEFORE the guard that tests it, so the cautious spelling — a quoted YAML
+# boolean — silently meant its opposite and the guard never fired.
+
+
+def test_quoted_break_inheritance_is_rejected_not_inverted(tmp_path: Path) -> None:
+    """The worst instance. `break_inheritance: "false"` coerced to True, so
+    the guard that refuses `reconcile: exact` on an inherited ACL tested
+    the COERCED value and passed. deploy.js then called
+    breakroleinheritance(copyRoleAssignments=false), dropping every
+    inherited grant, and exact reconciliation removed every non-declared
+    role binding. The author declared the opposite of what deployed, and
+    the build reported no findings."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "list_permissions:\n"
+            "  default:\n"
+            '    break_inheritance: "false"\n'
+            "    reconcile: exact\n"
+            "    assignments: []\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="break_inheritance"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_quoted_group_flags_are_rejected(tmp_path: Path) -> None:
+    """These fail OPEN: a quoted "false" on allow_members_edit_membership
+    grants members the right to change the group's membership."""
+    for flag in (
+        "allow_members_edit_membership",
+        "allow_request_to_join_leave",
+        "auto_accept_request_to_join_leave",
+        "only_allow_members_view_membership",
+    ):
+        (tmp_path / "m.yaml").write_text(
+            _views_yaml(f'groups:\n  - name: Editors\n    {flag}: "false"\n'),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match=flag):
+            load_mapping(tmp_path / "m.yaml")
+
+
+def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
+    """A quoted "false" deploys versioning ON — and the override path
+    reaches jsgen as a raw dict, so nothing checked it at all."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml('versioning:\n  default:\n    enable_versioning: "false"\n'),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="enable_versioning"):
+        load_mapping(tmp_path / "m.yaml")
+
+    (tmp_path / "m2.yaml").write_text(
+        _views_yaml(
+            'versioning:\n  overrides:\n    Project:\n      enable_versioning: "false"\n',
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"versioning\.overrides\.Project"):
+        load_mapping(tmp_path / "m2.yaml")
+
+    (tmp_path / "m3.yaml").write_text(
+        _views_yaml("versioning:\n  overrides:\n    Project:\n      major_version_limit: many\n"),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="major_version_limit"):
+        load_mapping(tmp_path / "m3.yaml")
+
+
+def test_quoted_view_default_is_rejected(tmp_path: Path) -> None:
+    """`default: "false"` coerced to True and stole the list's default
+    view — the one every link into the list lands on."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      fields: [Title]\n"
+            '      default: "false"\n',
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="default"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_quoted_group_by_collapsed_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      fields: [Title]\n"
+            '      group_by: { field: Status, collapsed: "false" }\n',
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="collapsed"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_quoted_singleton_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        '  Project: { kind: List, base_template: 100, site_role: default, singleton: "false" }\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="singleton"):
+        load_mapping(tmp_path / "m.yaml")

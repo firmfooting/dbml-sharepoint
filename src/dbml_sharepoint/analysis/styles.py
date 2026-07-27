@@ -66,6 +66,19 @@ def _fail(context: str, message: str) -> ValueError:
     return ValueError(f"{context}: {message}")
 
 
+def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> bool:
+    """Read a style-spec boolean without truthiness-coercing bad YAML.
+
+    `bool("false")` is True, so the cautious spelling meant its opposite:
+    `calculated: "false"` switched the calculated-value handling ON, and
+    `icons: "false"` kept the icons it was written to remove.
+    """
+    value = spec.get(key, default)
+    if not isinstance(value, bool):
+        raise _fail(context, f"{key}: expected true or false, got {value!r}")
+    return value
+
+
 def _reject_unknown_keys(spec: dict[str, Any], allowed: set[str], context: str) -> None:
     """A style spec used to ignore everything it did not recognise.
 
@@ -121,8 +134,8 @@ def _severity(
 ) -> dict[str, Any]:
     _reject_unknown_keys(spec, {"style", "map", "calculated", "icons"}, context)
     value_map = _validated_map(spec, context)
-    calculated = bool(spec.get("calculated", False))
-    icons = bool(spec.get("icons", True))
+    calculated = _bool(spec, "calculated", context, default=False)
+    icons = _bool(spec, "icons", context, default=True)
     tokens = {v: _resolve(t, context, theme) for v, t in value_map.items()}
     fallback = _resolve("muted", context, theme)
     class_pairs = [
@@ -214,7 +227,9 @@ def _data_bar(
             color_by, {"field", "map", "calculated"}, f"{context}.color_by",
         )
         value_map = _validated_map(color_by, context)
-        calculated = bool(color_by.get("calculated", False))
+        calculated = _bool(
+            color_by, "calculated", f"{context}.color_by", default=False,
+        )
         tokens = {v: _resolve(t, context, theme) for v, t in value_map.items()}
         fallback = _resolve("muted", context, theme)
         ref = f"[${field_name}]"

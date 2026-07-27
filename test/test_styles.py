@@ -196,3 +196,19 @@ def test_style_spec_unknown_keys_are_rejected(spec: dict[str, Any], typo: str) -
 def test_theme_override_unknown_keys_are_rejected() -> None:
     with pytest.raises(ValueError, match="icons"):
         parse_theme({"good": {"classes": ["x"], "icons": "Emoji2"}}, "style_theme")
+
+
+@pytest.mark.parametrize("spec, key", [
+    ({"style": "severity", "map": {"A": "good"}, "calculated": "false"}, "calculated"),
+    ({"style": "severity", "map": {"A": "good"}, "icons": "false"}, "icons"),
+    ({"style": "data-bar", "max": 25,
+      "color_by": {"field": "R", "map": {"A": "good"}, "calculated": "false"}},
+     "calculated"),
+])
+def test_quoted_booleans_in_style_specs_are_rejected(spec: dict[str, Any], key: str) -> None:
+    """`bool("false")` is True, so the cautious spelling meant its
+    opposite: `calculated: "false"` switched ON the calculated-value
+    handling, and `icons: "false"` kept the icons it was written to
+    remove."""
+    with pytest.raises(ValueError, match=key):
+        expand_style(spec, "column_formatting.T.C")

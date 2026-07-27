@@ -525,6 +525,21 @@ def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context
         )
 
 
+def _check_versioning_values(block: Any, context: str) -> None:
+    """Type-check one versioning settings block (default or override)."""
+    _reject_unknown_keys(block, _VERSIONING_KEYS, context)
+    for key in ("enable_versioning", "enable_minor_versions"):
+        if key in block and not isinstance(block[key], bool):
+            raise ValueError(
+                f"{context}.{key}: expected true or false, got {block[key]!r}",
+            )
+    limit = block.get("major_version_limit")
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
+        raise ValueError(
+            f"{context}.major_version_limit: expected an integer, got {limit!r}",
+        )
+
+
 def load_mapping(mapping_path: Path) -> MappingBundle:
     """Load the mapping YAML and the referenced configs into a single bundle."""
     mapping_path = mapping_path.resolve()
@@ -540,7 +555,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
             base_template=int(spec["base_template"]),
             site_role=spec["site_role"],
-            singleton=bool(spec.get("singleton", False)),
+            singleton=_optional_bool(spec, "singleton", f"entities.{name}"),
             display_column=spec.get("display_column"),
         )
 
@@ -563,16 +578,18 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
     versioning = raw.get("versioning") or {}
     _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
     default_v = versioning.get("default") or {}
-    _reject_unknown_keys(default_v, _VERSIONING_KEYS, "versioning.default")
+    _check_versioning_values(default_v, "versioning.default")
     versioning_default = Versioning(
-        enable_versioning=bool(default_v.get("enable_versioning", True)),
+        enable_versioning=_strict_bool(default_v, "enable_versioning", "versioning.default"),
         major_version_limit=int(default_v.get("major_version_limit", 500)),
-        enable_minor_versions=bool(default_v.get("enable_minor_versions", False)),
+        enable_minor_versions=_optional_bool(
+            default_v, "enable_minor_versions", "versioning.default",
+        ),
     )
+    # Overrides reach jsgen/reportgen/assessgen as a RAW dict and are read
+    # there with bool()/int(), so their values were never checked anywhere.
     for override_entity, override in (versioning.get("overrides") or {}).items():
-        _reject_unknown_keys(
-            override or {}, _VERSIONING_KEYS, f"versioning.overrides.{override_entity}",
-        )
+        _check_versioning_values(override or {}, f"versioning.overrides.{override_entity}")
 
     watched = []
     for i, item in enumerate(raw.get("watched_lists") or []):
@@ -937,7 +954,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     group_by = (
         ViewGroupBy(
             field=str(raw_group["field"]),
-            collapsed=bool(raw_group.get("collapsed", False)),
+            collapsed=_optional_bool(raw_group, "collapsed", f"{context}.group_by"),
         )
         if raw_group is not None
         else None
@@ -962,7 +979,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     return ViewDef(
         title=str(title),
         fields=[str(f) for f in fields],
-        default=bool(raw_view.get("default", False)),
+        default=_optional_bool(raw_view, "default", context),
         where=where,
         sort=sort,
         group_by=group_by,
@@ -1043,7 +1060,11 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
 def _parse_policy(raw_policy: Any, context: str) -> ListPermissionPolicy:
     """Parse a list permission policy dict."""
     _reject_unknown_keys(raw_policy, _POLICY_KEYS, context)
-    break_inheritance = bool(raw_policy.get("break_inheritance", True))
+    # Read STRICTLY, and before the reconcile guard below: bool("false") is
+    # True, so the quoted spelling used to coerce to True, the guard tested
+    # the coerced value, and the deploy broke inheritance the author had
+    # asked it to keep.
+    break_inheritance = _strict_bool(raw_policy, "break_inheritance", context)
     reconcile_mode = cast("ReconcileMode", str(raw_policy.get("reconcile", "configured")))
     if reconcile_mode not in {"configured", "exact"}:
         raise ValueError(
@@ -1109,17 +1130,17 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
             name=grp["name"],
             description=grp.get("description", ""),
             owner_group=grp.get("owner_group", "Site Owners"),
-            allow_members_edit_membership=bool(
-                grp.get("allow_members_edit_membership", False),
+            allow_members_edit_membership=_optional_bool(
+                grp, "allow_members_edit_membership", f"groups[{i}]",
             ),
-            allow_request_to_join_leave=bool(
-                grp.get("allow_request_to_join_leave", False),
+            allow_request_to_join_leave=_optional_bool(
+                grp, "allow_request_to_join_leave", f"groups[{i}]",
             ),
-            auto_accept_request_to_join_leave=bool(
-                grp.get("auto_accept_request_to_join_leave", False),
+            auto_accept_request_to_join_leave=_optional_bool(
+                grp, "auto_accept_request_to_join_leave", f"groups[{i}]",
             ),
-            only_allow_members_view_membership=bool(
-                grp.get("only_allow_members_view_membership", False),
+            only_allow_members_view_membership=_optional_bool(
+                grp, "only_allow_members_view_membership", f"groups[{i}]",
             ),
             require_empty_at_deploy=_optional_bool(
                 grp, "require_empty_at_deploy", f"groups[{i}]",
