@@ -450,10 +450,26 @@ class MappingBundle:
 # error. Kept as data because the allow-list is asserted against the
 # loader's readers, and these have no reader by design.
 _REMOVED_SECTIONS: dict[str, str] = {
-    "hidden_on_forms": "form_visibility, e.g. `Column: hidden`",
+    "hidden_on_forms": (
+        "form_visibility. A column listed there becomes:\n"
+        "\n"
+        "    form_visibility:\n"
+        "      <Entity>:\n"
+        "        columns:\n"
+        "          <Column>: hidden\n"
+        "\n"
+        "The `columns:` level is required."
+    ),
     "hidden_on_display": (
         "nothing — it never worked on modern lists, which read ShowInEditForm and "
-        "ignore ShowInDisplayForm; hide from the Edit form instead"
+        "ignore ShowInDisplayForm, so the setting was written, verified and had no "
+        "effect. Hide from the Edit form instead, accepting that this hides the "
+        "column from Display too:\n"
+        "\n"
+        "    form_visibility:\n"
+        "      <Entity>:\n"
+        "        columns:\n"
+        "          <Column>: hidden\n"
     ),
 }
 
@@ -796,7 +812,15 @@ def _parse_list_validation(rule: Any, context: str) -> ListValidation:
     if "formula" in unknown:
         raise ValueError(
             f"{context}: 'formula' has been replaced by 'when', which takes a condition "
-            f"tree instead of a SharePoint formula — see the conditions reference",
+            f"tree instead of a SharePoint formula:\n"
+            f"\n"
+            f"    list_validation:\n"
+            f"      <Entity>:\n"
+            f"        when:\n"
+            f"          - {{ field: <Column>, op: is_not_null }}\n"
+            f"        message: \"<shown to the person whose save failed>\"\n"
+            f"\n"
+            f"See the condition grammar reference for the operator vocabulary.",
         )
     if unknown:
         raise ValueError(f"{context}: unknown key(s) {sorted(unknown)}")

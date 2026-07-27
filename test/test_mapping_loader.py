@@ -1409,3 +1409,59 @@ def test_quoted_singleton_is_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="singleton"):
         load_mapping(tmp_path / "m.yaml")
+
+
+# --- Migration messages -----------------------------------------------------
+
+
+def _example_from(message: str) -> str:
+    """The indented YAML block a migration error offers as the replacement."""
+    lines = [ln[4:] for ln in message.splitlines() if ln.startswith("    ")]
+    assert lines, f"no example block in: {message}"
+    return "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("removed", ["hidden_on_forms", "hidden_on_display"])
+def test_removed_section_message_offers_an_example_that_loads(
+    tmp_path: Path, removed: str,
+) -> None:
+    """An error that names a replacement is only useful if the replacement
+    parses. The `hidden_on_forms` message offered `Column: hidden` without
+    the mandatory `columns:` level, so an author who followed it verbatim
+    hit a second error."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(f"{removed}:\n  Project: [Status]\n"), encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    example = _example_from(str(err.value))
+    assert "columns:" in example
+    (tmp_path / "fixed.yaml").write_text(
+        _views_yaml(example.replace("<Entity>", "Project").replace("<Column>", "Status")),
+        encoding="utf-8",
+    )
+    mapping = load_mapping(tmp_path / "fixed.yaml").mapping
+    assert mapping.form_visibility["Project"].columns["Status"].new is False
+
+
+def test_list_validation_formula_message_offers_an_example_that_loads(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "list_validation:\n"
+            "  Project:\n"
+            '    formula: \'=[Status]<>""\'\n'
+            "    message: Needs a status.\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as err:
+        load_mapping(tmp_path / "m.yaml")
+    example = _example_from(str(err.value))
+    (tmp_path / "fixed.yaml").write_text(
+        _views_yaml(example.replace("<Entity>", "Project").replace("<Column>", "Status")),
+        encoding="utf-8",
+    )
+    rule = load_mapping(tmp_path / "fixed.yaml").mapping.list_validation["Project"]
+    assert rule.message
