@@ -1797,3 +1797,157 @@ def test_field_set_must_be_a_list_of_column_names(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match=r"field_sets\.Board\.header"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_view_fields_expand_field_sets_in_declaration_order(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "field_sets:\n"
+            "  Board:\n"
+            "    header:   [BoardDate, Chair]\n"
+            "    statuses: [OperationsStatus, WorkforceStatus]\n"
+            "views:\n"
+            "  Board:\n"
+            "    - title: Heat grid\n"
+            '      fields: ["@header", "@statuses"]\n',
+        ),
+        encoding="utf-8",
+    )
+    view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
+    assert view.fields == [
+        "BoardDate", "Chair", "OperationsStatus", "WorkforceStatus",
+    ]
+    assert view.expanded_sets == ["header", "statuses"]
+
+
+def test_field_set_expansion_dedupes_keeping_first_position(tmp_path: Path) -> None:
+    """["@header", BoardDate] is a no-op, not an error: the spec removes
+    duplicates keeping FIRST position, so BoardDate stays where the set put
+    it rather than moving to the end."""
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "field_sets:\n"
+            "  Board:\n"
+            "    header: [BoardDate, Chair]\n"
+            "    audit:  [Chair, OverallStatus]\n"
+            "views:\n"
+            "  Board:\n"
+            "    - title: Today\n"
+            '      fields: ["@header", BoardDate, "@audit", "@header"]\n',
+        ),
+        encoding="utf-8",
+    )
+    view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
+    assert view.fields == ["BoardDate", "Chair", "OverallStatus"]
+    assert view.expanded_sets == ["header", "audit"]
+
+
+def test_field_sets_do_not_nest(tmp_path: Path) -> None:
+    """One level only, deliberately: a member that looks like a reference is
+    left literal, which the validator then reports as an unresolved set."""
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "field_sets:\n"
+            "  Board:\n"
+            '    outer: ["@inner", BoardDate]\n'
+            "    inner: [Chair]\n"
+            "views:\n"
+            "  Board:\n"
+            "    - title: Nested\n"
+            '      fields: ["@outer"]\n',
+        ),
+        encoding="utf-8",
+    )
+    view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
+    assert view.fields == ["@inner", "BoardDate"]
+    assert view.expanded_sets == ["outer"]
+
+
+def test_unresolved_field_set_reference_is_left_in_place(tmp_path: Path) -> None:
+    """Nothing is silently dropped: the validator names the bad reference and
+    cli.py aborts before jsgen is ever reached."""
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "field_sets:\n"
+            "  Board:\n"
+            "    header: [BoardDate]\n"
+            "views:\n"
+            "  Board:\n"
+            "    - title: Typo\n"
+            '      fields: ["@headr", Chair]\n',
+        ),
+        encoding="utf-8",
+    )
+    view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
+    assert view.fields == ["@headr", "Chair"]
+    assert view.expanded_sets == []
+
+
+def test_field_set_expansion_applies_to_fields_only(tmp_path: Path) -> None:
+    """widths, sort, group_by and where name columns directly; a set has no
+    meaningful expansion there, so an '@' entry stays literal."""
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "field_sets:\n"
+            "  Board:\n"
+            "    header: [BoardDate, Chair]\n"
+            "views:\n"
+            "  Board:\n"
+            "    - title: Literal elsewhere\n"
+            '      fields: ["@header"]\n'
+            "      sort:\n"
+            '        - { field: "@header", direction: asc }\n'
+            '      group_by: { field: "@header" }\n'
+            "      where:\n"
+            '        - { field: "@header", op: is_null }\n'
+            "      widths:\n"
+            '        "@header": 120\n',
+        ),
+        encoding="utf-8",
+    )
+    view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
+    assert view.fields == ["BoardDate", "Chair"]
+    assert view.sort[0].field == "@header"
+    assert view.group_by is not None
+    assert view.group_by.field == "@header"
+    assert view.widths == {"@header": 120}
+
+
+def test_views_without_field_sets_are_unchanged(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "views:\n"
+            "  Board:\n"
+            "    - title: Plain\n"
+            "      fields: [BoardDate, Chair]\n",
+        ),
+        encoding="utf-8",
+    )
+    view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
+    assert view.fields == ["BoardDate", "Chair"]
+    assert view.expanded_sets == []
+
+
+def test_field_sets_expand_before_retirement_filters_them(tmp_path: Path) -> None:
+    """Expansion must run BEFORE _apply_retirement, so retirement filters the
+    already-expanded list. If the order inverted, "@statuses" would survive
+    retirement untouched and WorkforceStatus would still be a view field."""
+    (tmp_path / "m.yaml").write_text(
+        _board_yaml(
+            "field_sets:\n"
+            "  Board:\n"
+            "    statuses: [OperationsStatus, WorkforceStatus]\n"
+            "retired_columns:\n"
+            "  Board:\n"
+            "    WorkforceStatus:\n"
+            '      retired: "2026-09-01"\n'
+            "views:\n"
+            "  Board:\n"
+            "    - title: Heat grid\n"
+            '      fields: ["@statuses"]\n',
+        ),
+        encoding="utf-8",
+    )
+    view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
+    assert view.fields == ["OperationsStatus"]
+    assert view.expanded_sets == ["statuses"]

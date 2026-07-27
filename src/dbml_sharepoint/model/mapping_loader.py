@@ -198,6 +198,12 @@ class ViewDef:
     # display titles — SP's ColumnWidth binds by display name). Empty = the
     # live widths are never touched.
     widths: dict[str, int] = field(default_factory=dict)
+    # The `field_sets` entries this view's `fields` was expanded from, in
+    # reference order, de-duplicated. Populated by _expand_field_sets at
+    # load; empty when the view named its columns directly. The manifest
+    # prints it as the footnote on the RESOLVED field list, and the
+    # validator uses it to warn about a declared set no view references.
+    expanded_sets: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -721,6 +727,19 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             column_formatting.setdefault(cf_entity, {})[cf_col] = expanded
 
     field_sets = _parse_field_sets(raw.get("field_sets"))
+    # Resolve "@setname" references BEFORE anything downstream sees a view.
+    # Every consumer from here on — retirement folding, the validator,
+    # jsgen — reads a flat list of internal column names.
+    expanded_views = _expand_field_sets(
+        {
+            entity: [
+                _parse_view(item, f"views.{entity}[{i}]", base_dir)
+                for i, item in enumerate(items or [])
+            ]
+            for entity, items in (raw.get("views") or {}).items()
+        },
+        field_sets,
+    )
 
     unknown_sections = set(raw) - KNOWN_SECTIONS
     if unknown_sections:
@@ -760,13 +779,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             entity: _parse_column_validation(block, f"column_validation.{entity}")
             for entity, block in (raw.get("column_validation") or {}).items()
         },
-        views={
-            entity: [
-                _parse_view(item, f"views.{entity}[{i}]", base_dir)
-                for i, item in enumerate(items or [])
-            ]
-            for entity, items in (raw.get("views") or {}).items()
-        },
+        views=expanded_views,
         field_sets=field_sets,
         demo_items={
             entity: [
@@ -1379,6 +1392,54 @@ def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
                 )
             parsed[str(entity)][str(set_name)] = [str(col) for col in columns]
     return parsed
+
+
+def _expand_field_sets(
+    views: dict[str, list[ViewDef]],
+    field_sets: dict[str, dict[str, list[str]]],
+) -> dict[str, list[ViewDef]]:
+    """Resolve every "@setname" entry in a view's `fields` into the columns
+    that set declares, on the same entity.
+
+    Expansion is in declaration order and duplicates are dropped keeping
+    FIRST position, so ["@header", "BoardDate"] is a no-op rather than an
+    error. Sets do NOT nest — one level only, deliberately: a set member
+    that itself looks like a reference is left literal and the validator
+    reports it. An "@name" with no matching set on the entity is likewise
+    left in place untouched, so nothing is silently dropped; the validator
+    names it and cli.py aborts before jsgen is ever reached.
+
+    Applies to `fields` ONLY. `widths`, `sort`, `group_by` and `where`
+    continue to name columns directly — a set has no meaningful expansion
+    there.
+
+    Runs BEFORE _apply_retirement so retirement filters the already-expanded
+    list: a view that pulls in a set containing a retired column must end up
+    without that column.
+    """
+    expanded: dict[str, list[ViewDef]] = {}
+    for entity, entity_views in views.items():
+        sets = field_sets.get(entity, {})
+        rebuilt: list[ViewDef] = []
+        for view in entity_views:
+            fields: list[str] = []
+            seen: set[str] = set()
+            used: list[str] = []
+            for entry in view.fields:
+                if entry.startswith("@") and entry[1:] in sets:
+                    set_name = entry[1:]
+                    if set_name not in used:
+                        used.append(set_name)
+                    members = sets[set_name]
+                else:
+                    members = [entry]
+                for name in members:
+                    if name not in seen:
+                        seen.add(name)
+                        fields.append(name)
+            rebuilt.append(replace(view, fields=fields, expanded_sets=used))
+        expanded[entity] = rebuilt
+    return expanded
 
 
 def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:

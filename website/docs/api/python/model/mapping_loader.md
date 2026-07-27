@@ -201,6 +201,7 @@ class ViewDef:
     row_limit: int | None = None
     formatting: dict[str, typing.Any] | None = None
     widths: dict[str, int] = dict()
+    expanded_sets: list[str] = list()
 ```
 
 One declared SharePoint list view (mapping `views:` section).
