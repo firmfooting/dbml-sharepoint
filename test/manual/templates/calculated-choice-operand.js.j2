@@ -77,9 +77,16 @@
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   if (!CONFIRMED) {
-    log('INFO', `Would create list '${LIST}' on ${WEB}, add Choice columns`);
-    log('INFO', 'RaisedAtTier/TargetTier plus a Person column, then attempt');
-    log('INFO', 'calculated columns over them and read back what was stored.');
+    log('INFO', `Would create list '${LIST}' on ${WEB}, add Choice, Date and`);
+    log('INFO', 'Person columns, then attempt calculated columns over them');
+    log('INFO', '(text, number and date results) and read back what was stored.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIST}' would be RECYCLED first, with its items.`);
+    } else {
+      log('INFO', `CLEANUP is off: an existing '${LIST}' would be topped up, and`);
+      log('INFO', 'columns already present report "already present" rather than');
+      log('INFO', 'being created. Set CLEANUP = true for a clean run.');
+    }
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
   }
@@ -106,6 +113,10 @@
   expect('R1', 'An existing calculated column survives its operand being re-titled "(retired)"');
   expect('R2', 'A NEW calculated column can reference a display name containing "(retired)"');
   expect('N1', 'NEGATIVE CONTROL: a Person operand is refused');
+
+  // Removes a previous run's list so every question below is answered by
+  // actually creating something. No-op unless CLEANUP is on.
+  await resetList(LIST);
 
   let digest = await getDigest();
 

@@ -63,10 +63,20 @@
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
-  // Both default false. Pasting an unedited probe prints its plan and
+  // All default false. Pasting an unedited probe prints its plan and
   // stops; nothing touches the tenant until the operator opts in.
-  const CONFIRMED = false;
-  const ALLOW_WRITES = false;
+  const CONFIRMED = true;
+  const ALLOW_WRITES = true;
+
+  // CLEANUP deletes the probe's own list BEFORE the run, so every question
+  // is answered by actually creating something rather than reporting
+  // "already present" from a previous run — which is much weaker evidence.
+  //
+  // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
+  // ever touches the single list the probe declares; it never enumerates or
+  // deletes anything else. The list is RECYCLED, not purged, so a mistake
+  // is recoverable from the site recycle bin.
+  const CLEANUP = false;
 
   // No SITE_URL constant, deliberately. The probe reads the site it was
   // pasted into. A tenant URL committed to this repo has leaked twice, and
@@ -115,6 +125,50 @@
     let parsed = null;
     try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
     return { ok: res.ok, status: res.status, body: parsed, text };
+  };
+
+  // ---- Pre-run reset --------------------------------------------------
+  // Call this before bootstrapping. A no-op unless CLEANUP is on, so the
+  // probe body reads the same either way.
+  const resetList = async (title) => {
+    if (!CLEANUP) return false;
+    if (!ALLOW_WRITES) {
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      return false;
+    }
+    const found = await spGet(`web/lists/getbytitle('${title}')`);
+    if (!found.ok) {
+      log('INFO', `CLEANUP: no list named '${title}' to remove.`);
+      return false;
+    }
+    log('INFO', `CLEANUP: removing list '${title}' and its items.`);
+
+    // Items first. Recycling the list takes them with it, but doing this
+    // explicitly still clears the data if the list itself cannot be
+    // removed — a locked or no-delete list would otherwise leave rows from
+    // a previous run answering this run's questions.
+    let digest = await getDigest();
+    const items = await spGet(
+      `web/lists/getbytitle('${title}')/items?$select=Id&$top=5000`);
+    const rows = (items.ok && items.body && items.body.value) || [];
+    for (const row of rows) {
+      digest = await getDigest();
+      await spPost(`web/lists/getbytitle('${title}')/items(${row.Id})`, {}, digest,
+                   { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    }
+    if (rows.length) log('INFO', `CLEANUP: deleted ${rows.length} item(s).`);
+    if (rows.length === 5000) {
+      log('INFO', 'CLEANUP: hit the 5000-row page limit; re-run to clear the rest.');
+    }
+
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${title}')/recycle`, {}, digest);
+    if (gone.ok) {
+      log('OK', `CLEANUP: recycled list '${title}'. It is restorable from the recycle bin.`);
+    } else {
+      log('FAIL', `CLEANUP: could not recycle '${title}': HTTP ${gone.status} ${gone.text.slice(0, 200)}`);
+    }
+    return gone.ok;
   };
 
   // ---- Result table --------------------------------------------------
@@ -170,9 +224,16 @@
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   if (!CONFIRMED) {
-    log('INFO', `Would create list '${LIST}' on ${WEB}, add Choice columns`);
-    log('INFO', 'RaisedAtTier/TargetTier plus a Person column, then attempt');
-    log('INFO', 'calculated columns over them and read back what was stored.');
+    log('INFO', `Would create list '${LIST}' on ${WEB}, add Choice, Date and`);
+    log('INFO', 'Person columns, then attempt calculated columns over them');
+    log('INFO', '(text, number and date results) and read back what was stored.');
+    if (CLEANUP) {
+      log('INFO', `CLEANUP is ON: '${LIST}' would be RECYCLED first, with its items.`);
+    } else {
+      log('INFO', `CLEANUP is off: an existing '${LIST}' would be topped up, and`);
+      log('INFO', 'columns already present report "already present" rather than');
+      log('INFO', 'being created. Set CLEANUP = true for a clean run.');
+    }
     log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
     return;
   }
@@ -199,6 +260,10 @@
   expect('R1', 'An existing calculated column survives its operand being re-titled "(retired)"');
   expect('R2', 'A NEW calculated column can reference a display name containing "(retired)"');
   expect('N1', 'NEGATIVE CONTROL: a Person operand is refused');
+
+  // Removes a previous run's list so every question below is answered by
+  // actually creating something. No-op unless CLEANUP is on.
+  await resetList(LIST);
 
   let digest = await getDigest();
 

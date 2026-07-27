@@ -80,6 +80,13 @@ def test_probes_carry_no_tenant_url() -> None:
 
 WRITE_CALL = re.compile(r"""method:\s*['"](POST|MERGE|DELETE|PUT)['"]""")
 
+# Flags that must ship off. CLEANUP is here because it is the most
+# destructive of the three — it recycles the probe's list and its items
+# before the run — and a probe committed with it on would do that to
+# whoever pasted the file. CLEANUP_AT_END is the legacy probe's separate,
+# opposite-timing flag; it is guarded for the same reason.
+GUARD_FLAGS = ("CONFIRMED", "ALLOW_WRITES", "CLEANUP", "CLEANUP_AT_END")
+
 
 def test_a_probe_that_writes_defaults_to_read_only() -> None:
     """A probe that can write must describe what it would do and stop,
@@ -98,22 +105,27 @@ def test_a_probe_that_writes_defaults_to_read_only() -> None:
             continue
         declared = {
             flag: value
-            for flag in ("CONFIRMED", "ALLOW_WRITES")
+            for flag in GUARD_FLAGS
             if (m := re.search(rf"^\s*(?:const|let|var)\s+{flag}\s*=\s*(\w+)", text, re.MULTILINE))
             and (value := m.group(1))
         }
         assert declared, (
             f"{path.name} performs writes but declares no guard. It needs at "
-            f"least one of CONFIRMED / ALLOW_WRITES."
+            f"least one of {', '.join(sorted(GUARD_FLAGS))}."
         )
         # How many guards a probe needs is its own business — one flag
         # gating everything is fine for a probe whose whole purpose is to
         # write. What is not negotiable is that each one ships off.
         for flag, value in declared.items():
+            consequence = (
+                "delete a list and its items on"
+                if flag.startswith("CLEANUP")
+                else "write to"
+            )
             assert value == "false", (
                 f"{path.name}: {flag} is committed as {value!r}. Pasting this "
-                f"file would write to the tenant of whoever ran it, without "
-                f"asking. It must be committed as false."
+                f"file would {consequence} the tenant of whoever ran it, "
+                f"without asking. It must be committed as false."
             )
 
 

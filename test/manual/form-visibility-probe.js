@@ -21,11 +21,11 @@
  *      this is a probe, not a test suite. Nothing here asserts a verdict.
  *
  * THE MANUAL STEP (Q6 cannot be done from script)
- *   Set CLEANUP = false, run once, then in the list UI open
+ *   Set CLEANUP_AT_END = false, run once, then in the list UI open
  *   "Edit form" -> "Edit columns" and toggle a probe column off. Then set
  *   RECHECK_ONLY = true and re-run: it reports whether the UI wrote
  *   ShowInNewForm/ShowInEditForm, and whether Sealed stopped it.
- *   Set CLEANUP = true on the final run to remove the list.
+ *   Set CLEANUP_AT_END = true on the final run to remove the list.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -38,7 +38,10 @@
   // that does not exist.
   const CONFIRMED = false;
   const PROBE_LIST = 'zzz dbmlsp form visibility probe';
-  const CLEANUP = false;           // false keeps the list for the manual UI step
+  // Named for its timing: this deletes the list AFTER the run. The shared
+  // harness has a CLEANUP that deletes BEFORE one. Same word, opposite
+  // moment, so they are kept distinct rather than merged by accident.
+  const CLEANUP_AT_END = false;
   const RECHECK_ONLY = true;     // true = read current state only; no setup, no writes
   // ------------------------------------------------------------------------
 
@@ -202,7 +205,7 @@
     log('INFO', 'RECHECK_ONLY — reading current visibility, making no changes.');
     const exists = await get(`${listPath}?$select=Title`);
     if (!exists.ok) {
-      log('ERROR', `Probe list '${PROBE_LIST}' not found. Run once with CLEANUP = false first.`);
+      log('ERROR', `Probe list '${PROBE_LIST}' not found. Run once with CLEANUP_AT_END = false first.`);
       return { aborted: 'no-probe-list' };
     }
     for (const [key, name] of Object.entries(FIELDS)) {
@@ -210,13 +213,13 @@
       record(`RECHECK.${key}`, name, v.ok ? shape(v) : 'READ FAILED', v.ok ? (v.sealed ? 'sealed' : 'not sealed') : v.error);
     }
     console.table(results);
-    if (CLEANUP) {
+    if (CLEANUP_AT_END) {
       const del = await post(listPath, undefined, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' });
       log(del.ok ? 'INFO' : 'ERROR', del.ok
         ? `Probe list '${PROBE_LIST}' deleted.`
-        : `CLEANUP FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
+        : `CLEANUP_AT_END FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
     } else {
-      log('WARN', `CLEANUP is false — '${PROBE_LIST}' is still on the site: ${listUrl}`);
+      log('WARN', `CLEANUP_AT_END is false — '${PROBE_LIST}' is still on the site: ${listUrl}`);
     }
     log('DONE', 'Recheck complete. Compare against the values from the probe run.');
     return { results };
@@ -335,15 +338,15 @@
 
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
   } finally {
-    if (CLEANUP) {
+    if (CLEANUP_AT_END) {
       const del = await post(listPath, undefined, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' });
       if (del.ok) {
         log('INFO', `Probe list '${PROBE_LIST}' deleted.`);
       } else {
-        log('ERROR', `CLEANUP FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
+        log('ERROR', `CLEANUP_AT_END FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
       }
     } else {
-      log('WARN', `CLEANUP is false — '${PROBE_LIST}' is still on the site: ${listUrl}`);
+      log('WARN', `CLEANUP_AT_END is false — '${PROBE_LIST}' is still on the site: ${listUrl}`);
       log('INFO', 'Manual step for Q6: open the list -> Edit form -> Edit columns, toggle a Probe* column off, then re-run this script with RECHECK_ONLY = true.');
       log('INFO', `Also check whether ${FIELDS.sealed} (Sealed) can be toggled in that panel at all — that answers whether sealing protects form visibility from UI drift.`);
     }
