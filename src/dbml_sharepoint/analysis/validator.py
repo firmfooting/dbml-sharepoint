@@ -1309,7 +1309,7 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
     # LookupField. jsgen defaults LookupField to "Title"; if the target list has
     # no Title column AND the mapping declares no display_column for it, every
     # lookup into it renders BLANK (the empty built-in Title). Force the author
-    # to declare display_column so person/roster references show a name (A1).
+    # to declare display_column so person/roster references show a name.
     # Cross-site reference columns are expanded to Choice+URL, not lookups, so
     # they are excluded.
     cross_site_pairs = {
@@ -1324,7 +1324,7 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                 continue  # missing-ref target already errored by validate()
             source_entity = bundle.mapping.entities.get(table.name)
             target_entity = bundle.mapping.entities.get(col.ref.target_table)
-            # A7: a SharePoint lookup cannot span webs. If the source and target
+            # A SharePoint lookup cannot span webs. If the source and target
             # map to different site_roles and the column is not declared
             # cross-site, deploy.js would emit a lookup whose target list is
             # never created in this site — failing only at deploy time
@@ -1344,7 +1344,7 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
                     f"the same site_role.",
                 ))
                 continue
-            # A1: lookup display-column guard. jsgen emits
+            # Lookup display-column guard. jsgen emits
             # LookupField = display_column or "Title".
             display = target_entity.display_column if target_entity else None
             if display:

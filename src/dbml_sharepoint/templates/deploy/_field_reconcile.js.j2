@@ -35,28 +35,16 @@
 
   // The ONE constructor for the synthetic Title field. Title is not a
   // declared column — it arrives as list.title_patch — so every consumer of
-  // a declared field has to synthesise one, and this object existed twice,
-  // hand-maintained, in two files. Both copies were wrong, differently:
-  //
-  //   - both omitted `seal`, so `actual.Sealed && !field.seal` read a sealed
-  //     built-in Title as an impostor and aborted the list in preflight;
-  //   - the UNMANAGED sentinel fix landed on the _lists.js.j2 copy only, so
-  //     the copy here still declared Title's formulas as managed. Harmless
-  //     purely because preflight never calls enforceDeclaredFormulas — the
-  //     first preflight formula check would have reintroduced the shipped
-  //     bug exactly.
-  //
-  // Two hand-maintained copies of one object IS the defect; the divergence
-  // was the symptom. One constructor, one place to be right.
+  // a declared field has to synthesise one. Keep it here: a second copy
+  // elsewhere will drift out of step with this one.
   function syntheticTitleField(list) {
     return {
       title: 'Title',
       body: { ...list.title_patch, FieldTypeKind: 2 },
       // Title is not a declared field, so it carries no declared formulas.
-      // All three sentinels are explicit: omitting them made
-      // `undefined !== UNMANAGED` read as "managed", which MERGEd an empty
-      // message onto the built-in Title column and then aborted the phase
-      // on every list, on every run.
+      // All three sentinels must be explicit — `undefined !== UNMANAGED`
+      // reads as "managed", which MERGEs an empty message onto the built-in
+      // Title column and aborts the phase.
       client_validation_formula: UNMANAGED,
       validation_formula: UNMANAGED,
       validation_message: UNMANAGED,

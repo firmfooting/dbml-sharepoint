@@ -138,13 +138,12 @@ def _section_target[T](
       (None, True)   — `reconcile: exact` with no entry, so CLEAR it
       (decl, False)  — render the declaration
 
-    Shared by both sections deliberately. The calculated-column exclusion
-    lived on the form_visibility path only, so `column_validation` with
-    `reconcile: exact` emitted a clear for a calculated column. The write
-    is a no-op — a calculated column never reaches an entry form, which is
-    why declaring one is a build error — but the manifest reported a clear
-    that never happened, and two siblings disagreeing about the same rule
-    is how the wrong one gets "fixed" later.
+    Shared by both sections deliberately, so the calculated-column exclusion
+    cannot apply to one and not the other. Clearing a calculated column is a
+    no-op write — it never reaches an entry form, which is why declaring one
+    is a build error — but the manifest would report a clear that never
+    happened, and two siblings disagreeing about one rule is how the wrong
+    one gets "fixed" later.
     """
     if section is None or is_calculated:
         return None, False
@@ -392,10 +391,10 @@ def build_schema_json(
         }
         table_formatting = bundle.mapping.column_formatting.get(table_name, {})
         # form_visibility carries per-column visibility as a composed
-        # ClientValidationFormula. SchemaXml ShowIn*Form is no longer
-        # written: saving the form designer migrates it into
-        # FieldLink.Hidden, which hides a column from EVERY form and
-        # cannot be undone over REST.
+        # ClientValidationFormula. Never write SchemaXml ShowIn*Form:
+        # saving the form designer migrates it into FieldLink.Hidden,
+        # which hides a column from EVERY form and cannot be undone
+        # over REST.
         visibility = bundle.mapping.form_visibility.get(table_name)
         validation = bundle.mapping.column_validation.get(table_name)
         col_types = {c.name: c.type for c in table.columns}
@@ -448,7 +447,7 @@ def build_schema_json(
             # No DBML Title column: the built-in Title on a base-template list is
             # Required by default, which blocks programmatic inserts (a flow
             # creating a row without Title gets HTTP 400) and forces manual
-            # entry. Patch it optional (A4).
+            # entry. Patch it optional.
             title_patch = {
                 "__metadata": {"type": "SP.FieldText"},
                 "Required": False,
@@ -673,8 +672,8 @@ def _field_body(
         case "DateTime":
             body["DisplayFormat"] = 0 if sp.date_only else 1
             # SP dynamic defaults ("[today]") and literal dates both ride
-            # DefaultValue; previously the DateTime branch dropped defaults
-            # the typemap carried.
+            # DefaultValue, so this branch must carry whatever the typemap
+            # resolved rather than handling only literals.
             if sp.default is not None:
                 body["DefaultValue"] = str(sp.default)
         case "Boolean":
@@ -688,7 +687,7 @@ def _field_body(
             # Display the target list's primary field. Defaults to the built-in
             # "Title", but a target whose mapping declares display_column (e.g.
             # Membership → DisplayName) renders that instead — a bare "Title"
-            # would show blank on lists that never populate Title (A1).
+            # shows blank on lists that never populate Title.
             target_entity = (
                 entities.get(sp.target_list) if entities and sp.target_list else None
             )

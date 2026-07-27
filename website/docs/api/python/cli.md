@@ -15,7 +15,7 @@ Command-line interface for dbml-sharepoint.
 def validate_site_url(site_url: str) -> None
 ```
 
-Reject a malformed or non-https ``--site-url`` at parse time (A5).
+Reject a malformed or non-https ``--site-url`` at parse time.
 
 The URL is interpolated into the generated deploy.js (as ``SITE_URL`` and in
 the site-match preflight comparison), so it must be a well-formed absolute

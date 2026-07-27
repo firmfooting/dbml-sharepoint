@@ -23,7 +23,7 @@
     try {
       // Refresh the digest per list: a long Phase {{ phase.number }} (hundreds of field POSTs)
       // can outlive a single FormDigestValue (~30 min), so re-fetch per list
-      // rather than reuse the one fetched before the loop (A4).
+      // rather than reuse the one fetched before the loop.
       digest = await getDigest();
       let createdThisRun = false;
       let listShape = await readListShape(list.title);
@@ -124,7 +124,7 @@
     try {
       let laneDigest = await getDigest();
       for (const col of list.fields_phase1) {
-        // Guard each field independently (A4): one field's failure (a transient
+        // Guard each field independently: one field's failure (a transient
         // 429/403, or a missing lookup target) must not abandon the list's
         // remaining columns and its Title patch. Existing fields are never
         // trusted by name alone: immutable identity is checked before safely

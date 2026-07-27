@@ -547,16 +547,15 @@ _REMOVED_SECTIONS: dict[str, str] = {
 }
 
 # Every top-level key load_mapping understands. A misspelling must fail
-# rather than be ignored: `form_visibilty:` used to build clean, report
-# "(none declared)" and deploy nothing at all.
+# rather than be ignored — `form_visibilty:` would otherwise build clean,
+# report "(none declared)" and deploy nothing.
 #
 # EVERY entry here must have a reader in load_mapping or _parse_permissions
-# (or be a _REMOVED_SECTIONS name), and a test asserts it. The first draft
-# of this set was written from website/docs/reference/mapping.md rather than
-# from the code, which allow-listed `permissions:` and `retention_policies:`
-# — two keys nothing has ever read. An allow-listed key with no reader is
-# worse than no allow-list: it makes a section that deploys nothing look
-# supported, and the build reports success.
+# (or be a _REMOVED_SECTIONS name), and a test asserts it against the
+# loader's own source. Populate this set from the code, never from
+# website/docs/reference/mapping.md: an allow-listed key with no reader is
+# worse than no allow-list, because it makes a section that deploys nothing
+# look supported while the build reports success.
 KNOWN_SECTIONS = frozenset({
     "prefix", "prefix_owner", "prefix_registry", "entities",
     "cross_site_reference_columns", "indexed_columns", "versioning",
@@ -603,12 +602,11 @@ _DEFAULT_POLICY_KEYS = _POLICY_KEYS | {"site_role"}
 def _reject_unknown_keys(block: Any, allowed: frozenset[str] | set[str], context: str) -> None:
     """Fail on any key the loader does not read.
 
-    The top-level guard covers one level, and every level below it was
-    fail-open: a typo'd build was byte-identical to one with the key
-    deleted, so `deafult:` never made a view the default, a filter under
-    `wheres:` deployed an unfiltered view, and a misspelled
-    `break_inheritance` left a list on inherited permissions — all with
-    zero findings.
+    Apply this at EVERY nesting level, not just the top. A fail-open level
+    makes a typo'd build byte-identical to one with the key deleted, so
+    `deafult:` never makes a view the default, a filter under `wheres:`
+    deploys an unfiltered view, and a misspelled `break_inheritance` leaves
+    a list on inherited permissions — all reporting zero findings.
     """
     if not isinstance(block, dict):
         raise ValueError(
@@ -968,12 +966,7 @@ def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
                 f"superseded_by / reason / hide_existing, got "
                 f"{type(spec).__name__}",
             )
-        unknown = set(spec) - _RETIREMENT_KEYS
-        if unknown:
-            raise ValueError(
-                f"{col_ctx}: unknown key(s) {sorted(unknown)} "
-                f"(known: {sorted(_RETIREMENT_KEYS)})",
-            )
+        _reject_unknown_keys(spec, _RETIREMENT_KEYS, col_ctx)
         retired = spec.get("retired")
         if retired is None:
             raise ValueError(f"{col_ctx}: 'retired' (an ISO date) is required")
@@ -1185,9 +1178,7 @@ def _apply_retirement(mapping: Mapping) -> None:
 def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormFormatting:
     if not isinstance(parts, dict):
         raise ValueError(f"{context}: expected a mapping of header/body/footer parts")
-    unknown = set(parts) - {"header", "body", "footer"}
-    if unknown:
-        raise ValueError(f"{context}: unknown part(s) {sorted(unknown)}")
+    _reject_unknown_keys(parts, {"header", "body", "footer"}, context)
     loaded = {
         name: _load_json_value(base_dir, value, f"{context}.{name}")
         for name, value in parts.items()
@@ -1220,9 +1211,7 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
 def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
     if not isinstance(block, dict):
         raise ValueError(f"{context}: expected a mapping with 'columns'")
-    unknown = set(block) - {"reconcile", "columns"}
-    if unknown:
-        raise ValueError(f"{context}: unknown key(s) {sorted(unknown)}")
+    _reject_unknown_keys(block, {"reconcile", "columns"}, context)
     reconcile = str(block.get("reconcile", "exact"))
     if reconcile not in ("exact", "declared"):
         raise ValueError(
@@ -1261,13 +1250,11 @@ def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibi
             continue
         if not isinstance(raw, dict):
             raise ValueError(f"{where}: expected 'hidden', 'visible' or a mapping")
-        unknown = set(raw) - {"new", "existing", "when"}
-        if unknown:
-            raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
+        _reject_unknown_keys(raw, {"new", "existing", "when"}, where)
         columns[name] = FormVisibility(
             new=_strict_bool(raw, "new", where),
             existing=_strict_bool(raw, "existing", where),
-            # M13: an empty `when` is a mistake, not an absence — the same
+            # An empty `when` is a mistake, not an absence — the same
             # declaration errors in column_validation and as an empty group.
             when=parse_condition(raw["when"], f"{where}.when") if "when" in raw else None,
         )
@@ -1281,9 +1268,7 @@ def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnVa
         where = f"{context}.columns.{name}"
         if not isinstance(raw, dict):
             raise ValueError(f"{where}: expected a mapping with 'when' and 'message'")
-        unknown = set(raw) - {"when", "message"}
-        if unknown:
-            raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
+        _reject_unknown_keys(raw, {"when", "message"}, where)
         for key in ("when", "message"):
             if not raw.get(key):
                 raise ValueError(
@@ -1515,10 +1500,10 @@ def _parse_policy(
         _DEFAULT_POLICY_KEYS if allow_site_role else _POLICY_KEYS,
         context,
     )
-    # Read STRICTLY, and before the reconcile guard below: bool("false") is
-    # True, so the quoted spelling used to coerce to True, the guard tested
-    # the coerced value, and the deploy broke inheritance the author had
-    # asked it to keep.
+    # Read STRICTLY, and before the reconcile guard below. bool("false") is
+    # True, so a lenient read coerces the quoted spelling to True and the
+    # guard then tests the coerced value — breaking inheritance the author
+    # asked to keep.
     break_inheritance = _strict_bool(raw_policy, "break_inheritance", context)
     reconcile_mode = cast("ReconcileMode", str(raw_policy.get("reconcile", "configured")))
     if reconcile_mode not in {"configured", "exact"}:

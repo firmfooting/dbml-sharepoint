@@ -327,8 +327,7 @@ def _combine(parts: list[str], *, conjunction: bool, target: str) -> str:
     if len(parts) == 1:
         return parts[0]
     if target == CAML:
-        # CAML's And/Or are strictly binary; fold left, as the hand-rolled
-        # view query did before this module existed.
+        # CAML's And/Or are strictly binary, so fold left.
         tag = "And" if conjunction else "Or"
         combined = parts[0]
         for nxt in parts[1:]:
@@ -354,9 +353,9 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     where = f"{context}.{leaf.field}"
     _check(leaf, target, where)
     # Gate on the REAL column type first. Substituting "number" for a
-    # measure before this check let LEN([MultiLine]) past a rule that
-    # is_not_null on the same column hits — the tool contradicting itself
-    # and routing the author to whichever spelling the guard missed.
+    # measure ahead of this check lets LEN([MultiLine]) past a rule that
+    # is_not_null on the same column hits — the tool contradicting itself,
+    # and routing the author to whichever spelling the guard misses.
     declared_type = _column_type(leaf.field, types, target, where)
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
     if declared_type in forbidden:

@@ -63,7 +63,7 @@
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   // OData string-literal encoder: SharePoint getbytitle/getbyname take a
   // single-quoted OData literal, where an embedded apostrophe must be
-  // DOUBLED (`''`); encodeURIComponent alone does not escape `'` (A5).
+  // DOUBLED (`''`); encodeURIComponent alone does not escape `'`.
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
   log('INFO', `Running as ${(_spPageContextInfo.userLoginName) || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
@@ -761,28 +761,16 @@
 
   // The ONE constructor for the synthetic Title field. Title is not a
   // declared column — it arrives as list.title_patch — so every consumer of
-  // a declared field has to synthesise one, and this object existed twice,
-  // hand-maintained, in two files. Both copies were wrong, differently:
-  //
-  //   - both omitted `seal`, so `actual.Sealed && !field.seal` read a sealed
-  //     built-in Title as an impostor and aborted the list in preflight;
-  //   - the UNMANAGED sentinel fix landed on the _lists.js.j2 copy only, so
-  //     the copy here still declared Title's formulas as managed. Harmless
-  //     purely because preflight never calls enforceDeclaredFormulas — the
-  //     first preflight formula check would have reintroduced the shipped
-  //     bug exactly.
-  //
-  // Two hand-maintained copies of one object IS the defect; the divergence
-  // was the symptom. One constructor, one place to be right.
+  // a declared field has to synthesise one. Keep it here: a second copy
+  // elsewhere will drift out of step with this one.
   function syntheticTitleField(list) {
     return {
       title: 'Title',
       body: { ...list.title_patch, FieldTypeKind: 2 },
       // Title is not a declared field, so it carries no declared formulas.
-      // All three sentinels are explicit: omitting them made
-      // `undefined !== UNMANAGED` read as "managed", which MERGEd an empty
-      // message onto the built-in Title column and then aborted the phase
-      // on every list, on every run.
+      // All three sentinels must be explicit — `undefined !== UNMANAGED`
+      // reads as "managed", which MERGEs an empty message onto the built-in
+      // Title column and aborts the phase.
       client_validation_formula: UNMANAGED,
       validation_formula: UNMANAGED,
       validation_message: UNMANAGED,
@@ -1732,7 +1720,7 @@
     try {
       // Refresh the digest per list: a long Phase 2.1 (hundreds of field POSTs)
       // can outlive a single FormDigestValue (~30 min), so re-fetch per list
-      // rather than reuse the one fetched before the loop (A4).
+      // rather than reuse the one fetched before the loop.
       digest = await getDigest();
       let createdThisRun = false;
       let listShape = await readListShape(list.title);
@@ -1833,7 +1821,7 @@
     try {
       let laneDigest = await getDigest();
       for (const col of list.fields_phase1) {
-        // Guard each field independently (A4): one field's failure (a transient
+        // Guard each field independently: one field's failure (a transient
         // 429/403, or a missing lookup target) must not abandon the list's
         // remaining columns and its Title patch. Existing fields are never
         // trusted by name alone: immutable identity is checked before safely
@@ -1911,7 +1899,7 @@
   digest = await getDigest();
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
-      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      digest = await getDigest();  // refresh per item (digest lifetime)
       const targetGuid = listGuids[lookup.target_list];
       if (!targetGuid) throw new Error(`Lookup target ${lookup.target_list} missing.`);
       if (await reconcileDeclaredField(
@@ -1954,7 +1942,7 @@
   digest = await getDigest();
   for (const idx of SCHEMA.indexed_columns) {
     try {
-      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      digest = await getDigest();  // refresh per item (digest lifetime)
       await patchField(idx.list, idx.field, { __metadata: { type: 'SP.Field' }, Indexed: true }, digest);
     } catch (err) {
       log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);

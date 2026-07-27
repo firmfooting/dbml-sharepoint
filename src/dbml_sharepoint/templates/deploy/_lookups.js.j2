@@ -9,7 +9,7 @@
   digest = await getDigest();
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
-      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      digest = await getDigest();  // refresh per item (digest lifetime)
       const targetGuid = listGuids[lookup.target_list];
       if (!targetGuid) throw new Error(`Lookup target ${lookup.target_list} missing.`);
       if (await reconcileDeclaredField(

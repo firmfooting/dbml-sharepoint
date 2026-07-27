@@ -65,7 +65,7 @@ Shared SP WRITE-request headers. Included only by scripts that make writes (depl
 
 Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
 
-Shared provenance header fields — rendered INSIDE each script's leading block comment. Expects: source_dbml, site_url, release, generated_at; optional: source_mtime, site_role. comment_safe (A5) guards every raw interpolation against a crafted `*/`.
+Shared provenance header fields — rendered INSIDE each script's leading block comment. Expects: source_dbml, site_url, release, generated_at; optional: source_mtime, site_role. comment_safe  guards every raw interpolation against a crafted `*/`.
 
 ### `_site_guard.js.j2`
 
