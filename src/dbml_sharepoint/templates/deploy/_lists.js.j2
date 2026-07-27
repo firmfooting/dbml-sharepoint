@@ -176,19 +176,9 @@
       }
 
       if (list.title_patch) {
-        const titleField = {
-          title: 'Title',
-          body: { ...list.title_patch, FieldTypeKind: 2 },
-          // Synthetic caller: Title is not a declared field, so it carries
-          // no declared formulas. Both sentinels are explicit — omitting
-          // them made `undefined !== UNMANAGED` read as "managed", which
-          // MERGEd an empty message onto the built-in Title column and then
-          // aborted the phase on every list, every run.
-          client_validation_formula: UNMANAGED,
-          validation_formula: UNMANAGED,
-          validation_message: UNMANAGED,
-        };
-        await reconcileDeclaredField(list.title, titleField, null, laneDigest, false);
+        await reconcileDeclaredField(
+          list.title, syntheticTitleField(list), null, laneDigest, false,
+        );
       }
 
       laneDigest = await getDigest();

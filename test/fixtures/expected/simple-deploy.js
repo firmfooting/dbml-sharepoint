@@ -752,6 +752,49 @@
   // too, and a caller that omits it is treated as managed.
   const UNMANAGED = "__dbmlsp_unmanaged__";
 
+  // List titles whose built-in Title this run unsealed so it could write
+  // the patch. PROTECTION re-seals exactly these and nothing else: the
+  // tool does not own Title's seal state, so it must hand back what it
+  // found rather than leaving open a column it opened. The column is
+  // always 'Title', so the list title is the whole key.
+  const titlesUnsealedForRun = new Set();
+
+  // The ONE constructor for the synthetic Title field. Title is not a
+  // declared column — it arrives as list.title_patch — so every consumer of
+  // a declared field has to synthesise one, and this object existed twice,
+  // hand-maintained, in two files. Both copies were wrong, differently:
+  //
+  //   - both omitted `seal`, so `actual.Sealed && !field.seal` read a sealed
+  //     built-in Title as an impostor and aborted the list in preflight;
+  //   - the UNMANAGED sentinel fix landed on the _lists.js.j2 copy only, so
+  //     the copy here still declared Title's formulas as managed. Harmless
+  //     purely because preflight never calls enforceDeclaredFormulas — the
+  //     first preflight formula check would have reintroduced the shipped
+  //     bug exactly.
+  //
+  // Two hand-maintained copies of one object IS the defect; the divergence
+  // was the symptom. One constructor, one place to be right.
+  function syntheticTitleField(list) {
+    return {
+      title: 'Title',
+      body: { ...list.title_patch, FieldTypeKind: 2 },
+      // Title is not a declared field, so it carries no declared formulas.
+      // All three sentinels are explicit: omitting them made
+      // `undefined !== UNMANAGED` read as "managed", which MERGEd an empty
+      // message onto the built-in Title column and then aborted the phase
+      // on every list, on every run.
+      client_validation_formula: UNMANAGED,
+      validation_formula: UNMANAGED,
+      validation_message: UNMANAGED,
+      // Answers the impostor guard only. The built-in Title exists on every
+      // SharePoint list and can never be a same-named impostor, so a sealed
+      // Title must not fail the shape check. The tool does not own Title's
+      // seal state: the PREPARE unseal opens it only if it is already
+      // sealed, and PROTECTION restores exactly what was found.
+      seal: true,
+    };
+  }
+
   // SharePoint stores a calculated field's Formula in the field schema XML
   // and returns it with XML character entities intact (`<>` reads back as
   // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
@@ -815,10 +858,7 @@
   }
 
   function declaredFieldsForList(list) {
-    const titleField = {
-      title: 'Title',
-      body: { ...list.title_patch, FieldTypeKind: 2 },
-    };
+    const titleField = syntheticTitleField(list);
     const deferred = SCHEMA.phase2_lookups
       .filter(lookup => lookup.list === list.title)
       .map(lookup => lookup.field);
@@ -1607,6 +1647,16 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
+    // The built-in Title is not a declared column, so it was never in this
+    // set — and Phase 1 writes list.title_patch to it. A Title sealed by
+    // anything other than this tool therefore made the run un-completable
+    // and un-repairable: the write failed, and the only maintenance path
+    // that can unseal walked declared columns only. Probed unconditionally
+    // (the loop below writes ONLY if it finds Sealed true), so a normal
+    // site pays one read and nothing changes.
+    for (const list of SCHEMA.lists) {
+      if (list.title_patch) sealDeclared.push([list.title, 'Title']);
+    }
     if (sealDeclared.length > 0) {
       log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
       let unsealedCount = 0;
@@ -1619,6 +1669,10 @@
             const unsealDigest = await getDigest();
             await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
             unsealedCount += 1;
+            // Record only the built-in Title: declared columns are re-sealed
+            // from their own declaration, but Title's prior state is the only
+            // evidence of what it should go back to.
+            if (columnTitle === 'Title') titlesUnsealedForRun.add(listTitle);
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
@@ -1801,19 +1855,9 @@
       }
 
       if (list.title_patch) {
-        const titleField = {
-          title: 'Title',
-          body: { ...list.title_patch, FieldTypeKind: 2 },
-          // Synthetic caller: Title is not a declared field, so it carries
-          // no declared formulas. Both sentinels are explicit — omitting
-          // them made `undefined !== UNMANAGED` read as "managed", which
-          // MERGEd an empty message onto the built-in Title column and then
-          // aborted the phase on every list, every run.
-          client_validation_formula: UNMANAGED,
-          validation_formula: UNMANAGED,
-          validation_message: UNMANAGED,
-        };
-        await reconcileDeclaredField(list.title, titleField, null, laneDigest, false);
+        await reconcileDeclaredField(
+          list.title, syntheticTitleField(list), null, laneDigest, false,
+        );
       }
 
       laneDigest = await getDigest();
@@ -2294,6 +2338,12 @@
     }
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
+    }
+    // Hand back exactly the built-in Titles PREPARE opened, and only
+    // those. The tool does not own Title's seal state, so it neither seals
+    // one it found unsealed nor leaves one it unsealed to write.
+    for (const listTitle of titlesUnsealedForRun) {
+      sealDeclared.push([listTitle, 'Title']);
     }
     let sealedCount = 0;
     // One lane per list (field MERGEs on the same list race into save
