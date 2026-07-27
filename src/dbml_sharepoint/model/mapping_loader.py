@@ -225,11 +225,14 @@ class FormFormatting:
 class ListValidation:
     """Declared SP list validation (ValidationFormula/ValidationMessage).
 
-    Authored with INTERNAL column names; jsgen rewrites references to
-    display names (SP resolves validation formulas by display, like
-    calculated formulas)."""
+    Cross-column: unlike `column_validation`, the condition may name any
+    column on the list. Authored as a condition tree — the raw `formula:`
+    key is gone, because it was the last surface where an author wrote
+    SharePoint syntax by hand and so the last place the quoting and
+    operator differences between the targets could bite them.
+    """
 
-    formula: str
+    when: "Condition"
     message: str
 
 
@@ -361,11 +364,9 @@ class Mapping:
     list_validation: dict[str, ListValidation] = field(default_factory=dict)
     # {entity: [columns]} hidden from NEW and EDIT forms (display form keeps
     # them for audit). For auto-stamped columns with declared defaults.
-    hidden_on_forms: dict[str, list[str]] = field(default_factory=dict)
     # {entity: [columns]} hidden from the DISPLAY form too — for system
     # scores that belong in views, not on the item form. Calculated columns
     # are valid here (they render on display, never on new/edit).
-    hidden_on_display: dict[str, list[str]] = field(default_factory=dict)
     # UI hardening (friction, not enforcement — site admins can undo via
     # API): seal every deployed column (blocks UI schema edits even for
     # admins; the deployer unseals for its own runs) and block UI deletion
@@ -523,6 +524,17 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
                 expanded = _load_json_value(base_dir, cf_value, cf_ctx)
             column_formatting.setdefault(cf_entity, {})[cf_col] = expanded
 
+    for removed, replacement in (
+        ("hidden_on_forms", "form_visibility, e.g. `Column: hidden`"),
+        (
+            "hidden_on_display",
+            "nothing — it never worked on modern lists, which read ShowInEditForm and "
+            "ignore ShowInDisplayForm; hide from the Edit form instead",
+        ),
+    ):
+        if removed in raw:
+            raise ValueError(f"{removed!r} has been replaced by {replacement}")
+
     mapping = Mapping(
         prefix=raw["prefix"],
         prefix_owner=raw.get("prefix_owner", ""),
@@ -580,14 +592,6 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         list_validation={
             entity: _parse_list_validation(rule, f"list_validation.{entity}")
             for entity, rule in (raw.get("list_validation") or {}).items()
-        },
-        hidden_on_forms={
-            entity: [str(col) for col in (cols or [])]
-            for entity, cols in (raw.get("hidden_on_forms") or {}).items()
-        },
-        hidden_on_display={
-            entity: [str(col) for col in (cols or [])]
-            for entity, cols in (raw.get("hidden_on_display") or {}).items()
         },
         seal_columns=_optional_bool(raw, "seal_columns", "mapping"),
         prevent_list_deletion=_optional_bool(raw, "prevent_list_deletion", "mapping"),
@@ -682,14 +686,22 @@ def _load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]
 
 def _parse_list_validation(rule: Any, context: str) -> ListValidation:
     if not isinstance(rule, dict):
-        raise ValueError(f"{context}: expected a mapping with formula and message")
-    formula = rule.get("formula")
-    message = rule.get("message")
-    if not formula:
-        raise ValueError(f"{context}: 'formula' is required")
-    if not message:
-        raise ValueError(f"{context}: 'message' is required")
-    return ListValidation(formula=str(formula), message=str(message))
+        raise ValueError(f"{context}: expected a mapping with 'when' and 'message'")
+    unknown = set(rule) - {"when", "message"}
+    if "formula" in unknown:
+        raise ValueError(
+            f"{context}: 'formula' has been replaced by 'when', which takes a condition "
+            f"tree instead of a SharePoint formula — see the conditions reference",
+        )
+    if unknown:
+        raise ValueError(f"{context}: unknown key(s) {sorted(unknown)}")
+    for key in ("when", "message"):
+        if not rule.get(key):
+            raise ValueError(f"{context}: {key!r} is required")
+    return ListValidation(
+        when=parse_condition(rule["when"], f"{context}.when"),
+        message=str(rule["message"]),
+    )
 
 
 def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormFormatting:

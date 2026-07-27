@@ -183,6 +183,20 @@ _UNSUPPORTED_PROPERTY: dict[str, str] = {
     VALIDATION: "person and lookup operands are unsupported in validation formulas",
 }
 
+# Operand types a target refuses outright. SharePoint validation formulas
+# cannot read a person, a multi-line column or a calculated column, and
+# reject the rule at save — so the build refuses first.
+_FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
+    VALIDATION: {
+        "person": "a person column",
+        "richtext": "a multi-line column",
+        "longtext": "a multi-line column",
+        "calculated_text": "a calculated column",
+        "calculated_number": "a calculated column",
+        "calculated_date": "a calculated column",
+    },
+}
+
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
 _TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
@@ -321,6 +335,10 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     column_type = (
         "number" if leaf.measure == "length" else _column_type(leaf.field, types, target, where)
     )
+
+    forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
+    if column_type in forbidden:
+        raise _reject(target, f"{leaf.field!r} is {forbidden[column_type]}", where)
 
     if leaf.op in ("in", "not_in"):
         op = "eq" if leaf.op == "in" else "neq"
@@ -463,6 +481,7 @@ def validate_condition(
     validator import, which would be a cycle.
     """
     problems: list[str] = []
+    already_reported: set[str] = set()
     depth, leaf_count = measure_tree(condition)
     if depth > MAX_DEPTH:
         problems.append(f"{context}: nested {depth} groups deep; the limit is {MAX_DEPTH}")
@@ -483,13 +502,23 @@ def validate_condition(
                 f"known operators: {', '.join(sorted(NEGATION))}",
             )
             continue
-        problems.extend(_operand_problems(leaf, where, types=types, lookups=lookups))
+        operand = _operand_problems(leaf, where, types=types, lookups=lookups)
+        lookup_problem = _lookup_problem(leaf, where, target, lookups)
+        if lookup_problem:
+            operand.append(lookup_problem)
+        if operand:
+            # Rendering a leaf whose operands are already wrong would report
+            # the same fault twice in different words — but only THAT leaf is
+            # suppressed, so one bad operand cannot mask every other fault in
+            # the tree.
+            problems.extend(operand)
+            already_reported.add(leaf.field)
 
-    if problems:
-        # Rendering a leaf whose operands are already wrong would report the
-        # same fault twice in different words.
-        return problems
-    return _render_problems(condition, target, types, context)
+    for leaf in leaves(normalise(condition)):
+        if leaf.field in already_reported or leaf.field not in rendered:
+            continue
+        problems.extend(_render_problems(leaf, target, types, context))
+    return _dedupe(problems)
 
 
 def _operand_problems(
@@ -519,20 +548,31 @@ def _operand_problems(
     return problems
 
 
+def _lookup_problem(leaf: Leaf, where: str, target: str, lookups: set[str]) -> str | None:
+    """Lookups are int-typed in DBML, so the type map alone cannot see them."""
+    if target == VALIDATION and leaf.field in lookups:
+        return f"{where}: {leaf.field!r} is a lookup column, unsupported in validation formulas"
+    return None
+
+
 def _render_problems(
-    condition: Condition, target: str, types: dict[str, str], context: str,
+    leaf: Leaf, target: str, types: dict[str, str], context: str,
 ) -> list[str]:
     """Reuse the renderer as the capability oracle, one leaf at a time, so a
     second copy of the capability rules cannot drift from the first."""
-    problems: list[str] = []
-    for leaf in leaves(normalise(condition)):
-        try:
-            _RENDERERS[target](leaf, types)
-        except ValueError as exc:
-            message = str(exc).replace("conditions.", f"{context}.", 1)
-            if message not in problems:
-                problems.append(message)
-    return problems
+    try:
+        _RENDERERS[target](leaf, types)
+    except ValueError as exc:
+        return [str(exc).replace("conditions.", f"{context}.", 1)]
+    return []
+
+
+def _dedupe(messages: list[str]) -> list[str]:
+    seen: list[str] = []
+    for message in messages:
+        if message not in seen:
+            seen.append(message)
+    return seen
 
 
 def describe(node: Condition) -> str:

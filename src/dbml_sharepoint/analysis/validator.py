@@ -8,6 +8,7 @@ from typing import Literal
 from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,
+    VALIDATION,
     validate_condition,
 )
 from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS, BUILT_IN_LEVELS
@@ -777,103 +778,20 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
             ))
             continue
         ctx = f"list_validation[{entity_name}]"
-        if not rule.formula.startswith("="):
-            findings.append(Finding(
-                "error", f"{ctx}: formula must start with '='.",
-            ))
-        if len(rule.formula) > 1024 or len(rule.message) > 1024:
-            findings.append(Finding(
-                "error", f"{ctx}: formula and message must be ≤1024 characters.",
-            ))
+        if len(rule.message) > 1024:
+            findings.append(Finding("error", f"{ctx}: message must be ≤1024 characters."))
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(rule_table, xcols) | {"Title"}
-        cols_by_name = {c.name: c for c in rule_table.columns}
-        for ref in sorted(formula_column_refs(rule.formula)):
-            if ref not in rendered:
-                findings.append(Finding(
-                    "error",
-                    f"{ctx}: formula references [{ref}], which is not a "
-                    f"rendered column of {entity_name}.",
-                ))
-                continue
-            col = cols_by_name.get(ref)
-            if col is None:
-                continue
-            if col.type in CALCULATED_TYPES:
-                findings.append(Finding(
-                    "error",
-                    f"{ctx}: formula references [{ref}], a calculated column "
-                    f"— SP validation formulas cannot reference calculated "
-                    f"columns.",
-                ))
-            elif col.type in _VALIDATION_FORBIDDEN_TYPES:
-                findings.append(Finding(
-                    "error",
-                    f"{ctx}: formula references [{ref}], "
-                    f"{_VALIDATION_FORBIDDEN_TYPES[col.type]} — unsupported "
-                    f"in SP validation formulas.",
-                ))
-            elif col.ref is not None:
-                findings.append(Finding(
-                    "error",
-                    f"{ctx}: formula references [{ref}], a lookup column — "
-                    f"unsupported in SP validation formulas.",
-                ))
-
-    # Hidden form fields: rendered non-calculated columns only; hiding a
-    # required column with no default would block every save.
-    for entity_name, hidden_cols in bundle.mapping.hidden_on_forms.items():
-        hidden_table = tables_by_name.get(entity_name)
-        if hidden_table is None or entity_name not in bundle.mapping.entities:
-            findings.append(Finding(
-                "error", f"hidden_on_forms[{entity_name}]: unknown entity.",
-            ))
-            continue
-        xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(hidden_table, xcols)
-        cols_by_name = {c.name: c for c in hidden_table.columns}
-        for col_name in hidden_cols:
-            ctx = f"hidden_on_forms[{entity_name}]"
-            if col_name not in rendered:
-                findings.append(Finding(
-                    "error",
-                    f"{ctx}: {col_name!r} is not a rendered column of "
-                    f"{entity_name}.",
-                ))
-                continue
-            col = cols_by_name.get(col_name)
-            if col is not None and col.type in CALCULATED_TYPES:
-                findings.append(Finding(
-                    "error",
-                    f"{ctx}: {col_name!r} is a calculated column — never on "
-                    f"entry forms; declaring it hidden is a mistake.",
-                ))
-            elif col is not None and col.required and col.default is None:
-                findings.append(Finding(
-                    "warning",
-                    f"{ctx}: {col_name!r} is required with no declared "
-                    f"default — hiding it from forms would block every save.",
-                ))
-
-    # Hidden display-form fields: rendered columns only. Calculated columns
-    # ARE valid here — they render on the display form (unlike new/edit,
-    # where SP never shows them, hence hidden_on_forms rejects them).
-    for entity_name, hidden_cols in bundle.mapping.hidden_on_display.items():
-        hidden_table = tables_by_name.get(entity_name)
-        if hidden_table is None or entity_name not in bundle.mapping.entities:
-            findings.append(Finding(
-                "error", f"hidden_on_display[{entity_name}]: unknown entity.",
-            ))
-            continue
-        xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(hidden_table, xcols)
-        for col_name in hidden_cols:
-            if col_name not in rendered:
-                findings.append(Finding(
-                    "error",
-                    f"hidden_on_display[{entity_name}]: {col_name!r} is not "
-                    f"a rendered column of {entity_name}.",
-                ))
+        findings.extend(
+            Finding("error", message)
+            for message in validate_condition(
+                rule.when,
+                target=VALIDATION,
+                rendered=_rendered_columns(rule_table, xcols) | {"Title"},
+                types={c.name: c.type for c in rule_table.columns},
+                lookups={c.name for c in rule_table.columns if c.ref is not None},
+                context=f"{ctx}.when",
+            )
+        )
 
     # Display names: overrides must target rendered columns, and the resolved
     # display titles (auto + overrides) must be non-empty, within SharePoint's

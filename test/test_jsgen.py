@@ -1964,7 +1964,11 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         "  mode: auto\n"
         "list_validation:\n"
         "  Risk:\n"
-        "    formula: '=IF([Status]=\"Closed\",NOT(ISBLANK([ClosureNote])),TRUE)'\n"
+        "    when:\n"
+        "      any_of:\n"
+        "        - none_of:\n"
+        "            - { field: Status, op: eq, value: Closed }\n"
+        "        - { field: ClosureNote, op: is_not_null }\n"
         "    message: Closing needs a closure note.\n",
         encoding="utf-8",
     )
@@ -1974,8 +1978,12 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         lst for lst in build_schema_json(schema, bundle, "default")["lists"]
         if lst["title"] == "APP_Risk"
     )
+    # The implication "if closed then a closure note" as the grammar spells
+    # it — any_of[none_of[antecedent], consequent] — with the null arm the
+    # negation adds so blank rows are not silently excluded, and internal
+    # names rewritten to display names, which is what SP resolves against.
     assert risk["validation_formula"] == (
-        '=IF([Status]="Closed",NOT(ISBLANK([Closure Note])),TRUE)'
+        '=OR(OR(ISBLANK([Status]),[Status]<>"Closed"),NOT(ISBLANK([Closure Note])))'
     )
     assert risk["validation_message"] == "Closing needs a closure note."
 
@@ -2006,57 +2014,6 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         "await reconcileListValidation(list",
     )
 
-
-def test_hidden_on_forms_flows_to_schema_and_template(tmp_path: Path) -> None:
-    from dbml_sharepoint.generators.jsgen import build_schema_json
-
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Stamp nvarchar [default: 'x']\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "hidden_on_forms:\n"
-        "  Risk: [Stamp]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
-        if lst["title"] == "APP_Risk"
-    )
-    flags = {f["title"]: f["hide_on_forms"] for f in risk["fields_phase1"]}
-    assert flags == {"Stamp": True}
-
-    js = generate_deploy_js(
-        schema=schema, bundle=bundle,
-        release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test",
-        site_role="default",
-        source_dbml="s.dbml",
-        source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
-    )
-    assert "async function enforceFormVisibility" in js
-    assert "setshowinnewform" in js
-    assert "setshowineditform" in js
-    assert "field.hide_on_forms" in js
-    assert "did not retain form visibility" in js
-    # ShowInNewForm/ShowInEditForm are NOT projected by the REST field
-    # resource ($select returns neither — seen live as `undefined`); the
-    # readable source of truth is the SchemaXml attribute, absent = shown.
-    assert "$select=SchemaXml" in js
-    assert 'ShowInNewForm="FALSE"' in js
-    assert 'ShowInEditForm="FALSE"' in js
-    assert "$select=ShowInNewForm" not in js
 
 
 def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
@@ -2169,55 +2126,6 @@ def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:
     assert "AllowDeletion: false" in js
     assert "did not retain AllowDeletion" in js
 
-
-def test_hidden_on_display_flows_to_schema_and_template(tmp_path: Path) -> None:
-    """The register use case: CALCULATED system scores hidden from the display
-    form. The flag must ride the field into deploy.js and the template must
-    carry the display setter."""
-    from dbml_sharepoint.generators.jsgen import build_schema_json
-
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Score calculated_number\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "hidden_on_display:\n"
-        "  Risk: [Score]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
-        if lst["title"] == "APP_Risk"
-    )
-    flags = {f["title"]: f["hide_on_display"] for f in risk["fields_phase1"]}
-    assert flags["Score"] is True
-    assert all(v is False for t, v in flags.items() if t != "Score")
-
-    js = generate_deploy_js(
-        schema=schema, bundle=bundle,
-        release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test",
-        site_role="default",
-        source_dbml="s.dbml",
-        source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
-    )
-    assert "setshowindisplayform" in js
-    assert "field.hide_on_display" in js
-    assert "ShowInDisplayForm" in js
 
 
 def test_view_existence_check_enumerates_per_list(tmp_path: Path) -> None:

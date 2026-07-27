@@ -164,3 +164,22 @@ def test_bad_reconcile_mode_is_rejected(tmp_path: object) -> None:
         _load(tmp_path, (
             "form_visibility:\n  Escalation:\n    reconcile: sometimes\n    columns: {}\n"
         ))
+
+
+def test_removed_sections_fail_loudly(tmp_path: object) -> None:
+    """The loader ignores unknown top-level keys, so deleting these
+    silently would leave a mapping that builds clean and quietly makes
+    every declared column visible."""
+    for removed in ("hidden_on_forms", "hidden_on_display"):
+        with pytest.raises(ValueError, match=f"{removed!r} has been replaced"):
+            _load(tmp_path, f"{removed}:\n  Escalation: [Note]\n")
+
+
+def test_list_validation_formula_key_names_its_replacement(tmp_path: object) -> None:
+    with pytest.raises(ValueError, match="'formula' has been replaced by 'when'"):
+        _load(tmp_path, (
+            "list_validation:\n"
+            "  Escalation:\n"
+            "    formula: '=TRUE'\n"
+            "    message: nope\n"
+        ))

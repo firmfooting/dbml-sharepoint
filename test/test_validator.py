@@ -1168,10 +1168,12 @@ def test_list_validation_rules_validated(tmp_path: Path) -> None:
         tmp_path,
         "list_validation:\n"
         "  Widget:\n"
-        "    formula: '=TRUE'\n"
+        "    when:\n"
+        "      - { field: Title, op: is_not_null }\n"
         "    message: x\n"
         "  Project:\n"
-        "    formula: '=IF([Ghost]=\"x\",TRUE,[DueDate]>[SortOrder])'\n"
+        "    when:\n"
+        "      - { field: Ghost, op: eq, value: x }\n"
         "    message: x\n",
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
@@ -1201,7 +1203,9 @@ def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> Non
         "    Score: '=1'\n"
         "list_validation:\n"
         "  Risk:\n"
-        "    formula: '=IF([Score]>0,NOT(ISBLANK([Owner])),TRUE)'\n"
+        "    when:\n"
+        "      - { field: Score, op: gt, value: 0 }\n"
+        "      - { field: Owner, op: is_not_null }\n"
         "    message: x\n",
         encoding="utf-8",
     )
@@ -1212,77 +1216,6 @@ def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> Non
     assert any("Owner" in f.message and "person" in f.message.lower() for f in errors)
 
 
-def test_hidden_on_forms_validated(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Stamp nvarchar [default: 'x']\n"
-        "  MustFill nvarchar [not null]\n"
-        "  Score calculated_number\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "hidden_on_forms:\n"
-        "  Widget: [Anything]\n"
-        "  Risk: [Ghost, Score, MustFill, Stamp]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    findings = validate_against_mapping(schema, bundle)
-    errors = [f for f in findings if f.severity == "error"]
-    warnings = [f for f in findings if f.severity == "warning"]
-    assert any("Widget" in f.message and "hidden_on_forms" in f.message for f in errors)
-    assert any("Ghost" in f.message for f in errors)
-    assert any("Score" in f.message and "calculated" in f.message.lower() for f in errors)
-    # Required without a default would block every save — warn loudly.
-    assert any("MustFill" in f.message and "required" in f.message.lower() for f in warnings)
-    assert not any("Stamp" in f.message for f in errors + warnings)
-
-
-def test_hidden_on_display_validated(tmp_path: Path) -> None:
-    """Display-form hiding accepts CALCULATED columns (they render on the
-    display form, unlike new/edit where SP never shows them) but still
-    rejects unknown entities and unrendered columns."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Stamp nvarchar [default: 'x']\n"
-        "  Score calculated_number\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "hidden_on_display:\n"
-        "  Widget: [Anything]\n"
-        "  Risk: [Ghost, Score, Stamp]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    findings = validate_against_mapping(schema, bundle)
-    errors = [f for f in findings if f.severity == "error"]
-    assert any("Widget" in f.message and "hidden_on_display" in f.message for f in errors)
-    assert any("Ghost" in f.message and "hidden_on_display" in f.message for f in errors)
-    assert not any("Score" in f.message for f in errors)
-    assert not any("Stamp" in f.message for f in errors)
 
 
 def test_today_offset_valid_on_calculated_date(tmp_path: Path) -> None:

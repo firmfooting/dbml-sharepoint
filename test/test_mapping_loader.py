@@ -872,31 +872,29 @@ def test_list_validation_parsed(tmp_path: Path) -> None:
         _views_yaml(
             "list_validation:\n"
             "  Project:\n"
-            "    formula: '=IF([Status]==\"Closed\",NOT(ISBLANK([Title])),TRUE)'\n"
+            "    when:\n"
+            "      any_of:\n"
+            "        - none_of:\n"
+            "            - { field: Status, op: eq, value: Closed }\n"
+            "        - { field: Title, op: is_not_null }\n"
             "    message: Closing needs a title.\n",
         ),
         encoding="utf-8",
     )
     rule = load_mapping(tmp_path / "m.yaml").mapping.list_validation["Project"]
-    assert rule.formula.startswith("=IF")
+    assert rule.when is not None
     assert rule.message == "Closing needs a title."
 
     (tmp_path / "m2.yaml").write_text(
-        _views_yaml("list_validation:\n  Project:\n    formula: '=TRUE'\n"),
+        _views_yaml(
+            "list_validation:\n  Project:\n"
+            "    when:\n      - { field: Title, op: is_not_null }\n",
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="message"):
         load_mapping(tmp_path / "m2.yaml")
 
-
-def test_hidden_on_forms_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("hidden_on_forms:\n  Project: [SortOrder, Status]\n"),
-        encoding="utf-8",
-    )
-    bundle = load_mapping(tmp_path / "m.yaml")
-    assert bundle.mapping.hidden_on_forms == {"Project": ["SortOrder", "Status"]}
-    assert load_mapping(FIXTURES / "calculated-mapping.yaml").mapping.hidden_on_forms == {}
 
 
 def test_hardening_flags_parsed(tmp_path: Path) -> None:
@@ -912,11 +910,3 @@ def test_hardening_flags_parsed(tmp_path: Path) -> None:
     assert off.prevent_list_deletion is False
 
 
-def test_hidden_on_display_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("hidden_on_display:\n  Project: [SortOrder]\n"),
-        encoding="utf-8",
-    )
-    bundle = load_mapping(tmp_path / "m.yaml")
-    assert bundle.mapping.hidden_on_display == {"Project": ["SortOrder"]}
-    assert load_mapping(FIXTURES / "calculated-mapping.yaml").mapping.hidden_on_display == {}

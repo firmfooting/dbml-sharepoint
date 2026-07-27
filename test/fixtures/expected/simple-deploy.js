@@ -553,12 +553,13 @@
               "type": "SP.FieldChoice"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": "{\"$schema\":\"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json\",\"attributes\":{\"class\":\"=if(@currentField == \u0027Open\u0027, \u0027sp-css-backgroundColor-BgLightBlue\u0027, \u0027sp-css-backgroundColor-BgMintGreen\u0027)\"},\"elmType\":\"div\",\"txtContent\":\"@currentField\"}",
           "display_title": "Status",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "seal": false,
-          "title": "Status"
+          "title": "Status",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         },
         {
           "body": {
@@ -570,12 +571,13 @@
               "type": "SP.FieldNumber"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
           "display_title": "Sort Order",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "seal": false,
-          "title": "SortOrder"
+          "title": "SortOrder",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
       "kind": "List",
@@ -589,7 +591,7 @@
           "type": "SP.FieldText"
         }
       },
-      "validation_formula": "=IF([Status]=\"Closed\",[Sort Order]\u003e=0,TRUE)",
+      "validation_formula": "=OR(OR(ISBLANK([Status]),[Status]\u003c\u003e\"Closed\"),[Sort Order]\u003e=0)",
       "validation_message": "A closed project needs a non-negative sort order."
     },
     {
@@ -609,10 +611,9 @@
               "type": "SP.FieldLookup"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
           "display_title": "Project",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "lookup_creation_parameters": {
             "FieldTypeKind": 7,
             "LookupFieldName": "Title",
@@ -624,7 +625,9 @@
           },
           "seal": false,
           "target_list": "APP_Project",
-          "title": "Project"
+          "title": "Project",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         },
         {
           "body": {
@@ -636,12 +639,13 @@
               "type": "SP.FieldDateTime"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
           "display_title": "Due Date",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "seal": false,
-          "title": "DueDate"
+          "title": "DueDate",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
       "kind": "List",

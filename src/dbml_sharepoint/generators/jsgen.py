@@ -6,7 +6,12 @@ import re
 from pathlib import Path
 from typing import Any
 
-from dbml_sharepoint.analysis.conditions import SYSTEM_COLUMN_TYPES, to_caml
+from dbml_sharepoint.analysis.conditions import (
+    SYSTEM_COLUMN_TYPES,
+    to_caml,
+    to_validation,
+)
+from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import base_permissions_to_high_low
 from dbml_sharepoint.analysis.phases import phases_context
@@ -14,7 +19,10 @@ from dbml_sharepoint.analysis.typemap import format_description, map_column
 from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
 from dbml_sharepoint.model.mapping_loader import (
+    ColumnValidation,
     EntityMapping,
+    EntitySection,
+    FormVisibility,
     MappingBundle,
     ViewDef,
     view_url_slug,
@@ -110,6 +118,43 @@ def _rewrite_formula_refs(formula: str, display_by_col: dict[str, str]) -> str:
 
 # CAML fragments for the declared-view DSL. Operators/columns are validated
 # at build time (validate_against_mapping), so rendering can be direct.
+
+# `declared` reconcile leaves an undeclared column alone, which is not the
+# same as clearing it; the deploy script must be able to tell them apart.
+UNMANAGED = "__dbmlsp_unmanaged__"
+
+
+def _visibility_formula(
+    section: "EntitySection[FormVisibility] | None", column: str, types: dict[str, str],
+) -> str:
+    """The composed formula for a column, "" to clear it, or UNMANAGED.
+
+    Under `reconcile: exact` an undeclared column is cleared rather than
+    left alone, so deployed state follows the declaration rather than the
+    history of edits to it.
+    """
+    if section is None:
+        return UNMANAGED
+    declared = section.columns.get(column)
+    if declared is None:
+        return "" if section.reconcile == "exact" else UNMANAGED
+    return compose_visibility(
+        new=declared.new, existing=declared.existing, when=declared.when, types=types,
+    )
+
+
+def _column_validation(
+    section: "EntitySection[ColumnValidation] | None", column: str, types: dict[str, str],
+) -> tuple[str, str]:
+    if section is None:
+        return (UNMANAGED, UNMANAGED)
+    declared = section.columns.get(column)
+    if declared is None:
+        return ("", "") if section.reconcile == "exact" else (UNMANAGED, UNMANAGED)
+    return (f"={to_validation(declared.when, types)}", declared.message)
+
+
+
 def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
     """Render a declared view's ViewQuery inner XML: <GroupBy>, then <Where>
     from the shared condition grammar, then <OrderBy> (ascending is CAML's
@@ -308,12 +353,22 @@ def build_schema_json(
             for f in fields_phase1
         }
         table_formatting = bundle.mapping.column_formatting.get(table_name, {})
-        hidden_cols = set(bundle.mapping.hidden_on_forms.get(table_name, []))
-        hidden_display_cols = set(bundle.mapping.hidden_on_display.get(table_name, []))
+        # form_visibility carries per-column visibility as a composed
+        # ClientValidationFormula. SchemaXml ShowIn*Form is no longer
+        # written: saving the form designer migrates it into
+        # FieldLink.Hidden, which hides a column from EVERY form and
+        # cannot be undone over REST.
+        visibility = bundle.mapping.form_visibility.get(table_name)
+        validation = bundle.mapping.column_validation.get(table_name)
+        col_types = {c.name: c.type for c in table.columns}
         for f in fields_phase1:
             f["display_title"] = display_map[f["title"]]
-            f["hide_on_forms"] = f["title"] in hidden_cols
-            f["hide_on_display"] = f["title"] in hidden_display_cols
+            f["client_validation_formula"] = _visibility_formula(
+                visibility, f["title"], col_types,
+            )
+            f["validation_formula"], f["validation_message"] = _column_validation(
+                validation, f["title"], col_types,
+            )
             f["seal"] = bundle.mapping.seal_columns
             if "Formula" in f["body"]:
                 f["body"]["Formula"] = _rewrite_formula_refs(f["body"]["Formula"], display_map)
@@ -334,12 +389,13 @@ def build_schema_json(
                     if deferred_formatter is not None
                     else None
                 )
-                deferred["field"]["hide_on_forms"] = (
-                    deferred["field"]["title"] in hidden_cols
+                deferred["field"]["client_validation_formula"] = _visibility_formula(
+                    visibility, deferred["field"]["title"], col_types,
                 )
-                deferred["field"]["hide_on_display"] = (
-                    deferred["field"]["title"] in hidden_display_cols
-                )
+                (
+                    deferred["field"]["validation_formula"],
+                    deferred["field"]["validation_message"],
+                ) = _column_validation(validation, deferred["field"]["title"], col_types)
                 deferred["field"]["seal"] = bundle.mapping.seal_columns
 
         if title_patch is None:
@@ -365,7 +421,12 @@ def build_schema_json(
             "fields_phase1": fields_phase1,
             "title_patch": title_patch,
             "validation_formula": (
-                _rewrite_formula_refs(declared_validation.formula, display_map)
+                # SP resolves validation formulas by DISPLAY name, like
+                # calculated formulas, so names are rewritten after the
+                # grammar renders them.
+                _rewrite_formula_refs(
+                    f"={to_validation(declared_validation.when, col_types)}", display_map,
+                )
                 if declared_validation is not None
                 else None
             ),
