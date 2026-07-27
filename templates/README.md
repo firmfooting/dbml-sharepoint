@@ -63,6 +63,7 @@ your own schema for the worst ones → define how you'll know it worked
 | Template | Process | Highlights |
 |---|---|---|
 | [meeting-actions](meeting-actions/) | Meetings, decisions, actions | The fastest payback in the library — deploy before your next meeting |
+| [tiered-huddle](tiered-huddle/) | Daily tiered huddle boards + escalation | The wall chart, live — one row per day per tier, one column per stream, and a blank cell that means *unreported*; add or retire a stream without losing history |
 | [onboarding-tracker](onboarding-tracker/) | New-starter coordination | HR + IT + facilities + finance queues from one record |
 | [training-register](training-register/) | Training & certification compliance | Course catalogue + per-person records, expiry tracking |
 | [stakeholder-contacts](stakeholder-contacts/) | External relationships & interactions | CRM-shaped without CRM weight; privacy governance included |
@@ -92,8 +93,10 @@ Work the folders in order: **design** what you're deploying (rename columns,
 prune what you don't need), **configure** it for your site (prefix, security),
 **deploy** it (administrator), **adopt** it (staff), **govern** it (owners).
 
-**Column titles deploy as the internal name.** No template sets
-`display_names:`, so a column declared `ReceivedDate` appears on the form,
+**Column titles deploy as the internal name.** Only `tiered-huddle` sets
+`display_names:` (it has to: the `" (retired)"` suffix a retired column's
+title carries only reaches SharePoint under `mode: auto`). Everywhere else a
+column declared `ReceivedDate` appears on the form,
 in views and in the reporting bundle as exactly `ReceivedDate` — not
 "Received Date". The staff guides write field names in prose ("set the
 received date"), so read those as pointing at the run-together column
@@ -164,15 +167,17 @@ dbml-sharepoint build \
 5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
 6. Create the views listed under **Recommended views** in that DEPLOY.md.
 
-**Recommended views are not deployed — you create them.** No template
-declares a `views:` block, so a fresh deploy gives each list SharePoint's
-default *All Items* view and nothing else. Every "Recommended views" table
-is a specification for views you build in the SharePoint UI (or add to
+**Recommended views are not deployed — you create them.** Only
+`tiered-huddle` declares a `views:` block; everywhere else a fresh deploy
+gives each list SharePoint's default *All Items* view and nothing else, and
+every "Recommended views" table is a specification for views you build in
+the SharePoint UI (or add to
 `mapping.yaml` under [`views:`](../website/docs/reference/mapping.md#views)
-and redeploy, which is the reproducible option). Nothing in a template's
-DEPLOY, STAFF-GUIDE or GOVERNANCE file will work until you have made them —
-so make them before you hand the list to anyone, and treat any document
-that names a view as depending on that step.
+and redeploy, which is the reproducible option). Nothing in such a
+template's DEPLOY, STAFF-GUIDE or GOVERNANCE file will work until you have
+made them — so make them before you hand the list to anyone, and treat any
+document that names a view as depending on that step. A template with a
+`views:` block has no such table: its views arrive with the paste.
 
 ## The shared security model
 
@@ -260,8 +265,11 @@ classes.
 
 - **Prefix** (`mapping.yaml`): pick something short and unique per site —
   two lists with the same internal name cannot coexist.
-- **Columns**: delete what you won't use *before* first deploy; removing a
-  column later is a manual SharePoint operation.
+- **Columns**: delete what you won't use *before* first deploy. Afterwards,
+  deleting the declaration strands a live column the schema no longer knows
+  about — retire it instead, with
+  [`retired_columns:`](../website/docs/reference/mapping.md#retired_columns),
+  which keeps the data and the drift audit intact.
 - **Choices**: edit enum members in `schema.dbml` to your organisation's
   vocabulary now — renaming a choice later strands existing rows on the old
   value.
