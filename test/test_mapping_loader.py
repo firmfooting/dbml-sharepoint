@@ -7,6 +7,7 @@ import pytest
 
 from dbml_sharepoint.model import mapping_loader
 from dbml_sharepoint.model.mapping_loader import (
+    FormVisibility,
     ListPermissionPolicy,
     RetiredColumn,
     load_mapping,
@@ -1592,3 +1593,165 @@ def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="bare-list entries must be column names"):
         load_mapping(tmp_path / "bad-list.yaml")
+
+
+def test_apply_retirement_folds_into_every_target_structure(tmp_path: Path) -> None:
+    """Retirement adds no deploy-time capability: it resolves into the
+    structures deploy.js already implements. The calculated column (Route)
+    is the carve-out — it must NEVER reach form_visibility, which the
+    validator rejects for calculated columns."""
+    (tmp_path / "m.yaml").write_text(
+        _retired_yaml(
+            "display_names:\n"
+            "  mode: auto\n"
+            "  overrides:\n"
+            "    Board:\n"
+            '      OperationsNote: "Ops commentary"\n'
+            "calculated_formulas:\n"
+            "  Board:\n"
+            "    Route: '=[BoardDate]'\n"
+            "views:\n"
+            "  Board:\n"
+            '    - title: "Last 14 days"\n'
+            "      fields: [BoardDate, OperationsStatus, SiteServicesStatus]\n"
+            "      widths: { OperationsStatus: 120, BoardDate: 140 }\n"
+            "retired_columns:\n"
+            "  Board:\n"
+            "    OperationsStatus:\n"
+            "      retired: 2026-09-01\n"
+            "      superseded_by: SiteServicesStatus\n"
+            "    OperationsNote:\n"
+            "      retired: 2026-09-01\n"
+            "      hide_existing: true\n"
+            "    Route:\n"
+            "      retired: 2026-09-01\n",
+        ),
+        encoding="utf-8",
+    )
+
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    # 1. form_visibility — hidden from the New form, but never the
+    #    calculated column, and `declared` so retiring one column does not
+    #    start clearing formulas on every other column of the list.
+    section = mapping.form_visibility["Board"]
+    assert section.reconcile == "declared"
+    assert section.columns["OperationsStatus"] == FormVisibility(new=False, existing=True)
+    # 2. hide_existing additionally hides it from Edit — and so from Display.
+    assert section.columns["OperationsNote"] == FormVisibility(new=False, existing=False)
+    assert "Route" not in section.columns
+    # 3. The suffix composes with the auto name AND with an explicit override.
+    assert mapping.display_name_for("Board", "OperationsStatus") == (
+        "Operations Status (retired)"
+    )
+    assert mapping.display_name_for("Board", "OperationsNote") == (
+        "Ops commentary (retired)"
+    )
+    assert mapping.display_name_for("Board", "Route") == "Route (retired)"
+    # 4. Views lose the retired column from fields and from widths.
+    view = mapping.views["Board"][0]
+    assert view.fields == ["BoardDate", "SiteServicesStatus"]
+    assert view.widths == {"BoardDate": 140}
+    # ...and each removal is recorded for the validator to warn from.
+    assert [(s.column, s.context) for s in mapping.retirement_strips] == [
+        ("OperationsStatus", "views[Board].Last 14 days fields"),
+        ("OperationsStatus", "views[Board].Last 14 days widths"),
+    ]
+    # The authoritative record survives the fold.
+    assert mapping.retired_columns["Board"]["OperationsStatus"].superseded_by == (
+        "SiteServicesStatus"
+    )
+
+
+def test_apply_retirement_replaces_a_declared_form_visibility_entry(
+    tmp_path: Path,
+) -> None:
+    """Retirement owns a retired column's form behaviour outright. A
+    hand-written declaration is replaced rather than merged — a `when`
+    predicate on a column nobody may enter is unreachable, and merging
+    would leave the author's `existing: true` fighting hide_existing. The
+    replacement is recorded so the validator can say so.
+    """
+    (tmp_path / "m.yaml").write_text(
+        _retired_yaml(
+            "form_visibility:\n"
+            "  Board:\n"
+            "    reconcile: exact\n"
+            "    columns:\n"
+            "      OperationsStatus:\n"
+            "        new: true\n"
+            "        existing: true\n"
+            "        when:\n"
+            "          - { field: BoardDate, op: is_not_null }\n"
+            "      Chair: hidden\n"
+            "retired_columns:\n"
+            "  Board:\n"
+            "    OperationsStatus:\n"
+            "      retired: 2026-09-01\n",
+        ),
+        encoding="utf-8",
+    )
+
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    section = mapping.form_visibility["Board"]
+    # The author's reconcile mode is theirs; retirement does not change it.
+    assert section.reconcile == "exact"
+    assert section.columns["OperationsStatus"] == FormVisibility(new=False, existing=True)
+    # An unrelated declaration is untouched.
+    assert section.columns["Chair"] == FormVisibility(new=False, existing=False)
+    assert [(s.column, s.context) for s in mapping.retirement_strips] == [
+        ("OperationsStatus", "form_visibility[Board].columns"),
+    ]
+
+
+def test_apply_retirement_strips_retired_fields_from_form_sections(
+    tmp_path: Path,
+) -> None:
+    """Retirement's contract is that the column leaves the entry
+    experience. A body section that still lists a retired field would rely
+    on SharePoint honouring a hiding formula over an explicit section
+    placement — an interaction untested against live SharePoint, and an
+    inconsistency next to the view and widths strips.
+
+    Only sections[].fields is touched: it is the one shape in the formatter
+    JSON with a known meaning and the one the validator already walks.
+    Every other key is left exactly as authored, and a section left with an
+    empty fields list is KEPT — an empty section is the author's layout to
+    clean up, and dropping it would be a second-order rewrite of their JSON.
+    """
+    (tmp_path / "m.yaml").write_text(
+        _retired_yaml(
+            "form_formatting:\n"
+            "  Board:\n"
+            "    body:\n"
+            "      sections:\n"
+            '        - displayname: "Header"\n'
+            "          fields: [BoardDate, OperationsStatus]\n"
+            '        - displayname: "Streams"\n'
+            "          fields: [OperationsStatus]\n"
+            "      unrelatedKey:\n"
+            '        nested: "left exactly as authored"\n'
+            "retired_columns:\n"
+            "  Board:\n"
+            "    OperationsStatus:\n"
+            "      retired: 2026-09-01\n",
+        ),
+        encoding="utf-8",
+    )
+
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    body = mapping.form_formatting["Board"].body
+    assert body is not None
+    # The retired field is gone; its live sibling survives, in place.
+    assert body["sections"][0] == {"displayname": "Header", "fields": ["BoardDate"]}
+    # A section left with no fields is KEPT, not dropped.
+    assert body["sections"][1] == {"displayname": "Streams", "fields": []}
+    # Nothing else in the formatter JSON is rewritten.
+    assert body["unrelatedKey"] == {"nested": "left exactly as authored"}
+    # Recorded once — a column listed under two sections is one retirement.
+    assert [
+        (s.column, s.context) for s in mapping.retirement_strips
+        if "form_formatting" in s.context
+    ] == [("OperationsStatus", "form_formatting[Board].body sections")]

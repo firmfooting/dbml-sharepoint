@@ -1438,3 +1438,76 @@ def test_calculated_formula_referencing_a_phase_one_column_is_fine() -> None:
     assert [
         f for f in validate_against_mapping(_schema(table), bundle) if f.severity == "error"
     ] == []
+
+
+# --- Retired columns --------------------------------------------------------
+
+
+def test_calculated_formula_pairing_guards_the_retirement_carve_out(
+    tmp_path: Path,
+) -> None:
+    """GUARD. `_apply_retirement` (model/mapping_loader.py) skips the
+    form_visibility fold for calculated columns, and identifies them by
+    their `calculated_formulas` keys — the loader has never seen the DBML
+    and cannot read column types. That is correct ONLY while those keys are
+    exactly the set of `calculated_*` columns.
+
+    Both directions of that pairing are asserted below. If you are here
+    because you relaxed one of them, go and read `_apply_retirement`'s
+    carve-out first: loosening either rule silently lets a calculated
+    column reach form_visibility, where the validator rejects it, making
+    retiring that column an unfixable build error.
+    """
+    # Direction 1: a calculated column with NO formula must error.
+    (tmp_path / "no-formula.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "  Route calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "no-formula.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "no-formula.dbml"),
+        load_mapping(tmp_path / "no-formula.yaml"),
+    )
+    assert any(
+        "Board.Route" in f.message and "has no" in f.message and "formula" in f.message
+        for f in findings if f.severity == "error"
+    )
+
+    # Direction 2: a formula targeting a NON-calculated column must error.
+    (tmp_path / "wrong-target.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "wrong-target.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Board:\n"
+        "    BoardDate: '=1'\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "wrong-target.dbml"),
+        load_mapping(tmp_path / "wrong-target.yaml"),
+    )
+    assert any(
+        "calculated_formulas[Board]" in f.message and "'BoardDate'" in f.message
+        for f in findings if f.severity == "error"
+    )
