@@ -573,18 +573,31 @@ def _column_rows_for_table(
     enum_names: set[str],
     enum_members: dict[str, list[str]],
     cross_site_keys: set[tuple[str, str]],
-) -> list[tuple[str, str, str, str, str, str, str, str]]:
+) -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
     """Plain-text dictionary rows for one table: (column, type, required,
-    unique, default, populated when, save rule, description)."""
+    unique, default, retired, superseded by, populated when, save rule,
+    description).
+
+    Retired columns are still listed, and the generated list queries still
+    select them: history is the entire point of retiring rather than
+    deleting.
+    """
     formulas = bundle.mapping.calculated_formulas.get(table.name, {})
-    rows: list[tuple[str, str, str, str, str, str, str, str]] = []
+    retired = bundle.mapping.retired_columns.get(table.name, {})
+    rows: list[tuple[str, str, str, str, str, str, str, str, str, str]] = []
     for col in table.columns:
         populated, rule = _form_behaviour_cells(table.name, col.name, bundle)
+        spec = retired.get(col.name)
+        # The bare-list declaration form carries no date; "yes" still says
+        # the column is retired.
+        retired_cell = (spec.retired or "yes") if spec is not None else "—"
+        superseded_cell = (spec.superseded_by or "—") if spec is not None else "—"
         if (table.name, col.name) in cross_site_keys:
             rows.append((
                 col.name,
                 "Cross-site reference (extension-expanded at deploy time)",
-                "—", "—", "—", populated, rule,
+                "—", "—", "—",
+                retired_cell, superseded_cell, populated, rule,
                 col.note or "—",
             ))
             continue
@@ -596,6 +609,8 @@ def _column_rows_for_table(
             "yes" if sp.required else "—",
             "yes" if sp.unique else "—",
             str(sp.default) if sp.default is not None else "—",
+            retired_cell,
+            superseded_cell,
             populated,
             rule,
             sp.description or (
@@ -697,17 +712,19 @@ def generate_data_dictionary(
             lines += [_md_cell(table.note), ""]
         lines += [
             "| Column | SharePoint type | Required | Unique | Default | "
-            "Populated when | Save rule | Description |",
-            "|---|---|---|---|---|---|---|---|",
+            "Retired | Superseded by | Populated when | Save rule | Description |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
         for (
-            name, type_cell, required, unique, default, populated, rule, description
+            name, type_cell, required, unique, default,
+            retired, superseded_by, populated, rule, description,
         ) in _column_rows_for_table(
             table, bundle, enum_names, enum_members, cross_site_keys,
         ):
             lines.append(
                 f"| {name} | {_md_cell(type_cell)} | {required} | {unique} | "
-                f"{_md_cell(default)} | {_md_cell(populated)} | {_md_cell(rule)} | "
+                f"{_md_cell(default)} | {retired} | {superseded_by} | "
+                f"{_md_cell(populated)} | {_md_cell(rule)} | "
                 f"{_md_cell(description)} |",
             )
         details: list[str] = []
@@ -758,9 +775,10 @@ def generate_data_dictionary(
 
 def _dictionary_rows(
     schema: Schema, bundle: MappingBundle, site_role: str,
-) -> list[tuple[str, str, str, str, str, str, str, str, str]]:
-    """(list, column, type, required, unique, default, populated when, save
-    rule, description) for every column in the site role, in schema order."""
+) -> list[tuple[str, str, str, str, str, str, str, str, str, str, str]]:
+    """(list, column, type, required, unique, default, retired, superseded
+    by, populated when, save rule, description) for every column in the site
+    role, in schema order."""
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = {
@@ -768,7 +786,7 @@ def _dictionary_rows(
         for xref in bundle.mapping.cross_site_reference_columns
     }
     prefix = bundle.mapping.prefix
-    rows: list[tuple[str, str, str, str, str, str, str, str, str]] = []
+    rows: list[tuple[str, str, str, str, str, str, str, str, str, str, str]] = []
     for table in _tables_for_role(schema, bundle, site_role):
         for row in _column_rows_for_table(
             table, bundle, enum_names, enum_members, cross_site_keys,
@@ -932,6 +950,7 @@ def generate_dictionary_powerquery(
             "(sorted by SortOrder) to surface the data dictionary in the report.",
             "SortOrder = Int64.Type, List = text, Column = text, Type = text, "
             "Required = text, Unique = text, Default = text, "
+            "Retired = text, SupersededBy = text, "
             "PopulatedWhen = text, SaveRule = text, Description = text",
             dd_rows,
         ),
@@ -1035,8 +1054,8 @@ def generate_dictionary_sql(
         _render_sql_values_view(
             f"vw_{prefix}DataDictionary",
             ["SortOrder", "List", "Column", "Type",
-             "Required", "Unique", "Default", "PopulatedWhen", "SaveRule",
-             "Description"],
+             "Required", "Unique", "Default", "Retired", "SupersededBy",
+             "PopulatedWhen", "SaveRule", "Description"],
             dd_rows,
         )
         + "\n"

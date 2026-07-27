@@ -527,8 +527,56 @@ def test_undeclared_columns_read_as_dashes_not_blanks(tmp_path: Path) -> None:
         row = next(ln for ln in doc.splitlines() if ln.startswith(f"| {column} |"))
         return [c.strip() for c in row.split("|")]
 
-    # Columns 6 and 7 are Populated when / Save rule.
-    assert cells("Status")[6] == "—"
-    assert cells("Status")[7] == "—"
-    assert cells("Resolution")[6] != "—"
-    assert cells("Resolution")[7] != "—"
+    # Columns 8 and 9 are Populated when / Save rule (6 and 7 are the
+    # retirement pair, which this mapping declares for nothing).
+    assert cells("Status")[8] == "—"
+    assert cells("Status")[9] == "—"
+    assert cells("Resolution")[8] != "—"
+    assert cells("Resolution")[9] != "—"
+
+
+def _retired() -> tuple[Schema, MappingBundle]:
+    return (
+        parse_dbml(FIXTURES / "retired.dbml"),
+        load_mapping(FIXTURES / "retired-mapping.yaml"),
+    )
+
+
+def test_data_dictionary_documents_retirement() -> None:
+    schema, bundle = _retired()
+    md = generate_data_dictionary(schema, bundle, "default")
+    assert "| Retired | Superseded by |" in md
+    assert "| 2026-09-01 | SiteServicesStatus |" in md
+    # A live column carries the em-dash placeholder, not a blank cell.
+    assert "| SiteServicesStatus | Choice" in md
+
+
+def test_dictionary_powerquery_and_sql_carry_retirement() -> None:
+    schema, bundle = _retired()
+    dd = generate_dictionary_powerquery(schema, bundle, "default")["_DataDictionary.pq"]
+    assert "Retired = text, SupersededBy = text" in dd
+    assert '"2026-09-01", "SiteServicesStatus"' in dd
+    sql = generate_dictionary_sql(schema, bundle, "default")
+    assert "[Retired]" in sql
+    assert "[SupersededBy]" in sql
+    assert "N'2026-09-01'" in sql
+
+
+def test_user_added_columns_still_expects_retired_columns() -> None:
+    """The whole point of retiring rather than deleting: the column stays
+    declared, so the live drift audit must keep expecting it. A row for a
+    retired column would erode the "any row here means investigate"
+    contract on every refresh, forever."""
+    schema, bundle = _retired()
+    q = generate_dictionary_powerquery(schema, bundle, "default")["_UserAddedColumns.pq"]
+    assert '"OperationsStatus"' in q
+    sql = generate_dictionary_sql(schema, bundle, "default")
+    assert "N'OperationsStatus'" in sql
+
+
+def test_powerquery_still_selects_retired_columns() -> None:
+    """History is the entire point; the list query must keep selecting the
+    retired column."""
+    schema, bundle = _retired()
+    q = generate_powerquery(schema, bundle, "default")["APP_Board.pq"]
+    assert "OperationsStatus" in q
