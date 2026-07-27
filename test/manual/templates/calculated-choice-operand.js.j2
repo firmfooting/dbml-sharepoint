@@ -43,11 +43,27 @@
  *       Does an existing formula survive that rename, and can a new one
  *       reference a title containing parentheses at all?
  *
+ *   L1  is a Lookup operand refused in a calculated formula, as N1's
+ *       Person operand is? The refusal message names no type list, so
+ *       Lookup has to be asked rather than assumed.
+ *   P1  a Person column in a COLUMN VALIDATION formula
+ *   L2  a Lookup column in a COLUMN VALIDATION formula
+ *   P2  a Person column in a CONDITIONAL VISIBILITY formula
+ *   L3  a Lookup column in a CONDITIONAL VISIBILITY formula
+ *       analysis/conditions.py forbids person in validation but permits
+ *       lookup there, and permits both in conditional visibility — none of
+ *       it evidenced. A rule that forbids what SharePoint allows is merely
+ *       restrictive; one that PERMITS what SharePoint refuses fails at
+ *       deploy time, part-way through provisioning.
+ *
  *   N1  NEGATIVE CONTROL — is a Person operand refused?
  *
- * FOR A CLEAN RUN, delete the list first if a previous run left one: a
- * column that already exists is reported as PASS "already present", which
- * is weaker evidence than actually creating it.
+ * SECOND LIST: the lookup questions need something to point at, so this
+ * also creates "<list> Target" with one row. CLEANUP removes both.
+ *
+ * FOR A CLEAN RUN set CLEANUP = true: a column that already exists is
+ * reported as "already present", which is weaker evidence than actually
+ * creating it.
  *
  * READ N1 FIRST. It is the only row that establishes this probe can tell
  * acceptance from refusal. If a Person operand is ACCEPTED, the probe is
@@ -59,7 +75,7 @@
  *   3. Edit CONFIRMED and ALLOW_WRITES to true, paste again.
  *   4. Copy the RESULTS block back verbatim.
  *
- * WHEN FINISHED: delete the list it created. Everything lives in it.
+ * WHEN FINISHED: delete both lists it created. Everything lives in them.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -78,7 +94,8 @@
 
   if (!CONFIRMED) {
     log('INFO', `Would create list '${LIST}' on ${WEB}, add Choice, Date and`);
-    log('INFO', 'Person columns, then attempt calculated columns over them');
+    log('INFO', 'Person and Lookup columns (the lookup needs a second list,');
+    log('INFO', `'${LIST} Target'), then attempt calculated columns over them`);
     log('INFO', '(text, number and date results) and read back what was stored.');
     if (CLEANUP) {
       log('INFO', `CLEANUP is ON: '${LIST}' would be RECYCLED first, with its items.`);
@@ -112,11 +129,19 @@
   expect('DAT2', 'Date result computes the offset the Choice selects');
   expect('R1', 'An existing calculated column survives its operand being re-titled "(retired)"');
   expect('R2', 'A NEW calculated column can reference a display name containing "(retired)"');
+  expect('L1', 'A Lookup operand in a CALCULATED formula');
+  expect('P1', 'A Person column in a COLUMN VALIDATION formula');
+  expect('L2', 'A Lookup column in a COLUMN VALIDATION formula');
+  expect('P2', 'A Person column in a CONDITIONAL VISIBILITY formula');
+  expect('L3', 'A Lookup column in a CONDITIONAL VISIBILITY formula');
   expect('N1', 'NEGATIVE CONTROL: a Person operand is refused');
 
-  // Removes a previous run's list so every question below is answered by
+  // Removes a previous run's lists so every question below is answered by
   // actually creating something. No-op unless CLEANUP is on.
+  // Main list FIRST: it holds the lookup column, and SharePoint refuses to
+  // delete a list that a lookup still points at.
   await resetList(LIST);
+  await resetList(`${LIST} Target`);
 
   let digest = await getDigest();
 
@@ -387,6 +412,104 @@
            newRef.ok ? `HTTP ${newRef.status}` : `HTTP ${newRef.status}: ${newRef.text.slice(0, 300)}`);
   }
 
+  // ---- P / L: person and lookup, in all three formula stores ----------
+  // The tool's own rules here are uneven, and none of them were evidenced:
+  //   analysis/conditions.py forbids `person` in a VALIDATION formula but
+  //   permits `lookup` there, and permits BOTH in an EXPRESSION
+  //   (conditional visibility) formula.
+  // A rule that forbids something SharePoint allows is merely restrictive.
+  // A rule that PERMITS something SharePoint refuses fails at deploy time,
+  // part-way through provisioning — so L2, P2 and L3 are the ones that
+  // matter most.
+  const targetList = `${LIST} Target`;
+  let lookupReady = false;
+  const targetProbe = await spGet(`web/lists/getbytitle('${targetList}')`);
+  if (!targetProbe.ok) {
+    digest = await getDigest();
+    await spPost('web/lists', {
+      Title: targetList, BaseTemplate: 100,
+      Description: 'dbml-sharepoint probe lookup target. Safe to delete.',
+    }, digest);
+  }
+  const target = await spGet(`web/lists/getbytitle('${targetList}')`);
+  if (target.ok) {
+    digest = await getDigest();
+    await spPost(`web/lists/getbytitle('${targetList}')/items`, { Title: 'row one' }, digest);
+    if (!(await fieldExists('ProbeLookup'))) {
+      await addField(
+        `<Field Type="Lookup" DisplayName="ProbeLookup" Name="ProbeLookup" ` +
+        `List="{${target.body.Id}}" ShowField="Title"/>`);
+    }
+    lookupReady = await fieldExists('ProbeLookup');
+  }
+
+  // L1 — a Lookup operand in a calculated formula. N1 establishes that a
+  // Person operand is refused, but the error names no type list, so Lookup
+  // has to be asked separately rather than assumed to behave the same.
+  if (!lookupReady) {
+    record('L1', 'A Lookup operand in a CALCULATED formula', 'NOT ESTABLISHED',
+           'the lookup column could not be created');
+  } else if (!(await fieldExists('LookupCalc'))) {
+    const made = await addField(calcXml('LookupCalc', '=[ProbeLookup]&" x"', ['ProbeLookup']));
+    record('L1', 'A Lookup operand in a CALCULATED formula',
+           made.ok ? 'ACCEPTED' : 'REFUSED',
+           made.ok
+             ? `HTTP ${made.status} — SharePoint ALLOWS this; the README says it does not`
+             : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
+  } else {
+    record('L1', 'A Lookup operand in a CALCULATED formula', 'ACCEPTED',
+           'already present from an earlier run');
+  }
+
+  // Both validation stores live on the field and are set by MERGE.
+  // ValidationFormula takes DOUBLE-quoted literals and AND()/OR();
+  // ClientValidationFormula takes SINGLE quotes and &&/|| — established
+  // earlier by form-visibility-evidence-probe.js.
+  const setOnField = async (field, body) => {
+    digest = await getDigest();
+    return spPost(`${fieldsPath}/getbyinternalnameortitle('${field}')`, body, digest,
+                  { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+  };
+  const readBackOf = async (field, prop) => {
+    const r = await spGet(`${fieldsPath}/getbyinternalnameortitle('${field}')?$select=${prop}`);
+    return r.ok ? r.body[prop] : null;
+  };
+
+  const stores = [
+    ['P1', 'A Person column in a COLUMN VALIDATION formula', 'ProbeOwner',
+     { ValidationFormula: '=NOT(ISBLANK([ProbeOwner]))' }, 'ValidationFormula',
+     'the tool FORBIDS this today'],
+    ['L2', 'A Lookup column in a COLUMN VALIDATION formula', 'ProbeLookup',
+     { ValidationFormula: '=NOT(ISBLANK([ProbeLookup]))' }, 'ValidationFormula',
+     'the tool PERMITS this today'],
+    ['P2', 'A Person column in a CONDITIONAL VISIBILITY formula', 'ProbeOwner',
+     { ClientValidationFormula: "=if([$ProbeOwner] != '', 'true', 'false')" },
+     'ClientValidationFormula', 'the tool PERMITS this today'],
+    ['L3', 'A Lookup column in a CONDITIONAL VISIBILITY formula', 'ProbeLookup',
+     { ClientValidationFormula: "=if([$ProbeLookup] != '', 'true', 'false')" },
+     'ClientValidationFormula', 'the tool PERMITS this today'],
+  ];
+  for (const [id, question, field, body, prop, toolStance] of stores) {
+    if (field === 'ProbeLookup' && !lookupReady) {
+      record(id, question, 'NOT ESTABLISHED', 'the lookup column could not be created');
+      continue;
+    }
+    const set = await setOnField(field, body);
+    // A store that accepts the write but discards it is the outcome that
+    // would fool a deploy: read it back rather than trusting HTTP 200.
+    const stored = set.ok ? await readBackOf(field, prop) : null;
+    if (!set.ok) {
+      record(id, question, 'REFUSED',
+             `${toolStance}; HTTP ${set.status}: ${set.text.slice(0, 300)}`);
+    } else if (!stored) {
+      record(id, question, 'ACCEPTED THEN DISCARDED',
+             `${toolStance}; HTTP ${set.status} but ${prop} reads back ${JSON.stringify(stored)}`);
+    } else {
+      record(id, question, 'ACCEPTED',
+             `${toolStance}; stored ${JSON.stringify(stored)}`);
+    }
+  }
+
   // ---- N1: NEGATIVE CONTROL -------------------------------------------
   // A Person operand in a calculated formula is documented as unsupported.
   // If this SUCCEEDS, this probe cannot distinguish acceptance from
@@ -407,5 +530,5 @@
   }
 
   report();
-  log('INFO', `Done. Delete the list '${LIST}' when you have copied the results.`);
+  log('INFO', `Done. Delete '${LIST}' and '${LIST} Target' when you have copied the results.`);
 })();
