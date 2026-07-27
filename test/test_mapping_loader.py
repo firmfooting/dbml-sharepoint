@@ -6,7 +6,11 @@ from pathlib import Path
 import pytest
 
 from dbml_sharepoint.model import mapping_loader
-from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, load_mapping
+from dbml_sharepoint.model.mapping_loader import (
+    ListPermissionPolicy,
+    RetiredColumn,
+    load_mapping,
+)
 
 
 def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
@@ -1508,3 +1512,83 @@ def test_site_role_on_the_default_policy_is_still_accepted(tmp_path: Path) -> No
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert perms.default_policy_site_role == "default"
+
+
+# --- Retired columns --------------------------------------------------------
+
+
+def _retired_yaml(block: str) -> str:
+    return (
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        + block
+    )
+
+
+def test_retired_columns_parse_both_declaration_forms(tmp_path: Path) -> None:
+    """The full mapping form carries the lifecycle facts; the bare list is
+    the minimal case. An unquoted YAML date scalar must normalise to ISO
+    text, not leak a datetime.date into the mapping."""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
+        "retired_columns:\n"
+        "  Board:\n"
+        "    OperationsStatus:\n"
+        "      retired: 2026-09-01\n"
+        "      superseded_by: SiteServicesStatus\n"
+        '      reason: "Merged into Site Services at the September review"\n'
+        "      hide_existing: true\n"
+        "  Escalation: [LegacyRoute]\n",
+        encoding="utf-8",
+    )
+
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    ops = mapping.retired_columns["Board"]["OperationsStatus"]
+    assert ops.column == "OperationsStatus"
+    assert ops.retired == "2026-09-01"
+    assert ops.superseded_by == "SiteServicesStatus"
+    assert ops.reason == "Merged into Site Services at the September review"
+    assert ops.hide_existing is True
+    assert mapping.retired_columns["Escalation"]["LegacyRoute"] == RetiredColumn(
+        column="LegacyRoute",
+    )
+    assert mapping.is_retired("Board", "OperationsStatus") is True
+    assert mapping.is_retired("Board", "SiteServicesStatus") is False
+    assert mapping.is_retired("Nope", "Anything") is False
+
+
+def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
+    """Structural mistakes fail at load with a message naming the exact
+    declaration — the same fail-closed contract as every other section."""
+    header = _retired_yaml("retired_columns:\n  Board:\n")
+    (tmp_path / "no-date.yaml").write_text(
+        header + '    OperationsStatus:\n      reason: "gone"\n', encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"retired_columns\.Board\.OperationsStatus"):
+        load_mapping(tmp_path / "no-date.yaml")
+
+    (tmp_path / "unknown-key.yaml").write_text(
+        header + "    OperationsStatus:\n      retired: 2026-09-01\n      when: soon\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown key"):
+        load_mapping(tmp_path / "unknown-key.yaml")
+
+    (tmp_path / "bad-bool.yaml").write_text(
+        header
+        + "    OperationsStatus:\n      retired: 2026-09-01\n      hide_existing: yep\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="hide_existing must be a boolean"):
+        load_mapping(tmp_path / "bad-bool.yaml")
+
+    (tmp_path / "bad-list.yaml").write_text(
+        _retired_yaml("retired_columns:\n  Board: [123]\n"), encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="bare-list entries must be column names"):
+        load_mapping(tmp_path / "bad-list.yaml")

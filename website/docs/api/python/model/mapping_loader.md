@@ -25,6 +25,12 @@ the mapping's own `extension:` key).
 ENTITY_KINDS = frozenset({'DocumentLibrary', 'HubOnlyList', 'List'})
 ```
 
+### `RETIRED_SUFFIX`
+
+```python
+RETIRED_SUFFIX = ' (retired)'
+```
+
 ### `auto_display_name`
 
 ```python
@@ -250,6 +256,55 @@ key is gone, because it was the last surface where an author wrote
 SharePoint syntax by hand and so the last place the quoting and
 operator differences between the targets could bite them.
 
+### `RetiredColumn`
+
+```python
+@dataclass
+class RetiredColumn:
+    column: str
+    retired: str = ''
+    superseded_by: str | None = None
+    reason: str = ''
+    hide_existing: bool = False
+```
+
+One retired column (mapping `retired_columns:` section).
+
+Retirement is a deployment-lifecycle fact, not a logical-model one: the
+column stays declared in the DBML and keeps its data — deleting the
+declaration would leave a live, deletable column the schema no longer
+knows about, which the generated `_UserAddedColumns.pq` drift audit
+would report forever — but it leaves the New form and every declared
+view, and its display title carries RETIRED_SUFFIX.
+
+`hide_existing` additionally hides it from the Edit form, which on a
+modern list also hides it from the Display form: SharePoint reads
+ShowInEditForm for both and there is no way to separate them (the
+reason the old `hidden_on_display:` section was removed). Default false,
+so the history a retired column exists to preserve stays readable.
+
+`retired` is the declared ISO date; it is "" for the bare-list
+shorthand, which carries no date. Format checking, column existence and
+supersession targets need the schema and live in the validator.
+
+### `RetirementStrip`
+
+```python
+@dataclass
+class RetirementStrip:
+    entity: str
+    column: str
+    context: str
+```
+
+One declared reference to a retired column that `_apply_retirement`
+removed or replaced. The structure no longer carries the reference, so
+the record is kept here for the validator: retirement must never break
+a build, but a stale declaration is worth telling the author about.
+
+`context` is the human-readable declaration site, e.g.
+"views[Tier3Board].Last 14 days fields".
+
 ### `CustomPermissionLevel`
 
 ```python
@@ -361,6 +416,8 @@ class Mapping:
     column_formatting: dict[str, dict[str, dict[str, typing.Any]]] = dict()
     form_formatting: dict[str, dbml_sharepoint.model.mapping_loader.FormFormatting] = dict()
     list_validation: dict[str, dbml_sharepoint.model.mapping_loader.ListValidation] = dict()
+    retired_columns: dict[str, dict[str, dbml_sharepoint.model.mapping_loader.RetiredColumn]] = dict()
+    retirement_strips: list[dbml_sharepoint.model.mapping_loader.RetirementStrip] = list()
     seal_columns: bool = False
     prevent_list_deletion: bool = False
 ```
@@ -381,6 +438,14 @@ PascalCase when mode is auto, else the internal name unchanged.
 ```python
 def entity(self, name: str) -> dbml_sharepoint.model.mapping_loader.EntityMapping
 ```
+
+#### `Mapping.is_retired`
+
+```python
+def is_retired(self, entity_name: str, column_name: str) -> bool
+```
+
+True when `retired_columns` declares this column for this entity.
 
 #### `Mapping.permissions_for_entity`
 

@@ -45,6 +45,13 @@ ENTITY_KINDS: frozenset[str] = frozenset(get_args(EntityKind.__value__))
 _DISPLAY_WORD_BREAK = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
+# Appended to a retired column's display title. Deliberately a constant and
+# not configurable: "retired" must read identically on every list in every
+# template, and the suffixed title participates in the per-entity
+# display-title uniqueness check like any other.
+RETIRED_SUFFIX = " (retired)"
+
+
 def auto_display_name(internal_name: str) -> str:
     """Human-readable display title derived from a PascalCase internal name."""
     return _DISPLAY_WORD_BREAK.sub(" ", internal_name)
@@ -237,6 +244,51 @@ class ListValidation:
 
 
 @dataclass(frozen=True)
+class RetiredColumn:
+    """One retired column (mapping `retired_columns:` section).
+
+    Retirement is a deployment-lifecycle fact, not a logical-model one: the
+    column stays declared in the DBML and keeps its data — deleting the
+    declaration would leave a live, deletable column the schema no longer
+    knows about, which the generated `_UserAddedColumns.pq` drift audit
+    would report forever — but it leaves the New form and every declared
+    view, and its display title carries RETIRED_SUFFIX.
+
+    `hide_existing` additionally hides it from the Edit form, which on a
+    modern list also hides it from the Display form: SharePoint reads
+    ShowInEditForm for both and there is no way to separate them (the
+    reason the old `hidden_on_display:` section was removed). Default false,
+    so the history a retired column exists to preserve stays readable.
+
+    `retired` is the declared ISO date; it is "" for the bare-list
+    shorthand, which carries no date. Format checking, column existence and
+    supersession targets need the schema and live in the validator.
+    """
+
+    column: str
+    retired: str = ""
+    superseded_by: str | None = None
+    reason: str = ""
+    hide_existing: bool = False
+
+
+@dataclass(frozen=True)
+class RetirementStrip:
+    """One declared reference to a retired column that `_apply_retirement`
+    removed or replaced. The structure no longer carries the reference, so
+    the record is kept here for the validator: retirement must never break
+    a build, but a stale declaration is worth telling the author about.
+
+    `context` is the human-readable declaration site, e.g.
+    "views[Tier3Board].Last 14 days fields".
+    """
+
+    entity: str
+    column: str
+    context: str
+
+
+@dataclass(frozen=True)
 class CustomPermissionLevel:
     """A custom permission level to create at the site."""
 
@@ -362,11 +414,16 @@ class Mapping:
     form_formatting: dict[str, FormFormatting] = field(default_factory=dict)
     # {entity: ListValidation} — save-time enforcement. Absent = untouched.
     list_validation: dict[str, ListValidation] = field(default_factory=dict)
-    # {entity: [columns]} hidden from NEW and EDIT forms (display form keeps
-    # them for audit). For auto-stamped columns with declared defaults.
-    # {entity: [columns]} hidden from the DISPLAY form too — for system
-    # scores that belong in views, not on the item form. Calculated columns
-    # are valid here (they render on display, never on new/edit).
+    # {entity: {column: RetiredColumn}} — the authoritative retirement
+    # record. _apply_retirement folds these into form_visibility,
+    # display_name_overrides, each ViewDef and each form body at load time;
+    # the dict itself is retained for the manifest, the data dictionary and
+    # the validator.
+    retired_columns: dict[str, dict[str, RetiredColumn]] = field(default_factory=dict)
+    # References to retired columns that _apply_retirement removed or
+    # replaced, kept so the validator can warn about declarations the fold
+    # silently rewrote.
+    retirement_strips: list[RetirementStrip] = field(default_factory=list)
     # UI hardening (friction, not enforcement — site admins can undo via
     # API): seal every deployed column (blocks UI schema edits even for
     # admins; the deployer unseals for its own runs) and block UI deletion
@@ -381,6 +438,10 @@ class Mapping:
             return column_name
         override = self.display_name_overrides.get(entity_name, {}).get(column_name)
         return override if override is not None else auto_display_name(column_name)
+
+    def is_retired(self, entity_name: str, column_name: str) -> bool:
+        """True when `retired_columns` declares this column for this entity."""
+        return column_name in self.retired_columns.get(entity_name, {})
 
     def entity(self, name: str) -> EntityMapping:
         if name not in self.entities:
@@ -491,6 +552,7 @@ KNOWN_SECTIONS = frozenset({
     "retention_policies_source",
     "extension", "extensions", "calculated_formulas", "views", "display_names",
     "column_formatting", "form_formatting", "list_validation", "form_visibility",
+    "retired_columns",
     "style_theme",
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
     # Permissions are declared as three top-level sections, not one nested
@@ -721,6 +783,10 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             entity: _parse_list_validation(rule, f"list_validation.{entity}")
             for entity, rule in (raw.get("list_validation") or {}).items()
         },
+        retired_columns={
+            entity: _parse_retired_columns(cols, f"retired_columns.{entity}")
+            for entity, cols in (raw.get("retired_columns") or {}).items()
+        },
         seal_columns=_optional_bool(raw, "seal_columns", "mapping"),
         prevent_list_deletion=_optional_bool(raw, "prevent_list_deletion", "mapping"),
     )
@@ -838,6 +904,68 @@ def _parse_list_validation(rule: Any, context: str) -> ListValidation:
         when=parse_condition(rule["when"], f"{context}.when"),
         message=str(rule["message"]),
     )
+
+
+_RETIREMENT_KEYS = frozenset({"retired", "superseded_by", "reason", "hide_existing"})
+
+
+def _parse_retired_columns(raw: Any, context: str) -> dict[str, RetiredColumn]:
+    """Parse one entity's `retired_columns` block.
+
+    Two accepted forms: the bare list shorthand (`[ColA, ColB]`) for the
+    minimal case, and the full mapping form carrying retired /
+    superseded_by / reason / hide_existing. Structural checks only.
+    """
+    if isinstance(raw, list):
+        bare: dict[str, RetiredColumn] = {}
+        for item in raw:
+            if not isinstance(item, str):
+                raise ValueError(
+                    f"{context}: bare-list entries must be column names, "
+                    f"got {type(item).__name__}",
+                )
+            bare[item] = RetiredColumn(column=item)
+        return bare
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"{context}: expected a mapping of column name to retirement "
+            f"details, or a bare list of column names, got "
+            f"{type(raw).__name__}",
+        )
+    parsed: dict[str, RetiredColumn] = {}
+    for col, spec in raw.items():
+        col_ctx = f"{context}.{col}"
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"{col_ctx}: expected a mapping with 'retired' and optional "
+                f"superseded_by / reason / hide_existing, got "
+                f"{type(spec).__name__}",
+            )
+        unknown = set(spec) - _RETIREMENT_KEYS
+        if unknown:
+            raise ValueError(
+                f"{col_ctx}: unknown key(s) {sorted(unknown)} "
+                f"(known: {sorted(_RETIREMENT_KEYS)})",
+            )
+        retired = spec.get("retired")
+        if retired is None:
+            raise ValueError(f"{col_ctx}: 'retired' (an ISO date) is required")
+        hide = spec.get("hide_existing", False)
+        if not isinstance(hide, bool):
+            raise ValueError(
+                f"{col_ctx}.hide_existing must be a boolean, got {hide!r}",
+            )
+        superseded = spec.get("superseded_by")
+        parsed[str(col)] = RetiredColumn(
+            column=str(col),
+            # A YAML date scalar arrives as datetime.date; str() normalises
+            # it back to the ISO text the validator and manifest expect.
+            retired=str(retired),
+            superseded_by=str(superseded) if superseded is not None else None,
+            reason=str(spec.get("reason", "")),
+            hide_existing=hide,
+        )
+    return parsed
 
 
 def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormFormatting:
