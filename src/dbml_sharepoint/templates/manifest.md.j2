@@ -169,6 +169,47 @@ field; columns without a declaration keep any hand-applied format.
 _(none declared)_
 {% endif %}
 
+## Form visibility
+
+{% if form_visibility %}
+{% for fv in form_visibility %}
+- {{ fv.list }}.{{ fv.column }}{% if fv.cleared %} — cleared{% else %}
+  `{{ fv.formula }}`{% endif %}
+
+{% endfor %}
+{% if reconcile_modes %}
+Reconcile: {% for list_title, mode in reconcile_modes.items() %}{{ list_title }} `{{ mode }}`{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+
+Per-form and conditional visibility ride a single field property
+(ClientValidationFormula), so both are composed into the one formula shown.
+"cleared" means the declaration is authoritative for that list and the
+column has no entry, so any existing formula is removed. SchemaXml
+ShowIn*Form is deliberately never written: saving the form designer
+migrates it into FieldLink.Hidden, which hides a column from every form
+and cannot be undone over REST.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## Column validation
+
+{% if column_validation %}
+{% for cv in column_validation %}
+- {{ cv.list }}.{{ cv.column }}{% if cv.cleared %} — cleared{% else %}
+  `{{ cv.formula }}`
+  message: {{ cv.message }}{% endif %}
+
+{% endfor %}
+
+Save-time rules on the field (ValidationFormula/ValidationMessage), a
+different property from the visibility formula above, so the two do not
+interfere. SharePoint normalises these on save, so the deploy compares
+them canonically.
+{% else %}
+_(none declared)_
+{% endif %}
+
 ## Form formatting
 
 {% if form_formatting %}

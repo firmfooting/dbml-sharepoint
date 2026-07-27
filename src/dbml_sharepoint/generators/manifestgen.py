@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.analysis.validator import Finding
 from dbml_sharepoint.extension import ManifestExtras
+from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -50,6 +51,37 @@ def generate_manifest(
         for f in lst["fields_phase1"]
         if f.get("custom_formatter") is not None
     ]
+
+    # Form behaviour, per list. The composed formula is printed in full:
+    # an operator reading the manifest should be able to see what will be
+    # written without inferring it from a declaration two files away.
+    form_visibility = [
+        {
+            "list": lst["title"],
+            "column": f["title"],
+            "formula": f["client_validation_formula"],
+            "cleared": f["client_validation_formula"] == "",
+        }
+        for lst in schema_json["lists"]
+        for f in lst["fields_phase1"]
+        if f.get("client_validation_formula", UNMANAGED) != UNMANAGED
+    ]
+    column_validation = [
+        {
+            "list": lst["title"],
+            "column": f["title"],
+            "formula": f["validation_formula"],
+            "message": f["validation_message"],
+            "cleared": f["validation_formula"] == "",
+        }
+        for lst in schema_json["lists"]
+        for f in lst["fields_phase1"]
+        if f.get("validation_formula", UNMANAGED) != UNMANAGED
+    ]
+    reconcile_modes = {
+        f"{bundle.mapping.prefix}{entity}": section.reconcile
+        for entity, section in bundle.mapping.form_visibility.items()
+    }
 
     def _form_parts(client_formatter: str) -> str:
         keys = list(json.loads(client_formatter))
@@ -115,6 +147,9 @@ def generate_manifest(
         indexed=schema_json["indexed_columns"],
         views=views,
         formatted_columns=formatted_columns,
+        form_visibility=form_visibility,
+        column_validation=column_validation,
+        reconcile_modes=reconcile_modes,
         form_formatting=form_formatting,
         retention=bundle.retention_list_defaults,
         prefix=bundle.mapping.prefix,

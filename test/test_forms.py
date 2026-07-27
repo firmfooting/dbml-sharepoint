@@ -312,3 +312,47 @@ def test_the_sentinel_never_reaches_a_formula_position(tmp_path: object) -> None
     # migration is gone, not merely unreachable.
     assert "setshowinnewform" not in js
     assert "enforceFormVisibility" not in js
+
+
+def test_manifest_shows_the_composed_formula_and_reconcile_mode(tmp_path: object) -> None:
+    """An operator reading the manifest should see what will be written,
+    not have to infer it from a declaration two files away."""
+    from pathlib import Path
+
+    from dbml_sharepoint.generators.manifestgen import generate_manifest
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.release import load_release
+
+    base = Path(str(tmp_path))
+    schema_json = _schema_json(tmp_path, (
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note: { new: false }\n"
+        "column_validation:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Other:\n"
+        "        when:\n"
+        "          - { field: Other, op: is_not_null }\n"
+        "        message: Say something.\n"
+    ))
+    manifest = generate_manifest(
+        schema_json=schema_json,
+        bundle=load_mapping(base / "m.yaml"),
+        release=load_release(Path("test/fixtures") / "release.yaml"),
+        findings=[],
+        site_url="https://example.sharepoint.com/sites/t",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert "## Form visibility" in manifest
+    assert "=if([$ID] != '', 'true', 'false')" in manifest
+    assert "`exact`" in manifest
+    assert "## Column validation" in manifest
+    assert "Say something." in manifest
+    # Undeclared columns under exact are shown as cleared, so the operator
+    # can see what the deploy will remove rather than discovering it live.
+    assert "cleared" in manifest

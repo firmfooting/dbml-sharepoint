@@ -59,6 +59,7 @@ KNOWN_CONTEXT = {
     # manifestgen
     "phase_num", "counts", "findings", "polymorphic", "lists", "phase2",
     "indexed", "views", "formatted_columns", "form_formatting", "retention",
+    "form_visibility", "column_validation", "reconcile_modes",
     "prefix", "seed_items", "extra_sections", "extra_warnings",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
