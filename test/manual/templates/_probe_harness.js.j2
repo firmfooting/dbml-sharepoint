@@ -56,11 +56,23 @@
   // ---- Result table --------------------------------------------------
   // A probe answers questions. Outcome and EVIDENCE are recorded
   // separately so a run cannot be summarised as a verdict with nothing
-  // behind it. NOT ESTABLISHED is a first-class outcome: a question the
-  // run did not reach must never be reported as a pass.
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
   const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({ id, question, outcome: 'NOT ESTABLISHED', evidence: 'the run did not reach this question' });
+  };
   const record = (id, question, outcome, evidence) => {
-    RESULTS.push({ id, question, outcome, evidence });
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, { question, outcome, evidence });
+    } else {
+      RESULTS.push({ id, question, outcome, evidence });
+    }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
     log(level, `${id}: ${outcome} — ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
@@ -74,7 +86,7 @@
     }
     console.log('=================================================');
     const open = RESULTS.filter((r) => r.outcome === 'NOT ESTABLISHED').length;
-    console.log(`${RESULTS.length} question(s) asked; ${open} not established.`);
+    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} NOT established.`);
     if (open) {
       console.log('A question with no observation is NOT a pass. Report it as open.');
     }

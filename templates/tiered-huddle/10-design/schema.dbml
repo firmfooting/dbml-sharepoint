@@ -198,11 +198,11 @@ Table Escalation {
   // Calculated column; formula lives in mapping.yaml. Declared AFTER both
   // operands so they exist at creation time. ASCII arrow deliberately, so
   // the generated formula carries no encoding question.
-  // Both operands are single-select Choice. That combination is NOT
-  // documented by Microsoft and has not been probed against a live tenant
-  // by this project — the verification checklist in 30-deploy/DEPLOY.md
-  // makes you check it on the first paste. If your tenant refuses it,
-  // delete this column and group the By route view on TargetTier instead.
+  // Both operands are single-select Choice. Microsoft documents neither
+  // that this works nor that it does not, so it was probed against a live
+  // tenant (test/manual/calculated-choice-operand.js): the column is
+  // accepted, renders correctly, and survives a choice value containing
+  // & " <. A blank operand yields "Tier 1 -> " rather than an error.
   Route        calculated_text      [note: 'Filled in automatically from the two tier fields; leave it alone']
   Owner        person               [not null, note: 'One named person, never a team']
   DueDate      date                 [note: 'When the target tier has agreed to come back']

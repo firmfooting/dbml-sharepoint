@@ -44,10 +44,27 @@
 
   const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
   const results = [];
+  // Registered up front, so a run that aborts part-way reports the
+  // questions it never reached rather than silently omitting them.
+  const expect = (id, question) => {
+    results.push({ id, question, observed: 'NOT ESTABLISHED', detail: 'the run did not reach this question' });
+  };
   const record = (id, question, observed, detail) => {
-    results.push({ id, question, observed, detail: detail || '' });
+    const row = results.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, { question, observed, detail: detail || '' });
+    } else {
+      results.push({ id, question, observed, detail: detail || '' });
+    }
     log('INFO', `${id}: ${observed}${detail ? ` — ${detail}` : ''}`);
   };
+  expect('Q1', 'setshowinnewform(false) persists with no Update()');
+  expect('Q2', 'new=false + edit=true can coexist');
+  expect('Q3', 'setshowinnewform(true) re-shows a hidden field');
+  expect('Q4', 'setters work on a Sealed field');
+  expect('Q5', 'setshowinnewform(false) on a calculated column');
+  expect('Q6', 'the modern "Edit form columns" panel writes these attributes');
+  expect('Q7', "AddFieldAsXml with ShowInNewForm='FALSE' at creation");
 
   // === Preflight: confirm the site ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare

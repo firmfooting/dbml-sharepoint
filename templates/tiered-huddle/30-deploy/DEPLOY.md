@@ -52,11 +52,11 @@ Shared procedure: [`templates/README.md`](../../README.md) with
       empty. Expected refusal: **"Resolving or closing an escalation needs a
       resolution and a resolved date."**
 - [ ] `Route` fills itself in as `Tier 2 -> Tier 3` and does not appear on
-      the new or edit form (calculated columns never do). **Check this one
-      properly.** `Route` is a calculated column over two Choice columns;
-      Microsoft documents neither that it works nor that it does not, and
-      this project has not probed it against a live tenant. If your tenant
-      refuses it, delete `Route` from `schema.dbml`, delete its
+      the new or edit form (calculated columns never do). A calculated
+      column over two Choice columns is undocumented by Microsoft but was
+      probed against a live tenant and works
+      (`test/manual/calculated-choice-operand.js`). If your tenant refuses
+      it anyway, delete `Route` from `schema.dbml`, delete its
       `calculated_formulas` entry, and group the **By route** view on
       `TargetTier` instead.
 - [ ] The **By route** view groups the queue on `Route`, collapsed.

@@ -91,11 +91,23 @@
   // ---- Result table --------------------------------------------------
   // A probe answers questions. Outcome and EVIDENCE are recorded
   // separately so a run cannot be summarised as a verdict with nothing
-  // behind it. NOT ESTABLISHED is a first-class outcome: a question the
-  // run did not reach must never be reported as a pass.
+  // behind it.
+  //
+  // Every question is REGISTERED UP FRONT as NOT ESTABLISHED, and record()
+  // overwrites. Appending as you go looks equivalent and is not: a probe
+  // that aborts early then reports only what it reached, and prints
+  // "0 not established" while most of its questions were never asked.
   const RESULTS = [];
+  const expect = (id, question) => {
+    RESULTS.push({ id, question, outcome: 'NOT ESTABLISHED', evidence: 'the run did not reach this question' });
+  };
   const record = (id, question, outcome, evidence) => {
-    RESULTS.push({ id, question, outcome, evidence });
+    const row = RESULTS.find((r) => r.id === id);
+    if (row) {
+      Object.assign(row, { question, outcome, evidence });
+    } else {
+      RESULTS.push({ id, question, outcome, evidence });
+    }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
     log(level, `${id}: ${outcome} — ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
@@ -109,7 +121,7 @@
     }
     console.log('=================================================');
     const open = RESULTS.filter((r) => r.outcome === 'NOT ESTABLISHED').length;
-    console.log(`${RESULTS.length} question(s) asked; ${open} not established.`);
+    console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} NOT established.`);
     if (open) {
       console.log('A question with no observation is NOT a pass. Report it as open.');
     }
@@ -140,6 +152,15 @@
     return;
   }
 
+  // Declared before anything can fail, so an abort reports the questions
+  // it never reached instead of only the ones it managed to ask.
+  expect('C1', 'Calculated column over two Choice operands is accepted');
+  expect('C2', 'Renders a value for two ordinary Choice values');
+  expect('C3', 'Formula as SharePoint stored it');
+  expect('C4', 'Renders a Choice value containing & " <');
+  expect('C5', 'Behaviour when one operand is blank');
+  expect('N1', 'NEGATIVE CONTROL: a Person operand is refused');
+
   let digest = await getDigest();
 
   // ---- Bootstrap. Every step checks first, so re-running tops up ------
@@ -165,9 +186,14 @@
 
   const addField = async (schemaXml) => {
     digest = await getDigest();
+    // No __metadata: the harness sends odata=nometadata, and that format
+    // REJECTS the type hint rather than ignoring it —
+    //   "The property '__metadata' does not exist on type
+    //    'SP.XmlSchemaFieldCreationInformation'"
+    // The odata=verbose examples in Microsoft's docs all carry it, which is
+    // where this gets copied from.
     return spPost(`${fieldsPath}/createfieldasxml`, {
       parameters: {
-        __metadata: { type: 'SP.XmlSchemaFieldCreationInformation' },
         SchemaXml: schemaXml,
         Options: 8,  // AddFieldInternalNameHint
       },

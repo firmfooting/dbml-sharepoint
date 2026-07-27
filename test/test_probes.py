@@ -117,6 +117,30 @@ def test_a_probe_that_writes_defaults_to_read_only() -> None:
             )
 
 
+def test_every_recorded_question_is_registered_up_front() -> None:
+    """A probe's summary must not be able to lie by omission.
+
+    If questions are appended as they are answered, a probe that aborts
+    early reports only what it reached — and prints "0 not established"
+    while most of its questions were never asked. Registering every
+    question with expect() up front makes an abort report the truth.
+    """
+    for path in _probe_scripts():
+        text = path.read_text(encoding="utf-8")
+        if "record(" not in text:
+            continue  # a probe using its own reporting style
+        recorded = set(re.findall(r"\brecord\(\s*'([A-Z0-9]+)'", text))
+        registered = set(re.findall(r"\bexpect\(\s*'([A-Z0-9]+)'", text))
+        # BOOT-style ids report a bootstrap failure rather than answering a
+        # declared question, so they are not expected to be pre-registered.
+        missing = {q for q in recorded - registered if not q.startswith("BOOT")}
+        assert not missing, (
+            f"{path.name}: question(s) {sorted(missing)} can be recorded but are "
+            f"never registered with expect(). If the run aborts before reaching "
+            f"them, the summary will not report them as unanswered."
+        )
+
+
 def test_probes_carry_no_control_characters() -> None:
     """A NUL byte reached generated deploy.js on this branch and was
     invisible to ruff, mypy, j2lint, the golden comparison and the whole
