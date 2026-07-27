@@ -31,8 +31,8 @@
   // ---- Operator settings -------------------------------------------------
   const SITE_URL = '';            // REQUIRED, e.g. 'https://contoso.sharepoint.com/sites/ops'
   const PROBE_LIST = 'zzz dbmlsp form visibility probe';
-  const CLEANUP = true;           // false keeps the list for the manual UI step
-  const RECHECK_ONLY = false;     // true = read current state only; no setup, no writes
+  const CLEANUP = false;           // false keeps the list for the manual UI step
+  const RECHECK_ONLY = true;     // true = read current state only; no setup, no writes
   // ------------------------------------------------------------------------
 
   const log = (level, msg) => console.log(`[SP-PROBE] [${level}] ${msg}`);
