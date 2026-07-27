@@ -1,6 +1,6 @@
 ---
 title: jsgen
-sidebar_position: 10
+sidebar_position: 13
 ---
 
 # `dbml_sharepoint.generators.jsgen`
@@ -13,6 +13,12 @@ Render deploy.js from the schema, mapping bundle, and release.
 
 ```python
 def generate_deploy_js(*, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, extension: dbml_sharepoint.extension.DeploymentExtension | None = None, site_context: dbml_sharepoint.extension.SiteContext | None = None) -> str
+```
+
+### `UNMANAGED`
+
+```python
+UNMANAGED = '__dbmlsp_unmanaged__'
 ```
 
 ### `build_schema_json`

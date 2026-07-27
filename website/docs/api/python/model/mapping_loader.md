@@ -112,21 +112,52 @@ class WatchedList:
 
 A (entity, column) pair watched by W10 status capture.
 
-### `ViewCondition`
+### `FormVisibility`
 
 ```python
 @dataclass
-class ViewCondition:
-    field: str
-    op: str
-    value: Any = None
+class FormVisibility:
+    new: bool = True
+    existing: bool = True
+    when: Condition | None = None
 ```
 
-One &lt;Where> condition of a declared view. Conditions are ANDed.
+One column's declared form behaviour.
 
-`op` is validated against the DSL allowlist by validate_against_mapping;
-`value` is absent for is_null/is_not_null and may be the `today`,
-`today+N` or `today-N` sentinel on date/datetime columns.
+`existing` covers the Edit form AND the Display form, which SharePoint
+does not let us separate — the modern Display form reads ShowInEditForm
+and ignores ShowInDisplayForm entirely. The key is named for what it
+does rather than for the form an author might expect.
+
+### `ColumnValidation`
+
+```python
+@dataclass
+class ColumnValidation:
+    when: Condition
+    message: str
+```
+
+One column's save-time rule. The message is the feature: without it
+a failed save shows SharePoint's generic text, which tells the person
+filling in the form nothing.
+
+### `EntitySection`
+
+```python
+@dataclass
+class EntitySection:
+    reconcile: str = 'exact'
+    columns: dict[str, T] = dict()
+```
+
+A per-entity block of column declarations plus its reconcile mode.
+
+`exact` (the default) makes the declaration authoritative for the whole
+entity: a column with no entry has its value cleared, so deployed state
+is a function of the declaration rather than of declaration history.
+`declared` touches only what is listed, for mappings running
+seal_columns: false where an operator may have set something by hand.
 
 ### `ViewSort`
 
@@ -158,7 +189,7 @@ class ViewDef:
     title: str
     fields: list[str]
     default: bool = False
-    where: list[dbml_sharepoint.model.mapping_loader.ViewCondition] = list()
+    where: Condition | None = None
     sort: list[dbml_sharepoint.model.mapping_loader.ViewSort] = list()
     group_by: dbml_sharepoint.model.mapping_loader.ViewGroupBy | None = None
     row_limit: int | None = None
@@ -207,15 +238,17 @@ rewrites them to display titles (SP matches form fields by display).
 ```python
 @dataclass
 class ListValidation:
-    formula: str
+    when: Condition
     message: str
 ```
 
 Declared SP list validation (ValidationFormula/ValidationMessage).
 
-Authored with INTERNAL column names; jsgen rewrites references to
-display names (SP resolves validation formulas by display, like
-calculated formulas).
+Cross-column: unlike `column_validation`, the condition may name any
+column on the list. Authored as a condition tree — the raw `formula:`
+key is gone, because it was the last surface where an author wrote
+SharePoint syntax by hand and so the last place the quoting and
+operator differences between the targets could bite them.
 
 ### `CustomPermissionLevel`
 
@@ -318,6 +351,8 @@ class Mapping:
     extension: str | None = None
     permissions: PermissionsConfig | None = None
     calculated_formulas: dict[str, dict[str, str]] = dict()
+    form_visibility: dict[str, dbml_sharepoint.model.mapping_loader.EntitySection[dbml_sharepoint.model.mapping_loader.FormVisibility]] = dict()
+    column_validation: dict[str, dbml_sharepoint.model.mapping_loader.EntitySection[dbml_sharepoint.model.mapping_loader.ColumnValidation]] = dict()
     views: dict[str, list[dbml_sharepoint.model.mapping_loader.ViewDef]] = dict()
     demo_items: dict[str, list[dbml_sharepoint.model.mapping_loader.DemoItem]] = dict()
     display_name_mode: str | None = None
@@ -326,8 +361,6 @@ class Mapping:
     column_formatting: dict[str, dict[str, dict[str, typing.Any]]] = dict()
     form_formatting: dict[str, dbml_sharepoint.model.mapping_loader.FormFormatting] = dict()
     list_validation: dict[str, dbml_sharepoint.model.mapping_loader.ListValidation] = dict()
-    hidden_on_forms: dict[str, list[str]] = dict()
-    hidden_on_display: dict[str, list[str]] = dict()
     seal_columns: bool = False
     prevent_list_deletion: bool = False
 ```
