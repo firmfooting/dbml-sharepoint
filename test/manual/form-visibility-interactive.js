@@ -289,6 +289,13 @@
   await setVis('BothWay', 'setshowinnewform', false);
   await post(fieldPath('SealedF'), { __metadata: { type: 'SP.Field' }, Sealed: true }, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' });
 
+  // KNOWN LIMITATION, established by running this: SharePoint refuses this
+  // write outright — "The type SP.FieldLink does not support HTTP PATCH
+  // method". FieldLink.Hidden is the store the modern "Edit columns" panel
+  // writes, and it is NOT reachable over REST at all; repairing UI drift
+  // needs CSOM ProcessQuery (as deploy.js already uses for group ownership).
+  // Kept as-is so the refusal is visible in the transcript rather than
+  // hidden behind an assumption.
   const setLinkHidden = async (name, hidden) => {
     const s = (await readStores()).get(name);
     if (!s || !s.linkId) return 'no FieldLink found';
