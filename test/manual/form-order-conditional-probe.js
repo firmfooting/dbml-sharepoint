@@ -21,6 +21,12 @@
  *   without one. It dumps every candidate store for both, so whichever
  *   one differs is the answer.
  *
+ *   USE AN UNSEALED COLUMN. A sealed field accepts writes with HTTP 200
+ *   and silently discards them (established by form-visibility-probe.js
+ *   Q4), so if conditional visibility is stored on the field, setting it
+ *   on a sealed column looks fine in the UI and never persists. The probe
+ *   warns if WITH_FORMULA names a sealed field.
+ *
  *   1. Set PROBE_LIST to that list's title.
  *   2. Open the site's /_layouts/15/settings.aspx as a Site Owner.
  *   3. F12 -> Console -> paste -> Enter.
@@ -124,6 +130,20 @@
   };
   const a = await dumpField(WITH_FORMULA);
   const b = await dumpField(WITHOUT_FORMULA);
+
+  // Conditional visibility is persisted in Field.ClientValidationFormula
+  // (not the form JSON, and not Field.CustomFormatter). A sealed field
+  // discards writes silently, so a sealed WITH_FORMULA reads back empty and
+  // proves nothing.
+  if (a.Sealed === true) {
+    console.warn(`[ORDER] ${WITH_FORMULA} is SEALED. Writes to a sealed field are silently `
+      + 'discarded, so an empty ClientValidationFormula below is expected and tells you '
+      + 'nothing about where the formula lives. Re-test with an UNSEALED column.');
+  }
+  if (!a.ClientValidationFormula) {
+    console.warn(`[ORDER] ${WITH_FORMULA} has no ClientValidationFormula — the formula did `
+      + 'not persist. Set it again and re-run before drawing conclusions.');
+  }
 
   const rows = [];
   for (const k of FIELD_PROPS) {
