@@ -24,6 +24,11 @@ type Severity = Literal["error", "warning"]
 # system column); 'Id' annotated pk+increment is special-cased (skip).
 RESERVED_NAMES = frozenset({
     "Created", "Modified", "Editor", "_UIVersion", "Attachments", "Author",
+    # SharePoint's own identity column. Legal only as the declared
+    # `Id int [pk, increment]`, which is skipped at render time; anything
+    # else named Id was emitted as a Text field against a name every list
+    # already has.
+    "Id", "ID",
 })
 
 # SharePoint system columns that exist on every list. Formatter [$Field]
@@ -224,6 +229,31 @@ def _check_column(
 
     if name in RESERVED_NAMES and not is_pk_id:
         findings.append(Finding("error", f"{table}.{name}: reserved column name."))
+
+    # The identity column must be called Id. typemap skips ANY
+    # `int [pk, increment]` column, while jsgen and _rendered_columns
+    # special-case the NAME — so a differently named one was validated as a
+    # real column and never created. Every consequence then validated
+    # clean: per-column declarations deployed nothing, indexed_columns and
+    # views.fields emitted calls that fail live, and demo_items wrote to a
+    # column that does not exist.
+    #
+    # Rejected rather than taught to the four consumers deliberately. A
+    # SharePoint list has exactly one auto-increment column and it is
+    # called ID; accepting another name would let the DBML claim a column
+    # the site does not have, and every downstream reader — the data
+    # dictionary, the Power Query bundle, any flow — would still have to
+    # say ID. That is a rename with no deployed counterpart, which is the
+    # same silent-drop class this rejection exists to close.
+    if col.is_pk and col.is_auto_increment and not is_pk_id:
+        findings.append(Finding(
+            "error",
+            f"{table}.{name}: an auto-increment primary key must be named "
+            f"'Id' — it maps to SharePoint's built-in ID column, which is "
+            f"created with the list and cannot be renamed. Declared under "
+            f"any other name it is validated as an ordinary column and "
+            f"never provisioned.",
+        ))
 
     if any(c in name for c in " !@#$%^&*()+={}[]|\\:;\"'<>,?/~`"):
         findings.append(Finding("error", f"{table}.{name}: contains illegal character."))

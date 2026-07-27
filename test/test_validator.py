@@ -1325,3 +1325,44 @@ def test_versioning_override_entity_must_exist() -> None:
         f.severity == "error" and "Tsak" in f.message and "versioning" in f.message
         for f in findings
     )
+
+
+def test_auto_increment_column_not_named_id_is_rejected() -> None:
+    """typemap skips any `int [pk, increment]` column, while jsgen and the
+    rendered-column oracle special-case the NAME "Id". So `TicketId int
+    [pk, increment]` was validated as a real column and never created, and
+    every consequence validated clean: form_visibility, column_validation
+    and column_formatting deployed nothing; indexed_columns and
+    views.fields emitted calls that 400 live; demo_items wrote to a column
+    that does not exist."""
+    table = Table(name="Ticket", columns=[
+        Column(name="TicketId", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    findings = validate(_schema(table))
+    assert any(
+        f.severity == "error" and "TicketId" in f.message and "Id" in f.message
+        for f in findings
+    ), findings
+
+
+def test_auto_increment_column_named_id_is_accepted() -> None:
+    table = Table(name="Ticket", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    assert [f for f in validate(_schema(table)) if f.severity == "error"] == []
+
+
+def test_column_named_id_that_is_not_the_identity_is_rejected() -> None:
+    """The inverse: SharePoint reserves ID on every list, so a plain
+    `Id nvarchar` was emitted as a Text field against a name that already
+    exists. RESERVED_NAMES omitted it."""
+    table = Table(name="Ticket", columns=[
+        Column(name="Id", type="nvarchar"),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    findings = validate(_schema(table))
+    assert any(
+        f.severity == "error" and "Id" in f.message for f in findings
+    ), findings
