@@ -39,7 +39,9 @@ philosophy.
 - **Fail closed, rerun safely.** Every write is preceded by read-only
   preflights: wrong site aborts, existing lists/fields are adopted only when
   their immutable shape provably matches, mutable drift is narrowly
-  reconciled and read back. Reruns of the same release skip verified work.
+  reconciled and read back. Reruns skip work the script can verify is
+  already correct — which it decides by reading the live site, not by
+  comparing release tags.
 - **Real column support.** Text, note, choice (+ defaults), person, date,
   number, boolean, hyperlink, same-site lookups (including deferred circular
   and self-lookups), **calculated columns** (formulas in the mapping),
@@ -176,7 +178,11 @@ the composition points).
   immutable shapes changed (field types, lookup targets, list templates)
   fails closed for explicit migration rather than guessing.
 - Calculated columns can't reference Lookup/Person columns or `[Today]` —
-  SharePoint's rules, surfaced at build time by the validator.
+  SharePoint's rules. The validator checks that every reference *names a
+  column of the entity*, which catches `[Today]` and typos but **not** a
+  Lookup or Person operand: `'=[Owner]'` builds exit 0 and fails at paste
+  time with an HTTP 500. Check operand types yourself; see the
+  [DBML reference](website/docs/reference/dbml.md#constraints-sharepoint-imposes).
 - The browser-paste model means an interactive operator; that is the point
   (no stored credentials, no app principal), but it is not unattended CI.
 
@@ -194,8 +200,11 @@ spine sits at the package root:
 
 Templates mirror that: `templates/*.js.j2` are the four pasteable scripts;
 `templates/_*.js.j2` are shared partials (provenance header, site guard +
-`apiUrl`/`odataName`, cached digest) included by all of them;
-`templates/deploy/_*.js.j2` are deploy.js's phase bodies.
+`apiUrl`/`odataName`, cached digest, read transport, write headers);
+`templates/deploy/_*.js.j2` are deploy.js's phase bodies. Not every
+partial goes into every script — `assess.js` deliberately omits
+`_http_write.js.j2`, which is what makes its read-only guarantee
+structural rather than a promise.
 
 Conventions: underscore-prefixed names are module-private — anything
 imported across modules is public and unprefixed. Extension CLIs

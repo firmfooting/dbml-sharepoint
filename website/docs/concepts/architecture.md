@@ -35,17 +35,35 @@ pipeline; the packaging spine sits at the package root:
 | `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
 | root | `bundle` · `templating` · `cli` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, the extension protocol |
 
-Data flows strictly downward — model knows nothing of analysis,
-analysis nothing of generators — and the root modules orchestrate. The
-[generated API reference](../api/index.md) documents each module's
-public surface, organised the same way.
+Data flows downward — analysis knows nothing of generators — and the root
+modules orchestrate. The [generated API reference](../api/index.md)
+documents each module's public surface, organised the same way.
+
+**One upward edge exists**, and it is deliberate rather than accidental
+drift: `model/mapping_loader.py` imports `analysis.styles`, because
+parsing a `column_formatting` style spec means validating it against the
+style vocabulary, and that vocabulary is analysis's to own. Treat the rule
+as "no layer reaches down past its neighbour" rather than as a strict
+acyclic import graph, and check the imports rather than trusting this
+paragraph if it matters to you.
 
 ## Templates mirror the layout
 
 `templates/*.js.j2` are the pasteable entry-point scripts;
 `templates/_*.js.j2` are shared partials (provenance header, site guard,
-HTTP transport, write headers, cached digest) included by all of them;
-`templates/deploy/_*.js.j2` are deploy.js's phase bodies. Each template
+HTTP transport, write headers, cached digest); `templates/deploy/_*.js.j2`
+are deploy.js's phase bodies.
+
+**"Shared" means available to every script, not present in every script.**
+`deploy.js`, `rollback.js` and `demo-data.js` include all five top-level
+partials. `assess.js` includes four: it omits `_http_write.js.j2`, so the
+write-header helper (`spHeaders`) and every mutation path it feeds are
+simply absent from the emitted file. That omission is what makes the
+read-only guarantee structural — you can check it by grepping the artifact
+rather than by trusting the phase logic. (`assess.js` still issues two
+POSTs: the `contextinfo` digest fetch, and a CSOM `ProcessQuery`
+availability probe that reads `Web.Title`. Both are reads; POST is just
+how SharePoint spells them.) Each template
 opens with a contract comment — extracted verbatim into the
 [template reference](../api/templates.md).
 

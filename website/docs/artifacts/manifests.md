@@ -31,12 +31,20 @@ verification.
 
 ## Provenance headers
 
-Every generated script and manifest opens with the same provenance
-block: source schema (and its modification time), target site, site
-role, release tag, schema version and generation timestamp. A pasted
-console transcript therefore records exactly which release produced it.
-Interpolated values are comment-escaped so a crafted string in an input
-file cannot break out of the header comment.
+Every generated **script** — deploy.js, rollback.js, assess.js,
+demo-data.js — opens with the same provenance block: source schema (and
+its modification time), target site, site role, release tag, schema
+version and generation timestamp. A pasted console transcript therefore
+records exactly which release produced it. Interpolated values are
+comment-escaped so a crafted string in an input file cannot break out of
+the header comment.
+
+`deploy-manifest.md` carries the same fields as a header block.
+**`assess-manifest.md` does not** — it opens with the target site and
+nothing else: no source schema, no release tag, no schema version, no
+generation timestamp. If you are filing an assessment as evidence, take
+the provenance from the `assess.js` header beside it, which carries the
+full block.
 
 ## Stale clearing
 
