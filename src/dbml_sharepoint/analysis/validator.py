@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from dbml_sharepoint.analysis import typemap
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
@@ -65,10 +66,13 @@ KNOWN_SCALARS = frozenset({
     "boolean", "hyperlink",
 })
 
-# SP.FieldCalculated column types. The formula is NOT in DBML — it lives in
-# the mapping's `calculated_formulas: {entity: {column: formula}}` section;
-# validate_against_mapping enforces the pairing and SP's formula constraints.
-CALCULATED_TYPES = frozenset({"calculated_text", "calculated_number", "calculated_date"})
+# SP.FieldCalculated column types, re-exported from the one place that
+# enumerates them (a calculated type without an OutputType cannot deploy,
+# so typemap's map is where the vocabulary is forced to be complete). The
+# formula is NOT in DBML — it lives in the mapping's `calculated_formulas:
+# {entity: {column: formula}}` section; validate_against_mapping enforces
+# the pairing and SP's formula constraints.
+CALCULATED_TYPES = typemap.CALCULATED_TYPES
 
 _FORMULA_STRING_LITERAL = re.compile(r'"[^"]*"')
 FORMULA_COLUMN_REF = re.compile(r"\[([^\[\]]+)\]")

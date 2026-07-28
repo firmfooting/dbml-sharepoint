@@ -22,6 +22,7 @@ grammar as authored and normalised by the rules above.
 import math
 import re
 
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 
 # Every operator's exact inverse. The involution is asserted by a test: an
@@ -211,11 +212,7 @@ _UNSUPPORTED_PROPERTY: dict[str, str] = {
 # target (the client-side equivalent is @now, with datetime rather than
 # date semantics).
 # https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-conditional-show-hide
-_CALCULATED_OPERAND = {
-    "calculated_text": "a calculated column",
-    "calculated_number": "a calculated column",
-    "calculated_date": "a calculated column",
-}
+_CALCULATED_OPERAND = dict.fromkeys(CALCULATED_TYPES, "a calculated column")
 _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
     VALIDATION: {
         "person": "a person column",

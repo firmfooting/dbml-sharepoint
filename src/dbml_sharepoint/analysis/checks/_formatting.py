@@ -23,14 +23,8 @@ def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
     cross_site_by_entity = vc.cross_site_by_entity
+    calculated_by_entity = vc.calculated_by_entity
     findings: list[Finding] = []
-    calculated_by_entity = {
-        table.name: {
-            col.name for col in table.columns
-            if col.type in ("calculated_text", "calculated_number", "calculated_date")
-        }
-        for table in schema.tables
-    }
     # Column formatting: declared targets must be rendered columns, the
     # formatter must be an SP formatter object (elmType root), and every
     # [$Field] reference must name a rendered column — deploy-time render

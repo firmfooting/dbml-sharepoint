@@ -28,6 +28,16 @@ CALCULATED_OUTPUT_TYPES: dict[str, int] = {
     "calculated_date": 4,
 }
 
+# THE calculated type vocabulary. This map is where it belongs, because a
+# calculated type that has no OutputType cannot be deployed at all — so
+# adding one here is not optional, which is what makes the keys
+# authoritative. Everything else derives; a second hand-written copy is a
+# set that can silently disagree, leaving a new type uncovered by every
+# check that reads the stale one while the suite stays green.
+# test_validator.py asserts these three names appear together in this file
+# and nowhere else in the package.
+CALCULATED_TYPES = frozenset(CALCULATED_OUTPUT_TYPES)
+
 
 @dataclass(frozen=True)
 class SPField:

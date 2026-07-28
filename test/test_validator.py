@@ -1,4 +1,5 @@
 # test/test_validator.py
+import ast
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -2262,3 +2263,50 @@ def test_a_form_header_may_not_read_a_calculated_column(tmp_path: Path) -> None:
     )
     ok = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
     assert ok == [], ok
+
+
+def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> None:
+    """No collection may re-list the three calculated DBML types.
+
+    They belong to typemap's CALCULATED_OUTPUT_TYPES, because each needs an
+    SP OutputType — a calculated type without one cannot deploy, which is
+    what forces that map to stay complete and makes its keys authoritative.
+    Everywhere else derives from CALCULATED_TYPES.
+
+    A second copy is not a style problem: it is a set that can disagree
+    with the first. Add a fourth calculated type and the copy is silently
+    short, so every check reading it quietly stops covering the new type
+    while the suite stays green.
+
+    The rule is per-COLLECTION, not per-file. `conditions.py` legitimately
+    names calculated_number in its numeric types, calculated_date in its
+    date types and calculated_text in its measurable types — three
+    different classifications that each happen to include one. That is not
+    a copy of the vocabulary; a single literal holding all three is.
+    """
+    names = {"calculated_text", "calculated_number", "calculated_date"}
+    src = Path(__file__).parent.parent / "src" / "dbml_sharepoint"
+    offenders: list[str] = []
+    for path in sorted(src.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Set | ast.List | ast.Tuple):
+                literals = {
+                    e.value for e in node.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                }
+            elif isinstance(node, ast.Dict):
+                literals = {
+                    k.value for k in node.keys
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str)
+                }
+            else:
+                continue
+            if names <= literals:
+                offenders.append(path.relative_to(src).as_posix())
+                break
+    assert offenders == ["analysis/typemap.py"], (
+        f"the calculated type vocabulary is enumerated in {offenders}; it "
+        f"belongs only in analysis/typemap.py, with everything else "
+        f"deriving from CALCULATED_TYPES"
+    )
