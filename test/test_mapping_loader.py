@@ -548,7 +548,7 @@ def test_views_section_parsed(tmp_path: Path) -> None:
     assert view.fields == ["Title", "Status"]
     assert view.where == Group("all_of", (Leaf("Status", "neq", "Closed"),))
     assert view.sort == [ViewSort(field="SortOrder", direction="asc")]
-    assert view.group_by == ViewGroupBy(field="Status", collapsed=True)
+    assert view.group_by == ViewGroupBy(fields=["Status"], collapsed=True)
     assert view.row_limit == 100
 
 
@@ -1992,7 +1992,7 @@ def test_field_set_expansion_applies_to_fields_only(tmp_path: Path) -> None:
     assert view.fields == ["BoardDate", "Chair"]
     assert view.sort[0].field == "@header"
     assert view.group_by is not None
-    assert view.group_by.field == "@header"
+    assert view.group_by.fields == ["@header"]
     assert view.widths == {"@header": 120}
 
 
@@ -2034,3 +2034,137 @@ def test_field_sets_expand_before_retirement_filters_them(tmp_path: Path) -> Non
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == ["OperationsStatus"]
     assert view.expanded_sets == ["statuses"]
+
+
+# --- Two-level group_by -----------------------------------------------------
+
+
+def test_group_by_accepts_two_levels(tmp_path: Path) -> None:
+    """compliance-obligations publishes "group by SourceType then
+    SourceInstrument" as its accreditation-pack view. SharePoint has always
+    taken two FieldRefs inside one GroupBy; the mapping could say one."""
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: By source\n"
+            "      fields: [Title, SourceType, SourceInstrument]\n"
+            "      group_by: { fields: [SourceType, SourceInstrument], collapsed: true }\n",
+        ),
+        encoding="utf-8",
+    )
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.views["Project"][0].group_by == ViewGroupBy(
+        fields=["SourceType", "SourceInstrument"], collapsed=True,
+    )
+
+
+def test_group_by_refuses_three_levels(tmp_path: Path) -> None:
+    """SharePoint's own ceiling. Silently dropping the third would answer a
+    declared grouping with a different one."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Too deep\n"
+            "      fields: [Title, A, B, C]\n"
+            "      group_by: { fields: [A, B, C] }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="two levels"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_group_by_refuses_both_spellings_at_once(tmp_path: Path) -> None:
+    """Accepting both would need a precedence rule nobody would remember."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Both\n"
+            "      fields: [Title, A, B]\n"
+            "      group_by: { field: A, fields: [B] }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="exactly one of 'field'"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_group_by_refuses_an_empty_fields_list(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Empty\n"
+            "      fields: [Title]\n"
+            "      group_by: { fields: [] }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="non-empty"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+# --- Declared view totals ---------------------------------------------------
+
+
+def test_totals_parse(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Totals\n"
+            "      fields: [Title, SortOrder]\n"
+            "      totals: { SortOrder: sum }\n",
+        ),
+        encoding="utf-8",
+    )
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.views["Project"][0].totals == {"SortOrder": "sum"}
+
+
+def test_totals_default_to_empty(tmp_path: Path) -> None:
+    """Empty means the live Aggregations property is never touched, so the
+    default has to be an empty mapping rather than None — the deploy reads
+    it as "nothing declared", not as "declare nothing"."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml("views:\n  Project:\n    - title: V\n      fields: [Title]\n"),
+        encoding="utf-8",
+    )
+    assert load_mapping(tmp_path / "m.yaml").mapping.views["Project"][0].totals == {}
+
+
+def test_totals_refuse_an_unknown_function(tmp_path: Path) -> None:
+    """SharePoint has no median. Unchecked, it would be written into the
+    Aggregations property as a string and quietly produce nothing."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Bad\n"
+            "      fields: [Title, SortOrder]\n"
+            "      totals: { SortOrder: median }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="median"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_totals_must_be_a_mapping(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Bad\n"
+            "      fields: [Title, SortOrder]\n"
+            "      totals: [SortOrder]\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must be a mapping"):
+        load_mapping(tmp_path / "m.yaml")

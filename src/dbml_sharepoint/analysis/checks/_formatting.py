@@ -94,7 +94,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{ctx}: calculated: true on {style} expects "
                     f"{calculated_type_for_style}, not {target_type}.",
                 ))
-            if style in ("severity", "pill"):
+            if style in ("severity", "pill") and types_by_col.get(col_name) == "boolean":
+                # Both styles compare @currentField against QUOTED strings.
+                # A SharePoint Yes/No column is a boolean, so every branch
+                # of the generated =if chain is false and the cell renders
+                # unstyled — no error in the build, the deploy or the
+                # console. Found by the stakeholder-contacts uplift, which
+                # wanted a chip on IsActive and got nothing.
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: {style} on a Yes/No column matches nothing. The style "
+                    f"compares against quoted strings and a boolean is not one, so "
+                    f"every branch is false and the cell renders unstyled — silently. "
+                    f"Use a bespoke formatter testing the value's truthiness.",
+                ))
+            elif style in ("severity", "pill"):
                 members = style_enum_members.get(types_by_col.get(col_name, ""))
                 if members is not None:
                     for unknown in sorted(set(spec.get("map", {})) - members):
@@ -186,10 +200,38 @@ def check(vc: ValidationContext) -> list[Finding]:
         if form.body is not None:
             sections = form.body.get("sections")
             if isinstance(sections, list):
-                for section in sections:
+                # A column is visible unless it is declared off BOTH the new
+                # and the existing forms. `when:` is conditional visibility,
+                # so such a column is visible and must still be placed.
+                visibility = bundle.mapping.form_visibility.get(entity_name)
+                hidden_everywhere = {
+                    name
+                    for name, rule in (visibility.columns.items() if visibility else {}.items())
+                    if not rule.new and not rule.existing
+                }
+                # THE LAST SECTION IS A DOCUMENTED CATCH-ALL. Learn, on
+                # configuring the list form: "A column not referenced in any
+                # of the sections will be automatically referenced in the
+                # last section", and "New columns added will be automatically
+                # referenced in the last section".
+                #
+                # That fact decides both rules below, and it refuted a third
+                # this check originally carried — that an unreferenced column
+                # is left off the form entirely. It is not. It moves.
+                # The columns that will exist on the provisioned list, which
+                # is NOT every DBML column: the auto-increment Id is skipped
+                # at render time and SharePoint supplies its own. Reusing
+                # `rendered` would be wrong the other way — it folds in
+                # Created/Modified/Author, which no author places on a form.
+                declared = _rendered_columns(form_table, xcols) | {"Title"}
+                placed: set[str] = set()
+                for index, section in enumerate(sections):
                     if not isinstance(section, dict):
                         continue
-                    for name in section.get("fields") or []:
+                    is_last = index == len(sections) - 1
+                    section_fields = [str(n) for n in (section.get("fields") or [])]
+                    placed.update(section_fields)
+                    for name in section_fields:
                         if name not in rendered:
                             findings.append(Finding(
                                 "error",
@@ -197,6 +239,50 @@ def check(vc: ValidationContext) -> list[Finding]:
                                 f"sections field {name!r} is not a rendered "
                                 f"column of {entity_name}.",
                             ))
+                    # A section whose every column is off every form renders
+                    # as a heading with nothing under it. Not asserted of the
+                    # LAST section: unreferenced columns land there, so it is
+                    # empty only when every column is placed elsewhere —
+                    # which is exactly risk-register's System section, whose
+                    # DEPLOY.md already documents the bare heading on the New
+                    # form as cosmetic and expected.
+                    named = [n for n in section_fields if n in declared]
+                    if named and not is_last and all(n in hidden_everywhere for n in named):
+                        title = section.get("displayname") or "(untitled)"
+                        findings.append(Finding(
+                            "error",
+                            f"form_formatting[{entity_name}].body: section "
+                            f"{title!r} has no column that appears on any form — "
+                            f"every one of {sorted(named)} is declared new: false "
+                            f"and existing: false, so the section renders as a "
+                            f"bare heading. Drop the section, or put a visible "
+                            f"column in it.",
+                        ))
+                # Unreferenced columns are not lost, they are appended to the
+                # last section — so this is drift, not breakage, and it warns.
+                # It still matters: the arrangement a template declares stops
+                # being the arrangement it deploys as soon as a column is
+                # added, and the last section quietly becomes a junk drawer.
+                # Retired columns are excluded, not overlooked: retirement
+                # STRIPS them from body sections on purpose (and warns
+                # separately about declarations it rewrote), so flagging
+                # them here would ask an author to re-add exactly what the
+                # fold just removed.
+                unplaced = sorted(
+                    name for name in declared - placed
+                    if not bundle.mapping.is_retired(entity_name, name)
+                )
+                if unplaced:
+                    findings.append(Finding(
+                        "warning",
+                        f"form_formatting[{entity_name}].body: "
+                        f"{', '.join(unplaced)} in no section. SharePoint appends "
+                        f"unreferenced columns to the LAST section, so the form "
+                        f"still renders them — but its layout is then partly "
+                        f"incidental, and every column added later lands there too. "
+                        f"Reference every column explicitly to keep the declared "
+                        f"arrangement the deployed one.",
+                    ))
 
     for entity_name, rule in bundle.mapping.list_validation.items():
         rule_table = tables_by_name.get(entity_name)

@@ -158,9 +158,9 @@ def emit_bundle(
 
     The one emission sequence — deploy.js, rollback.js, assess.js and its
     manifest, the seed-gated demo-data.js, reporting, INDEX.md and
-    checksums.txt — previously duplicated across the core CLI and every
-    extension CLI. Raises :class:`SeedRequiresDemoItemsError` before writing
-    anything when ``seed`` is set but the mapping declares no demo rows.
+    checksums.txt — shared by the core CLI and every extension CLI. Raises
+    :class:`SeedRequiresDemoItemsError` before writing anything when
+    ``seed`` is set but the mapping declares no demo rows.
     """
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure

@@ -80,6 +80,18 @@ columns" — true, but it buries the actual mistake. Resolving first also
 keeps the supported-type vocabulary in one place, the match statement
 below, rather than in a second hand-maintained set beside it.
 
+### `TOTAL_FUNCTIONS`
+
+```python
+TOTAL_FUNCTIONS = {'sum': 'SUM', 'count': 'COUNT', 'avg': 'AVG', 'min': 'MIN', 'max': 'MAX', 'stdev': 'STDEV', 'var': 'VAR'}
+```
+
+### `NUMERIC_ONLY_TOTALS`
+
+```python
+NUMERIC_ONLY_TOTALS = frozenset({'avg', 'max', 'min', 'stdev', 'sum', 'var'})
+```
+
 ### `format_description`
 
 ```python

@@ -20,6 +20,7 @@ from typing import Any, cast
 import yaml
 
 from dbml_sharepoint.analysis import styles
+from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
 from dbml_sharepoint.model._keys import _reject_unknown_keys
 from dbml_sharepoint.model._mapping_types import (
     _REMOVED_SECTIONS,
@@ -134,7 +135,7 @@ _VERSIONING_KEYS = frozenset({
 })
 _VIEW_KEYS = frozenset({
     "title", "renamed_from", "fields", "default", "where", "sort", "group_by",
-    "row_limit", "formatting", "widths",
+    "row_limit", "formatting", "widths", "totals",
 })
 _GROUP_KEYS = frozenset({
     "name", "description", "owner_group", "allow_members_edit_membership",
@@ -615,16 +616,36 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             )
         sort.append(ViewSort(field=str(entry["field"]), direction=cast("SortDirection", direction)))
     raw_group = raw_view.get("group_by")
+    group_by = None
     if raw_group is not None:
-        _reject_unknown_keys(raw_group, {"field", "collapsed"}, f"{context}.group_by")
-    group_by = (
-        ViewGroupBy(
-            field=str(raw_group["field"]),
+        _reject_unknown_keys(
+            raw_group, {"field", "fields", "collapsed"}, f"{context}.group_by",
+        )
+        # Both spellings at once would need a precedence rule nobody would
+        # remember, so it is an error rather than a silent winner.
+        if ("field" in raw_group) == ("fields" in raw_group):
+            raise ValueError(
+                f"{context}.group_by: declare exactly one of 'field' (one level) "
+                f"or 'fields' (one or two levels)",
+            )
+        raw_fields = (
+            raw_group["fields"] if "fields" in raw_group else [raw_group["field"]]
+        )
+        if not isinstance(raw_fields, list) or not raw_fields:
+            raise ValueError(
+                f"{context}.group_by: 'fields' must be a non-empty list of column names",
+            )
+        # SharePoint's own ceiling. Dropping the third silently would answer
+        # a declared grouping with a different one.
+        if len(raw_fields) > 2:
+            raise ValueError(
+                f"{context}.group_by: SharePoint groups by at most two levels, "
+                f"got {len(raw_fields)}",
+            )
+        group_by = ViewGroupBy(
+            fields=[str(name) for name in raw_fields],
             collapsed=_optional_bool(raw_group, "collapsed", f"{context}.group_by"),
         )
-        if raw_group is not None
-        else None
-    )
     raw_limit = raw_view.get("row_limit")
     raw_formatting = raw_view.get("formatting")
     raw_widths = raw_view.get("widths")
@@ -642,6 +663,21 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
                     f"width, got {px!r}",
                 )
             widths[str(col)] = px
+    raw_totals = raw_view.get("totals")
+    totals: dict[str, str] = {}
+    if raw_totals is not None:
+        if not isinstance(raw_totals, dict):
+            raise ValueError(
+                f"{context}: 'totals' must be a mapping of column name to "
+                f"aggregation, got {type(raw_totals).__name__}",
+            )
+        for col, func in raw_totals.items():
+            if not isinstance(func, str) or func not in TOTAL_FUNCTIONS:
+                raise ValueError(
+                    f"{context}: totals[{col}] must be one of "
+                    f"{', '.join(sorted(TOTAL_FUNCTIONS))}, got {func!r}",
+                )
+            totals[str(col)] = func
     return ViewDef(
         title=str(title),
         fields=[str(f) for f in fields],
@@ -657,6 +693,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             else None
         ),
         widths=widths,
+        totals=totals,
     )
 
 

@@ -18,9 +18,9 @@
         {
           "elmType": "div",
           "attributes": {
-            "iconName": "Shield",
+            "iconName": "ClipboardList",
             "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
-            "title": "Risk"
+            "title": "Tier 1 board"
           },
           "style": { "flex": "none", "padding": "0px", "height": "auto" }
         }
@@ -33,12 +33,12 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
-          "txtContent": "=if([$Title] == '', 'New risk', 'Risk: ' + [$Title])"
+          "txtContent": "=if([$Title] == '', 'Tier 1 board', 'Tier 1: ' + [$Title])"
         },
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Pick Likelihood and Consequence — the rating and score calculate themselves."
+          "txtContent": "Leave a stream blank only if it did not report — blank means unreported, which is the signal this board exists to give."
         }
       ]
     }

@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The issue",
+      "fields": ["Title", "RaisedDate", "RaisedAtTier", "Stream"]
+    },
+    {
+      "displayname": "Where it goes",
+      "fields": ["Direction", "TargetTier", "Route", "Owner", "DueDate", "Priority"]
+    },
+    {
+      "displayname": "Outcome",
+      "fields": ["Status", "Resolution", "ResolvedDate", "Notes"]
+    }
+  ]
+}
