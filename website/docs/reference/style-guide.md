@@ -29,6 +29,42 @@ trending and date examples.
 
 `muted` is also the automatic fallback for unmapped values.
 
+## Map by role, never by word
+
+A status member takes its token from **the role it plays in its
+lifecycle**, not from what it is called. This is the whole reason colour
+means the same thing across a fleet of solutions: "Received", "Draft" and
+"Submitted" are three vocabularies for one role, and somebody meeting the
+second register of their week should not have to relearn what grey means.
+
+| Role in the lifecycle | Token | Members that play it |
+|---|---|---|
+| Intake, not yet triaged | `neutral` | Provisional, Draft, Received, Submitted, Reported, Applying, Idea |
+| In motion | `low` | Open, In progress, Assigned, In service, Under review, Testing, Current |
+| Needs attention | `warning` | Waiting, Partially compliant, On hold, Pending decision, Out of range |
+| Late or degraded | `severe` | Overdue, Non-compliant, Out of service, Expiring, Breached |
+| Blocked or failed | `blocked` | Failed, Withdrawn, Escalated, Uncontrolled, Extreme |
+| Complete and healthy | `good` | Closed, Completed, Compliant, Adopted, Published, Approved, Returned |
+| Cancelled or superseded | `muted` | Cancelled, Superseded, Declined, Abandoned, Retired, Disposed, Expired |
+
+The members are illustrative, not a closed list — the column is what
+matters. Ask which of the seven roles a value occupies in *that* list's
+lifecycle and take the token from the answer. A member the map does not
+name falls back to `muted`, so the cost of forgetting one is neutral grey
+rather than a false severity, and a map key that is not a member of the
+column's enum at all — the stale key a rename leaves behind — is a build
+error.
+
+Two bindings follow from the roles rather than from per-column taste:
+
+- **Every deadline date gets `overdue-date`, with a `guard` naming that
+  list's terminal statuses.** A due date that keeps shouting after the
+  item is closed trains people to ignore the colour, which costs more
+  than the colour ever earned.
+- **Every score, count or ratio gets `data-bar` with an explicit `max`**,
+  and where a rating column sits beside it, `color_by` takes the fill
+  from that column's map so the bar and the cell cannot disagree.
+
 ## Styles
 
 Declared per column under `column_formatting` in the mapping:
@@ -94,6 +130,29 @@ somewhere it does not.
 - Numeric deltas: trend arrows.
 - Neutral text, people, lookups, titles: NO icons.
 - Icons come only from Fluent UI's documented set, only via `iconName`.
+
+### Form-header icons come from one curated vocabulary
+
+The icon at the top of a
+[form header](./mapping.md#form_formatting) is not drawn from the token
+table — it names the list rather than a value — so it is the one place an
+author picks a Fluent name freely. That freedom is where the fleet's icons
+would drift, and the failure mode is the worst kind: SharePoint renders an
+unknown `iconName` as **nothing**. No build error, no deploy error, no
+console message. The only witness is a person looking at the form.
+
+So the vocabulary has one home — `FLEET_ICONS` in
+`src/dbml_sharepoint/analysis/icons.py` — with every member checked once
+against Microsoft's published MDL2 icon source, which is what `iconName`
+resolves against. The template sweep asserts that every shipped form
+header's icon is a member.
+
+The check earns itself: of the first thirty-five names proposed for that
+set, five did not exist. `Calendar`, `Key`, `Flow`, `Scales` and
+`AddFriend` all read as obviously real and are not. Adding a name means
+verifying it in the catalogue first, then adding it to that module — an
+offline test suite can assert membership, but it cannot check a catalogue,
+which is exactly why the set is small, central and reviewed.
 
 ## Authoring rules
 
