@@ -2681,3 +2681,39 @@ def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
     assert not [
         f for f in findings if f.severity == "warning" and "in no section" in f.message
     ], findings
+
+
+def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
+    """A library's items ARE files. demo-data.js posts to /items, which asks
+    SharePoint to create a library row with nothing behind it.
+
+    This built GREEN until the policy-library uplift went looking: the
+    bundle would have shipped and failed at paste time, in front of whoever
+    was being shown the demo — which is the audience this tool's fail-closed
+    posture exists to protect.
+    """
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Docs {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }\n"
+        "demo_items:\n"
+        "  Docs:\n"
+        "    - key: d1\n"
+        "      values:\n"
+        '        Title: "[DEMO] A document"\n',
+        encoding="utf-8",
+    )
+    schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert any(
+        "DocumentLibrary" in f.message and "no file behind them" in f.message
+        for f in errors
+    ), errors
