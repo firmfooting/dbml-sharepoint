@@ -325,7 +325,11 @@ def test_a_wrong_mapping_key_is_a_message_not_a_traceback(tmp_path: Path) -> Non
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    # 1, not merely non-zero: the documented table in cli.md gives 1 to
+    # "the build refused", which includes an unreadable or invalid input
+    # file, and reserves 2 for usage errors typer raises before the
+    # pipeline runs. A loose != 0 let a 2 regress past this test.
+    assert result.returncode == 1, result.stderr
     assert "Traceback" not in output, output
     assert "mapping_loader.py" not in output, output
     # The useful sentence survives, and names the offending key.
@@ -346,7 +350,11 @@ def test_a_malformed_release_file_is_a_message_not_a_traceback(tmp_path: Path) -
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    # 1, not merely non-zero: the documented table in cli.md gives 1 to
+    # "the build refused", which includes an unreadable or invalid input
+    # file, and reserves 2 for usage errors typer raises before the
+    # pipeline runs. A loose != 0 let a 2 regress past this test.
+    assert result.returncode == 1, result.stderr
     assert "Traceback" not in output, output
     assert "release" in output
 
@@ -361,7 +369,11 @@ def test_a_missing_mapping_file_is_a_message_not_a_traceback(tmp_path: Path) -> 
         "--out", str(tmp_path / "build"),
     )
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    # 1, not merely non-zero: the documented table in cli.md gives 1 to
+    # "the build refused", which includes an unreadable or invalid input
+    # file, and reserves 2 for usage errors typer raises before the
+    # pipeline runs. A loose != 0 let a 2 regress past this test.
+    assert result.returncode == 1, result.stderr
     assert "Traceback" not in output, output
     assert "nope.yaml" in output
 
@@ -376,6 +388,10 @@ def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
         "--out", str(tmp_path / "reports"),
     )
     output = result.stdout + result.stderr
-    assert result.returncode != 0
+    # 1, not merely non-zero: the documented table in cli.md gives 1 to
+    # "the build refused", which includes an unreadable or invalid input
+    # file, and reserves 2 for usage errors typer raises before the
+    # pipeline runs. A loose != 0 let a 2 regress past this test.
+    assert result.returncode == 1, result.stderr
     assert "Traceback" not in output, output
     assert "enable_versionin" in output

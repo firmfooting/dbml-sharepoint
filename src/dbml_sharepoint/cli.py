@@ -54,7 +54,13 @@ _CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError)
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
     detail = f"missing required key {exc}" if isinstance(exc, KeyError) else str(exc)
     typer.echo(f"[ERROR] {what} {path}: {detail}", err=True)
-    raise typer.Exit(code=2) from exc
+    # 1, not 2. The documented contract reserves 2 for the usage errors
+    # typer raises BEFORE the pipeline runs — a missing option, an unknown
+    # --site-role — and gives 1 to "the build refused", which explicitly
+    # includes an unreadable or invalid input file. A bad config is a
+    # refused build, not a misuse of the command line, and a CI gate keying
+    # on the documented table would have mis-classified it.
+    raise typer.Exit(code=1) from exc
 
 
 def _load_config(

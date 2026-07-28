@@ -195,6 +195,11 @@ def stable_repr(obj: object) -> str:
     processes and the docs looked stale on every other run.
     """
     if isinstance(obj, (set, frozenset)):
+        # An empty set has no brace form: repr(set()) is "set()", and
+        # "set({})" is not merely ugly, it evaluates to an empty DICT.
+        # Published docs showing it would teach the wrong literal.
+        if not obj:
+            return f"{type(obj).__name__}()"
         inner = ", ".join(sorted(stable_repr(x) for x in obj))
         return f"{type(obj).__name__}({{{inner}}})"
     if isinstance(obj, dict):

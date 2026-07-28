@@ -126,6 +126,3 @@ def check(vc: ValidationContext) -> list[Finding]:
             _check_policy_assignments(override_policy, ctx_key)
 
     return findings
-
-
-    return findings
