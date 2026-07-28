@@ -1,4 +1,5 @@
 # test/test_validator.py
+import ast
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -91,6 +92,38 @@ def test_data_bar_color_by_map_keys_must_be_enum_members(tmp_path: Path) -> None
     )
     # The valid key raises nothing.
     assert not any("'Low'" in f.message for f in findings if f.severity == "error")
+
+
+def test_calculated_number_and_date_styles_require_decoding(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Score calculated_number\n"
+        "  Due calculated_date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Risk:\n"
+        "    Score: '=1'\n"
+        "    Due: '=DATE(2026,1,1)'\n"
+        "column_formatting:\n"
+        "  Risk:\n"
+        "    Score: { style: data-bar, max: 25 }\n"
+        "    Due: { style: overdue-date }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    errors = [f.message for f in findings if f.severity == "error"]
+    assert any("Score" in message and "calculated: true" in message for message in errors)
+    assert any("Due" in message and "calculated: true" in message for message in errors)
 
 
 def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
@@ -363,8 +396,8 @@ def test_indexed_column_unknown_column_is_error() -> None:
 
 def test_indexed_column_cross_site_logical_name_is_error() -> None:
     """A cross-site column's LOGICAL name never exists in SP — it is expanded
-    to <col>Abbreviation / <col>SiteUrl. Indexing the logical name must be an
-    error; indexing an expanded name is valid."""
+    to <col>Abbreviation / <col>SiteUrl. The Text abbreviation is indexable;
+    the Hyperlink URL and nonexistent logical name are not."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.mapping.cross_site_reference_columns.append(
@@ -379,11 +412,97 @@ def test_indexed_column_cross_site_logical_name_is_error() -> None:
         for f in findings
     )
 
-    # Expanded names are the real rendered fields and must pass.
+    # The expanded abbreviation is Text and indexable. SiteUrl is a
+    # Hyperlink, which SharePoint does not support as an index target.
     bundle.mapping.indexed_columns["Task"] = ["ProjectAbbreviation", "ProjectSiteUrl"]
     findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "ProjectSiteUrl" in f.message
+        and "Hyperlink" in f.message for f in findings
+    )
     assert not any(
-        f.severity == "error" and "indexed_columns" in f.message for f in findings
+        f.severity == "error" and "ProjectAbbreviation" in f.message for f in findings
+    )
+
+
+def test_indexed_columns_reject_unsupported_field_types(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Notes longtext\n"
+        "  Url hyperlink\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "indexed_columns:\n"
+        "  Task: [Notes, Url]\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert any(
+        f.severity == "error" and "Notes" in f.message and "Note" in f.message
+        for f in findings
+    )
+    assert any(
+        f.severity == "error" and "Url" in f.message and "Hyperlink" in f.message
+        for f in findings
+    )
+
+
+def test_indexed_columns_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> None:
+    columns = "".join(f"  Col{i} nvarchar\n" for i in range(21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Wide {{\n  Id int [pk, increment]\n{columns}}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Wide: { kind: List, base_template: 100, site_role: default }\n"
+        "indexed_columns:\n"
+        f"  Wide: [{', '.join(f'Col{i}' for i in range(21))}, Col0]\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert any(
+        f.severity == "error" and "Col0" in f.message and "duplicate" in f.message
+        for f in findings
+    )
+    assert any(
+        f.severity == "error" and "21" in f.message and "20" in f.message
+        for f in findings
+    )
+
+
+def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path: Path) -> None:
+    columns = "".join(f"  Col{i} nvarchar [unique]\n" for i in range(21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Wide {{\n  Id int [pk, increment]\n{columns}}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Wide: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert any(
+        f.severity == "error" and "21" in f.message and "20" in f.message
+        for f in findings
     )
 
 
@@ -889,6 +1008,24 @@ def test_view_on_unknown_entity_is_error(tmp_path: Path) -> None:
         "views:\n  Widget:\n    - title: V\n      fields: [Title]\n",
     )
     assert any("Widget" in f.message and "views" in f.message for f in errors)
+
+
+def test_view_previous_titles_cannot_collide_or_claim_all_items(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: Open\n"
+        "      renamed_from: [Open, All Items, Legacy]\n"
+        "      fields: [Title]\n"
+        "    - title: Closed\n"
+        "      renamed_from: [Legacy, Open]\n"
+        "      fields: [Title]\n",
+    )
+    assert any("Open" in f.message and "own title" in f.message for f in errors)
+    assert any("All Items" in f.message and "reserved" in f.message for f in errors)
+    assert any("Legacy" in f.message and "more than one" in f.message for f in errors)
+    assert any("Open" in f.message and "current title" in f.message for f in errors)
 
 
 def test_view_field_references_must_be_rendered_columns(tmp_path: Path) -> None:
@@ -2170,3 +2307,168 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
         for f in findings
     )
     assert not [f for f in findings if f.severity == "error"]
+
+
+def test_view_formatting_may_only_read_columns_the_view_displays(tmp_path: Path) -> None:
+    """SharePoint resolves a view formatter's [$Field] against the columns
+    that view renders, not the list's columns — "reference to other fields
+    will work only if they are included in the same view". A reference to a
+    real column the view omits therefore resolves to nothing: the format
+    silently never fires, the build exits 0, and the only symptom is a row
+    wash nobody sees. Catching it needs the VIEW's field list, which is why
+    checking against the table's columns was not enough."""
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title]\n"
+        "      formatting: { additionalRowClass: \"=if([$Status] == 'Open', 'x', '')\" }\n",
+    )
+    assert any(
+        "Status" in f.message and "V" in f.message for f in errors
+    ), f"a formatter reading a column the view does not show must be refused: {errors}"
+
+    # The same reference is fine once the view actually shows the column.
+    ok = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status]\n"
+        "      formatting: { additionalRowClass: \"=if([$Status] == 'Open', 'x', '')\" }\n",
+    )
+    assert ok == [], ok
+
+
+def test_view_formatting_may_only_read_system_columns_the_view_displays(
+    tmp_path: Path,
+) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title]\n"
+        "      formatting: { additionalRowClass: \"=if([$Created] != '', 'x', '')\" }\n",
+    )
+    assert any("Created" in f.message and "does not display" in f.message for f in errors), (
+        f"a formatter cannot read an omitted system column: {errors}"
+    )
+
+    ok = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Created]\n"
+        "      formatting: { additionalRowClass: \"=if([$Created] != '', 'x', '')\" }\n",
+    )
+    assert ok == [], ok
+
+
+def _calculated_form_inputs(tmp_path: Path, block: str) -> tuple[Schema, MappingBundle]:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Score int\n"
+        "  Band calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Project:\n"
+        "    Band: '=IF([Score]>5,\"High\",\"Low\")'\n"
+        + block,
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_form_header_may_not_read_a_calculated_column(tmp_path: Path) -> None:
+    """A calculated column resolves to an empty string in a form header or
+    footer — verified on a live tenant against a saved item that had a
+    value. Nothing errors: the header renders, that one value is blank. The
+    deploy cannot see it either, because the formatter saves and reads back
+    byte-identical. So the build is the only place it can be caught.
+
+    Body sections are exempt: they list field NAMES rather than reading
+    values, and a calculated column placed in one renders on the Display
+    form exactly as intended."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_formatting:\n"
+        "  Project:\n"
+        "    header: { elmType: div, txtContent: '=[$Band]' }\n",
+    )
+    errors = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
+    ]
+    assert any(
+        "Band" in f.message and "calculated" in f.message.lower() for f in errors
+    ), f"a header reading a calculated column must be refused: {errors}"
+
+    # A non-calculated reference is fine, and so is the same calculated
+    # column named in a body section.
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_formatting:\n"
+        "  Project:\n"
+        "    header: { elmType: div, txtContent: '=[$Title]' }\n"
+        "    body: { sections: [ { displayname: X, fields: [Title, Band] } ] }\n",
+    )
+    ok = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert ok == [], ok
+
+
+def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> None:
+    """No collection may re-list the three calculated DBML types.
+
+    They belong to typemap's CALCULATED_OUTPUT_TYPES, because each needs an
+    SP OutputType — a calculated type without one cannot deploy, which is
+    what forces that map to stay complete and makes its keys authoritative.
+    Everywhere else derives from CALCULATED_TYPES.
+
+    A second copy is not a style problem: it is a set that can disagree
+    with the first. Add a fourth calculated type and the copy is silently
+    short, so every check reading it quietly stops covering the new type
+    while the suite stays green.
+
+    The rule is per-COLLECTION, not per-file. `conditions.py` legitimately
+    names calculated_number in its numeric types, calculated_date in its
+    date types and calculated_text in its measurable types — three
+    different classifications that each happen to include one. That is not
+    a copy of the vocabulary; a single literal holding all three is.
+    """
+    names = {"calculated_text", "calculated_number", "calculated_date"}
+    src = Path(__file__).parent.parent / "src" / "dbml_sharepoint"
+    offenders: list[str] = []
+    for path in sorted(src.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Set | ast.List | ast.Tuple):
+                literals = {
+                    e.value for e in node.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                }
+            elif isinstance(node, ast.Dict):
+                literals = {
+                    k.value for k in node.keys
+                    if isinstance(k, ast.Constant) and isinstance(k.value, str)
+                }
+            else:
+                continue
+            if names <= literals:
+                offenders.append(path.relative_to(src).as_posix())
+                break
+    assert offenders == ["analysis/typemap.py"], (
+        f"the calculated type vocabulary is enumerated in {offenders}; it "
+        f"belongs only in analysis/typemap.py, with everything else "
+        f"deriving from CALCULATED_TYPES"
+    )

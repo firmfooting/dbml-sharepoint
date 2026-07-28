@@ -76,6 +76,16 @@ def test_data_bar_matches_the_doc_pattern() -> None:
     assert out["style"]["margin"] == "1px 4px 1px 0"
 
 
+def test_data_bar_decodes_a_calculated_number() -> None:
+    out = expand_style(
+        {"style": "data-bar", "max": 25, "calculated": True}, "ctx",
+    )
+    width = out["style"]["width"]
+    assert "Number(substring(@currentField" in width
+    assert ";#" in width
+    assert out["children"][0]["txtContent"].startswith("=Number(substring(")
+
+
 def test_data_bar_color_by_takes_severity_tokens_from_another_column() -> None:
     """The mapping-translation pattern: the bar keeps its width semantics
     but wears the severity token mapped from ANOTHER column's value, so a
@@ -130,6 +140,16 @@ def test_overdue_date_guard_and_severity_treatment() -> None:
     assert "'Warning'" in out["children"][0]["attributes"]["iconName"]
     assert out["children"][1]["txtContent"] == "=toLocaleDateString(@currentField)"
     assert out["style"]["border-radius"] == "4px"
+
+
+def test_overdue_date_decodes_a_calculated_date() -> None:
+    out = expand_style(
+        {"style": "overdue-date", "calculated": True}, "ctx",
+    )
+    cls = out["attributes"]["class"]
+    assert "Date(substring(@currentField" in cls
+    assert ";#" in cls
+    assert "toLocaleDateString(Date(substring(" in out["children"][1]["txtContent"]
 
 
 @pytest.mark.parametrize("spec, fragment", [
@@ -204,6 +224,8 @@ def test_theme_override_unknown_keys_are_rejected() -> None:
     ({"style": "data-bar", "max": 25,
       "color_by": {"field": "R", "map": {"A": "good"}, "calculated": "false"}},
      "calculated"),
+    ({"style": "data-bar", "max": 25, "calculated": "false"}, "calculated"),
+    ({"style": "overdue-date", "calculated": "false"}, "calculated"),
 ])
 def test_quoted_booleans_in_style_specs_are_rejected(spec: dict[str, Any], key: str) -> None:
     """`bool("false")` is True, so the cautious spelling meant its

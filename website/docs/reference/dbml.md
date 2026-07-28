@@ -95,6 +95,9 @@ caught only because no column is called `Today`.
 
 Until this is a build error, treat the operands of every
 `calculated_formulas` entry as your responsibility: single-select Choice,
-Text, Number, Boolean and Date columns of the same list only.
+Text, Number, Boolean, Date and other **calculated** columns of the same
+list. Calculated operands are supported — the build provisions a
+calc-on-calc chain in dependency order and refuses a cycle — but Person
+and Lookup are not, and nothing checks them for you.
 
 :::

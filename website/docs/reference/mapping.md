@@ -91,6 +91,7 @@ with the sets it expanded from — nothing hides behind the indirection.
 views:
   Risk:
     - title: "Open by score"
+      renamed_from: ["Active risks"]
       default: true
       fields: [Title, Category, RiskScore, Status]
       where:
@@ -112,7 +113,16 @@ views:
   nesting existed keeps working unchanged. The same grammar drives
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
-- `formatting` points at a view-level (row) formatter JSON file.
+- `formatting` points at a view-level (row) formatter JSON file. Its
+  `[$Field]` references must be columns **this view displays** — SharePoint
+  resolves them against the view's own fields, so a reference to a column
+  the view omits yields nothing and the format silently never fires. System
+  columns such as `Created` and `Author` are not exceptions: put them in
+  `fields` when formatting reads them. An omitted reference is a build error
+  rather than a runtime surprise. A calculated column is fine here and needs
+  no `calculated: true`: the `string;#` prefix belongs to column formatting
+  only, see the
+  [style guide](./style-guide.md#styles).
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see
@@ -120,6 +130,11 @@ views:
 - Views are created under a URL slug derived from the title ("Open by
   score" lives at `OpenByScore.aspx`) and renamed to the declared title,
   so view URLs never contain `%20`.
+- `renamed_from` declares prior deployer-managed titles. If the current title
+  is absent and exactly one prior title exists, deployment adopts it and
+  migrates it to the current title and URL. If both exist, or multiple prior
+  titles exist, deployment fails closed rather than deleting an ambiguous
+  view. Keep aliases declared so sites that skip releases can still upgrade.
 - Every deployed list also gets a managed **All Items** recovery view. It
   has no filter and contains every rendered schema column plus `ID`,
   `Created`, `Modified`, `Author` and `Editor`. It is the default view only
@@ -152,7 +167,7 @@ into SharePoint's own formatter JSON, using only documented
 column_formatting:
   Risk:
     Status:    { style: severity, map: { Open: low, Closed: good } }
-    RiskScore: { style: data-bar, max: 25 }
+    RiskScore: { style: data-bar, max: 25, calculated: true }
     DueDate:   { style: overdue-date, guard: { field: Status, not: [Closed] } }
 ```
 
@@ -162,6 +177,12 @@ Available styles: `severity`, `pill`, `data-bar`, `trend`,
 where a parameterised style does not fit; the validator checks either
 form. The [style guide](style-guide.md) defines the tokens, icon rules
 and authoring rules in full.
+
+Set `calculated: true` when `severity`, `data-bar`, or `overdue-date`
+formats a `calculated_text`, `calculated_number`, or `calculated_date`
+target respectively. SharePoint exposes calculated values to column
+formatters as typed `type;#value` strings; the flag selects the matching
+decode before comparison, arithmetic, display, or date conversion.
 
 ## `form_formatting`
 
@@ -176,6 +197,49 @@ form_formatting:
 Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
+
+:::tip Header field references: what works, and the one thing that does not
+
+A header reads item fields the same way column formatting does — bare
+(`"txtContent": "[$Title]"`) or composed
+(`"='Risk: ' + [$Title]"`) — and the value updates live as the user types.
+
+**A blank field is harmless.** Before the item has a value the reference
+resolves to an empty string; nothing is discarded. Guard it only for
+looks, which is also PnP's house style — its
+[event-itinerary-header](https://github.com/pnp/list-formatting/tree/master/form-samples/event-itinerary-header)
+gates every element on `[$Field] != ''`:
+
+```json
+{ "txtContent": "=if([$Title] == '', 'New risk', 'Risk: ' + [$Title])" }
+```
+
+**A calculated column is the exception: it always resolves empty.**
+Verified on a live tenant against a saved item that had a value. Nothing
+errors — the header renders, that one value is blank. PnP has no
+counter-example anywhere in its samples: the only form sample that even
+declares a `Calculated` column never references it in the header, and
+several column samples use a `=""` calculated column *specifically
+because* it keeps the field off the forms.
+
+So put a calculated value on the form through `column_formatting` on the
+column itself, inside a body section. Referencing it from the header
+silently shows nothing — **which is now a build error**, since neither the
+build nor the deploy could otherwise tell you: the formatter saves and
+reads back byte-identical either way.
+
+Body sections are exempt. They list field *names* rather than reading
+values, so a calculated column in a section renders on the Display form
+exactly as intended.
+
+If you see `… not part of the data object` in the console, that is the
+`"debugMode": true` switch reporting a blank field, not a failure. Take
+`debugMode` out before shipping.
+
+The deploy cannot check any of this: the formatter saves, reads back
+byte-identical and the phase reports it verified whatever the form does.
+
+:::
 
 ## `form_visibility`
 
@@ -583,7 +647,7 @@ Lookup/Person references, no `[Today]`) are enforced at build time.
 
 ```yaml
 indexed_columns:
-  Risk: [Status]
+  Risk: [Status, Category, ReviewDate]
 
 versioning:
   default:
@@ -602,6 +666,15 @@ polymorphic_patterns: []           # discriminator-typed reference columns
 watched_lists: []                  # lists to flag in the manifest for watching
 retention_policies_source: null    # documented retention posture (manifest)
 ```
+
+`indexed_columns` is the source of truth for ordinary SharePoint indexes;
+it is a physical mapping concern and is not written in DBML. DBML `[unique]`
+still implies an index because SharePoint enforces uniqueness through one.
+The build rejects duplicate targets, more than 20 effective indexes per list,
+calculated columns, multiple-lines-of-text columns, hyperlinks and generated
+`SiteUrl` fields. Lookup and Person columns are technically indexable, but
+Microsoft notes that their indexes do not avoid list-view-threshold failures;
+prefer a supported scalar column as a view's first selective filter.
 
 ## Protection
 

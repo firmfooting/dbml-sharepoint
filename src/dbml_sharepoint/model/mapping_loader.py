@@ -133,8 +133,8 @@ _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
 })
 _VIEW_KEYS = frozenset({
-    "title", "fields", "default", "where", "sort", "group_by", "row_limit",
-    "formatting", "widths",
+    "title", "renamed_from", "fields", "default", "where", "sort", "group_by",
+    "row_limit", "formatting", "widths",
 })
 _GROUP_KEYS = frozenset({
     "name", "description", "owner_group", "allow_members_edit_membership",
@@ -596,6 +596,11 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     fields = raw_view.get("fields")
     if not isinstance(fields, list) or not fields or not all(isinstance(f, str) for f in fields):
         raise ValueError(f"{context}: view 'fields' must be a non-empty list of column names")
+    renamed_from = raw_view.get("renamed_from") or []
+    if not isinstance(renamed_from, list) or not all(
+        isinstance(previous, str) for previous in renamed_from
+    ):
+        raise ValueError(f"{context}: 'renamed_from' must be a list of view titles")
     where = (
         parse_condition(raw_view["where"], f"{context}.where")
         if "where" in raw_view
@@ -641,6 +646,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     return ViewDef(
         title=str(title),
         fields=[str(f) for f in fields],
+        renamed_from=[str(previous) for previous in renamed_from],
         default=_optional_bool(raw_view, "default", context),
         where=where,
         sort=sort,

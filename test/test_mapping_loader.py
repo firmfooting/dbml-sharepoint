@@ -513,6 +513,7 @@ def test_views_section_parsed(tmp_path: Path) -> None:
             "views:\n"
             "  Project:\n"
             "    - title: Open projects\n"
+            "      renamed_from: [Active projects, Current projects]\n"
             "      default: true\n"
             "      fields: [Title, Status]\n"
             "      where:\n"
@@ -529,6 +530,7 @@ def test_views_section_parsed(tmp_path: Path) -> None:
     assert len(views) == 1
     view = views[0]
     assert view.title == "Open projects"
+    assert view.renamed_from == ["Active projects", "Current projects"]
     assert view.default is True
     assert view.fields == ["Title", "Status"]
     assert view.where == Group("all_of", (Leaf("Status", "neq", "Closed"),))
@@ -554,6 +556,24 @@ def test_views_optional_parts_default(tmp_path: Path) -> None:
     assert view.sort == []
     assert view.group_by is None
     assert view.row_limit is None
+    assert view.renamed_from == []
+
+
+def test_view_renamed_from_must_be_a_string_list(tmp_path: Path) -> None:
+    import pytest
+
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      renamed_from: Active projects\n"
+            "      fields: [Title]\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"renamed_from.*list"):
+        load_mapping(tmp_path / "m.yaml")
 
 
 def test_views_absent_defaults_empty() -> None:

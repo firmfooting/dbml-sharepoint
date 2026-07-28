@@ -20,6 +20,12 @@ Field type kinds map to SP REST FieldTypeKind values:
 CALCULATED_OUTPUT_TYPES = {'calculated_text': 2, 'calculated_number': 9, 'calculated_date': 4}
 ```
 
+### `CALCULATED_TYPES`
+
+```python
+CALCULATED_TYPES = frozenset({'calculated_date', 'calculated_number', 'calculated_text'})
+```
+
 ### `SPField`
 
 ```python

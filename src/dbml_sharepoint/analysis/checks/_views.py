@@ -121,6 +121,40 @@ def check(vc: ValidationContext) -> list[Finding]:
             findings.append(Finding(
                 "error", f"views[{entity_name}]: duplicate view title {title!r}.",
             ))
+        previous_claims: dict[str, list[str]] = {}
+        for view in views:
+            for previous in view.renamed_from:
+                ctx = f"views[{entity_name}].{view.title}.renamed_from"
+                if not previous.strip():
+                    findings.append(Finding(
+                        "error", f"{ctx}: previous titles cannot be empty.",
+                    ))
+                if previous == view.title:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: {previous!r} is the view's own title, not a "
+                        f"previous title.",
+                    ))
+                if previous == "All Items":
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: 'All Items' is reserved for the generated "
+                        f"recovery view and cannot be adopted.",
+                    ))
+                if previous in titles and previous != view.title:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: {previous!r} is another declared view's "
+                        f"current title.",
+                    ))
+                previous_claims.setdefault(previous, []).append(view.title)
+        for previous, claimants in previous_claims.items():
+            if len(claimants) > 1:
+                findings.append(Finding(
+                    "error",
+                    f"views[{entity_name}]: previous title {previous!r} is "
+                    f"claimed by more than one view ({', '.join(claimants)}).",
+                ))
         defaults = [v.title for v in views if v.default]
         if len(defaults) > 1:
             findings.append(Finding(
@@ -196,11 +230,29 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error", f"{ctx}: row_limit must be between 1 and 5000.",
                 ))
             if view.formatting is not None:
-                for ref in sorted(formatter_field_refs(view.formatting) - view_rendered):
+                refs = formatter_field_refs(view.formatting)
+                for ref in sorted(refs - view_rendered):
                     findings.append(Finding(
                         "error",
                         f"{ctx}: formatting references [${ref}], which is "
                         f"not a rendered column of {entity_name}.",
+                    ))
+                # A real column the VIEW does not display is the worse case,
+                # including built-in system columns such as Created/Author:
+                # SharePoint resolves a view formatter's references against
+                # the columns that view renders, so the reference yields
+                # nothing and the format silently never fires. The build
+                # exits 0, the deploy reports the formatter verified, and
+                # the only symptom is a row wash nobody sees.
+                shown = set(view.fields)
+                for ref in sorted((refs & view_rendered) - shown):
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: formatting references [${ref}], which this "
+                        f"view does not display — a view formatter can only "
+                        f"read columns in its own 'fields', so the format "
+                        f"would never fire. Add {ref} to fields, or drop the "
+                        f"reference.",
                     ))
             # Widths bind to columns the view actually shows; a width on an
             # unshown column is dead config the deployer would emit and SP

@@ -62,6 +62,14 @@ _CALC_TEXT = (
 )
 
 
+def _calculated_scalar(constructor: str) -> str:
+    """Decode SharePoint's ``type;#value`` calculated-field payload."""
+    return (
+        f"{constructor}(substring(@currentField, "
+        "indexOf(@currentField, ';#') + 2, 1000))"
+    )
+
+
 def _fail(context: str, message: str) -> ValueError:
     return ValueError(f"{context}: {message}")
 
@@ -204,11 +212,13 @@ def _pill(
 def _data_bar(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
-    _reject_unknown_keys(spec, {"style", "max", "color_by"}, context)
+    _reject_unknown_keys(spec, {"style", "max", "calculated", "color_by"}, context)
     maximum = spec.get("max")
     if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
         raise _fail(context, "data-bar requires a positive integer 'max'")
     factor_text = f"{100 / maximum:g}"
+    calculated = _bool(spec, "calculated", context, default=False)
+    value = _calculated_scalar("Number") if calculated else "@currentField"
     color_by = spec.get("color_by")
     if color_by is None:
         class_expr = "sp-field-dataBars"
@@ -246,7 +256,7 @@ def _data_bar(
         "elmType": "div",
         "children": [{
             "elmType": "span",
-            "txtContent": "@currentField",
+            "txtContent": f"={value}" if calculated else value,
             "style": {"padding-left": "8px", "white-space": "nowrap"},
         }],
         "attributes": {"class": class_expr},
@@ -254,8 +264,8 @@ def _data_bar(
             "padding": "0",
             "display": _HIDE_BLANK,
             "width": (
-                f"=if(@currentField >= {maximum}, '100%', "
-                f"(@currentField * {factor_text}) + '%')"
+                f"=if({value} >= {maximum}, '100%', "
+                f"({value} * {factor_text}) + '%')"
             ),
             **_CELL_INSET,
         },
@@ -293,7 +303,9 @@ def _trend(spec: dict[str, Any], context: str) -> dict[str, Any]:
 def _overdue_date(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
-    _reject_unknown_keys(spec, {"style", "guard"}, context)
+    _reject_unknown_keys(spec, {"style", "calculated", "guard"}, context)
+    calculated = _bool(spec, "calculated", context, default=False)
+    value = _calculated_scalar("Date") if calculated else "@currentField"
     guard = spec.get("guard")
     guard_terms = ""
     if guard is not None:
@@ -306,7 +318,7 @@ def _overdue_date(
             f" && [${field_name}] != '{str(v).replace(chr(39), chr(39) * 2)}'"
             for v in excluded
         )
-    overdue = f"@currentField != '' && @currentField < @now{guard_terms}"
+    overdue = f"@currentField != '' && {value} < @now{guard_terms}"
     severe = _resolve("severe", context, theme)
     return {
         "$schema": _SCHEMA,
@@ -326,7 +338,7 @@ def _overdue_date(
                     "iconName": f"=if({overdue}, '{severe.icon or ''}', '')",
                 },
             },
-            {"elmType": "span", "txtContent": "=toLocaleDateString(@currentField)"},
+            {"elmType": "span", "txtContent": f"=toLocaleDateString({value})"},
         ],
     }
 
