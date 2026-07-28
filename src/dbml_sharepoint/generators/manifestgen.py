@@ -52,6 +52,19 @@ def generate_manifest(
         if f.get("custom_formatter") is not None
     ]
 
+    # The manifest describes ONE build: the lists this site_role deploys.
+    # schema_json is already filtered to that role; bundle.mapping is not.
+    # Every inventory driven straight off the mapping therefore announced
+    # rules, retirements, reconcile modes and polymorphic columns on lists
+    # that appear nowhere in this build's own deploy.js — the manifest and
+    # the script disagreeing, in the artefact an operator reads to decide
+    # whether to paste the script. Anything below that starts from
+    # bundle.mapping passes through here first.
+    deployed_titles = {lst["title"] for lst in schema_json["lists"]}
+
+    def _deployed(entity: str) -> bool:
+        return f"{bundle.mapping.prefix}{entity}" in deployed_titles
+
     # Every field the deploy actually writes, per list. Iterating
     # fields_phase1 alone made the manifest blind to deferred lookups:
     # jsgen puts the identical keys on phase2_lookups and deploy.js writes
@@ -101,10 +114,12 @@ def generate_manifest(
         "form_visibility": {
             f"{bundle.mapping.prefix}{entity}": section.reconcile
             for entity, section in bundle.mapping.form_visibility.items()
+            if _deployed(entity)
         },
         "column_validation": {
             f"{bundle.mapping.prefix}{entity}": section.reconcile
             for entity, section in bundle.mapping.column_validation.items()
+            if _deployed(entity)
         },
     }
     # The cross-column sibling had no section at all, so a save rule
@@ -116,6 +131,7 @@ def generate_manifest(
             "message": rule.message,
         }
         for entity, rule in bundle.mapping.list_validation.items()
+        if _deployed(entity)
     ]
 
     def _form_parts(client_formatter: str) -> str:
@@ -181,6 +197,7 @@ def generate_manifest(
             "reason": spec.reason or "—",
         }
         for entity, cols in bundle.mapping.retired_columns.items()
+        if _deployed(entity)
         for column, spec in cols.items()
     ]
     # Polymorphic patterns are data-driven: unprefixed entity names in the mapping, rendered
@@ -192,7 +209,19 @@ def generate_manifest(
             "discriminator": p.discriminator,
         }
         for p in bundle.mapping.polymorphic_patterns
+        if _deployed(p.list)
     ]
+    # Retention keys are authored in config/retention-policies.yaml and are
+    # loose about form: some name the entity, some the prefixed list title.
+    # Resolve both. A key matching no declared entity at all is KEPT — that
+    # is a typo the operator needs to see, not a role leak to hide, and
+    # dropping it would trade one silent disagreement for another.
+    retention = {
+        key: policy
+        for key, policy in bundle.retention_list_defaults.items()
+        if (entity := key.removeprefix(bundle.mapping.prefix)) not in bundle.mapping.entities
+        or _deployed(entity)
+    }
     extras = manifest_extras if manifest_extras is not None else ManifestExtras()
     return template.render(
         phase_num=phase_numbers(),
@@ -216,7 +245,7 @@ def generate_manifest(
         reconcile_modes=reconcile_modes,
         list_validation=list_validation,
         form_formatting=form_formatting,
-        retention=bundle.retention_list_defaults,
+        retention=retention,
         prefix=bundle.mapping.prefix,
         schema_json=schema_json,
         seed_items=schema_json["seed_items"],

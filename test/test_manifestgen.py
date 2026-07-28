@@ -463,6 +463,155 @@ def test_manifest_has_a_list_validation_section(tmp_path: Path) -> None:
     assert "Status is_not_null" in md
 
 
+def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> None:
+    """The manifest is what an operator reads to decide whether to paste the
+    script, so it must describe THIS build and no other.
+
+    `schema_json` is already filtered to the target `site_role`, but several
+    inventories iterated `bundle.mapping` directly instead — so a build for
+    role `default` announced validation rules, retirements, reconcile modes
+    and polymorphic columns on lists that appear nowhere in its own
+    `deploy.js`. Not a deploy defect; the manifest-disagrees-with-behaviour
+    one, which is worse in an artefact whose whole job is to be believed."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Note nvarchar\n"
+        "  Status nvarchar\n"
+        "}\n"
+        "Table Ledger {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Note nvarchar\n"
+        "  Status nvarchar\n"
+        "  OldNote nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    # Ledger lives on the OTHER role, and every section below names it.
+    # Escalation carries a declaration in the two reconcile-bearing sections
+    # so those sections RENDER: their "Reconcile:" line is emitted only when
+    # the section has entries, which would otherwise hide the same leak.
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
+        "  Ledger: { kind: List, base_template: 100, site_role: finance }\n"
+        "display_names:\n"
+        "  mode: auto\n"
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note: hidden\n"
+        "  Ledger:\n"
+        "    columns:\n"
+        "      Note: hidden\n"
+        "column_validation:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        "          - { field: Note, op: is_not_null }\n"
+        "        message: Say something.\n"
+        "  Ledger:\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        "          - { field: Note, op: is_not_null }\n"
+        "        message: Say something.\n"
+        "list_validation:\n"
+        "  Ledger:\n"
+        "    when:\n"
+        "      - { field: Status, op: is_not_null }\n"
+        "    message: A status is required.\n"
+        "retired_columns:\n"
+        "  Ledger:\n"
+        "    OldNote:\n"
+        "      retired: 2026-09-01\n"
+        "polymorphic_patterns:\n"
+        "  - { list: Ledger, field: Note, discriminator: Status }\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    # Guards the fixture: a manifest that rendered nothing at all would pass
+    # the real assertion below without proving anything.
+    assert "APP_Escalation" in md
+    leaked = [ln for ln in md.splitlines() if "APP_Ledger" in ln or "Ledger" in ln]
+    assert not leaked, f"the manifest describes lists this role does not deploy: {leaked}"
+
+
+def test_manifest_retention_table_covers_only_this_role(tmp_path: Path) -> None:
+    """The retention table is the same leak, one section further down, and
+    its keys are the awkward case: `list_defaults` is authored loosely, so
+    some name the entity and some the prefixed list title. Both forms must
+    resolve — and a key naming no declared entity at all must SURVIVE the
+    filter, because that is a typo the operator needs to see rather than a
+    role leak to hide."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n"
+        "Table Ledger {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "r.yaml").write_text(
+        "policies:\n"
+        "  Standard7Y:\n"
+        '    description: "Seven years."\n'
+        '    sp_label: "GH-Standard-7Y"\n'
+        "    retain_years: 7\n"
+        "list_defaults:\n"
+        "  Escalation: Standard7Y\n"       # this role, bare entity name
+        "  APP_Ledger: Standard7Y\n"       # other role, prefixed title
+        "  Ghost: Standard7Y\n",           # names nothing declared
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "retention_policies_source: r.yaml\n"
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
+        "  Ledger: { kind: List, base_template: 100, site_role: finance }\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    table = md.split("## Retention policy mapping")[1]
+    assert "| Escalation |" in table, table
+    assert "| Ghost |" in table, table
+    assert "Ledger" not in table, table
+
+
 def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
     """The operator must be able to see, from the manifest alone, which
     columns are retired and why — retirement is a silent mutation of the
