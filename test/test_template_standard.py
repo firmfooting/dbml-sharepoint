@@ -508,6 +508,44 @@ def test_at_least_the_exemplars_are_uplifted() -> None:
     assert set(_uplifted()) >= {"risk-register", "tiered-huddle"}
 
 
+# The roster's floor, pinned. Every template on it needs a reason recorded
+# beside it, and the four theme branches have now landed, so the only
+# admissible reason left is the document-library gap in the standard itself
+# — not "we ran out of time" and not "this one is awkward".
+ROSTER_EXCEPTIONS: frozenset[str] = frozenset({"policy-library"})
+
+
+def test_the_roster_holds_only_its_documented_exception() -> None:
+    """The spec said this set must reach empty when the last theme branch
+    landed. It reached one, for a reason the spec did not anticipate:
+    `policy-library`'s `PolicyDocuments` half is a document library, and
+    three parts of the standard do not describe one (see the comment on
+    NOT_YET_UPLIFTED).
+
+    So the aspiration becomes a check. Adding a template here now fails
+    unless it is also added to ROSTER_EXCEPTIONS, which is a deliberate,
+    reviewable act — and the empty set stays the goal rather than becoming
+    a place to put anything inconvenient.
+    """
+    undocumented = NOT_YET_UPLIFTED - ROSTER_EXCEPTIONS
+    assert not undocumented, (
+        f"{sorted(undocumented)} are on NOT_YET_UPLIFTED with no recorded reason. "
+        f"The roster is not a way out of the standard: uplift the template, or "
+        f"document why it cannot be and add it to ROSTER_EXCEPTIONS."
+    )
+
+
+def test_the_roster_exceptions_are_still_needed() -> None:
+    """The mirror of the rule above. An exception left behind after its
+    template is uplifted would quietly exempt that template from every
+    assertion in this file."""
+    stale = ROSTER_EXCEPTIONS - NOT_YET_UPLIFTED
+    assert not stale, (
+        f"{sorted(stale)} are documented exceptions but no longer on the roster — "
+        f"delete them from ROSTER_EXCEPTIONS."
+    )
+
+
 def test_the_declared_section_beats_are_arc_beats() -> None:
     """Guards SECTION_BEATS itself: a typo'd beat would otherwise fail the
     body test with a message pointing at the template rather than at here."""
