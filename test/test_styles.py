@@ -118,6 +118,18 @@ def test_data_bar_color_by_plain_column_uses_equality() -> None:
     assert "[$Rating] == 'Low'" in out["attributes"]["class"]
 
 
+def test_calculated_data_bar_keeps_decoding_with_plain_color_source() -> None:
+    out = expand_style(
+        {"style": "data-bar", "max": 25, "calculated": True,
+         "color_by": {"field": "Rating", "map": {"Low": "good"}}},
+        "ctx",
+    )
+    decoded = "Number(substring(@currentField"
+    assert decoded in out["style"]["width"]
+    assert out["children"][0]["txtContent"].startswith(f"={decoded}")
+    assert "[$Rating] == 'Low'" in out["attributes"]["class"]
+
+
 def test_trend_compares_against_column() -> None:
     out = expand_style({"style": "trend", "against": "Before"}, "ctx")
     icon_span = out["children"][0]

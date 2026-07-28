@@ -163,8 +163,8 @@ its own run and re-seals afterwards; nobody else should need to.
 
 ## Data-quality rules
 
-1. `RiskOwner` and `Category` are mandatory on every row — SharePoint
-   refuses to save without them.
+1. `RiskOwner` is mandatory on every row. `Category` may stay blank while a
+   risk is being classified; use the register's review process to complete it.
 2. Consequence is "worst credible", agreed at review — not re-argued
    weekly.
 3. Closed risks keep their history; a recurrence is a new row, with
