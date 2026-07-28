@@ -1,6 +1,7 @@
 """Command-line interface for dbml-sharepoint."""
 
 import datetime as dt
+import shutil
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlparse
@@ -50,6 +51,17 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
 # A bad config file fails as one of these. Deliberately not `Exception`:
 # an unexpected error is a bug in the tool and must keep its traceback.
 _CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
+
+_REPORT_FILES = ("REPORTING.md", "DATA-DICTIONARY.md")
+_REPORT_DIRECTORIES = ("powerquery", "sql")
+
+
+def _clear_report_output(out: Path) -> None:
+    """Remove generated standalone-report artifacts, preserving other files."""
+    for dirname in _REPORT_DIRECTORIES:
+        shutil.rmtree(out / dirname, ignore_errors=True)
+    for filename in _REPORT_FILES:
+        (out / filename).unlink(missing_ok=True)
 
 
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
@@ -265,6 +277,9 @@ def report(
     DATA-DICTIONARY.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
     """
+    # Fail closed like `build`: no refused run may leave a previous report
+    # set looking current. This removes only files owned by this command.
+    _clear_report_output(out)
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
 
     # Same data-driven role vocabulary as `build`: a misspelled role would
