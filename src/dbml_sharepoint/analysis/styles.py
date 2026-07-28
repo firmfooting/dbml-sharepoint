@@ -217,8 +217,8 @@ def _data_bar(
     if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
         raise _fail(context, "data-bar requires a positive integer 'max'")
     factor_text = f"{100 / maximum:g}"
-    calculated = _bool(spec, "calculated", context, default=False)
-    value = _calculated_scalar("Number") if calculated else "@currentField"
+    target_calculated = _bool(spec, "calculated", context, default=False)
+    value = _calculated_scalar("Number") if target_calculated else "@currentField"
     color_by = spec.get("color_by")
     if color_by is None:
         class_expr = "sp-field-dataBars"
@@ -237,14 +237,14 @@ def _data_bar(
             color_by, {"field", "map", "calculated"}, f"{context}.color_by",
         )
         value_map = _validated_map(color_by, context)
-        calculated = _bool(
+        source_calculated = _bool(
             color_by, "calculated", f"{context}.color_by", default=False,
         )
         tokens = {v: _resolve(t, context, theme) for v, t in value_map.items()}
         fallback = _resolve("muted", context, theme)
         ref = f"[${field_name}]"
         pairs = [
-            (_condition(v, calculated, ref), tok.classes)
+            (_condition(v, source_calculated, ref), tok.classes)
             for v, tok in tokens.items()
         ]
         class_expr = (
@@ -256,7 +256,7 @@ def _data_bar(
         "elmType": "div",
         "children": [{
             "elmType": "span",
-            "txtContent": f"={value}" if calculated else value,
+            "txtContent": f"={value}" if target_calculated else value,
             "style": {"padding-left": "8px", "white-space": "nowrap"},
         }],
         "attributes": {"class": class_expr},
