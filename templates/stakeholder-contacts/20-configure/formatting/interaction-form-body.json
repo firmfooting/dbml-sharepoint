@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "What happened",
+      "fields": ["Title", "Contact", "InteractionDate", "InteractionType"]
+    },
+    {
+      "displayname": "What was said",
+      "fields": ["Summary"]
+    },
+    {
+      "displayname": "Our record",
+      "fields": ["RecordedBy"]
+    }
+  ]
+}

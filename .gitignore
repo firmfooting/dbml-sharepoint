@@ -27,3 +27,6 @@ Thumbs.db
 # repository, and they dominated PR diffs (9,062 lines across 8 files).
 # Kept on disk so the reasoning survives; `git clean -x` WOULD delete them.
 docs/superpowers/
+
+# Worktrees created for parallel agent work.
+.claude/worktrees/

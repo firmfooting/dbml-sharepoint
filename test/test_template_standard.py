@@ -49,13 +49,12 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # four.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "audit-actions", "complaints-feedback",
-    "compliance-obligations", "contract-register", "credentialing-register",
+    "compliance-obligations", "contract-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "incident-management",
-    "meeting-actions", "onboarding-tracker",
     "policy-library", "routine-checks",
-    "service-requests", "stakeholder-contacts", "switchboard-log",
-    "training-register", "vehicle-log", "visitor-log", "volunteer-register",
+    "service-requests", "switchboard-log",
+    "vehicle-log", "visitor-log",
 })
 
 # §1.2. Order never changes; a small list may collapse the middle beats but
@@ -131,6 +130,89 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Digitise it": "Act",
         "Review": "Govern",
         "System": "System",
+    },
+    # People & relationships. "Checks and clearances" is the Assess beat
+    # even though nothing is scored there: the checks ARE the assessment
+    # this register performs, and Active is the decision they gate.
+    ("volunteer-register", "Volunteer"): {
+        "Who they are": "Identify",
+        "Checks and clearances": "Assess",
+        "In the programme": "Act",
+        "Coordination": "Govern",
+    },
+    # The catalogue never reaches Govern: a Course row is a definition, and
+    # the governance that acts on it lives on TrainingRecord.
+    ("training-register", "Course"): {
+        "The course": "Identify",
+        "Requirement and validity": "Assess",
+        "Booking and content": "Act",
+    },
+    ("training-register", "TrainingRecord"): {
+        "Who and what": "Identify",
+        "When": "Assess",
+        "Evidence": "Act",
+        "Currency and notes": "Govern",
+    },
+    # Both lists collapse Assess: an onboarding record is not rated, it is
+    # scheduled. The middle beat is where the work is scheduled and owned.
+    ("onboarding-tracker", "Starter"): {
+        "The hire": "Identify",
+        "Start and ownership": "Act",
+        "Progress": "Govern",
+    },
+    ("onboarding-tracker", "OnboardingTask"): {
+        "The task": "Identify",
+        "Who and when": "Act",
+        "Outcome": "Govern",
+    },
+    # "Registration" and "Issue and expiry" are the Assess beat: on this
+    # register the assessment IS the documentary evidence, and the Act beat
+    # is what the organisation then does with it — grant a scope, or link
+    # the sighted proof.
+    ("credentialing-register", "Practitioner"): {
+        "The practitioner": "Identify",
+        "Registration": "Assess",
+        "Scope of practice": "Act",
+        "Standing": "Govern",
+    },
+    ("credentialing-register", "Credential"): {
+        "The credential": "Identify",
+        "Issue and expiry": "Assess",
+        "Evidence": "Act",
+        "Standing": "Govern",
+    },
+    # Meeting collapses to two beats and Decision to two, in both cases
+    # because there is genuinely nothing in the middle: a meeting is a fact
+    # plus its record, and a decision is a statement plus its reasoning.
+    ("meeting-actions", "Meeting"): {
+        "The meeting": "Identify",
+        "The record": "Govern",
+    },
+    ("meeting-actions", "Decision"): {
+        "The decision": "Identify",
+        "Why": "Assess",
+    },
+    ("meeting-actions", "ActionItem"): {
+        "The action": "Identify",
+        "Owner and date": "Act",
+        "Progress": "Govern",
+    },
+    # "What was said" is the Assess beat on a log whose whole job is
+    # judgement: the summary is what a colleague picking up the thread
+    # actually reads.
+    ("stakeholder-contacts", "Organisation"): {
+        "The organisation": "Identify",
+        "Ownership": "Govern",
+    },
+    ("stakeholder-contacts", "Contact"): {
+        "The person": "Identify",
+        "How to reach them": "Act",
+        "Standing and notes": "Govern",
+    },
+    ("stakeholder-contacts", "Interaction"): {
+        "What happened": "Identify",
+        "What was said": "Assess",
+        "Our record": "Govern",
     },
 }
 

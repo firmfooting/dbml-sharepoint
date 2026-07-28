@@ -58,3 +58,321 @@ list_permissions:
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
+
+# Backend internal names stay exactly as authored in the DBML (the two
+# lookups, the indexes, the views and the reporting bundle all key on
+# them); the deployer renames the display Title after create. One
+# override: "Is Active" is how a programmer reads a boolean and "Active"
+# is how everyone else does.
+display_names:
+  mode: auto
+  overrides:
+    Contact:
+      IsActive: "Active"
+
+# ONE formatted column on the whole template, and the emptiness elsewhere
+# is a finding rather than an oversight. This register has no lifecycle
+# enum and no deadline date: OrgType and InteractionType are taxonomies of
+# what a thing IS, not states it passes through, and giving them severity
+# tokens would hand the fleet's colour vocabulary a second, incompatible
+# meaning (see the style guide's role-not-word rule). InteractionDate is
+# when something HAPPENED, so an overdue treatment would redden the entire
+# log. That is why this was the only template in its theme shipping with
+# no column_formatting at all — correctly, until now.
+#
+# IsActive is the exception and it IS a lifecycle: current, or moved on.
+# It gets a bespoke file rather than `style: severity`, because the
+# parameterised styles compare @currentField against QUOTED strings and a
+# SharePoint Yes/No column is a boolean, not the words "Yes" and "No" —
+# a string comparison there would match nothing and fail silently, which
+# is the exact failure mode the style standard exists to prevent.
+#
+# The truthiness test is Microsoft's own documented idiom for a Yes/No
+# column ("it checks for the value true which maps to Yes for users",
+# list-form-conditional-show-hide; `=if([$Promoted], …)` is listed as
+# valid). Documented rather than read back off a live list, so
+# 30-deploy/DEPLOY.md carries a checklist line asking the first adopter to
+# confirm it renders — the same treatment tiered-huddle's Route formula
+# gets. The classes are the token table's own `low` and `muted`; no icon,
+# because an arrow beside every active contact in a directory is noise.
+column_formatting:
+  Contact:
+    IsActive: formatting/contact-active.json
+
+# NO field_sets. The standard's threshold is three repetitions of the same
+# run of columns, and no list here has more than two views — below that the
+# indirection costs more than it saves. Recorded because its absence in a
+# three-list template otherwise reads as an omission.
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view and the
+# keys are INTERNAL names — the build rewrites them to display titles,
+# because ColumnWidth binds by display name and an internal name silently
+# resets.
+views:
+  Organisation:
+    # Deliberately unfiltered, and the blank group at the end is doing
+    # real work: it is every organisation nobody owns, which is exactly
+    # what GOVERNANCE.md's quarterly ownership check is looking for.
+    #
+    # A filtered "Unowned" view would be better and IS NOT BUILDABLE. A
+    # person column needs a `property` accessor to be compared at all —
+    # there is no defensible default between a name, an email and an id —
+    # and CAML refuses every accessor it might be given. The `me` sentinel
+    # resolves that deadlock for equality only, by supplying the accessor
+    # itself; there is no equivalent for a null test. So the grouping
+    # carries it. See 30-deploy/DEPLOY.md.
+    - title: "By owner"
+      default: true
+      fields: [Title, OrgType, Owner, Website]
+      group_by: { field: Owner, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        OrgType: 200
+        Owner: 160
+        Website: 180
+    - title: "By type"
+      fields: [Title, OrgType, Owner, Website]
+      group_by: { field: OrgType, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        OrgType: 200
+        Owner: 160
+        Website: 180
+  Contact:
+    - title: "Active by organisation"
+      default: true
+      fields: [Title, Organisation, Role, Email, Phone, IsActive]
+      where:
+        - { field: IsActive, op: eq, value: true }
+      group_by: { field: Organisation, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Organisation: 220
+        Role: 200
+        Email: 220
+        Phone: 160
+        IsActive: 120
+    # The privacy surface. GOVERNANCE.md's annual purge review — contact
+    # details cleared, row and interaction history kept — is worked from
+    # here, and it is the only place these rows appear once they leave the
+    # working view.
+    - title: "Moved on"
+      fields: [Title, Organisation, Role, Email, Phone, IsActive]
+      where:
+        - { field: IsActive, op: eq, value: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Organisation: 220
+        Role: 200
+        Email: 220
+        Phone: 160
+        IsActive: 120
+  Interaction:
+    # A ROLLING NINETY DAYS. The published row was "sorted by
+    # InteractionDate, newest first" with no filter, which on a register
+    # anyone has actually used is every interaction ever. CAML has no
+    # calendar predicate — today±N is what exists — so this is a rolling
+    # window rather than "this quarter", and the title says "Recent"
+    # rather than naming a period so it cannot lie about which. Nothing is
+    # lost: "By contact" below carries no filter at all.
+    - title: "Recent activity"
+      default: true
+      fields: [Title, Contact, InteractionDate, InteractionType, RecordedBy]
+      where:
+        - { field: InteractionDate, op: geq, value: today-90 }
+      sort:
+        - { field: InteractionDate, direction: desc }
+      widths:
+        Title: 320
+        Contact: 220
+        InteractionDate: 160
+        InteractionType: 160
+        RecordedBy: 160
+    # THE PUBLISHED ROW WAS "By contact — filter by Contact, the handover
+    # view". A static view cannot filter to one parent record; the choices
+    # were one view per contact, rotting from the day it was made, or one
+    # grouped view that never does. Collapsed and unfiltered: opening a
+    # contact's group before a meeting IS reading the thread, and the
+    # whole history is what makes that worth doing.
+    - title: "By contact"
+      fields: [Title, Contact, InteractionDate, InteractionType, RecordedBy]
+      group_by: { field: Contact, collapsed: true }
+      sort:
+        - { field: InteractionDate, direction: desc }
+      widths:
+        Title: 320
+        Contact: 220
+        InteractionDate: 160
+        InteractionType: 160
+        RecordedBy: 160
+
+# Form layouts: a strapline header and a sectioned body per list. Section
+# field lists are authored with INTERNAL names; the build rewrites them to
+# display titles. Per-field description hints render on the NEW form only —
+# SharePoint suppresses column descriptions on the Edit form.
+#
+# The Contact strapline carries the privacy rule rather than leaving it in
+# GOVERNANCE.md, because that is where it is needed: at the moment someone
+# is typing a note about a person who can ask to read it.
+form_formatting:
+  Organisation:
+    header: formatting/organisation-form-header.json
+    body: formatting/organisation-form-body.json
+  Contact:
+    header: formatting/contact-form-header.json
+    body: formatting/contact-form-body.json
+  Interaction:
+    header: formatting/interaction-form-header.json
+    body: formatting/interaction-form-body.json
+
+# NO form_visibility, and NO list_validation. Neither is an oversight:
+# nothing on these three lists is conditional on another field's value,
+# and nothing cross-column is checkable. The register's real rules are
+# about what may be RECORDED — business-contact facts only, no opinions,
+# no sensitive attributes — and no formula can read the difference between
+# a professional note and a personal one. Those stay governance checks,
+# and 50-govern/GOVERNANCE.md now says so in as many words.
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run.
+column_validation:
+  Interaction:
+    columns:
+      # This list is a log of what HAPPENED. A forward-dated entry sorts
+      # to the top of Recent activity and reads as the last thing anyone
+      # heard from that stakeholder, which is the opposite of true — and
+      # walking into a meeting believing it is precisely the failure the
+      # register exists to prevent.
+      InteractionDate:
+        when:
+          - { field: InteractionDate, op: leq, value: today }
+        message: "An interaction cannot have happened in the future. Log meetings, calls and emails after they happen — this list is a record, not a calendar."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Dates are today±N so the
+# window-derived views land correctly on whatever day the demo runs.
+#
+# PRIVACY POSTURE, seriously applied. 50-govern/GOVERNANCE.md calls this
+# register's privacy rules load-bearing rather than boilerplate, so the
+# demo does not invent people: every Title names a ROLE at an
+# organisation, every person column is "@me", and the only contact details
+# are RFC 2606 reserved example.com/.org addresses and an undialable
+# number. A seeded register full of plausible names and numbers would
+# teach the opposite of what the governance doc asks for, on the first
+# screen anyone sees.
+#
+# Website is left blank on every organisation. A SharePoint URL column
+# takes a structured SP.FieldUrlValue over REST rather than a bare string
+# (see the note at generators/reportgen.py, which handles the read side of
+# exactly that record) and the demo writer emits literals — seeding one
+# would be a write this repository has not read back from a live list.
+#
+# Coverage: four organisations including one nobody owns, four contacts
+# including one who has moved on, and five interactions including one
+# older than the Recent activity window.
+demo_items:
+  Organisation:
+    - key: org-council
+      values:
+        Title: "[DEMO] Regional council"
+        OrgType: "Government"
+        Owner: "@me"
+        Notes: "Demo row. Funds two programmes through the grants team. Sensitivity worth knowing before anyone picks up the phone: media approaches go through their communications unit first, never through the grants contact."
+    - key: org-supplier
+      values:
+        Title: "[DEMO] Clinical supplies vendor"
+        OrgType: "Supplier / vendor"
+        Owner: "@me"
+    - key: org-community
+      values:
+        Title: "[DEMO] Neighbourhood care network"
+        OrgType: "Community group"
+        Owner: "@me"
+    - key: org-peak
+      values:
+        Title: "[DEMO] Sector peak body"
+        OrgType: "Peak body / industry"
+        Notes: "Demo row. Nobody owns this relationship. It lands in the blank group in By owner, which is where the quarterly ownership check finds it — a filtered view for the same thing cannot be built, because CAML cannot ask whether a person column is empty."
+  Contact:
+    - key: con-council-grants
+      values:
+        Title: "[DEMO] Grants manager, regional council"
+        Organisation: { demo_ref: org-council }
+        Role: "Grants manager"
+        Email: "demo.contact@example.org"
+        Phone: "00 0000 0000"
+        IsActive: true
+        Notes: "Prefers phone; works Tuesday to Thursday. A professional fact, which is the only kind that belongs here."
+    - key: con-supplier-account
+      values:
+        Title: "[DEMO] Account manager, clinical supplies"
+        Organisation: { demo_ref: org-supplier }
+        Role: "Account manager"
+        Email: "demo.contact@example.com"
+        Phone: "00 0000 0000"
+        IsActive: true
+    - key: con-community-coord
+      values:
+        Title: "[DEMO] Volunteer coordinator, neighbourhood care"
+        Organisation: { demo_ref: org-community }
+        Role: "Volunteer coordinator"
+        Email: "demo.contact@example.org"
+        IsActive: true
+    - key: con-council-former
+      values:
+        Title: "[DEMO] Former policy adviser, regional council"
+        Organisation: { demo_ref: org-council }
+        Role: "Policy adviser"
+        IsActive: false
+        Notes: "Demo row. Moved on, and kept rather than deleted — the interaction history below is the organisational memory. Contact details were cleared at the annual purge review; the row stays so the thread still hangs together."
+  Interaction:
+    - key: int-council-review
+      values:
+        Title: "[DEMO] Quarterly review — funding timeline discussed"
+        Contact: { demo_ref: con-council-grants }
+        InteractionDate: "today-6"
+        InteractionType: "Meeting"
+        RecordedBy: "@me"
+        Summary: "Demo row. They will confirm the next round's opening date by the end of the month. That is a promise from their side, and recording promises — either side's — is the single habit that makes this register worth keeping."
+    - key: int-supplier-call
+      values:
+        Title: "[DEMO] Call — delivery schedule for the winter order"
+        Contact: { demo_ref: con-supplier-account }
+        InteractionDate: "today-20"
+        InteractionType: "Call"
+        RecordedBy: "@me"
+        Summary: "Demo row. Winter order splits across two deliveries; we agreed to confirm the second date a fortnight out."
+    - key: int-community-visit
+      values:
+        Title: "[DEMO] Site visit — shared transport pilot"
+        Contact: { demo_ref: con-community-coord }
+        InteractionDate: "today-45"
+        InteractionType: "Site visit"
+        RecordedBy: "@me"
+        Summary: "Demo row. They have capacity for a shared transport pilot from the new financial year and would want a written agreement first."
+    - key: int-council-email
+      values:
+        Title: "[DEMO] Email — acquittal template query"
+        Contact: { demo_ref: con-council-grants }
+        InteractionDate: "today-70"
+        InteractionType: "Email"
+        RecordedBy: "@me"
+        Summary: "Demo row. Acquittal template has changed for this round; they sent the new one. Synthesised here rather than pasted — the attachment lives in the grants folder."
+    - key: int-former-handover
+      values:
+        Title: "[DEMO] Meeting — handover before the adviser moved on"
+        Contact: { demo_ref: con-council-former }
+        InteractionDate: "today-160"
+        InteractionType: "Meeting"
+        RecordedBy: "@me"
+        Summary: "Demo row. Introduced the incoming grants manager and walked through the two open commitments. Older than the Recent activity window and still reachable through By contact — which is the handover view, and the reason a contact who has moved on is never deleted."
