@@ -212,12 +212,19 @@ def _column_validation(
 
 def _view_aggregations(view: ViewDef) -> str:
     """A declared view's SP.View `Aggregations` property: one FieldRef per
-    totalled column, carrying SharePoint's own spelling of the function.
+    totalled column, carrying SharePoint's own token for the function.
 
-    Declaration order is preserved because that is the order SharePoint
-    renders the figures in. Empty when nothing is declared, which the
-    deploy reads as "never touch the live property" rather than as
-    "clear it"."""
+    INTERNAL names, NOT display titles — the opposite of the widths rewrite
+    a few functions below, which converts to display titles because
+    ColumnWidth binds by those and silently resets when given internal
+    ones. Both behaviours are observed on a live tenant; neither can be
+    inferred from the other, and swapping either for the other produces a
+    property that saves, reads back unchanged and does nothing.
+
+    Declaration order is preserved: SharePoint renders the figures in it
+    and returns the FieldRefs in it, and the deploy compares the string
+    exactly. Empty when nothing is declared, which the deploy reads as
+    "never touch the live property" rather than as "clear it"."""
     return "".join(
         f'<FieldRef Name="{name}" Type="{TOTAL_FUNCTIONS[func]}"/>'
         for name, func in view.totals.items()

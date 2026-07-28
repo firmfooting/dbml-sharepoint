@@ -38,6 +38,7 @@
  * ANSWERED, 2026-07-29, against a live SharePoint Online site:
  *
  *   seeded=ok mechanism=patch readback=ok rendered=yes
+ *   internal_names=bind  two_columns=render  order=preserved
  *
  *   A REST MERGE of SP.View with Aggregations and AggregationsStatus is
  *   accepted (HTTP 204), reads back as
@@ -46,19 +47,21 @@
  *   because the simpler mechanism won. The probe is kept for re-running
  *   against a tenant whose behaviour is in doubt.
  *
- *   TWO QUESTIONS THAT RUN DID NOT ANSWER, added afterwards by an
- *   adversarial review and STILL OPEN:
- *
- *     Q5 — does Aggregations bind by INTERNAL name or by DISPLAY title?
- *          The sibling ColumnWidth property binds by display title, and
- *          silently resets when given internal names. This probe's first
- *          run created a field whose Title equalled its internal name, so
- *          it could not distinguish the two. Every template that ships
- *          totals uses display_names: auto, so every totalled column is in
- *          the untested case. Until Q5 is answered, `totals:` is
- *          UNVERIFIED for real templates.
- *     Q6 — do two aggregations on one view both render, in declaration
- *          order? complaints-feedback ships two; the first run wrote one.
+ *   Q5 — AGGREGATIONS BINDS BY INTERNAL NAME. A FieldRef naming
+ *        `SecondAmount` produced a figure under its display title
+ *        "Second Amount Display". This is the opposite of the sibling
+ *        ColumnWidth property, which binds by DISPLAY title and silently
+ *        resets when given internal names — so the two are written
+ *        differently on purpose, and neither can be inferred from the
+ *        other.
+ *   Q6 — TWO AGGREGATIONS BOTH RENDER, and the readback preserves
+ *        declaration order:
+ *        `<FieldRef Name="Amount" Type="Sum" /><FieldRef Name="SecondAmount" Type="AVG" />`
+ *        The deployer compares that string exactly, so order mattering is
+ *        the safe outcome. Tokens also round-trip verbatim — `Sum` stays
+ *        `Sum` and `AVG` stays `AVG` — so SharePoint normalises neither
+ *        case nor spelling, and the only difference to absorb is the
+ *        pre-`/>` space.
  *
  *   THE AGGREGATION TYPE IS AN ENUMERATION, NOT ENGLISH: AVG, COUNT, MAX,
  *   MIN, SUM, STDEV, VAR, per FieldRef element (Query), case-insensitive.

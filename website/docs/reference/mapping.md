@@ -201,10 +201,17 @@ operands already are.
   alternative would have the deployer stamping over hand-added totals on
   every view in a site.
 
-  The write mechanism (a REST `MERGE` of `Aggregations` and
-  `AggregationsStatus` on `SP.View`) was established against a live tenant
-  before the feature was built; see
-  `test/manual/view-aggregations-probe.js`.
+  Totals are keyed on **internal** names, and unlike `widths` they stay
+  that way: `Aggregations` binds by internal name while `ColumnWidth` binds
+  by display title. Both are live-verified, neither follows from the other,
+  and using the wrong one gives you a property that saves, reads back
+  unchanged and produces nothing. Multiple totals on one view render in
+  declaration order.
+
+  The write mechanism — a REST `MERGE` of `Aggregations` and
+  `AggregationsStatus` on `SP.View` — and every claim above were
+  established against a live tenant before the feature shipped; see
+  `test/manual/view-aggregations-probe.js`, which records its verdict.
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see
