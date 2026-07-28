@@ -1,7 +1,7 @@
 """Command-line interface for dbml-sharepoint."""
 
 import datetime as dt
-import shutil
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlparse
@@ -53,13 +53,33 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
 _CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
 
 _REPORT_FILES = ("REPORTING.md", "DATA-DICTIONARY.md")
-_REPORT_DIRECTORIES = ("powerquery", "sql")
+# (subdirectory, glob) pairs naming everything `report` writes below `out`.
+_REPORT_DIRECTORY_CONTENTS = (("powerquery", "*.pq"), ("sql", "views.sql"))
 
 
 def _clear_report_output(out: Path) -> None:
-    """Remove generated standalone-report artifacts, preserving other files."""
-    for dirname in _REPORT_DIRECTORIES:
-        shutil.rmtree(out / dirname, ignore_errors=True)
+    """Remove the artifacts this command writes, and nothing else.
+
+    Deliberately not `rmtree` on powerquery/ and sql/. Those names are
+    generic, `--out` is routinely aimed at a directory the operator also
+    keeps their own work in, and a hand-written migration sitting beside
+    views.sql is not this command's to delete. Remove by the names `report`
+    generates, then drop each directory only if emptying it left nothing
+    behind.
+
+    `*.pq` is the one broad pattern, and it is deliberate: a stale query
+    from a list that has left the schema is indistinguishable from a
+    hand-written one, and leaving it is the worse failure — it documents a
+    list that no longer exists. The docs say so; `--out` is not the place
+    to keep your own .pq files.
+    """
+    for dirname, pattern in _REPORT_DIRECTORY_CONTENTS:
+        directory = out / dirname
+        for path in sorted(directory.glob(pattern)):
+            if path.is_file():
+                path.unlink()
+        with suppress(OSError):
+            directory.rmdir()  # refuses when the operator left anything here
     for filename in _REPORT_FILES:
         (out / filename).unlink(missing_ok=True)
 
@@ -277,9 +297,6 @@ def report(
     DATA-DICTIONARY.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
     """
-    # Fail closed like `build`: no refused run may leave a previous report
-    # set looking current. This removes only files owned by this command.
-    _clear_report_output(out)
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
 
     # Same data-driven role vocabulary as `build`: a misspelled role would
@@ -329,12 +346,23 @@ def report(
             parsed_schema, bundle, site_role, **dictionary_kwargs,
         )
     except ValueError as exc:
+        # The schema was read and refused, so whatever is in `out` describes
+        # a schema that no longer exists — clear it rather than leave a stale
+        # set looking current. Only reachable once the config loaded and the
+        # role resolved: a mistyped --schema path or an unknown --site-role
+        # never learns anything about the report, and must not destroy the
+        # last good one on its way out.
+        _clear_report_output(out)
         typer.echo(
             f"[ERROR] schema {schema}: {exc}\n"
             "Run `build --dry-run` for the full validation report.",
             err=True,
         )
         raise typer.Exit(code=1) from exc
+
+    # Drop the previous set so a list removed from the schema does not leave
+    # its .pq file behind, outliving the schema that justified it.
+    _clear_report_output(out)
 
     pq_dir = out / "powerquery"
     sql_dir = out / "sql"

@@ -79,6 +79,25 @@ class SPField:
 
 
 def map_column(col: Column, enum_names: set[str]) -> SPField:
+    """Map a DBML column to its SharePoint field descriptor.
+
+    The uniqueness gate runs after the type resolves, not before: an
+    unrecognised type is the more useful complaint, and checking `[unique]`
+    first answered `blob [unique]` with "unique is not supported for 'blob'
+    columns" — true, but it buries the actual mistake. Resolving first also
+    keeps the supported-type vocabulary in one place, the match statement
+    below, rather than in a second hand-maintained set beside it.
+    """
+    field = _resolve_column(col, enum_names)
+    if col.unique and not supports_unique(col, enum_names):
+        raise ValueError(
+            f"{col.name}: [unique] is not supported for SharePoint "
+            f"{col.type!r} columns.",
+        )
+    return field
+
+
+def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
     if col.is_pk and col.is_auto_increment and col.type == "int":
         return SPField(
             name=col.name, kind="Skip", field_type_kind=None,
@@ -91,12 +110,6 @@ def map_column(col: Column, enum_names: set[str]) -> SPField:
         raise ValueError(
             f"{col.name}: legacy 'choice' type is not supported. "
             "Migrate to a named DBML enum.",
-        )
-
-    if col.unique and not supports_unique(col, enum_names):
-        raise ValueError(
-            f"{col.name}: [unique] is not supported for SharePoint "
-            f"{col.type!r} columns.",
         )
 
     if col.type in CALCULATED_OUTPUT_TYPES:

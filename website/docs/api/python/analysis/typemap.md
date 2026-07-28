@@ -71,6 +71,15 @@ SPField(name: str, kind: FieldKind, field_type_kind: int | None, required: bool,
 def map_column(col: dbml_sharepoint.model.parser.Column, enum_names: set[str]) -> dbml_sharepoint.analysis.typemap.SPField
 ```
 
+Map a DBML column to its SharePoint field descriptor.
+
+The uniqueness gate runs after the type resolves, not before: an
+unrecognised type is the more useful complaint, and checking `[unique]`
+first answered `blob [unique]` with "unique is not supported for 'blob'
+columns" — true, but it buries the actual mistake. Resolving first also
+keeps the supported-type vocabulary in one place, the match statement
+below, rather than in a second hand-maintained set beside it.
+
 ### `format_description`
 
 ```python
