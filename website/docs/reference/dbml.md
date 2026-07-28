@@ -95,7 +95,8 @@ The supported DBML subset is intentionally narrow:
 - Put `unique` on the column itself, for example
   `Code nvarchar [unique]`. SharePoint creates an index as part of enforcing
   uniqueness, so it counts toward the same per-list limit even when it is
-  not repeated in `indexes`.
+  not repeated in `indexes`. Repeating it in `indexes` is rejected as a
+  redundant declaration.
 - A list may have at most 20 effective declared/unique indexes. Declaring the
   same column twice is an error.
 - Text, Number, Date/DateTime, Boolean, Choice, Lookup and Person columns can
@@ -104,8 +105,10 @@ The supported DBML subset is intentionally narrow:
 - Lookup and Person indexes do not make those fields suitable as the first
   filter in a large-list threshold query. Prefer a selective scalar field.
 - A mapping `cross_site_reference_columns` entry replaces its logical DBML
-  column with generated Abbreviation and SiteUrl fields, so that logical
-  column cannot also be indexed from DBML.
+  column with generated Abbreviation and SiteUrl fields. Neither the logical
+  column nor its generated `Abbreviation`/`SiteUrl` fields can be indexed from
+  DBML; pydbml accepts only declared columns as index subjects, while declaring
+  either generated name would collide with the expansion.
 
 `mapping.yaml` has no index API. The former `indexed_columns` section is a
 load error rather than a compatibility alias.

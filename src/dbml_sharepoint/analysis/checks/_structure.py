@@ -137,10 +137,17 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
         # Unique fields carry an implicit SharePoint index and count toward
         # the same per-list ceiling as explicit declarations.
-        effective_indexes = set(indexed) | {
+        unique_indexes = {
             col.name for col in indexed_table.columns
             if col.unique and col.name in rendered
         }
+        for duplicate in sorted(set(indexed) & unique_indexes):
+            findings.append(Finding(
+                "error",
+                f"{entity_name}.indexes: {duplicate!r} is already indexed by "
+                "its column [unique] setting; remove the redundant indexes entry.",
+            ))
+        effective_indexes = set(indexed) | unique_indexes
         if len(effective_indexes) > 20:
             findings.append(Finding(
                 "error",
@@ -161,13 +168,6 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error",
                     f"{entity_name}.indexes: {col_name!r} is not a "
                     f"rendered column of {entity_name}{hint}.",
-                ))
-                continue
-            if any(col_name == f"{xcol}SiteUrl" for xcol in xcols):
-                findings.append(Finding(
-                    "error",
-                    f"{entity_name}.indexes: {col_name!r} renders "
-                    f"as a Hyperlink column, which SharePoint cannot index.",
                 ))
                 continue
             column = columns_by_name.get(col_name)

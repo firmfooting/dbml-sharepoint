@@ -30,6 +30,7 @@ import pytest
 from jinja2 import Environment, TemplateSyntaxError, meta, nodes
 
 from dbml_sharepoint.analysis.phases import DEPLOY_GROUPS
+from dbml_sharepoint.model.parser import Table, TableIndex
 from dbml_sharepoint.templating import TEMPLATES_DIR, script_env
 
 SRC_DIR = TEMPLATES_DIR.parent
@@ -132,6 +133,15 @@ def test_every_template_has_a_contract_comment() -> None:
         "templates without a contract comment (the API docs extract these "
         f"verbatim): {missing}"
     )
+
+
+def test_generated_dataclass_docs_preserve_constructor_semantics() -> None:
+    generate_api = _load_generate_api()
+    index_docs = generate_api.render_class("TableIndex", TableIndex)
+    table_docs = generate_api.render_class("Table", Table)
+    assert "@dataclass(frozen=True)" in index_docs
+    assert "field(default_factory=list)" in table_docs
+    assert "= list()" not in table_docs
 
 
 def test_template_variables_are_known_context(env: Environment) -> None:

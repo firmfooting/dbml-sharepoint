@@ -20,7 +20,7 @@ class SiteContext:
     site_role: str
     release: Any
     output_dir: Path
-    extension_args: dict[str, typing.Any] = dict()
+    extension_args: dict[str, typing.Any] = field(default_factory=dict)
 ```
 
 Per-build inputs hooks need: site URL, site role, release
@@ -32,8 +32,8 @@ extension's own CLI entry point (e.g. {"org_unit": "QSC"}).
 ```python
 @dataclass
 class ManifestExtras:
-    sections: dict[str, str] = dict()
-    warnings: list[str] = list()
+    sections: dict[str, str] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 ```
 
 Extra manifest content from an extension.

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from pydbml import PyDBML
+from pydbml.exceptions import ColumnNotFoundError, TableNotFoundError
 
 
 @dataclass(frozen=True)
@@ -40,7 +41,13 @@ class Column:
 
 @dataclass(frozen=True)
 class TableIndex:
-    """A table-level DBML index declaration and its optional SQL settings."""
+    """A table-level DBML index declaration.
+
+    SharePoint accepts only bare single-column indexes. The DBML `name`,
+    `unique`, `type`, `pk` and `note` settings are retained only so validation
+    can reject them explicitly; declare uniqueness on the column with
+    `[unique]` instead.
+    """
 
     columns: tuple[str, ...]
     name: str | None = None
@@ -52,7 +59,7 @@ class TableIndex:
 
 @dataclass
 class Table:
-    """A DBML Table — name, columns, optional table-level note."""
+    """A DBML Table — name, columns, indexes, optional table-level note."""
 
     name: str
     columns: list[Column] = field(default_factory=list)
@@ -79,7 +86,14 @@ class Schema:
 
 def parse_dbml(path: Path) -> Schema:
     """Parse a DBML file and return our in-memory model."""
-    parsed = PyDBML(path)
+    try:
+        parsed = PyDBML(path)
+    except (ColumnNotFoundError, TableNotFoundError) as exc:
+        # These pydbml semantic errors do not inherit from ValueError or its
+        # parser exception types, so normal CLI config-error handling would
+        # otherwise miss them and print a traceback for a schema typo.
+        detail = str(exc).replace(' table "{self.name}".', ".")
+        raise ValueError(detail) from exc
     schema = Schema()
 
     if parsed.project and parsed.project.note:

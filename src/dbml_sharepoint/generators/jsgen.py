@@ -19,6 +19,7 @@ from dbml_sharepoint.analysis.phases import phases_context
 from dbml_sharepoint.analysis.typemap import format_description, map_column
 from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
+from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_loader import (
     ColumnValidation,
     EntityMapping,
@@ -499,12 +500,8 @@ def build_schema_json(
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
         })
 
-        for index in table.indexes:
-            if len(index.columns) != 1:
-                raise ValueError(
-                    f"{table_name}: composite DBML indexes cannot be deployed to SharePoint",
-                )
-            indexed_columns_out.append({"list": list_title, "field": index.columns[0]})
+        for col_name in deployable_index_columns(table):
+            indexed_columns_out.append({"list": list_title, "field": col_name})
 
         declared_form = bundle.mapping.form_formatting.get(table_name)
         if declared_form is not None:

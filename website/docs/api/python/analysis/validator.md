@@ -81,7 +81,7 @@ MAX_INTERNAL_NAME = 32
 ### `Finding`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Finding:
     severity: Severity
     message: str

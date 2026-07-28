@@ -29,7 +29,7 @@ CALCULATED_TYPES = frozenset({'calculated_date', 'calculated_number', 'calculate
 ### `SPField`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class SPField:
     name: str
     kind: FieldKind

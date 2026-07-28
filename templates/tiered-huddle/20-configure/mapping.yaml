@@ -9,6 +9,9 @@ entities:
 
 cross_site_reference_columns: []
 
+# House default, with the boards trimmed: a daily record edited several
+# times a day burns versions fast, and old versions of a huddle board are
+# worthless.
 versioning:
   default:
     enable_versioning: true

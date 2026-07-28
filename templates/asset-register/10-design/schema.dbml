@@ -51,6 +51,5 @@ Table Asset {
     Status
     Category
     Location
-    AssetTag
   }
 }

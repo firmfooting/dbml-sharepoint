@@ -20,8 +20,8 @@ of a strongly connected component.
 ```python
 @dataclass
 class DeployPlan:
-    list_creation_order: list[str] = list()
-    phase2_lookups: list[tuple[str, str]] = list()
+    list_creation_order: list[str] = field(default_factory=list)
+    phase2_lookups: list[tuple[str, str]] = field(default_factory=list)
 ```
 
 DeployPlan(list_creation_order: list[str] = &lt;factory>, phase2_lookups: list[tuple[str, str]] = &lt;factory>)
