@@ -81,7 +81,7 @@ Emit the full post-validation bundle; returns the success message.
 
 The one emission sequence — deploy.js, rollback.js, assess.js and its
 manifest, the seed-gated demo-data.js, reporting, INDEX.md and
-checksums.txt — previously duplicated across the core CLI and every
-extension CLI. Raises :class:`SeedRequiresDemoItemsError` before writing
-anything when ``seed`` is set but the mapping declares no demo rows.
+checksums.txt — shared by the core CLI and every extension CLI. Raises
+:class:`SeedRequiresDemoItemsError` before writing anything when
+``seed`` is set but the mapping declares no demo rows.
 

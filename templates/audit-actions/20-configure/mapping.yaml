@@ -115,10 +115,25 @@ form_visibility:
 # Cross-column, so it belongs here and not in column_validation, which may
 # only reference the column being validated. Read as an implication: EITHER
 # it is not closed, OR there is evidence.
+# SHAREPOINT WILL NOT ENFORCE AN EVIDENCE URL AT SAVE, so there is no rule
+# here requiring one. Probed against a live tenant
+# (test/manual/hyperlink-validation-operand-probe.js): setting a
+# ValidationFormula that references a URL column returns HTTP 500,
+#
+#   "One or more column references are not allowed, because the columns are
+#    defined as a data type that is not supported in formulas."
+#
+# Such a rule does not fail quietly: it fails the PASTE, at the validation
+# phase, in front of the operator. The build refuses the operand
+# (analysis/conditions.py, _FORBIDDEN_OPERAND_TYPES), which turns a failed
+# deploy into a failed build.
+#
+# The requirement stands as a closure criterion in 50-govern/GOVERNANCE.md
+# and a verification step in 30-deploy/DEPLOY.md.
 list_validation:
   Recommendation:
     when:
       any_of:
         - { field: Status, op: neq, value: "Closed" }
-        - { field: EvidenceUrl, op: is_not_null }
-    message: "Closing a recommendation needs closure evidence — record the EvidenceUrl link before setting Status to Closed."
+        - { field: ClosedDate, op: is_not_null }
+    message: "Closing a recommendation needs the Closed Date it was verified on — DaysLate is computed from it. Closure evidence is also required; that one is a governance check, not a save rule (see 50-govern/GOVERNANCE.md)."

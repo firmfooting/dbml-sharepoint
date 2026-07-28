@@ -40,7 +40,6 @@ def site_tables_in_order(schema: dbml_sharepoint.model.parser.Schema, entities: 
 
 Dependency-ordered table names deployed for this site role.
 
-The shared role filter jsgen, rollbackgen, demogen and assessgen each
-previously re-implemented inline. Callers pass
-``bundle.mapping.entities``; ordering stays parser-pure.
+The one role filter for jsgen, rollbackgen, demogen and assessgen.
+Callers pass ``bundle.mapping.entities``; ordering stays parser-pure.
 

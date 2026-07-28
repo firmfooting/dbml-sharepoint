@@ -218,6 +218,20 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
         "person": "a person column",
         "richtext": "a multi-line column",
         "longtext": "a multi-line column",
+        # Settled by probe on 2026-07-29, having first shipped here as
+        # merely UNVERIFIED. SharePoint refuses the ValidationFormula
+        # outright — HTTP 500, "One or more column references are not
+        # allowed, because the columns are defined as a data type that is
+        # not supported in formulas" — so this is a closed question, not an
+        # open one, and it belongs with the other cannots.
+        #
+        # Worth recording that this is a LOUD failure, not the silent one
+        # first assumed: a template carrying such a rule fails at the
+        # validation phase of the paste, in front of the operator. The
+        # build-time refusal is still the right place for it, because it
+        # turns a failed deploy into a failed build.
+        # See test/manual/hyperlink-validation-operand-probe.js.
+        "hyperlink": "a hyperlink column, which SharePoint refuses in a validation formula",
         **_CALCULATED_OPERAND,
     },
     EXPRESSION: dict(_CALCULATED_OPERAND),
@@ -226,6 +240,18 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
 _TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
+# The current-user sentinel. A person column could not be filtered at all
+# before this: the operand rules demand an accessor because there is no
+# defensible default between a name, an email and an id, and CAML refuses
+# every accessor it might be given. `me` resolves that deadlock rather than
+# side-stepping it — CAML's <UserID/> compares the person field's user id
+# natively, so the sentinel SUPPLIES the missing accessor instead of
+# declaring one, which is why it takes no `property` and refuses one.
+_ME = "me"
+_PERSON_TYPES = frozenset({"person"})
+# <UserID/> is an identity. Ordering it, or asking whether it contains a
+# substring, is meaningless rather than merely unrendered.
+_ME_OPS = frozenset({"eq", "neq"})
 # True == 1 and False == 0 in Python, so the bare ints cover the bools.
 _TRUTHY = frozenset({1, "1", "true", "True", "TRUE", "yes", "Yes", "YES"})
 _FALSY = frozenset({0, "0", "false", "False", "FALSE", "no", "No", "NO"})
@@ -280,6 +306,14 @@ def _is_today(value: object, column_type: str) -> bool:
     column it is the literal word, and reading it as TODAY() would give one
     authored condition three different meanings across the three targets."""
     return column_type in _DATE_TYPES and isinstance(value, str) and bool(_TODAY.match(value))
+
+
+def _is_me(value: object, column_type: str) -> bool:
+    """A `me` sentinel only means the current user on a PERSON column. On a
+    text column it is the literal word — the same rule `today` follows, and
+    for the same reason: one authored condition must not mean three
+    different things across the three targets."""
+    return column_type in _PERSON_TYPES and value == _ME
 
 
 def _number(value: object, context: str, target: str) -> str:
@@ -407,6 +441,16 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             where,
         )
 
+    if _is_me(leaf.value, column_type) and target == EXPRESSION:
+        raise _reject(
+            target,
+            "the 'me' sentinel has no verified client-side equivalent — a "
+            "show/hide formula is evaluated against the item's field values, "
+            "not against the signed-in user, so the rule would save, read "
+            "back equal, pass the phase and never fire",
+            where,
+        )
+
     if target == CAML:
         ref = f'<FieldRef Name="{leaf.field}"/>'
         tag = _CAML_OP_TAGS[leaf.op]
@@ -448,6 +492,10 @@ def _validation_leaf(leaf: Leaf, column_type: str, where: str) -> str:
 
 
 def _caml_value(column_type: str, value: object, where: str) -> str:
+    if _is_me(value, column_type):
+        # SharePoint's own "[Me]" filter, and the only spelling by which a
+        # person column can be compared in CAML at all.
+        return '<Value Type="Integer"><UserID/></Value>'
     if column_type == "boolean":
         return f'<Value Type="Integer">{"1" if _boolean(value, where, CAML) else "0"}</Value>'
     if column_type in _NUMBER_TYPES:
@@ -641,6 +689,33 @@ def _operand_problems(
     column_type = types.get(leaf.field, "")
     kind = "lookup" if leaf.field in lookups else column_type
     problems: list[str] = []
+    # The `me` sentinel carries its own accessor semantics: <UserID/>
+    # compares the person field's user id, so an accessor is neither needed
+    # nor meaningful beside it. Handled before the accessor rules rather
+    # than inside them, because the exemption is the whole point — without
+    # it a person column cannot be filtered in CAML at all.
+    if _is_me(leaf.value, column_type):
+        if leaf.property:
+            problems.append(
+                f"{where}: 'me' compares the person column's user id, so it takes no "
+                f"'property' — drop {leaf.property!r}",
+            )
+        if leaf.op not in _ME_OPS:
+            problems.append(
+                f"{where}: 'me' is an identity, so operator {leaf.op!r} has no meaning "
+                f"against it; use one of {', '.join(sorted(_ME_OPS))}",
+            )
+        return problems
+    # A null test needs no accessor either, and for the same reason `me`
+    # needs none: emptiness is a property of the FIELD, not of a name, an
+    # email or an id — all three are absent together. CAML's IsNull takes a
+    # bare FieldRef and no Value, so there is nothing for an accessor to
+    # change. Without this, "organisations with no owner" — a view
+    # stakeholder-contacts' governance doc asks for by name — was
+    # inexpressible: the accessor rules demanded a property and CAML
+    # refuses every property.
+    if kind in PROPERTY_ACCESSORS and leaf.op in _VALUELESS_OPS and not leaf.property:
+        return problems
     if kind in PROPERTY_ACCESSORS:
         allowed = PROPERTY_ACCESSORS[kind]
         if not leaf.property:

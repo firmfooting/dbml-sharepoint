@@ -29,6 +29,20 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "error", f"demo_items[{entity_name}]: unknown entity.",
             ))
             continue
+        # A document library's items ARE files. demo-data.js POSTs to
+        # /items, which asks SharePoint to create a library row with no
+        # file behind it — and this built GREEN until now, so it would have
+        # shipped and failed at paste time, in front of whoever was being
+        # shown the demo. Found by the policy-library uplift.
+        if bundle.mapping.entities[entity_name].kind == "DocumentLibrary":
+            findings.append(Finding(
+                "error",
+                f"demo_items[{entity_name}]: {entity_name} is a DocumentLibrary, and a "
+                f"library's items are files. Seeding posts to /items and would create "
+                f"rows with no file behind them. Seed the register list that accompanies "
+                f"the library, and upload sample documents by hand.",
+            ))
+            continue
         for row in demo_rows:
             if row.key in demo_keys:
                 findings.append(Finding(

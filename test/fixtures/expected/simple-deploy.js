@@ -738,6 +738,7 @@
   "seed_items": [],
   "views": [
     {
+      "aggregations": "",
       "caml_query": "\u003cWhere\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
       "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
       "hidden": false,
@@ -755,6 +756,7 @@
       "widths": null
     },
     {
+      "aggregations": "",
       "caml_query": "",
       "formatting": null,
       "hidden": true,
@@ -777,6 +779,7 @@
       "widths": null
     },
     {
+      "aggregations": "",
       "caml_query": "",
       "formatting": null,
       "hidden": false,
@@ -799,6 +802,7 @@
       "widths": null
     },
     {
+      "aggregations": "",
       "caml_query": "\u003cGroupBy Collapse=\"FALSE\"\u003e\u003cFieldRef Name=\"Project\"/\u003e\u003c/GroupBy\u003e\u003cWhere\u003e\u003cLeq\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003cValue Type=\"DateTime\"\u003e\u003cToday OffsetDays=\"30\"/\u003e\u003c/Value\u003e\u003c/Leq\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003c/OrderBy\u003e",
       "formatting": null,
       "hidden": false,
@@ -816,6 +820,7 @@
       "widths": null
     },
     {
+      "aggregations": "",
       "caml_query": "",
       "formatting": null,
       "hidden": false,
@@ -2179,7 +2184,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -2197,7 +2202,7 @@
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {
@@ -2329,8 +2334,40 @@
         if (existing.Hidden !== view.hidden) {
           patchBody.Hidden = view.hidden;
         }
+        // Declared totals only. A view with none keeps whatever is live,
         if (Object.keys(patchBody).length > 1) {
           await mergeView(viewUrl, patchBody, viewDigest);
+        }
+      }
+      // Declared totals. OUTSIDE the create/adopt branch above, like
+      // ViewFields, formatting and the default flag: createViewWithCleanUrl
+      // does not send Aggregations, so a newly created view would otherwise
+      // reach the verify below with none and fail its own first deploy.
+      //
+      // A view with no declaration keeps whatever is live, matching
+      // CustomFormatter and widths — so deleting a totals block does NOT
+      // clear a deployed total.
+      //
+      // normalizeViewQuery is required here, not tidiness: SP reads back
+      // `<FieldRef Name="X" Type="Sum" />` for the `...Type="Sum"/>` it was
+      // sent, which is the pre-`/>` space that normaliser exists for.
+      // Compared raw, a correct view drifts on every redeploy, rewrites,
+      // reads the same difference back and fails the phase closed.
+      //
+      // The status is part of the CONDITION, not just the payload: SP
+      // renders no figure when AggregationsStatus is Off, so a view whose
+      // XML already matched while the status read Off would be refused by
+      // the verify below and never repaired by this write.
+      if (view.aggregations) {
+        const beforeTotals = existing || await readViewShape(viewUrl);
+        if (!beforeTotals) throw new Error('view disappeared before totals reconciliation');
+        if (normalizeViewQuery(beforeTotals.Aggregations) !== normalizeViewQuery(view.aggregations)
+            || beforeTotals.AggregationsStatus !== 'On') {
+          await mergeView(viewUrl, {
+            __metadata: { type: 'SP.View' },
+            Aggregations: view.aggregations,
+            AggregationsStatus: 'On',
+          }, viewDigest);
         }
       }
       // Declared column set and order, reconciled exactly when drifted.
@@ -2388,6 +2425,17 @@
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
         drifted.push(`CustomFormatter (declared ${JSON.stringify(view.formatting)}; readback ${JSON.stringify(actual.CustomFormatter)})`);
+      }
+      // Both halves are verified: SP renders nothing without the status,
+      // so an Aggregations that matched while the status read Off would be
+      // a view the deploy called correct and the reader sees no total on.
+      if (view.aggregations) {
+        if (normalizeViewQuery(actual.Aggregations) !== normalizeViewQuery(view.aggregations)) {
+          drifted.push(`Aggregations (declared ${JSON.stringify(view.aggregations)}; readback ${JSON.stringify(actual.Aggregations)})`);
+        }
+        if (actual.AggregationsStatus !== 'On') {
+          drifted.push(`AggregationsStatus (declared On; readback ${JSON.stringify(actual.AggregationsStatus)})`);
+        }
       }
       const fieldsMatch = readbackFields.length === view.view_fields.length
         && readbackFields.every((name, index) => name === view.view_fields[index]);

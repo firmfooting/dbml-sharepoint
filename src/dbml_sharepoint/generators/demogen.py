@@ -37,10 +37,32 @@ _DATE_TYPES = {"date", "datetime"}
 
 
 def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
+    # Keyed on `demo_ref` rather than on being a dict at all: a hyperlink
+    # value is also a mapping, and a bare isinstance check claimed it as a
+    # lookup reference and then raised KeyError.
+    if isinstance(value, dict) and "demo_ref" in value:
         return {"name": name, "kind": "ref", "value": str(value["demo_ref"])}
     if col_type == "person":
         return {"name": name, "kind": "me", "value": None}
+    if col_type == "hyperlink":
+        # A SharePoint URL column is a RECORD over REST (SP.FieldUrlValue,
+        # Url + Description), not a scalar — writing a bare string is
+        # rejected at create time. Without this kind, a hyperlink column
+        # simply could not be seeded, which is why four templates in the
+        # people theme shipped their EvidenceUrl and MinutesUrl blank.
+        #
+        # Authored as either "https://..." or {url: ..., description: ...};
+        # a bare string takes the URL as its own description, which is what
+        # SharePoint shows when an author leaves the description empty.
+        if isinstance(value, dict):
+            url, description = str(value.get("url", "")), value.get("description")
+        else:
+            url, description = str(value), None
+        return {
+            "name": name,
+            "kind": "url",
+            "value": {"url": url, "description": str(description or url)},
+        }
     if col_type in _DATE_TYPES and isinstance(value, str):
         m = _TODAY_OFFSET.match(value)
         if m:

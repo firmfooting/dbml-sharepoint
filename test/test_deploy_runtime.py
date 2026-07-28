@@ -14,6 +14,7 @@ is not a dependency of the package.
 """
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -748,3 +749,61 @@ def test_formula_reconcile_fails_when_client_message_is_not_cleared(tmp_path: Pa
     ).replace("(async () => {", "((async () => {", 1)
     output = _run(script)
     assert "did not retain ClientValidationMessage" in output, output[-3000:]
+
+
+def test_the_aggregations_comparison_survives_sharepoints_readback_spacing() -> None:
+    """SharePoint returns `<FieldRef Name="X" Type="Sum" />` for the
+    `...Type="Sum"/>` it was sent — verified against a live tenant on
+    2026-07-29 (test/manual/view-aggregations-probe.js).
+
+    Compared raw, a perfectly correct totals view drifts on EVERY redeploy:
+    the phase rewrites the property, reads the same difference back, and
+    fails closed. And it does so on the second run, never the first, which
+    is the kind of bug that ships.
+
+    This executes the SHIPPED normaliser out of the generated script rather
+    than a copy of its logic, because a copy would keep passing after the
+    real one changed.
+    """
+    if NODE is None:
+        pytest.skip("node is not installed")
+    script = _deploy_js()
+    decode = re.search(r"^\s*const xmlDecode = .*?;$", script, re.MULTILINE | re.DOTALL)
+    normalise = re.search(r"^\s*const normalizeViewQuery = .*?;$", script, re.MULTILINE)
+    assert decode and normalise, "could not extract the normaliser from the generated script"
+
+    sent = '<FieldRef Name="Amount" Type="Sum"/>'
+    read_back = '<FieldRef Name="Amount" Type="Sum" />'
+    program = (
+        f"{decode.group(0)}\n{normalise.group(0)}\n"
+        f"const a = normalizeViewQuery({json.dumps(sent)});\n"
+        f"const b = normalizeViewQuery({json.dumps(read_back)});\n"
+        "console.log(JSON.stringify({ equal: a === b, a, b }));"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "normalise.js"
+        path.write_text(program, encoding="utf-8")
+        out = subprocess.run(  # noqa: S603
+            [NODE, str(path)], capture_output=True, text=True, check=True, timeout=60,
+        )
+    result = json.loads(out.stdout.strip())
+    assert result["equal"], (
+        f"the shipped normaliser does not equalise SharePoint's readback spacing: "
+        f"sent normalised to {result['a']!r}, readback to {result['b']!r}"
+    )
+
+
+def test_no_aggregations_comparison_is_made_raw() -> None:
+    """The write-side and readback-side comparisons are separate call sites
+    and either one left raw reintroduces the never-converging redeploy.
+
+    Asserted as the ABSENCE of any raw comparison rather than the presence
+    of two known-good ones: naming the variables would break on a rename
+    while saying nothing about a third call site somebody adds later.
+    """
+    script = _deploy_js()
+    raw = re.findall(r"(?<!normalizeViewQuery\()\b\w+\.Aggregations\s*[!=]==", script)
+    assert not raw, f"Aggregations compared without the normaliser: {raw}"
+    # AggregationsStatus is a plain enum ('On'/'Off') and IS compared raw —
+    # asserted so the regex above cannot be "fixed" by wrapping it too.
+    assert "AggregationsStatus !== 'On'" in script
