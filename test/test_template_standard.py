@@ -52,7 +52,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "measures-register", "meeting-actions", "onboarding-tracker",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
-    "training-register", "vehicle-log", "visitor-log", "volunteer-register",
+    "training-register", "vehicle-log", "volunteer-register",
 })
 
 # §1.2. Order never changes; a small list may collapse the middle beats but
@@ -88,6 +88,14 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "The issue": "Identify",
         "Where it goes": "Act",
         "Outcome": "Govern",
+    },
+    # --- Operations & service ------------------------------------------
+    # A visit has nothing to assess: the middle beat collapses, which §1.2
+    # permits and names visitor-log as the case for.
+    ("visitor-log", "Visit"): {
+        "Who is visiting": "Identify",
+        "On site": "Act",
+        "Induction": "Govern",
     },
 }
 
