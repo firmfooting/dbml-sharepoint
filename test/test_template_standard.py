@@ -46,7 +46,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # Removed by the branch that uplifts them; must reach empty.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "audit-actions", "change-register", "complaints-feedback",
-    "compliance-obligations", "credentialing-register",
+    "credentialing-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
     "measures-register", "meeting-actions", "onboarding-tracker",
@@ -83,6 +83,15 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # No System beat: nothing on this list is auto-stamped. Every column is
+    # authored by a coordinator or an obligation owner, so a System section
+    # would be a heading over nothing.
+    ("compliance-obligations", "Obligation"): {
+        "The duty": "Identify",
+        "Assessment and evidence": "Assess",
+        "Gaps and remediation": "Act",
+        "Ownership and cycle": "Govern",
     },
     # A contract has no assessment step and no treatment step: the middle of
     # the arc collapses to the commercial terms, which are what the register

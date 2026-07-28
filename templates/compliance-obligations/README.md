@@ -17,6 +17,14 @@ health service this is the NSQHS/aged-care standards backbone; for anyone
 else, swap in your acts, standards and contracts — the discipline is
 identical.
 
+**Five views deploy with the list**, including the accreditation pack —
+*By source*, grouped by source type and then by the named instrument
+inside it. A status other than *Not assessed* cannot be saved without a
+date and a line of evidence, which is the whole assessment standard turned
+into something the list refuses rather than something a document asks for.
+Build with `--seed` and five demo rows show every status colour and both
+grouping levels working before you load a thing.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
