@@ -28,6 +28,13 @@ the full cause → event → consequence story in **Detail**.
    unopened is something to chase the Sponsor about, not something to
    re-save yourself.
 
+> **You need to be in the RR Risk Managers group to edit anything here.**
+> Being named in Risk Owner or Risk Sponsor does not grant access — those
+> columns record accountability, not permission. Everyone else on the site
+> has read access. If you have been made the owner or sponsor of a risk
+> and the form opens read-only, ask your site owner to add you to RR Risk
+> Managers; you are not doing anything wrong.
+
 Provisional is the one status that tolerates a half-finished risk. Past
 it, the register requires both **Likelihood** and **Consequence**: without
 them there is no rating and no score, so the risk cannot be ranked in

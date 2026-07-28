@@ -33,8 +33,8 @@ watched_lists: []
 # MatrixVersion: a row stamped to an older matrix shows blank rather than
 # being silently re-rated. LevelsAboveTarget and NextReviewDue read
 # ResidualRiskRating, itself calculated — SharePoint permits calc-on-calc
-# and jsgen provisions them in dependency order (_order_calculated_after_
-# references), so declaration order here does not matter.
+# and jsgen provisions them in dependency order, so declaration order
+# here does not matter (see _order_calculated_after_references in jsgen).
 #
 # KNOWN, ACCEPTED: NextReviewDue adds months with
 # DATE(YEAR(d), MONTH(d)+N, DAY(d)), which OVERFLOWS at month end rather
@@ -48,6 +48,16 @@ watched_lists: []
 #
 # CHANGE CONTROL: SharePoint recalculates every existing row when a formula
 # changes — read 50-govern/GOVERNANCE.md before editing these cells.
+#
+# These formulas are keyed to EXACTLY the five Likelihood and five
+# Consequence members below, in this order: the nested IFs map the first
+# four by name and treat everything else as the fifth, so an added,
+# renamed or reordered member silently rates as the worst case rather
+# than failing. The matrix is 5x5, so changing the enums means rewriting
+# the 25 cells anyway — a fallback would not save you, and the coupling is
+# recorded here because that is where someone editing an enum will look.
+# Unreachable by data entry today: every Choice column deploys with
+# FillInChoice false, so a value outside the enum cannot be typed.
 calculated_formulas:
   Risk:
     ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence]),[MatrixVersion]<>"1.0"),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
@@ -235,8 +245,14 @@ views:
         RiskOwner: 160
         RiskSponsor: 160
         Status: 100
+    # LevelsAboveTarget is here for audit, not decoration. "Above target"
+    # filters Status neq Closed, so a risk closed while still above target
+    # vanishes from it — and SharePoint cannot enforce residual-at-or-below-
+    # target at save, because LevelsAboveTarget is calculated and validation
+    # formulas cannot read those. This column, sortable, is where a closure
+    # review sees it: anything greater than 0 here was closed above appetite.
     - title: "Closed risks"
-      fields: [Title, ResidualRiskRating, TargetRiskRating,
+      fields: [Title, ResidualRiskRating, TargetRiskRating, LevelsAboveTarget,
                OverallControlEffectiveness, ClosureStatement, RiskOwner,
                LastReviewedDate]
       where:
@@ -247,6 +263,7 @@ views:
         Title: 240
         ResidualRiskRating: 160
         TargetRiskRating: 160
+        LevelsAboveTarget: 150
         OverallControlEffectiveness: 220
         ClosureStatement: 200
         RiskOwner: 160

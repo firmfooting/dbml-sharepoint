@@ -6,7 +6,7 @@
     },
     {
       "displayname": "Assess the risk",
-      "fields": ["Likelihood", "Consequence", "ResidualRiskRating", "TargetRiskRating", "LastReviewedDate"]
+      "fields": ["Likelihood", "Consequence", "ResidualRiskRating", "RiskScore", "TargetRiskRating", "LevelsAboveTarget", "LastReviewedDate"]
     },
     {
       "displayname": "Response and controls",

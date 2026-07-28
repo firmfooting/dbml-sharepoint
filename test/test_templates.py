@@ -86,9 +86,12 @@ def test_risk_register_declares_the_governance_columns() -> None:
         assert gone not in names, f"{gone} should have been renamed or removed"
 
 
-def test_every_risk_formula_is_version_guarded_and_within_the_length_limit() -> None:
-    """The MatrixVersion guard is the entire reason that column exists: it
-    stops a matrix revision silently re-rating historical rows. A formula
+def test_matrix_formulas_are_version_guarded_and_all_are_within_the_length_limit() -> None:
+    """The guard belongs on the two MATRIX formulas — they are the ones that
+    read Likelihood and Consequence, so they are the ones a matrix revision
+    would silently re-rate. LevelsAboveTarget and NextReviewDue inherit it
+    for free: both read ResidualRiskRating, which is already blank on a
+    stale row. The length ceiling applies to all four. A formula
     over the ceiling is refused by SharePoint part-way through provisioning,
     which a build cannot detect. SharePoint receives formulas AFTER
     display-name rewriting (internal names are rewritten to display titles

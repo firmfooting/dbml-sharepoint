@@ -9,6 +9,23 @@
 | Risk Sponsor (per row) | The `RiskSponsor` column | Approving opening, tolerance and closure |
 | RR Risk Managers | The maintaining group | Data entry, upkeep, and checking the Closure Statement before a risk closes |
 
+**Naming someone in `RiskOwner` or `RiskSponsor` grants them nothing.**
+Those are person columns, not permissions: `list_permissions` gives
+Contribute to **RR Risk Managers** and Read to the site's associated
+members and owners, under `reconcile: exact`, and SharePoint has no
+item-level grant derived from a person column.
+
+So a Risk Owner who is not in RR Risk Managers cannot record their own
+review, and a Risk Sponsor who is not in it cannot move a risk from
+Provisional to Open, tolerate one, or close one — the acts this table
+makes them accountable for.
+
+**Put every named Risk Owner and Risk Sponsor in RR Risk Managers.** If
+that group is wider than you want for general data entry, split it: a
+second group with Contribute for the accountable people, RR Risk Managers
+for the maintainers. What does not work is assuming the person column
+carries an edit path, which reads as though it should and does not.
+
 ## Status versus RiskResponse
 
 These two columns look similar and answer different questions.
@@ -134,9 +151,15 @@ as plain text would not help. An RR Risk Manager reads it before the
 status moves.
 
 *Residual is at or below target at closure.* `LevelsAboveTarget` is a
-calculated column, and validation formulas cannot read those either. The
-**Above target** view is the compensating control: a Closed risk should
-never have been in it.
+calculated column, and validation formulas cannot read those either.
+
+The compensating control is the **Closed risks** view, which carries
+`LevelsAboveTarget` for exactly this purpose: anything above 0 there was
+closed above appetite, and closure review is where that gets caught. It is
+*not* the **Above target** view, which filters out closed risks — a risk
+wrongly closed while above target leaves that view at the moment it most
+needs watching, so a control resting on it would be looking away precisely
+when the failure happens.
 
 Enforcing the third rule at all is new. The `OverallControlEffectiveness`
 column description has always stated it; until it was declared, nothing
