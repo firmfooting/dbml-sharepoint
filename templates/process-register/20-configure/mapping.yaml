@@ -6,9 +6,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  BusinessProcess: [Function, DigitisationStatus, CurrentState]
-
 versioning:
   default:
     enable_versioning: true

@@ -5,8 +5,10 @@ sidebar_position: 3
 
 # Mapping reference
 
-`mapping.yaml` owns everything physical: which DBML tables deploy where,
-as what, with which views, formatting, protection and permissions.
+`mapping.yaml` owns deployment and presentation concerns: which DBML tables
+deploy where, as what, with which views, formatting, protection and
+permissions. Table indexes belong to the
+[DBML schema](./dbml.md#indexes), beside the columns they index.
 Relative paths inside it (formatter files, `enum_sources`,
 `retention_policies_source`) resolve against the mapping file's own
 directory, so builds work from any working directory.
@@ -537,9 +539,9 @@ referencing a retired column; and a `retired` value that is not an ISO date.
 
 It warns — never breaks the build — for: a retired `not null` column
 **with** a default (saves succeed, but the default is stamped into every
-new row forever); a retired column still in `indexed_columns` (a finite
-budget spent on dead weight); a view left with no fields at all; and every
-reference the fold rewrote — a view's `fields` or `widths`, a
+new row forever); a retired column still in its DBML table's `indexes` block
+(a finite budget spent on dead weight); a view left with no fields at all;
+and every reference the fold rewrote — a view's `fields` or `widths`, a
 `form_formatting` body section, a replaced `form_visibility` entry. A
 `column_formatting` entry on a retired column is **kept** deliberately:
 historical values still render with their severity colours wherever the
@@ -646,9 +648,6 @@ Lookup/Person references, no `[Today]`) are enforced at build time.
 ## Structure and behaviour
 
 ```yaml
-indexed_columns:
-  Risk: [Status, Category, ReviewDate]
-
 versioning:
   default:
     enable_versioning: true
@@ -667,14 +666,10 @@ watched_lists: []                  # lists to flag in the manifest for watching
 retention_policies_source: null    # documented retention posture (manifest)
 ```
 
-`indexed_columns` is the source of truth for ordinary SharePoint indexes;
-it is a physical mapping concern and is not written in DBML. DBML `[unique]`
-still implies an index because SharePoint enforces uniqueness through one.
-The build rejects duplicate targets, more than 20 effective indexes per list,
-calculated columns, multiple-lines-of-text columns, hyperlinks and generated
-`SiteUrl` fields. Lookup and Person columns are technically indexable, but
-Microsoft notes that their indexes do not avoid list-view-threshold failures;
-prefer a supported scalar column as a view's first selective filter.
+Indexes are not configured in this file. Declare them in the table-level
+[`indexes` block in `schema.dbml`](./dbml.md#indexes). The removed
+`indexed_columns` key is a hard load error; there is no compatibility or
+dual-source mode.
 
 ## Protection
 

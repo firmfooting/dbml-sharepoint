@@ -728,7 +728,7 @@ def generate_data_dictionary(
                 f"{_md_cell(description)} |",
             )
         details: list[str] = []
-        indexed = mapping.indexed_columns.get(table.name, [])
+        indexed = [index.columns[0] for index in table.indexes if len(index.columns) == 1]
         if indexed:
             details.append(f"Indexed columns: {', '.join(indexed)}.")
         v_override = mapping.versioning_overrides.get(table.name, {})

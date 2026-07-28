@@ -38,12 +38,25 @@ class Column:
     is_auto_increment: bool = False
 
 
+@dataclass(frozen=True)
+class TableIndex:
+    """A table-level DBML index declaration and its optional SQL settings."""
+
+    columns: tuple[str, ...]
+    name: str | None = None
+    unique: bool = False
+    type: str | None = None
+    pk: bool = False
+    note: str = ""
+
+
 @dataclass
 class Table:
     """A DBML Table — name, columns, optional table-level note."""
 
     name: str
     columns: list[Column] = field(default_factory=list)
+    indexes: list[TableIndex] = field(default_factory=list)
     note: str = ""
 
 
@@ -83,6 +96,15 @@ def parse_dbml(path: Path) -> Schema:
         )
         for raw_col in raw_table.columns:
             table.columns.append(_to_column(raw_col))
+        for raw_index in raw_table.indexes:
+            table.indexes.append(TableIndex(
+                columns=tuple(raw_index.subject_names),
+                name=raw_index.name,
+                unique=bool(raw_index.unique),
+                type=raw_index.type,
+                pk=bool(raw_index.pk),
+                note=raw_index.note.text if raw_index.note else "",
+            ))
         schema.tables.append(table)
 
     return schema

@@ -37,6 +37,11 @@ Table Audit {
   ReportUrl   hyperlink   [note: 'Link to the report in its document store']
   Sponsor     person      [note: 'Executive accountable for responding to this audit']
   Notes       richtext
+
+  indexes {
+    AuditType
+    ReportDate
+  }
 }
 
 Table Recommendation {
@@ -57,4 +62,12 @@ Table Recommendation {
   DaysLate      calculated_number [note: 'How many days past the committed date this was closed. Shows 0 when closed on time or early. Fills itself in once the closed date is entered.']
   EvidenceUrl   hyperlink      [note: 'The closure evidence — what proves the action happened (required to close; see governance)']
   Notes         richtext       [note: 'Progress updates, dated, newest first']
+
+  indexes {
+    Status
+    Audit
+    Owner
+    DueDate
+    FindingRating
+  }
 }

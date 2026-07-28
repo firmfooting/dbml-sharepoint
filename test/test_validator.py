@@ -25,7 +25,15 @@ from dbml_sharepoint.model.mapping_loader import (
     Versioning,
     load_mapping,
 )
-from dbml_sharepoint.model.parser import Column, EnumDef, Reference, Schema, Table, parse_dbml
+from dbml_sharepoint.model.parser import (
+    Column,
+    EnumDef,
+    Reference,
+    Schema,
+    Table,
+    TableIndex,
+    parse_dbml,
+)
 
 
 def test_style_map_keys_must_be_enum_members(tmp_path: Path) -> None:
@@ -187,7 +195,7 @@ def _bundle_with_formulas(
             )
             for name in entity_names
         },
-        cross_site_reference_columns=[], indexed_columns={},
+        cross_site_reference_columns=[],
         versioning_default=Versioning(True, 500, False), versioning_overrides={},
         enum_sources={}, watched_lists=[], calculated_formulas=formulas,
     )
@@ -366,81 +374,43 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
     )
 
 
-def test_indexed_column_unknown_entity_is_error() -> None:
-    """indexed_columns keyed by a table that is not in the schema must be an
-    error; jsgen silently ignores unknown keys, so the index would never be
-    applied."""
-    schema = parse_dbml(FIXTURES / "simple.dbml")
-    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    bundle.mapping.indexed_columns["NotATable"] = ["Whatever"]
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "NotATable" in f.message for f in findings
-    )
-
-
-def test_indexed_column_unknown_column_is_error() -> None:
-    """Regression: an indexed_columns entry naming a nonexistent column passed
-    validation and emitted a Phase 2.3 patch against a missing SP field, failing
-    late in the browser."""
-    schema = parse_dbml(FIXTURES / "simple.dbml")
-    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    bundle.mapping.indexed_columns["Task"] = ["DueDate", "NoSuchColumn"]
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "NoSuchColumn" in f.message for f in findings
-    )
-    # The valid sibling entry must not be flagged.
-    assert not any("DueDate" in f.message for f in findings)
-
-
 def test_indexed_column_cross_site_logical_name_is_error() -> None:
-    """A cross-site column's LOGICAL name never exists in SP — it is expanded
-    to <col>Abbreviation / <col>SiteUrl. The Text abbreviation is indexable;
-    the Hyperlink URL and nonexistent logical name are not."""
+    """A cross-site column's logical DBML field is expanded and never exists
+    in SharePoint, so its otherwise-valid DBML index must be rejected."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.mapping.cross_site_reference_columns.append(
         CrossSiteRef(entity="Task", column="Project"),
     )
-    bundle.mapping.indexed_columns["Task"] = ["Project"]
+    task = next(table for table in schema.tables if table.name == "Task")
+    task.indexes = [TableIndex(("Project",))]
     findings = validate_against_mapping(schema, bundle)
     assert any(
         f.severity == "error"
         and "Project" in f.message
-        and "indexed_columns" in f.message
+        and "indexes" in f.message
         for f in findings
     )
 
-    # The expanded abbreviation is Text and indexable. SiteUrl is a
-    # Hyperlink, which SharePoint does not support as an index target.
-    bundle.mapping.indexed_columns["Task"] = ["ProjectAbbreviation", "ProjectSiteUrl"]
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "ProjectSiteUrl" in f.message
-        and "Hyperlink" in f.message for f in findings
-    )
-    assert not any(
-        f.severity == "error" and "ProjectAbbreviation" in f.message for f in findings
-    )
 
-
-def test_indexed_columns_reject_unsupported_field_types(tmp_path: Path) -> None:
+def test_dbml_indexes_reject_unsupported_field_types(tmp_path: Path) -> None:
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
         "Table Task {\n"
         "  Id int [pk, increment]\n"
         "  Notes longtext\n"
         "  Url hyperlink\n"
+        "  indexes {\n"
+        "    Notes\n"
+        "    Url\n"
+        "  }\n"
         "}\n",
         encoding="utf-8",
     )
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
         "entities:\n"
-        "  Task: { kind: List, base_template: 100, site_role: default }\n"
-        "indexed_columns:\n"
-        "  Task: [Notes, Url]\n",
+        "  Task: { kind: List, base_template: 100, site_role: default }\n",
         encoding="utf-8",
     )
     findings = validate_against_mapping(
@@ -456,19 +426,19 @@ def test_indexed_columns_reject_unsupported_field_types(tmp_path: Path) -> None:
     )
 
 
-def test_indexed_columns_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> None:
+def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> None:
     columns = "".join(f"  Col{i} nvarchar\n" for i in range(21))
+    indexes = "".join(f"    Col{i}\n" for i in range(21)) + "    Col0\n"
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Wide {{\n  Id int [pk, increment]\n{columns}}}\n",
+        f"Table Wide {{\n  Id int [pk, increment]\n{columns}"
+        f"  indexes {{\n{indexes}  }}\n}}\n",
         encoding="utf-8",
     )
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
         "entities:\n"
-        "  Wide: { kind: List, base_template: 100, site_role: default }\n"
-        "indexed_columns:\n"
-        f"  Wide: [{', '.join(f'Col{i}' for i in range(21))}, Col0]\n",
+        "  Wide: { kind: List, base_template: 100, site_role: default }\n",
         encoding="utf-8",
     )
     findings = validate_against_mapping(
@@ -503,6 +473,68 @@ def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path:
     assert any(
         f.severity == "error" and "21" in f.message and "20" in f.message
         for f in findings
+    )
+
+
+def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Status nvarchar\n"
+        "  Category nvarchar\n"
+        "  indexes {\n"
+        "    (Status, Category)\n"
+        "    Status [name: 'status_index']\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    errors = [f.message for f in findings if f.severity == "error"]
+    assert any("composite" in message for message in errors)
+    assert any("name" in message and "status_index" in message for message in errors)
+
+
+def test_cross_site_reference_cannot_declare_unique_constraint(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Project int [unique, ref: > Project.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Task, column: Project }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert any(
+        finding.severity == "error"
+        and "Task.Project" in finding.message
+        and "unique" in finding.message
+        and "cross-site" in finding.message
+        for finding in findings
     )
 
 
@@ -653,7 +685,7 @@ def test_lookup_target_without_title_or_display_column_is_error() -> None:
         }
         mapping = Mapping(
             prefix="APP_", prefix_owner="", prefix_registry="", entities=entities,
-            cross_site_reference_columns=[], indexed_columns={},
+            cross_site_reference_columns=[],
             versioning_default=Versioning(True, 500, False), versioning_overrides={},
             enum_sources={}, watched_lists=[],
         )
@@ -704,7 +736,7 @@ def test_lookup_display_column_must_name_a_real_target_column() -> None:
         }
         mapping = Mapping(
             prefix="APP_", prefix_owner="", prefix_registry="", entities=entities,
-            cross_site_reference_columns=[], indexed_columns={},
+            cross_site_reference_columns=[],
             versioning_default=Versioning(True, 500, False), versioning_overrides={},
             enum_sources={}, watched_lists=[],
         )
@@ -752,7 +784,7 @@ def test_cross_site_role_lookup_is_error() -> None:
         }
         mapping = Mapping(
             prefix="APP_", prefix_owner="", prefix_registry="", entities=entities,
-            cross_site_reference_columns=cross_site, indexed_columns={},
+            cross_site_reference_columns=cross_site,
             versioning_default=Versioning(True, 500, False), versioning_overrides={},
             enum_sources={}, watched_lists=[],
         )
@@ -959,7 +991,9 @@ def test_calculated_formula_circular_references_are_error() -> None:
 
 def test_indexed_calculated_column_is_error() -> None:
     schema, bundle = _calc_inputs()
-    bundle.mapping.indexed_columns["Risk"] = ["RiskScore"]
+    next(table for table in schema.tables if table.name == "Risk").indexes.append(
+        TableIndex(("RiskScore",)),
+    )
     findings = validate_against_mapping(schema, bundle)
     assert any(
         f.severity == "error" and "RiskScore" in f.message
@@ -1627,7 +1661,7 @@ def test_auto_increment_column_not_named_id_is_rejected() -> None:
     rendered-column oracle special-case the NAME "Id". So `TicketId int
     [pk, increment]` was validated as a real column and never created, and
     every consequence validated clean: form_visibility, column_validation
-    and column_formatting deployed nothing; indexed_columns and
+    and column_formatting deployed nothing; DBML indexes and
     views.fields emitted calls that 400 live; demo_items wrote to a column
     that does not exist."""
     table = Table(name="Ticket", columns=[
@@ -2037,6 +2071,7 @@ def test_retired_columns_warnings(tmp_path: Path) -> None:
         "  BoardDate date\n"
         "  OperationsStatus rag\n"
         "  Stamp nvarchar [not null, default: 'x']\n"
+        "  indexes { OperationsStatus }\n"
         "}\n",
         encoding="utf-8",
     )
@@ -2046,8 +2081,6 @@ def test_retired_columns_warnings(tmp_path: Path) -> None:
         "  Board: { kind: List, base_template: 100, site_role: default }\n"
         "display_names:\n"
         "  mode: auto\n"
-        "indexed_columns:\n"
-        "  Board: [OperationsStatus]\n"
         "column_formatting:\n"
         "  Board:\n"
         "    OperationsStatus: { style: severity, map: { Green: good } }\n"
@@ -2083,7 +2116,7 @@ def test_retired_columns_warnings(tmp_path: Path) -> None:
     # not null WITH a default: saves succeed, the default is stamped forever.
     assert warned("retired_columns[Board]", "'Stamp'", "stamped with")
     # A dead index is dead weight against a finite per-list budget.
-    assert warned("retired_columns[Board]", "'OperationsStatus'", "indexed_columns")
+    assert warned("retired_columns[Board]", "'OperationsStatus'", "indexes block")
     # Stripped view field, width and form-section references — reported,
     # never rejected. One generic loop over retirement_strips covers all
     # three; the context string is what distinguishes them.

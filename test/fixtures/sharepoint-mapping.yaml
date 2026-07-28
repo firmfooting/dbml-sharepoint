@@ -13,9 +13,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Task: [DueDate]
-
 display_names:
   mode: auto
 

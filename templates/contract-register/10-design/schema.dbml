@@ -45,4 +45,10 @@ Table Contract {
   AnnualValue     number           [note: 'Approximate annual value in your base currency']
   Summary         richtext         [note: 'What the contract covers, key obligations']
   DocumentUrl     hyperlink        [note: 'Link to the signed contract in its system of record']
+
+  indexes {
+    Status
+    EndDate
+    ContractType
+  }
 }

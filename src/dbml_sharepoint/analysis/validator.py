@@ -25,7 +25,7 @@ RESERVED_NAMES = frozenset({
 
 # SharePoint system columns that exist on every list. Formatter [$Field]
 # references and view/form field lists may name them; they are never
-# DBML-declared. Deployer-managed sets (indexed_columns, hidden_on_forms,
+# DBML-declared. Deployer-managed sets (views, form_visibility,
 # display_names) stay strict, as do list-validation formulas (SP support
 # for system columns there is not relied on — fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
@@ -235,7 +235,7 @@ def _check_column(
     # `int [pk, increment]` column, while jsgen and _rendered_columns
     # special-case the NAME — so a differently named one was validated as a
     # real column and never created. Every consequence then validated
-    # clean: per-column declarations deployed nothing, indexed_columns and
+    # clean: per-column declarations deployed nothing, DBML indexes and
     # views.fields emitted calls that fail live, and demo_items wrote to a
     # column that does not exist.
     #

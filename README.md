@@ -29,9 +29,9 @@ philosophy.
 ## Why
 
 - **Design as code.** Your list schema lives in DBML — reviewable, diffable,
-  renderable as an ERD on [dbdiagram.io](https://dbdiagram.io). The physical
-  mapping (prefixes, templates, versioning, indexes, ACLs) lives in YAML next
-  to it.
+  renderable as an ERD on [dbdiagram.io](https://dbdiagram.io), with indexes
+  declared beside their tables. Deployment and presentation mapping
+  (prefixes, templates, versioning, views, ACLs) lives in YAML next to it.
 - **Deploy with nothing but a browser.** The generated script runs in the
   site's own console under your own login, calling only documented SharePoint
   REST/CSOM endpoints. No PnP, no CSOM installs, no app registrations, no
@@ -100,8 +100,8 @@ Then:
 
 | File | Owns |
 |---|---|
-| `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), notes (→ column descriptions) |
-| `mapping.yaml` | List prefix, entity kind/template/site-role, indexed columns, versioning, calculated-column formulas, permission levels, groups, per-list ACLs |
+| `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), indexes, notes (→ column descriptions) |
+| `mapping.yaml` | List prefix, entity kind/template/site-role, views, versioning, calculated-column formulas, permission levels, groups, per-list ACLs |
 | `release.yaml` | Release tag + schema version stamped into every artefact for provenance |
 
 See [`examples/project-tracker/README.md`](examples/project-tracker/README.md)

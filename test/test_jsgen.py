@@ -39,6 +39,30 @@ def test_generated_deploy_js_contains_lifecycle_markers() -> None:
     assert "0.1.0-test" in js  # release tag rendered
 
 
+def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Status nvarchar\n"
+        "  indexes { Status }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    output = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
+
+
 def test_simple_deploy_js_matches_golden() -> None:
     """Golden-file regression: deploy.js from simple.dbml must match
     test/fixtures/expected/simple-deploy.js byte-for-byte.

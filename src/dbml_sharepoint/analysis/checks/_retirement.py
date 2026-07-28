@@ -96,11 +96,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{ctx}.{col_name}: superseded_by {superseded!r} is "
                     f"itself retired.",
                 ))
-        for indexed_col in bundle.mapping.indexed_columns.get(entity_name, []):
+        for indexed_col in (
+            index.columns[0]
+            for index in retired_table.indexes
+            if len(index.columns) == 1
+        ):
             if indexed_col in retired_cols:
                 findings.append(Finding(
                     "warning",
-                    f"{ctx}: {indexed_col!r} is still in indexed_columns — a "
+                    f"{ctx}: {indexed_col!r} is still in the DBML indexes block — a "
                     f"list's index budget is finite and this one is now dead "
                     f"weight.",
                 ))

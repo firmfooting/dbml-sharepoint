@@ -61,6 +61,55 @@ all lists exist. SharePoint cannot span webs with a lookup; cross-site
 relationships use the mapping's `cross_site_reference_columns` pattern
 (a Choice + URL pair) instead.
 
+## Indexes
+
+Declare ordinary SharePoint column indexes in the table's DBML `indexes`
+block. Each entry is one column name:
+
+```dbml
+Table Risk {
+  Id          int         [pk, increment]
+  Status      risk_status
+  Category    risk_category
+  ReviewDate  date
+
+  indexes {
+    Status
+    Category
+    ReviewDate
+  }
+}
+```
+
+The block is the sole source of truth for ordinary indexes. A build turns
+each entry into `Indexed: true`, verifies the property by readback, and lists
+the result in the deployment manifest and data dictionary. Deployment is
+declarative for additions and repairs: a missing declared index is created,
+but removing an entry does not delete an existing SharePoint index.
+
+The supported DBML subset is intentionally narrow:
+
+- One bare column per entry. Composite indexes are rejected.
+- Index options such as `name`, `type`, `unique`, `pk` and `note` are
+  rejected because SharePoint has no equivalent deployment contract.
+- Put `unique` on the column itself, for example
+  `Code nvarchar [unique]`. SharePoint creates an index as part of enforcing
+  uniqueness, so it counts toward the same per-list limit even when it is
+  not repeated in `indexes`.
+- A list may have at most 20 effective declared/unique indexes. Declaring the
+  same column twice is an error.
+- Text, Number, Date/DateTime, Boolean, Choice, Lookup and Person columns can
+  be declared. Multiple-lines-of-text, Hyperlink and Calculated columns
+  cannot be indexed and fail validation.
+- Lookup and Person indexes do not make those fields suitable as the first
+  filter in a large-list threshold query. Prefer a selective scalar field.
+- A mapping `cross_site_reference_columns` entry replaces its logical DBML
+  column with generated Abbreviation and SiteUrl fields, so that logical
+  column cannot also be indexed from DBML.
+
+`mapping.yaml` has no index API. The former `indexed_columns` section is a
+load error rather than a compatibility alias.
+
 ## Column settings
 
 - `not null` → required column.

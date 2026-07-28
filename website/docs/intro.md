@@ -33,9 +33,10 @@ schema.dbml + mapping.yaml + release.yaml
 ## Why
 
 - **Design as code.** Your list schema lives in DBML — reviewable,
-  diffable, renderable as an ERD on [dbdiagram.io](https://dbdiagram.io).
-  The physical mapping (prefixes, templates, versioning, views, indexes,
-  formatting, ACLs) lives in YAML next to it.
+  diffable, renderable as an ERD on [dbdiagram.io](https://dbdiagram.io),
+  with indexes declared beside their tables. Deployment and presentation
+  mapping (prefixes, templates, versioning, views, formatting, ACLs) lives
+  in YAML next to it.
 - **Deploy with nothing but a browser.** The generated script runs in the
   site's own console under your own login, calling SharePoint REST/CSOM
   endpoints. No PnP, no CSOM installs, no app registrations, no Graph

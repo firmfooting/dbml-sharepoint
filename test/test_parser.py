@@ -37,3 +37,21 @@ def test_id_pk_increment_is_marked() -> None:
     id_col = next(c for c in project.columns if c.name == "Id")
     assert id_col.is_pk is True
     assert id_col.is_auto_increment is True
+
+
+def test_table_indexes_are_preserved_from_dbml(tmp_path: Path) -> None:
+    schema_path = tmp_path / "indexed.dbml"
+    schema_path.write_text(
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Status nvarchar\n"
+        "  Category nvarchar\n"
+        "  indexes {\n"
+        "    Status\n"
+        "    Category\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    risk = parse_dbml(schema_path).tables[0]
+    assert [index.columns for index in risk.indexes] == [("Status",), ("Category",)]

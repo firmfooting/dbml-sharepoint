@@ -31,6 +31,11 @@ Table PolicyDocuments {
   PolicyArea  policy_area  [note: 'Which domain of the policy framework this document belongs to']
   DocStatus   policy_status [not null, default: 'Draft', note: 'Lifecycle state of THIS document']
   OwnerRole   nvarchar     [note: 'The accountable role (not person) — roles outlive people, e.g. "Finance Manager"']
+
+  indexes {
+    DocStatus
+    PolicyArea
+  }
 }
 
 // The register: one row per policy, whether or not its document is drafted
@@ -49,4 +54,10 @@ Table PolicyRegister {
   // Points at the current published file in the PL_PolicyDocuments library.
   DocumentUrl  hyperlink     [note: 'Link to the current published version of this policy']
   Notes        richtext      [note: 'Approval body, consultation notes, supersession trail']
+
+  indexes {
+    Status
+    PolicyArea
+    ReviewDate
+  }
 }

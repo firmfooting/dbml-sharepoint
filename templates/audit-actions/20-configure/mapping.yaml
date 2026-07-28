@@ -7,10 +7,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Audit: [AuditType, ReportDate]
-  Recommendation: [Status, Audit, Owner, DueDate, FindingRating]
-
 versioning:
   default:
     enable_versioning: true
