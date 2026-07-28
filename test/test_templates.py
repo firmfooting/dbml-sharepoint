@@ -20,6 +20,52 @@ def _risk_bundle() -> MappingBundle:
     return load_mapping(RISK / "20-configure" / "mapping.yaml")
 
 
+def _choose_call_args(formula: str) -> list[str]:
+    """Split the top-level arguments out of a formula's (single) CHOOSE(...)
+    call, respecting nested parens and quoted strings — so a demo-row band
+    check can read the SHIPPED formula's own 25-cell array instead of a
+    second copy of the matrix that could drift from it independently."""
+    start = formula.index("CHOOSE(") + len("CHOOSE(")
+    depth = 1
+    args: list[str] = []
+    current: list[str] = []
+    in_quote = False
+    i = start
+    while depth > 0:
+        ch = formula[i]
+        if in_quote:
+            current.append(ch)
+            if ch == '"':
+                in_quote = False
+        elif ch == '"':
+            in_quote = True
+            current.append(ch)
+        elif ch == "(":
+            depth += 1
+            current.append(ch)
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                args.append("".join(current))
+                break
+            current.append(ch)
+        elif ch == "," and depth == 1:
+            args.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+        i += 1
+    return args
+
+
+def _unquote(literal: str) -> str:
+    stripped = literal.strip()
+    assert stripped.startswith('"') and stripped.endswith('"'), (
+        f"expected a quoted CHOOSE argument, got {literal!r}"
+    )
+    return stripped[1:-1]
+
+
 def test_risk_register_declares_the_governance_columns() -> None:
     """The uplift's whole point. A column silently absent takes its view
     column, its format and its form section down with it, and the build
@@ -105,3 +151,39 @@ def test_risk_register_demo_rows_cover_every_rating_band() -> None:
     # The closed view and the closure-statement guidance both need this row.
     assert by_key["risk-closed"]["Status"] == "Closed"
     assert by_key["risk-closed"]["ClosureStatement"]
+
+    # Band coverage, checked against the SHIPPED ResidualRiskRating formula
+    # rather than a duplicate of the matrix: resolve each row's
+    # Likelihood/Consequence through the formula's own 25-cell CHOOSE
+    # array, so a future edit that shifts risk-high's inputs onto a
+    # different cell is caught here even though the key still says "high".
+    schema = parse_dbml(RISK / "10-design" / "schema.dbml")
+    likelihood_order = next(e.members for e in schema.enums if e.name == "risk_likelihood")
+    consequence_order = next(e.members for e in schema.enums if e.name == "risk_consequence")
+    formula = _risk_bundle().mapping.calculated_formulas["Risk"]["ResidualRiskRating"]
+    choose_args = _choose_call_args(formula)
+    bands = [_unquote(arg) for arg in choose_args[1:]]
+    assert len(bands) == 25, f"expected a 25-cell CHOOSE array, got {len(bands)}: {bands}"
+
+    def resolved_band(likelihood: str, consequence: str) -> str:
+        li = likelihood_order.index(likelihood) + 1
+        ci = consequence_order.index(consequence) + 1
+        return bands[(li - 1) * 5 + (ci - 1)]
+
+    resolved = {
+        key: resolved_band(values["Likelihood"], values["Consequence"])
+        for key, values in by_key.items()
+    }
+    for key, expected_band in (
+        ("risk-low", "Low"), ("risk-medium", "Medium"),
+        ("risk-high", "High"), ("risk-extreme", "Extreme"),
+    ):
+        assert resolved[key] == expected_band, (
+            f"{key}: Likelihood={by_key[key]['Likelihood']!r} Consequence="
+            f"{by_key[key]['Consequence']!r} resolves to {resolved[key]!r} "
+            f"via the shipped formula, not {expected_band!r}"
+        )
+    assert set(resolved.values()) >= {"Low", "Medium", "High", "Extreme"}, (
+        f"only {sorted(set(resolved.values()))} of the four rating bands "
+        f"are covered by the demo rows: {resolved}"
+    )
