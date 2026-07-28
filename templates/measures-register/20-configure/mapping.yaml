@@ -68,10 +68,270 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes and formulas all key on them); the deployer renames the display
+# Title after create — "MeasureArea" shows as "Measure Area". Auto
+# PascalCase splitting handles every column here correctly, so there are no
+# overrides.
+display_names:
+  mode: auto
+
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# website/docs/reference/style-guide.md) — tokens are chosen by the ROLE a
+# member plays in the lifecycle, not by its wording, so a colour means the
+# same thing here as it does in every other template.
+#
+# This is the one list in the process theme with no calculated score, so it
+# carries no data-bar. What it does carry is the theme's other shared
+# binding: the review date escalates once it is past due, guarded on the
+# status members for which a review no longer means anything. A retired
+# measure keeps its last review date without shouting about it.
 column_formatting:
   Measure:
     Status: { style: severity, map: { Active: low, "Under development": neutral, Retired: muted } }
+    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Retired] } }
+
+# The identifying spine every lens repeats. Five views share it, which is
+# above §1.9's three-repetition threshold; below that the indirection costs
+# more than it saves.
+field_sets:
+  Measure:
+    identity: [Title, MeasureArea, Owner]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). "The catalogue" is the default — the register
+# as a browsable, area-grouped list of what is actually in force. The four
+# lenses are the ones the register is used through: what each forum
+# receives, what needs a definition review, what is still being defined,
+# and what has been retired but must stay readable to decode old reports.
+#
+# Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
+# rewrites them to display titles — ColumnWidth binds by display name, and
+# internal names silently reset).
+#
+# ReviewDate's overdue formatting reads [$Status] through its guard, so
+# every view that shows the date also shows the status. A column formatter
+# can only read columns the view carries.
+views:
+  Measure:
+    - title: "The catalogue"
+      default: true
+      fields: ["@identity", Frequency, Direction, Target, ReportedTo, Status]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      group_by: { field: MeasureArea, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        MeasureArea: 130
+        Owner: 160
+        Frequency: 120
+        Direction: 160
+        Target: 130
+        ReportedTo: 220
+        Status: 110
+    # Grouped on the free-text forum field, because "what does the board
+    # actually see" is a question nobody can answer from a flat list and
+    # everybody is asked before an agenda goes out. Retired measures are
+    # excluded: they are history, not a reporting commitment.
+    - title: "By forum"
+      fields: ["@identity", ReportedTo, Frequency, Status]
+      where:
+        - { field: Status, op: neq, value: "Retired" }
+      group_by: { field: ReportedTo, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        MeasureArea: 130
+        Owner: 160
+        ReportedTo: 220
+        Frequency: 120
+        Status: 110
+    - title: "Definition reviews due"
+      fields: ["@identity", Frequency, Status, ReviewDate]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+        - { field: ReviewDate, op: leq, value: today+60 }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 300
+        MeasureArea: 130
+        Owner: 160
+        Frequency: 120
+        Status: 110
+        ReviewDate: 170
+    - title: "In development"
+      fields: ["@identity", Definition, DataSource, Status]
+      where:
+        - { field: Status, op: eq, value: "Under development" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        MeasureArea: 130
+        Owner: 160
+        Definition: 200
+        DataSource: 180
+        Status: 110
+    # Retired measures are kept permanently — they are what makes an old
+    # report readable. This is where a custodian finds the definition
+    # behind a number nobody produces any more.
+    - title: "Retired"
+      fields: ["@identity", Status, ReviewDate, Notes]
+      where:
+        - { field: Status, op: eq, value: "Retired" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        MeasureArea: 130
+        Owner: 160
+        Status: 110
+        ReviewDate: 170
+        Notes: 200
+
+# Form layouts: a strapline header and a sectioned body. SharePoint renders
+# per-field description hints inside sectioned forms on the NEW form only —
+# the edit form suppresses column descriptions (platform limitation).
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+#
+# Four beats rather than five: this list stamps nothing automatically and
+# holds no calculated column, so there is no System section to put under
+# them. Collapsing a beat is permitted; reordering is not.
+form_formatting:
+  Measure:
+    header: formatting/measure-form-header.json
+    body: formatting/measure-form-body.json
+
+# Deliberately NOT declared: form_visibility. Every column on this list is
+# authored by a human at some point in a measure's life, and none of them
+# is conditional on another — a measure under development still needs its
+# definition drafted, and a retired one still shows everything it was.
+# Declaring an empty `columns: {}` under the default `exact` reconciliation
+# would clear formulas nobody set; declaring nothing leaves the list alone.
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has a
+# single ValidationFormula and every cross-column rule shares one message.
+column_validation:
+  Measure:
+    columns:
+      # Governance sets the cadence at "at least annual". A review date two
+      # years out is not a slower cadence, it is a measure that has left
+      # the cull: it never appears in "Definition reviews due" and nobody
+      # is ever asked whether the definition still holds. The blank arm is
+      # deliberate — a measure Under development has nothing to review yet,
+      # and the list rule below is what requires the date once it is Active.
+      ReviewDate:
+        when:
+          any_of:
+            - { field: ReviewDate, op: is_null }
+            - { field: ReviewDate, op: leq, value: today+365 }
+        message: "A definition review is at least annual. Pick a date within the next twelve months, or leave it blank until the measure goes Active."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# This is data-quality rule 3 in 50-govern/GOVERNANCE.md, which until now
+# was a rule nothing enforced.
+list_validation:
+  Measure:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Active" }
+        - { field: ReviewDate, op: is_not_null }
+    message: "An active measure needs a Review Date. Without one it never reaches the review queue and its definition is never re-tested."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# review-cadence surfaces land on whatever day the demo runs; "@me" is the
+# pasting operator. Coverage: every declared view returns rows, every
+# status band renders, and the review date appears both overdue (red) and
+# comfortably ahead (plain) so the escalation and its absence are both
+# visible.
+demo_items:
+  Measure:
+    - key: measure-complaints
+      values:
+        Title: "[DEMO] Complaints acknowledged within 2 business days (%)"
+        MeasureArea: "Quality"
+        Owner: "@me"
+        Definition: "Demo row. Numerator: complaints with an acknowledgement recorded within 2 business days of ReceivedDate. Denominator: all complaints received in the month, excluding Withdrawn. Business days exclude public holidays. Reported to one decimal place."
+        DataSource: "Complaints register (CF_Complaint)"
+        Frequency: "Monthly"
+        Direction: "Higher is better"
+        Target: "95%"
+        ReportedTo: "Executive; Quality committee"
+        Status: "Active"
+        ReviewDate: "today+45"
+    - key: measure-turnaround
+      values:
+        Title: "[DEMO] Service request turnaround (median days)"
+        MeasureArea: "Service"
+        Owner: "@me"
+        Definition: "Demo row. Median of (ClosedDate - LoggedDate) in calendar days over requests closed in the month. Excludes requests closed as Duplicate. Median, not mean — the mean is dominated by three annual outliers."
+        DataSource: "Service requests (SR_Request)"
+        Frequency: "Monthly"
+        Direction: "Lower is better"
+        Target: "under 5 days"
+        ReportedTo: "Team meeting"
+        Status: "Active"
+        ReviewDate: "today-20"
+        Notes: "Demo row. Definition review overdue — the date anchor was queried at the last committee and has not been settled."
+    - key: measure-turnover
+      values:
+        Title: "[DEMO] Voluntary staff turnover (12-month rolling %)"
+        MeasureArea: "People"
+        Owner: "@me"
+        Definition: "Demo row. Numerator: voluntary exits in the trailing 12 months. Denominator: average headcount over the same 12 months. Excludes fixed-term expiry and casual conversions."
+        DataSource: "Payroll export, monthly"
+        Frequency: "Quarterly"
+        Direction: "Within range"
+        Target: "between 8 and 14"
+        ReportedTo: "Board"
+        Status: "Active"
+        ReviewDate: "today+200"
+    - key: measure-invoices
+      values:
+        Title: "[DEMO] Invoices paid within terms (%)"
+        MeasureArea: "Finance"
+        Owner: "@me"
+        Definition: "Demo row. Numerator: invoices paid on or before their due date. Denominator: all invoices with a due date in the month. Excludes disputed invoices while the dispute is open."
+        DataSource: "Finance system, AP ageing report"
+        Frequency: "Weekly"
+        Direction: "Higher is better"
+        Target: "98%"
+        ReportedTo: "Finance committee"
+        Status: "Active"
+        ReviewDate: "today+15"
+    # No ReviewDate: a measure that is still being defined has nothing to
+    # review yet, and the list save rule only requires the date once the
+    # status is Active. That is the rule demonstrating itself.
+    - key: measure-reversion
+      values:
+        Title: "[DEMO] Digitised process reversion rate (%)"
+        MeasureArea: "Digital"
+        Owner: "@me"
+        Definition: "Demo row. DRAFT. Numerator: processes recorded as Digitised in the process register that have work arriving by email or paper again. Denominator: all processes recorded as Digitised. The detection method is not agreed, which is why this is not Active."
+        DataSource: "Process register (PR_BusinessProcess), plus a manual check"
+        Frequency: "Quarterly"
+        Direction: "Lower is better"
+        ReportedTo: "Improvement group"
+        Status: "Under development"
+    - key: measure-answer-time
+      values:
+        Title: "[DEMO] Average call answer time (seconds)"
+        MeasureArea: "Service"
+        Owner: "@me"
+        Definition: "Demo row. Mean seconds from call arrival to answer, all queues, business hours."
+        DataSource: "Phone system report (decommissioned)"
+        Frequency: "Monthly"
+        Direction: "Lower is better"
+        Target: "under 20 seconds"
+        ReportedTo: "Team meeting"
+        Status: "Retired"
+        ReviewDate: "today-400"
+        Notes: "Demo row. Retired at the annual cull: nobody acted on it in a year and the phone system it came from is gone. Kept so the 2024 committee packs can still be read."

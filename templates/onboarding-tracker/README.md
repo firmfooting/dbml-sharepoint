@@ -8,10 +8,17 @@ by function).
 **The value case.** Onboarding is the textbook multifactorial process: four
 departments, one deadline, and no single owner of the whole. When it's run
 by email, the new starter arrives to no laptop, no access, no desk — and
-everyone is sure someone else dropped it. This tracker gives each function a
-filtered queue (*IT's open tasks*), the manager a per-starter checklist, and
+everyone is sure someone else dropped it. This tracker gives each function
+its own group in the open-task queue, every individual a *My tasks* view
+that follows the signed-in user, the manager a per-starter checklist, and
 HR a single *anything overdue before a start date* view. Value lands with
 the very first starter.
+
+**Deploys with:** seven views (starters in progress, starting soon, and
+complete-or-withdrawn; tasks grouped by function, grouped by starter, the
+current user's own queue, and the overdue-before-start list), sectioned
+forms on both lists, a Done Date that only appears once a task is Done,
+overdue colouring, three save rules, and ten demo rows.
 
 **Work the folders in order:**
 

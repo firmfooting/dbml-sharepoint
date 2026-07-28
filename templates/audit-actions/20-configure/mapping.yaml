@@ -74,13 +74,87 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes, the Audit lookup and the DaysLate formula all key on them); the
+# deployer renames the display Title after create. Two overrides for the
+# initialisms the splitter turns into "Url".
+display_names:
+  mode: auto
+  overrides:
+    Audit:
+      ReportUrl: "Report URL"
+    Recommendation:
+      EvidenceUrl: "Evidence URL"
+
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md) — status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
+#
+# AU_Audit gets none, deliberately. It is a header record: a report, its
+# date, who wrote it and who answers for it. There is no lifecycle on it
+# and no deadline — everything with a clock or a state lives on the
+# recommendations that hang off it.
 column_formatting:
   Recommendation:
-    Status: { style: severity, map: { Open: low, "In progress": low, "Implemented - awaiting evidence": good, Closed: good, "Risk accepted": good } }
+    # The shipped map put THREE members on `good`, which erased the
+    # distinction this register exists to make: "Implemented - awaiting
+    # evidence" is not closed, "Risk accepted" is not delivered, and
+    # Closed is. Now each carries its own role. "Implemented - awaiting
+    # evidence" is the waiting band — the coordinator has something to
+    # chase — and "Risk accepted" is the superseded band, an honest
+    # ending in which the action will not happen.
+    #
+    # "Open" moves to `neutral` against the style guide's own example
+    # list, and the reason is local: this enum ALSO has "In progress", so
+    # Open is genuinely the untriaged band here rather than the working
+    # state it names on registers that have no separate in-motion member.
+    Status:
+      style: severity
+      map:
+        "Open": neutral
+        "In progress": low
+        "Implemented - awaiting evidence": warning
+        "Closed": good
+        "Risk accepted": muted
+    # The rating the REPORT gave the finding, and until now unformatted —
+    # so a Critical finding rendered in the same grey as a Low one on the
+    # view the audit committee reads. Same four bands and the same tokens
+    # as risk-register's rating columns, on purpose: a Critical is a
+    # Critical wherever it appears in this library.
+    FindingRating:
+      style: severity
+      map:
+        "Low": good
+        "Moderate": warning
+        "High": severe
+        "Critical": blocked
+    # BOTH dates carry the deadline treatment, because the committed date
+    # is whichever of them is set — that is what DaysLate computes against
+    # and what the "Overdue" view filters on. Guarded on both endings: a
+    # date that keeps shouting after the row is closed or accepted trains
+    # people to ignore the colour.
+    DueDate:
+      style: overdue-date
+      guard: { field: Status, not: ["Closed", "Risk accepted"] }
+    RevisedDue:
+      style: overdue-date
+      guard: { field: Status, not: ["Closed", "Risk accepted"] }
+    # Days past the committed date, taking its fill from the finding's own
+    # rating so the bar and the rating pill beside it can never disagree —
+    # a forty-day-late Critical reads differently from a forty-day-late
+    # Low, which is the whole point of showing lateness as a number. The
+    # value arrives prefixed `number;#`, hence `calculated: true`;
+    # FindingRating is a plain Choice, so the nested map needs no flag.
+    # max 60 is two months, past which the committee is not asking how
+    # late any more.
+    DaysLate:
+      style: data-bar
+      max: 60
+      calculated: true
+      color_by:
+        field: FindingRating
+        map: { Low: good, Moderate: warning, High: severe, Critical: blocked }
 
 # Form visibility: the closure columns only exist as questions once there
 # is something to close, so they are off the New form and appear as the
@@ -111,12 +185,61 @@ form_visibility:
         when:
           - { field: Status, op: in, value: ["Implemented - awaiting evidence", "Closed"] }
 
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule has to share one message.
+# So anything expressible on one column belongs here, where the person who
+# broke it is told which rule they broke.
+column_validation:
+  Audit:
+    columns:
+      # ReportDate is the anchor for the ten-business-day loading rule in
+      # 50-govern and for the whole register's chronology. A future date
+      # is a typed year, and nothing downstream can tell.
+      ReportDate:
+        when:
+          - { field: ReportDate, op: leq, value: today }
+        message: "A report cannot be dated in the future. Use the date on the final report."
+  Recommendation:
+    columns:
+      # DaysLate is computed from this date. A future ClosedDate produces
+      # a negative range, which the formula's own guard turns into 0 — so
+      # a recommendation closed "next month" reports as closed on time,
+      # silently, on the number the audit committee reads.
+      ClosedDate:
+        when:
+          - { field: ClosedDate, op: leq, value: today }
+        message: "A recommendation cannot have been closed in the future. Use the date the action was actually verified as complete."
+
 # The closure-evidence standard, enforced at save rather than by reminder.
 # Cross-column, so it belongs here and not in column_validation, which may
-# only reference the column being validated. Read as an implication: EITHER
-# it is not closed, OR there is evidence.
-# SHAREPOINT WILL NOT ENFORCE AN EVIDENCE URL AT SAVE, so there is no rule
-# here requiring one. Probed against a live tenant
+# only reference the column being validated. Each rule is an implication:
+# `if A then B` is `any_of[not A, B]`, which is why every branch below
+# starts with the case the rule does not apply to.
+#
+# TWO rules now, chained. A list has ONE ValidationFormula, so the
+# top-level list is an AND and they compose — and they share ONE message,
+# which is why it names both checks rather than describing one. 50-govern's
+# second data-quality rule is "no Closed without EvidenceUrl AND
+# ClosedDate"; only the first half was enforced.
+#
+# NOTE, and it is the fleet's one open question of its kind: the evidence
+# rule puts a HYPERLINK column in a validation formula. This tool accepts
+# that operand, and this template has shipped the rule since before the
+# family standard existed — but it has not been read back from a live
+# tenant, and grants-register declined to copy the pattern for exactly that
+# reason. The rule stays here because removing a shipped rule on a hunch is
+# worse than keeping one, and because DEPLOY.md's checklist makes an
+# adopter test it on the first row they close. Settle it once, for the
+# fleet, rather than four times.
+#
+# NOT enforceable: the recorded authority a "Risk accepted" ending needs.
+# It lives in Notes, which is rich text, and validation formulas cannot
+# reference a multi-line column at all.
+# WHY THE EVIDENCE URL IS NOT ENFORCED HERE, though closure requires it.
+#
+# SHAREPOINT WILL NOT ENFORCE IT, so there is no branch here requiring
+# EvidenceUrl on a Closed recommendation. Probed against a live tenant
 # (test/manual/hyperlink-validation-operand-probe.js): setting a
 # ValidationFormula that references a URL column returns HTTP 500,
 #
@@ -126,14 +249,321 @@ form_visibility:
 # Such a rule does not fail quietly: it fails the PASTE, at the validation
 # phase, in front of the operator. The build refuses the operand
 # (analysis/conditions.py, _FORBIDDEN_OPERAND_TYPES), which turns a failed
-# deploy into a failed build.
+# deploy into a failed build and answers the question identically for all
+# twenty-nine templates.
 #
-# The requirement stands as a closure criterion in 50-govern/GOVERNANCE.md
-# and a verification step in 30-deploy/DEPLOY.md.
+# The requirement itself has not been dropped: it is a closure criterion in
+# 50-govern/GOVERNANCE.md and a verification step in 30-deploy/DEPLOY.md,
+# and the "Closed, last 90 days" view shows Evidence URL so an empty one is
+# visible to the committee reading it.
 list_validation:
   Recommendation:
     when:
-      any_of:
+      - any_of:
+          - { field: Status, op: neq, value: "Closed" }
+          - { field: ClosedDate, op: is_not_null }
+    message: "Closing a recommendation needs the Closed Date it was verified on. DaysLate is computed from that date, so without it the committee's lateness figure is blank. The Evidence URL is also required at closure — that one is a governance check, not a save rule; see 50-govern/GOVERNANCE.md."
+
+# All five Recommendation lenses show the same six identifying columns
+# before their own payload, so the spine is declared once (§1.9). AU_Audit
+# has two views and gets no set — below the three-repetition bar, the
+# indirection costs more than it saves.
+field_sets:
+  Recommendation:
+    identity: [Title, Audit, FindingRating, Owner, Status, DueDate]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are keyed on INTERNAL names — the build
+# rewrites them to display titles, because ColumnWidth binds by display
+# name and an internal name silently resets.
+views:
+  Audit:
+    # An audit register has no lifecycle and no deadline, so there is
+    # nothing here to build a queue or a cadence lens out of: two views is
+    # the honest number. Everything with a clock or a state on it lives on
+    # the recommendations.
+    - title: "Recent reports"
+      default: true
+      fields: [Title, AuditType, Auditor, ReportDate, Sponsor, ReportUrl]
+      sort:
+        - { field: ReportDate, direction: desc }
+      widths:
+        Title: 300
+        AuditType: 220
+        Auditor: 200
+        ReportDate: 170
+        Sponsor: 160
+        ReportUrl: 180
+    - title: "By type"
+      fields: [Title, AuditType, Auditor, ReportDate, Sponsor]
+      group_by: { field: AuditType, collapsed: true }
+      sort:
+        - { field: ReportDate, direction: desc }
+      widths:
+        Title: 300
+        AuditType: 220
+        Auditor: 200
+        ReportDate: 170
+        Sponsor: 160
+  Recommendation:
+    - title: "Open by owner"
+      default: true
+      fields: ["@identity", RevisedDue, Notes]
+      where:
+        - { field: Status, op: not_in, value: ["Closed", "Risk accepted"] }
+      group_by: { field: Owner, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Audit: 220
+        FindingRating: 160
+        Owner: 160
+        Status: 220
+        DueDate: 160
+        RevisedDue: 170
+        Notes: 200
+    # "(RevisedDue or DueDate) < today" — the committed date is RevisedDue
+    # when a formal extension exists and DueDate otherwise, which is
+    # exactly what the DaysLate formula computes against. The grammar
+    # expresses it by nesting: either there IS a revised date and it has
+    # passed, or there is NOT one and the original has. Written as two
+    # explicit branches rather than one, because a bare
+    # `RevisedDue < today` would drop every unextended row (a CAML
+    # comparison does not match an empty column) and a bare
+    # `DueDate < today` would re-surface every row that WAS extended into
+    # the future — the mistake the extension mechanism exists to prevent.
+    - title: "Overdue"
+      fields: ["@identity", RevisedDue, Notes]
+      where:
+        - { field: Status, op: not_in, value: ["Closed", "Risk accepted"] }
+        - any_of:
+            - all_of:
+                - { field: RevisedDue, op: is_not_null }
+                - { field: RevisedDue, op: lt, value: today }
+            - all_of:
+                - { field: RevisedDue, op: is_null }
+                - { field: DueDate, op: lt, value: today }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Audit: 220
+        FindingRating: 160
+        Owner: 160
+        Status: 220
+        DueDate: 160
+        RevisedDue: 170
+        Notes: 200
+    # The coordinator's verification queue: the action is done and the
+    # evidence has not been checked. It is the one status that needs a
+    # person to read something rather than chase someone.
+    - title: "Awaiting evidence"
+      fields: ["@identity", RevisedDue, EvidenceUrl]
+      where:
+        - { field: Status, op: eq, value: "Implemented - awaiting evidence" }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Audit: 220
+        FindingRating: 160
+        Owner: 160
+        Status: 220
+        DueDate: 160
+        RevisedDue: 170
+        EvidenceUrl: 180
+    # The old table asked for this sorted by FindingRating. That is NOT
+    # what ships, and the reason is worth stating: SharePoint orders a
+    # Choice column by its stored text, so "descending" would give
+    # Moderate, Low, High, Critical — not severity order, and worse than
+    # no rating sort at all because it looks like one. The pack ships
+    # grouped by audit and sorted by committed date, with FindingRating
+    # carrying the severity colours; 30-deploy/DEPLOY.md says so and
+    # names the workaround for anyone who needs a true rating sort.
+    - title: "Committee pack"
+      fields: ["@identity", RevisedDue, AgreedAction]
+      where:
         - { field: Status, op: neq, value: "Closed" }
-        - { field: ClosedDate, op: is_not_null }
-    message: "Closing a recommendation needs the Closed Date it was verified on — DaysLate is computed from it. Closure evidence is also required; that one is a governance check, not a save rule (see 50-govern/GOVERNANCE.md)."
+      group_by: { field: Audit, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Audit: 220
+        FindingRating: 160
+        Owner: 160
+        Status: 220
+        DueDate: 160
+        RevisedDue: 170
+        AgreedAction: 200
+    # "Closed this quarter" is not buildable: CAML has no calendar-period
+    # predicate. This is a ROLLING ninety days, and the two differ on the
+    # first day of a quarter — which somebody reconciling a committee pack
+    # will notice, so DEPLOY.md says it too.
+    - title: "Closed, last 90 days"
+      fields: ["@identity", ClosedDate, DaysLate, EvidenceUrl]
+      where:
+        - { field: Status, op: in, value: ["Closed", "Risk accepted"] }
+        - { field: ClosedDate, op: geq, value: today-90 }
+      sort:
+        - { field: ClosedDate, direction: desc }
+      widths:
+        Title: 280
+        Audit: 220
+        FindingRating: 160
+        Owner: 160
+        Status: 220
+        DueDate: 160
+        ClosedDate: 160
+        DaysLate: 140
+        EvidenceUrl: 180
+
+# Form layouts: a strapline header and a sectioned body per list. Per-field
+# description hints render on the NEW form only — the edit form suppresses
+# column descriptions (platform limitation). Section field lists are
+# authored with INTERNAL names; the build rewrites them to display titles.
+#
+# Recommendation's System section holds DaysLate alone. Calculated columns
+# never render on entry forms, so on the NEW form that section is a bare
+# heading with nothing under it — cosmetic and expected, exactly as
+# risk-register's is, and the reason the empty-section refusal is not
+# asserted of the LAST section.
+#
+# Deliberately NOT declared: any header reference to DaysLate. A
+# calculated column always resolves empty in a form header, silently. It
+# reaches the form through its own column_formatting, in that section.
+#
+# Also deliberately NOT declared: a row-level formatter. §1.6 allows one
+# per list, for a single worst state. The worst row here is an overdue
+# Critical — a compound of two columns, not one — and both already
+# escalate in their own cells on every view that shows them. A wash would
+# duplicate rather than add.
+form_formatting:
+  Audit:
+    header: formatting/audit-form-header.json
+    body: formatting/audit-form-body.json
+  Recommendation:
+    header: formatting/recommendation-form-header.json
+    body: formatting/recommendation-form-body.json
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# overdue and closure surfaces land on whatever day the demo runs; "@me" is
+# the pasting operator; { demo_ref: key } resolves to the Id of the audit
+# created under that key.
+#
+# Coverage: one audit per AuditType, one recommendation per Status and per
+# FindingRating, and — the row that earns its place — an extended
+# recommendation whose ORIGINAL date has passed and whose REVISED date has
+# not. Without it the Overdue view demonstrates the nesting only in the
+# direction that fires, and the branch that SUPPRESSES a properly extended
+# row goes unshown.
+demo_items:
+  Audit:
+    - key: au-payroll
+      values:
+        Title: "[DEMO] Internal audit - payroll controls 2026"
+        AuditType: "Internal audit"
+        Auditor: "[DEMO] Assurance Partners"
+        ReportDate: "today-120"
+        ReportUrl: "https://example.sharepoint.com/sites/assurance/demo-payroll-audit.pdf"
+        Sponsor: "@me"
+        Notes: "Demo row. Four recommendations, two rated Critical or High. Management response accepted all four."
+    - key: au-financial
+      values:
+        Title: "[DEMO] External audit - annual financial statements"
+        AuditType: "External audit"
+        Auditor: "[DEMO] Meridian Audit LLP"
+        ReportDate: "today-300"
+        ReportUrl: "https://example.sharepoint.com/sites/assurance/demo-financial-audit.pdf"
+        Sponsor: "@me"
+    - key: au-accreditation
+      values:
+        Title: "[DEMO] Accreditation survey - clinical governance"
+        AuditType: "Accreditation / certification"
+        Auditor: "[DEMO] National Accreditation Body"
+        ReportDate: "today-40"
+        Sponsor: "@me"
+        Notes: "Demo row. Met with recommendations; the survey team returns in eighteen months."
+    - key: au-regulator
+      values:
+        Title: "[DEMO] Regulator review - incident notification timeliness"
+        AuditType: "Regulator review"
+        Auditor: "[DEMO] State Regulator, compliance branch"
+        ReportDate: "today-200"
+        Sponsor: "@me"
+    - key: au-infosec
+      values:
+        Title: "[DEMO] Self-assessment - information security baseline"
+        AuditType: "Self-assessment"
+        Auditor: "[DEMO] Internal, IT and governance"
+        ReportDate: "today-15"
+        Sponsor: "@me"
+  Recommendation:
+    - key: rec-segregation
+      values:
+        Title: "[DEMO] Segregate the payroll approval and bank file release roles"
+        Audit: { demo_ref: au-payroll }
+        FindingRating: "Critical"
+        AgreedAction: "Demo row. Reassign bank file release to finance operations and remove the permission from the payroll officer role by the end of the quarter."
+        Owner: "@me"
+        DueDate: "today-30"
+        Status: "In progress"
+        Notes: "Demo row. Roles reassigned in the payroll system; the banking platform change is with the bank. Overdue and being chased weekly."
+    - key: rec-reconciliation
+      values:
+        Title: "[DEMO] Reconcile the payroll control account monthly and evidence the review"
+        Audit: { demo_ref: au-payroll }
+        FindingRating: "High"
+        AgreedAction: "Demo row. Monthly reconciliation prepared by the payroll officer and reviewed and signed by the finance manager within ten days of month end."
+        Owner: "@me"
+        DueDate: "today-60"
+        RevisedDue: "today-5"
+        Status: "Open"
+        Notes: "Demo row. Extended once by the audit sponsor; the revised date has now also passed, which is why this still reads as overdue."
+    - key: rec-consent
+      values:
+        Title: "[DEMO] Record consent discussions in the clinical record at the time"
+        Audit: { demo_ref: au-accreditation }
+        FindingRating: "Moderate"
+        AgreedAction: "Demo row. Add a consent prompt to the procedure workflow and audit twenty records per quarter."
+        Owner: "@me"
+        DueDate: "today+40"
+        Status: "Open"
+    - key: rec-notification
+      values:
+        Title: "[DEMO] Notify reportable incidents within the statutory window"
+        Audit: { demo_ref: au-regulator }
+        FindingRating: "High"
+        AgreedAction: "Demo row. Automated escalation at 18 hours, with a named after-hours delegate for weekends."
+        Owner: "@me"
+        DueDate: "today-90"
+        RevisedDue: "today+30"
+        Status: "Implemented - awaiting evidence"
+        EvidenceUrl: "https://example.sharepoint.com/sites/assurance/demo-escalation-config.pdf"
+        Notes: "Demo row. Formally extended before the original date passed, so this is NOT overdue - the revised date is the committed date."
+    - key: rec-mfa
+      values:
+        Title: "[DEMO] Enforce multi-factor authentication on all administrative accounts"
+        Audit: { demo_ref: au-infosec }
+        FindingRating: "Critical"
+        AgreedAction: "Demo row. Conditional access policy applied to every account holding an administrative role, with break-glass accounts excluded and monitored."
+        Owner: "@me"
+        DueDate: "today-150"
+        Status: "Closed"
+        ClosedDate: "today-40"
+        EvidenceUrl: "https://example.sharepoint.com/sites/assurance/demo-mfa-policy-export.pdf"
+        Notes: "Demo row. Closed 110 days past the committed date, which is what the committee sees as a number rather than an adjective."
+    - key: rec-legacy
+      values:
+        Title: "[DEMO] Replace the legacy reporting interface"
+        Audit: { demo_ref: au-financial }
+        FindingRating: "Low"
+        AgreedAction: "Demo row. Retire the interface as part of the finance platform upgrade."
+        Owner: "@me"
+        DueDate: "today-200"
+        Status: "Risk accepted"
+        ClosedDate: "today-25"
+        Notes: "Demo row. Superseded by the platform upgrade programme. Accepted by the audit committee on the sponsor's written justification, minuted - which is the authority this register cannot check for itself."

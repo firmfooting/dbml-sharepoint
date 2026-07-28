@@ -4,18 +4,23 @@
 
 1. Scan the QR / open **RC_CheckEntry** → **New** (the link is where the
    paper sheet used to be).
-2. Pick the **CheckPoint**, confirm **CheckedAt** (now — see the golden
-   rule), record the **Reading** exactly as observed: "4.2 C", "all seals
-   intact", "O2 cylinder below half".
-3. **Result** against the checkpoint's stated range:
-   - **In range - OK** — done, walk on.
+2. **The check**: pick the **Checkpoint**, confirm **Checked At** (now —
+   see the golden rule).
+3. **What you found**: record the **Reading** exactly as observed —
+   "4.2 C", "all seals intact", "O2 cylinder below half" — and the
+   **Result** against the checkpoint's stated range:
+   - **In range - OK** — done, walk on. No further boxes appear.
    - **Out of range** — act *first* per the checkpoint's Instructions
-     (move the vaccines, restock the trolley, report the fault), then
-     record **Action taken**: what you did and who you told, then pick
-     *action taken* or *escalated*.
+     (move the vaccines, restock the trolley, report the fault), then pick
+     *action taken* or *escalated*. **What you did** appears as soon as
+     you do, and **the list will not let you save without it**: what you
+     did, and who you told.
    - **Unable to check** (locked room, equipment in use) — record it as
-     exactly that with a word of why. An honest gap beats a guessed
-     reading.
+     exactly that. The action box appears here too, for a word of why, but
+     the list does not force it: an honest gap must stay cheap to record.
+     A guessed reading is the thing we are trying to prevent.
+
+The form refuses a check dated in the future, and says why.
 
 ## The golden rule: record at the time, or record the truth
 
@@ -29,11 +34,26 @@ a falsified compliance record (and the timestamps make it visible anyway).
 Nobody deploys this to collect the in-range readings. The register earns
 its keep on the bad day — the fridge that drifted overnight, the trolley
 missing an item before the emergency. Acting and recording the action is
-the whole job; an out-of-range entry with an empty Action taken is a
-half-done check.
+the whole job.
+
+The colours say which kind of bad day it was: amber for something you
+fixed on the spot, and the strongest treatment in the palette for
+**escalated**, because an escalated check has left your hands and somebody
+else now has to close it.
+
+## The views
+
+- **Today** (opens by default) — every check recorded today, grouped by
+  checkpoint. This is the completeness glance: expand a checkpoint and see
+  whether it has been done.
+- **Out of range** — the review queue, newest first.
+- **Escalated** — everything that left the checker's hands.
+- **By checkpoint** — every entry ever, grouped under its checkpoint. This
+  is the history an auditor reads: find the fridge, expand it, and its
+  whole record is there in order.
 
 ## Checkpoint owners
 
-Your checkpoint's *Per checkpoint* view weekly: complete? Out-of-range
-entries all actioned and, where required, escalated? Instructions still
-right? That five-minute skim is what "monitored" means.
+Your checkpoint's group in **By checkpoint**, weekly: complete?
+Out-of-range entries all actioned and, where required, escalated?
+Instructions still right? That five-minute skim is what "monitored" means.

@@ -42,6 +42,57 @@ Record the decision either way — declined rounds inform next year.
 2. Every acquittal Submitted has a date and a filed, linked copy.
 3. AmountAwarded comes from the agreement, not the announcement.
 
+## What the lists enforce, and what this document does
+
+Every one of those three rules is now **half** enforced, and the halves
+that are missing are all the same shape: a hyperlink or a rich-text column,
+neither of which a SharePoint validation formula can reach.
+
+**Enforced at save — SharePoint rejects the row:**
+
+| Rule | List | Where it lives |
+|---|---|---|
+| Anything the funder has received (*Submitted*, *Successful*, *Unsuccessful*) needs a `SubmittedDate` | Submission | list validation |
+| Rule 3: a *Successful* bid needs `AmountAwarded` | Submission | list validation |
+| Rule 2, the date half: a filed obligation needs its `SubmittedDate` | Acquittal | list validation |
+| `AmountSought` and `AmountAwarded` cannot be negative | Submission | column validation |
+| A `SubmittedDate` cannot be in the future | both | column validation |
+
+Each list has one `ValidationFormula`, so the two Submission rules share
+one message naming both checks — SharePoint cannot say which branch failed.
+The column rules keep messages of their own, which is why they say
+something specific.
+
+*Withdrawn* is exempt from the submitted-date rule: a bid can be withdrawn
+before it is ever lodged, and question three of the bid/no-bid test above
+is designed to produce exactly that outcome.
+
+**Still a governance check — nothing stops a wrong entry:**
+
+- **Rule 1's linked agreement** (`AgreementUrl`) and **rule 2's filed
+  copy** (`EvidenceUrl`) are hyperlink columns. A validation formula has
+  never been read back from a live tenant referencing one, and this
+  library does not ship a rule it has not seen work. The *Live grants* and
+  *Filed* views each show the link column so an empty one is visible in
+  the sweep.
+- **Rule 1's "within a week of signing".** Nothing on a submission row can
+  know how many obligation rows point at it. This is the register's single
+  most valuable habit and it is entirely on the coordinators — which is
+  why 40-adopt gives it its own section rather than a bullet.
+- **The unsuccessful-bid debrief.** `ProjectSummary` is rich text, which a
+  validation formula cannot reference at all. *Lost bids* shows the column
+  for that reason.
+- **That `AmountAwarded` came from the agreement rather than the
+  announcement.** A save rule proves a number is present. Only the
+  quarterly reconciliation proves it is the right one.
+
+**What the colours do, which is not enforcement but is the sweep's first
+signal.** An `Overdue` obligation tints its whole row in *Open
+obligations* — one row-level signal on the list, reserved for the one
+state this document calls an incident. A *Submitted* obligation reads
+amber rather than green, because it is still waiting on the funder's
+acceptance; green is *Accepted by funder* and nothing else.
+
 ## Lifecycle
 
 Grant records outlive projects (funders audit years later): retain per

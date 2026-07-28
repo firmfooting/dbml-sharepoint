@@ -55,7 +55,7 @@ your own schema for the worst ones → define how you'll know it worked
 | [equipment-maintenance](equipment-maintenance/) | Testing / preventive maintenance | Next-due schedule with evidence-linked history; the Overdue view's target is empty |
 | [routine-checks](routine-checks/) | Digitised paper checklists | Fridge temps, trolley checks, rounds — timestamped, attributed, acted on |
 | [switchboard-log](switchboard-log/) | Switchboard / after-hours desk | The three paper books digitised: code log (calculated duration), message book (relay times), key register |
-| [visitor-log](visitor-log/) | Front-desk sign-in | An On-site-now view (which you create — see its DEPLOY.md) becomes the evacuation muster list; contractor induction flag |
+| [visitor-log](visitor-log/) | Front-desk sign-in | The On-site now view is your evacuation muster list, live at the desk; contractor induction flag |
 | [vehicle-log](vehicle-log/) | Pool-car log books | Calculated kilometres from odometer readings; the Purpose column is your FBT substantiation |
 
 ## Theme: People & relationships
@@ -70,6 +70,64 @@ your own schema for the worst ones → define how you'll know it worked
 | [credentialing-register](credentialing-register/) | Practitioner credentials & scope of practice | Who may do what, on whose decision, until when — with evidence |
 | [volunteer-register](volunteer-register/) | Volunteers & their checks | Police/WWCC expiry sweeps; privacy-first, no general access |
 
+## What every template ships
+
+Every template in the library is finished to the same standard, so the
+twenty-nine read as members of one family rather than as twenty-nine
+tastes. Whichever you deploy, you get these seven things.
+
+**Views, created by the deploy.** Every list declares a default working
+view plus up to four lenses drawn from the same four shapes: a deadline
+view (a date inside the next N days, terminal statuses excluded), a
+grouped view (by owner, area, or the parent record), a queue (the intake
+status, oldest first) and a history (the terminal statuses, newest
+first). Each one carries its own filter, sort, column selection and pixel
+widths.
+
+**A form with a header and named sections.** The header is an icon, a
+title line that names the record as it is typed, and one sentence saying
+the single thing that makes this list work. The body follows one arc —
+identify the thing, assess it, act on it, govern it, and last the
+system-stamped columns nobody authors — named in each template's own
+language, so risk-register reads *Describe the risk / Assess the risk /
+Response and controls / Governance / System*.
+
+**Spaced column titles.** `ReceivedDate` deploys as "Received Date"
+everywhere a person sees it, with per-column overrides where splitting
+PascalCase reads badly.
+
+**Colour that means the same thing in all twenty-nine.** Every lifecycle
+and severity column, every deadline date and every score or count is
+formatted, and the colour comes from the *role* a value plays in its
+lifecycle rather than from what it is called — so Draft, Received and
+Submitted wear the same neutral grey wherever you meet them, and Overdue,
+Breached and Non-compliant the same red. A due date stops shouting once
+the item is closed; a score renders as a bar that takes its fill from the
+rating column beside it, so the two can never disagree. See
+[the style guide](../website/docs/reference/style-guide.md).
+
+**At most one row-level signal per list**, and only where a genuinely
+worst state exists — risk-register's Extreme wash. The restraint is the
+point: a second row colour competing with the first turns both into
+decoration.
+
+**Fields that appear when they are relevant, and save rules that hold.**
+A closure statement that only shows once the item is being closed is
+declared, not left to whoever last opened the form designer; and where a
+register depends on a rule — closing needs a closure statement, a
+mitigation needs more than one word — the save is refused with a message
+written for the person filling in the form rather than SharePoint's
+generic one.
+
+**Demonstration data.** Four to six rows per list, every Title prefixed
+`[DEMO] `, dates written relative to the day you run them, and people
+resolved to whoever pastes the script. They are chosen so that every
+declared view returns something and every formatted column renders in its
+colours — a view that demonstrates empty teaches the adopter it does not
+work. Build with `--seed` to get them; `rollback.js` removes a list whose
+rows are all marked without its usual non-empty prompt, so it is
+deploy, demonstrate, delete.
+
 ## Anatomy — every template follows the same sequence
 
 ```
@@ -80,7 +138,9 @@ your own schema for the worst ones → define how you'll know it worked
   20-configure/        The physical and release configuration
       mapping.yaml       — prefix, versioning, formulas, views, security model
       release.yaml       — the version stamped into every deployed artefact
-      formatting/        — optional; formatter JSON referenced by mapping.yaml
+      formatting/        — one <list>-form-header.json and one
+                           <list>-form-body.json per list, plus any bespoke
+                           row formatter; referenced from mapping.yaml
   30-deploy/           Administrator guidance
       DEPLOY.md          — build, paste, verify; template-specific checks
   40-adopt/            Staff education
@@ -93,14 +153,11 @@ Work the folders in order: **design** what you're deploying (rename columns,
 prune what you don't need), **configure** it for your site (prefix, security),
 **deploy** it (administrator), **adopt** it (staff), **govern** it (owners).
 
-**Column titles deploy as the internal name — unless a template sets
-`display_names:`.** A template without that section leaves a column
-declared `ReceivedDate` appearing on the form,
-in views and in the reporting bundle as exactly `ReceivedDate` — not
-"Received Date". The staff guides write field names in prose ("set the
-received date"), so read those as pointing at the run-together column
-beside them. If you want spaced titles, add one section to `mapping.yaml`
-and redeploy:
+**Column titles are spaced; internal names stay authoritative.** Every
+template declares `display_names:`, so a column declared `ReceivedDate`
+reaches the form, the views and the reporting bundle as "Received Date",
+with per-column overrides wherever splitting PascalCase reads badly
+(`TripKm`, `WWCCExpiry`, `DocumentUrl`):
 
 ```yaml
 display_names:
@@ -110,11 +167,13 @@ display_names:
       DocumentUrl: "Document link"   # where auto-splitting reads badly
 ```
 
-Internal names stay authoritative either way — the schema, lookups and
-reporting all bind to them — so this changes only what people see. Do it
-before first deploy if you are going to: a rename afterwards is drift the
-next re-paste reverts, and the DEPLOY.md checklists all name columns by
-their internal name.
+The title is the only thing this changes. The schema, lookups, indexes,
+calculated formulas and the reporting queries all bind to the internal
+name, and so do the DEPLOY.md checklists — where a document names a
+column exactly, it is naming it the way the schema does. Change a title
+before first deploy if you are going to change it: a rename made in the
+SharePoint UI afterwards is drift, which the next re-paste detects,
+reverts and reports.
 
 **Notes are form text.** A column's `note:` deploys as the SharePoint column
 Description, which the modern list form shows as help text under the input at
@@ -132,8 +191,10 @@ relative path to a `.json` file, resolved against `20-configure/`. Keep short
 formatters inline where they read as part of the declaration; put long ones
 (a multi-section form body, a bespoke row formatter) in
 `20-configure/formatting/` so `mapping.yaml` stays readable. Both forms
-deploy identically. The directory is optional — omit it when every formatter
-is inline.
+deploy identically. Every template here uses the directory, because every
+template ships a form header and a form body per list and those are long;
+in a mapping of your own it is optional — omit it when every formatter is
+inline.
 
 ## Deploying any template (shared procedure)
 
@@ -164,21 +225,39 @@ dbml-sharepoint build \
    error: read it, fix the stated cause, paste the same script again —
    reruns verify-and-skip completed work.
 5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
-6. If that DEPLOY.md has a **Recommended views** table, create the views it
-   lists.
+6. Optional: to demonstrate the solution with content, rebuild with
+   `--seed` and paste `build/demo-data.js` from the same console. Each
+   template's DEPLOY.md gives the command and says what the rows show.
 
-**Recommended views are not deployed — you create them.** Every list gets
-an unfiltered *All Items* recovery view containing all rendered columns. It
-is hidden from the modern view bar when an authored view is the default. A
-template with no `views:` block gets that view and nothing else, and
-every "Recommended views" table is a specification for views you build in
-the SharePoint UI (or add to
-`mapping.yaml` under [`views:`](../website/docs/reference/mapping.md#views)
-and redeploy, which is the reproducible option). Nothing in such a
-template's DEPLOY, STAFF-GUIDE or GOVERNANCE file will work until you have
-made them — so make them before you hand the list to anyone, and treat any
-document that names a view as depending on that step. A template with a
-`views:` block has no such table: its views arrive with the paste.
+**Views arrive with the paste.** Every list's views are declared in
+`mapping.yaml` under
+[`views:`](../website/docs/reference/mapping.md#views), and the deploy
+creates them: title, filter, sort, grouping, row limit, per-column pixel
+widths and any row formatting, each verified by read-back. Nothing in a
+template's DEPLOY, STAFF-GUIDE or GOVERNANCE file waits on a step you have
+to perform in the SharePoint UI first — where those documents name a view,
+that view exists as soon as the script finishes.
+
+The declaration stays authoritative afterwards. A redeploy reconciles each
+declared view back to what the mapping says, so a view somebody widened,
+re-sorted or re-filtered by hand returns to the declared shape and the run
+reports having done it. Views you create yourself are a different thing
+entirely: undeclared views are user content, and a deploy neither touches
+nor reports them. Build as many as your team wants. Every list also keeps a
+managed, unfiltered **All Items** view holding every rendered column — the
+recovery view for the day a filter hides the row you need. It is hidden
+from the modern view bar whenever an authored view is the default.
+
+Two shapes are deliberately absent, and the affected DEPLOY.md says so
+rather than leaving you to notice. A view filtered to a single parent
+record — one vehicle, one practitioner, one meeting — is not something a
+static view can express; what ships instead is one view grouped on the
+parent lookup and collapsed, which is the SharePoint idiom, is one view
+rather than one per parent, and stays correct as parents are added. And
+calendar periods ("closed this quarter") have no CAML predicate, so those
+views ship as rolling windows ("closed in the last 90 days") — which differ
+on the first day of a quarter, so read the view title before you paste a
+number into a committee pack.
 
 ## The shared security model
 

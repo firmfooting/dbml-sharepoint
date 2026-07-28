@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "The decision",
+      "fields": ["Title", "Meeting"]
+    },
+    {
+      "displayname": "Why",
+      "fields": ["Detail"]
+    }
+  ]
+}

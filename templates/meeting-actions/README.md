@@ -7,8 +7,16 @@ their meeting).
 **The value case.** The fastest-payback template here: every team already
 has meetings, and almost none can answer "what did we decide in March, and
 did anyone do the actions?" Deploy before your next meeting; by the one
-after that, the *Open actions by person* view replaces the ritual of
-re-reading old minutes. Decisions become findable facts instead of folklore.
+after that, the *Open by person* view replaces the ritual of re-reading old
+minutes. Decisions become findable facts instead of folklore.
+
+**Deploys with:** nine views (recent meetings and meetings by forum; the
+decision log and decisions by meeting; and — on actions — open by person,
+the current user's own list, overdue, actions by meeting, and the
+done-and-dropped history), sectioned forms on all three lists, overdue
+colouring, a Completed Date that only appears once an action is Done, two
+save rules, and thirteen demo rows. Paste it seeded and the first agenda
+item works before you have held a meeting.
 
 **Work the folders in order:**
 

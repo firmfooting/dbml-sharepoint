@@ -56,3 +56,254 @@ list_permissions:
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
+
+# Internal names stay authoritative (views, indexes and the reporting
+# bundle all bind to them); only the display title changes. Auto
+# PascalCase splitting is right for every column here except one:
+# "VisitLocation" exists to keep a bare "Location" out of the DBML, and a
+# warden reading the muster list on a phone wants the column headed
+# "Location".
+display_names:
+  mode: auto
+  overrides:
+    Visit:
+      VisitLocation: "Location"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md).
+#
+# SignedOutAt is a bespoke file rather than a style because the shape the
+# library covers is the opposite of what this column means. Everywhere
+# else a blank cell is missing data; here a blank cell IS the fact — the
+# person is still in the building — and it is the single fact the whole
+# register exists to publish. So blank renders as an "On site" chip in the
+# `low` treatment, and a filled cell renders as the plain local time they
+# left. Documented sp-field-severity classes only; no hexes.
+#
+# Deliberately NOT declared: a row-level wash (§1.6). The worst state here
+# is "signed in yesterday, still shown as on site", and that state already
+# has a whole view of its own — a wash would be a second signal for a
+# condition the filter has already isolated, which is the noise §1.6
+# exists to prevent.
+column_formatting:
+  Visit:
+    VisitorType:
+      style: pill
+      map:
+        "Visitor": neutral
+        "Contractor": low
+        "Student / placement": low
+        "Volunteer": low
+        "Delivery": neutral
+        "Other": muted
+    SignedOutAt: formatting/signed-out-at.json
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). "On site now" is the default because it is the
+# muster list: at the assembly point nobody should have to pick a view.
+# Widths are pixel ColumnWidth per view, keyed on INTERNAL names — the
+# build rewrites them to display titles, and ColumnWidth binds by display
+# name.
+views:
+  Visit:
+    - title: "On site now"
+      default: true
+      fields: [Title, Organisation, VisitorType, Host, VisitLocation, Purpose,
+               SignedInAt, BadgeRef, InductionSighted]
+      where:
+        - { field: SignedOutAt, op: is_null }
+      sort:
+        - { field: SignedInAt, direction: asc }
+      widths:
+        Title: 260
+        Organisation: 180
+        VisitorType: 130
+        Host: 160
+        VisitLocation: 160
+        Purpose: 200
+        SignedInAt: 170
+        BadgeRef: 120
+        InductionSighted: 130
+    # The published recommended-views table specified `SignedInAt = today`.
+    # That filter returns nothing on a datetime column: CAML's <Today/> is
+    # midnight, and an equality test against midnight matches only a
+    # sign-in stamped at exactly 00:00. `geq today` is the same day's
+    # traffic, and is what ships.
+    - title: "Signed in today"
+      fields: [Title, Organisation, VisitorType, Host, VisitLocation,
+               SignedInAt, SignedOutAt]
+      where:
+        - { field: SignedInAt, op: geq, value: today }
+      sort:
+        - { field: SignedInAt, direction: desc }
+      widths:
+        Title: 280
+        Organisation: 180
+        VisitorType: 130
+        Host: 160
+        VisitLocation: 160
+        SignedInAt: 170
+        SignedOutAt: 170
+    - title: "Contractors on site"
+      fields: [Title, Organisation, VisitorType, Host, VisitLocation,
+               InductionSighted, SignedInAt]
+      where:
+        - { field: SignedOutAt, op: is_null }
+        - { field: VisitorType, op: eq, value: "Contractor" }
+      sort:
+        - { field: SignedInAt, direction: asc }
+      widths:
+        Title: 280
+        Organisation: 180
+        VisitorType: 130
+        Host: 160
+        VisitLocation: 160
+        InductionSighted: 130
+        SignedInAt: 170
+    # The morning tidy-up. Still shown as on site, but signed in before
+    # today — on a muster list that is a warden searching a building for
+    # someone who went home at three yesterday afternoon.
+    - title: "Never signed out"
+      fields: [Title, Organisation, VisitorType, Host, VisitLocation,
+               SignedInAt, BadgeRef]
+      where:
+        - { field: SignedOutAt, op: is_null }
+        - { field: SignedInAt, op: lt, value: today }
+      sort:
+        - { field: SignedInAt, direction: asc }
+      widths:
+        Title: 280
+        Organisation: 180
+        VisitorType: 130
+        Host: 160
+        VisitLocation: 160
+        SignedInAt: 170
+        BadgeRef: 120
+
+# Nobody signs out at the moment they sign in, and an induction question
+# asked of a courier is a question that trains people to tick without
+# reading. Both fields therefore appear only when they mean something.
+#
+# reconcile: exact makes this file authoritative for the whole list —
+# every other column's conditional formula is cleared on each deploy. Read
+# the Reconciliation section of the mapping reference before copying the
+# pattern onto a hand-configured list.
+form_visibility:
+  Visit:
+    reconcile: exact
+    columns:
+      SignedOutAt: { new: false }
+      InductionSighted:
+        when:
+          - { field: VisitorType, op: in,
+              value: ["Contractor", "Student / placement"] }
+
+# Form layout: a strapline header and three sections. Per-field
+# description hints render on the NEW form only — SharePoint suppresses
+# column descriptions on the Edit form. Section field lists are authored
+# with INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  Visit:
+    header: formatting/visit-form-header.json
+    body: formatting/visit-form-body.json
+
+# Per-column save rules, each with its own message.
+#
+# TODAY() in a SharePoint validation formula is midnight, so `leq today`
+# on a DATETIME column would reject every sign-in stamped after 00:00 —
+# that is, all of them. `today+1` is the midnight allowance: anything up
+# to the end of today passes, and next month's date does not.
+column_validation:
+  Visit:
+    columns:
+      SignedInAt:
+        when:
+          - { field: SignedInAt, op: leq, value: today+1 }
+        message: "A sign-in cannot be in the future. Use the time they actually arrived."
+      SignedOutAt:
+        when:
+          - { field: SignedOutAt, op: leq, value: today+1 }
+        message: "A sign-out cannot be in the future. Leave it blank until they actually leave."
+
+# Deliberately NOT declared: list_validation.
+#
+# The two cross-column rules this register wants are both unbuildable.
+# "Signed out at or after signed in" needs a column-to-column comparison,
+# which the condition grammar does not express — every operand is a
+# literal. "Everyone but a delivery driver needs a host" needs a person
+# column as an operand, which SharePoint validation formulas cannot read
+# at all. Both stay governance checks; 50-govern/GOVERNANCE.md says so.
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Dates are today±N so the
+# muster surfaces land correctly whenever the demo runs; "@me" is the
+# pasting operator. Coverage: three people still on site (one of them
+# signed in yesterday, which is what "Never signed out" exists for), a
+# contractor with an induction ticked, a student, and three completed
+# visits so the sign-out rendering has something to show.
+demo_items:
+  Visit:
+    - key: vi-onsite-supplier
+      values:
+        Title: "[DEMO] Priya Raman"
+        Organisation: "[DEMO] Northbridge Supplies"
+        VisitorType: "Visitor"
+        Host: "@me"
+        Purpose: "Demo row. Quarterly supply review with the facilities team."
+        VisitLocation: "Main building - meeting room 2"
+        SignedInAt: "today"
+        BadgeRef: "V-114"
+    - key: vi-onsite-contractor
+      values:
+        Title: "[DEMO] Dan Whitcombe"
+        Organisation: "[DEMO] Kestrel Electrical"
+        VisitorType: "Contractor"
+        Host: "@me"
+        Purpose: "Demo row. Switchboard testing, plant room."
+        VisitLocation: "Plant room - level 1"
+        SignedInAt: "today"
+        InductionSighted: true
+        BadgeRef: "C-207"
+    - key: vi-never-signed-out
+      values:
+        Title: "[DEMO] Alison Frayne"
+        Organisation: "[DEMO] Frayne Physiotherapy"
+        VisitorType: "Visitor"
+        Host: "@me"
+        Purpose: "Demo row. Left without signing out - the row the morning tidy-up finds."
+        VisitLocation: "Clinic wing - room 4"
+        SignedInAt: "today-1"
+        BadgeRef: "V-108"
+    - key: vi-student
+      values:
+        Title: "[DEMO] Sam Okonkwo"
+        Organisation: "[DEMO] Riverside TAFE"
+        VisitorType: "Student / placement"
+        Host: "@me"
+        Purpose: "Demo row. Second week of a six-week administration placement."
+        VisitLocation: "Administration"
+        SignedInAt: "today"
+        SignedOutAt: "today"
+        InductionSighted: true
+        BadgeRef: "S-031"
+    - key: vi-delivery
+      values:
+        Title: "[DEMO] Marcus Bell"
+        Organisation: "[DEMO] Statewide Freight"
+        VisitorType: "Delivery"
+        Purpose: "Demo row. Consumables delivery to the loading dock."
+        VisitLocation: "Loading dock"
+        SignedInAt: "today-2"
+        SignedOutAt: "today-2"
+    - key: vi-closed-visit
+      values:
+        Title: "[DEMO] Helen Zhu"
+        Organisation: "[DEMO] Zhu and Associates"
+        VisitorType: "Visitor"
+        Host: "@me"
+        Purpose: "Demo row. Audit fieldwork, completed and signed out."
+        VisitLocation: "Administration - room 9"
+        SignedInAt: "today-3"
+        SignedOutAt: "today-3"
+        BadgeRef: "V-096"

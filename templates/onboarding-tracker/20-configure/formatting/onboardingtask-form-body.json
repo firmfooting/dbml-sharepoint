@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The task",
+      "fields": ["Title", "Starter", "TaskFunction"]
+    },
+    {
+      "displayname": "Who and when",
+      "fields": ["AssignedTo", "DueDate"]
+    },
+    {
+      "displayname": "Outcome",
+      "fields": ["Status", "DoneDate", "Notes"]
+    }
+  ]
+}

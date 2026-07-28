@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The trip",
+      "fields": ["Title", "Vehicle", "Driver", "TripType", "Purpose"]
+    },
+    {
+      "displayname": "Out and back",
+      "fields": ["DepartedAt", "OdoStart", "ReturnedAt", "OdoEnd", "Notes"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["TripKm"]
+    }
+  ]
+}

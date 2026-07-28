@@ -61,3 +61,347 @@ list_permissions:
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
+
+# Internal names stay authoritative (the lookup, the indexes and the
+# reporting bundle bind to them); only display titles change. Two
+# overrides: auto-splitting turns "CheckPoint" into "Check Point", which is
+# not a word, and "CheckLocation" exists only to keep a bare "Location" out
+# of the DBML.
+display_names:
+  mode: auto
+  overrides:
+    CheckPoint:
+      CheckLocation: "Location"
+    CheckEntry:
+      CheckPoint: "Checkpoint"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md). Result is the only column on either list that carries a
+# lifecycle, and it carries the whole register: an out-of-range reading is
+# the reason anybody deployed this.
+#
+# "Out of range - escalated" maps to `blocked` rather than `severe`
+# because the role table puts Escalated there — the check did not merely
+# fail, it left the hands of the person who did it, and that is a
+# different fact from a fault the checker fixed on the spot.
+#
+# Deliberately NOT formatted: CheckPoint's own two enums. `CheckType`
+# classifies and `Frequency` sets a cadence; neither is a lifecycle, and
+# colour in this fleet marks the role a value plays in one. A frequency
+# ladder rendered in reds would be reading urgency into a schedule.
+#
+# Deliberately NOT declared: a row-level wash (§1.6). The worst state here
+# is an escalated out-of-range entry, and the Result cell already renders
+# it in the `blocked` treatment inside a view that already filters to
+# out-of-range entries. A wash on top would be the third signal for one
+# fact, which is exactly the noise §1.6 exists to prevent.
+column_formatting:
+  CheckEntry:
+    Result:
+      style: severity
+      map:
+        "In range - OK": good
+        "Out of range - action taken": warning
+        "Out of range - escalated": blocked
+        "Unable to check": neutral
+
+# The identifying spine every CheckEntry view opens with.
+field_sets:
+  CheckEntry:
+    identity: [Title, CheckPoint, CheckedAt, Reading, Result]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view, keyed on
+# INTERNAL names — the build rewrites them to display titles, and
+# ColumnWidth binds by display name.
+views:
+  CheckPoint:
+    - title: "The catalogue"
+      default: true
+      fields: [Title, CheckType, CheckLocation, Frequency, AcceptableRange,
+               Owner, Active]
+      where:
+        - { field: Active, op: eq, value: true }
+      group_by: { field: CheckType, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        CheckType: 220
+        CheckLocation: 180
+        Frequency: 130
+        AcceptableRange: 220
+        Owner: 160
+        Active: 110
+    # Retiring a checkpoint means unticking Active, not deleting the row —
+    # its history is compliance evidence. This is where the retired ones
+    # live, so the catalogue does not carry them.
+    - title: "Retired checkpoints"
+      fields: [Title, CheckType, CheckLocation, Frequency, Owner, Active]
+      where:
+        - { field: Active, op: eq, value: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        CheckType: 220
+        CheckLocation: 180
+        Frequency: 130
+        Owner: 160
+        Active: 110
+  CheckEntry:
+    # The completeness glance, and the default: open the list and the
+    # question "has everything been checked today?" is already on screen,
+    # grouped by checkpoint.
+    #
+    # The published table specified `CheckedAt = today`. That filter
+    # returns nothing on a datetime column — CAML's <Today/> is midnight,
+    # so an equality test matches only a check stamped at exactly 00:00.
+    # `geq today` is today's checks, and is what ships.
+    - title: "Today"
+      default: true
+      fields: ["@identity", ActionTaken, CheckedBy]
+      where:
+        - { field: CheckedAt, op: geq, value: today }
+      group_by: { field: CheckPoint, collapsed: true }
+      sort:
+        - { field: CheckedAt, direction: desc }
+      widths:
+        Title: 220
+        CheckPoint: 240
+        CheckedAt: 180
+        Reading: 220
+        Result: 220
+        ActionTaken: 200
+        CheckedBy: 160
+    # The review queue. Nobody deploys this register to collect the
+    # in-range readings.
+    - title: "Out of range"
+      fields: ["@identity", ActionTaken, CheckedBy]
+      where:
+        - { field: Result, op: neq, value: "In range - OK" }
+      sort:
+        - { field: CheckedAt, direction: desc }
+      widths:
+        Title: 220
+        CheckPoint: 240
+        CheckedAt: 180
+        Reading: 220
+        Result: 220
+        ActionTaken: 200
+        CheckedBy: 160
+    # Governance's weekly review reads this one specifically: an escalated
+    # entry is a check that left the hands of the person who did it, and
+    # somebody has to confirm it landed.
+    - title: "Escalated"
+      fields: ["@identity", ActionTaken, CheckedBy]
+      where:
+        - { field: Result, op: eq, value: "Out of range - escalated" }
+      sort:
+        - { field: CheckedAt, direction: desc }
+      widths:
+        Title: 220
+        CheckPoint: 240
+        CheckedAt: 180
+        Reading: 220
+        Result: 220
+        ActionTaken: 200
+        CheckedBy: 160
+    # The published table promised "Per checkpoint" — one view filtered to
+    # one checkpoint, described as the history an auditor reads. A static
+    # view cannot filter to one parent: building it meant hard-coding a
+    # checkpoint into a filter that rots the moment the catalogue changes,
+    # or one view per fridge. Per §2.4 of the family standard this ships as
+    # ONE view grouped on the CheckPoint lookup, collapsed — the real
+    # SharePoint idiom, which gives an auditor the same per-checkpoint
+    # history and absorbs a new checkpoint with no work.
+    - title: "By checkpoint"
+      fields: ["@identity", ActionTaken, CheckedBy]
+      group_by: { field: CheckPoint, collapsed: true }
+      sort:
+        - { field: CheckedAt, direction: desc }
+      widths:
+        Title: 220
+        CheckPoint: 240
+        CheckedAt: 180
+        Reading: 220
+        Result: 220
+        ActionTaken: 200
+        CheckedBy: 160
+
+# Ask for the action only when there was one to take. An "Action taken" box
+# under every in-range fridge reading is a box people learn to skip, and a
+# box people learn to skip is empty on the day it matters.
+#
+# reconcile: exact makes this file authoritative for the whole list —
+# every other column's conditional formula is cleared on each deploy.
+form_visibility:
+  CheckEntry:
+    reconcile: exact
+    columns:
+      ActionTaken:
+        when:
+          - { field: Result, op: in,
+              value: ["Out of range - action taken", "Out of range - escalated",
+                      "Unable to check"] }
+
+# Form layouts: a strapline header and sections on both lists. The
+# CheckEntry title line falls back to "Check" rather than "New check",
+# because Title is optional there — an entry is identified by its
+# checkpoint and its time, so an empty Title does not mean the row is new.
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+form_formatting:
+  CheckPoint:
+    header: formatting/checkpoint-form-header.json
+    body: formatting/checkpoint-form-body.json
+  CheckEntry:
+    header: formatting/checkentry-form-header.json
+    body: formatting/checkentry-form-body.json
+
+# Per-column save rules, each with its own message.
+#
+# TODAY() in a SharePoint validation formula is midnight, so `leq today`
+# on a DATETIME column would reject every check stamped after 00:00 — that
+# is, all of them. `today+1` is the midnight allowance: anything up to the
+# end of today passes, and next week's date does not.
+column_validation:
+  CheckEntry:
+    columns:
+      CheckedAt:
+        when:
+          - { field: CheckedAt, op: leq, value: today+1 }
+        message: "A check cannot be recorded as happening in the future. Checks are recorded when they are performed - see the retrospective-entry rule in governance."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column.
+#
+# CheckEntry: governance's data-quality rule 2, which until now nothing
+# enforced. An out-of-range entry with an empty Action taken is a half-done
+# check, and the half that is missing is the half the register exists for.
+# "Unable to check" is deliberately NOT in the rule: an honest gap is a
+# legitimate answer and demanding a remedy for it is how you teach people
+# to guess a reading instead.
+#
+# CheckPoint: governance's data-quality rule 1, in the only part of it a
+# formula can reach. Frequency and Owner are already required by the
+# schema; Instructions is rich text, which SharePoint validation formulas
+# cannot reference at all. AcceptableRange is the one that was optional and
+# load-bearing — every entry's Result is a judgement against those words,
+# so a checkpoint without them cannot be checked, only guessed at.
+list_validation:
+  CheckEntry:
+    when:
+      any_of:
+        - { field: Result, op: not_in,
+            value: ["Out of range - action taken", "Out of range - escalated"] }
+        - { field: ActionTaken, op: is_not_null }
+    message: "An out-of-range result needs Action taken: what you did, and who you told."
+  CheckPoint:
+    when:
+      any_of:
+        - { field: Active, op: eq, value: false }
+        - { field: AcceptableRange, op: is_not_null }
+    message: "An active checkpoint needs its acceptable range written out - every entry is judged against those words."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Checkpoints are created
+# first and the entries reference them by demo key. Coverage: one entry per
+# Result, including the escalated cold-chain breach that is the reason this
+# template exists, and a retired checkpoint so the Active filter has both
+# sides.
+demo_items:
+  CheckPoint:
+    - key: rc-fridge
+      values:
+        Title: "[DEMO] Pharmacy vaccine fridge"
+        CheckType: "Temperature - cold chain"
+        CheckLocation: "Pharmacy - main dispensary"
+        Frequency: "Twice daily"
+        AcceptableRange: "2 to 8 degrees C, minimum and maximum since the last check"
+        Instructions: "Demo row. Read the min/max, then reset it. Out of range: do not use the stock, move it to the backup fridge, phone the immunisation lead on the switch, and record what you did here."
+        Owner: "@me"
+        Active: true
+    - key: rc-resus
+      values:
+        Title: "[DEMO] Resus trolley - emergency department"
+        CheckType: "Safety equipment"
+        CheckLocation: "Emergency department - bay 1"
+        Frequency: "Daily"
+        AcceptableRange: "Tamper seal intact, contents match the trolley list, defibrillator self-test green"
+        Instructions: "Demo row. If the seal is broken, check the contents against the list, restock, and re-seal before you walk away. Record the missing item here."
+        Owner: "@me"
+        Active: true
+    - key: rc-security
+      values:
+        Title: "[DEMO] Overnight security round - main building"
+        CheckType: "Security round"
+        CheckLocation: "Main building - all floors"
+        Frequency: "Daily"
+        AcceptableRange: "All external doors secured, no unaccounted persons on site, plant room locked"
+        Instructions: "Demo row. Follow the marked route. Anything unsecured: secure it if safe to do so, note it, and tell the duty manager."
+        Owner: "@me"
+        Active: true
+    - key: rc-retired
+      values:
+        Title: "[DEMO] Old sluice room cleaning check"
+        CheckType: "Cleaning / environment"
+        CheckLocation: "Ward 2 north - former sluice"
+        Frequency: "Weekly"
+        AcceptableRange: "Surfaces clear, bins emptied, no stored items"
+        Instructions: "Demo row. Retired when the sluice was decommissioned. Kept so its history stays readable."
+        Owner: "@me"
+        Active: false
+  CheckEntry:
+    - key: rc-e-resus-action
+      values:
+        Title: "[DEMO] Trolley check - item missing"
+        CheckPoint: { demo_ref: rc-resus }
+        CheckedAt: "today-2"
+        Reading: "Seal intact, defibrillator green, adult bag-valve mask absent from the list position"
+        Result: "Out of range - action taken"
+        ActionTaken: "Demo row. Replacement mask drawn from stores and fitted, trolley re-sealed, ED nurse in charge told. Restock request raised."
+        CheckedBy: "@me"
+    - key: rc-e-security-ok
+      values:
+        Title: "[DEMO] Overnight round - all secure"
+        CheckPoint: { demo_ref: rc-security }
+        CheckedAt: "today-1"
+        Reading: "All external doors secured, plant room locked, nobody on site"
+        Result: "In range - OK"
+        CheckedBy: "@me"
+    - key: rc-e-fridge-breach
+      values:
+        Title: "[DEMO] Vaccine fridge - overnight temperature breach"
+        CheckPoint: { demo_ref: rc-fridge }
+        CheckedAt: "today-1"
+        Reading: "Max 9.6 C overnight, current 5.1 C"
+        Result: "Out of range - escalated"
+        ActionTaken: "Demo row. Stock quarantined in the backup fridge and not used. Immunisation lead phoned at 07:20 and cold-chain breach form started. Engineer called for the door seal."
+        CheckedBy: "@me"
+    - key: rc-e-unable
+      values:
+        Title: "[DEMO] Round incomplete - store room inaccessible"
+        CheckPoint: { demo_ref: rc-security }
+        CheckedAt: "today-3"
+        Reading: "Route walked; ground floor store room could not be entered, key not on the board"
+        Result: "Unable to check"
+        ActionTaken: "Demo row. Recorded as unchecked rather than guessed. Duty manager told; key traced to the day shift and returned to the board."
+        CheckedBy: "@me"
+    - key: rc-e-fridge-ok
+      values:
+        Title: "[DEMO] Vaccine fridge - morning check"
+        CheckPoint: { demo_ref: rc-fridge }
+        CheckedAt: "today"
+        Reading: "Min 3.8 C, max 6.1 C, current 4.2 C"
+        Result: "In range - OK"
+        CheckedBy: "@me"
+    - key: rc-e-resus-ok
+      values:
+        Title: "[DEMO] Trolley check - complete"
+        CheckPoint: { demo_ref: rc-resus }
+        CheckedAt: "today"
+        Reading: "Seal intact, contents per list, defibrillator self-test green"
+        Result: "In range - OK"
+        CheckedBy: "@me"

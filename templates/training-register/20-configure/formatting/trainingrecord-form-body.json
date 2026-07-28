@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "Who and what",
+      "fields": ["Title", "Person", "Course"]
+    },
+    {
+      "displayname": "When",
+      "fields": ["CompletedDate", "ExpiryDate"]
+    },
+    {
+      "displayname": "Evidence",
+      "fields": ["EvidenceUrl"]
+    },
+    {
+      "displayname": "Currency and notes",
+      "fields": ["Status", "Notes"]
+    }
+  ]
+}

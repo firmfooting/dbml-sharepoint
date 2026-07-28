@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The checkpoint",
+      "fields": ["Title", "CheckType", "CheckLocation"]
+    },
+    {
+      "displayname": "What good looks like",
+      "fields": ["Frequency", "AcceptableRange", "Instructions"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["Owner", "Active"]
+    }
+  ]
+}

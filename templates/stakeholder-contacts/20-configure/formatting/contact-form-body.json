@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The person",
+      "fields": ["Title", "Organisation", "Role"]
+    },
+    {
+      "displayname": "How to reach them",
+      "fields": ["Email", "Phone"]
+    },
+    {
+      "displayname": "Standing and notes",
+      "fields": ["IsActive", "Notes"]
+    }
+  ]
+}

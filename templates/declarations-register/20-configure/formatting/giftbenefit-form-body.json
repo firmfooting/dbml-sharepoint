@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The offer",
+      "fields": ["Title", "GiftCategory", "OfferedTo", "OfferedBy", "OfferedDate"]
+    },
+    {
+      "displayname": "Value and context",
+      "fields": ["EstimatedValue", "Detail"]
+    },
+    {
+      "displayname": "The decision",
+      "fields": ["Decision", "DecisionBy"]
+    }
+  ]
+}
