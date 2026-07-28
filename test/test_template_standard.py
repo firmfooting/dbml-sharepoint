@@ -52,7 +52,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "measures-register", "meeting-actions", "onboarding-tracker",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
-    "training-register", "vehicle-log", "visitor-log",
+    "vehicle-log", "visitor-log",
 })
 
 # §1.2. Order never changes; a small list may collapse the middle beats but
@@ -97,6 +97,19 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Checks and clearances": "Assess",
         "In the programme": "Act",
         "Coordination": "Govern",
+    },
+    # The catalogue never reaches Govern: a Course row is a definition, and
+    # the governance that acts on it lives on TrainingRecord.
+    ("training-register", "Course"): {
+        "The course": "Identify",
+        "Requirement and validity": "Assess",
+        "Booking and content": "Act",
+    },
+    ("training-register", "TrainingRecord"): {
+        "Who and what": "Identify",
+        "When": "Assess",
+        "Evidence": "Act",
+        "Currency and notes": "Govern",
     },
 }
 
