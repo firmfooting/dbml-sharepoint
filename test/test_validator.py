@@ -2659,3 +2659,25 @@ def test_a_column_in_no_section_warns_rather_than_failing(tmp_path: Path) -> Non
     assert not [f for f in findings if f.severity == "error"], findings
     warnings = [f for f in findings if f.severity == "warning"]
     assert any("Score" in f.message and "Band" in f.message for f in warnings), warnings
+
+
+def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
+    """Retirement STRIPS a column from body sections on purpose, and warns
+    separately about the declarations it rewrote. Warning again here would
+    ask the author to re-add exactly what the fold just removed — which is
+    what the first version of the rule did to tiered-huddle."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "retired_columns:\n"
+        "  Project:\n"
+        "    Score: { retired: '2026-01-01', reason: 'superseded' }\n"
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Main, fields: [Title, Band] }\n",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert not [
+        f for f in findings if f.severity == "warning" and "in no section" in f.message
+    ], findings

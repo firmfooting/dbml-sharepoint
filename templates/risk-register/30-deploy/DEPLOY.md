@@ -25,16 +25,6 @@ against the checklist below. Template-specific notes follow.
       `calculated_formulas` shows the cell layout; keep the DBML
       Likelihood/Consequence enums in the same order the formulas index
       them.
-- [ ] `20-configure/formatting/risk-form-header.json` carries a literal
-      placeholder, `https://REPLACE-WITH-PROJECT-RISK-PROCESS-URL`, as the
-      "Project risk process guide" link shown on every New, Edit **and
-      Display** form — the header formatter applies to all three.
-      **Set it to your organisation's real risk-process document, or delete
-      that link element entirely, before you deploy** — every form you
-      hand to a risk owner would otherwise carry a dead link.
-      Use an **absolute** `https://` address: SharePoint's formatter only
-      emits `http://`, `https://`, `mailto:` and `tel:` links, so a
-      site-relative path is not a valid substitution here.
 - [ ] The header shows `Risk: <title>` on a saved risk and `New risk`
       before the title is filled in, updating live as it is typed. If you
       add another `[$FieldName]` reference, note that a **calculated**

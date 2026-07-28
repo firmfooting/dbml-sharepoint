@@ -244,13 +244,23 @@ column_formatting:
 # lists inside those files use INTERNAL names; the deployer rewrites them
 # to display titles.
 # ADDING A STREAM: add its pair to the Streams section of the matching file.
+# Headers carry the fleet anatomy: icon, live title line, strapline. The
+# boards' title line falls back to "Tier N board" rather than "New Tier N
+# board", because Title is optional here — the date identifies a board, so
+# an empty Title does not mean the row is new.
 form_formatting:
   Tier1Board:
+    header: formatting/tier1-form-header.json
     body: formatting/tier1-form-body.json
   Tier2Board:
+    header: formatting/tier2-form-header.json
     body: formatting/tier2-form-body.json
   Tier3Board:
+    header: formatting/tier3-form-header.json
     body: formatting/tier3-form-body.json
+  Escalation:
+    header: formatting/escalation-form-header.json
+    body: formatting/escalation-form-body.json
 
 # Ask for the stood-down reason only when there is one to give. Every other
 # day the chair never sees the field, which is the whole point: the form is

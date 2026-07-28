@@ -249,7 +249,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # It still matters: the arrangement a template declares stops
                 # being the arrangement it deploys as soon as a column is
                 # added, and the last section quietly becomes a junk drawer.
-                unplaced = sorted(declared - placed)
+                # Retired columns are excluded, not overlooked: retirement
+                # STRIPS them from body sections on purpose (and warns
+                # separately about declarations it rewrote), so flagging
+                # them here would ask an author to re-add exactly what the
+                # fold just removed.
+                unplaced = sorted(
+                    name for name in declared - placed
+                    if not bundle.mapping.is_retired(entity_name, name)
+                )
                 if unplaced:
                     findings.append(Finding(
                         "warning",
