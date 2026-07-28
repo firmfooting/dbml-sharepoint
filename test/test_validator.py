@@ -2791,3 +2791,58 @@ def test_a_total_on_a_calculated_number_is_allowed(tmp_path: Path) -> None:
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
     assert not [f for f in errors if "totals" in f.message], errors
+
+
+def _hyperlink_demo(tmp_path: Path, value: str) -> list[Finding]:
+    """A whole build's worth of validation, not `_field_plan` alone: the
+    demo planner and the demo VALIDATOR are separate readers of the same
+    authored value, and a form one accepts and the other refuses never
+    reaches generation."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Doc {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Link hyperlink\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Doc: { kind: List, base_template: 100, site_role: default }\n"
+        "demo_items:\n"
+        "  Doc:\n"
+        "    - key: d1\n"
+        "      values:\n"
+        '        Title: "[DEMO] A row"\n'
+        f"        Link: {value}\n",
+        encoding="utf-8",
+    )
+    schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+    return [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+
+
+def test_a_hyperlink_demo_value_may_be_a_bare_url(tmp_path: Path) -> None:
+    assert not _hyperlink_demo(tmp_path, '"https://example.invalid/a.pdf"')
+
+
+def test_a_hyperlink_demo_value_may_carry_a_description(tmp_path: Path) -> None:
+    """The object form the demo planner accepts. The validator must accept
+    it too — it reads every dict, and a lookup reference is not the only
+    thing that is one."""
+    assert not _hyperlink_demo(
+        tmp_path, '{ url: "https://example.invalid/a.pdf", description: "The file" }',
+    )
+
+
+def test_a_hyperlink_demo_object_needs_a_url(tmp_path: Path) -> None:
+    errors = _hyperlink_demo(tmp_path, '{ description: "no address" }')
+    assert any("url" in f.message for f in errors), errors
+
+
+def test_a_hyperlink_demo_object_refuses_unknown_keys(tmp_path: Path) -> None:
+    errors = _hyperlink_demo(
+        tmp_path, '{ url: "https://example.invalid/a.pdf", label: "wrong key" }',
+    )
+    assert any("label" in f.message for f in errors), errors
