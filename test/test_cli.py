@@ -469,14 +469,101 @@ def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
         assert not out.exists(), sorted(p.name for p in out.iterdir())
 
 
+def test_report_replaces_owned_outputs_and_preserves_operator_files(
+    tmp_path: Path,
+) -> None:
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "  Legacy: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    schema = tmp_path / "s.dbml"
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n}\n"
+        "Table Legacy {\n  Id int [pk, increment]\n}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "reports"
+    first = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    assert (out / "powerquery" / "APP_Legacy.pq").exists()
+    (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
+
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n}\n",
+        encoding="utf-8",
+    )
+    second = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+
+    assert second.returncode == 0, second.stderr
+    assert (out / "powerquery" / "APP_Risk.pq").exists()
+    assert not (out / "powerquery" / "APP_Legacy.pq").exists()
+    assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
+
+
+def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> None:
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    schema = tmp_path / "s.dbml"
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status nvarchar\n}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "reports"
+    first = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
+
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status blob\n}\n",
+        encoding="utf-8",
+    )
+    failed = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+
+    assert failed.returncode == 1
+    assert not (out / "powerquery").exists()
+    assert not (out / "sql").exists()
+    assert not (out / "REPORTING.md").exists()
+    assert not (out / "DATA-DICTIONARY.md").exists()
+    assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
+
+
 def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     """`report` loads the same three files and had the same behaviour."""
     mapping = _bad_mapping(tmp_path, "versioning:\n  default:\n    enable_versionin: false\n")
+    out = tmp_path / "reports"
+    (out / "powerquery").mkdir(parents=True)
+    (out / "powerquery" / "stale.pq").write_text("stale", encoding="utf-8")
+    (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
     result = _cli(
         "report",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(mapping),
-        "--out", str(tmp_path / "reports"),
+        "--out", str(out),
     )
     output = result.stdout + result.stderr
     # 1, not merely non-zero: the documented table in cli.md gives 1 to
@@ -486,3 +573,5 @@ def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     assert result.returncode == 1, result.stderr
     assert "Traceback" not in output, output
     assert "enable_versionin" in output
+    assert not (out / "powerquery").exists()
+    assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
