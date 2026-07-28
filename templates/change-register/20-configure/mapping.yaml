@@ -6,9 +6,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  ChangeRequest: [Status, ChangeType, Impact, RequestedDate]
-
 versioning:
   default:
     enable_versioning: true

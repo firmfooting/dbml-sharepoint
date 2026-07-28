@@ -22,7 +22,7 @@ examples — the emitted structures mirror those samples).
 ### `StyleToken`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class StyleToken:
     classes: str
     icon: str | None

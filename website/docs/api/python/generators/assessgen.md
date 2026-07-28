@@ -18,7 +18,7 @@ guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 ### `Requirement`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Requirement:
     key: str
     description: str

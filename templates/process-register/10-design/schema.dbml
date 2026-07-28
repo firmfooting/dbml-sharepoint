@@ -50,4 +50,10 @@ Table BusinessProcess {
   TargetState          nvarchar             [note: 'Where it should end up: which system, which template, which form']
   SystemUrl            hyperlink            [note: 'Link to the digitised process once it exists (the list, form or system)']
   ReviewDate           date                 [note: 'Next inventory review of this row']
+
+  indexes {
+    Function
+    DigitisationStatus
+    CurrentState
+  }
 }

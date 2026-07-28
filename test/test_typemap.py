@@ -13,10 +13,17 @@ def test_int_pk_increment_returns_skip() -> None:
 
 
 def test_int_with_ref_is_lookup() -> None:
-    col = Column(name="Project", type="int", ref=Reference("Project", "Id"), required=True)
+    col = Column(
+        name="Project",
+        type="int",
+        ref=Reference("Project", "Id"),
+        required=True,
+        unique=True,
+    )
     field = map_column(col, ENUM_NAMES)
     assert field.kind == "Lookup"
     assert field.target_list == "Project"
+    assert field.unique is True
 
 
 def test_int_plain_is_number() -> None:
@@ -53,10 +60,13 @@ def test_hyperlink_uses_field_url_display_format() -> None:
 
 
 def test_enum_typed_column_is_choice() -> None:
-    col = Column(name="Status", type="status", required=True, default="Open")
+    col = Column(
+        name="Status", type="status", required=True, unique=True, default="Open",
+    )
     field = map_column(col, ENUM_NAMES)
     assert field.kind == "Choice"
     assert field.choices_enum == "status"
+    assert field.unique is True
 
 
 def test_unknown_type_raises() -> None:

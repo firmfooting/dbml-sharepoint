@@ -34,4 +34,11 @@ Table Obligation {
   LastAssessedDate date              [note: 'When the status was last verified against evidence']
   ReviewDate       date              [not null, note: 'Next scheduled assessment']
   Notes            richtext          [note: 'Gaps, remediation pointers (link change-register/improvement items), history']
+
+  indexes {
+    ComplianceStatus
+    SourceType
+    ReviewDate
+    Owner
+  }
 }

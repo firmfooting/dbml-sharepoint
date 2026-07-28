@@ -50,6 +50,13 @@ Table Incident {
   ResolvedDate  date               [note: 'Set when Status moves to Resolved']
   // Calculated column; formula in mapping.yaml.
   DaysToResolve calculated_number  [note: 'Calculated automatically: days from the reported date to the resolved date. Blank until the incident is resolved.']
+
+  indexes {
+    Status
+    Severity
+    Category
+    ReportedDate
+  }
 }
 
 Table CorrectiveAction {
@@ -62,4 +69,10 @@ Table CorrectiveAction {
   DueDate     date           [not null]
   DoneDate    date
   Notes       richtext       [note: 'Evidence of completion / why cancelled']
+
+  indexes {
+    Status
+    Incident
+    DueDate
+  }
 }

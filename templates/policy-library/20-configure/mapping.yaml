@@ -7,10 +7,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  PolicyRegister: [Status, PolicyArea, ReviewDate]
-  PolicyDocuments: [DocStatus, PolicyArea]
-
 versioning:
   default:
     enable_versioning: true

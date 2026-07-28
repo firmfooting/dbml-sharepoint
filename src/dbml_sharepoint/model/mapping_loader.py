@@ -111,7 +111,7 @@ __all__ = [
 # look supported while the build reports success.
 KNOWN_SECTIONS = frozenset({
     "prefix", "prefix_owner", "prefix_registry", "entities",
-    "cross_site_reference_columns", "indexed_columns", "versioning",
+    "cross_site_reference_columns", "versioning",
     "enum_sources", "watched_lists", "polymorphic_patterns",
     "retention_policies_source",
     "extension", "extensions", "calculated_formulas", "views", "display_names",
@@ -290,7 +290,6 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         prefix_registry=raw.get("prefix_registry", ""),
         entities=entities,
         cross_site_reference_columns=cross_site,
-        indexed_columns={k: list(v) for k, v in (raw.get("indexed_columns") or {}).items()},
         versioning_default=versioning_default,
         versioning_overrides=dict(versioning.get("overrides") or {}),
         enum_sources=enum_source_paths,

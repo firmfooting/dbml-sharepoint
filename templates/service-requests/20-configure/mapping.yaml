@@ -6,9 +6,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Request: [Status, Category, Priority, RequestedDate]
-
 versioning:
   default:
     enable_versioning: true

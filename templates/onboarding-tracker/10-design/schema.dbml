@@ -36,6 +36,11 @@ Table Starter {
   Manager    person          [not null, note: 'Hiring manager — owns the overall experience']
   Status     starter_status  [not null, default: 'Preparing']
   Notes      richtext        [note: 'Anything the functions need to know (part-time pattern, location, equipment specifics)']
+
+  indexes {
+    StartDate
+    Status
+  }
 }
 
 Table OnboardingTask {
@@ -49,4 +54,11 @@ Table OnboardingTask {
   Status       task_status    [not null, default: 'Open']
   DoneDate     date
   Notes        nvarchar
+
+  indexes {
+    Starter
+    TaskFunction
+    Status
+    DueDate
+  }
 }

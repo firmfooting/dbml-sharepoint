@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from pydbml import PyDBML
+from pydbml.exceptions import ColumnNotFoundError, TableNotFoundError
 
 
 @dataclass(frozen=True)
@@ -38,12 +39,31 @@ class Column:
     is_auto_increment: bool = False
 
 
+@dataclass(frozen=True)
+class TableIndex:
+    """A table-level DBML index declaration.
+
+    SharePoint accepts only bare single-column indexes. The DBML `name`,
+    `unique`, `type`, `pk` and `note` settings are retained only so validation
+    can reject them explicitly; declare uniqueness on the column with
+    `[unique]` instead.
+    """
+
+    columns: tuple[str, ...]
+    name: str | None = None
+    unique: bool = False
+    type: str | None = None
+    pk: bool = False
+    note: str = ""
+
+
 @dataclass
 class Table:
-    """A DBML Table — name, columns, optional table-level note."""
+    """A DBML Table — name, columns, indexes, optional table-level note."""
 
     name: str
     columns: list[Column] = field(default_factory=list)
+    indexes: list[TableIndex] = field(default_factory=list)
     note: str = ""
 
 
@@ -66,7 +86,22 @@ class Schema:
 
 def parse_dbml(path: Path) -> Schema:
     """Parse a DBML file and return our in-memory model."""
-    parsed = PyDBML(path)
+    try:
+        parsed = PyDBML(path)
+    except (ColumnNotFoundError, TableNotFoundError) as exc:
+        # These pydbml semantic errors do not inherit from ValueError or its
+        # parser exception types, so normal CLI config-error handling would
+        # otherwise miss them and print a traceback for a schema typo.
+        #
+        # pydbml's index message ends in an unformatted f-string fragment —
+        # a literal `{self.name}` where the table name belongs. Drop the
+        # whole clause, preposition included, rather than leaving the
+        # sentence hanging on "not defined in.". The caller names the file,
+        # which is the part an author actually needs. If pydbml ever fixes
+        # the placeholder, this no longer matches and the real (better)
+        # message passes through untouched.
+        detail = str(exc).replace(' in table "{self.name}".', ".")
+        raise ValueError(detail) from exc
     schema = Schema()
 
     if parsed.project and parsed.project.note:
@@ -83,6 +118,15 @@ def parse_dbml(path: Path) -> Schema:
         )
         for raw_col in raw_table.columns:
             table.columns.append(_to_column(raw_col))
+        for raw_index in raw_table.indexes:
+            table.indexes.append(TableIndex(
+                columns=tuple(raw_index.subject_names),
+                name=raw_index.name,
+                unique=bool(raw_index.unique),
+                type=raw_index.type,
+                pk=bool(raw_index.pk),
+                note=raw_index.note.text if raw_index.note else "",
+            ))
         schema.tables.append(table)
 
     return schema

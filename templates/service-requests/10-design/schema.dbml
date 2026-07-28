@@ -43,4 +43,11 @@ Table Request {
   // Calculated column — formula in mapping.yaml (RequestedDate -> CompletedDate).
   DaysToComplete calculated_number [note: 'How many days the request took, from requested to completed. Calculated automatically. Blank until both dates are set.']
   Resolution     nvarchar         [note: 'What was done, or why declined']
+
+  indexes {
+    Status
+    Category
+    Priority
+    RequestedDate
+  }
 }

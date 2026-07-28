@@ -50,6 +50,13 @@ Table Practitioner {
   ScopeReviewDate    date                [not null, note: 'Next scheduled credentialing review']
   Status             practitioner_status [not null, default: 'Current']
   Notes              richtext            [note: 'Committee references, conditions history — professional facts only']
+
+  indexes {
+    Discipline
+    Status
+    ScopeReviewDate
+    RegistrationExpiry
+  }
 }
 
 Table Credential {
@@ -66,4 +73,11 @@ Table Credential {
   // Design stance: the register indexes, the records system holds.
   EvidenceUrl    hyperlink         [note: 'Link to the sighted evidence in your records system']
   Notes          nvarchar
+
+  indexes {
+    Practitioner
+    CredentialType
+    Status
+    ExpiryDate
+  }
 }

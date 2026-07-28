@@ -395,14 +395,263 @@ def test_malformed_dbml_is_a_message_not_a_traceback(tmp_path: Path) -> None:
     assert "schema" in output and "bad.dbml" in output
 
 
+def test_unknown_dbml_index_column_is_a_message_not_a_traceback(tmp_path: Path) -> None:
+    schema = tmp_path / "bad-index.dbml"
+    schema.write_text(
+        "Table Risk {\n"
+        "  Status nvarchar\n"
+        "  indexes { Staus }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    result = _cli(
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1, output
+    assert "Traceback" not in output, output
+    assert "bad-index.dbml" in output
+    assert "Staus" in output
+    # pydbml names the table with a literal, unformatted '{self.name}'. The
+    # whole clause is dropped, so the sentence must not trail off mid-phrase.
+    assert "{self.name}" not in output, output
+    assert "not defined in." not in output, output
+
+
+def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
+    """`report` does not validate — the generators meet a bad schema first.
+
+    They refuse by raising, and unhandled that printed a traceback for a
+    hand-edited typo. Both refusals reachable from a parseable schema are
+    covered: an unmapped column type (typemap) and a composite DBML index
+    (the deploy projection).
+    """
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    refusals = {
+        "bad-type.dbml": ("  Status blob\n", "blob"),
+        "composite.dbml": (
+            "  Status nvarchar\n  Category nvarchar\n"
+            "  indexes { (Status, Category) }\n",
+            "composite",
+        ),
+    }
+    for filename, (body, needle) in refusals.items():
+        schema = tmp_path / filename
+        schema.write_text(
+            "Project t { database_type: 'SharePoint Online' }\n"
+            f"Table Risk {{\n  Id int [pk, increment]\n{body}}}\n",
+            encoding="utf-8",
+        )
+        out = tmp_path / f"reports-{filename}"
+        result = _cli(
+            "report",
+            "--schema", str(schema),
+            "--mapping", str(mapping),
+            "--out", str(out),
+        )
+        output = result.stdout + result.stderr
+        assert result.returncode == 1, output
+        assert "Traceback" not in output, output
+        assert needle in output, output
+        assert "build --dry-run" in output, output
+        # Nothing half-written survives the refusal.
+        assert not out.exists(), sorted(p.name for p in out.iterdir())
+
+
+def test_report_replaces_owned_outputs_and_preserves_operator_files(
+    tmp_path: Path,
+) -> None:
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "  Legacy: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    schema = tmp_path / "s.dbml"
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n}\n"
+        "Table Legacy {\n  Id int [pk, increment]\n}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "reports"
+    first = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    assert (out / "powerquery" / "APP_Legacy.pq").exists()
+    (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
+
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n}\n",
+        encoding="utf-8",
+    )
+    second = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+
+    assert second.returncode == 0, second.stderr
+    assert (out / "powerquery" / "APP_Risk.pq").exists()
+    assert not (out / "powerquery" / "APP_Legacy.pq").exists()
+    assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
+
+
+def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> None:
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    schema = tmp_path / "s.dbml"
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status nvarchar\n}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "reports"
+    first = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
+
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status blob\n}\n",
+        encoding="utf-8",
+    )
+    failed = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+
+    assert failed.returncode == 1
+    assert not (out / "powerquery").exists()
+    assert not (out / "sql").exists()
+    assert not (out / "REPORTING.md").exists()
+    assert not (out / "DATA-DICTIONARY.md").exists()
+    assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
+
+
+def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -> None:
+    """An input error must not destroy the last good report set.
+
+    `--out` is routinely aimed at a directory holding the operator's own
+    work, and `sql/`/`powerquery/` are generic enough names to collide with
+    it. Clearing on the way in meant a mistyped --schema path — or an
+    unknown --site-role, which exits 2 for "usage error, before the
+    pipeline runs" — deleted both trees whole before reading anything.
+    """
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "shared"
+    (out / "sql").mkdir(parents=True)
+    (out / "powerquery").mkdir(parents=True)
+    (out / "sql" / "001_migration.sql").write_text("-- hand written", encoding="utf-8")
+    (out / "powerquery" / "MyReport.pq").write_text("mine", encoding="utf-8")
+
+    def surviving() -> set[str]:
+        return {p.name for p in out.rglob("*") if p.is_file()}
+
+    owned = {"001_migration.sql", "MyReport.pq"}
+
+    missing = _cli(
+        "report", "--schema", str(tmp_path / "nope.dbml"),
+        "--mapping", str(mapping), "--out", str(out),
+    )
+    assert missing.returncode == 1, missing.stderr
+    assert surviving() == owned
+
+    bad_role = _cli(
+        "report", "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(mapping), "--site-role", "nosuchrole", "--out", str(out),
+    )
+    assert bad_role.returncode == 2, bad_role.stderr
+    assert surviving() == owned
+
+
+def test_report_clearing_spares_operator_files_inside_owned_directories(
+    tmp_path: Path,
+) -> None:
+    """Only the generated names go; a neighbour in sql/ is not ours to delete."""
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    schema = tmp_path / "s.dbml"
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status nvarchar\n}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "shared"
+    first = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    (out / "sql" / "001_migration.sql").write_text("-- hand written", encoding="utf-8")
+    (out / "powerquery" / "notes.md").write_text("mine", encoding="utf-8")
+
+    # A refusal clears what this command wrote — and stops there.
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status blob\n}\n",
+        encoding="utf-8",
+    )
+    refused = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
+    )
+
+    assert refused.returncode == 1
+    assert not (out / "sql" / "views.sql").exists()
+    assert not (out / "DATA-DICTIONARY.md").exists()
+    assert (out / "sql" / "001_migration.sql").read_text(encoding="utf-8") == "-- hand written"
+    assert (out / "powerquery" / "notes.md").read_text(encoding="utf-8") == "mine"
+    # The directories survive precisely because the operator left something
+    # in them; with nothing but generated files they go too.
+    assert (out / "sql").is_dir()
+    assert (out / "powerquery").is_dir()
+
+
 def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     """`report` loads the same three files and had the same behaviour."""
     mapping = _bad_mapping(tmp_path, "versioning:\n  default:\n    enable_versionin: false\n")
+    out = tmp_path / "reports"
+    (out / "powerquery").mkdir(parents=True)
+    (out / "powerquery" / "stale.pq").write_text("stale", encoding="utf-8")
+    (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
     result = _cli(
         "report",
         "--schema", str(FIXTURES / "simple.dbml"),
         "--mapping", str(mapping),
-        "--out", str(tmp_path / "reports"),
+        "--out", str(out),
     )
     output = result.stdout + result.stderr
     # 1, not merely non-zero: the documented table in cli.md gives 1 to
@@ -412,3 +661,7 @@ def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     assert result.returncode == 1, result.stderr
     assert "Traceback" not in output, output
     assert "enable_versionin" in output
+    # A config that never loaded says nothing about the report, so the last
+    # good set survives. Clearing here destroyed output on a YAML typo.
+    assert (out / "powerquery" / "stale.pq").read_text(encoding="utf-8") == "stale"
+    assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"

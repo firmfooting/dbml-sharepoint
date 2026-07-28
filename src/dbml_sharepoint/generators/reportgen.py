@@ -29,6 +29,7 @@ from typing import Any
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.typemap import SPField, map_column
+from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
@@ -728,7 +729,7 @@ def generate_data_dictionary(
                 f"{_md_cell(description)} |",
             )
         details: list[str] = []
-        indexed = mapping.indexed_columns.get(table.name, [])
+        indexed = deployable_index_columns(table)
         if indexed:
             details.append(f"Indexed columns: {', '.join(indexed)}.")
         v_override = mapping.versioning_overrides.get(table.name, {})

@@ -76,9 +76,9 @@ your own schema for the worst ones → define how you'll know it worked
 <template>/
   README.md            Why this exists, the value case, what to customise
   10-design/           The data model
-      schema.dbml        — tables/columns/enums (render the ERD on dbdiagram.io)
+      schema.dbml        — tables/columns/enums/indexes (render on dbdiagram.io)
   20-configure/        The physical and release configuration
-      mapping.yaml       — prefix, indexes, versioning, formulas, security model
+      mapping.yaml       — prefix, versioning, formulas, views, security model
       release.yaml       — the version stamped into every deployed artefact
       formatting/        — optional; formatter JSON referenced by mapping.yaml
   30-deploy/           Administrator guidance

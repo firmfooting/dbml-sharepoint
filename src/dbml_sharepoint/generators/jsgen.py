@@ -19,6 +19,7 @@ from dbml_sharepoint.analysis.phases import phases_context
 from dbml_sharepoint.analysis.typemap import format_description, map_column
 from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
+from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_loader import (
     ColumnValidation,
     EntityMapping,
@@ -499,7 +500,7 @@ def build_schema_json(
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
         })
 
-        for col_name in bundle.mapping.indexed_columns.get(table_name, []):
+        for col_name in deployable_index_columns(table):
             indexed_columns_out.append({"list": list_title, "field": col_name})
 
         declared_form = bundle.mapping.form_formatting.get(table_name)
@@ -753,6 +754,14 @@ def _field_body(
             # FieldCollection.AddField creation shape separately. The target
             # GUID is only known in the browser and is added there as
             # LookupListId.
+            #
+            # SP.FieldCreationInformation carries no EnforceUniqueValues or
+            # Indexed, so a [unique] lookup is the one field type where both
+            # arrive by the MERGE that reconcileDeclaredField issues straight
+            # after AddField, rather than in the create call. Microsoft
+            # requires a unique column to be indexed; the reconciler sends
+            # both properties in a single patch body, which is the same shape
+            # it already uses to repair a drifted unique Text column.
             creation_parameters = {
                 "__metadata": {"type": "SP.FieldCreationInformation"},
                 "FieldTypeKind": sp.field_type_kind,

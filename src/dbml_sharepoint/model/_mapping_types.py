@@ -375,7 +375,6 @@ class Mapping:
     prefix_registry: str
     entities: dict[str, EntityMapping]
     cross_site_reference_columns: list[CrossSiteRef]
-    indexed_columns: dict[str, list[str]]
     versioning_default: Versioning
     versioning_overrides: dict[str, dict[str, Any]]
     enum_sources: dict[str, Path]
@@ -521,6 +520,17 @@ class MappingBundle:
 # error. Kept as data because the allow-list is asserted against the
 # loader's readers, and these have no reader by design.
 _REMOVED_SECTIONS: dict[str, str] = {
+    "indexed_columns": (
+        "DBML table indexes. Move each mapped column into its table declaration:\n"
+        "\n"
+        "    Table <Entity> {\n"
+        "      <Column> nvarchar\n"
+        "\n"
+        "      indexes {\n"
+        "        <Column>\n"
+        "      }\n"
+        "    }"
+    ),
     "hidden_on_forms": (
         "form_visibility. A column listed there becomes:\n"
         "\n"

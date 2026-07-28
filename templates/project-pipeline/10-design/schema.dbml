@@ -52,4 +52,9 @@ Table Proposal {
   DecisionDate  date               [note: 'When the gate decision (Approved/Declined/Parked) was made']
   DecisionNotes richtext           [note: 'Who decided and why — especially for Declined and Parked']
   DeliveredDate date
+
+  indexes {
+    Stage
+    ProposedDate
+  }
 }
