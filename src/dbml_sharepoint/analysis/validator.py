@@ -149,7 +149,13 @@ def formula_column_refs(formula: str) -> frozenset[str]:
         FORMULA_COLUMN_REF.findall(_FORMULA_STRING_LITERAL.sub("", formula)),
     )
 
-# SharePoint's documented calculated-column formula length ceiling.
+# The practical calculated-column formula ceiling. Widely reported as the
+# limit of the Lists UI formula box, but NOT documented by Microsoft for
+# SharePoint — the documented 1000-character formula limit belongs to
+# Dataverse, which is a different product with different rules (the same
+# confusion once had this project believing SharePoint forbade calc-on-calc
+# chains, which it permits). Conservative, so it cannot pass a formula
+# SharePoint would refuse; raising it needs a live probe, not a citation.
 MAX_CALCULATED_FORMULA = 1024
 
 MAX_INTERNAL_NAME = 32
