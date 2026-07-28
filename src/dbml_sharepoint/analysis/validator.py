@@ -293,10 +293,11 @@ def _check_column(
             f"{table}.{name}: ref target {col.ref.target_table} not defined.",
         ))
 
-    if col.unique and col.type in {"longtext", "richtext"}:
+    if col.unique and not typemap.supports_unique(col, set(enums)):
         findings.append(Finding(
-            "warning",
-            f"{table}.{name}: unique on {col.type} is silently dropped by SP.",
+            "error",
+            f"{table}.{name}: [unique] is not supported for SharePoint "
+            f"{col.type!r} columns.",
         ))
 
     if col.unique and not col.required and not is_title:

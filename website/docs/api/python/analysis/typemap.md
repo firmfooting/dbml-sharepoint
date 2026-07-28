@@ -26,6 +26,20 @@ CALCULATED_OUTPUT_TYPES = {'calculated_text': 2, 'calculated_number': 9, 'calcul
 CALCULATED_TYPES = frozenset({'calculated_date', 'calculated_number', 'calculated_text'})
 ```
 
+### `UNIQUE_SUPPORTED_SCALAR_TYPES`
+
+```python
+UNIQUE_SUPPORTED_SCALAR_TYPES = frozenset({'date', 'datetime', 'int', 'number', 'nvarchar', 'person'})
+```
+
+### `supports_unique`
+
+```python
+def supports_unique(col: dbml_sharepoint.model.parser.Column, enum_names: set[str]) -> bool
+```
+
+Whether this DBML column maps to a uniqueness-capable SP field.
+
 ### `SPField`
 
 ```python

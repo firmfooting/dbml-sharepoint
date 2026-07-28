@@ -3,6 +3,7 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.ordering import compute_phases
+from dbml_sharepoint.analysis.typemap import supports_unique
 from dbml_sharepoint.analysis.validator import (
     CALCULATED_TYPES,
     MAX_CALCULATED_FORMULA,
@@ -139,7 +140,11 @@ def check(vc: ValidationContext) -> list[Finding]:
         # the same per-list ceiling as explicit declarations.
         unique_indexes = {
             col.name for col in indexed_table.columns
-            if col.unique and col.name in rendered
+            if (
+                col.unique
+                and col.name in rendered
+                and supports_unique(col, set(vc.enum_by_name))
+            )
         }
         for duplicate in sorted(set(indexed) & unique_indexes):
             findings.append(Finding(

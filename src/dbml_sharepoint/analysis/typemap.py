@@ -38,6 +38,22 @@ CALCULATED_OUTPUT_TYPES: dict[str, int] = {
 # and nowhere else in the package.
 CALCULATED_TYPES = frozenset(CALCULATED_OUTPUT_TYPES)
 
+# Microsoft documents unique constraints for single-value Text, Choice,
+# Number, Date/Time, Lookup and Person columns. The deployer has no multi-value
+# variants, so every Choice/Lookup/Person it emits is in that supported shape.
+UNIQUE_SUPPORTED_SCALAR_TYPES = frozenset({
+    "nvarchar", "int", "number", "date", "datetime", "person",
+})
+
+
+def supports_unique(col: Column, enum_names: set[str]) -> bool:
+    """Whether this DBML column maps to a uniqueness-capable SP field."""
+    return (
+        col.ref is not None
+        or col.type in enum_names
+        or col.type in UNIQUE_SUPPORTED_SCALAR_TYPES
+    )
+
 
 @dataclass(frozen=True)
 class SPField:
@@ -77,6 +93,12 @@ def map_column(col: Column, enum_names: set[str]) -> SPField:
             "Migrate to a named DBML enum.",
         )
 
+    if col.unique and not supports_unique(col, enum_names):
+        raise ValueError(
+            f"{col.name}: [unique] is not supported for SharePoint "
+            f"{col.type!r} columns.",
+        )
+
     if col.type in CALCULATED_OUTPUT_TYPES:
         # Calculated columns are read-only derivations: never required/unique,
         # never defaulted. SP recalculates on every item edit.
@@ -90,14 +112,14 @@ def map_column(col: Column, enum_names: set[str]) -> SPField:
     if col.type in enum_names:
         return SPField(
             name=col.name, kind="Choice", field_type_kind=6,
-            required=col.required, unique=False, default=col.default,
+            required=col.required, unique=col.unique, default=col.default,
             description=description, choices_enum=col.type,
         )
 
     if col.ref is not None:
         return SPField(
             name=col.name, kind="Lookup", field_type_kind=7,
-            required=col.required, unique=False, default=None,
+            required=col.required, unique=col.unique, default=None,
             description=description, target_list=col.ref.target_table,
         )
 
