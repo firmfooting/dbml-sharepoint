@@ -46,7 +46,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # Removed by the branch that uplifts them; must reach empty.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "audit-actions", "change-register", "complaints-feedback",
-    "compliance-obligations", "contract-register", "credentialing-register",
+    "compliance-obligations", "contract-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
     "measures-register", "meeting-actions",
@@ -122,6 +122,22 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "The task": "Identify",
         "Who and when": "Act",
         "Outcome": "Govern",
+    },
+    # "Registration" and "Issue and expiry" are the Assess beat: on this
+    # register the assessment IS the documentary evidence, and the Act beat
+    # is what the organisation then does with it — grant a scope, or link
+    # the sighted proof.
+    ("credentialing-register", "Practitioner"): {
+        "The practitioner": "Identify",
+        "Registration": "Assess",
+        "Scope of practice": "Act",
+        "Standing": "Govern",
+    },
+    ("credentialing-register", "Credential"): {
+        "The credential": "Identify",
+        "Issue and expiry": "Assess",
+        "Evidence": "Act",
+        "Standing": "Govern",
     },
 }
 

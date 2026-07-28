@@ -17,6 +17,14 @@ register makes the answer a filter: scope decisions with dates and review
 cycles, credentials with expiries and evidence links, and an *expiring
 soon* view that ends the annual registration-renewal scramble.
 
+**Deploys with:** nine views (practitioners by discipline, registrations
+expiring, scope reviews due, under review or lapsed, and ceased; then
+credentials grouped into a per-practitioner file, expiring, missing
+evidence, and expired), sectioned forms on both lists, a registration pair
+that only appears for registered disciplines, three deadline dates that
+turn red past due, a row wash on an expired credential inside the
+credentialing file, four save rules, and eleven demo rows.
+
 **Boundary:** this register **indexes** credentialing decisions and
 evidence; primary source documents (AHPRA extracts, certificates) live in
 your records system, linked. It holds staff professional data — read the
