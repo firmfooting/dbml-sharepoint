@@ -792,20 +792,22 @@ def test_me_supports_only_equality() -> None:
     assert any("'me'" in problem for problem in bad), bad
 
 
-def test_a_hyperlink_operand_in_a_validation_formula_is_refused_as_unproven() -> None:
-    """Not "SharePoint cannot" — "nobody has checked". Microsoft documents
-    the unsupported types for conditional show/hide and Hyperlink is not
-    among them, but that governs a different surface, and no first-party
-    source says what a validation formula does with a URL column, which
-    stores a value AND a description rather than a scalar.
+def test_a_hyperlink_operand_in_a_validation_formula_is_refused() -> None:
+    """Settled on a live tenant, 2026-07-29. SharePoint refuses the
+    ValidationFormula outright: HTTP 500, "One or more column references
+    are not allowed, because the columns are defined as a data type that is
+    not supported in formulas."
 
-    A save rule that never fires is this repository's worst failure mode, so
-    the build refuses until someone reads it back from a live list. Raised
-    by the process-register uplift, which wanted 'a Digitised row carries a
-    SystemUrl' and shipped a visual control instead.
+    It shipped here first as merely unverified, raised by the
+    process-register uplift ('a Digitised row carries a SystemUrl') and
+    then by audit-actions, which had such a rule already. The probe
+    (test/manual/hyperlink-validation-operand-probe.js) closed the
+    question at its first attempt — the formula never even stores, so the
+    later questions about which half of a URL column a formula compares
+    have no subject.
     """
     condition = parse_condition([{"field": "Doc", "op": "is_not_null"}], "c")
-    with pytest.raises(ValueError, match="not been verified"):
+    with pytest.raises(ValueError, match="hyperlink"):
         to_validation(condition, {"Doc": "hyperlink"})
 
 

@@ -121,14 +121,15 @@ treats a list whose rows are *all* demo-marked as demo-only content.
 - [ ] **The EvidenceUrl requirement is NOT a save rule**, and you should
       confirm that rather than assume it: set Status to *Closed* with
       EvidenceUrl empty and a ClosedDate filled, and the row **saves**.
-      That is deliberate. A hyperlink operand in a SharePoint validation
-      formula has never been read back from a live tenant — a URL column
-      stores a value and a description rather than a scalar — so the build
-      refuses the operand rather than shipping a rule that might pass
-      everything it is meant to stop. Evidence at closure remains a
-      closure criterion in `50-govern/GOVERNANCE.md`, and the **Closed,
-      last 90 days** view shows the column so an empty one is visible to
-      the committee.
+      SharePoint does not permit the alternative — a validation formula
+      referencing a URL column is refused when you try to set it, with
+      *"One or more column references are not allowed, because the columns
+      are defined as a data type that is not supported in formulas."* The
+      build refuses the operand for that reason, so a template carrying
+      such a rule fails at build rather than partway through your paste.
+      Evidence at closure remains a criterion in
+      `50-govern/GOVERNANCE.md`, and the **Closed, last 90 days** view
+      shows the column so an empty one is visible to the committee.
 - [ ] **Two per-column save rules**, each with its own message: a future
       `ReportDate` on an audit, and a future `ClosedDate` on a
       recommendation. The second matters more than it looks: `DaysLate`

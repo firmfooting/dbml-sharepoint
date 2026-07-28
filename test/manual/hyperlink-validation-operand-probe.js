@@ -10,17 +10,16 @@
  * EvidenceUrl before a recommendation could be closed. Nobody had ever
  * read one back from a live tenant. A URL column is not a scalar: it
  * stores a Url AND a Description, and no first-party source says which a
- * formula sees, or whether ISBLANK on one means anything at all. The rule
- * may have been passing everything it was written to stop, for as long as
- * it shipped — which is this repository's worst failure mode, because a
- * save rule that never fires looks exactly like a save rule that is never
- * broken.
+ * formula sees, or whether ISBLANK on one means anything at all — so the
+ * fear was that the rule stored, read back byte-identical, passed every
+ * deploy check and enforced nothing.
  *
- * The build now refuses the operand outright
- * (`analysis/conditions.py`, `_UNVERIFIED_OPERAND_TYPES`). This probe is
- * how that refusal gets lifted, or confirmed. Microsoft's published
- * unsupported-type list for CONDITIONAL SHOW/HIDE does not name Hyperlink,
- * but that governs a different surface and is not evidence about this one.
+ * The build refuses the operand (`analysis/conditions.py`,
+ * `_FORBIDDEN_OPERAND_TYPES`). This probe is what put it there, and is how
+ * it would be lifted. Microsoft's published unsupported-type list for
+ * CONDITIONAL SHOW/HIDE does not name Hyperlink, but that governs a
+ * different surface and is not evidence about this one — which is the
+ * whole reason a probe was needed rather than a search.
  *
  * WHAT IT WRITES: one list, named by PROBE_LIST below, created at start
  * and deleted at end (unless CLEANUP_AT_END = false). It never reads,
@@ -46,6 +45,39 @@
  * stores the formula, and a stored formula that never fires is precisely
  * the thing being tested for: it reads back byte-identical, passes every
  * deploy check, and enforces nothing.
+ *
+ * ANSWERED, 2026-07-29, against a live SharePoint Online site:
+ *
+ *   accepted=REFUSED => operand_usable=NO
+ *
+ *   SharePoint refuses the ValidationFormula outright, at Q1, with
+ *   HTTP 500 and a first-party message that names the cause:
+ *
+ *     "One or more column references are not allowed, because the columns
+ *      are defined as a data type that is not supported in formulas."
+ *
+ *   So Q2 through Q5 have no subject — a formula that never stores cannot
+ *   fire, and the question of which half of a URL column it would compare
+ *   does not arise. `hyperlink` moved from _UNVERIFIED_OPERAND_TYPES to
+ *   _FORBIDDEN_OPERAND_TYPES in analysis/conditions.py on the strength of
+ *   this run.
+ *
+ *   ONE CORRECTION THIS RUN FORCED. The refusal was written on the
+ *   suspicion that such a rule would store and then silently never fire —
+ *   this repository's worst failure mode. It is not that. It is a LOUD
+ *   failure: a template carrying the rule fails at the validation phase of
+ *   the paste, in front of the operator. The build-time refusal is still
+ *   right, for a different reason than the one first given — it turns a
+ *   failed deploy into a failed build.
+ *
+ *   The probe is kept for re-running against a tenant whose behaviour is in
+ *   doubt, and because Q2-Q5 would matter if Microsoft ever accepts the
+ *   operand.
+ *
+ * ONE OPERATIONAL NOTE from that run: cleanup failed with "List cannot be
+ * deleted while on hold or retention policy." A site under a retention
+ * policy will not let this probe remove its own list, so delete it by hand
+ * — the probe prints the URL.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -338,7 +370,7 @@
     log(
       'INFO',
       usable
-        ? 'Usable. Remove the "hyperlink" entry from _UNVERIFIED_OPERAND_TYPES in analysis/conditions.py, restore audit-actions\' EvidenceUrl rule, and cite this run.'
+        ? 'Usable. Remove the "hyperlink" entry from _FORBIDDEN_OPERAND_TYPES[VALIDATION] in analysis/conditions.py, restore audit-actions\' EvidenceUrl rule, and cite this run.'
         : 'NOT usable. Leave the build refusal in place and keep the requirement as a governance check.',
     );
     return { usable, results };

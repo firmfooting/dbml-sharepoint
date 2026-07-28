@@ -62,22 +62,24 @@ Rule 2 is half enforced. The `ClosedDate` requirement is a save rule; the
 `EvidenceUrl` requirement is not, and the reason is worth reading before
 anyone tries to "fix" it.
 
-The evidence requirement *was* a save rule, written before anyone asked
-whether SharePoint honours a hyperlink operand in a validation formula.
-Nobody has ever read one back from a live tenant. A URL column stores a
-value **and** a description rather than a scalar, and no first-party
-source says which of them a formula compares — so that rule may have been
-passing everything it was meant to stop, silently, for as long as it
-shipped. The build now refuses the operand outright, so that the same
-question gets the same answer across all twenty-nine templates instead of
-three different ones.
+The evidence requirement *was* a save rule. **SharePoint will not accept
+one.** Setting a validation formula that references a URL column is
+refused outright, with a message that names the cause: *"One or more
+column references are not allowed, because the columns are defined as a
+data type that is not supported in formulas."* That was established
+against a live tenant rather than reasoned about — the probe is
+`test/manual/hyperlink-validation-operand-probe.js`.
+
+So the rule never enforced anything. It would not have failed quietly,
+either: it would have failed the **paste**, at the validation phase, in
+front of whoever was deploying. The build now refuses the operand, which
+turns a failed deploy into a failed build.
 
 The requirement itself stands. It is a closure criterion below, a
 verification step in `30-deploy/DEPLOY.md`, and the **Closed, last 90
 days** view displays `EvidenceUrl` so that an empty one is visible to the
-committee reading it. To make it a save rule again, probe the operand
-against a live list and remove the entry from `_UNVERIFIED_OPERAND_TYPES`
-in `analysis/conditions.py`.
+committee reading it. That is the compensating control, and — given
+SharePoint's answer — the only one available.
 
 Rules 1 and 3 cannot be enforced at save either.
 
