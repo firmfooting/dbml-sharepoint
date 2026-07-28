@@ -223,12 +223,9 @@ views:
     # is stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
     # predicate, so this is a rolling thirty days and the title says so.
     #
-    # The sum IS here. Grouped by vehicle and collapsed, SharePoint renders
-    # a per-group subtotal as well as an overall one, which is exactly the
-    # fleet-review figure the table asked for. An earlier revision of this
-    # template said "THERE IS NO SUM ... the per-vehicle total is an
-    # export"; that was true only until the aggregation mechanism was
-    # verified against a live tenant.
+    # Grouped by vehicle and collapsed, SharePoint renders a per-group
+    # subtotal as well as an overall one — the fleet-review figure the
+    # published table asked for.
     - title: "Last 30 days by vehicle"
       fields: ["@identity", OdoStart, OdoEnd, TripKm]
       where:

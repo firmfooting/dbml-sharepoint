@@ -2660,30 +2660,51 @@ def _aggregations(totals: dict[str, str]) -> str:
     return _view_aggregations(ViewDef(title="V", fields=["Title"], totals=totals))
 
 
-def test_view_aggregations_render_sharepoints_own_spellings() -> None:
-    """`avg` is authored short and rendered `Average`, the same relationship
-    `desc` has with Ascending="FALSE" — the mapping vocabulary is lowercase
-    throughout and SharePoint's is not."""
+def test_view_aggregations_concatenate_in_declaration_order() -> None:
+    """Order matters twice over: it is the order SharePoint renders the
+    figures in, and the deployer compares the whole string exactly, so a
+    reordering would drift on every redeploy."""
     assert _aggregations({"TripKm": "sum", "Days": "avg"}) == (
-        '<FieldRef Name="TripKm" Type="Sum"/><FieldRef Name="Days" Type="Average"/>'
+        '<FieldRef Name="TripKm" Type="SUM"/><FieldRef Name="Days" Type="AVG"/>'
     )
 
 
-def test_every_function_renders_the_spelling_sharepoint_accepts() -> None:
-    """Every SharePoint spelling written out LITERALLY.
+def test_every_function_renders_the_token_sharepoint_documents() -> None:
+    """The tokens transcribed from Microsoft's FieldRef element (Query)
+    reference, which enumerates exactly AVG, COUNT, MAX, MIN, SUM, STDEV
+    and VAR:
+    https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query
 
-    The first version of this test read the expected spellings out of
-    TOTAL_FUNCTIONS itself, which made it tautological: changing `count` to
-    `Cnt` and `min` to `Minimum` — two values SharePoint rejects — left the
-    whole suite green. These are the strings SharePoint accepts in an
-    Aggregations FieldRef, and the only way to keep them honest is to
-    repeat them here rather than derive them.
+    Written out LITERALLY and taken from that reference rather than from
+    English. Deriving them from TOTAL_FUNCTIONS would be tautological, and
+    typing the function's name instead of its token yields values like
+    "Average" that SharePoint stores, round-trips, and then fails the whole
+    view over. A literal test is only as good as the source the literal
+    came from.
     """
-    assert _aggregations({"A": "sum"}) == '<FieldRef Name="A" Type="Sum"/>'
-    assert _aggregations({"A": "count"}) == '<FieldRef Name="A" Type="Count"/>'
-    assert _aggregations({"A": "avg"}) == '<FieldRef Name="A" Type="Average"/>'
-    assert _aggregations({"A": "min"}) == '<FieldRef Name="A" Type="Min"/>'
-    assert _aggregations({"A": "max"}) == '<FieldRef Name="A" Type="Max"/>'
+    assert _aggregations({"A": "sum"}) == '<FieldRef Name="A" Type="SUM"/>'
+    assert _aggregations({"A": "count"}) == '<FieldRef Name="A" Type="COUNT"/>'
+    assert _aggregations({"A": "avg"}) == '<FieldRef Name="A" Type="AVG"/>'
+    assert _aggregations({"A": "min"}) == '<FieldRef Name="A" Type="MIN"/>'
+    assert _aggregations({"A": "max"}) == '<FieldRef Name="A" Type="MAX"/>'
+    assert _aggregations({"A": "stdev"}) == '<FieldRef Name="A" Type="STDEV"/>'
+    assert _aggregations({"A": "var"}) == '<FieldRef Name="A" Type="VAR"/>'
+
+
+def test_no_aggregation_token_is_an_english_word_sharepoint_does_not_know() -> None:
+    """`Average`, `Minimum`, `Maximum`, `Total` and `Mean` are what an
+    author reaches for when transcribing from memory instead of from the
+    enumeration. None is a member of it, and a non-member breaks the view
+    rather than being rejected."""
+    from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
+
+    invented = {"Average", "Minimum", "Maximum", "Total", "Mean"}
+    present = invented & set(TOTAL_FUNCTIONS.values())
+    assert not present, (
+        f"{sorted(present)} are not SharePoint aggregation tokens. The enumeration is "
+        f"AVG, COUNT, MAX, MIN, SUM, STDEV, VAR — a non-member is stored, round-tripped, "
+        f"and then breaks the view's rendering entirely."
+    )
 
 
 def test_every_declared_function_is_pinned_above() -> None:
@@ -2692,7 +2713,9 @@ def test_every_declared_function_is_pinned_above() -> None:
     which is exactly how the tautological version hid three of five."""
     from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
 
-    assert set(TOTAL_FUNCTIONS) == {"sum", "count", "avg", "min", "max"}
+    assert set(TOTAL_FUNCTIONS) == {
+        "sum", "count", "avg", "min", "max", "stdev", "var",
+    }
 
 
 def test_a_view_without_totals_renders_no_aggregations() -> None:

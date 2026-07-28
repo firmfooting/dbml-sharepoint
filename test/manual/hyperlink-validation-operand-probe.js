@@ -58,17 +58,13 @@
  *
  *   So Q2 through Q5 have no subject — a formula that never stores cannot
  *   fire, and the question of which half of a URL column it would compare
- *   does not arise. `hyperlink` moved from _UNVERIFIED_OPERAND_TYPES to
- *   _FORBIDDEN_OPERAND_TYPES in analysis/conditions.py on the strength of
- *   this run.
+ *   does not arise. `hyperlink` sits in _FORBIDDEN_OPERAND_TYPES in
+ *   analysis/conditions.py on the strength of this run.
  *
- *   ONE CORRECTION THIS RUN FORCED. The refusal was written on the
- *   suspicion that such a rule would store and then silently never fire —
- *   this repository's worst failure mode. It is not that. It is a LOUD
- *   failure: a template carrying the rule fails at the validation phase of
- *   the paste, in front of the operator. The build-time refusal is still
- *   right, for a different reason than the one first given — it turns a
- *   failed deploy into a failed build.
+ *   NOTE THE FAILURE MODE. This is not the silent kind: a template
+ *   carrying such a rule fails at the validation phase of the paste, in
+ *   front of the operator. The build-time refusal earns its place by
+ *   turning a failed deploy into a failed build.
  *
  *   The probe is kept for re-running against a tenant whose behaviour is in
  *   doubt, and because Q2-Q5 would matter if Microsoft ever accepts the

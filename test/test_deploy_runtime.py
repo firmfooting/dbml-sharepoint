@@ -797,11 +797,9 @@ def test_no_aggregations_comparison_is_made_raw() -> None:
     """The write-side and readback-side comparisons are separate call sites
     and either one left raw reintroduces the never-converging redeploy.
 
-    Asserted as the ABSENCE of a raw comparison rather than the presence of
-    two known-good ones: the first version of this test named the variables
-    (`existing.Aggregations`) and went green-to-red purely because a fix
-    renamed one of them, while saying nothing about a third call site
-    somebody might add later.
+    Asserted as the ABSENCE of any raw comparison rather than the presence
+    of two known-good ones: naming the variables would break on a rename
+    while saying nothing about a third call site somebody adds later.
     """
     script = _deploy_js()
     raw = re.findall(r"(?<!normalizeViewQuery\()\b\w+\.Aggregations\s*[!=]==", script)

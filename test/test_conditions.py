@@ -798,13 +798,9 @@ def test_a_hyperlink_operand_in_a_validation_formula_is_refused() -> None:
     are not allowed, because the columns are defined as a data type that is
     not supported in formulas."
 
-    It shipped here first as merely unverified, raised by the
-    process-register uplift ('a Digitised row carries a SystemUrl') and
-    then by audit-actions, which had such a rule already. The probe
-    (test/manual/hyperlink-validation-operand-probe.js) closed the
-    question at its first attempt — the formula never even stores, so the
-    later questions about which half of a URL column a formula compares
-    have no subject.
+    The formula never even stores, so questions about which half of a URL
+    column a formula would compare have no subject. See
+    test/manual/hyperlink-validation-operand-probe.js.
     """
     condition = parse_condition([{"field": "Doc", "op": "is_not_null"}], "c")
     with pytest.raises(ValueError, match="hyperlink"):

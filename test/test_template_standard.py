@@ -405,10 +405,9 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
 # error (1600) and a unit mistake, and does not catch a person column set to
 # 200.
 #
-# It was first written as a closed set of ten values, from memory of
-# risk-register rather than from risk-register — which uses 100, 130, 150,
-# 170 and 260, five values that set did not contain. An enforced rule must
-# be no stronger than what the reference actually satisfies.
+# An enforced rule must be no stronger than what the reference
+# implementation actually satisfies, and risk-register's widths span the
+# tens from 100 to 300.
 WIDTH_SCALE: frozenset[int] = frozenset(range(100, 321, 10))
 
 # ONE fixed reference date for every `today±N` resolution, on both sides of
@@ -435,7 +434,7 @@ SUPPORTED_OPS: frozenset[str] = frozenset({
 # legitimate templates, which is worse than a narrower net: a sweep that
 # fires on correct work gets weakened, and then it catches nothing.
 #
-# An earlier draft also treated "any date column a view filters on" as a
+# Deliberately NOT treating "any date column a view filters on" as a
 # deadline. That fires on tiered-huddle's `BoardDate` — the day a huddle
 # board covers, filtered by a rolling-fortnight view and emphatically not a
 # deadline — so the view-filter clause is dropped and the rule is name-based

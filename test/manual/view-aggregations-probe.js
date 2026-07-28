@@ -60,14 +60,20 @@
  *     Q6 — do two aggregations on one view both render, in declaration
  *          order? complaints-feedback ships two; the first run wrote one.
  *
- *   That first run also found a bug in THIS FILE rather than in SharePoint:
- *   both seeding posts sent `SP.Data.ListItem` instead of the list's own
- *   ListItemEntityTypeFullName, took HTTP 400, and the probe reported
- *   "Seeded two rows" because it never read the responses. The operator
- *   answered Q4 by adding rows by hand. A probe that prints an unchecked
- *   claim is worse than no probe, so seeding is now Q0 — posted, counted
- *   and read back — and a failed seed downgrades the verdict line rather
- *   than sitting quietly beneath it.
+ *   THE AGGREGATION TYPE IS AN ENUMERATION, NOT ENGLISH: AVG, COUNT, MAX,
+ *   MIN, SUM, STDEV, VAR, per FieldRef element (Query), case-insensitive.
+ *   A non-member such as "Average" is ACCEPTED, stored and read back
+ *   unchanged, and then the view will not render at all — "Unknown render
+ *   failure". That is worse than a silent no-op, and it is observed
+ *   behaviour on this tenant, not a caution.
+ *
+ *   To recover a view in that state, MERGE it with Aggregations: '' and
+ *   AggregationsStatus: 'Off'.
+ *
+ *   SEEDING IS Q0 — posted, counted, and read back from ItemCount — and a
+ *   failed seed downgrades the verdict line rather than sitting quietly
+ *   beneath it. An empty list shows no totals row whether the feature works
+ *   or not, so a `rendered=no` from an unseeded run means nothing.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -363,7 +369,7 @@
       );
       await post(`${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(SECOND)}')`);
       const both = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`
-        + `<FieldRef Name="${SECOND}" Type="Average"/>`;
+        + `<FieldRef Name="${SECOND}" Type="AVG"/>`;
       const wrote = await post(
         `${listPath}/views('${viewId}')`,
         { __metadata: { type: 'SP.View' }, Aggregations: both, AggregationsStatus: 'On' },

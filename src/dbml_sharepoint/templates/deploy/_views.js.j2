@@ -185,10 +185,9 @@
         }
       }
       // Declared totals. OUTSIDE the create/adopt branch above, like
-      // ViewFields, formatting and the default flag — createViewWithCleanUrl
-      // does not send Aggregations, so a version of this that lived in the
-      // `existing` arm left every FIRST deploy of a totals view failing its
-      // own verify, on exactly the views the feature was built for.
+      // ViewFields, formatting and the default flag: createViewWithCleanUrl
+      // does not send Aggregations, so a newly created view would otherwise
+      // reach the verify below with none and fail its own first deploy.
       //
       // A view with no declaration keeps whatever is live, matching
       // CustomFormatter and widths — so deleting a totals block does NOT

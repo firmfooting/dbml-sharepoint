@@ -28,10 +28,8 @@ _NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
 # declared DBML type says. Separated from the numeric rule so the message
 # can say "not at all" rather than pointing at `count`.
 #
-# `count` is NOT blocked on these: it counts rows, and SharePoint does
-# offer Count on a person or hyperlink column. An earlier revision refused
-# every function here, which contradicted the reference documentation's
-# own promise that count works on any displayed column.
+# `count` is NOT blocked on these: it counts rows, and SharePoint offers
+# Count on a person or hyperlink column.
 _NON_ARITHMETIC = frozenset({"person", "richtext", "longtext", "hyperlink"})
 
 

@@ -238,20 +238,19 @@ column_validation:
 # reference a multi-line column at all.
 # WHY THE EVIDENCE URL IS NOT ENFORCED HERE, though closure requires it.
 #
-# This rule used to carry a second branch requiring EvidenceUrl on a Closed
-# recommendation. SHAREPOINT WILL NOT ACCEPT IT. Probed against a live
-# tenant on 2026-07-29 (test/manual/hyperlink-validation-operand-probe.js):
-# setting a ValidationFormula that references a URL column returns HTTP 500,
+# SHAREPOINT WILL NOT ENFORCE IT, so there is no branch here requiring
+# EvidenceUrl on a Closed recommendation. Probed against a live tenant
+# (test/manual/hyperlink-validation-operand-probe.js): setting a
+# ValidationFormula that references a URL column returns HTTP 500,
 #
 #   "One or more column references are not allowed, because the columns are
 #    defined as a data type that is not supported in formulas."
 #
-# So the branch was never enforcing anything — but not in the way first
-# suspected. It would not have stored and silently passed; it would have
-# FAILED THE PASTE, at the validation phase, in front of the operator. The
-# build now refuses the operand (analysis/conditions.py,
-# _FORBIDDEN_OPERAND_TYPES), which turns a failed deploy into a failed
-# build and answers the question identically for all twenty-nine templates.
+# Such a rule does not fail quietly: it fails the PASTE, at the validation
+# phase, in front of the operator. The build refuses the operand
+# (analysis/conditions.py, _FORBIDDEN_OPERAND_TYPES), which turns a failed
+# deploy into a failed build and answers the question identically for all
+# twenty-nine templates.
 #
 # The requirement itself has not been dropped: it is a closure criterion in
 # 50-govern/GOVERNANCE.md and a verification step in 30-deploy/DEPLOY.md,

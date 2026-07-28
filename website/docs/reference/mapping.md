@@ -172,11 +172,17 @@ operands already are.
 
   ```yaml
   totals:
-    TripKm: sum          # sum | count | avg | min | max
+    TripKm: sum          # sum | count | avg | min | max | stdev | var
   ```
 
-  Authored short and lowercase; the build renders SharePoint's own
-  spellings (`avg` → `Average`). **`count` works on any displayed column**,
+  Authored short and lowercase; the build renders SharePoint's own tokens
+  (`avg` → `AVG`). Those tokens are an **enumeration, not English** —
+  `AVG`, `COUNT`, `MAX`, `MIN`, `SUM`, `STDEV`, `VAR`, per the
+  [FieldRef element (Query)](https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query#elements-and-attributes)
+  reference. Writing `Average` instead of `AVG` is accepted by SharePoint,
+  stored, and read back unchanged, and then breaks the view's rendering
+  entirely; that is why the mapping takes short names and the build owns
+  the translation. **`count` works on any displayed column**,
   including person, lookup and hyperlink, because it counts rows rather
   than values. The arithmetic four — `sum`, `avg`, `min`, `max` — need a
   numeric column, and calculated numbers qualify. They are refused on a

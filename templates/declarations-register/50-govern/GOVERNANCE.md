@@ -114,9 +114,9 @@ column rules keep messages of their own.
 
 **What the colours do.** *Pending decision* is the only amber state on the
 gifts register and the only row anyone has to act on. *Assessed - managed*
-is amber on the interests register for the same reason — it was previously
-green, sharing a colour with *Assessed - no action*, which erased the only
-distinction on that list carrying an ongoing obligation. `ReviewDate` turns
+is amber on the interests register for the same reason: it is the only
+state on that list carrying an ongoing obligation, so it must not share a
+colour with *Assessed - no action*. `ReviewDate` turns
 red once past, and stops once the interest is *Ceased*.
 
 ## Lifecycle

@@ -178,29 +178,40 @@ def _scalar(col: Column, description: str) -> SPField:
             )
 
 
-# Declared view aggregations: the authored name, and SharePoint's own
-# spelling of it. The renderer owns the translation, exactly as it does for
-# a sort direction (`desc` -> Ascending="FALSE") — the mapping vocabulary is
-# short and lowercase throughout, and SharePoint's is neither.
+# Declared view aggregations: the authored name, and SharePoint's own token
+# for it. The renderer owns the translation, exactly as it does for a sort
+# direction (`desc` -> Ascending="FALSE").
 #
-# SP also offers StdDev and Var. Both are omitted deliberately: nothing in
-# the library wants them, a standard deviation under a SharePoint view is a
-# figure almost nobody reading a committee pack can interpret, and an unused
-# function is an unverified one. Adding either is two lines and a probe run.
+# THESE TOKENS ARE AN ENUMERATION, NOT ENGLISH. They are transcribed from
+# the FieldRef element (Query) reference, which lists exactly AVG, COUNT,
+# MAX, MIN, SUM, STDEV and VAR and notes they are case-insensitive:
+# https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query
 #
-# Mechanism verified against a live tenant on 2026-07-29 —
-# test/manual/view-aggregations-probe.js.
+# `avg` is the trap: the English word is "Average" and the token is "AVG".
+# A non-member is ACCEPTED — SharePoint stores it and reads it back
+# unchanged — and then fails the whole view with "Unknown render failure".
+# Nothing in the build or the readback can see the difference; a person
+# opening the view is the only witness. `SUM` hides this, being both the
+# token and the word, so transcribe from the reference rather than typing
+# what the function is called.
+#
+# The full enumeration is offered, STDEV and VAR included. Probes are for
+# UNDOCUMENTED behaviour, which is where the silent failures live; a member
+# of a published enumeration is documented, and withholding it buys nothing
+# while costing an adopter something SharePoint plainly does.
 TOTAL_FUNCTIONS: dict[str, str] = {
-    "sum": "Sum",
-    "count": "Count",
-    "avg": "Average",
-    "min": "Min",
-    "max": "Max",
+    "sum": "SUM",
+    "count": "COUNT",
+    "avg": "AVG",
+    "min": "MIN",
+    "max": "MAX",
+    "stdev": "STDEV",
+    "var": "VAR",
 }
 
 # `count` is excluded because it counts ROWS, not values, so it is legal on
-# any column a view displays. The other four need something to add up.
-NUMERIC_ONLY_TOTALS = frozenset({"sum", "avg", "min", "max"})
+# any column a view displays. Everything else needs something to compute.
+NUMERIC_ONLY_TOTALS = frozenset(set(TOTAL_FUNCTIONS) - {"count"})
 
 
 def format_description(note: str) -> str:

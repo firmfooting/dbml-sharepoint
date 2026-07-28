@@ -94,8 +94,8 @@ def _strip_retired_from_view(
     stripped and reported as a warning rather than failing — and stripping
     the width and the total too keeps the validator's "must name one of
     this view's fields" checks honest, which would otherwise turn
-    retirement into an ERROR. `totals` was missed when it was added and
-    retiring a totalled column did exactly that.
+    retirement into an ERROR. Anything else keyed on a column name must be
+    stripped here for the same reason.
     """
     named = [name for name in view.fields if name in retired]
     widths_named = [name for name in view.widths if name in retired]

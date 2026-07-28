@@ -6,19 +6,12 @@ drift is invisible. SharePoint renders an unknown ``iconName`` as nothing
 — no error in the build, no error in the deploy, nothing in the browser
 console. The only witness is a person looking at the form.
 
-That is not a hypothetical. The thirty-five names first proposed for this
-set were chosen carefully and checked afterwards against the catalogue:
-five did not exist. ``Calendar``, ``Key``, ``Flow``, ``Scales`` and
-``AddFriend`` all read as obviously real and are not. The replacements
-below (``CalendarDay``, ``Lock``, ``FlowChart``, ``Permissions``,
-``PeopleAdd``) are.
-
-``DocumentApproval``, ``ReportDocument`` and ``ContactLink`` were added by
-the governance/risk/compliance theme branch and checked the same way — a
-countersigned agreement, an acquittal report and a person's declared link
-to an outside party are three things the original nine could only
-approximate. ``Handshake`` and ``Signature``, the two names that came to
-mind first for the contract register, do not exist.
+Names that read as obviously real and do not exist include ``Calendar``,
+``Key``, ``Flow``, ``Scales``, ``AddFriend``, ``Handshake`` and
+``Signature``. Use ``CalendarDay``, ``Lock``, ``FlowChart``,
+``Permissions`` and ``PeopleAdd`` instead; there is no substitute for the
+last two. The test beside this module pins that list, because they are the
+names the next author will reach for too.
 
 Every member here was verified against Microsoft's published
 MDL2 icon source, which is what SharePoint's ``iconName`` resolves against:
