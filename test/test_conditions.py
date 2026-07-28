@@ -627,3 +627,47 @@ def test_calculated_operands_are_still_fine_in_caml() -> None:
     types = {**TYPES, "Score": "calculated_number"}
     condition = parse_condition([{"field": "Score", "op": "gt", "value": 3}], "w")
     assert "Score" in to_caml(condition, types)
+
+
+def test_a_negation_that_normalisation_breaks_is_a_finding_not_a_crash() -> None:
+    """Regression: the capability check ran only over the leaves the author
+    wrote. De Morgan normalisation rewrites none_of[contains] to
+    not_contains, which CAML cannot render, so the rule passed validation
+    and then raised ValueError out of build_schema_json — a traceback where
+    the author needed a sentence."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Status", "op": "contains", "value": "x"}]}, "w",
+    )
+    problems = validate_condition(
+        condition, target=CAML, rendered={"Status"},
+        types={"Status": "nvarchar"}, lookups=set(), context="views[X].where",
+    )
+    assert problems, "a rule CAML cannot render must be reported, not raised"
+    assert "not_contains" in problems[0]
+    # The message must explain WHY an operator the author never typed appears.
+    assert "negating this rule" in problems[0]
+
+
+def test_an_authored_operator_is_not_re_reported_under_a_rewritten_name() -> None:
+    """The second pass reports only what normalisation introduced. A rule the
+    author wrote was already judged in their own vocabulary above."""
+    condition = parse_condition([{"field": "Status", "op": "contains", "value": "x"}], "w")
+    problems = validate_condition(
+        condition, target=CAML, rendered={"Status"},
+        types={"Status": "nvarchar"}, lookups=set(), context="views[X].where",
+    )
+    assert problems == [], f"a plain supported operator must be clean: {problems}"
+
+
+def test_a_lookup_value_accessor_compares_as_text() -> None:
+    """Regression: a lookup is int-typed in DBML, so typing the literal by the
+    COLUMN rejected every real title as 'not a number' and left lookupId the
+    only usable accessor."""
+    condition = parse_condition(
+        [{"field": "Project", "property": "lookupValue", "op": "eq", "value": "Alpha"}], "w",
+    )
+    assert to_expression(condition, {"Project": "int"}) == "[$Project.lookupValue] == 'Alpha'"
+    numeric = parse_condition(
+        [{"field": "Project", "property": "lookupId", "op": "eq", "value": 7}], "w",
+    )
+    assert to_expression(numeric, {"Project": "int"}) == "[$Project.lookupId] == 7"

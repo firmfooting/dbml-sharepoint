@@ -363,6 +363,13 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     # Only then: a measure changes what is compared — LEN(x) is a number
     # whatever x is — so the operand must not be quoted as the column would be.
     column_type = "number" if leaf.measure == "length" else declared_type
+    # An accessor changes it too, and for the same reason: the literal is
+    # compared against the SUB-PROPERTY, not the column. A lookup is
+    # int-typed in DBML, so without this `property: lookupValue` typed its
+    # operand numerically and rejected every real title as "not a number" —
+    # leaving lookupId the only usable accessor.
+    if leaf.property and leaf.measure != "length":
+        column_type = _ACCESSOR_TYPES.get(leaf.property, column_type)
 
     if leaf.op in ("in", "not_in"):
         op = "eq" if leaf.op == "in" else "neq"
@@ -476,6 +483,18 @@ PROPERTY_ACCESSORS: dict[str, frozenset[str]] = {
     "person": frozenset({"title", "email", "id"}),
     "lookup": frozenset({"lookupValue", "lookupId"}),
 }
+# What each accessor COMPARES, which is not what the column is declared as.
+# A lookup is int-typed in DBML and a person is its own type, but a title,
+# an email or a lookup's display value are all text, and the two id
+# accessors are numbers. Typing the literal by the column instead of the
+# accessor is what made `property: lookupValue` unusable.
+_ACCESSOR_TYPES: dict[str, str] = {
+    "title": "nvarchar",
+    "email": "nvarchar",
+    "lookupValue": "nvarchar",
+    "id": "number",
+    "lookupId": "number",
+}
 _MEASURABLE_TYPES = frozenset({"nvarchar", "longtext", "richtext", "calculated_text"})
 
 _RENDERERS = {CAML: to_caml, EXPRESSION: to_expression, VALIDATION: to_validation}
@@ -551,10 +570,31 @@ def validate_condition(
         # into a traceback.
         return _dedupe(problems)
 
-    for original, leaf in zip(leaves(condition), leaves(condition), strict=True):
-        if id(original) in suppressed or leaf.field not in rendered:
+    for leaf in leaves(condition):
+        if id(leaf) in suppressed or leaf.field not in rendered:
             continue
         problems.extend(_render_problems(leaf, target, types, context))
+
+    # Second pass, over the tree the RENDERER will actually see. De Morgan
+    # normalisation rewrites operators — none_of[contains] becomes
+    # not_contains — so a rule can pass every check above and still be
+    # unrenderable. Without this it surfaced as a ValueError out of
+    # build_schema_json instead of a finding: a traceback where the author
+    # needed a sentence.
+    #
+    # Only operators normalisation INTRODUCED are reported here. Anything
+    # the author wrote was already judged above, in their own vocabulary,
+    # and repeating it under a rewritten name would read as two faults.
+    authored_ops = {leaf.op for leaf in leaves(condition)}
+    for leaf in leaves(normalise(condition)):
+        if leaf.op in authored_ops or leaf.field not in rendered:
+            continue
+        for problem in _render_problems(leaf, target, types, context):
+            problems.append(
+                f"{problem} — negating this rule turns it into {leaf.op!r}, "
+                f"which that target cannot express. Rewrite it as a positive "
+                f"filter, or move it to a target that supports the negation.",
+            )
     return _dedupe(problems)
 
 
