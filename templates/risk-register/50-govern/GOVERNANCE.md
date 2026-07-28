@@ -95,7 +95,7 @@ formula; the fourth reads only its own column and so keeps its own.
 | A Tolerate response carries a Tolerance End Date | list (shared message) |
 | A risk past Provisional has both Likelihood and Consequence | list (shared message) |
 | A Closed risk has a Target Risk Rating **and** controls rated *All reasonable controls in place* or better | list (shared message) |
-| Last Reviewed Date is never in the future | column (own message) |
+| Last Reviewed Date is required and never in the future | required field + column (own message) |
 
 The target rating is part of the closure rule rather than a nicety:
 `LevelsAboveTarget` returns blank when there is no target, so a risk closed

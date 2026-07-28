@@ -117,7 +117,8 @@ site that already holds real risks.
       For Tolerate, note the date field is on screen when the refusal
       fires: a rejection naming a field the author cannot see is what the
       visibility rule exists to prevent.
-- [ ] `LastReviewedDate` refuses a future date, with its own message.
+- [ ] `LastReviewedDate` refuses a blank through its required-field check and
+      refuses a future date with its own validation message.
 - [ ] On an existing risk, set `Status` to **Closed** and confirm
       `ClosureStatement` appears.
 - [ ] As an ordinary Member: read-only. As **RR Risk Managers**: Contribute.

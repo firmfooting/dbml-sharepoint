@@ -348,19 +348,12 @@ column_validation:
       # year's year pushes the next review out by a year and drops the
       # risk off the review queue silently — no error, no empty cell, just
       # a risk nobody is asked to look at again. That is worth a save rule.
-      #
-      # The rule ADMITS a blank deliberately. The column is hidden from the
-      # New form and filled by its own [today] default, so it should never
-      # be empty at create — but a save rule that cannot pass with the
-      # column empty rejects EVERY new item if that assumption is ever
-      # wrong, and this project has shipped that failure before. A cleared
-      # date is visible (NextReviewDue goes blank and the row leaves the
-      # review views); a list that refuses all new risks is not.
+      # The field is required as well as defaulted. Allowing it to be
+      # cleared blanks NextReviewDue and silently removes an open risk from
+      # every cadence view, so that state must fail closed at save time.
       LastReviewedDate:
         when:
-          - any_of:
-              - { field: LastReviewedDate, op: is_null }
-              - { field: LastReviewedDate, op: leq, value: today }
+          - { field: LastReviewedDate, op: leq, value: today }
         message: "A review cannot have happened in the future. Use the date you actually reviewed this risk, or today's date."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.

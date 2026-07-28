@@ -100,7 +100,8 @@ not a target.
 You will not see Last Reviewed Date when raising a new risk: it fills
 itself with today's date, which is the baseline every later cadence counts
 from. It appears once the risk exists, which is the only point at which
-moving it means anything.
+moving it means anything. It is required and cannot be cleared, because a
+risk without that baseline has no next review date.
 
 It will not accept a date in the future. That is not pedantry — Next
 Review Due is counted from it, so a year typed wrong pushes the next
