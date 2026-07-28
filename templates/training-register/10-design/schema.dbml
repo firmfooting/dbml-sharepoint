@@ -29,6 +29,10 @@ Table Course {
   Mandatory      boolean          [default: false, note: 'Required for all staff (role-specific requirements live in the governance matrix)']
   Provider       nvarchar         [note: 'Who delivers it (internal team / external provider)']
   Notes          richtext         [note: 'Content summary, booking instructions']
+
+  indexes {
+    Category
+  }
 }
 
 Table TrainingRecord {
@@ -44,4 +48,10 @@ Table TrainingRecord {
   Status        record_status  [not null, default: 'Current', note: 'Whether this completion is still current. The training coordinator keeps this up to date as expiry dates approach — leave as Current for a new record']
   EvidenceUrl   hyperlink      [note: 'Link to the certificate / attendance evidence in its document store']
   Notes         nvarchar       [note: 'Score, trainer, anything auditors ask about']
+
+  indexes {
+    Course
+    Status
+    ExpiryDate
+  }
 }

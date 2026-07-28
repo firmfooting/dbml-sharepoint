@@ -35,6 +35,12 @@ Table Submission {
   // Governance: unsuccessful bids get a debrief — the lessons learned land in this column.
   ProjectSummary richtext           [note: 'What was bid, in two paragraphs. Once the outcome is known, add what was learned']
   ProjectEndDate date               [note: 'When funded activity ends — obligations usually trail this']
+
+  indexes {
+    Outcome
+    Funder
+    DueDate
+  }
 }
 
 Table Acquittal {
@@ -48,4 +54,10 @@ Table Acquittal {
   SubmittedDate date
   EvidenceUrl   hyperlink        [note: 'The submitted report/acquittal as filed in your records system']
   Notes         nvarchar
+
+  indexes {
+    Submission
+    AcqStatus
+    DueDate
+  }
 }

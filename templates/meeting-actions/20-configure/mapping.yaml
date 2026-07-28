@@ -8,11 +8,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Meeting: [MeetingDate, MeetingType]
-  Decision: [Meeting]
-  ActionItem: [Status, AssignedTo, Meeting, DueDate]
-
 versioning:
   default:
     enable_versioning: true

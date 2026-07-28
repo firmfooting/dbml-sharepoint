@@ -6,9 +6,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Visit: [SignedInAt, VisitorType, VisitLocation]
-
 versioning:
   default:
     enable_versioning: true

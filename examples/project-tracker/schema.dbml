@@ -45,6 +45,10 @@ Table Project {
   // Informational flag only; not an ACL.
   IsConfidential boolean        [default: false, note: 'Tick if this project should not be shared widely. Does not restrict who can open the item by itself.']
   CharterUrl    hyperlink       [note: 'Link to the project charter']
+
+  indexes {
+    Status
+  }
 }
 
 Table Task {
@@ -59,6 +63,11 @@ Table Task {
   AssignedTo  person
   DueDate     date
   Estimate    number         [note: 'Estimated hours']
+
+  indexes {
+    Status
+    Project
+  }
 }
 
 Table TimeLog {
@@ -69,4 +78,9 @@ Table TimeLog {
   Worker    person   [not null]
   WorkDate  date     [not null]
   Hours     number   [not null]
+
+  indexes {
+    Task
+    WorkDate
+  }
 }

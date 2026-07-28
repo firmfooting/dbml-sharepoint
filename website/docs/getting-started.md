@@ -33,8 +33,8 @@ uv run dbml-sharepoint version
 
 | File | Owns |
 |---|---|
-| `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), notes (→ column descriptions) |
-| `mapping.yaml` | List prefix, entity kind/template/site-role, views, widths, indexes, versioning, calculated formulas, formatting, permission levels, groups, per-list ACLs, demo rows |
+| `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), indexes, notes (→ column descriptions) |
+| `mapping.yaml` | List prefix, entity kind/template/site-role, views, widths, versioning, calculated formulas, formatting, permission levels, groups, per-list ACLs, demo rows |
 | `release.yaml` | Release tag + schema version stamped into every artifact for provenance |
 
 A complete worked example lives in the repository at

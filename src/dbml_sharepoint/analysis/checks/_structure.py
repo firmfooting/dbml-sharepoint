@@ -65,6 +65,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"cross_site_reference_columns: {xref.entity}.{xref.column} has no ref:",
             ))
         else:
+            if col.unique:
+                findings.append(Finding(
+                    "error",
+                    f"{xref.entity}.{xref.column}: a cross-site reference cannot "
+                    "be unique. Its logical DBML column is replaced by generated "
+                    "Abbreviation and SiteUrl fields, so the column-level unique "
+                    "constraint would not be deployed.",
+                ))
             # Cross-site columns expand to <name>Abbreviation + <name>SiteUrl
             # at deploy time. The longer of the two ("Abbreviation", 12 chars)
             # plus the column name must fit within SP's 32-char internal-name
@@ -86,30 +94,46 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{xref.entity}.{generated}.",
                     ))
 
-    # Every indexed_columns entry must name a column that will actually be
-    # rendered in SP for that table. Phase 2.3 patches fields by name, so an
-    # unknown name (or a cross-site LOGICAL name, which is expanded to
-    # <col>Abbreviation / <col>SiteUrl and never exists itself) would only
-    # fail late, in the browser.
-    for entity_name in sorted(set(bundle.mapping.indexed_columns) - set(tables_by_name)):
-        findings.append(Finding(
-            "error",
-            f"indexed_columns references unknown entity: {entity_name}",
-        ))
-    # Visit every deployed entity, not only those with an explicit mapping
-    # entry: unique DBML columns create implicit SharePoint indexes too.
+    # DBML table indexes are the sole source of ordinary SharePoint indexes.
+    # The deployer can represent only a one-column index and SharePoint does
+    # not expose DBML's SQL name/type options, so unsupported structure is a
+    # build error rather than silently discarded metadata.
     for entity_name in bundle.mapping.entities:
-        indexed = bundle.mapping.indexed_columns.get(entity_name, [])
         indexed_table = tables_by_name.get(entity_name)
         if indexed_table is None:
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
         rendered = _rendered_columns(indexed_table, xcols)
+        indexed: list[str] = []
+        for position, index in enumerate(indexed_table.indexes):
+            ctx = f"{entity_name}.indexes[{position}]"
+            if len(index.columns) != 1:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: composite index {index.columns!r} is unsupported; "
+                    "SharePoint deployment supports one column per DBML index.",
+                ))
+                continue
+            settings = {
+                "name": index.name,
+                "unique": index.unique or None,
+                "type": index.type,
+                "pk": index.pk or None,
+                "note": index.note or None,
+            }
+            configured = {key: value for key, value in settings.items() if value is not None}
+            if configured:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: DBML index settings {configured!r} are unsupported by "
+                    "SharePoint. Declare a bare column index; use the column's "
+                    "[unique] setting when uniqueness is required.",
+                ))
+            indexed.append(index.columns[0])
         for duplicate in sorted({name for name in indexed if indexed.count(name) > 1}):
             findings.append(Finding(
                 "error",
-                f"indexed_columns[{entity_name}]: duplicate index target "
-                f"{duplicate!r}.",
+                f"{entity_name}.indexes: duplicate index target {duplicate!r}.",
             ))
         # Unique fields carry an implicit SharePoint index and count toward
         # the same per-list ceiling as explicit declarations.
@@ -120,7 +144,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         if len(effective_indexes) > 20:
             findings.append(Finding(
                 "error",
-                f"indexed_columns[{entity_name}]: {len(effective_indexes)} "
+                f"{entity_name}.indexes: {len(effective_indexes)} "
                 f"effective indexes exceed SharePoint's limit of 20 "
                 f"(including unique columns).",
             ))
@@ -128,21 +152,21 @@ def check(vc: ValidationContext) -> list[Finding]:
         for col_name in indexed:
             if col_name not in rendered:
                 hint = (
-                    f" (cross-site column: use '{col_name}Abbreviation' or "
-                    f"'{col_name}SiteUrl')"
+                    " (cross-site logical columns are replaced by generated "
+                    "companion fields and cannot be indexed from DBML)"
                     if col_name in xcols
                     else ""
                 )
                 findings.append(Finding(
                     "error",
-                    f"indexed_columns[{entity_name}]: {col_name!r} is not a "
+                    f"{entity_name}.indexes: {col_name!r} is not a "
                     f"rendered column of {entity_name}{hint}.",
                 ))
                 continue
             if any(col_name == f"{xcol}SiteUrl" for xcol in xcols):
                 findings.append(Finding(
                     "error",
-                    f"indexed_columns[{entity_name}]: {col_name!r} renders "
+                    f"{entity_name}.indexes: {col_name!r} renders "
                     f"as a Hyperlink column, which SharePoint cannot index.",
                 ))
                 continue
@@ -150,7 +174,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             if column is not None and column.type in _UNSUPPORTED_INDEX_TYPES:
                 findings.append(Finding(
                     "error",
-                    f"indexed_columns[{entity_name}]: {col_name!r} is a "
+                    f"{entity_name}.indexes: {col_name!r} is a "
                     f"{_UNSUPPORTED_INDEX_TYPES[column.type]} column, which SharePoint "
                     f"cannot index.",
                 ))
@@ -322,12 +346,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                 break
             for name in ready:
                 del remaining[name]
-    for entity_name, indexed in bundle.mapping.indexed_columns.items():
-        for col_name in indexed:
-            if col_name in calc_columns_by_table.get(entity_name, set()):
+    for table in schema.tables:
+        for index in table.indexes:
+            if len(index.columns) != 1:
+                continue
+            col_name = index.columns[0]
+            if col_name in calc_columns_by_table.get(table.name, set()):
                 findings.append(Finding(
                     "error",
-                    f"indexed_columns[{entity_name}]: {col_name!r} is a "
+                    f"{table.name}.indexes: {col_name!r} is a "
                     f"calculated column — SharePoint cannot index calculated "
                     f"columns.",
                 ))

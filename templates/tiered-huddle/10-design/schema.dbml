@@ -99,6 +99,12 @@ Table Tier1Board {
   ImprovementNote   longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   Recognition       longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
   OtherUpdates      longtext     [note: 'Anything that does not belong to a stream']
+
+  indexes {
+    BoardDate
+    OverallStatus
+    HuddleHeld
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +136,12 @@ Table Tier2Board {
   ImprovementNote      longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   Recognition          longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
   OtherUpdates         longtext     [note: 'Anything that does not belong to a stream']
+
+  indexes {
+    BoardDate
+    OverallStatus
+    HuddleHeld
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +188,12 @@ Table Tier3Board {
   CommunicationsNote    longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   Recognition           longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
   OtherUpdates          longtext     [note: 'Anything that does not belong to a stream']
+
+  indexes {
+    BoardDate
+    OverallStatus
+    HuddleHeld
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -213,4 +231,12 @@ Table Escalation {
   Resolution   nvarchar             [note: 'Required to resolve or close: one line on what was actually done']
   ResolvedDate date                 [note: 'Required to resolve or close']
   Notes        longtext             [note: 'The longer story — discussion, options, who was consulted']
+
+  indexes {
+    Status
+    DueDate
+    RaisedAtTier
+    TargetTier
+    Owner
+  }
 }

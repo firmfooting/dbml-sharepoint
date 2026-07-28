@@ -46,4 +46,11 @@ Table Asset {
   // Calculated column; formula in mapping.yaml.
   WarrantyMonths calculated_number [note: 'Calculated automatically: whole months of warranty from the purchase date. Blank until Purchase Date and Warranty Expiry are set.']
   Notes          richtext        [note: 'Condition, repairs, anything the next holder should know']
+
+  indexes {
+    Status
+    Category
+    Location
+    AssetTag
+  }
 }

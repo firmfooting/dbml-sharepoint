@@ -499,8 +499,12 @@ def build_schema_json(
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
         })
 
-        for col_name in bundle.mapping.indexed_columns.get(table_name, []):
-            indexed_columns_out.append({"list": list_title, "field": col_name})
+        for index in table.indexes:
+            if len(index.columns) != 1:
+                raise ValueError(
+                    f"{table_name}: composite DBML indexes cannot be deployed to SharePoint",
+                )
+            indexed_columns_out.append({"list": list_title, "field": index.columns[0]})
 
         declared_form = bundle.mapping.form_formatting.get(table_name)
         if declared_form is not None:

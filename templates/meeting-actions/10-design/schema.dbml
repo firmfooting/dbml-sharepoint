@@ -28,6 +28,11 @@ Table Meeting {
   Chair       person
   MinutesUrl  hyperlink     [note: 'Link to the minutes document, if you keep one']
   Notes       richtext
+
+  indexes {
+    MeetingDate
+    MeetingType
+  }
 }
 
 Table Decision {
@@ -36,6 +41,10 @@ Table Decision {
   // Lookup to Meeting.
   Meeting  int      [not null, ref: > Meeting.Id, note: 'The meeting where this was decided']
   Detail   richtext [note: 'Context, options considered, who dissented — enough to not relitigate']
+
+  indexes {
+    Meeting
+  }
 }
 
 Table ActionItem {
@@ -48,4 +57,11 @@ Table ActionItem {
   Status        action_status [not null, default: 'Open']
   CompletedDate date
   Notes         nvarchar
+
+  indexes {
+    Status
+    AssignedTo
+    Meeting
+    DueDate
+  }
 }

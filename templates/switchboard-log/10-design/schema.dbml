@@ -48,6 +48,12 @@ Table CodeEvent {
   AnnouncedBy     person    [note: 'The operator who made the announcement (defaults to you)']
   InitiatedBy     nvarchar  [note: 'Who called it in: role/extension/name as known at the time']
   EventNotes      richtext  [note: 'What the switchboard did and observed: pages sent, services called, instructions received. Operational facts only — clinical detail belongs in clinical systems']
+
+  indexes {
+    CodeType
+    AnnouncedAt
+    IsDrill
+  }
 }
 
 Table MessageLog {
@@ -65,6 +71,12 @@ Table MessageLog {
   // calculated_number — formula in mapping.yaml (TakenAt to RelayedAt, in minutes).
   MinutesToRelay calculated_number [note: 'Calculated automatically from the taken and relayed times: how long the message waited, in minutes. Blank until both times are entered']
   TakenBy        person          [note: 'The operator (defaults to you)']
+
+  indexes {
+    Status
+    Urgency
+    TakenAt
+  }
 }
 
 Table Key {
@@ -74,6 +86,11 @@ Table Key {
   Covers       nvarchar [note: 'What it opens']
   Restrictions nvarchar [note: 'Who may take it, per your procedure: "Pharmacist or director on-call only"']
   Active       boolean  [default: true, note: 'Uncheck for retired/lost keys — history stays']
+
+  indexes {
+    KeyRef
+    Active
+  }
 }
 
 Table KeyMovement {
@@ -87,4 +104,10 @@ Table KeyMovement {
   ReturnedAt datetime
   IssuedBy   person     [note: 'The operator (defaults to you)']
   Notes      nvarchar
+
+  indexes {
+    Key
+    Status
+    IssuedAt
+  }
 }

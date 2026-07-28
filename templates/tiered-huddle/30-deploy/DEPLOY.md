@@ -15,7 +15,8 @@ Shared procedure: [`templates/README.md`](../../README.md) with
       mechanism, and there is no history to preserve on a site that has
       never held this list.
 - [ ] Running two tiers rather than three? Delete the unused board list from
-      `schema.dbml`, from `mapping.yaml` (`entities`, `indexed_columns`,
+      `schema.dbml` (including its `indexes` block), from `mapping.yaml`
+      (`entities`,
       `versioning.overrides`, `display_names.overrides`, `field_sets`,
       `views`, `column_formatting`, `form_formatting`, `form_visibility`,
       `list_validation`, `demo_items`) **and** delete its form body from

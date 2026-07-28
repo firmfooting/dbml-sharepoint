@@ -7,9 +7,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Asset: [Status, Category, Location, AssetTag]
-
 versioning:
   default:
     enable_versioning: true

@@ -8,11 +8,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Organisation: [OrgType]
-  Contact: [Organisation, IsActive]
-  Interaction: [Contact, InteractionDate, InteractionType]
-
 versioning:
   default:
     enable_versioning: true

@@ -7,10 +7,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Incident: [Status, Severity, Category, ReportedDate]
-  CorrectiveAction: [Status, Incident, DueDate]
-
 versioning:
   default:
     enable_versioning: true

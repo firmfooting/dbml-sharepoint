@@ -7,10 +7,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Vehicle: [Rego, Status]
-  Trip: [Vehicle, Driver, DepartedAt]
-
 versioning:
   default:
     enable_versioning: true

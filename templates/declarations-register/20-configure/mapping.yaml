@@ -7,10 +7,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  Interest: [Status, DeclaredBy, ReviewDate]
-  GiftBenefit: [Decision, OfferedTo, OfferedDate]
-
 versioning:
   default:
     enable_versioning: true

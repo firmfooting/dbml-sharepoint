@@ -1,8 +1,8 @@
 # ============================================================================
 # dbml-sharepoint example: Project Tracker — physical mapping
 # ============================================================================
-# Everything SharePoint-physical that does not belong in the DBML: the list
-# prefix, templates, indexes, versioning, calculated-column formulas, and the
+# Deployment and presentation configuration that does not belong in the DBML:
+# the list prefix, templates, versioning, calculated-column formulas, and the
 # security model (permission level, groups, per-list ACLs with exact
 # allowlist reconciliation).
 # ============================================================================
@@ -15,12 +15,6 @@ entities:
   TimeLog: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
-
-# Indexed for the common filters: open tasks per project, time per task.
-indexed_columns:
-  Project: [Status]
-  Task: [Status, Project]
-  TimeLog: [Task, WorkDate]
 
 versioning:
   default:

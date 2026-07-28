@@ -44,6 +44,21 @@ class Column:
 
 A single column on a DBML Table.
 
+### `TableIndex`
+
+```python
+@dataclass
+class TableIndex:
+    columns: tuple[str, ...]
+    name: str | None = None
+    unique: bool = False
+    type: str | None = None
+    pk: bool = False
+    note: str = ''
+```
+
+A table-level DBML index declaration and its optional SQL settings.
+
 ### `Table`
 
 ```python
@@ -51,6 +66,7 @@ A single column on a DBML Table.
 class Table:
     name: str
     columns: list[dbml_sharepoint.model.parser.Column] = list()
+    indexes: list[dbml_sharepoint.model.parser.TableIndex] = list()
     note: str = ''
 ```
 

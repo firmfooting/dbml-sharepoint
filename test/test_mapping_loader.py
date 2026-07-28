@@ -31,6 +31,19 @@ def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
     assert "DocumentLibrary" in str(err.value)
 
 
+def test_mapping_indexes_are_a_removed_section(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "indexed_columns:\n"
+        "  Risk: [Status]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"indexed_columns.*DBML.*indexes"):
+        load_mapping(tmp_path / "m.yaml")
+
+
 def test_column_formatting_style_specs_expand_to_formatters(tmp_path: Path) -> None:
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
