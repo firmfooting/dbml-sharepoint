@@ -118,12 +118,20 @@ tolerance, or answer for a closure. It cannot be enforced conditionally:
 cannot read those at all — the same limit that rules out any rule about
 `RiskOwner`.
 
-The only enforceable alternative is making `RiskSponsor` mandatory on
-every row, including a Provisional risk somebody is still drafting. That
-is a deliberate trade rather than an oversight: add `[not null]` to the
-column in `10-design/schema.dbml` if your register would rather refuse an
-unsponsored draft than allow an unsponsored decision. Until then, the
-sponsor is checked the same way the closure statement is — by a person.
+**This is an adopter choice, and the template ships both halves of it.**
+The alternative is making `RiskSponsor` mandatory on every row, including
+a Provisional draft — enforced by SharePoint, no governance check needed,
+at the cost of friction on capture. Both options, and what each costs, are
+written at the column in `10-design/schema.dbml`; requiring one is adding
+`[not null]` there, and `30-deploy/DEPLOY.md` carries it as a
+before-you-build decision.
+
+Decide before first deploy. Flipping it later re-validates every existing
+row, so a register that has run without sponsors will refuse to save any
+of them until each is filled in.
+
+As shipped, the sponsor is checked the same way the closure statement is —
+by a person, at the point the status moves.
 
 *Residual is at or below target at closure.* `LevelsAboveTarget` is a
 calculated column, and validation formulas cannot read those either.

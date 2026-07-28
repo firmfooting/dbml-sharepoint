@@ -11,6 +11,15 @@ against the checklist below. Template-specific notes follow.
 
 - [ ] `RR_` prefix free on the target site.
 - [ ] `Category` enum matches your risk taxonomy.
+- [ ] **Decide whether a Risk Sponsor is mandatory.** `RiskSponsor` ships
+      optional. The two options and their costs are set out at the column
+      in `10-design/schema.dbml`; requiring one is adding `[not null]`
+      there. Decide **before first deploy** — flipping it later re-validates
+      every existing row, so a register that has been running without
+      sponsors will refuse to save any of them until each is filled in.
+      There is no middle setting: SharePoint validation formulas cannot
+      read person columns, so "required only once it leaves Provisional"
+      is not expressible.
 - [ ] If your organisation has its OWN risk matrix, encode it in
       `mapping.yaml` **now**, before first deploy — the comment above
       `calculated_formulas` shows the cell layout; keep the DBML

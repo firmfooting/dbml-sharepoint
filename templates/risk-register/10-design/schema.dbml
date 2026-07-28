@@ -97,6 +97,25 @@ Table Risk {
   LevelsAboveTarget calculated_number [note: 'Calculated automatically: how many rating levels the residual risk sits above the target (negative means below). Two or more levels above means at-least-quarterly review. Blank until both ratings are set']
   MatrixVersion matrix_version [not null, default: '1.0', note: 'Which version of the risk matrix rated this row. Filled automatically - change it only if you re-assess the risk under a newer matrix version']
   RiskOwner   person           [not null, note: 'Manages the risk day to day']
+  // ADOPTER CHOICE — sponsor required, or not. Both are supported; pick one
+  // before first deploy, because changing it later re-validates every row.
+  //
+  //   As shipped (optional): a risk can be raised without naming a sponsor,
+  //   and one is added when the register knows who it is. The cost is that
+  //   a risk can reach Open, Tolerate or Closed with nobody accountable for
+  //   the decision — SharePoint cannot refuse that, because validation
+  //   formulas cannot read person columns at all, so there is no rule that
+  //   says "sponsor required once it leaves Provisional". It is a
+  //   governance check, listed as one in 50-govern/GOVERNANCE.md.
+  //
+  //   Add [not null]: every risk names a sponsor from the moment it is
+  //   raised, including a Provisional draft somebody is still writing.
+  //   Enforced by SharePoint, no governance check needed. The cost is
+  //   friction on capture, and a raiser who does not yet know the sponsor
+  //   has to pick someone to get the risk recorded at all.
+  //
+  //   To require one, change the line below to:
+  //     RiskSponsor person [not null, note: '...']
   RiskSponsor person           [note: 'Accountable for the risk; approves opening, tolerance and closure']
   Status      risk_status      [not null, default: 'Provisional', note: 'New risks start as Provisional; the Risk Sponsor moves them to Open. Close only when the closure criteria are met, recording the reasons in Closure Statement']
   RiskResponse risk_response   [note: 'The current response. Tolerate is always for a set period and needs Risk Sponsor approval']
