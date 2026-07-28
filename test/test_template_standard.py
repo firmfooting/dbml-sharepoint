@@ -42,15 +42,18 @@ from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 
-# The twenty-seven templates that have not yet been through a theme branch.
-# Removed by the branch that uplifts them; must reach empty.
+# The templates that have not yet been through a theme branch. Removed by
+# the branch that uplifts them; must reach empty. Deliberately carries no
+# count: four theme branches shrink this set in parallel, and a number in
+# the comment would be wrong on three of them and a merge conflict on all
+# four.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "audit-actions", "change-register", "complaints-feedback",
+    "asset-register", "audit-actions", "complaints-feedback",
     "compliance-obligations", "contract-register", "credentialing-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
-    "grants-register", "improvement-register", "incident-management",
-    "measures-register", "meeting-actions", "onboarding-tracker",
-    "policy-library", "process-register", "project-pipeline", "routine-checks",
+    "grants-register", "incident-management",
+    "meeting-actions", "onboarding-tracker",
+    "policy-library", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
     "training-register", "vehicle-log", "visitor-log", "volunteer-register",
 })
@@ -88,6 +91,46 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "The issue": "Identify",
         "Where it goes": "Act",
         "Outcome": "Govern",
+    },
+    # === Process digitisation & improvement ==================================
+    # Five single-list templates that deliberately read as siblings: name the
+    # thing, assess it against the definitions, act, govern, and a System
+    # section holding the calculated score where one exists. measures-register
+    # has no calculated column and no auto-stamp, so it collapses System away
+    # rather than shipping an empty heading.
+    ("measures-register", "Measure"): {
+        "Name the measure": "Identify",
+        "Define it": "Assess",
+        "Report it": "Act",
+        "Govern it": "Govern",
+    },
+    # Decision and implementation are one beat here, not two: the register's
+    # governance IS its decision trail, and splitting them left the New form
+    # showing a heading with one hidden date under it.
+    ("change-register", "ChangeRequest"): {
+        "Describe the change": "Identify",
+        "Triage": "Assess",
+        "Decision and implementation": "Act",
+        "System": "System",
+    },
+    ("project-pipeline", "Proposal"): {
+        "The idea": "Identify",
+        "Scoping": "Assess",
+        "Decision and delivery": "Act",
+        "System": "System",
+    },
+    ("improvement-register", "Improvement"): {
+        "The idea": "Identify",
+        "Plan the test": "Assess",
+        "Test and outcome": "Act",
+        "System": "System",
+    },
+    ("process-register", "BusinessProcess"): {
+        "Name the process": "Identify",
+        "Score it": "Assess",
+        "Digitise it": "Act",
+        "Review": "Govern",
+        "System": "System",
     },
 }
 

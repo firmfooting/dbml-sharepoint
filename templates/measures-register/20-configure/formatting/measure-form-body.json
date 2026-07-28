@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "Name the measure",
+      "fields": ["Title", "MeasureArea", "Owner"]
+    },
+    {
+      "displayname": "Define it",
+      "fields": ["Definition", "DataSource", "Direction", "Target"]
+    },
+    {
+      "displayname": "Report it",
+      "fields": ["Frequency", "ReportedTo"]
+    },
+    {
+      "displayname": "Govern it",
+      "fields": ["Status", "ReviewDate", "Notes"]
+    }
+  ]
+}

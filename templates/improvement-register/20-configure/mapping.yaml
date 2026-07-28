@@ -58,3 +58,348 @@ list_permissions:
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
+
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes and formulas all key on them); the deployer renames the display
+# Title after create. Auto PascalCase splitting handles every column here
+# except one: "DaysIdeaToOutcome" splits to "Days Idea To Outcome", and a
+# capitalised "To" mid-title reads as a typo on every view header.
+display_names:
+  mode: auto
+  overrides:
+    Improvement:
+      DaysIdeaToOutcome: "Days Idea to Outcome"
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# website/docs/reference/style-guide.md). This template shipped with none
+# at all. Tokens map by the ROLE a member plays in its lifecycle: Idea is
+# intake, Planned and Testing are both in motion, Adopted is the healthy
+# terminal state, and Abandoned is `muted` rather than `blocked` — the
+# staff guide asks people to celebrate an abandoned test, and painting it
+# with the alarm colour would argue the other way in every view.
+#
+# DaysIdeaToOutcome takes the theme's shared treatment — data-bar with an
+# explicit max — but NO color_by, and that is the deliberate part. The
+# fleet rule is that a score bar takes its fill from the rating column
+# beside it; nothing beside this one is a rating. Stage is a lifecycle, not
+# a band, and colouring the bar from it would repeat the Stage chip sitting
+# two columns away while saying nothing about the number. A plain bar that
+# means "how long" is better than a coloured one that means "what the chip
+# already said".
+#
+# max is 180 days. Test discipline in 50-govern/GOVERNANCE.md is one team,
+# one fortnight, small before big; two quarters from idea to outcome is a
+# cycle that stopped being a test somewhere, and a bar that pins at full
+# width is the register saying so.
+column_formatting:
+  Improvement:
+    Stage:
+      style: severity
+      map:
+        Idea: neutral
+        Planned: low
+        Testing: low
+        Adopted: good
+        Abandoned: muted
+    DaysIdeaToOutcome: { style: data-bar, max: 180, calculated: true }
+
+# The identifying spine every lens repeats. Five views share it, above
+# §1.9's three-repetition threshold.
+field_sets:
+  Improvement:
+    identity: [Title, Source, Owner, Stage]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). "In flight" is the default — the improvements
+# actually being run, grouped by the person running them. The four lenses
+# are the register's own cadence: the fortnightly triage, the quarterly
+# adopted-with-numbers slide, the learning shelf, and the are-the-loops-
+# real check.
+#
+# Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
+# rewrites them to display titles — ColumnWidth binds by display name, and
+# internal names silently reset).
+views:
+  Improvement:
+    - title: "In flight"
+      default: true
+      fields: ["@identity", RaisedDate, BenefitType, MeasureBefore]
+      where:
+        - { field: Stage, op: in, value: ["Planned", "Testing"] }
+      group_by: { field: Owner, collapsed: true }
+      sort:
+        - { field: RaisedDate, direction: asc }
+      widths:
+        Title: 280
+        Source: 220
+        Owner: 160
+        Stage: 110
+        RaisedDate: 160
+        BenefitType: 220
+        MeasureBefore: 180
+    # The fortnightly triage list, oldest first. Governance is explicit that
+    # every Idea leaves triage with one of four outcomes and that silence is
+    # not one of them, so this view is the whole meeting.
+    - title: "Triage"
+      fields: ["@identity", SourceRef, RaisedDate, MeasureBefore]
+      where:
+        - { field: Stage, op: eq, value: "Idea" }
+      sort:
+        - { field: RaisedDate, direction: asc }
+      widths:
+        Title: 300
+        Source: 220
+        Owner: 160
+        Stage: 110
+        SourceRef: 180
+        RaisedDate: 160
+        MeasureBefore: 180
+    # §2.5: CAML has no calendar-quarter predicate, so the published
+    # "Adopted this quarter" ships as a ROLLING NINETY DAYS. The two differ
+    # on the first day of a quarter, and someone reconciling a committee
+    # pack will notice — say so before they do.
+    - title: "Adopted this quarter"
+      fields: ["@identity", BenefitType, MeasureBefore, MeasureAfter,
+               AdoptedDate, DaysIdeaToOutcome]
+      where:
+        - { field: Stage, op: eq, value: "Adopted" }
+        - { field: AdoptedDate, op: geq, value: today-90 }
+      sort:
+        - { field: AdoptedDate, direction: desc }
+      widths:
+        Title: 260
+        Source: 220
+        Owner: 160
+        Stage: 110
+        BenefitType: 220
+        MeasureBefore: 180
+        MeasureAfter: 180
+        AdoptedDate: 170
+        DaysIdeaToOutcome: 150
+    # Kept, and kept under this name. A view called "Abandoned" would be
+    # read as a failure list; the staff guide asks people to celebrate what
+    # is on this shelf, and the register should not undercut that in its own
+    # navigation. Both measures are on it — an abandoned test where the
+    # number did not move is the lesson, and the lesson is the two numbers
+    # side by side.
+    - title: "The learning shelf"
+      fields: ["@identity", RaisedDate, MeasureBefore, MeasureAfter,
+               AdoptedDate, DaysIdeaToOutcome]
+      where:
+        - { field: Stage, op: eq, value: "Abandoned" }
+      sort:
+        - { field: AdoptedDate, direction: desc }
+      widths:
+        Title: 260
+        Source: 220
+        Owner: 160
+        Stage: 110
+        RaisedDate: 160
+        MeasureBefore: 180
+        MeasureAfter: 180
+        AdoptedDate: 170
+        DaysIdeaToOutcome: 150
+    # Unfiltered on purpose: the quarterly question is whether complaints,
+    # incidents and audits are actually feeding improvement or whether the
+    # loops are decorative, and that is answered by the size of each group
+    # across the whole register rather than by the live ones alone.
+    - title: "By source"
+      fields: ["@identity", SourceRef, RaisedDate]
+      group_by: { field: Source, collapsed: true }
+      sort:
+        - { field: RaisedDate, direction: desc }
+      widths:
+        Title: 280
+        Source: 220
+        Owner: 160
+        Stage: 110
+        SourceRef: 180
+        RaisedDate: 160
+
+# Form layouts: a strapline header and a sectioned body. SharePoint renders
+# per-field description hints inside sectioned forms on the NEW form only —
+# the edit form suppresses column descriptions (platform limitation).
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+#
+# Four beats, not five: running the test and recording its outcome are one
+# act. Splitting them left a "Run the test" section whose every field is
+# off the New form, which renders as a heading with nothing under it.
+#
+# System is last and holds only DaysIdeaToOutcome, so on the New form it is
+# a bare heading — calculated columns never render on entry forms. Cosmetic
+# and expected, the same shape risk-register's System section has.
+form_formatting:
+  Improvement:
+    header: formatting/improvement-form-header.json
+    body: formatting/improvement-form-body.json
+
+# The staff guide promises raising an idea takes five minutes, and this is
+# what keeps that true: the New form asks for the problem, the change to
+# try and the baseline, and nothing that only exists after the test has
+# run. MeasureBefore stays on it deliberately — it is required, it is the
+# one field the whole register turns on, and hiding it would be hiding the
+# point.
+#
+# Deliberately NOT declared: any rule conditioned on DaysIdeaToOutcome.
+# Conditional show/hide cannot read a calculated column — the formula stays
+# syntactically valid, so it saves, the readback compares equal and the
+# phase passes, but the form never reacts. The build refuses it.
+form_visibility:
+  Improvement:
+    columns:
+      # "Primary benefit claimed — set when Planned", per the schema. An
+      # idea does not have to claim a benefit type to be worth raising.
+      BenefitType: { new: false }
+      TestNotes: { new: false }
+      # The after-measure appears once there is something to measure after.
+      MeasureAfter:
+        new: false
+        when:
+          - { field: Stage, op: in, value: ["Testing", "Adopted", "Abandoned"] }
+      # The outcome date — adoption or the abandon decision, per the
+      # column's own note. It appears exactly when the save rule below
+      # starts requiring it, so the refusal never names a field the author
+      # cannot see.
+      AdoptedDate:
+        new: false
+        when:
+          - { field: Stage, op: in, value: ["Adopted", "Abandoned"] }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has a
+# single ValidationFormula and every cross-column rule shares one message.
+# Both dates below are the inputs to DaysIdeaToOutcome, whose median is a
+# quarterly report line: the improvement system measuring itself only works
+# if the two dates it is measured from are real.
+column_validation:
+  Improvement:
+    columns:
+      RaisedDate:
+        when:
+          - { field: RaisedDate, op: leq, value: today }
+        message: "An idea cannot have been raised in the future. Use the date it was actually put forward, or today's date."
+      AdoptedDate:
+        when:
+          any_of:
+            - { field: AdoptedDate, op: is_null }
+            - { field: AdoptedDate, op: leq, value: today }
+        message: "An outcome cannot have been decided in the future. Use the date the change actually became the standard way, or the date it was abandoned."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# This is as much of data-quality rule 1 in 50-govern/GOVERNANCE.md as
+# SharePoint can hold; the governance document now says which part and why.
+list_validation:
+  Improvement:
+    # TWO rules, chained. A list has ONE ValidationFormula, so every
+    # cross-column rule shares this slot — the top-level list is an AND, so
+    # they compose, and each is written as an implication: `if A then B` is
+    # `any_of[not A, B]`.
+    when:
+      # Every finished cycle has an outcome date, adopted or abandoned
+      # alike. Without it DaysIdeaToOutcome is blank, and the median that
+      # is meant to show the improvement system improving is computed over
+      # whichever rows happened to be filled in.
+      - any_of:
+          - { field: Stage, op: not_in, value: ["Adopted", "Abandoned"] }
+          - { field: AdoptedDate, op: is_not_null }
+      # "Adopted" is a system state, not a mood. The governance criteria
+      # name four things and only this one is a column a formula can read —
+      # so this one is enforced and the other three are named as checks.
+      - any_of:
+          - { field: Stage, op: neq, value: "Adopted" }
+          - { field: MeasureAfter, op: is_not_null }
+    message: "This improvement cannot be saved yet. An Adopted or Abandoned improvement needs an Adopted Date, and an Adopted one needs its Measure After — 'improved' has to be a number."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# rolling adoption window lands on whatever day the demo runs; "@me" is the
+# pasting operator. Coverage: every declared view returns rows, every stage
+# colour renders, five of the seven sources are represented so "By source"
+# has something to group, and one adoption sits deliberately OUTSIDE the
+# ninety-day window so the rolling filter is visibly a filter. That row's
+# 240-day cycle also pins the bar at full width, which is what the 180-day
+# max is there to say.
+demo_items:
+  Improvement:
+    - key: improvement-referral
+      values:
+        Title: "[DEMO] Pre-fill the referral form from the booking record"
+        Source: "Staff idea"
+        Owner: "@me"
+        RaisedDate: "today-12"
+        Problem: "Demo row. Reception retypes name, date of birth and referrer into the referral form for every booking. Timed at about 34 minutes a day across the desk, and the retyping is where the wrong-DOB errors come from."
+        ChangeIdea: "Demo row. Pre-fill the four repeated fields from the booking record. Prediction: retyping time drops by more than half and DOB corrections stop."
+        Stage: "Testing"
+        BenefitType: "Time saved"
+        MeasureBefore: "34 min/day (timed 5 mornings)"
+        TestNotes: "Demo row. Week 1: running on the front desk only. Two fields pre-fill cleanly; the referrer field still needs a manual pick because the booking record holds a free-text name."
+    - key: improvement-signage
+      values:
+        Title: "[DEMO] Reposition the ward signage at the lift lobby"
+        Source: "Complaint / feedback"
+        SourceRef: "[DEMO] CF-2026-0041"
+        Owner: "@me"
+        RaisedDate: "today-5"
+        Problem: "Demo row. Visitors leaving the lift turn the wrong way; reception counted twelve misdirected visitors in a week and three of them arrived late to an appointment."
+        Stage: "Idea"
+        MeasureBefore: "12 misdirected visitors/week (reception tally)"
+    - key: improvement-handover
+      values:
+        Title: "[DEMO] Structured handover sheet for the afternoon shift"
+        Source: "Incident"
+        SourceRef: "[DEMO] IN-2026-0113"
+        Owner: "@me"
+        RaisedDate: "today-20"
+        Problem: "Demo row. Handover is verbal and unstructured. Three items were missed in a fortnight, one of which reached an incident report."
+        ChangeIdea: "Demo row. A one-page structured sheet, four headings, filled in during the last ten minutes of the morning shift. Prediction: missed items drop to zero over a fortnight."
+        Stage: "Planned"
+        BenefitType: "Quality / safety"
+        MeasureBefore: "3 missed handover items in 2 weeks"
+    - key: improvement-invoices
+      values:
+        Title: "[DEMO] Stop printing invoices for the approval signature"
+        Source: "Data / measures"
+        Owner: "@me"
+        RaisedDate: "today-70"
+        Problem: "Demo row. Every invoice was printed, signed and rescanned. The measures register showed approval taking 22 minutes of handling per invoice."
+        ChangeIdea: "Demo row. Approve in the finance system and keep the audit trail there. Prediction: handling time drops below 10 minutes."
+        Stage: "Adopted"
+        BenefitType: "Time saved"
+        MeasureBefore: "22 min average handling"
+        MeasureAfter: "8 min average handling"
+        TestNotes: "Demo row. Fortnight test with two budget holders, then extended. The auditors were shown the trail before rollout, which is why adoption was uncontested."
+        AdoptedDate: "today-25"
+    - key: improvement-checklist
+      values:
+        Title: "[DEMO] Second-person check on the stores order"
+        Source: "Audit / review"
+        SourceRef: "[DEMO] AU-2025-0009"
+        Owner: "@me"
+        RaisedDate: "today-200"
+        Problem: "Demo row. Six ordering errors a month, mostly wrong pack sizes."
+        ChangeIdea: "Demo row. A second person checks the order before it is sent. Prediction: errors halve."
+        Stage: "Abandoned"
+        BenefitType: "Compliance"
+        MeasureBefore: "6 errors/month"
+        MeasureAfter: "6 errors/month"
+        TestNotes: "Demo row. Six weeks, no change. The errors are in the catalogue's pack-size data, not in the person ordering, so a second pair of eyes reads the same wrong number. Abandoned in favour of fixing the catalogue — a paid-for lesson and a better problem statement."
+        AdoptedDate: "today-140"
+    # Adopted 160 days ago: OUTSIDE the rolling ninety-day window, so it is
+    # absent from "Adopted this quarter" and present in "By source". Its
+    # 240-day cycle pins the bar at full width.
+    - key: improvement-stock
+      values:
+        Title: "[DEMO] Reorder point on the six items that always run out"
+        Source: "Process inventory"
+        Owner: "@me"
+        RaisedDate: "today-400"
+        Problem: "Demo row. Four stockouts a quarter, always the same six items, always noticed by the person who needed one."
+        ChangeIdea: "Demo row. A reorder point per item and a weekly check. Prediction: stockouts on those six items stop."
+        Stage: "Adopted"
+        BenefitType: "Cost"
+        MeasureBefore: "4 stockouts/quarter"
+        MeasureAfter: "0 stockouts in 8 weeks"
+        TestNotes: "Demo row. Slow to start — it sat as an Idea for four months before anyone owned it, which is the cycle time this register exists to make visible."
+        AdoptedDate: "today-160"

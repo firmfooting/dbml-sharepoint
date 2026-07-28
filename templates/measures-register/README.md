@@ -16,6 +16,17 @@ register asks for baselines; this is where those measures live permanently.
 And when someone proposes a new report, the first question becomes "is the
 measure registered?" — which is how measure sprawl dies.
 
+**Five declared views**, deployed with the paste — nothing to build by
+hand: *The catalogue* (the default, grouped by area), *By forum*,
+*Definition reviews due*, *In development*, *Retired*. The review date
+turns red once it is past due, and stops shouting once the measure is
+retired.
+
+**Two save rules.** An Active measure cannot be saved without a review
+date, and a review date cannot be set more than twelve months out — the
+"at least annual" cadence in `50-govern/GOVERNANCE.md` was a rule nothing
+enforced until now.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
@@ -27,4 +38,12 @@ measure registered?" — which is how measure sprawl dies.
 | 5 | `50-govern/` | Definition change control, the annual measure cull |
 
 **Customisation points:** none structural — the discipline is the product.
-The definition-writing guide in `40-adopt` is the part to socialise.
+The definition-writing guide in `40-adopt` is the part to socialise. The
+review cadence in `column_validation` is the one number worth agreeing
+before first deploy.
+
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+that pastes six `[DEMO] `-titled rows — four Active measures across four
+areas and four forums, one Under development with no review date, and one
+Retired — so every view and every status colour renders on a first look.
+See `30-deploy/DEPLOY.md`.
