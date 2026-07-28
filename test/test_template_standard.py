@@ -45,7 +45,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # The twenty-seven templates that have not yet been through a theme branch.
 # Removed by the branch that uplifts them; must reach empty.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "audit-actions", "change-register",
+    "audit-actions", "change-register",
     "compliance-obligations", "contract-register", "credentialing-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
@@ -109,6 +109,17 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Triage": "Assess",
         "Response": "Act",
         "Ownership": "Govern",
+        "System": "System",
+    },
+    # A reference list has one idea, so it gets one section. Collapsing to
+    # a single beat is what §1.2 permits at the small end.
+    ("asset-register", "Location"): {
+        "The place": "Identify",
+    },
+    ("asset-register", "Asset"): {
+        "What it is": "Identify",
+        "Where it is": "Act",
+        "Purchase and warranty": "Govern",
         "System": "System",
     },
 }

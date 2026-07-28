@@ -60,10 +60,303 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Auto PascalCase splitting handles every column on both lists correctly
+# ("AssetTag" -> "Asset Tag", "WarrantyExpiry" -> "Warranty Expiry"), so
+# there are no overrides. Internal names stay authoritative for the
+# lookup, the indexes, the formula and the reporting bundle.
+display_names:
+  mode: auto
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md).
+#
+# WarrantyExpiry gets the fleet's standard deadline treatment, guarded on
+# Status: a warranty that keeps shouting after the item is disposed of
+# teaches people to ignore the colour, and this register is full of items
+# whose warranties expired long before they were retired.
+#
+# Deliberately NOT formatted:
+#   - Category. Eight equipment classes with no lifecycle between them; a
+#     token map over them would be decoration pretending to be meaning.
+#     Colour in this fleet marks a ROLE in a lifecycle, and a monitor does
+#     not outrank a chair.
+#   - PurchaseCost. A bar needs a defensible maximum, and there is none
+#     that is right for both a monitor and a vehicle.
 column_formatting:
   Asset:
-    Status: { style: severity, map: { "In service": low, Assigned: low, "In storage": neutral, "Under repair": warning, Retired: muted, Disposed: muted } }
+    Status:
+      style: severity
+      map:
+        "In service": low
+        "Assigned": low
+        "In storage": neutral
+        "Under repair": warning
+        "Retired": muted
+        "Disposed": muted
+    WarrantyExpiry:
+      style: overdue-date
+      guard: { field: Status, not: ["Retired", "Disposed"] }
+    WarrantyMonths: { style: data-bar, max: 60, calculated: true }
+
+# The identifying spine every Asset view opens with — four of the five use
+# it, past §1.9's three-repetition threshold.
+field_sets:
+  Asset:
+    identity: [Title, AssetTag, Category, Location, AssignedTo, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view, keyed on
+# INTERNAL names — the build rewrites them to display titles, and
+# ColumnWidth binds by display name.
+views:
+  Location:
+    # A reference list has one job and one view. Sorted by name, because
+    # the only question anyone asks of it is "is my building already in
+    # here?" and the answer is alphabetical.
+    - title: "Locations by name"
+      default: true
+      fields: [Title, Notes]
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Notes: 320
+  Asset:
+    # The default is the sheet you carry round the building: everything
+    # that currently exists as equipment, in the order you will walk past
+    # it. SharePoint sorts a lookup by its displayed value, so Location
+    # first then tag is the physical order.
+    - title: "Stocktake"
+      default: true
+      fields: ["@identity", PurchaseDate, WarrantyExpiry]
+      where:
+        - { field: Status, op: in, value: ["In service", "Assigned"] }
+      sort:
+        - { field: Location, direction: asc }
+        - { field: AssetTag, direction: asc }
+      widths:
+        Title: 260
+        AssetTag: 150
+        Category: 130
+        Location: 180
+        AssignedTo: 160
+        Status: 130
+        PurchaseDate: 160
+        WarrantyExpiry: 180
+    - title: "By holder"
+      fields: ["@identity", PurchaseDate, WarrantyExpiry]
+      where:
+        - { field: Status, op: eq, value: "Assigned" }
+      group_by: { field: AssignedTo, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        AssetTag: 150
+        Category: 130
+        Location: 180
+        AssignedTo: 160
+        Status: 130
+        PurchaseDate: 160
+        WarrantyExpiry: 180
+    - title: "By location"
+      fields: ["@identity", WarrantyExpiry]
+      where:
+        - { field: Status, op: not_in, value: ["Retired", "Disposed"] }
+      group_by: { field: Location, collapsed: true }
+      sort:
+        - { field: AssetTag, direction: asc }
+      widths:
+        Title: 280
+        AssetTag: 150
+        Category: 130
+        Location: 180
+        AssignedTo: 160
+        Status: 130
+        WarrantyExpiry: 180
+    - title: "Warranty expiring"
+      fields: ["@identity", PurchaseDate, WarrantyExpiry, WarrantyMonths]
+      where:
+        - { field: Status, op: not_in, value: ["Retired", "Disposed"] }
+        - { field: WarrantyExpiry, op: leq, value: today+60 }
+      sort:
+        - { field: WarrantyExpiry, direction: asc }
+      widths:
+        Title: 240
+        AssetTag: 150
+        Category: 130
+        Location: 180
+        AssignedTo: 160
+        Status: 130
+        PurchaseDate: 160
+        WarrantyExpiry: 180
+        WarrantyMonths: 150
+    # The history lens. Retired and disposed items stay in the register —
+    # deleting them is how a register loses the answer to "what happened
+    # to that laptop?" — and this is where they live so the working views
+    # do not carry them.
+    - title: "Retired and disposed"
+      fields: [Title, AssetTag, Category, Location, Status, PurchaseDate,
+               PurchaseCost, Notes]
+      where:
+        - { field: Status, op: in, value: ["Retired", "Disposed"] }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        AssetTag: 150
+        Category: 130
+        Location: 180
+        Status: 130
+        PurchaseDate: 160
+        PurchaseCost: 150
+        Notes: 200
+
+# A disposed asset is nobody's. Hiding the holder field once the item has
+# left service is a small thing that stops the register accumulating
+# assignments to people who left years ago.
+#
+# reconcile: exact makes this file authoritative for the whole list —
+# every other column's conditional formula is cleared on each deploy.
+form_visibility:
+  Asset:
+    reconcile: exact
+    columns:
+      AssignedTo:
+        when:
+          - { field: Status, op: not_in, value: ["Retired", "Disposed"] }
+
+# Form layouts: a strapline header and sections on both lists. The
+# Location form has one section because a reference list has one idea;
+# it still carries a header, because a form with a bare Title box and no
+# explanation is how a location catalogue fills up with three spellings of
+# the same room. Section field lists are authored with INTERNAL names; the
+# build rewrites them to display titles.
+form_formatting:
+  Location:
+    header: formatting/location-form-header.json
+    body: formatting/location-form-body.json
+  Asset:
+    header: formatting/asset-form-header.json
+    body: formatting/asset-form-body.json
+
+# Per-column save rules, each with its own message.
+column_validation:
+  Asset:
+    columns:
+      PurchaseDate:
+        when:
+          - { field: PurchaseDate, op: leq, value: today }
+        message: "An asset cannot have been purchased in the future. Use the invoice date."
+      PurchaseCost:
+        when:
+          - { field: PurchaseCost, op: geq, value: 0 }
+        message: "Purchase cost cannot be negative. Leave it blank if you do not know it."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column. WarrantyMonths is computed from both dates, so a warranty expiry
+# recorded without a purchase date produces a blank month count and an
+# item whose warranty term nobody can check — the exact question the
+# column exists to answer.
+list_validation:
+  Asset:
+    when:
+      any_of:
+        - { field: WarrantyExpiry, op: is_null }
+        - { field: PurchaseDate, op: is_not_null }
+    message: "An asset with a Warranty Expiry needs a Purchase Date as well, or the warranty term cannot be calculated."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Locations are created
+# first and the assets reference them by demo key, which is also the
+# cheapest way to see that the lookup deployed correctly. Coverage: one
+# asset per Status, a warranty inside the sixty-day window so "Warranty
+# expiring" fills, and two whose warranty has already lapsed so the
+# overdue treatment is visible.
+demo_items:
+  Location:
+    - key: as-loc-admin
+      values:
+        Title: "[DEMO] Administration - level 1"
+        Notes: "Demo row. Swipe access; keys held at reception."
+    - key: as-loc-clinic
+      values:
+        Title: "[DEMO] Clinic wing"
+        Notes: "Demo row. Consulting rooms 1-6 and the treatment room."
+    - key: as-loc-store
+      values:
+        Title: "[DEMO] Store room 3"
+        Notes: "Demo row. Ground floor, behind the loading dock. Facilities hold the key."
+    - key: as-loc-fleet
+      values:
+        Title: "[DEMO] Fleet compound"
+        Notes: "Demo row. Outdoor compound; vehicles and grounds equipment."
+  Asset:
+    - key: as-laptop
+      values:
+        Title: "[DEMO] Dell Latitude 5440 laptop"
+        AssetTag: "[DEMO] IT-0142"
+        Category: "Laptop"
+        Status: "Assigned"
+        Location: { demo_ref: as-loc-admin }
+        AssignedTo: "@me"
+        PurchaseDate: "today-700"
+        PurchaseCost: 1840
+        WarrantyExpiry: "today+45"
+        Notes: "Demo row. Three-year on-site warranty; docking station issued with it."
+    - key: as-monitor
+      values:
+        Title: "[DEMO] 27-inch clinical monitor"
+        AssetTag: "[DEMO] IT-0311"
+        Category: "Monitor"
+        Status: "In service"
+        Location: { demo_ref: as-loc-clinic }
+        PurchaseDate: "today-400"
+        PurchaseCost: 340
+        WarrantyExpiry: "today+330"
+        Notes: "Demo row. Consulting room 4."
+    - key: as-projector
+      values:
+        Title: "[DEMO] Ceiling projector, training room"
+        AssetTag: "[DEMO] AV-0028"
+        Category: "AV equipment"
+        Status: "In storage"
+        Location: { demo_ref: as-loc-store }
+        PurchaseDate: "today-1100"
+        PurchaseCost: 1200
+        WarrantyExpiry: "today-15"
+        Notes: "Demo row. Removed when the training room was reconfigured; lamp hours low."
+    - key: as-tablet
+      values:
+        Title: "[DEMO] Ward round tablet"
+        AssetTag: "[DEMO] IT-0207"
+        Category: "Phone / tablet"
+        Status: "Under repair"
+        Location: { demo_ref: as-loc-admin }
+        AssignedTo: "@me"
+        PurchaseDate: "today-500"
+        PurchaseCost: 990
+        WarrantyExpiry: "today-30"
+        Notes: "Demo row. Charge port intermittent; out of warranty, quoted for repair."
+    - key: as-desk
+      values:
+        Title: "[DEMO] Height-adjustable desk"
+        AssetTag: "[DEMO] FF-0091"
+        Category: "Furniture"
+        Status: "Retired"
+        Location: { demo_ref: as-loc-store }
+        PurchaseDate: "today-3000"
+        PurchaseCost: 450
+        Notes: "Demo row. Motor failed; kept for parts, not reissued."
+    - key: as-ute
+      values:
+        Title: "[DEMO] Grounds utility vehicle"
+        AssetTag: "[DEMO] VE-0004"
+        Category: "Vehicle"
+        Status: "Disposed"
+        Location: { demo_ref: as-loc-fleet }
+        PurchaseDate: "today-3600"
+        PurchaseCost: 28500
+        WarrantyExpiry: "today-1200"
+        Notes: "Demo row. Sold at auction; disposal certificate filed with finance."
