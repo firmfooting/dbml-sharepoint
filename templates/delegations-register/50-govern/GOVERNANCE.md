@@ -24,9 +24,13 @@ register never "clarifies" authority on its own.
 2. Coordinators update the register the same week: changed rows edited
    with the new clause wording and ApprovedDate; removed authorities →
    Status **Superseded** with the supersession noted; new authorities
-   added.
+   added. **The list now refuses to save a Superseded row with an empty
+   `Notes`** — step 2 is the one step of this workflow that is enforced
+   rather than remembered.
 3. The *History* view preserves what authority existed when — which is
-   exactly what an auditor reconstructing an old approval needs.
+   exactly what an auditor reconstructing an old approval needs. It
+   deploys with the list, filtered to Superseded and sorted by
+   `ApprovedDate` descending, with `Notes` beside each row.
 
 ## Acting arrangements
 
@@ -42,8 +46,11 @@ acting rules are.
 - **Annually** (or per your governance calendar): the delegating
   authority reviews the instrument; the register review rides along —
   every Current row's clause still exists, every ReviewDate resets.
-- **Quarterly** (register owner): *Reviews due* view; spot-check five
-  rows against the instrument verbatim.
+- **Quarterly** (register owner): the *Reviews due* view — it deploys with
+  the list, filtered to Current rows due inside a **rolling** ninety days
+  (CAML has no calendar-quarter predicate, so it is ninety days from
+  whenever you open it, not "this quarter"). Spot-check five rows against
+  the instrument verbatim.
 
 ## Data-quality rules
 
@@ -51,6 +58,47 @@ acting rules are.
    to a role that no longer exists is flagged at every review.
 2. Limits and conditions are verbatim, not paraphrased.
 3. Superseded rows are never deleted.
+
+## What the list enforces, and what this document does
+
+One step of the instrument-change workflow is now refused at save. The
+three data-quality rules above are not, and cannot be.
+
+**Enforced at save — SharePoint rejects the row:**
+
+| Rule | Where it lives | Message shown |
+|---|---|---|
+| A **Superseded** row must record its supersession in `Notes` | list validation | Names what the note has to say: which instrument version replaced it, and where the authority went |
+| `ApprovedDate` cannot be in the future | column validation | Its own message, on the column |
+
+The supersession rule is a cross-column rule, so it takes the list's single
+`ValidationFormula`. The future-date rule reads only its own column, so it
+lives there and keeps a message of its own — which is why it can say
+something specific rather than sharing a sentence with an unrelated check.
+
+**Still a governance check — nothing stops a wrong entry:**
+
+- **Rule 1, role-not-person.** `RoleHolder` is free text and no formula can
+  tell "Director of Nursing" from "Jane Chen". This is the register's most
+  important editorial rule and it is entirely unenforceable; the quarterly
+  five-row verbatim spot-check is the control.
+- **Rule 2, verbatim limits and conditions.** A save rule can prove text
+  exists. It cannot prove the text matches the instrument — the register
+  cannot read the instrument, which is why the form header links to it.
+- **Rule 3, never deleting a superseded row.** Deletion is a permission
+  question, not a validation question: ordinary members read only, and
+  Contribute is confined to DG Governance Coordinators. Sealed columns and
+  `prevent_list_deletion` block the UI routes to losing the list itself.
+- **That a `SourceInstrument` clause exists at all.** Same reason as rule 2.
+- **Acting arrangements.** They are a rule about people, and the register
+  holds only roles. The *By role* view is truthful only if your acting rule
+  above is written down and followed.
+
+**What the colours do, which is not enforcement but is useful.**
+`ReviewDate` escalates to red once past, and the escalation is suppressed
+on Superseded rows — a review date on an authority nobody holds is not a
+deadline, and a date that keeps shouting after the row is finished trains
+people to ignore the colour everywhere else.
 
 ## Lifecycle
 

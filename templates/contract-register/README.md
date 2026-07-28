@@ -6,10 +6,13 @@ renewed or exited. Deploys as one list: `CT_Contract`.
 
 **The value case.** Most organisations discover contract sprawl the
 expensive way — an auto-renewal nobody wanted, an expiry nobody watched, a
-supplier nobody remembers engaging. A register turns that into three
-filtered views: *what expires in the next 90 days*, *what auto-renews*, and
-*what we pay whom*. `TermMonths` is calculated automatically from the start
-and end dates.
+supplier nobody remembers engaging. A register turns that into five views
+that **deploy with the list**: *Live contracts*, *Expiring 90 days*,
+*Auto-renewals*, *By counterparty* and *Exited*. `TermMonths` is calculated
+automatically from the start and end dates, and an auto-renewing contract
+cannot be saved without a notice period — the one number that prevents a
+renewal nobody chose. Build with `--seed` and five demo rows show every
+view and every colour working before you type a thing.
 
 **Work the folders in order:**
 

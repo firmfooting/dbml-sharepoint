@@ -49,13 +49,62 @@ owner, and dated (`LastAssessedDate`):
   remediation status; counts by instrument; anything Not assessed older
   than 6 months.
 - **Pre-accreditation**: the *By source* view for the relevant standard IS
-  the self-assessment evidence index.
+  the self-assessment evidence index. It deploys with the list, grouped by
+  source type and then by the named instrument inside it, both collapsed —
+  expand your standard and the rows underneath are the pack.
 
 ## Data-quality rules
 
 1. No status other than Not assessed without LastAssessedDate + evidence.
 2. Every row has a human Owner; leavers reassigned within a month.
 3. Instrument changes trigger a recorded sweep (dated in Notes).
+
+## What the list enforces, and what this document does
+
+Rule 1 is now refused at save. Rules 2 and 3 cannot be, and the reasons are
+worth knowing rather than discovering.
+
+**Enforced at save — SharePoint rejects the row:**
+
+| Rule | Where it lives | Message shown |
+|---|---|---|
+| A status other than *Not assessed* needs a `LastAssessedDate` | list validation | Shared, names both list rules |
+| *Compliant* / *Partially compliant* / *Non-compliant* needs `EvidenceNotes` | list validation | Shared, names both list rules |
+| `LastAssessedDate` cannot be in the future | column validation | Its own message, on the column |
+
+The two list rules share one message because a SharePoint list has exactly
+one `ValidationFormula` — it cannot say which branch failed, so the message
+names both checks rather than guessing. The future-date rule reads only its
+own column, so it lives there and keeps a message of its own.
+
+*Not applicable* is exempt from the evidence rule. Its reasoning belongs in
+`Notes`, and requiring evidence of a duty that does not apply would be
+asking for the wrong artefact.
+
+**Still a governance check — nothing stops a wrong entry:**
+
+- **The remediation pointer on every gap row.** It lives in `Notes`, which
+  is rich text, and a SharePoint validation formula cannot reference a
+  multi-line column at all. *The gap list* view shows `Notes` beside the
+  status precisely so its absence is visible in the monthly review.
+- **Rule 2, an Owner that is a real current person.** `Owner` is required
+  at the schema level, so it cannot be blank — but person columns cannot
+  appear in a validation formula, so "the owner still works here" is
+  unreachable. The annual reassignment sweep is the control.
+- **Rule 3, the recorded sweep.** Also `Notes`, also unreachable, and in
+  any case a rule about a coordinator's process rather than about a row.
+- **That a status is *true*.** A save rule proves a date and a sentence of
+  evidence exist. Whether the practice they describe actually happens is
+  what the assessment standard above, and its spot-check-don't-file-check
+  instruction, is for.
+
+**What the colours enforce, which is nothing, but they do it usefully.**
+`ReviewDate` escalates to red once it is past on **every** row, including
+*Not applicable* ones. Every other register in this theme suppresses that
+escalation on its terminal status; this one has no terminal status,
+because the cycles table above puts *Not applicable* on a review cycle for
+the same reason it puts everything else on one — applicability is exactly
+what changes.
 
 ## Lifecycle
 

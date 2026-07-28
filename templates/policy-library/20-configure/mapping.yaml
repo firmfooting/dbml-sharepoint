@@ -74,10 +74,341 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# ============================================================================
+# PARTIAL UPLIFT — the register half only.
+#
+# This template is HALF a document library, and the family standard does not
+# cleanly describe that half. PL_PolicyRegister below is brought to the
+# standard in full. PL_PolicyDocuments deliberately gains nothing but the
+# display-title rewrite, and the template stays on the sweep's
+# NOT_YET_UPLIFTED roster until the fleet decides what a library form,
+# a library view and library demo data should be. Three things blocked it,
+# each verified by building them rather than assumed:
+#
+# 1. A library VIEW cannot show the file. `views[].fields` accepts DBML
+#    columns plus ID/Created/Modified/Author/Editor; `FileLeafRef` is none
+#    of those, and naming it is a build error ("not a rendered column").
+#    A documents view with no file name is a view nobody can open a
+#    document from.
+# 2. A library FORM BODY cannot reference the file either — same column,
+#    same refusal — so a declared body would be document metadata with the
+#    document itself missing from the layout.
+# 3. The standard's HEADER title line is `[$Title]`, and on a document
+#    library Title is a separate, normally empty field: SharePoint does not
+#    populate it from the file name. The header would read "New document"
+#    on every saved document, forever. tiered-huddle's boards hit the same
+#    trap and the answer there was to change the title line rather than
+#    ship a header that lies.
+#
+# A fourth is not a build error and is worse: demo_items on a library
+# generate a POST to `/items`, which on a document library asks SharePoint
+# to create an item with no file behind it. That has not been run against a
+# tenant and should not be shipped on the assumption that it works.
+#
+# See 30-deploy/DEPLOY.md, which still asks the adopter to build the one
+# library view by hand and says why.
+# ============================================================================
+
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes and the ReviewMonths formula all key on them); the deployer
+# renames the display Title after create. This section applies to BOTH
+# entities — it is a display-title rewrite and nothing more, so it is the
+# one part of the standard the library half takes cleanly.
+display_names:
+  mode: auto
+  overrides:
+    PolicyDocuments:
+      # Auto-splitting gives "Doc Status", which reads as an abbreviation
+      # nobody chose.
+      DocStatus: "Document Status"
+    PolicyRegister:
+      DocumentUrl: "Document URL"
+
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md) — status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 column_formatting:
   PolicyRegister:
-    Status: { style: severity, map: { Draft: neutral, "In review": low, Approved: good, Published: good, Superseded: muted, Withdrawn: muted } }
+    # Three changes, all by ROLE rather than by word.
+    #
+    # "Approved" leaves `good`, where it shared a token with "Published".
+    # An approved policy nobody can read yet is a job half done — the
+    # decision has been made and the document has not reached staff — so
+    # it is the needs-attention band, and the "In development" view exists
+    # to empty it.
+    #
+    # "Withdrawn" leaves `muted` for `blocked`, which is where the style
+    # standard's role table puts it. Superseded and Withdrawn are not the
+    # same ending: a superseded policy was replaced, and a withdrawn one
+    # was pulled with nothing in its place — a hole in the framework, and
+    # the register should not render a hole the same grey as a tidy
+    # replacement.
+    Status:
+      style: severity
+      map:
+        "Draft": neutral
+        "In review": low
+        "Approved": warning
+        "Published": good
+        "Superseded": muted
+        "Withdrawn": blocked
+    # The review discipline this register exists for. Guarded on both
+    # endings: a review date on a policy no longer in force is not a
+    # deadline, and a date that keeps shouting after the row is finished
+    # trains people to ignore the colour.
+    ReviewDate:
+      style: overdue-date
+      guard: { field: Status, not: ["Superseded", "Withdrawn"] }
+    # 50-govern sets the standard interval at 24 months and 36 for
+    # low-risk areas, and says in as many words that ReviewMonths is what
+    # makes outliers visible. max 36 is therefore not an invented number:
+    # it is the documented ceiling, so anything pinning the bar full is by
+    # definition an outlier. The value arrives prefixed `number;#`, hence
+    # `calculated: true`.
+    ReviewMonths: { style: data-bar, max: 36, calculated: true }
+    # ApprovedDate is deliberately unformatted: a historical stamp with no
+    # late state. PolicyArea is a category, and icons belong to lifecycle
+    # and severity only.
+
+# All four register lenses show the same five identifying columns before
+# their own payload, so the spine is declared once (§1.9).
+field_sets:
+  PolicyRegister:
+    identity: [Title, PolicyArea, Owner, Status, ReviewDate]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). REGISTER ONLY — see the note at the top of this
+# file for why the library's one recommended view is still a manual step in
+# 30-deploy/DEPLOY.md. Widths are keyed on INTERNAL names, because
+# ColumnWidth binds by display name and an internal name silently resets.
+views:
+  PolicyRegister:
+    # "What is our policy on X" is the daily question, and the answer is
+    # found by area. Filtered to policies still in force: a register that
+    # answers with a superseded policy is worse than one that does not
+    # answer.
+    - title: "By area"
+      default: true
+      fields: ["@identity", ApprovedDate, DocumentUrl]
+      where:
+        - { field: Status, op: not_in, value: ["Superseded", "Withdrawn"] }
+      group_by: { field: PolicyArea, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        PolicyArea: 220
+        Owner: 160
+        Status: 160
+        ReviewDate: 160
+        ApprovedDate: 170
+        DocumentUrl: 180
+    # today+90 is a ROLLING ninety days, matching the window 50-govern's
+    # monthly discipline names. CAML has no calendar-period predicate, so
+    # rolling is what exists — and here it is also what was asked for.
+    - title: "Review due"
+      fields: ["@identity", ApprovedDate, ReviewMonths, DocumentUrl]
+      where:
+        - { field: Status, op: eq, value: "Published" }
+        - { field: ReviewDate, op: leq, value: today+90 }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 280
+        PolicyArea: 220
+        Owner: 160
+        Status: 160
+        ReviewDate: 160
+        ApprovedDate: 170
+        ReviewMonths: 140
+        DocumentUrl: 180
+    # Not in the old table, and the gap it fills is the one this register
+    # is worst at showing: a policy sitting at "Approved" is decided and
+    # unreadable — the document has not reached staff. This is the authors'
+    # queue, and the amber Approved rows at the top of it are the ones with
+    # an action outstanding.
+    - title: "In development"
+      fields: ["@identity", ApprovedDate, Notes]
+      where:
+        - { field: Status, op: in, value: ["Draft", "In review", "Approved"] }
+      sort:
+        - { field: Status, direction: asc }
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        PolicyArea: 220
+        Owner: 160
+        Status: 160
+        ReviewDate: 160
+        ApprovedDate: 170
+        Notes: 200
+    - title: "Retired"
+      fields: ["@identity", ApprovedDate, Notes]
+      where:
+        - { field: Status, op: in, value: ["Superseded", "Withdrawn"] }
+      sort:
+        - { field: ApprovedDate, direction: desc }
+      widths:
+        Title: 280
+        PolicyArea: 220
+        Owner: 160
+        Status: 160
+        ReviewDate: 160
+        ApprovedDate: 170
+        Notes: 200
+
+# Form layouts: a strapline header and a sectioned body. REGISTER ONLY.
+# Per-field description hints render on the NEW form only — the edit form
+# suppresses column descriptions (platform limitation). Section field lists
+# are authored with INTERNAL names; the build rewrites them to display
+# titles.
+#
+# The System section holds ReviewMonths alone. Calculated columns never
+# render on entry forms, so on the NEW form that section is a bare heading
+# with nothing under it — cosmetic and expected, exactly as
+# risk-register's is, and the reason the empty-section refusal is not
+# asserted of the LAST section.
+#
+# NO guide link, and that is a decision. The standard permits one where a
+# template points at a single external document; this one points at a whole
+# LIBRARY of them, and each register row already carries its own
+# DocumentUrl. A header link could only be a placeholder on the form every
+# policy author opens.
+form_formatting:
+  PolicyRegister:
+    header: formatting/policyregister-form-header.json
+    body: formatting/policyregister-form-body.json
+
+# 40-adopt is explicit that a policy is registered FIRST, at Draft, with a
+# placeholder review date and no document — "unregistered documents don't
+# exist". So the two facts about a published version are off the New form
+# and appear as the status moves, rather than inviting an approval date for
+# an approval that has not happened.
+#
+# Changing a status back does NOT clear values already entered — SharePoint
+# has no such mechanism — so these fields hide while keeping their values.
+#
+# Deliberately NOT declared: anything on PolicyDocuments, and any rule
+# conditioned on ReviewMonths. Conditional show/hide cannot read a
+# calculated column: the formula stays syntactically valid, so it saves,
+# the readback compares equal and the phase passes, but the form never
+# reacts. The build refuses it.
+form_visibility:
+  PolicyRegister:
+    columns:
+      ApprovedDate:
+        new: false
+        when:
+          - { field: Status, op: not_in, value: ["Draft", "In review"] }
+      DocumentUrl:
+        new: false
+        when:
+          - { field: Status, op: not_in, value: ["Draft", "In review", "Approved"] }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule has to share one message.
+column_validation:
+  PolicyRegister:
+    columns:
+      # ReviewMonths is computed from this date, and 50-govern reads that
+      # number to spot outliers. A future approval date makes the interval
+      # shorter than it is and quietly moves a policy down the list.
+      ApprovedDate:
+        when:
+          - { field: ApprovedDate, op: leq, value: today }
+        message: "A policy cannot have been approved in the future. Use the date the approving body actually approved this version."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# ONE rule, written as an implication: `if A then B` is `any_of[not A, B]`.
+#
+# NOT enforceable, and therefore still governance checks (see
+# 50-govern/GOVERNANCE.md): the supersession trail a retired policy must
+# carry, which lives in Notes — rich text, which a validation formula
+# cannot reference at all — and the DocumentUrl a published policy needs,
+# which is a hyperlink column. This tool accepts a hyperlink operand and
+# audit-actions has shipped one since before the family standard existed,
+# but it has never been read back from a live tenant, so it is not copied
+# here. That question is worth settling once for the fleet.
+list_validation:
+  PolicyRegister:
+    when:
+      # ReviewMonths is blank without it, which takes the policy out of the
+      # outlier check 50-govern relies on, and an approved policy with no
+      # approval date cannot be reconciled against an approval record.
+      - any_of:
+          - { field: Status, op: not_in, value: ["Approved", "Published"] }
+          - { field: ApprovedDate, op: is_not_null }
+    message: "An approved or published policy needs its Approved Date — it is what the review interval is measured from, and without it Review Months stays blank."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# review surfaces land on whatever day the demo runs; "@me" is the pasting
+# operator.
+#
+# REGISTER ONLY: no demo documents, because a demo item in a document
+# library would be a metadata row with no file behind it. See the note at
+# the top of this file.
+#
+# Coverage: one policy per Status member, each in a different PolicyArea so
+# that every group heading in the default view appears with content under
+# it, and a published policy whose review falls inside the ninety-day
+# window.
+demo_items:
+  PolicyRegister:
+    - key: pl-code
+      values:
+        Title: "[DEMO] Code of conduct"
+        PolicyArea: "Governance"
+        Status: "Published"
+        Owner: "@me"
+        ApprovedDate: "today-700"
+        ReviewDate: "today+30"
+        DocumentUrl: "https://example.sharepoint.com/sites/policies/PL_PolicyDocuments/demo-code-of-conduct.pdf"
+        Notes: "Demo row. Approved by the board. Twenty-four month interval; the review falls inside the ninety-day window, which is why this appears in Review due."
+    - key: pl-leave
+      values:
+        Title: "[DEMO] Leave and flexible working policy"
+        PolicyArea: "People / HR"
+        Status: "Approved"
+        Owner: "@me"
+        ApprovedDate: "today-10"
+        ReviewDate: "today+720"
+        Notes: "Demo row. Approved by the executive director for people last week and not yet published - which is why it reads amber. Staff cannot see it until the document is published and the register row updated."
+    - key: pl-procurement
+      values:
+        Title: "[DEMO] Procurement policy"
+        PolicyArea: "Finance"
+        Status: "In review"
+        Owner: "@me"
+        ReviewDate: "today+400"
+        Notes: "Demo row. Out for consultation with budget holders; two clauses on panel arrangements are contested."
+    - key: pl-whs
+      values:
+        Title: "[DEMO] Work health and safety manual"
+        PolicyArea: "Health & safety"
+        Status: "Draft"
+        Owner: "@me"
+        ReviewDate: "today+500"
+        Notes: "Demo row. Registered before drafting started, with a placeholder review date - unregistered documents do not exist."
+    - key: pl-travel
+      values:
+        Title: "[DEMO] Staff travel policy"
+        PolicyArea: "Operations"
+        Status: "Superseded"
+        Owner: "@me"
+        ApprovedDate: "today-1200"
+        ReviewDate: "today-100"
+        DocumentUrl: "https://example.sharepoint.com/sites/policies/PL_PolicyDocuments/demo-travel-policy-v1.pdf"
+        Notes: "Demo row. Superseded by the expenses and travel policy. The document stays for history; the register link moves."
+    - key: pl-byod
+      values:
+        Title: "[DEMO] Bring-your-own-device policy"
+        PolicyArea: "Information & IT"
+        Status: "Withdrawn"
+        Owner: "@me"
+        ApprovedDate: "today-900"
+        ReviewDate: "today-200"
+        Notes: "Demo row. Withdrawn when the managed-device rollout removed the case for it, with nothing put in its place. Withdrawn renders differently from Superseded on purpose: this is a hole in the framework, not a tidy replacement."

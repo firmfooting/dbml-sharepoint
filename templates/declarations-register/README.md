@@ -13,6 +13,14 @@ Staff declare in two minutes (submit-only — declarations are evidential);
 a compliance coordinator manages assessment and review; the annual
 attestation becomes a filter, not a project.
 
+**Nine views deploy with the lists**, including *My interests*, which shows
+each person their own declarations and nobody else's — that is the annual
+attestation, done. The assessment fields are off the New form entirely, so
+"the declarer never assesses their own declaration" is structural rather
+than cultural. Build with `--seed` and ten demo rows show every colour,
+every view and a deliberately repeated offeror before anyone declares
+anything real.
+
 **Work the folders in order:**
 
 | Step | Folder | You |

@@ -13,7 +13,14 @@ five did not exist. ``Calendar``, ``Key``, ``Flow``, ``Scales`` and
 below (``CalendarDay``, ``Lock``, ``FlowChart``, ``Permissions``,
 ``PeopleAdd``) are.
 
-Every member here was verified on 2026-07-28 against Microsoft's published
+``DocumentApproval``, ``ReportDocument`` and ``ContactLink`` were added by
+the governance/risk/compliance theme branch and checked the same way — a
+countersigned agreement, an acquittal report and a person's declared link
+to an outside party are three things the original nine could only
+approximate. ``Handshake`` and ``Signature``, the two names that came to
+mind first for the contract register, do not exist.
+
+Every member here was verified against Microsoft's published
 MDL2 icon source, which is what SharePoint's ``iconName`` resolves against:
 https://github.com/microsoft/fluentui/tree/master/packages/font-icons-mdl2/src
 
@@ -31,11 +38,14 @@ FLEET_ICONS: frozenset[str] = frozenset({
     "ComplianceAudit",
     "Certificate",
     "DocumentSet",
+    "DocumentApproval",
+    "ReportDocument",
     "PageLock",
     "Bank",
     "Ribbon",
     "Permissions",
     "GiftboxOpen",
+    "ContactLink",
     # Operations and service
     "Package",
     "MapPin",

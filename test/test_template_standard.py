@@ -44,14 +44,25 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 
 # The templates that have not yet been through a theme branch. Removed by
 # the branch that uplifts them; must reach empty. Deliberately carries no
-# count: four theme branches shrink this set in parallel, and a number in
-# the comment would be wrong on three of them and a merge conflict on all
-# four.
+# count: four theme branches shrank this set in parallel, and a number in
+# the comment would have been wrong on three of them and a merge conflict
+# on all four.
+#
+# `policy-library` is the one entry that is NOT simply awaiting its turn.
+# Its `PolicyRegister` half is uplifted in full; its `PolicyDocuments` half
+# is a `kind: DocumentLibrary`, and three parts of the standard do not
+# describe one — a view and a form body cannot name `FileLeafRef` (it is
+# not a rendered column, so the build refuses it), and the header's
+# `[$Title]` line reads empty on a library, where SharePoint does not
+# populate Title from the file name. Demo data for a library WAS worse than
+# unbuildable — it generated cleanly and posted an item with no file behind
+# it — which is now a build error in its own right. The template stays on
+# this roster until libraries are designed for once, for the whole fleet,
+# rather than four different ways; see the header comment in
+# `templates/policy-library/20-configure/mapping.yaml`.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "audit-actions", "complaints-feedback",
-    "compliance-obligations", "contract-register",
-    "declarations-register", "delegations-register", "equipment-maintenance",
-    "grants-register", "incident-management",
+    "asset-register", "complaints-feedback",
+    "equipment-maintenance", "incident-management",
     "policy-library", "routine-checks",
     "service-requests", "switchboard-log",
     "vehicle-log", "visitor-log",
@@ -85,6 +96,85 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # Declared ahead of the sweep reaching it: policy-library is still on
+    # NOT_YET_UPLIFTED because of its document-library half, so nothing here
+    # is asserted yet — but PolicyRegister IS uplifted and its arc should
+    # not have to be rediscovered when the library question is settled.
+    ("policy-library", "PolicyRegister"): {
+        "The policy": "Identify",
+        "The current version": "Act",
+        "Review and history": "Govern",
+        "System": "System",
+    },
+    # The audit row is a header record — a report and who answers for it —
+    # so it collapses to Identify -> Govern. The recommendation carries the
+    # whole arc except Assess: the rating comes FROM the report rather than
+    # from anything done here.
+    ("audit-actions", "Audit"): {
+        "The review": "Identify",
+        "Response": "Govern",
+    },
+    ("audit-actions", "Recommendation"): {
+        "The finding": "Identify",
+        "The agreed action": "Act",
+        "Closure": "Govern",
+        "System": "System",
+    },
+    # Two standalone registers with no link between them, and the same
+    # shape either way: the person declares, somebody else decides. The
+    # beat boundary is the permission boundary — everything after the
+    # first section is off the New form.
+    ("declarations-register", "Interest"): {
+        "The interest": "Identify",
+        "Assessment": "Assess",
+        "Review and cessation": "Govern",
+    },
+    ("declarations-register", "GiftBenefit"): {
+        "The offer": "Identify",
+        "Value and context": "Assess",
+        "The decision": "Act",
+    },
+    # Both halves of the grant lifecycle run Identify -> Act -> Govern.
+    # There is no Assess beat on either: the bid/no-bid assessment happens
+    # before a row exists (50-govern's ten-minute test), and an obligation
+    # is not assessed at all — it is either filed or it is not.
+    ("grants-register", "Submission"): {
+        "The bid": "Identify",
+        "Submission and outcome": "Act",
+        "Delivery": "Govern",
+    },
+    ("grants-register", "Acquittal"): {
+        "The obligation": "Identify",
+        "Preparing and filing": "Act",
+        "Escalation notes": "Govern",
+    },
+    # Three beats. There is no Act on a register that transcribes rather
+    # than decides — the doctrine is that authority is created in the
+    # instrument and only mirrored here — and nothing is auto-stamped, so
+    # no System either.
+    ("delegations-register", "Delegation"): {
+        "The authority": "Identify",
+        "Limit and conditions": "Assess",
+        "Source and review": "Govern",
+    },
+    # No System beat: nothing on this list is auto-stamped. Every column is
+    # authored by a coordinator or an obligation owner, so a System section
+    # would be a heading over nothing.
+    ("compliance-obligations", "Obligation"): {
+        "The duty": "Identify",
+        "Assessment and evidence": "Assess",
+        "Gaps and remediation": "Act",
+        "Ownership and cycle": "Govern",
+    },
+    # A contract has no assessment step and no treatment step: the middle of
+    # the arc collapses to the commercial terms, which are what the register
+    # weighs. Identify -> Assess -> Govern -> System.
+    ("contract-register", "Contract"): {
+        "The contract": "Identify",
+        "Term and value": "Assess",
+        "Ownership": "Govern",
+        "System": "System",
     },
     ("tiered-huddle", "Escalation"): {
         "The issue": "Identify",
