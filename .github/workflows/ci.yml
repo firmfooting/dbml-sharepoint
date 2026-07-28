@@ -65,18 +65,31 @@ jobs:
           echo "Built $found template(s)."
           # A glob that matches nothing would otherwise pass silently.
           test "$found" -gt 0
-      - name: Build the seeded bundle (tiered-huddle is the library's only demo_items consumer)
+      - name: Build every seeded bundle (discovered, never listed)
         shell: bash
+        # A hardcoded roster fails open: a new demo_items consumer is simply
+        # never seeded, and CI stays green saying so.
         run: |
-          uv run dbml-sharepoint build \
-            --schema templates/tiered-huddle/10-design/schema.dbml \
-            --mapping templates/tiered-huddle/20-configure/mapping.yaml \
-            --release templates/tiered-huddle/20-configure/release.yaml \
-            --site-url https://example.sharepoint.com/sites/ci \
-            --site-role default \
-            --seed \
-            --out build/tiered-huddle-seed
-          node --check build/tiered-huddle-seed/demo-data.js
+          set -euo pipefail
+          found=0
+          for mapping in templates/*/20-configure/mapping.yaml; do
+            grep -q '^demo_items:' "$mapping" || continue
+            t="$(basename "$(dirname "$(dirname "$mapping")")")"
+            found=$((found + 1))
+            echo "::group::$t"
+            uv run dbml-sharepoint build \
+              --schema "templates/$t/10-design/schema.dbml" \
+              --mapping "$mapping" \
+              --release "templates/$t/20-configure/release.yaml" \
+              --site-url https://example.sharepoint.com/sites/ci \
+              --site-role default \
+              --seed \
+              --out "build/$t-seed"
+            node --check "build/$t-seed/demo-data.js"
+            echo "::endgroup::"
+          done
+          echo "Seeded $found bundle(s)."
+          test "$found" -ge 2
 
   docs:
     # onBrokenLinks/onBrokenMarkdownLinks are 'throw', so this build is

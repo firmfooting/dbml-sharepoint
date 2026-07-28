@@ -267,3 +267,110 @@ list_validation:
           - { field: RiskResponse, op: neq, value: "Tolerate" }
           - { field: ToleranceEndDate, op: is_not_null }
     message: "A Tolerate response is always for a set period: record the Tolerance End Date, and have the Risk Sponsor reassess before it."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# cadence-derived surfaces land on whatever day the demo runs; "@me" is the
+# pasting operator. Coverage: one risk per rating band (the Extreme one
+# drives the row wash, the red score bar, Levels Above Target 3, an OVERDUE
+# review and the SourceReference bridge), a Tolerate risk inside the
+# tolerance-expiry window, and a Closed risk with a closure statement.
+demo_items:
+  Risk:
+    - key: risk-low
+      values:
+        Title: "[DEMO] Local printer outage delays sign-in sheets"
+        Detail: "Demo row. Reception printer fails on clinic mornings; paper sign-in falls back to a shared device two rooms away."
+        Category: "Operational"
+        Likelihood: "Rare"
+        Consequence: "Moderate"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Accept"
+        Controls: "Spare toner on site; shared device fallback documented."
+        OverallControlEffectiveness: "All reasonable controls in place"
+        LastReviewedDate: "today-300"
+    - key: risk-medium
+      values:
+        Title: "[DEMO] Key subject-matter expert on extended leave"
+        Detail: "Demo row. The only staff member who knows the legacy roster rules is on leave for the configuration window."
+        Category: "Project"
+        Likelihood: "Likely"
+        Consequence: "Moderate"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Manage"
+        Controls: "Handover notes drafted; backup contact identified but not yet trained."
+        Treatment: "Train the backup contact before the configuration window opens."
+        OverallControlEffectiveness: "Partially effective"
+        LastReviewedDate: "today-155"
+    - key: risk-high
+      values:
+        Title: "[DEMO] Vendor delivery slips past the go-live window"
+        Detail: "Demo row. Vendor milestone slippage would push integration testing into the go-live freeze."
+        Category: "Project"
+        Likelihood: "Very Likely"
+        Consequence: "Substantial"
+        TargetRiskRating: "Medium"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Manage"
+        Controls: "Weekly vendor checkpoint; contractual milestone credits."
+        Treatment: "Bring integration testing forward two weeks; agree a contingency scope cut."
+        OverallControlEffectiveness: "Partially effective"
+        LastReviewedDate: "today-80"
+    - key: risk-extreme
+      values:
+        Title: "[DEMO] Untested data migration corrupts records"
+        Detail: "Demo row. Migrating identified records without a full rehearsal risks silent corruption discovered only in live use."
+        Category: "Project"
+        Likelihood: "Almost Certain"
+        Consequence: "Business Critical"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Manage"
+        Controls: "Migration runbook exists; no rehearsal on masked data yet."
+        Treatment: "Rehearse the migration on masked data and reconcile row counts before cutover."
+        OverallControlEffectiveness: "Inadequate"
+        LastReviewedDate: "today-100"
+        SourceReference: "[DEMO] ENT-2026-0000"
+    - key: risk-tolerate
+      values:
+        Title: "[DEMO] Legacy interface stays until the upgrade lands"
+        Detail: "Demo row. The old results interface remains in service until the platform upgrade; tolerated for a set period with sponsor approval."
+        Category: "Operational"
+        Likelihood: "Likely"
+        Consequence: "Substantial"
+        TargetRiskRating: "Medium"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Tolerate"
+        ToleranceEndDate: "today+21"
+        Controls: "Daily interface monitoring; manual reconciliation procedure."
+        OverallControlEffectiveness: "Partially effective"
+        LastReviewedDate: "today-30"
+    - key: risk-closed
+      values:
+        Title: "[DEMO] Server room access control gap"
+        Detail: "Demo row. Door controller misconfiguration allowed untracked access; remediated and verified."
+        Category: "Operational"
+        Likelihood: "Rare"
+        Consequence: "Moderate"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Closed"
+        RiskResponse: "Terminate"
+        Controls: "Controller reconfigured; access log review added to the monthly audit."
+        OverallControlEffectiveness: "Eliminated or within appetite"
+        ClosureStatement: "Demo row. Residual at target, all actions closed, controls verified effective by audit - closure criteria met."
+        LastReviewedDate: "today-10"
