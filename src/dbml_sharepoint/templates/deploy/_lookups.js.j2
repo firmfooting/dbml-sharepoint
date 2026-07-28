@@ -42,7 +42,5 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Phase {{ phase.number }} lookup reconciliation failed; aborting before indexes and ACL work.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-2-schema-errors' };
   }
-

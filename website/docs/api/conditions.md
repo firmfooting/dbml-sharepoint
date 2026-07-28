@@ -38,13 +38,13 @@ everywhere else in this package.
 | Declared | CAML | Expression | Validation |
 |---|---|---|---|
 | `eq` | `<Eq><FieldRef Name="Status"/><Value Type="Text">Open</Value></Eq>` | `[$Status] == 'Open'` | `[Status]="Open"` |
-| `neq` | `<Neq><FieldRef Name="Status"/><Value Type="Text">Open</Value></Neq>` | `[$Status] != 'Open'` | `[Status]<>"Open"` |
+| `neq` | `<Or><IsNull><FieldRef Name="Status"/></IsNull><Neq><FieldRef Name="Status"/><Value Type="Text">Open</Value></Neq></Or>` | `[$Status] != 'Open'` | `[Status]<>"Open"` |
 | `lt` | `<Lt><FieldRef Name="Count"/><Value Type="Number">5</Value></Lt>` | `[$Count] < 5` | `[Count]<5` |
 | `geq` | `<Geq><FieldRef Name="Count"/><Value Type="Number">5</Value></Geq>` | `[$Count] >= 5` | `[Count]>=5` |
 | `is_null` | `<IsNull><FieldRef Name="Note"/></IsNull>` | `[$Note] == ''` | `ISBLANK([Note])` |
 | `is_not_null` | `<IsNotNull><FieldRef Name="Note"/></IsNotNull>` | `[$Note] != ''` | `NOT(ISBLANK([Note]))` |
 | `in` | `<Or><Eq><FieldRef Name="Status"/><Value Type="Text">A</Value></Eq><Eq><FieldRef Name="Status"/><Value Type="Text">B</Value></Eq></Or>` | `([$Status] == 'A' || [$Status] == 'B')` | `OR([Status]="A",[Status]="B")` |
-| `not_in` | `<And><Neq><FieldRef Name="Status"/><Value Type="Text">A</Value></Neq><Neq><FieldRef Name="Status"/><Value Type="Text">B</Value></Neq></And>` | `([$Status] != 'A' && [$Status] != 'B')` | `AND([Status]<>"A",[Status]<>"B")` |
+| `not_in` | `<Or><IsNull><FieldRef Name="Status"/></IsNull><And><Neq><FieldRef Name="Status"/><Value Type="Text">A</Value></Neq><Neq><FieldRef Name="Status"/><Value Type="Text">B</Value></Neq></And></Or>` | `([$Status] != 'A' && [$Status] != 'B')` | `AND([Status]<>"A",[Status]<>"B")` |
 | `contains` | `<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>` | _not supported — operator 'contains' is not yet verified against a live tenant for this target; confirm it with test/manual/form-visibility-evidence-probe.js and enable it deliberately_ | `ISNUMBER(FIND("x",[Note]))` |
 | `begins_with` | `<BeginsWith><FieldRef Name="Note"/><Value Type="Text">ab</Value></BeginsWith>` | _not supported — operator 'begins_with' is not yet verified against a live tenant for this target; confirm it with test/manual/form-visibility-evidence-probe.js and enable it deliberately_ | `LEFT([Note],2)="ab"` |
 | `measure: length` | _not supported — 'measure' cannot be rendered: CAML has no LEN_ | _not supported — 'measure' cannot be rendered: list formatting's length() counts array items and returns 1/0 for other types — it does not measure a string, so the formula would be false for every value_ | `LEN([Note])>10` |

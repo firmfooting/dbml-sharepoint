@@ -111,8 +111,36 @@ def test_none_of_admits_the_empty_case() -> None:
     exclude items with no A at all — the opposite of the plain reading, and
     a disagreement with the expression target, where a blank coerces in."""
     condition = parse_condition({"none_of": [{"field": "A", "op": "eq", "value": 1}]}, "ctx")
-    assert normalise(condition) == Group(
-        "all_of", (Group("any_of", (Leaf("A", "is_null"), Leaf("A", "neq", 1))),),
+    assert normalise(condition) == Group("all_of", (Leaf("A", "neq", 1),))
+
+
+def test_direct_neq_agrees_across_targets_about_blanks() -> None:
+    """`neq` is the exact inverse of `eq`, so an empty value is not equal
+    to a non-empty literal. CAML's bare Neq drops that row while the two
+    formula targets admit it; the CAML renderer must make the null arm
+    explicit rather than giving one authored condition two meanings."""
+    condition = parse_condition([{"field": "Status", "op": "neq", "value": "Closed"}], "c")
+
+    assert to_caml(condition, TYPES) == (
+        '<Or><IsNull><FieldRef Name="Status"/></IsNull>'
+        '<Neq><FieldRef Name="Status"/><Value Type="Text">Closed</Value></Neq></Or>'
+    )
+    assert to_expression(condition, TYPES) == "[$Status] != 'Closed'"
+    assert to_validation(condition, TYPES) == '[Status]<>"Closed"'
+
+
+def test_direct_not_in_admits_a_blank_once_in_caml() -> None:
+    """A blank is outside every non-empty set. Keep one explicit null arm
+    around the conjunction instead of repeating it for every member."""
+    condition = parse_condition(
+        [{"field": "Status", "op": "not_in", "value": ["Closed", "Deferred"]}], "c",
+    )
+
+    assert to_caml(condition, TYPES) == (
+        '<Or><IsNull><FieldRef Name="Status"/></IsNull><And>'
+        '<Neq><FieldRef Name="Status"/><Value Type="Text">Closed</Value></Neq>'
+        '<Neq><FieldRef Name="Status"/><Value Type="Text">Deferred</Value></Neq>'
+        '</And></Or>'
     )
 
 
@@ -137,7 +165,7 @@ def test_nested_negation_flips_group_kind() -> None:
             Group(
                 "all_of",
                 (
-                    Group("any_of", (Leaf("A", "is_null"), Leaf("A", "neq", 1))),
+                    Leaf("A", "neq", 1),
                     Group("any_of", (Leaf("B", "is_null"), Leaf("B", "leq", 2))),
                 ),
             ),
@@ -182,13 +210,8 @@ def test_normalise_preserves_operand_transforms() -> None:
     normalised = normalise(condition)
     assert isinstance(normalised, Group)
     admitted = normalised.children[0]
-    assert isinstance(admitted, Group)
-    # Both arms keep the accessor: a null test on a person column must test
-    # the same sub-property the comparison reads.
-    arms = [leaf for leaf in admitted.children if isinstance(leaf, Leaf)]
-    assert [(leaf.op, leaf.property) for leaf in arms] == [
-        ("is_null", "title"), ("neq", "title"),
-    ]
+    assert isinstance(admitted, Leaf)
+    assert (admitted.op, admitted.property) == ("neq", "title")
 
 
 def test_measure_tree_counts_depth_and_leaves() -> None:

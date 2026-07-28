@@ -437,6 +437,35 @@ _ABORTING_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
 """)
 
 
+_ABORTING_SEALED_FIELD_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    // Adopt one ordinary declared field in the sealed state PREPARE finds
+    // on a maintained site. Its stale description forces Phase 2.1 to write.
+    const adoptedNote = fieldShape('APP_Escalation', 'Note', {
+      FieldTypeKind: 2, Required: false, Description: 'stale description', MaxLength: 255,
+    });
+    adoptedNote.Sealed = true;
+    created['APP_Escalation Note'] = adoptedNote;
+
+    const _passThrough = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const parsed = opts.body ? JSON.parse(opts.body) : {};
+      const refusingReconcile = (opts.method || 'GET') === 'POST'
+        && u.includes("getbyinternalnameortitle('Note')")
+        && parsed.Description !== undefined && parsed.Sealed === undefined;
+      if (!refusingReconcile) return _passThrough(url, opts);
+      calls.push({ url: u, method: 'POST', body: opts.body });
+      const payload = { error: { message: { value: 'field reconcile refused' } } };
+      return {
+        ok: false, status: 400,
+        headers: { get: () => null },
+        json: async () => payload,
+        text: async () => JSON.stringify(payload),
+      };
+    };
+""")
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
     """A failed run must not leave the site less protected than it found it.
@@ -482,6 +511,40 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
     assert seal_writes, "PREPARE never unsealed a Title, so there was nothing to restore"
     assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
     assert seal_writes[-1] is True, f"the aborted run left Title unsealed: {seal_writes}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_run_that_aborts_after_unsealing_a_declared_field_reseals_it(tmp_path: Path) -> None:
+    """Title is not special on the exit path: PREPARE opens every declared
+    sealed field, so a Phase 2.1 abort must hand every one of them back."""
+    js = _declared_deploy_js(tmp_path, "seal_columns: true\n")
+    script = _ABORTING_SEALED_FIELD_HARNESS + "\n" + js.replace(
+        "})();", "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    assert summary.get("aborted") == "phase-1-schema-errors"
+
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, "harness produced no call log"
+    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    seal_writes = [
+        json.loads(c["body"])["Sealed"]
+        for c in calls
+        if c["method"] == "POST" and c.get("body")
+        and "getbyinternalnameortitle('Note')" in c["url"]
+        and "Sealed" in c["body"]
+    ]
+    assert seal_writes[0] is False, f"PREPARE did not unseal Note: {seal_writes}"
+    assert seal_writes[-1] is True, f"the aborted run left Note unsealed: {seal_writes}"
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")

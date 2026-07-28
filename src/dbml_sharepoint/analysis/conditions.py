@@ -76,13 +76,19 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # A null test is its own inverse, and a measure is never null —
             # LEN(blank) is 0, so the flipped comparison already matches.
             return flipped
-        # SharePoint comparisons are three-valued: CAML's Neq and Leq do NOT
+        if flipped.op in ("neq", "not_in"):
+            # These two inverse operators define the empty value as outside
+            # the compared literal/set. Their renderers already carry that
+            # semantic, so adding another null arm here would only duplicate
+            # it in every none_of[eq/in] tree.
+            return flipped
+        # SharePoint comparisons are three-valued: CAML's bare Leq does NOT
         # match rows where the column is empty, so a bare operator flip would
         # make "none of the items where Count > 5" exclude items with no
         # Count at all — which is the opposite of what the words say, and
         # disagrees with the expression target, where a blank coerces and is
-        # included. Negation therefore admits the empty case explicitly, so
-        # all three targets answer alike.
+        # included. Relational negation therefore admits the empty case
+        # explicitly; neq/not_in do so in their own renderings above.
         return Group("any_of", (Leaf(node.field, "is_null", None, node.property), flipped))
 
     if node.kind == "none_of":
@@ -372,6 +378,17 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
         column_type = _ACCESSOR_TYPES.get(leaf.property, column_type)
 
     if leaf.op in ("in", "not_in"):
+        if target == CAML and leaf.op == "not_in":
+            # CAML's bare Neq drops an empty field, but an empty value is
+            # outside every non-empty set. Admit null once around the whole
+            # conjunction rather than once per set member.
+            ref = f'<FieldRef Name="{leaf.field}"/>'
+            parts = [
+                f"<Neq>{ref}{_caml_value(column_type, item, where)}</Neq>"
+                for item in leaf.value
+            ]
+            excluded = _combine(parts, conjunction=True, target=CAML)
+            return f"<Or><IsNull>{ref}</IsNull>{excluded}</Or>"
         op = "eq" if leaf.op == "in" else "neq"
         parts = [
             _leaf(Leaf(leaf.field, op, item, leaf.property, leaf.measure), types, target, context)
@@ -392,7 +409,13 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
         tag = _CAML_OP_TAGS[leaf.op]
         if leaf.op in _VALUELESS_OPS:
             return f"<{tag}>{ref}</{tag}>"
-        return f"<{tag}>{ref}{_caml_value(column_type, leaf.value, where)}</{tag}>"
+        rendered = f"<{tag}>{ref}{_caml_value(column_type, leaf.value, where)}</{tag}>"
+        if leaf.op == "neq":
+            # Neq is the exact inverse of Eq in the authored grammar. CAML
+            # comparisons are three-valued, so make the empty case explicit
+            # to match the expression and validation targets.
+            return f"<Or><IsNull>{ref}</IsNull>{rendered}</Or>"
+        return rendered
 
     if target == EXPRESSION:
         ref = f"[${leaf.field}{'.' + leaf.property if leaf.property else ''}]"

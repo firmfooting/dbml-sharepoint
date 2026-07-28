@@ -19,11 +19,10 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
-    // Hand back exactly the built-in Titles PREPARE opened, and only
-    // those. The tool does not own Title's seal state, so it neither seals
-    // one it found unsealed nor leaves one it unsealed to write.
-    for (const listTitle of titlesUnsealedForRun) {
-      sealDeclared.push([listTitle, 'Title']);
+    // Declared fields are already present above. Add the built-in Titles
+    // PREPARE opened; the tool does not otherwise own their seal state.
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (columnTitle === 'Title') sealDeclared.push([listTitle, columnTitle]);
     }
     let sealedCount = 0;
     // One lane per list (field MERGEs on the same list race into save
@@ -73,4 +72,3 @@
       log('INFO', `Phase {{ phase.number }} complete: ${sealDeclared.length} column(s) sealed and verified (${sealedCount} newly sealed).`);
     }
   }
-

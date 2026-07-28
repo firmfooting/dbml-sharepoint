@@ -274,7 +274,5 @@
   // repair checklist and the rerunnable deployment can be attempted again.
   if (summary.errors.length > 0) {
     log('ERROR', 'Deployment has unresolved schema or ACL errors; aborting before seed items.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'pre-seed-errors' };
   }
-

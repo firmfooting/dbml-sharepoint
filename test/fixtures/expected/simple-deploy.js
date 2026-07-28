@@ -631,7 +631,7 @@
           "type": "SP.FieldText"
         }
       },
-      "validation_formula": "=OR(OR(ISBLANK([Status]),[Status]\u003c\u003e\"Closed\"),[Sort Order]\u003e=0)",
+      "validation_formula": "=OR([Status]\u003c\u003e\"Closed\",[Sort Order]\u003e=0)",
       "validation_message": "A closed project needs a non-negative sort order."
     },
     {
@@ -738,7 +738,7 @@
   "seed_items": [],
   "views": [
     {
-      "caml_query": "\u003cWhere\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
+      "caml_query": "\u003cWhere\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
       "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
       "list": "APP_Project",
       "row_limit": 100,
@@ -792,12 +792,10 @@
   // too, and a caller that omits it is treated as managed.
   const UNMANAGED = "__dbmlsp_unmanaged__";
 
-  // List titles whose built-in Title this run unsealed so it could write
-  // the patch. PROTECTION re-seals exactly these and nothing else: the
-  // tool does not own Title's seal state, so it must hand back what it
-  // found rather than leaving open a column it opened. The column is
-  // always 'Title', so the list title is the whole key.
-  const titlesUnsealedForRun = new Set();
+  // Every field this run changed from sealed to unsealed. The value retains
+  // the pair while the key makes repeat encounters idempotent. Exit cleanup
+  // restores exactly these fields and never seals one it found open.
+  const fieldsUnsealedForRun = new Map();
 
   // The restoration itself, called from the finally in deploy.js.j2 rather
   // than from PROTECTION. Every phase between PREPARE and PROTECTION can
@@ -808,23 +806,30 @@
   // guarantee has to sit on the exit path, which is the only path every
   // abort shares. Idempotent by construction: PROTECTION normally seals
   // these on the way past, and this writes only what it finds still open,
-  // so the success path pays one read per unsealed Title and nothing else.
-  async function restoreUnsealedTitles() {
-    for (const listTitle of titlesUnsealedForRun) {
-      try {
-        invalidateFieldShapes(listTitle);  // never trust phase-start state
-        const shape = await readFieldShape(listTitle, 'Title', null);
-        if (shape && shape.Sealed === true) continue;
-        const digest = await getDigest();
-        await patchField(
-          listTitle, 'Title', { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
-        );
-        log('WARN', `Re-sealed the built-in Title on '${listTitle}' while exiting: the run opened it and did not reach the seal phase.`);
-      } catch (err) {
-        // Loud, and recorded: the operator has to know the site was left
-        // open, because nothing else in the run will say so.
-        log('ERROR', `Could not re-seal the built-in Title on '${listTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
-        summary.errors.push({ phase: 'exit', list: listTitle, column: 'Title', error: err.message });
+  // so the success path pays one field enumeration per affected list.
+  async function restoreUnsealedFields() {
+    const byList = new Map();
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (!byList.has(listTitle)) byList.set(listTitle, []);
+      byList.get(listTitle).push(columnTitle);
+    }
+    for (const [listTitle, columns] of byList.entries()) {
+      invalidateFieldShapes(listTitle);  // never trust phase-start state
+      for (const columnTitle of columns) {
+        try {
+          const shape = await readFieldShape(listTitle, columnTitle, null);
+          if (shape && shape.Sealed === true) continue;
+          const digest = await getDigest();
+          await patchField(
+            listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
+          );
+          log('WARN', `Re-sealed '${listTitle}.${columnTitle}' while exiting: the run opened it and did not reach the seal phase.`);
+        } catch (err) {
+          // Loud, and recorded: the operator has to know the site was left
+          // open, because nothing else in the run will say so.
+          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
+          summary.errors.push({ phase: 'exit', list: listTitle, column: columnTitle, error: err.message });
+        }
       }
     }
   }
@@ -1304,7 +1309,28 @@
       : 'Current user lacks ManageLists on this site.');
     return { aborted: 'insufficient-permissions' };
   }
-
+  // Run-scoped privilege is exit-scoped too. Keep the state and cleanup
+  // outside the phase try so an unexpected throw can still remove every
+  // membership this deployment added.
+  const selfEnrollments = [];
+  async function removeSelfEnrollments() {
+    for (const enrollment of selfEnrollments.splice(0)) {
+      try {
+        const digestR = await getDigest();
+        const removeResp = await fetchWithRetry(apiUrl(`web/sitegroups(${enrollment.groupId})/users/removebyid(${enrollment.userId})`), {
+          method: 'POST',
+          headers: spHeaders(digestR),
+        });
+        if (!removeResp.ok) {
+          const text = await removeResp.text();
+          throw new Error(`HTTP ${removeResp.status} ${text}`);
+        }
+        log('INFO', `Removed operator from '${enrollment.groupName}' (run-scoped enrolment).`);
+      } catch (err) {
+        log('ERROR', `Could not remove the operator from '${enrollment.groupName}': ${err.message}. Remove yourself in Site permissions > Groups.`);
+      }
+    }
+  }
   // Every phase runs inside this try so that the finally below is reached
   // by EVERY exit: the normal `return summary` at the end of the last
   // phase, the seven early returns that abort a broken run, and a throw
@@ -1661,25 +1687,6 @@
   // member is left untouched. Only principals who can already manage the
   // group (its Site-Owners owner) can benefit; this adds no new authority.
   log('INFO', 'Starting Phase 1.3: operator self-enrolment.');
-  const selfEnrollments = [];
-  async function removeSelfEnrollments() {
-    for (const enrollment of selfEnrollments.splice(0)) {
-      try {
-        const digestR = await getDigest();
-        const removeResp = await fetchWithRetry(apiUrl(`web/sitegroups(${enrollment.groupId})/users/removebyid(${enrollment.userId})`), {
-          method: 'POST',
-          headers: spHeaders(digestR),
-        });
-        if (!removeResp.ok) {
-          const text = await removeResp.text();
-          throw new Error(`HTTP ${removeResp.status} ${text}`);
-        }
-        log('INFO', `Removed operator from '${enrollment.groupName}' (run-scoped enrolment).`);
-      } catch (err) {
-        log('ERROR', `Could not remove the operator from '${enrollment.groupName}': ${err.message}. Remove yourself in Site permissions > Groups.`);
-      }
-    }
-  }
   {
     const enrollGroups = SCHEMA.groups.filter(g => g.enroll_operator_during_deploy);
     for (const grp of enrollGroups) {
@@ -1723,10 +1730,8 @@
   }
   if (summary.errors.length > 0) {
     log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
-
   markPhase('Phase 1.4 — maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY
@@ -1767,10 +1772,12 @@
             const unsealDigest = await getDigest();
             await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
             unsealedCount += 1;
-            // Record only the built-in Title: declared columns are re-sealed
-            // from their own declaration, but Title's prior state is the only
-            // evidence of what it should go back to.
-            if (columnTitle === 'Title') titlesUnsealedForRun.add(listTitle);
+            // Record only after the write succeeds. The exit path restores
+            // every field this run actually opened, including ordinary
+            // declared columns when a later phase aborts before PROTECTION.
+            fieldsUnsealedForRun.set(
+              `${listTitle}\u0000${columnTitle}`, [listTitle, columnTitle],
+            );
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
@@ -1780,7 +1787,6 @@
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
     }
   }
-
   markPhase('Phase 2.1 — list creation');
   // === Phase 2.1: lists + non-lookup columns + same-site lookups ===
   log('INFO', 'Group 2 — STRUCTURE');
@@ -1969,10 +1975,8 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-1-schema-errors' };
   }
-
   markPhase('Phase 2.2 — deferred lookups');
   // === Phase 2.2: deferred lookups ===
   log('INFO', 'Starting Phase 2.2: deferred lookups.');
@@ -2013,10 +2017,8 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Phase 2.2 lookup reconciliation failed; aborting before indexes and ACL work.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-2-schema-errors' };
   }
-
   markPhase('Phase 2.3 — indexed columns');
   // === Phase 2.3: indexed columns ===
   log('INFO', 'Starting Phase 2.3: indexed columns.');
@@ -2438,11 +2440,10 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
-    // Hand back exactly the built-in Titles PREPARE opened, and only
-    // those. The tool does not own Title's seal state, so it neither seals
-    // one it found unsealed nor leaves one it unsealed to write.
-    for (const listTitle of titlesUnsealedForRun) {
-      sealDeclared.push([listTitle, 'Title']);
+    // Declared fields are already present above. Add the built-in Titles
+    // PREPARE opened; the tool does not otherwise own their seal state.
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (columnTitle === 'Title') sealDeclared.push([listTitle, columnTitle]);
     }
     let sealedCount = 0;
     // One lane per list (field MERGEs on the same list race into save
@@ -2492,7 +2493,6 @@
       log('INFO', `Phase 4.1 complete: ${sealDeclared.length} column(s) sealed and verified (${sealedCount} newly sealed).`);
     }
   }
-
   markPhase('Phase 4.2 — role inheritance and assignments');
   // === Phase 4.2: break inheritance + role assignments ===
   log('INFO', 'Starting Phase 4.2: role inheritance and assignments.');
@@ -2762,10 +2762,8 @@
   // repair checklist and the rerunnable deployment can be attempted again.
   if (summary.errors.length > 0) {
     log('ERROR', 'Deployment has unresolved schema or ACL errors; aborting before seed items.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'pre-seed-errors' };
   }
-
   markPhase('Phase 5.1 — seed items');
   // === Phase 5.1: seed singleton list items (extension-provided) ===
   log('INFO', 'Group 5 — DATA');
@@ -2887,7 +2885,6 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Singleton seed verification failed; deployment is not activation-ready.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-5-seed-errors' };
   }
 
@@ -2932,6 +2929,9 @@
   // itself would close the function before that finally could run.
   return summary;
   } finally {
-    await restoreUnsealedTitles();
+    // Restore field protection before dropping the temporary membership
+    // that may be what authorises those writes.
+    await restoreUnsealedFields();
+    await removeSelfEnrollments();
   }
 })();

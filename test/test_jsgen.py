@@ -1291,8 +1291,9 @@ def test_view_caml_condition_sort_and_group() -> None:
     )
     assert caml == (
         '<GroupBy Collapse="TRUE"><FieldRef Name="Impact"/></GroupBy>'
-        '<Where><Neq><FieldRef Name="Status"/>'
-        '<Value Type="Text">Closed</Value></Neq></Where>'
+        '<Where><Or><IsNull><FieldRef Name="Status"/></IsNull>'
+        '<Neq><FieldRef Name="Status"/>'
+        '<Value Type="Text">Closed</Value></Neq></Or></Where>'
         '<OrderBy><FieldRef Name="RiskScore" Ascending="FALSE"/></OrderBy>'
     )
 
@@ -1405,8 +1406,9 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         "title": "Open risks",
         "view_fields": ["Title", "Status", "DueDate"],
         "caml_query": (
-            '<Where><Neq><FieldRef Name="Status"/>'
-            '<Value Type="Text">Closed</Value></Neq></Where>'
+            '<Where><Or><IsNull><FieldRef Name="Status"/></IsNull>'
+            '<Neq><FieldRef Name="Status"/>'
+            '<Value Type="Text">Closed</Value></Neq></Or></Where>'
             '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
         ),
         "row_limit": 100,
@@ -1979,11 +1981,11 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         if lst["title"] == "APP_Risk"
     )
     # The implication "if closed then a closure note" as the grammar spells
-    # it — any_of[none_of[antecedent], consequent] — with the null arm the
-    # negation adds so blank rows are not silently excluded, and internal
-    # names rewritten to display names, which is what SP resolves against.
+    # it — any_of[none_of[antecedent], consequent]. The neq renderer itself
+    # admits blanks, and internal names are rewritten to display names,
+    # which is what SP resolves against.
     assert risk["validation_formula"] == (
-        '=OR(OR(ISBLANK([Status]),[Status]<>"Closed"),NOT(ISBLANK([Closure Note])))'
+        '=OR([Status]<>"Closed",NOT(ISBLANK([Closure Note])))'
     )
     assert risk["validation_message"] == "Closing needs a closure note."
 
@@ -2035,9 +2037,9 @@ def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
     assert "site collection admin = " in js
     assert "owners of a group-connected site are site collection admins" in js
     # After cleanup, before DONE — enrolment would otherwise inflate rights.
-    assert js.rindex("await removeSelfEnrollments()") < js.index(
-        "Operator effective rights on",
-    ) < js.index("Deployment complete.")
+    diagnostic = js.index("Operator effective rights on")
+    assert js.rfind("await removeSelfEnrollments()", 0, diagnostic) >= 0
+    assert diagnostic < js.index("Deployment complete.")
 
 
 # --- UI hardening: sealed columns + list deletion block ----------------------
@@ -2105,6 +2107,31 @@ def test_template_brackets_writes_with_unseal_and_seal_phases(tmp_path: Path) ->
     assert js.index(f"Starting Phase {pn('forms')}") < js.index(
         f"Starting Phase {pn('seal')}",
     ) < js.index(f"Starting Phase {pn('acls')}")
+
+
+def test_exit_restores_every_field_the_run_unsealed(tmp_path: Path) -> None:
+    """Every declared field is opened during PREPARE, not only Title. An
+    abort before PROTECTION must restore every list/column pair this run
+    changed, while leaving fields it found open untouched."""
+    schema, bundle = _hardening_inputs(tmp_path)
+    js = generate_deploy_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    assert "const fieldsUnsealedForRun = new Map();" in js
+    assert "fieldsUnsealedForRun.set(" in js
+    assert "[listTitle, columnTitle]" in js
+    assert "async function restoreUnsealedFields()" in js
+    assert "for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values())" in js
+    finally_block = js.rsplit("} finally {", 1)[1]
+    assert "await restoreUnsealedFields();" in finally_block
+    assert "await removeSelfEnrollments();" in finally_block
 
 
 def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:

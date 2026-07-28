@@ -123,7 +123,6 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Singleton seed verification failed; deployment is not activation-ready.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-5-seed-errors' };
   }
 

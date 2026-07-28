@@ -48,6 +48,28 @@
 {% include "deploy/_shape_probes.js.j2" %}
 {% include "deploy/_helpers.js.j2" %}
 {% include "deploy/_field_reconcile.js.j2" %}
+  // Run-scoped privilege is exit-scoped too. Keep the state and cleanup
+  // outside the phase try so an unexpected throw can still remove every
+  // membership this deployment added.
+  const selfEnrollments = [];
+  async function removeSelfEnrollments() {
+    for (const enrollment of selfEnrollments.splice(0)) {
+      try {
+        const digestR = await getDigest();
+        const removeResp = await fetchWithRetry(apiUrl(`web/sitegroups(${enrollment.groupId})/users/removebyid(${enrollment.userId})`), {
+          method: 'POST',
+          headers: spHeaders(digestR),
+        });
+        if (!removeResp.ok) {
+          const text = await removeResp.text();
+          throw new Error(`HTTP ${removeResp.status} ${text}`);
+        }
+        log('INFO', `Removed operator from '${enrollment.groupName}' (run-scoped enrolment).`);
+      } catch (err) {
+        log('ERROR', `Could not remove the operator from '${enrollment.groupName}': ${err.message}. Remove yourself in Site permissions > Groups.`);
+      }
+    }
+  }
   // Every phase runs inside this try so that the finally below is reached
   // by EVERY exit: the normal `return summary` at the end of the last
   // phase, the seven early returns that abort a broken run, and a throw
@@ -66,6 +88,9 @@
 {% endfor %}
 {% endfor %}
   } finally {
-    await restoreUnsealedTitles();
+    // Restore field protection before dropping the temporary membership
+    // that may be what authorises those writes.
+    await restoreUnsealedFields();
+    await removeSelfEnrollments();
   }
 })();

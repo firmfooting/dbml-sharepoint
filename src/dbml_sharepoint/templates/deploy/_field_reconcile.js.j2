@@ -26,12 +26,10 @@
   // too, and a caller that omits it is treated as managed.
   const UNMANAGED = {{ unmanaged_sentinel | tojson }};
 
-  // List titles whose built-in Title this run unsealed so it could write
-  // the patch. PROTECTION re-seals exactly these and nothing else: the
-  // tool does not own Title's seal state, so it must hand back what it
-  // found rather than leaving open a column it opened. The column is
-  // always 'Title', so the list title is the whole key.
-  const titlesUnsealedForRun = new Set();
+  // Every field this run changed from sealed to unsealed. The value retains
+  // the pair while the key makes repeat encounters idempotent. Exit cleanup
+  // restores exactly these fields and never seals one it found open.
+  const fieldsUnsealedForRun = new Map();
 
   // The restoration itself, called from the finally in deploy.js.j2 rather
   // than from PROTECTION. Every phase between PREPARE and PROTECTION can
@@ -42,23 +40,30 @@
   // guarantee has to sit on the exit path, which is the only path every
   // abort shares. Idempotent by construction: PROTECTION normally seals
   // these on the way past, and this writes only what it finds still open,
-  // so the success path pays one read per unsealed Title and nothing else.
-  async function restoreUnsealedTitles() {
-    for (const listTitle of titlesUnsealedForRun) {
-      try {
-        invalidateFieldShapes(listTitle);  // never trust phase-start state
-        const shape = await readFieldShape(listTitle, 'Title', null);
-        if (shape && shape.Sealed === true) continue;
-        const digest = await getDigest();
-        await patchField(
-          listTitle, 'Title', { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
-        );
-        log('WARN', `Re-sealed the built-in Title on '${listTitle}' while exiting: the run opened it and did not reach the seal phase.`);
-      } catch (err) {
-        // Loud, and recorded: the operator has to know the site was left
-        // open, because nothing else in the run will say so.
-        log('ERROR', `Could not re-seal the built-in Title on '${listTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
-        summary.errors.push({ phase: 'exit', list: listTitle, column: 'Title', error: err.message });
+  // so the success path pays one field enumeration per affected list.
+  async function restoreUnsealedFields() {
+    const byList = new Map();
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (!byList.has(listTitle)) byList.set(listTitle, []);
+      byList.get(listTitle).push(columnTitle);
+    }
+    for (const [listTitle, columns] of byList.entries()) {
+      invalidateFieldShapes(listTitle);  // never trust phase-start state
+      for (const columnTitle of columns) {
+        try {
+          const shape = await readFieldShape(listTitle, columnTitle, null);
+          if (shape && shape.Sealed === true) continue;
+          const digest = await getDigest();
+          await patchField(
+            listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
+          );
+          log('WARN', `Re-sealed '${listTitle}.${columnTitle}' while exiting: the run opened it and did not reach the seal phase.`);
+        } catch (err) {
+          // Loud, and recorded: the operator has to know the site was left
+          // open, because nothing else in the run will say so.
+          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
+          summary.errors.push({ phase: 'exit', list: listTitle, column: columnTitle, error: err.message });
+        }
       }
     }
   }
@@ -538,4 +543,3 @@
       : 'Current user lacks ManageLists on this site.');
     return { aborted: 'insufficient-permissions' };
   }
-
