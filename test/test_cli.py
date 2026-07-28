@@ -417,6 +417,56 @@ def test_unknown_dbml_index_column_is_a_message_not_a_traceback(tmp_path: Path) 
     assert "Traceback" not in output, output
     assert "bad-index.dbml" in output
     assert "Staus" in output
+    # pydbml names the table with a literal, unformatted '{self.name}'. The
+    # whole clause is dropped, so the sentence must not trail off mid-phrase.
+    assert "{self.name}" not in output, output
+    assert "not defined in." not in output, output
+
+
+def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
+    """`report` does not validate — the generators meet a bad schema first.
+
+    They refuse by raising, and unhandled that printed a traceback for a
+    hand-edited typo. Both refusals reachable from a parseable schema are
+    covered: an unmapped column type (typemap) and a composite DBML index
+    (the deploy projection).
+    """
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    refusals = {
+        "bad-type.dbml": ("  Status blob\n", "blob"),
+        "composite.dbml": (
+            "  Status nvarchar\n  Category nvarchar\n"
+            "  indexes { (Status, Category) }\n",
+            "composite",
+        ),
+    }
+    for filename, (body, needle) in refusals.items():
+        schema = tmp_path / filename
+        schema.write_text(
+            "Project t { database_type: 'SharePoint Online' }\n"
+            f"Table Risk {{\n  Id int [pk, increment]\n{body}}}\n",
+            encoding="utf-8",
+        )
+        out = tmp_path / f"reports-{filename}"
+        result = _cli(
+            "report",
+            "--schema", str(schema),
+            "--mapping", str(mapping),
+            "--out", str(out),
+        )
+        output = result.stdout + result.stderr
+        assert result.returncode == 1, output
+        assert "Traceback" not in output, output
+        assert needle in output, output
+        assert "build --dry-run" in output, output
+        # Nothing half-written survives the refusal.
+        assert not out.exists(), sorted(p.name for p in out.iterdir())
 
 
 def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
