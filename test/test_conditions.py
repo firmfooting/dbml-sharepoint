@@ -694,3 +694,38 @@ def test_a_lookup_value_accessor_compares_as_text() -> None:
         [{"field": "Project", "property": "lookupId", "op": "eq", "value": 7}], "w",
     )
     assert to_expression(numeric, {"Project": "int"}) == "[$Project.lookupId] == 7"
+
+
+def test_condition_accessors_must_be_strings() -> None:
+    with pytest.raises(ValueError, match=r"property.*string"):
+        parse_condition(
+            {"field": "Project", "property": ["lookupValue"], "op": "eq", "value": "Alpha"},
+            "w",
+        )
+
+
+@pytest.mark.parametrize("value", [[True], {"answer": True}])
+def test_boolean_container_operands_are_configuration_errors(value: object) -> None:
+    condition = parse_condition({"field": "Active", "op": "eq", "value": value}, "w")
+    with pytest.raises(ValueError, match="not a boolean"):
+        to_validation(condition, {"Active": "boolean"})
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), "NaN", "Infinity"])
+def test_non_finite_numeric_operands_are_rejected(value: object) -> None:
+    condition = parse_condition({"field": "Score", "op": "eq", "value": value}, "w")
+    with pytest.raises(ValueError, match="finite number"):
+        to_caml(condition, {"Score": "number"})
+
+
+def test_negating_negative_operators_does_not_admit_nulls() -> None:
+    neq = parse_condition(
+        {"none_of": [{"field": "Status", "op": "neq", "value": "Closed"}]}, "w",
+    )
+    not_in = parse_condition(
+        {"none_of": [{"field": "Status", "op": "not_in", "value": ["A", "B"]}]}, "w",
+    )
+    assert "IsNull" not in to_caml(neq, {"Status": "nvarchar"})
+    assert "IsNull" not in to_caml(not_in, {"Status": "nvarchar"})
+    assert to_validation(neq, {"Status": "nvarchar"}) == '[Status]="Closed"'
+    assert to_validation(not_in, {"Status": "nvarchar"}) == 'OR([Status]="A",[Status]="B")'

@@ -1,6 +1,8 @@
 # src/dbml_sharepoint/analysis/checks/_demo.py
 """Demo rows seeded by ``--seed``."""
 
+import datetime as dt
+
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.validator import (
     _DATE_TYPES,
@@ -43,7 +45,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         xcols = cross_site_by_entity.get(entity_name, set())
         demo_writable = _rendered_columns(demo_table, xcols) | {"Title"}
         demo_types = {c.name: c.type for c in demo_table.columns}
-        for row in demo_rows:
+        columns = {c.name: c for c in demo_table.columns}
+        row_positions = {row.key: position for position, row in enumerate(demo_rows)}
+        for position, row in enumerate(demo_rows):
             ctx = f"demo_items[{entity_name}].{row.key}"
             demo_title = row.values.get("Title")
             if not isinstance(demo_title, str) or not demo_title.startswith("[DEMO] "):
@@ -83,6 +87,29 @@ def check(vc: ValidationContext) -> list[Finding]:
                             f"{value['demo_ref']!r} is not a declared demo "
                             f"key.",
                         ))
+                    else:
+                        column = columns.get(col_name)
+                        target_entity = demo_keys[value["demo_ref"]]
+                        if column is None or column.ref is None:
+                            findings.append(Finding(
+                                "error",
+                                f"{ctx}: {col_name} uses demo_ref but is not a lookup column.",
+                            ))
+                        elif column.ref.target_table != target_entity:
+                            findings.append(Finding(
+                                "error",
+                                f"{ctx}: {col_name} targets {column.ref.target_table}, but "
+                                f"demo_ref {value['demo_ref']!r} belongs to {target_entity}.",
+                            ))
+                        elif (
+                            target_entity == entity_name
+                            and row_positions.get(value["demo_ref"], position) >= position
+                        ):
+                            findings.append(Finding(
+                                "error",
+                                f"{ctx}: {col_name} demo_ref {value['demo_ref']!r} must be "
+                                f"declared before the row that uses it.",
+                            ))
                     continue
                 if col_type == "person":
                     if value != "@me":
@@ -93,12 +120,20 @@ def check(vc: ValidationContext) -> list[Finding]:
                         ))
                     continue
                 if col_type in _DATE_TYPES:
-                    if not (isinstance(value, str)
-                            and (_TODAY_SENTINEL.match(value) or _DEMO_ISO_DATE.match(value))):
+                    valid_date = False
+                    if isinstance(value, str) and _TODAY_SENTINEL.match(value):
+                        valid_date = True
+                    elif isinstance(value, str) and _DEMO_ISO_DATE.match(value):
+                        try:
+                            dt.date.fromisoformat(value)
+                            valid_date = True
+                        except ValueError:
+                            pass
+                    if not valid_date:
                         findings.append(Finding(
                             "error",
                             f"{ctx}: date column {col_name} accepts "
-                            f"'today+N'/'today-N' or an ISO date "
+                            f"'today+N'/'today-N' or a real ISO calendar date "
                             f"(got {value!r}).",
                         ))
                     continue

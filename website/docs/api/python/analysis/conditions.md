@@ -125,6 +125,14 @@ Render to a classic validation predicate for `ValidationFormula`.
 SYSTEM_COLUMN_TYPES = {'ID': 'int', 'Created': 'datetime', 'Modified': 'datetime', 'Author': 'person', 'Editor': 'person'}
 ```
 
+### `effective_column_types`
+
+```python
+def effective_column_types(declared: dict[str, str], cross_site_columns: set[str] | frozenset[str] = frozenset()) -> dict[str, str]
+```
+
+Types for DBML columns plus fields provisioned implicitly or by expansion.
+
 ### `PROPERTY_ACCESSORS`
 
 ```python

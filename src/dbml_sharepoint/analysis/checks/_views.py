@@ -5,6 +5,7 @@ from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,
+    effective_column_types,
     validate_condition,
 )
 from dbml_sharepoint.analysis.validator import (
@@ -105,11 +106,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         # build. Two are rendered without being DBML columns: the built-in
         # Title, which every provisioned list has, and the Choice+URL pair a
         # cross-site reference expands into. Both are text.
-        types_by_col = {c.name: c.type for c in view_table.columns}
-        types_by_col.setdefault("Title", "nvarchar")
-        for xcol in xcols:
-            types_by_col.setdefault(f"{xcol}Abbreviation", "nvarchar")
-            types_by_col.setdefault(f"{xcol}SiteUrl", "nvarchar")
+        types_by_col = effective_column_types(
+            {c.name: c.type for c in view_table.columns}, xcols,
+        )
         titles = [v.title for v in views]
         if "All Items" in titles:
             findings.append(Finding(
@@ -132,7 +131,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # Views are created under a URL slug derived from the title (the
         # .aspx name is fixed at creation); two titles collapsing to one
         # slug would fight over the same page.
-        slugs_seen: dict[str, str] = {}
+        slugs_seen: dict[str, str] = {"allitems": "All Items"}
         for view in views:
             slug = view_url_slug(view.title)
             if not slug:
@@ -141,15 +140,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"views[{entity_name}].{view.title}: title yields an "
                     f"empty URL slug; include at least one letter or digit.",
                 ))
-            elif slug in slugs_seen:
+            elif slug.casefold() in slugs_seen:
                 findings.append(Finding(
                     "error",
-                    f"views[{entity_name}]: titles {slugs_seen[slug]!r} and "
+                    f"views[{entity_name}]: titles {slugs_seen[slug.casefold()]!r} and "
                     f"{view.title!r} share the URL slug {slug}.aspx; retitle "
                     f"one so the view pages differ.",
                 ))
             else:
-                slugs_seen[slug] = view.title
+                slugs_seen[slug.casefold()] = view.title
         for view in views:
             ctx = f"views[{entity_name}].{view.title}"
             # Any "@name" still in fields is one the loader could not

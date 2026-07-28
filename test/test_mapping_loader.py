@@ -1435,6 +1435,37 @@ def test_quoted_singleton_is_rejected(tmp_path: Path) -> None:
         load_mapping(tmp_path / "m.yaml")
 
 
+@pytest.mark.parametrize("section", ["form_visibility", "column_validation"])
+def test_formula_sections_reject_non_mapping_columns(tmp_path: Path, section: str) -> None:
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        f"{section}:\n"
+        "  Project:\n"
+        "    columns: []\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"columns.*mapping"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+@pytest.mark.parametrize("empty_filter", ["[]", "{}"])
+def test_views_reject_explicit_empty_filters(tmp_path: Path, empty_filter: str) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Open\n"
+            "      fields: [Title]\n"
+            f"      where: {empty_filter}\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"where.*(empty|expected)|empty group"):
+        load_mapping(tmp_path / "m.yaml")
+
+
 # --- Migration messages -----------------------------------------------------
 
 

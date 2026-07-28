@@ -2,7 +2,12 @@
 """Column formatting, style specs, and form formatting."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
-from dbml_sharepoint.analysis.conditions import VALIDATION, validate_condition
+from dbml_sharepoint.analysis.conditions import (
+    VALIDATION,
+    effective_column_types,
+    to_validation,
+    validate_condition,
+)
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
     SYSTEM_COLUMNS,
@@ -163,17 +168,29 @@ def check(vc: ValidationContext) -> list[Finding]:
         if len(rule.message) > 1024:
             findings.append(Finding("error", f"{ctx}: message must be ≤1024 characters."))
         xcols = cross_site_by_entity.get(entity_name, set())
-        findings.extend(
-            Finding("error", message)
-            for message in validate_condition(
-                rule.when,
-                target=VALIDATION,
-                rendered=_rendered_columns(rule_table, xcols) | {"Title"},
-                types={c.name: c.type for c in rule_table.columns},
-                lookups={c.name for c in rule_table.columns if c.ref is not None},
-                context=f"{ctx}.when",
-            )
+        types = effective_column_types(
+            {c.name: c.type for c in rule_table.columns}, xcols,
         )
+        problems = validate_condition(
+            rule.when,
+            target=VALIDATION,
+            rendered=_rendered_columns(rule_table, xcols) | {"Title"},
+            types=types,
+            lookups={c.name for c in rule_table.columns if c.ref is not None},
+            context=f"{ctx}.when",
+        )
+        findings.extend(Finding("error", message) for message in problems)
+        if not problems:
+            formula = f"={to_validation(rule.when, types)}"
+            for internal in types:
+                display = bundle.mapping.display_name_for(entity_name, internal)
+                formula = formula.replace(f"[{internal}]", f"[{display}]")
+            if len(formula) > 1024:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: rendered formula is {len(formula)} characters; "
+                    "SharePoint's limit is 1024.",
+                ))
 
 
     return findings

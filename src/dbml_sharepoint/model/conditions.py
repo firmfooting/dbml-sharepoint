@@ -93,6 +93,10 @@ def parse_condition(raw: Any, context: str) -> Condition:
     for key in ("field", "op"):
         if not raw.get(key):
             raise ValueError(f"{context}: {key!r} is required on a condition")
+    for key in ("property", "measure"):
+        value = raw.get(key)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{context}: {key!r} must be a string or null")
     return Leaf(
         field=str(raw["field"]),
         op=str(raw["op"]),

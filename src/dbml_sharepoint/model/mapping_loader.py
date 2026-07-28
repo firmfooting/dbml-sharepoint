@@ -516,7 +516,9 @@ def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
         raise ValueError(
             f"{context}.reconcile: expected 'exact' or 'declared', got {reconcile!r}",
         )
-    columns = block.get("columns") or {}
+    columns = block.get("columns")
+    if columns is None:
+        columns = {}
     if not isinstance(columns, dict):
         raise ValueError(f"{context}.columns: expected a mapping of column name to declaration")
     return reconcile, columns
@@ -594,8 +596,11 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     fields = raw_view.get("fields")
     if not isinstance(fields, list) or not fields or not all(isinstance(f, str) for f in fields):
         raise ValueError(f"{context}: view 'fields' must be a non-empty list of column names")
-    raw_where = raw_view.get("where")
-    where = parse_condition(raw_where, f"{context}.where") if raw_where else None
+    where = (
+        parse_condition(raw_view["where"], f"{context}.where")
+        if "where" in raw_view
+        else None
+    )
     sort: list[ViewSort] = []
     for i, entry in enumerate(raw_view.get("sort") or []):
         _reject_unknown_keys(entry, {"field", "direction"}, f"{context}.sort[{i}]")

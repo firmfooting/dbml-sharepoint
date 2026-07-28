@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import typer
 import yaml
+from pyparsing.exceptions import ParseBaseException
 
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import SeedRequiresDemoItemsError, clear_generated, emit_bundle
@@ -48,7 +49,7 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
 
 # A bad config file fails as one of these. Deliberately not `Exception`:
 # an unexpected error is a bug in the tool and must keep its traceback.
-_CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError)
+_CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
 
 
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:

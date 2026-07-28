@@ -378,6 +378,23 @@ def test_a_missing_mapping_file_is_a_message_not_a_traceback(tmp_path: Path) -> 
     assert "nope.yaml" in output
 
 
+def test_malformed_dbml_is_a_message_not_a_traceback(tmp_path: Path) -> None:
+    schema = tmp_path / "bad.dbml"
+    schema.write_text("Table Broken {\n  invalid !!!\n}\n", encoding="utf-8")
+    result = _cli(
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert "Traceback" not in output, output
+    assert "schema" in output and "bad.dbml" in output
+
+
 def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     """`report` loads the same three files and had the same behaviour."""
     mapping = _bad_mapping(tmp_path, "versioning:\n  default:\n    enable_versionin: false\n")

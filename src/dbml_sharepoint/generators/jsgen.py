@@ -8,6 +8,7 @@ from typing import Any
 
 from dbml_sharepoint.analysis.conditions import (
     SYSTEM_COLUMN_TYPES,
+    effective_column_types,
     to_caml,
     to_validation,
 )
@@ -409,7 +410,10 @@ def build_schema_json(
         # over REST.
         visibility = bundle.mapping.form_visibility.get(table_name)
         validation = bundle.mapping.column_validation.get(table_name)
-        col_types = {c.name: c.type for c in table.columns}
+        col_types = effective_column_types(
+            {c.name: c.type for c in table.columns},
+            {name for entity_name, name in cross_site_keys if entity_name == table_name},
+        )
         calculated_here = bundle.mapping.calculated_formulas.get(table_name, {})
         for f in fields_phase1:
             f["display_title"] = display_map[f["title"]]
@@ -528,7 +532,10 @@ def build_schema_json(
                 ),
             })
 
-        column_types = {col.name: col.type for col in table.columns}
+        column_types = effective_column_types(
+            {col.name: col.type for col in table.columns},
+            {name for entity_name, name in cross_site_keys if entity_name == table_name},
+        )
         declared_views = bundle.mapping.views.get(table_name, [])
         views_to_render = list(declared_views)
         if entity.kind != "DocumentLibrary":

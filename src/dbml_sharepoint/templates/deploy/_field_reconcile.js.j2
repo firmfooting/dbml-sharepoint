@@ -427,6 +427,13 @@
         + `(declared ${JSON.stringify(field.client_validation_formula)}; readback ${JSON.stringify(after.ClientValidationFormula)})`,
       );
     }
+    if (field.client_validation_formula !== UNMANAGED
+        && !same(after.ClientValidationMessage, '')) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ClientValidationMessage `
+        + `(declared ""; readback ${JSON.stringify(after.ClientValidationMessage)})`,
+      );
+    }
     if (field.validation_formula !== UNMANAGED
         && canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(field.validation_formula)) {
       // Both values are logged: SharePoint's normalisation may do more than
@@ -434,6 +441,13 @@
       throw new Error(
         `Field '${listName}.${field.title}' did not retain ValidationFormula `
         + `(declared ${JSON.stringify(field.validation_formula)}; readback ${JSON.stringify(after.ValidationFormula)})`,
+      );
+    }
+    if (field.validation_formula !== UNMANAGED
+        && !same(after.ValidationMessage, field.validation_message)) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ValidationMessage `
+        + `(declared ${JSON.stringify(field.validation_message)}; readback ${JSON.stringify(after.ValidationMessage)})`,
       );
     }
   }

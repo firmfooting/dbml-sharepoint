@@ -72,6 +72,13 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"name '{generated}' is {len(generated)} chars; "
                         f"SP internal-name limit is 32.",
                     ))
+                if any(col.name == generated and col.name != xref.column for col in table.columns):
+                    findings.append(Finding(
+                        "error",
+                        f"cross_site {xref.entity}.{xref.column}: generated field "
+                        f"{generated!r} collides with the declared DBML column "
+                        f"{xref.entity}.{generated}.",
+                    ))
 
     # Every indexed_columns entry must name a column that will actually be
     # rendered in SP for that table. Phase 2.3 patches fields by name, so an

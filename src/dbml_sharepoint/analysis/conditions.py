@@ -19,6 +19,7 @@ Implications need no operator of their own. A validation rule is usually
 grammar as authored and normalised by the rules above.
 """
 
+import math
 import re
 
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -76,7 +77,7 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # A null test is its own inverse, and a measure is never null —
             # LEN(blank) is 0, so the flipped comparison already matches.
             return flipped
-        if flipped.op in ("neq", "not_in"):
+        if node.op in ("neq", "not_in") or flipped.op in ("neq", "not_in"):
             # These two inverse operators define the empty value as outside
             # the compared literal/set. Their renderers already carry that
             # semantic, so adding another null arm here would only duplicate
@@ -291,15 +292,20 @@ def _number(value: object, context: str, target: str) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
         raise _reject(target, f"{value!r} is not a number", context)
     try:
-        return str(int(value)) if float(value).is_integer() else str(float(value))
+        numeric = float(value)
     except ValueError:
         raise _reject(target, f"{value!r} is not a number on a numeric column", context) from None
+    if not math.isfinite(numeric):
+        raise _reject(target, f"{value!r} is not a finite number", context)
+    return str(int(numeric)) if numeric.is_integer() else str(numeric)
 
 
 def _boolean(value: object, context: str, target: str) -> bool:
     """Coercion is two-sided. A one-sided test silently inverts the
     condition for the author who quotes 'true', which is the cautious
     thing to do and so exactly the author who should not be punished."""
+    if not isinstance(value, (bool, int, str)):
+        raise _reject(target, f"{value!r} is not a boolean", context)
     if value in _TRUTHY:
         return True
     if value in _FALSY:
@@ -499,6 +505,17 @@ SYSTEM_COLUMN_TYPES: dict[str, str] = {
     "Author": "person",
     "Editor": "person",
 }
+
+
+def effective_column_types(
+    declared: dict[str, str], cross_site_columns: set[str] | frozenset[str] = frozenset(),
+) -> dict[str, str]:
+    """Types for DBML columns plus fields provisioned implicitly or by expansion."""
+    effective = {"Title": "nvarchar", **declared}
+    for name in cross_site_columns:
+        effective.setdefault(f"{name}Abbreviation", "nvarchar")
+        effective.setdefault(f"{name}SiteUrl", "hyperlink")
+    return effective
 
 # There is no defensible default between a person's display name, their
 # email and their id, so the accessor is declared rather than guessed.

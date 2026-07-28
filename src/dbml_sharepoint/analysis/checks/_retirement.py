@@ -4,7 +4,13 @@
 import datetime as dt
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
-from dbml_sharepoint.analysis.conditions import VALIDATION, leaves, validate_condition
+from dbml_sharepoint.analysis.conditions import (
+    VALIDATION,
+    effective_column_types,
+    leaves,
+    to_validation,
+    validate_condition,
+)
 from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
@@ -185,7 +191,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue
         xcols = cross_site_by_entity.get(fv_entity, set())
         rendered = _rendered_columns(section_table, xcols) | {"Title"}
-        types = {c.name: c.type for c in section_table.columns}
+        types = effective_column_types(
+            {c.name: c.type for c in section_table.columns}, xcols,
+        )
         lookups = {c.name for c in section_table.columns if c.ref is not None}
         calculated = set(bundle.mapping.calculated_formulas.get(fv_entity, {}))
         by_name = {c.name: c for c in section_table.columns}
@@ -237,7 +245,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue
         xcols = cross_site_by_entity.get(cv_entity, set())
         rendered = _rendered_columns(section_table, xcols) | {"Title"}
-        types = {c.name: c.type for c in section_table.columns}
+        types = effective_column_types(
+            {c.name: c.type for c in section_table.columns}, xcols,
+        )
         lookups = {c.name for c in section_table.columns if c.ref is not None}
         ctx = f"column_validation[{cv_entity}]"
         for column, cv_rule in cv_section.columns.items():
@@ -263,16 +273,25 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{ctx}.{column}: references {others} — column validation may only "
                     f"reference its own column; use list_validation for a cross-column rule.",
                 ))
-            findings.extend(
-                Finding("error", message)
-                for message in validate_condition(
-                    cv_rule.when,
-                    target=VALIDATION,
-                    rendered=rendered,
-                    types=types,
-                    lookups=lookups,
-                    context=f"{ctx}.{column}.when",
-                )
+            problems = validate_condition(
+                cv_rule.when,
+                target=VALIDATION,
+                rendered=rendered,
+                types=types,
+                lookups=lookups,
+                context=f"{ctx}.{column}.when",
             )
+            findings.extend(Finding("error", message) for message in problems)
+            if not problems:
+                formula = f"={to_validation(cv_rule.when, types)}"
+                for internal in types:
+                    display = bundle.mapping.display_name_for(cv_entity, internal)
+                    formula = formula.replace(f"[{internal}]", f"[{display}]")
+                if len(formula) > 1024:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}.{column}: rendered formula is {len(formula)} characters; "
+                        "SharePoint's limit is 1024.",
+                    ))
 
     return findings

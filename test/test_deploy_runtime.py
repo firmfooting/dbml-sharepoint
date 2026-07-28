@@ -704,3 +704,47 @@ def test_overwriting_a_declared_formula_logs_the_prior_value(tmp_path: Path) -> 
     replaced = [ln for ln in output.splitlines() if "declared formulas" in ln]
     assert replaced, f"no prior value logged:\n{output[-2500:]}"
     assert any("WasHere" in ln for ln in replaced), replaced
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_formula_reconcile_fails_when_sharepoint_drops_validation_message(
+    tmp_path: Path,
+) -> None:
+    harness = _ADOPTED_HARNESS.replace(
+        "if (parsed.ValidationMessage != null) f.__vm = parsed.ValidationMessage;",
+        "// Simulate SharePoint accepting the MERGE but dropping ValidationMessage.",
+    )
+    js = _declared_deploy_js(
+        tmp_path,
+        "column_validation:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when: [{ field: Note, op: is_not_null }]\n"
+        "        message: A note is required.\n",
+    )
+    script = harness + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    assert "did not retain ValidationMessage" in output, output[-3000:]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_formula_reconcile_fails_when_client_message_is_not_cleared(tmp_path: Path) -> None:
+    harness = _ADOPTED_HARNESS.replace(
+        "ClientValidationMessage: null,",
+        "ClientValidationMessage: 'stale guidance',",
+    )
+    js = _declared_deploy_js(
+        tmp_path,
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Note: hidden\n",
+    )
+    script = harness + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    assert "did not retain ClientValidationMessage" in output, output[-3000:]

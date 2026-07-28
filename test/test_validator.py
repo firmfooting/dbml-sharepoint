@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+import pytest
+
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate,
@@ -1028,6 +1030,122 @@ def test_view_url_slug_must_be_nonempty(tmp_path: Path) -> None:
         "      fields: [Title]\n",
     )
     assert any("slug" in f.message and "empty" in f.message for f in errors)
+
+
+@pytest.mark.parametrize("title", ["AllItems", "All-Items", "all items"])
+def test_authored_views_cannot_take_the_generated_all_items_url(
+    tmp_path: Path, title: str,
+) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        f"    - title: {title}\n"
+        "      fields: [Title]\n",
+    )
+    assert any("AllItems.aspx" in f.message for f in errors)
+
+
+def test_cross_site_expansion_cannot_collide_with_declared_columns(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Unit {\n"
+        "  Id int [pk, increment]\n"
+        "}\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Unit int [ref: > Unit.Id]\n"
+        "  UnitAbbreviation nvarchar\n"
+        "  UnitSiteUrl hyperlink\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Unit: { kind: List, base_template: 100, site_role: default }\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Project, column: Unit }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    collisions = [f.message for f in findings if "collides" in f.message]
+    assert any("UnitAbbreviation" in message for message in collisions)
+    assert any("UnitSiteUrl" in message for message in collisions)
+
+
+def test_demo_refs_and_calendar_dates_are_validated_before_generation(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Parent {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Parent int [ref: > Parent.Id]\n"
+        "  Previous int [ref: > Task.Id]\n"
+        "  Note nvarchar\n"
+        "  DueDate date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Parent: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "demo_items:\n"
+        "  Parent:\n"
+        "    - { key: p1, values: { Title: '[DEMO] Parent' } }\n"
+        "  Task:\n"
+        "    - key: t1\n"
+        "      values:\n"
+        "        Title: '[DEMO] First'\n"
+        "        Previous: { demo_ref: t2 }\n"
+        "        Note: { demo_ref: t1 }\n"
+        "        DueDate: '2026-02-31'\n"
+        "    - key: t2\n"
+        "      values:\n"
+        "        Title: '[DEMO] Second'\n"
+        "        Parent: { demo_ref: t1 }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    errors = [f.message for f in findings if f.severity == "error"]
+    assert any("Previous" in message and "before" in message for message in errors)
+    assert any("Note" in message and "lookup" in message for message in errors)
+    assert any(
+        "Parent" in message and "Task" in message and "targets" in message
+        for message in errors
+    )
+    assert any("2026-02-31" in message and "calendar" in message for message in errors)
+
+
+def test_rendered_validation_formula_length_is_checked(tmp_path: Path) -> None:
+    values = ", ".join(f"'value-{i}-{'x' * 40}'" for i in range(24))
+    errors = _view_errors(
+        tmp_path,
+        "list_validation:\n"
+        "  Project:\n"
+        f"    when: [{{ field: Status, op: in, value: [{values}] }}]\n"
+        "    message: Too long.\n"
+        "column_validation:\n"
+        "  Project:\n"
+        "    columns:\n"
+        "      Status:\n"
+        f"        when: [{{ field: Status, op: in, value: [{values}] }}]\n"
+        "        message: Too long.\n",
+    )
+    overlong = [f.message for f in errors if "1024" in f.message]
+    assert any("list_validation" in message for message in overlong)
+    assert any("column_validation" in message for message in overlong)
 
 
 def test_view_today_sentinel_only_on_date_columns(tmp_path: Path) -> None:

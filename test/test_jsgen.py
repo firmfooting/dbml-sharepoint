@@ -1024,6 +1024,91 @@ def test_cross_site_column_without_extension_is_error_finding() -> None:
     )
 
 
+def test_generated_condition_fields_are_typed_in_schema_output(tmp_path: Path) -> None:
+    """Built-in Title and cross-site expansion fields can drive conditions
+    even though neither appears as an ordinary rendered DBML column."""
+
+    class Expansion(BaseExtension):
+        def expand_column(
+            self, table: Any, column: Any, bundle: Any,
+        ) -> list[dict[str, Any]] | None:
+            return [
+                {
+                    "title": "UnitAbbreviation",
+                    "body": {
+                        "__metadata": {"type": "SP.FieldChoice"},
+                        "Title": "UnitAbbreviation",
+                        "FieldTypeKind": 6,
+                        "Choices": {"results": ["A"]},
+                        "Required": False,
+                    },
+                },
+                {
+                    "title": "UnitSiteUrl",
+                    "body": {
+                        "__metadata": {"type": "SP.FieldUrl"},
+                        "Title": "UnitSiteUrl",
+                        "FieldTypeKind": 11,
+                        "Required": False,
+                    },
+                },
+            ]
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Unit {\n"
+        "  Id int [pk, increment]\n"
+        "}\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Unit int [ref: > Unit.Id]\n"
+        "  Note nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Unit: { kind: List, base_template: 100, site_role: default }\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Risk, column: Unit }\n"
+        "form_visibility:\n"
+        "  Risk:\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        "          any_of:\n"
+        "            - { field: Title, op: eq, value: Named }\n"
+        "            - { field: UnitAbbreviation, op: eq, value: A }\n"
+        "views:\n"
+        "  Risk:\n"
+        "    - title: A unit\n"
+        "      fields: [UnitAbbreviation, Note]\n"
+        "      where: [{ field: UnitAbbreviation, op: eq, value: A }]\n"
+        "list_validation:\n"
+        "  Risk:\n"
+        "    when: [{ field: Title, op: is_not_null }]\n"
+        "    message: A title is required.\n",
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert not [
+        f for f in validate_all(schema, bundle, Expansion()) if f.severity == "error"
+    ]
+    output = build_schema_json(schema, bundle, "default", extension=Expansion())
+    risk = next(item for item in output["lists"] if item["title"] == "APP_Risk")
+    note = next(item for item in risk["fields_phase1"] if item["title"] == "Note")
+    assert "[$Title]" in note["client_validation_formula"]
+    assert "[$UnitAbbreviation]" in note["client_validation_formula"]
+    assert risk["validation_formula"] == "=NOT(ISBLANK([Title]))"
+    unit_view = next(item for item in output["views"] if item["title"] == "A unit")
+    assert '<Value Type="Text">A</Value>' in unit_view["caml_query"]
+
+
 def test_calculated_field_rendered_with_formula_and_output_type() -> None:
     """calculated_* columns render as SP.FieldCalculated with the mapping's
     formula and the right OutputType; they are never marked Required."""
