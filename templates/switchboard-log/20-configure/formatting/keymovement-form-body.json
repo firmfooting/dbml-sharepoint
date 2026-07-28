@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The movement",
+      "fields": ["Title", "Key", "IssuedTo", "Notes"]
+    },
+    {
+      "displayname": "Out and back",
+      "fields": ["IssuedAt", "Status", "ReturnedAt"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["IssuedBy"]
+    }
+  ]
+}
