@@ -1895,6 +1895,59 @@ def test_date_default_today_reaches_field_defaults(tmp_path: Path) -> None:
     assert field["body"]["DefaultValue"] == "[today]"
 
 
+def test_exact_column_validation_skips_unsupported_field_types(tmp_path: Path) -> None:
+    """Exact reconciliation clears stale rules only where SharePoint exposes
+    ValidationFormula. Writing even an empty formula to Note, Person or
+    Lookup fields fails the whole field MERGE with HTTP 500."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Summary nvarchar\n"
+        "  ReviewDate date\n"
+        "  Detail richtext\n"
+        "  Notes longtext\n"
+        "  Owner person\n"
+        "  Parent int [ref: > Risk.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "column_validation:\n"
+        "  Risk:\n"
+        "    reconcile: exact\n"
+        "    columns:\n"
+        "      Summary:\n"
+        "        when:\n"
+        "          - { field: Summary, op: neq, value: forbidden }\n"
+        "        message: Use a different summary.\n",
+        encoding="utf-8",
+    )
+    out = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    fields = {
+        field["title"]: field
+        for field in out["lists"][0]["fields_phase1"]
+    }
+    fields.update({
+        lookup["field"]["title"]: lookup["field"]
+        for lookup in out["phase2_lookups"]
+    })
+
+    assert fields["Summary"]["validation_formula"] == '=[Summary]<>"forbidden"'
+    assert fields["ReviewDate"]["validation_formula"] == ""
+    for name in ("Detail", "Notes", "Owner", "Parent"):
+        assert fields[name]["validation_formula"] == UNMANAGED, name
+        assert fields[name]["validation_message"] == UNMANAGED, name
+
+
 def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:
     """ClientFormCustomFormatter is a JSON string whose *JSONFormatter keys
     hold part JSON OBJECTS — the pane-native encoding (the Format pane

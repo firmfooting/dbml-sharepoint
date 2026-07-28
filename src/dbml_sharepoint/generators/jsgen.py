@@ -124,6 +124,15 @@ def _rewrite_formula_refs(formula: str, display_by_col: dict[str, str]) -> str:
 # same as clearing it; the deploy script must be able to tell them apart.
 UNMANAGED = "__dbmlsp_unmanaged__"
 
+# SP rejects ValidationFormula even when the desired value is an empty
+# string on these field kinds. This is a property-surface capability, not
+# merely an operand rule: exact reconciliation must not attempt to CLEAR a
+# formula the field type cannot carry. Confirmed live for Note (HTTP 500,
+# "This field type does not support validation formulas"); Lookup, User and
+# Calculated are already refused as validation operands for the same platform
+# limitation.
+_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 17, 20})
+
 
 def _section_target[T](
     section: EntitySection[T] | None,
@@ -180,8 +189,11 @@ def _column_validation(
     types: dict[str, str],
     display_map: dict[str, str],
     *,
+    field_type_kind: int,
     is_calculated: bool = False,
 ) -> tuple[str, str]:
+    if field_type_kind in _COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS:
+        return (UNMANAGED, UNMANAGED)
     declared, clear = _section_target(section, column, is_calculated=is_calculated)
     if declared is None:
         return ("", "") if clear else (UNMANAGED, UNMANAGED)
@@ -407,6 +419,7 @@ def build_schema_json(
             )
             f["validation_formula"], f["validation_message"] = _column_validation(
                 validation, f["title"], col_types, display_map,
+                field_type_kind=f["body"]["FieldTypeKind"],
                 is_calculated=is_calculated,
             )
             f["seal"] = bundle.mapping.seal_columns
@@ -439,6 +452,7 @@ def build_schema_json(
                     deferred["field"]["validation_message"],
                 ) = _column_validation(
                     validation, deferred["field"]["title"], col_types, display_map,
+                    field_type_kind=deferred["field"]["body"]["FieldTypeKind"],
                     is_calculated=deferred_calculated,
                 )
                 deferred["field"]["seal"] = bundle.mapping.seal_columns
