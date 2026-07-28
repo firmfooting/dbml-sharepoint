@@ -19,7 +19,7 @@ in prose and docs; numbers belong to generated artifacts.
 ### `PhaseStep`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class PhaseStep:
     key: str
     name: str

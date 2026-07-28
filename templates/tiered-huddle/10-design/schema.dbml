@@ -70,6 +70,10 @@ Enum escalation_priority {
   "Critical"
 }
 
+// BoardDate is [unique], so SharePoint indexes it implicitly. The ordinary
+// board indexes support headline-status views; Escalation indexes its queue,
+// due-date, routing and ownership filters.
+
 // ---------------------------------------------------------------------------
 // Tier 1 — the frontline team huddle. Six streams.
 // ---------------------------------------------------------------------------
@@ -101,7 +105,6 @@ Table Tier1Board {
   OtherUpdates      longtext     [note: 'Anything that does not belong to a stream']
 
   indexes {
-    BoardDate
     OverallStatus
     HuddleHeld
   }
@@ -138,7 +141,6 @@ Table Tier2Board {
   OtherUpdates         longtext     [note: 'Anything that does not belong to a stream']
 
   indexes {
-    BoardDate
     OverallStatus
     HuddleHeld
   }
@@ -190,7 +192,6 @@ Table Tier3Board {
   OtherUpdates          longtext     [note: 'Anything that does not belong to a stream']
 
   indexes {
-    BoardDate
     OverallStatus
     HuddleHeld
   }

@@ -46,6 +46,7 @@ Table Contract {
   Summary         richtext         [note: 'What the contract covers, key obligations']
   DocumentUrl     hyperlink        [note: 'Link to the signed contract in its system of record']
 
+  // The register's working filters: expiring soon, by status and by type.
   indexes {
     Status
     EndDate

@@ -16,11 +16,10 @@ Shared procedure: [`templates/README.md`](../../README.md) with
       never held this list.
 - [ ] Running two tiers rather than three? Delete the unused board list from
       `schema.dbml` (including its `indexes` block), from `mapping.yaml`
-      (`entities`,
-      `versioning.overrides`, `display_names.overrides`, `field_sets`,
-      `views`, `column_formatting`, `form_formatting`, `form_visibility`,
-      `list_validation`, `demo_items`) **and** delete its form body from
-      `20-configure/formatting/`.
+      (`entities`, `versioning.overrides`, `display_names.overrides`,
+      `field_sets`, `views`, `column_formatting`, `form_formatting`,
+      `form_visibility`, `list_validation`, `demo_items`) **and** delete
+      its form body from `20-configure/formatting/`.
 - [ ] The huddle chairs are site Members. The security model gives Members
       and Owners Contribute; nobody needs a bespoke group.
 

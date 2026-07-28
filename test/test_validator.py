@@ -374,17 +374,34 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
     )
 
 
-def test_indexed_column_cross_site_logical_name_is_error() -> None:
+def test_indexed_column_cross_site_logical_name_is_error(tmp_path: Path) -> None:
     """A cross-site column's logical DBML field is expanded and never exists
     in SharePoint, so its otherwise-valid DBML index must be rejected."""
-    schema = parse_dbml(FIXTURES / "simple.dbml")
-    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    bundle.mapping.cross_site_reference_columns.append(
-        CrossSiteRef(entity="Task", column="Project"),
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Project int [ref: > Project.Id]\n"
+        "  indexes { Project }\n"
+        "}\n",
+        encoding="utf-8",
     )
-    task = next(table for table in schema.tables if table.name == "Task")
-    task.indexes = [TableIndex(("Project",))]
-    findings = validate_against_mapping(schema, bundle)
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Task, column: Project }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
     assert any(
         f.severity == "error"
         and "Project" in f.message
@@ -473,6 +490,34 @@ def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path:
     assert any(
         f.severity == "error" and "21" in f.message and "20" in f.message
         for f in findings
+    )
+
+
+def test_dbml_index_must_not_repeat_a_unique_column(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Asset {\n"
+        "  Id int [pk, increment]\n"
+        "  AssetTag nvarchar [unique]\n"
+        "  indexes { AssetTag }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Asset: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert any(
+        finding.severity == "error"
+        and "AssetTag" in finding.message
+        and "unique" in finding.message
+        and "indexes" in finding.message
+        for finding in findings
     )
 
 

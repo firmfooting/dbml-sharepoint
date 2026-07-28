@@ -12,7 +12,7 @@ release.yaml reader + config-snapshot hashing.
 ### `Release`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Release:
     release_tag: str
     date: str

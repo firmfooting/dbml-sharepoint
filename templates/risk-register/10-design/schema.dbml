@@ -128,6 +128,9 @@ Table Risk {
   LastReviewedDate date        [not null, default: '[today]', note: 'Required review-cadence baseline. Fills automatically when the risk is created - update it each time you complete a review']
   SourceReference nvarchar     [note: 'The reference for this risk in whatever system of record it was escalated to, if any']
 
+  // Supported columns used by declared filters and common header filters.
+  // The calculated ratings, score, appetite gap and review date cannot be
+  // indexed by SharePoint and are rejected by the build validator.
   indexes {
     Status
     Category

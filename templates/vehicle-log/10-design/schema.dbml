@@ -27,7 +27,6 @@ Table Vehicle {
   Notes        nvarchar       [note: 'Fuel card ref, e-tag, quirks the next driver should know']
 
   indexes {
-    Rego
     Status
   }
 }

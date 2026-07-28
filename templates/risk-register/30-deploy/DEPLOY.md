@@ -79,6 +79,10 @@ site that already holds real risks.
       **Closed**. If you seeded, none of them
       is empty. The generated **All Items** recovery view is hidden from the
       modern view bar because this template has an authored default.
+- [ ] If upgrading a site that previously deployed the longer view titles,
+      delete **Open by score**, **Reviews due**, **Tolerance expiring** and
+      **Closed risks** after confirming the short replacements. This clean-cut
+      template does not adopt or delete those legacy views.
 - [ ] List Settings → Indexed columns shows `Status`, `Category`,
       `RiskResponse`, `ToleranceEndDate` and `LastReviewedDate`. The build
       manifest lists the same five under **indexed columns**.

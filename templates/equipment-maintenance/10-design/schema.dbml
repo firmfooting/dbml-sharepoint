@@ -53,7 +53,6 @@ Table Equipment {
     NextDueDate
     Status
     EquipmentType
-    EquipmentTag
   }
 }
 

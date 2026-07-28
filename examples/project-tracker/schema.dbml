@@ -46,6 +46,7 @@ Table Project {
   IsConfidential boolean        [default: false, note: 'Tick if this project should not be shared widely. Does not restrict who can open the item by itself.']
   CharterUrl    hyperlink       [note: 'Link to the project charter']
 
+  // Common filter: active projects.
   indexes {
     Status
   }
@@ -64,6 +65,7 @@ Table Task {
   DueDate     date
   Estimate    number         [note: 'Estimated hours']
 
+  // Common filter: open tasks within a project.
   indexes {
     Status
     Project
@@ -79,6 +81,7 @@ Table TimeLog {
   WorkDate  date     [not null]
   Hours     number   [not null]
 
+  // Common filter: time recorded against a task and reporting date.
   indexes {
     Task
     WorkDate
