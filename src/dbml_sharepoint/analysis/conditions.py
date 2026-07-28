@@ -223,6 +223,34 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
     EXPRESSION: dict(_CALCULATED_OPERAND),
 }
 
+# Operand types a target has not been PROVEN to support, as opposed to types
+# it demonstrably cannot. The distinction is the point: _FORBIDDEN_OPERAND_TYPES
+# above says "SharePoint cannot", this says "nobody has checked", and
+# collapsing the two would lose the difference between a closed question and
+# an open one.
+#
+# Hyperlink in a validation formula is the open one. Microsoft documents the
+# unsupported types for conditional show/hide (multi-select Person, Choice and
+# Lookup, time calculations, Currency, Location, Calculated, Managed Metadata)
+# and Hyperlink is not among them — but that list governs a different surface,
+# and no first-party source says what a validation formula does with a URL
+# column, which stores a value and a description rather than a scalar. A rule
+# that saves and silently never fires is this repository's worst failure mode,
+# so the build refuses until someone reads it back from a live list.
+#
+# To settle it: write the probe, run it, and delete the entry.
+_UNVERIFIED_OPERAND_TYPES: dict[str, dict[str, str]] = {
+    VALIDATION: {
+        "hyperlink": (
+            "a hyperlink column, whose behaviour in a validation formula has not been "
+            "verified against a live tenant — a URL column stores a value AND a "
+            "description rather than a scalar, and no first-party source says which "
+            "a formula compares. Enforce it in governance, or probe it and enable "
+            "this deliberately"
+        ),
+    },
+}
+
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
 _TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
@@ -389,6 +417,9 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
     if declared_type in forbidden:
         raise _reject(target, f"{leaf.field!r} is {forbidden[declared_type]}", where)
+    unverified = _UNVERIFIED_OPERAND_TYPES.get(target, {})
+    if declared_type in unverified:
+        raise _reject(target, f"{leaf.field!r} is {unverified[declared_type]}", where)
     # Only then: a measure changes what is compared — LEN(x) is a number
     # whatever x is — so the operand must not be quoted as the column would be.
     column_type = "number" if leaf.measure == "length" else declared_type

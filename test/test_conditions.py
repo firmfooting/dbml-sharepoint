@@ -790,3 +790,29 @@ def test_me_supports_only_equality() -> None:
     against it are meaningless rather than merely unsupported."""
     bad = _problems([{"field": "Owner", "op": "contains", "value": "me"}], CAML)
     assert any("'me'" in problem for problem in bad), bad
+
+
+def test_a_hyperlink_operand_in_a_validation_formula_is_refused_as_unproven() -> None:
+    """Not "SharePoint cannot" — "nobody has checked". Microsoft documents
+    the unsupported types for conditional show/hide and Hyperlink is not
+    among them, but that governs a different surface, and no first-party
+    source says what a validation formula does with a URL column, which
+    stores a value AND a description rather than a scalar.
+
+    A save rule that never fires is this repository's worst failure mode, so
+    the build refuses until someone reads it back from a live list. Raised
+    by the process-register uplift, which wanted 'a Digitised row carries a
+    SystemUrl' and shipped a visual control instead.
+    """
+    condition = parse_condition([{"field": "Doc", "op": "is_not_null"}], "c")
+    with pytest.raises(ValueError, match="not been verified"):
+        to_validation(condition, {"Doc": "hyperlink"})
+
+
+def test_a_hyperlink_operand_is_fine_in_a_view_filter() -> None:
+    """The refusal is scoped to validation formulas. CAML comparisons on a
+    URL column are ordinary text comparisons and are not in question."""
+    condition = parse_condition([{"field": "Doc", "op": "is_not_null"}], "c")
+    assert to_caml(condition, {"Doc": "hyperlink"}) == (
+        '<IsNotNull><FieldRef Name="Doc"/></IsNotNull>'
+    )
