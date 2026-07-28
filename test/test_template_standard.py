@@ -45,7 +45,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # The twenty-seven templates that have not yet been through a theme branch.
 # Removed by the branch that uplifts them; must reach empty.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "audit-actions", "change-register", "complaints-feedback",
+    "asset-register", "change-register", "complaints-feedback",
     "credentialing-register",
     "equipment-maintenance",
     "improvement-register", "incident-management",
@@ -83,6 +83,20 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # The audit row is a header record — a report and who answers for it —
+    # so it collapses to Identify -> Govern. The recommendation carries the
+    # whole arc except Assess: the rating comes FROM the report rather than
+    # from anything done here.
+    ("audit-actions", "Audit"): {
+        "The review": "Identify",
+        "Response": "Govern",
+    },
+    ("audit-actions", "Recommendation"): {
+        "The finding": "Identify",
+        "The agreed action": "Act",
+        "Closure": "Govern",
+        "System": "System",
     },
     # Two standalone registers with no link between them, and the same
     # shape either way: the person declares, somebody else decides. The
