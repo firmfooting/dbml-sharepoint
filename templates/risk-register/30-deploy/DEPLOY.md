@@ -75,10 +75,14 @@ site that already holds real risks.
       - Very Likely + Business Critical → **Extreme / 24**
       - Clear Likelihood → `ResidualRiskRating` and `RiskScore` both go
         **blank** (unrated is visible, not defaulted).
-- [ ] The New form shows four sections: **Describe the risk**, **Assess the
-      risk**, **Response and controls**, **Governance**. **System** holds
-      only `MatrixVersion`, which is off the New form, so that section does
-      not appear there; it shows on Edit and Display.
+- [ ] The New form shows **Describe the risk**, **Assess the risk**,
+      **Response and controls** and **Governance**, each holding the fields
+      named in `20-configure/formatting/risk-form-body.json`. **System**
+      holds only `MatrixVersion`, which is off the New form — so on New
+      that section has nothing to render. Whether SharePoint drops the
+      empty section heading or leaves it showing is not established here;
+      if you see a bare **System** heading on the New form, that is
+      cosmetic and expected, not a deployment fault.
 - [ ] `MatrixVersion` is absent from the New form and present on the Edit
       and Display forms — it is the audit stamp for which matrix version
       rated the row, not something a risk owner sets at creation, but it

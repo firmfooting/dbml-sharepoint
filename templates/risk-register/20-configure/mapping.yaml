@@ -401,9 +401,18 @@ list_validation:
       # nothing enforced it.
       - any_of:
           - { field: Status, op: neq, value: "Closed" }
-          - { field: OverallControlEffectiveness, op: in,
-              value: ["Eliminated or within appetite", "All reasonable controls in place"] }
-    message: "This risk cannot be saved yet. Check all three: a Tolerate response needs a Tolerance End Date; a risk past Provisional needs both Likelihood and Consequence; and a risk can only be Closed once its controls are rated 'All reasonable controls in place' or better."
+          - all_of:
+              - { field: OverallControlEffectiveness, op: in,
+                  value: ["Eliminated or within appetite", "All reasonable controls in place"] }
+              # A target is required at closure or the audit signal is
+              # blank. LevelsAboveTarget returns "" when TargetRiskRating
+              # is empty, so a risk closed with no target shows nothing in
+              # the "Closed risks" column that exists to reveal an
+              # above-appetite closure — the compensating control for the
+              # one closure criterion SharePoint cannot check would be
+              # silently empty exactly where it is needed.
+              - { field: TargetRiskRating, op: is_not_null }
+    message: "This risk cannot be saved yet. Check all three: a Tolerate response needs a Tolerance End Date; a risk past Provisional needs both Likelihood and Consequence; and a Closed risk needs a Target Risk Rating and controls rated 'All reasonable controls in place' or better."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] " — the marker rollback.js trusts to delete

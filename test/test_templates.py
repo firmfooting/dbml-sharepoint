@@ -308,6 +308,7 @@ def test_risk_register_save_rules_split_by_what_they_can_reference() -> None:
         "RiskResponse", "ToleranceEndDate",       # Tolerate needs its end date
         "Status", "Likelihood", "Consequence",    # past Provisional means assessed
         "OverallControlEffectiveness",            # Closed needs controls that hold
+        "TargetRiskRating",                       # ...and a target, or the audit is blank
     }, "a chained list rule was dropped, or a self-referencing one crept in"
     # Every operand is a type SharePoint can actually read in a validation
     # formula. Person, calculated and multi-line columns are refused at
@@ -343,4 +344,5 @@ def test_risk_register_demo_rows_satisfy_every_save_rule() -> None:
         ), f"{row.key}: past Provisional without being assessed"
         assert v.get("Status") != "Closed" or (
             v.get("OverallControlEffectiveness") in closure_ok
-        ), f"{row.key}: closed without controls that hold"
+            and v.get("TargetRiskRating")
+        ), f"{row.key}: closed without controls that hold, or without a target"

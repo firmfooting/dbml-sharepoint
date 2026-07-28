@@ -86,26 +86,59 @@ preserves the ratings as they stood immediately before the revision.
 
 ## Enforcement boundary
 
-Two rules protect this register's data quality, and they sit in different
-places for a specific reason.
+Four rules are enforced at save. Three are cross-column and therefore
+share a single message, because SharePoint gives a list one validation
+formula; the fourth reads only its own column and so keeps its own.
 
-- **The Tolerate/Tolerance End Date rule is enforced by SharePoint.** The
-  list-level validation formula in `mapping.yaml` refuses to save a row
-  where `RiskResponse` is `Tolerate` and `ToleranceEndDate` is empty. This
-  works because both columns are plain Choice/Date columns a validation
-  formula can read.
-- **The Closure Statement requirement is *not* enforced by SharePoint, and
-  cannot be.** `ClosureStatement` is a rich-text column, and SharePoint's
-  list and column validation formulas cannot reference rich-text columns
-  at all — there is no formula that can check whether it is empty. Closing
-  a risk without a real closure statement is therefore a **process
-  failure the register cannot catch by itself**: an RR Risk Manager reads
-  the statement before moving Status to Closed, and that reading is the
-  actual control, not a formula standing in for one.
+| Rule | Where |
+|---|---|
+| A Tolerate response carries a Tolerance End Date | list (shared message) |
+| A risk past Provisional has both Likelihood and Consequence | list (shared message) |
+| A Closed risk has a Target Risk Rating **and** controls rated *All reasonable controls in place* or better | list (shared message) |
+| Last Reviewed Date is never in the future | column (own message) |
 
-Do not add columns hoping to route around this: the same rich-text
-limitation applies to `Detail`, `Controls` and `Treatment` — none of them
-can be referenced by a validation formula either.
+The target rating is part of the closure rule rather than a nicety:
+`LevelsAboveTarget` returns blank when there is no target, so a risk closed
+without one shows nothing in the audit column described below — the
+compensating control would be empty exactly where it is needed.
+
+**Three things remain governance checks, and all three are platform limits
+rather than choices.**
+
+*A Closed risk carries a real Closure Statement.* Validation formulas
+cannot read multi-line columns — plain or rich text alike, so retyping it
+as plain text would not help. An RR Risk Manager reads it before the
+status moves.
+
+*A risk moved to Open, Tolerate or Closed has a named Risk Sponsor.* Those
+are the decisions this document makes the sponsor accountable for, and a
+row without one has nobody to approve an opening, re-endorse an expiring
+tolerance, or answer for a closure. It cannot be enforced conditionally:
+`RiskSponsor` is a person column, and SharePoint validation formulas
+cannot read those at all — the same limit that rules out any rule about
+`RiskOwner`.
+
+The only enforceable alternative is making `RiskSponsor` mandatory on
+every row, including a Provisional risk somebody is still drafting. That
+is a deliberate trade rather than an oversight: add `[not null]` to the
+column in `10-design/schema.dbml` if your register would rather refuse an
+unsponsored draft than allow an unsponsored decision. Until then, the
+sponsor is checked the same way the closure statement is — by a person.
+
+*Residual is at or below target at closure.* `LevelsAboveTarget` is a
+calculated column, and validation formulas cannot read those either.
+
+The compensating control is the **Closed risks** view, which carries
+`LevelsAboveTarget` for exactly this purpose: anything above 0 there was
+closed above appetite, and closure review is where that gets caught. It is
+*not* the **Above target** view, which filters out closed risks — a risk
+wrongly closed while above target leaves that view at the moment it most
+needs watching, so a control resting on it would be looking away precisely
+when the failure happens.
+
+The controls half of the closure rule is newly enforced. The
+`OverallControlEffectiveness` column description has always stated it;
+until it was declared here, nothing checked it.
 
 ## Sealed columns and deletion protection
 
@@ -128,42 +161,6 @@ its own run and re-seals afterwards; nobody else should need to.
    weekly.
 3. Closed risks keep their history; a recurrence is a new row, with
    `SourceReference` or `Detail` naming the old one.
-
-### What the register enforces, and what it cannot
-
-Four rules are enforced at save. Three are cross-column and therefore
-share a single message, because SharePoint gives a list one validation
-formula; the fourth reads only its own column and so keeps its own.
-
-| Rule | Where |
-|---|---|
-| A Tolerate response carries a Tolerance End Date | list (shared message) |
-| A risk past Provisional has both Likelihood and Consequence | list (shared message) |
-| A Closed risk has controls rated *All reasonable controls in place* or better | list (shared message) |
-| Last Reviewed Date is never in the future | column (own message) |
-
-**Two things remain governance checks, and both are platform limits rather
-than choices.**
-
-*A Closed risk carries a real Closure Statement.* Validation formulas
-cannot read multi-line columns — plain or rich text alike, so retyping it
-as plain text would not help. An RR Risk Manager reads it before the
-status moves.
-
-*Residual is at or below target at closure.* `LevelsAboveTarget` is a
-calculated column, and validation formulas cannot read those either.
-
-The compensating control is the **Closed risks** view, which carries
-`LevelsAboveTarget` for exactly this purpose: anything above 0 there was
-closed above appetite, and closure review is where that gets caught. It is
-*not* the **Above target** view, which filters out closed risks — a risk
-wrongly closed while above target leaves that view at the moment it most
-needs watching, so a control resting on it would be looking away precisely
-when the failure happens.
-
-Enforcing the third rule at all is new. The `OverallControlEffectiveness`
-column description has always stated it; until it was declared, nothing
-checked it.
 
 ## Lifecycle
 
