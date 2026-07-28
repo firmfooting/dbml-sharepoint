@@ -21,6 +21,7 @@ ones, measure what matters, and close the loop.
 | [process-register](process-register/) | Business-process inventory | The digitisation backbone — calculated digitisation-priority score (criticality × pain) |
 | [improvement-register](improvement-register/) | Continuous improvement log | Idea → test → adopt/abandon stages; before/after measures; fed by complaints, incidents and audits |
 | [measures-register](measures-register/) | KPI / measures catalogue | Definitions with numerator/denominator discipline — makes "improved" provable |
+| [opportunities-register](opportunities-register/) | Project-discovered business problems | Safety-first, one-minute capture → existing-system routing → selective assessment and hand-off |
 | [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefit×feasibility priority score; gate + graveyard discipline |
 | [change-register](change-register/) | Change requests & approvals | Submit-only intake, decision authority trail, days-to-decision |
 
@@ -29,7 +30,10 @@ score the pain (*process-register*) → deploy quick-win templates or build
 your own schema for the worst ones → define how you'll know it worked
 (*measures-register*) → run the smaller fixes as improvement cycles
 (*improvement-register*) and the bigger ones through *project-pipeline* /
-*change-register*.
+*change-register*. When a delivery team discovers a worthwhile business
+problem outside its authority, *opportunities-register* captures it once,
+routes known destinations immediately, and assesses only the remainder before
+hand-off into that same improvement/investment chain.
 
 ## Theme: Governance, risk & compliance
 

@@ -34,6 +34,10 @@ A SharePoint list never replaces a mandated system:
   local tiers and escalate material risks upward per your framework
   (the template's RiskMan-style escalation hook pattern exists for
   exactly that).
+- **opportunities-register** is only a de-identified project-to-business
+  routing layer. Its stop gate sends current harm, incidents, complaints,
+  privacy/cyber matters and statutory concerns to their mandated systems;
+  only a safe process observation and destination reference remain here.
 
 ## Template map for a health service
 
@@ -48,6 +52,7 @@ A SharePoint list never replaces a mandated system:
 | Grants and their acquittals | grants-register | Regional services live on these |
 | Consumer feedback (Std 2 partnering) | complaints-feedback | Statutory-scheme check first |
 | Quality improvement (Std 1 CQI) | improvement-register | Feed it from feedback, audits, incidents |
+| Out-of-scope problems discovered by projects | opportunities-register | One-minute capture; route to existing controls before assessing anything |
 | Clinical audit actions / accreditation findings | audit-actions | Recommendations to closure with evidence |
 | Committee meetings, decisions, actions | meeting-actions | Governance-lite for every committee |
 | Policies & procedures (PROMPT-class gap) | policy-library | Where no controlled-document system exists |
@@ -68,8 +73,9 @@ A SharePoint list never replaces a mandated system:
 
 ## Privacy defaults for health deployments
 
-The restrictive templates (complaints-feedback, volunteer-register) ship
-with no general-staff access; keep it that way. For everything else,
+The restrictive templates (complaints-feedback, volunteer-register and
+opportunities-register) ship with no general-staff access; keep it that way.
+For everything else,
 remember site membership *is* the audience — a "whole of org" site makes
 every Read grant organisation-wide. Registers holding staff professional
 data (credentialing) are read-wide by operational design but deserve a
