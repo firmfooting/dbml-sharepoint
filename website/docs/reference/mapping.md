@@ -115,10 +115,12 @@ views:
 - `formatting` points at a view-level (row) formatter JSON file. Its
   `[$Field]` references must be columns **this view displays** — SharePoint
   resolves them against the view's own fields, so a reference to a column
-  the view omits yields nothing and the format silently never fires. That
-  is a build error rather than a runtime surprise. A calculated column is
-  fine here and needs no `calculated: true`: the `string;#` prefix belongs
-  to column formatting only, see the
+  the view omits yields nothing and the format silently never fires. System
+  columns such as `Created` and `Author` are not exceptions: put them in
+  `fields` when formatting reads them. An omitted reference is a build error
+  rather than a runtime surprise. A calculated column is fine here and needs
+  no `calculated: true`: the `string;#` prefix belongs to column formatting
+  only, see the
   [style guide](./style-guide.md#styles).
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own

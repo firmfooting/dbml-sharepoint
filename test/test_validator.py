@@ -2205,6 +2205,32 @@ def test_view_formatting_may_only_read_columns_the_view_displays(tmp_path: Path)
     assert ok == [], ok
 
 
+def test_view_formatting_may_only_read_system_columns_the_view_displays(
+    tmp_path: Path,
+) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title]\n"
+        "      formatting: { additionalRowClass: \"=if([$Created] != '', 'x', '')\" }\n",
+    )
+    assert any("Created" in f.message and "does not display" in f.message for f in errors), (
+        f"a formatter cannot read an omitted system column: {errors}"
+    )
+
+    ok = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Created]\n"
+        "      formatting: { additionalRowClass: \"=if([$Created] != '', 'x', '')\" }\n",
+    )
+    assert ok == [], ok
+
+
 def _calculated_form_inputs(tmp_path: Path, block: str) -> tuple[Schema, MappingBundle]:
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"

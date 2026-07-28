@@ -203,13 +203,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{ctx}: formatting references [${ref}], which is "
                         f"not a rendered column of {entity_name}.",
                     ))
-                # A real column the VIEW does not display is the worse case:
+                # A real column the VIEW does not display is the worse case,
+                # including built-in system columns such as Created/Author:
                 # SharePoint resolves a view formatter's references against
                 # the columns that view renders, so the reference yields
                 # nothing and the format silently never fires. The build
                 # exits 0, the deploy reports the formatter verified, and
                 # the only symptom is a row wash nobody sees.
-                shown = set(view.fields) | SYSTEM_COLUMNS
+                shown = set(view.fields)
                 for ref in sorted((refs & view_rendered) - shown):
                     findings.append(Finding(
                         "error",
