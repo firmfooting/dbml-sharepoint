@@ -192,8 +192,10 @@ operands already are.
   too — SharePoint accepts it and renders nothing, having no column to put
   the figure under.
 
-  `StdDev` and `Var` exist in SharePoint and are deliberately not offered:
-  nothing needed them, and an unused function is an unverified one.
+  `stdev` and `var` are offered too. Probes exist for UNDOCUMENTED
+  behaviour, which is where the silent failures live; a member of a
+  published enumeration is documented, so withholding it would buy
+  nothing.
 
   **Undeclared totals are never touched**, like `formatting`. The
   consequence worth knowing: *deleting* a `totals:` block does not remove
