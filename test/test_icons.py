@@ -32,7 +32,10 @@ def test_the_five_names_that_were_invented_stay_out() -> None:
     They read as obviously real, so they are exactly the names a future
     author will reach for again.
     """
-    invented = {"Calendar", "Key", "Flow", "Scales", "AddFriend"}
+    invented = {
+        "Calendar", "Key", "Flow", "Scales", "AddFriend",
+        "Handshake", "Signature",
+    }
     present = invented & FLEET_ICONS
     assert not present, (
         f"{sorted(present)} do not exist in Fluent MDL2 and render as a blank "
