@@ -77,7 +77,8 @@ site that already holds real risks.
 - [ ] `RR_Risk` exists and all five declared views appear: **Open by
       score** (the default), **Reviews due**, **Above target**,
       **Tolerance expiring**, **Closed risks**. If you seeded, none of them
-      is empty.
+      is empty. The generated **All Items** recovery view is hidden from the
+      modern view bar because this template has an authored default.
 - [ ] Matrix spot-checks on a test risk:
       - Rare + Minor → **Low / 1**
       - Unlikely + Substantial → **Medium / 11**
@@ -86,20 +87,17 @@ site that already holds real risks.
         **blank** (unrated is visible, not defaulted).
 - [ ] The New form shows **Describe the risk**, **Assess the risk**,
       **Response and controls** and **Governance**, each holding the fields
-      named in `20-configure/formatting/risk-form-body.json`. **System**
-      holds only `MatrixVersion`, which is off the New form — so on New
-      that section has nothing to render. Whether SharePoint drops the
-      empty section heading or leaves it showing is not established here;
-      if you see a bare **System** heading on the New form, that is
-      cosmetic and expected, not a deployment fault.
+      named in `20-configure/formatting/risk-form-body.json`. **System** is
+      last and holds the three calculated matrix outputs plus
+      `MatrixVersion`; it does not interrupt the assessment inputs.
 - [ ] `MatrixVersion` is absent from the New form and present on the Edit
       and Display forms — it is the audit stamp for which matrix version
       rated the row, not something a risk owner sets at creation, but it
       must stay editable so an owner can re-stamp it on an old row during
       the matrix-revision procedure in `50-govern/GOVERNANCE.md`.
-- [ ] `ResidualRiskRating`, `RiskScore`, `LevelsAboveTarget` and
-      `NextReviewDue` are calculated and never appear on the New or Edit
-      form either.
+- [ ] On Edit and Display, `ResidualRiskRating`, `RiskScore` and
+      `LevelsAboveTarget` appear read-only under **System**. `NextReviewDue`
+      appears read-only under **Governance**. None can be typed over.
 - [ ] The form reacts as you fill it in. On a New form, `ToleranceEndDate`
       and `ClosureStatement` are both absent. Set `RiskResponse` to
       **Tolerate** and the date appears; switch to **Manage** and it

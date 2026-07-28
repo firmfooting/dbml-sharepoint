@@ -17,19 +17,19 @@ clinical, project — which is what makes it a whole-of-business quick win.
 | Group | Columns |
 |---|---|
 | Describe | `Detail`, `Category` |
-| Assess | `Likelihood`, `Consequence`, `ResidualRiskRating` *(calculated)*, `RiskScore` *(calculated)*, `TargetRiskRating`, `LevelsAboveTarget` *(calculated)*, `MatrixVersion` |
+| Assess | `Likelihood`, `Consequence`, `TargetRiskRating`, `LastReviewedDate` |
 | Respond | `RiskResponse`, `ToleranceEndDate`, `Controls`, `Treatment`, `OverallControlEffectiveness`, `ClosureStatement` |
-| Govern | `RiskOwner`, `RiskSponsor`, `Status`, `NextReviewDue` *(calculated)*, `LastReviewedDate`, `SourceReference` |
+| Govern | `RiskOwner`, `RiskSponsor`, `Status`, `NextReviewDue` *(calculated)*, `SourceReference` |
+| System | `ResidualRiskRating` *(calculated)*, `RiskScore` *(calculated)*, `LevelsAboveTarget` *(calculated)*, `MatrixVersion` |
 
-Four columns are calculated and never appear on the New or Edit form —
-`ResidualRiskRating`, `RiskScore`, `LevelsAboveTarget`, `NextReviewDue` —
-because a person cannot type over the matrix. `MatrixVersion` is also off
-the New form (it stamps itself), but unlike those four it stays on Edit and
-Display, in its own fifth, system-only section — a risk owner cannot see it
-while raising a risk, but it stays correctable on an existing row, which
-the matrix-revision procedure in `50-govern/GOVERNANCE.md` depends on.
-Everything else is entered by a person; the form groups them into the same
-sections as the table above.
+Four columns are calculated and read-only. The three matrix outputs —
+`ResidualRiskRating`, `RiskScore` and `LevelsAboveTarget` — sit at the bottom
+of Edit and Display forms in the **System** section rather than interrupting
+the assessment inputs. `NextReviewDue` stays in **Governance**, where its
+date is useful during review. `MatrixVersion` is off the New form (it stamps
+itself) but remains editable in **System** on existing rows so the
+matrix-revision procedure in `50-govern/GOVERNANCE.md` can re-stamp them.
+The form groups all columns into the same sections as the table above.
 
 **Five declared views**, deployed with the paste — nothing to build by
 hand: *Open by score* (the default), *Reviews due*, *Above target*,

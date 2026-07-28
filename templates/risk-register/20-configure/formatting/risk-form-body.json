@@ -6,7 +6,7 @@
     },
     {
       "displayname": "Assess the risk",
-      "fields": ["Likelihood", "Consequence", "ResidualRiskRating", "RiskScore", "TargetRiskRating", "LevelsAboveTarget", "LastReviewedDate"]
+      "fields": ["Likelihood", "Consequence", "TargetRiskRating", "LastReviewedDate"]
     },
     {
       "displayname": "Response and controls",
@@ -18,7 +18,7 @@
     },
     {
       "displayname": "System",
-      "fields": ["MatrixVersion"]
+      "fields": ["ResidualRiskRating", "RiskScore", "LevelsAboveTarget", "MatrixVersion"]
     }
   ]
 }
