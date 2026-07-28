@@ -102,6 +102,17 @@ def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> No
         assert fields[name]["body"]["EnforceUniqueValues"] is True
         assert fields[name]["body"]["Indexed"] is True
 
+    # The Choice field is POSTed as this body, so its flags are set at
+    # creation. A lookup cannot be: SharePoint only accepts it through
+    # AddField, whose SP.FieldCreationInformation carries neither property.
+    # Both therefore arrive by the MERGE reconcileDeclaredField issues right
+    # after creation — assert the split so a future change that drops that
+    # reconcile call cannot leave a [unique] lookup silently non-unique.
+    creation = fields["Project"]["lookup_creation_parameters"]
+    assert "EnforceUniqueValues" not in creation
+    assert "Indexed" not in creation
+    assert "lookup_creation_parameters" not in fields["Status"]
+
 
 def test_simple_deploy_js_matches_golden() -> None:
     """Golden-file regression: deploy.js from simple.dbml must match

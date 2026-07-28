@@ -754,6 +754,14 @@ def _field_body(
             # FieldCollection.AddField creation shape separately. The target
             # GUID is only known in the browser and is added there as
             # LookupListId.
+            #
+            # SP.FieldCreationInformation carries no EnforceUniqueValues or
+            # Indexed, so a [unique] lookup is the one field type where both
+            # arrive by the MERGE that reconcileDeclaredField issues straight
+            # after AddField, rather than in the create call. Microsoft
+            # requires a unique column to be indexed; the reconciler sends
+            # both properties in a single patch body, which is the same shape
+            # it already uses to repair a drifted unique Text column.
             creation_parameters = {
                 "__metadata": {"type": "SP.FieldCreationInformation"},
                 "FieldTypeKind": sp.field_type_kind,

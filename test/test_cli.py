@@ -552,6 +552,94 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
 
 
+def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -> None:
+    """An input error must not destroy the last good report set.
+
+    `--out` is routinely aimed at a directory holding the operator's own
+    work, and `sql/`/`powerquery/` are generic enough names to collide with
+    it. Clearing on the way in meant a mistyped --schema path — or an
+    unknown --site-role, which exits 2 for "usage error, before the
+    pipeline runs" — deleted both trees whole before reading anything.
+    """
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "shared"
+    (out / "sql").mkdir(parents=True)
+    (out / "powerquery").mkdir(parents=True)
+    (out / "sql" / "001_migration.sql").write_text("-- hand written", encoding="utf-8")
+    (out / "powerquery" / "MyReport.pq").write_text("mine", encoding="utf-8")
+
+    def surviving() -> set[str]:
+        return {p.name for p in out.rglob("*") if p.is_file()}
+
+    owned = {"001_migration.sql", "MyReport.pq"}
+
+    missing = _cli(
+        "report", "--schema", str(tmp_path / "nope.dbml"),
+        "--mapping", str(mapping), "--out", str(out),
+    )
+    assert missing.returncode == 1, missing.stderr
+    assert surviving() == owned
+
+    bad_role = _cli(
+        "report", "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(mapping), "--site-role", "nosuchrole", "--out", str(out),
+    )
+    assert bad_role.returncode == 2, bad_role.stderr
+    assert surviving() == owned
+
+
+def test_report_clearing_spares_operator_files_inside_owned_directories(
+    tmp_path: Path,
+) -> None:
+    """Only the generated names go; a neighbour in sql/ is not ours to delete."""
+    mapping = tmp_path / "m.yaml"
+    mapping.write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    schema = tmp_path / "s.dbml"
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status nvarchar\n}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "shared"
+    first = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
+    )
+    assert first.returncode == 0, first.stderr
+    (out / "sql" / "001_migration.sql").write_text("-- hand written", encoding="utf-8")
+    (out / "powerquery" / "notes.md").write_text("mine", encoding="utf-8")
+
+    # A refusal clears what this command wrote — and stops there.
+    schema.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n  Id int [pk, increment]\n  Status blob\n}\n",
+        encoding="utf-8",
+    )
+    refused = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
+    )
+
+    assert refused.returncode == 1
+    assert not (out / "sql" / "views.sql").exists()
+    assert not (out / "DATA-DICTIONARY.md").exists()
+    assert (out / "sql" / "001_migration.sql").read_text(encoding="utf-8") == "-- hand written"
+    assert (out / "powerquery" / "notes.md").read_text(encoding="utf-8") == "mine"
+    # The directories survive precisely because the operator left something
+    # in them; with nothing but generated files they go too.
+    assert (out / "sql").is_dir()
+    assert (out / "powerquery").is_dir()
+
+
 def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     """`report` loads the same three files and had the same behaviour."""
     mapping = _bad_mapping(tmp_path, "versioning:\n  default:\n    enable_versionin: false\n")
@@ -573,5 +661,7 @@ def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     assert result.returncode == 1, result.stderr
     assert "Traceback" not in output, output
     assert "enable_versionin" in output
-    assert not (out / "powerquery").exists()
+    # A config that never loaded says nothing about the report, so the last
+    # good set survives. Clearing here destroyed output on a YAML typo.
+    assert (out / "powerquery" / "stale.pq").read_text(encoding="utf-8") == "stale"
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"

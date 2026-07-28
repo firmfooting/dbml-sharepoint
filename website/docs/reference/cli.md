@@ -61,6 +61,19 @@ frames above it are noise, not a crash.
 Emit the reporting pack only (no site URL required): `powerquery/`,
 `sql/views.sql`, `REPORTING.md`, `DATA-DICTIONARY.md`.
 
+Each run replaces the previous pack, so a list dropped from the schema does
+not leave its `.pq` file behind. What it removes is exactly what it writes:
+every `*.pq` under `powerquery/`, `sql/views.sql`, `REPORTING.md` and
+`DATA-DICTIONARY.md` — then `powerquery/` and `sql/` themselves, but only if
+emptying them left nothing. Treat `*.pq` as owned by this command: keep
+hand-written queries somewhere other than `--out`. Anything else survives,
+including files of other types sitting inside those two directories.
+
+An input the command never got past — an unreadable schema or mapping, an
+unknown `--site-role` — leaves the existing pack untouched. A schema it
+reads and then refuses clears the pack, which by then describes a schema
+that no longer exists.
+
 | Option | Default | Meaning |
 |---|---|---|
 | `--schema PATH` | required | Path to the DBML schema file |
