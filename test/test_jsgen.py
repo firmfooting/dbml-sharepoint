@@ -1476,6 +1476,7 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         "views:\n"
         "  Risk:\n"
         "    - title: Open risks\n"
+        "      renamed_from: [Active risks]\n"
         "      default: true\n"
         "      fields: [Title, Status, DueDate]\n"
         "      where:\n"
@@ -1507,6 +1508,7 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         ),
         "row_limit": 100,
         "set_default": True,
+        "renamed_from": ["Active risks"],
         "hidden": False,
         "formatting": None,
         "widths": None,
@@ -1567,6 +1569,7 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
         "caml_query": "",
         "row_limit": None,
         "set_default": True,
+        "renamed_from": [],
         "hidden": False,
         "formatting": None,
         "widths": None,
@@ -1666,6 +1669,8 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
     assert "removeallviewfields" in js
     assert "addviewfield('${odataName(name)}')" in js
     assert "DefaultView: true" in js
+    assert "view.renamed_from.includes(v.Title)" in js
+    assert "multiple previous-title views exist" in js
     assert "Hidden: view.hidden" in js
     assert "actual.Hidden !== view.hidden" in js
     assert "$select=Id,Title,DefaultView,Hidden,RowLimit" in js
@@ -1956,23 +1961,30 @@ def _form_formatting_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
     return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 
-def test_date_default_today_reaches_field_defaults(tmp_path: Path) -> None:
-    """A DBML date default (notably the dynamic '[today]') must land on the
-    SP.FieldDateTime body and in SCHEMA.field_defaults — previously the
-    DateTime branch silently dropped defaults the typemap carried."""
+def test_required_date_default_and_validation_reach_the_field(tmp_path: Path) -> None:
+    """A required cadence baseline can be hidden on New only if its dynamic
+    default and save rule survive together. The generated field must reject
+    clearing, start at today, and refuse a future date."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
         "Table Risk {\n  Id int [pk, increment]\n"
         "  Title nvarchar [not null]\n"
-        "  LastReviewedDate date [default: '[today]']\n}\n",
+        "  LastReviewedDate date [not null, default: '[today]']\n}\n",
         encoding="utf-8",
     )
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
         "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "column_validation:\n"
+        "  Risk:\n"
+        "    columns:\n"
+        "      LastReviewedDate:\n"
+        "        when:\n"
+        "          - { field: LastReviewedDate, op: leq, value: today }\n"
+        "        message: Review date cannot be in the future.\n",
         encoding="utf-8",
     )
     schema = parse_dbml(tmp_path / "s.dbml")
@@ -1986,7 +1998,10 @@ def test_date_default_today_reaches_field_defaults(tmp_path: Path) -> None:
         f for f in out["lists"][0]["fields_phase1"]
         if f["title"] == "LastReviewedDate"
     )
+    assert field["body"]["Required"] is True
     assert field["body"]["DefaultValue"] == "[today]"
+    assert field["validation_formula"] == "=[LastReviewedDate]<=TODAY()"
+    assert field["validation_message"] == "Review date cannot be in the future."
 
 
 def test_exact_column_validation_skips_unsupported_field_types(tmp_path: Path) -> None:

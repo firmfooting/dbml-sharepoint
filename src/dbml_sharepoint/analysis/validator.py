@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from dbml_sharepoint.analysis import typemap
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
@@ -65,10 +66,13 @@ KNOWN_SCALARS = frozenset({
     "boolean", "hyperlink",
 })
 
-# SP.FieldCalculated column types. The formula is NOT in DBML — it lives in
-# the mapping's `calculated_formulas: {entity: {column: formula}}` section;
-# validate_against_mapping enforces the pairing and SP's formula constraints.
-CALCULATED_TYPES = frozenset({"calculated_text", "calculated_number", "calculated_date"})
+# SP.FieldCalculated column types, re-exported from the one place that
+# enumerates them (a calculated type without an OutputType cannot deploy,
+# so typemap's map is where the vocabulary is forced to be complete). The
+# formula is NOT in DBML — it lives in the mapping's `calculated_formulas:
+# {entity: {column: formula}}` section; validate_against_mapping enforces
+# the pairing and SP's formula constraints.
+CALCULATED_TYPES = typemap.CALCULATED_TYPES
 
 _FORMULA_STRING_LITERAL = re.compile(r'"[^"]*"')
 FORMULA_COLUMN_REF = re.compile(r"\[([^\[\]]+)\]")
@@ -149,7 +153,13 @@ def formula_column_refs(formula: str) -> frozenset[str]:
         FORMULA_COLUMN_REF.findall(_FORMULA_STRING_LITERAL.sub("", formula)),
     )
 
-# SharePoint's documented calculated-column formula length ceiling.
+# The practical calculated-column formula ceiling. Widely reported as the
+# limit of the Lists UI formula box, but NOT documented by Microsoft for
+# SharePoint — the documented 1000-character formula limit belongs to
+# Dataverse, which is a different product with different rules (the same
+# confusion once had this project believing SharePoint forbade calc-on-calc
+# chains, which it permits). Conservative, so it cannot pass a formula
+# SharePoint would refuse; raising it needs a live probe, not a citation.
 MAX_CALCULATED_FORMULA = 1024
 
 MAX_INTERNAL_NAME = 32

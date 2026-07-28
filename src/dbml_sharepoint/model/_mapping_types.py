@@ -179,6 +179,10 @@ class ViewDef:
 
     title: str
     fields: list[str]
+    # Prior managed titles accepted during a one-way rename migration. A
+    # matching live view is adopted and reconciled under `title`; aliases are
+    # never created and must remain declared so old sites can still upgrade.
+    renamed_from: list[str] = field(default_factory=list)
     default: bool = False
     # A condition tree from the shared grammar; None when undeclared.
     where: Condition | None = None

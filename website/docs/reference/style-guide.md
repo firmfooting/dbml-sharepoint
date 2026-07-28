@@ -49,6 +49,28 @@ column_formatting:
   `calculated: true` is REQUIRED for calculated-text columns (SharePoint
   renders their values with a `string;#` prefix — the style switches to
   contains-matching and strips the prefix for display).
+
+:::note The `string;#` prefix is a COLUMN-formatting thing only
+
+Characterised on a live tenant, 2026-07-28, because getting this backwards
+costs a silently-not-firing format either way:
+
+| Where | Reference | A calculated-text value arrives as |
+|---|---|---|
+| Column formatting | `@currentField` | `string;#Extreme` |
+| View formatting (`views[].formatting`) | `[$Field]` | `Extreme` |
+
+So `calculated: true` is required in `column_formatting` and an exact
+comparison there silently never matches — but a **view** row formatter
+compares directly, and `"=if([$Rating] == 'Extreme', …)"` is correct as
+written. `templates/risk-register` relies on this for its Extreme row
+wash, confirmed rendering on a real list.
+
+Do not add contains-matching to a view formatter "to be safe": it works,
+so it survives, and it leaves the next reader believing the prefix reaches
+somewhere it does not.
+
+:::
 - **pill** — compact native choice-pill look (opt-in alternative).
 - **data-bar** — the documented `sp-field-dataBars` bar; `max` sets the
   full-width value. Optional `color_by: { field, map, calculated }` is

@@ -23,6 +23,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
     cross_site_by_entity = vc.cross_site_by_entity
+    calculated_by_entity = vc.calculated_by_entity
     findings: list[Finding] = []
     # Column formatting: declared targets must be rendered columns, the
     # formatter must be an SP formatter object (elmType root), and every
@@ -74,6 +75,25 @@ def check(vc: ValidationContext) -> list[Finding]:
         for col_name, spec in spec_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             style = spec.get("style")
+            style_name = style if isinstance(style, str) else ""
+            calculated_type_for_style = {
+                "severity": "calculated_text",
+                "data-bar": "calculated_number",
+                "overdue-date": "calculated_date",
+            }.get(style_name)
+            target_type = types_by_col.get(col_name)
+            if target_type == calculated_type_for_style and spec.get("calculated") is not True:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: {style} on {target_type} requires calculated: true "
+                    "to decode SharePoint's typed formatter value.",
+                ))
+            elif spec.get("calculated") is True and target_type != calculated_type_for_style:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: calculated: true on {style} expects "
+                    f"{calculated_type_for_style}, not {target_type}.",
+                ))
             if style in ("severity", "pill"):
                 members = style_enum_members.get(types_by_col.get(col_name, ""))
                 if members is not None:
@@ -136,12 +156,33 @@ def check(vc: ValidationContext) -> list[Finding]:
             if part_json is None:
                 continue
             ctx = f"form_formatting[{entity_name}].{part_name}"
-            for ref in sorted(formatter_field_refs(part_json) - rendered):
+            refs = formatter_field_refs(part_json)
+            for ref in sorted(refs - rendered):
                 findings.append(Finding(
                     "error",
                     f"{ctx}: references [${ref}], which is not a rendered "
                     f"column of {entity_name}.",
                 ))
+            # A calculated column reads as an empty string in a header or
+            # footer — established on a live tenant against a saved item
+            # that had a value. Nothing errors there: the part renders and
+            # that one value is blank, and the deploy cannot see it because
+            # the formatter saves and reads back byte-identical. The build
+            # is the only place this is catchable.
+            #
+            # Body sections are exempt by construction: they list field
+            # NAMES rather than reading values, so a calculated column in a
+            # section renders on the Display form as intended.
+            if part_name in ("header", "footer"):
+                for ref in sorted(refs & calculated_by_entity.get(entity_name, set())):
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: references [${ref}], a calculated column. "
+                        f"Calculated columns resolve to an empty string in a "
+                        f"form header or footer, so this would render blank "
+                        f"with no error. Show it through column_formatting "
+                        f"in a body section instead.",
+                    ))
         if form.body is not None:
             sections = form.body.get("sections")
             if isinstance(sections, list):

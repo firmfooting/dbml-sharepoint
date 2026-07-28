@@ -7,7 +7,11 @@ entities:
 cross_site_reference_columns: []
 
 indexed_columns:
-  Risk: [Status, Category, ReviewDate]
+  # Physical SharePoint indexes. Keep this list focused on supported columns
+  # used by declared filters/sorts or common header filters. Calculated fields
+  # (RiskScore, ResidualRiskRating, LevelsAboveTarget, NextReviewDue) cannot be
+  # indexed by SharePoint and are rejected by the build validator.
+  Risk: [Status, Category, RiskResponse, ToleranceEndDate, LastReviewedDate]
 
 versioning:
   default:
@@ -20,22 +24,50 @@ enum_sources: {}
 watched_lists: []
 
 # The 5x5 matrix, encoded cell-by-cell (rows = likelihood Rare..Almost
-# certain; columns = consequence Insignificant..Severe):
+# Certain; columns = consequence Minor..Business Critical):
 #
-#                Insig  Minor  Moderate  Major  Severe
-#  Rare           Low    Low     Low     Medium Medium
-#  Unlikely       Low    Low     Medium  Medium High
-#  Possible       Low    Medium  Medium  High   High
-#  Likely         Medium Medium  High    High   Extreme
-#  Almost certain Medium High    High    Extreme Extreme
+#                 Minor   Moderate  Substantial  Major    Business Critical
+#  Rare           Low     Low       Low          Medium   Medium
+#  Unlikely       Low     Low       Medium       Medium   High
+#  Likely         Low     Medium    Medium       High     High
+#  Very Likely    Medium  Medium    High         High     Extreme
+#  Almost Certain Medium  High      High         Extreme  Extreme
 #
-# RiskScore is the simple index product (1-25) for sorting. CHANGE CONTROL:
-# SharePoint recalculates every existing row when a formula changes — read
-# 50-govern/GOVERNANCE.md before editing these cells.
+# RiskScore is the matrix score 1-25 for sorting. Both are guarded on
+# MatrixVersion: a row stamped to an older matrix shows blank rather than
+# being silently re-rated. LevelsAboveTarget and NextReviewDue read
+# ResidualRiskRating, itself calculated — SharePoint permits calc-on-calc
+# and jsgen provisions them in dependency order, so declaration order
+# here does not matter (see _order_calculated_after_references in jsgen).
+#
+# KNOWN, ACCEPTED: NextReviewDue adds months with
+# DATE(YEAR(d), MONTH(d)+N, DAY(d)), which OVERFLOWS at month end rather
+# than clamping — a review completed 31 January falls due 1 May rather
+# than 30 April, and 31 August + 6 months lands 3 March. The slip is one
+# to three days on a cadence of three months or more, against a column
+# whose own description says to review sooner on contextual change, so it
+# is not worth the formula budget an end-of-month-safe construction costs.
+# Tracked as issue #5; revisit if the cadence ever drives an obligation
+# that is counted in days.
+#
+# CHANGE CONTROL: SharePoint recalculates every existing row when a formula
+# changes — read 50-govern/GOVERNANCE.md before editing these cells.
+#
+# These formulas are keyed to EXACTLY the five Likelihood and five
+# Consequence members below, in this order: the nested IFs map the first
+# four by name and treat everything else as the fifth, so an added,
+# renamed or reordered member silently rates as the worst case rather
+# than failing. The matrix is 5x5, so changing the enums means rewriting
+# the 25 cells anyway — a fallback would not save you, and the coupling is
+# recorded here because that is where someone editing an enum will look.
+# Unreachable by data entry today: every Choice column deploys with
+# FillInChoice false, so a value outside the enum cannot be typed.
 calculated_formulas:
   Risk:
-    RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Possible",3,IF([Likelihood]="Likely",4,5))))*IF([Consequence]="Insignificant",1,IF([Consequence]="Minor",2,IF([Consequence]="Moderate",3,IF([Consequence]="Major",4,5)))))'
-    RiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Possible",3,IF([Likelihood]="Likely",4,5))))-1)*5+IF([Consequence]="Insignificant",1,IF([Consequence]="Minor",2,IF([Consequence]="Moderate",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
+    ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence]),[MatrixVersion]<>"1.0"),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
+    RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence]),[MatrixVersion]<>"1.0"),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
+    LevelsAboveTarget: '=IF(OR([ResidualRiskRating]="",ISBLANK([TargetRiskRating])),"",IF([ResidualRiskRating]="Low",1,IF([ResidualRiskRating]="Medium",2,IF([ResidualRiskRating]="High",3,4)))-IF([TargetRiskRating]="Low",1,IF([TargetRiskRating]="Medium",2,IF([TargetRiskRating]="High",3,4))))'
+    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme",[OverallControlEffectiveness]="Inadequate",[OverallControlEffectiveness]="Uncontrolled",AND(NOT(ISBLANK([TargetRiskRating])),IF([ResidualRiskRating]="Low",1,IF([ResidualRiskRating]="Medium",2,IF([ResidualRiskRating]="High",3,4)))-IF([TargetRiskRating]="Low",1,IF([TargetRiskRating]="Medium",2,IF([TargetRiskRating]="High",3,4)))>=2)),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate",[OverallControlEffectiveness]="Partially effective"),6,12)),DAY([LastReviewedDate])))'
 
 # Security: risks are maintained by a managers group; everyone reads.
 groups:
@@ -84,10 +116,410 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Backend internal names stay exactly as authored in the DBML (probes,
+# views, indexes and formulas all key on them); the deployer renames the
+# display Title after create — "ResidualRiskRating" shows as "Residual Risk
+# Rating". Auto PascalCase splitting handles every column here correctly,
+# so there are no overrides.
+display_names:
+  mode: auto
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md) — SharePoint's own severity boxes and icons, tokens
+# resolved by the style library. levels-above-target stays a bespoke file
+# (numeric severity ranges); it draws only on standard classes.
 column_formatting:
   Risk:
-    Status: { style: severity, map: { Open: low, Treating: low, Accepted: good, Closed: good } }
+    Status: { style: severity, map: { Provisional: neutral, Open: low, Closed: good } }
+    ResidualRiskRating: { style: severity, calculated: true,
+                          map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
+    TargetRiskRating: { style: severity,
+                        map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
+    # Data-bar with the fill translated from the rating column via the
+    # severity tokens (style standard `color_by`) — the same map the rating
+    # columns declare, so bar and rating cell can never disagree.
+    RiskScore: { style: data-bar, max: 25, calculated: true,
+                 color_by: { field: ResidualRiskRating, calculated: true,
+                             map: { Low: good, Medium: warning, High: severe, Extreme: blocked } } }
+    LevelsAboveTarget: formatting/levels-above-target.json
+    OverallControlEffectiveness:
+      style: severity
+      map:
+        "Eliminated or within appetite": good
+        "All reasonable controls in place": low
+        "Partially effective": warning
+        "Inadequate": severe
+        "Uncontrolled": blocked
+    NextReviewDue: { style: overdue-date, calculated: true,
+                     guard: { field: Status, not: [Closed] } }
+    ToleranceEndDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Five governance lenses on the same list: "Open"
+# is the default, ranking live work by matrix score; "Review due" surfaces
+# what needs a look soon; "Above target" and "Tolerance due" flag risks
+# sitting above appetite or nearing a tolerance deadline; "Closed" is the
+# closed-out history. renamed_from migrates the longer titles shipped before
+# 1.0 without leaving duplicate views behind. Widths are pixel
+# ColumnWidth per view, keys are INTERNAL names (the build
+# rewrites them to display titles — ColumnWidth binds by display name, and
+# internal names silently reset). Rating pills ~160, dates ~140-180, people
+# ~160, status chips ~100-110, Title widest on sparser views.
+views:
+  Risk:
+    - title: "Open"
+      renamed_from: ["Open by score"]
+      default: true
+      fields: [Title, Category, Likelihood, Consequence, ResidualRiskRating,
+               RiskScore, LevelsAboveTarget, RiskOwner, Status, NextReviewDue]
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: RiskScore, direction: desc }
+      # ONE row-level signal, reserved for Extreme. Everything else stays
+      # cell-level: a second wash for above-target rows duplicated the LAT
+      # cell's own escalation and read as noise on High rows.
+      #
+      # The wash reads ResidualRiskRating, so it must stay in this view's
+      # `fields:` list — view formatting can only read columns the view
+      # displays. Drop it from fields and the wash stops firing with a
+      # clean build.
+      #
+      # It compares with `==` even though the column is calculated. That is
+      # correct HERE and would be wrong in column_formatting: the `string;#`
+      # prefix that makes `calculated: true` necessary there does not reach
+      # a view formatter's [$Field] reference. Confirmed on a live list —
+      # see the note in website/docs/reference/style-guide.md.
+      formatting: formatting/row-extreme.json
+      widths:
+        Title: 280
+        Category: 130
+        Likelihood: 110
+        Consequence: 120
+        ResidualRiskRating: 160
+        RiskScore: 140
+        LevelsAboveTarget: 150
+        RiskOwner: 160
+        Status: 100
+        NextReviewDue: 160
+    - title: "Review due"
+      renamed_from: ["Reviews due"]
+      fields: [Title, RiskOwner, Status, ResidualRiskRating, RiskScore,
+               NextReviewDue, LastReviewedDate]
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+        - { field: NextReviewDue, op: leq, value: today+30 }
+      sort:
+        - { field: NextReviewDue, direction: asc }
+      widths:
+        Title: 300
+        RiskOwner: 160
+        Status: 100
+        ResidualRiskRating: 160
+        RiskScore: 140
+        NextReviewDue: 160
+        LastReviewedDate: 180
+    - title: "Above target"
+      fields: [Title, ResidualRiskRating, TargetRiskRating, LevelsAboveTarget,
+               RiskScore, OverallControlEffectiveness, RiskOwner, Status,
+               NextReviewDue, LastReviewedDate]
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+        - { field: LevelsAboveTarget, op: gt, value: 0 }
+      sort:
+        - { field: LevelsAboveTarget, direction: desc }
+        - { field: RiskScore, direction: desc }
+      widths:
+        Title: 260
+        ResidualRiskRating: 160
+        TargetRiskRating: 160
+        LevelsAboveTarget: 150
+        RiskScore: 140
+        OverallControlEffectiveness: 220
+        RiskOwner: 160
+        Status: 100
+        NextReviewDue: 160
+        LastReviewedDate: 180
+    - title: "Tolerance due"
+      renamed_from: ["Tolerance expiring"]
+      fields: [Title, RiskResponse, ToleranceEndDate, ResidualRiskRating,
+               RiskOwner, RiskSponsor, Status]
+      where:
+        # RiskResponse is part of the filter, not decoration: nothing clears
+        # ToleranceEndDate when a risk moves off Tolerate, so a date-only
+        # filter re-surfaces every risk that was EVER tolerated as soon as
+        # its old end date enters the window.
+        - { field: RiskResponse, op: eq, value: "Tolerate" }
+        - { field: ToleranceEndDate, op: leq, value: today+30 }
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: ToleranceEndDate, direction: asc }
+      widths:
+        Title: 300
+        RiskResponse: 130
+        ToleranceEndDate: 170
+        ResidualRiskRating: 160
+        RiskOwner: 160
+        RiskSponsor: 160
+        Status: 100
+    # LevelsAboveTarget is here for audit, not decoration. "Above target"
+    # filters Status neq Closed, so a risk closed while still above target
+    # vanishes from it — and SharePoint cannot enforce residual-at-or-below-
+    # target at save, because LevelsAboveTarget is calculated and validation
+    # formulas cannot read those. This column, sortable, is where a closure
+    # review sees it: anything greater than 0 here was closed above appetite.
+    - title: "Closed"
+      renamed_from: ["Closed risks"]
+      fields: [Title, ResidualRiskRating, TargetRiskRating, LevelsAboveTarget,
+               OverallControlEffectiveness, ClosureStatement, RiskOwner,
+               LastReviewedDate]
+      where:
+        - { field: Status, op: eq, value: "Closed" }
+      sort:
+        - { field: LastReviewedDate, direction: desc }
+      widths:
+        Title: 240
+        ResidualRiskRating: 160
+        TargetRiskRating: 160
+        LevelsAboveTarget: 150
+        OverallControlEffectiveness: 220
+        ClosureStatement: 200
+        RiskOwner: 160
+        LastReviewedDate: 180
+
+# The auto-stamped matrix version leaves the NEW form only; it stays on the
+# Edit and Display forms (existing: true, the default — `existing:` cannot
+# separate the two, see website/docs/reference/mapping.md). It must remain
+# editable: the matrix-revision procedure in 50-govern/GOVERNANCE.md has a
+# risk owner re-stamp MatrixVersion on their own row by hand once a
+# revision blanks their rating, and that only works if the column is still
+# on a form they can save.
+#
+# Deliberately NOT declared: any rule conditioned on ResidualRiskRating.
+# Conditional show/hide cannot read a calculated column — the formula stays
+# syntactically valid, so it saves, the readback compares equal and the
+# phase passes, but the form never reacts. The build refuses it; see the
+# note in analysis/conditions.py, which names this register's most natural
+# rule ("show Treatment only when the rating is High or Extreme") as
+# exactly that trap.
+form_visibility:
+  Risk:
+    columns:
+      MatrixVersion: { new: false }
+      # A tolerance period only exists while the response IS Tolerate, so
+      # the date only appears then. This pairs with the save rule below:
+      # the field is visible exactly when it is mandatory, instead of
+      # sitting on every form and firing a rejection whose cause the
+      # author cannot see.
+      #
+      # Changing the response back does NOT clear an end date already
+      # entered — SharePoint has no such mechanism — so the field hides
+      # while keeping its value. That stale date is why the "Tolerance
+      # expiring" view filters on RiskResponse as well as the date.
+      ToleranceEndDate:
+        when:
+          - { field: RiskResponse, op: eq, value: "Tolerate" }
+      # Nobody closes a risk at creation, and the closure criteria are a
+      # governance act. Off the New form entirely, and on the edit form
+      # only once the author has actually selected Closed.
+      ClosureStatement:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Closed" }
+      # Stamped with today at creation by the column's own default. Showing
+      # it on the New form only invites someone to back-date the baseline
+      # every review cadence is then counted from.
+      LastReviewedDate: { new: false }
+
+# Form layouts: a strapline header and a sectioned body. SharePoint renders
+# per-field description hints inside sectioned forms on the NEW form only —
+# the edit form suppresses column descriptions (platform limitation).
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+form_formatting:
+  Risk:
+    header: formatting/risk-form-header.json
+    body: formatting/risk-form-body.json
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has a
+# single ValidationFormula and every cross-column rule has to share one
+# message. So anything expressible on one column belongs here, where the
+# person who broke it is told which rule they broke.
+#
+# SharePoint permits a column formula to reference only the column being
+# validated, so cross-column rules cannot live here at all.
+column_validation:
+  Risk:
+    columns:
+      # LastReviewedDate is the baseline the whole cadence counts from:
+      # NextReviewDue is computed from it, "Review due" filters on that,
+      # and the overdue formatting keys off it. A date typed with next
+      # year's year pushes the next review out by a year and drops the
+      # risk off the review queue silently — no error, no empty cell, just
+      # a risk nobody is asked to look at again. That is worth a save rule.
+      # The field is required as well as defaulted. Allowing it to be
+      # cleared blanks NextReviewDue and silently removes an open risk from
+      # every cadence view, so that state must fail closed at save time.
+      LastReviewedDate:
+        when:
+          - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date you actually reviewed this risk, or today's date."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# A Tolerate response is always for a set period, so it needs its end date.
+# NOTE: ClosureStatement is rich text, which SP validation formulas cannot
+# reference — the closure-statement requirement stays a governance check
+# (see 50-govern/GOVERNANCE.md).
+list_validation:
+  Risk:
+    # THREE rules, chained. A list has ONE ValidationFormula, so every
+    # cross-column rule shares this slot — the top-level list is an AND, so
+    # they compose, and each is written as an implication: `if A then B` is
+    # `any_of[not A, B]`, which is why every branch below starts with the
+    # case the rule does not apply to.
+    #
+    # They also share ONE message, which is the real cost and the reason a
+    # rule belongs on its column whenever it can reference only that column
+    # (see column_validation above). The message therefore names all three
+    # checks rather than describing one, because SharePoint cannot tell the
+    # author which branch failed and a message that guesses would be wrong
+    # two times in three.
+    when:
+      # Tolerate is always for a set period, so it needs its end date.
+      - any_of:
+          - { field: RiskResponse, op: neq, value: "Tolerate" }
+          - { field: ToleranceEndDate, op: is_not_null }
+      # A risk past Provisional must actually be assessed. Without both
+      # inputs there is no rating and no score, so the row cannot be ranked
+      # in the default view, cannot appear in "Above target", and has no
+      # NextReviewDue — it is a risk the register can no longer manage.
+      - any_of:
+          - { field: Status, op: eq, value: "Provisional" }
+          - all_of:
+              - { field: Likelihood, op: is_not_null }
+              - { field: Consequence, op: is_not_null }
+      # Closure needs controls that hold. The schema note on
+      # OverallControlEffectiveness has always stated this; until now
+      # nothing enforced it.
+      - any_of:
+          - { field: Status, op: neq, value: "Closed" }
+          - all_of:
+              - { field: OverallControlEffectiveness, op: in,
+                  value: ["Eliminated or within appetite", "All reasonable controls in place"] }
+              # A target is required at closure or the audit signal is
+              # blank. LevelsAboveTarget returns "" when TargetRiskRating
+              # is empty, so a risk closed with no target shows nothing in
+              # the "Closed" column that exists to reveal an
+              # above-appetite closure — the compensating control for the
+              # one closure criterion SharePoint cannot check would be
+              # silently empty exactly where it is needed.
+              - { field: TargetRiskRating, op: is_not_null }
+    message: "This risk cannot be saved yet. Check all three: a Tolerate response needs a Tolerance End Date; a risk past Provisional needs both Likelihood and Consequence; and a Closed risk needs a Target Risk Rating and controls rated 'All reasonable controls in place' or better."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# cadence-derived surfaces land on whatever day the demo runs; "@me" is the
+# pasting operator. Coverage: one risk per rating band (the Extreme one
+# drives the row wash, the red score bar, Levels Above Target 3, an OVERDUE
+# review and the SourceReference bridge), a Tolerate risk inside the
+# tolerance-expiry window, and a Closed risk with a closure statement.
+demo_items:
+  Risk:
+    - key: risk-low
+      values:
+        Title: "[DEMO] Local printer outage delays sign-in sheets"
+        Detail: "Demo row. Reception printer fails on clinic mornings; paper sign-in falls back to a shared device two rooms away."
+        Category: "Operational"
+        Likelihood: "Rare"
+        Consequence: "Moderate"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Accept"
+        Controls: "Spare toner on site; shared device fallback documented."
+        OverallControlEffectiveness: "All reasonable controls in place"
+        LastReviewedDate: "today-300"
+    - key: risk-medium
+      values:
+        Title: "[DEMO] Key subject-matter expert on extended leave"
+        Detail: "Demo row. The only staff member who knows the legacy roster rules is on leave for the configuration window."
+        Category: "Project"
+        Likelihood: "Likely"
+        Consequence: "Moderate"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Manage"
+        Controls: "Handover notes drafted; backup contact identified but not yet trained."
+        Treatment: "Train the backup contact before the configuration window opens."
+        OverallControlEffectiveness: "Partially effective"
+        LastReviewedDate: "today-155"
+    - key: risk-high
+      values:
+        Title: "[DEMO] Vendor delivery slips past the go-live window"
+        Detail: "Demo row. Vendor milestone slippage would push integration testing into the go-live freeze."
+        Category: "Project"
+        Likelihood: "Very Likely"
+        Consequence: "Substantial"
+        TargetRiskRating: "Medium"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Manage"
+        Controls: "Weekly vendor checkpoint; contractual milestone credits."
+        Treatment: "Bring integration testing forward two weeks; agree a contingency scope cut."
+        OverallControlEffectiveness: "Partially effective"
+        LastReviewedDate: "today-80"
+    - key: risk-extreme
+      values:
+        Title: "[DEMO] Untested data migration corrupts records"
+        Detail: "Demo row. Migrating identified records without a full rehearsal risks silent corruption discovered only in live use."
+        Category: "Project"
+        Likelihood: "Almost Certain"
+        Consequence: "Business Critical"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Manage"
+        Controls: "Migration runbook exists; no rehearsal on masked data yet."
+        Treatment: "Rehearse the migration on masked data and reconcile row counts before cutover."
+        OverallControlEffectiveness: "Inadequate"
+        LastReviewedDate: "today-100"
+        SourceReference: "[DEMO] ENT-2026-0000"
+    - key: risk-tolerate
+      values:
+        Title: "[DEMO] Legacy interface stays until the upgrade lands"
+        Detail: "Demo row. The old results interface remains in service until the platform upgrade; tolerated for a set period with sponsor approval."
+        Category: "Operational"
+        Likelihood: "Likely"
+        Consequence: "Substantial"
+        TargetRiskRating: "Medium"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Open"
+        RiskResponse: "Tolerate"
+        ToleranceEndDate: "today+21"
+        Controls: "Daily interface monitoring; manual reconciliation procedure."
+        OverallControlEffectiveness: "Partially effective"
+        LastReviewedDate: "today-30"
+    - key: risk-closed
+      values:
+        Title: "[DEMO] Server room access control gap"
+        Detail: "Demo row. Door controller misconfiguration allowed untracked access; remediated and verified."
+        Category: "Operational"
+        Likelihood: "Rare"
+        Consequence: "Moderate"
+        TargetRiskRating: "Low"
+        RiskOwner: "@me"
+        RiskSponsor: "@me"
+        Status: "Closed"
+        RiskResponse: "Terminate"
+        Controls: "Controller reconfigured; access log review added to the monthly audit."
+        OverallControlEffectiveness: "Eliminated or within appetite"
+        ClosureStatement: "Demo row. Residual at target, all actions closed, controls verified effective by audit - closure criteria met."
+        LastReviewedDate: "today-10"

@@ -570,6 +570,7 @@ def build_schema_json(
                 "caml_query": _view_caml_query(view, column_types),
                 "row_limit": view.row_limit,
                 "set_default": view.default,
+                "renamed_from": list(view.renamed_from),
                 # All Items is a recovery/audit view. Keep it out of modern
                 # view tabs when an authored default provides the working UI.
                 "hidden": view.title == "All Items" and not view.default,

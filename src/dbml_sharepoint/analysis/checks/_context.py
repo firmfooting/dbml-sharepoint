@@ -13,6 +13,7 @@ tested one at a time.
 
 from dataclasses import dataclass, field
 
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
 
@@ -33,6 +34,10 @@ class ValidationContext:
     # Columns expanded to a Choice+URL pair rather than deployed as declared,
     # so a check asking "is this column rendered?" must consult this too.
     cross_site_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    # {entity: calculated column names}. Derived once here rather than in
+    # each check, so no two of them can disagree about what "calculated"
+    # means — which is the whole point of this object.
+    calculated_by_entity: dict[str, set[str]] = field(default_factory=dict)
 
     @classmethod
     def build(cls, schema: Schema, bundle: MappingBundle) -> "ValidationContext":
@@ -46,6 +51,13 @@ class ValidationContext:
             tables_by_name={t.name: t for t in schema.tables},
             enum_by_name={e.name: e for e in schema.enums},
             cross_site_by_entity=cross_site_by_entity,
+            calculated_by_entity={
+                table.name: {
+                    col.name for col in table.columns
+                    if col.type in CALCULATED_TYPES
+                }
+                for table in schema.tables
+            },
         )
 
     def cross_site_columns(self, entity_name: str) -> set[str]:
