@@ -49,7 +49,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "compliance-obligations", "contract-register", "credentialing-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
-    "measures-register", "meeting-actions", "onboarding-tracker",
+    "meeting-actions", "onboarding-tracker",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
     "training-register", "vehicle-log", "visitor-log", "volunteer-register",
@@ -88,6 +88,18 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "The issue": "Identify",
         "Where it goes": "Act",
         "Outcome": "Govern",
+    },
+    # === Process digitisation & improvement ==================================
+    # Five single-list templates that deliberately read as siblings: name the
+    # thing, assess it against the definitions, act, govern, and a System
+    # section holding the calculated score where one exists. measures-register
+    # has no calculated column and no auto-stamp, so it collapses System away
+    # rather than shipping an empty heading.
+    ("measures-register", "Measure"): {
+        "Name the measure": "Identify",
+        "Define it": "Assess",
+        "Report it": "Act",
+        "Govern it": "Govern",
     },
 }
 
