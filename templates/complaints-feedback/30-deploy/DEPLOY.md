@@ -79,11 +79,13 @@ site that already holds real feedback.
         written in — has no calendar-month predicate; `today-30` is what
         exists. On the first business day of a month the two answers
         differ, and someone reconciling a committee pack will notice.
-      - It has **no totals**. Column aggregations are not a capability
-        this tool ships, so there is no mean, count or sum row under a
-        type group — each row carries its own two day-counts and their
-        bars. For a monthly mean, export the view or use the generated
-        reporting bundle.
+      - It **averages both clocks** per feedback type. Each collapsed
+        type shows a mean Days To Acknowledge and a mean Days To Close,
+        with an overall figure for the window — the acknowledgement mean
+        especially, since it is the measure most organisations fail
+        first. Means rather than sums: adding day-counts across
+        complaints answers nothing. A **calendar**-month mean still needs
+        an export, because the window is rolling.
 - [ ] Access split verified with three accounts:
       - ordinary Member: **cannot see the list at all**;
       - Recorder: can submit, cannot edit after saving;

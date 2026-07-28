@@ -167,6 +167,34 @@ operands already are.
   group column must also appear in the view's `fields`** — SharePoint
   groups by a column the view does not display and then has nothing to
   label the group headers with, so the view renders groups nobody can read.
+- `totals` declares column aggregations — the figures SharePoint renders
+  under a view, and under each group when the view is grouped:
+
+  ```yaml
+  totals:
+    TripKm: sum          # sum | count | avg | min | max
+  ```
+
+  Authored short and lowercase; the build renders SharePoint's own
+  spellings (`avg` → `Average`). **`count` works on any displayed column**
+  because it counts rows rather than values; `sum`, `avg`, `min` and `max`
+  need a numeric column, and calculated numbers qualify. A total on a
+  column the view does not display is a build error — SharePoint would
+  accept it and render nothing, having no column to put the figure under.
+
+  `StdDev` and `Var` exist in SharePoint and are deliberately not offered:
+  nothing needed them, and an unused function is an unverified one.
+
+  **Undeclared totals are never touched**, like `formatting`. The
+  consequence worth knowing: *deleting* a `totals:` block does not remove
+  a total from an already-deployed view — clear it in the UI. The
+  alternative would have the deployer stamping over hand-added totals on
+  every view in a site.
+
+  The write mechanism (a REST `MERGE` of `Aggregations` and
+  `AggregationsStatus` on `SP.View`) was established against a live tenant
+  before the feature was built; see
+  `test/manual/view-aggregations-probe.js`.
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see

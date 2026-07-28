@@ -18,8 +18,8 @@
 
 Targets are promises to staff — set ones you can keep. The **Turnaround**
 view is where you find out whether you did, with one caveat worth knowing
-before you build a report on it: it shows a **rolling ninety days** and
-**no totals**. See "What the report can and cannot tell you" below.
+before you build a report on it: it shows a **rolling ninety days**, not a
+calendar month. See "What the report can and cannot tell you" below.
 
 ## What is enforced at save, and what stays a governance check
 
@@ -78,11 +78,12 @@ built on a misunderstanding:
   language SharePoint views are written in — has no calendar-month or
   calendar-quarter predicate; `today-90` is what exists. On the first
   business day of a month the two answers differ noticeably.
-- **There are no totals.** The view groups by category and shows each
-  request's own day-count and a bar, but there is no sum, mean or count
-  row under a group. Column aggregations are not a capability this tool
-  ships. For a monthly mean, export the view and total it in Excel, or use
-  the generated reporting bundle.
+- **The mean turnaround is on the screen.** The view groups by category,
+  collapsed, and averages `DaysToComplete`, so each team's figure and the
+  overall one are both visible without an export. A mean, not a sum:
+  adding day-counts together answers no question anyone asks.
+  What still needs an export is a **calendar**-month mean, because the
+  window is a rolling ninety days.
 
 ## Data-quality rules
 

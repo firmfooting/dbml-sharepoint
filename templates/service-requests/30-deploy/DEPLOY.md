@@ -81,11 +81,12 @@ site that already holds real requests.
         summary of `DaysToComplete`. CAML has no calendar-month predicate,
         so the shipped **Turnaround** view is a rolling **ninety days**;
         the first business day of a month is where the two differ and
-        somebody reconciling a monthly pack will notice. And there is **no
-        total, sum or average row** under each category group: column
-        aggregations are not a feature this tool has, so the day-count is
-        per row, with a bar coloured by priority, and the monthly figure is
-        still an export.
+        somebody reconciling a monthly pack will notice. The summary IS
+        there: the view totals `DaysToComplete` as a **mean**, so each
+        collapsed category shows its average turnaround and the window
+        shows an overall one. A mean rather than a sum, because adding up
+        day-counts answers nothing — "how long does this team take" is the
+        question the report exists for.
 - [ ] `Requested 2026-07-01` + `Completed 2026-07-04` →
       **Days To Complete = 3**, drawn as a bar against a 30-day scale and
       coloured from that request's **Priority**, not from its own value.

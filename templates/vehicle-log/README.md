@@ -27,11 +27,12 @@ trip pink in the view where odometer continuity is read. Four demo
 vehicles and six demo trips with continuous odometer readings ship behind
 `--seed`.
 
-**One thing it does not do:** total the kilometres. Column aggregations
-are not a capability this tool ships, so the per-vehicle sum a fleet
-review or an FBT return wants is an export rather than a figure on the
-screen. `50-govern/GOVERNANCE.md` says so where the review is described,
-so it is not discovered mid-review.
+**It totals the kilometres.** *Last 30 days by vehicle* groups by vehicle
+and sums `TripKm`, so the per-vehicle figure a fleet review wants is on
+the screen rather than in an export. The window is a rolling thirty days
+rather than a calendar month — CAML has no calendar predicate — so a
+financial-year or true calendar-month figure still needs an export, and
+`50-govern/GOVERNANCE.md` says so where the review is described.
 
 **Work the folders in order:**
 

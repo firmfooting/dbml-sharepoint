@@ -81,12 +81,12 @@ moment a figure leaves this list for a fleet paper or an FBT return:
 - **The view is a rolling thirty days, not a calendar month.** CAML has no
   calendar-month predicate. For a financial-year or calendar-month
   figure, export.
-- **There is no per-vehicle total.** The view groups by vehicle and shows
-  each trip's own kilometres with a bar; there is no sum row under a
-  group. Column aggregations are not a capability this tool ships. Export
-  the view, or use the generated reporting bundle, and total it there.
-  Budget for that step in the quarterly review rather than discovering it
-  during one.
+- **The per-vehicle total is on the screen.** *Last 30 days by vehicle*
+  groups by vehicle, collapsed, and totals `TripKm`, so SharePoint shows
+  a kilometre figure under each vehicle and one for the whole window. Run
+  the quarterly fleet review from the view.
+  What still needs an export is a **calendar** period — a financial year,
+  or a true calendar month — because the window is a rolling thirty days.
 
 ## Data-quality rules
 

@@ -219,20 +219,23 @@ views:
         TripKm: 150
         ReturnedAt: 180
     # The published table promised "Monthly km by vehicle — DepartedAt in
-    # month, group by Vehicle, SUM TripKm". Two substitutions, both stated
-    # in 30-deploy/DEPLOY.md:
-    #   - CAML has no calendar-month predicate, so this is a rolling
-    #     thirty days and the title says so;
-    #   - THERE IS NO SUM. Column aggregations are not a capability this
-    #     tool ships, so each trip's kilometres appear per row with a bar,
-    #     and the per-vehicle total for a fleet review is an export.
-    #     Nothing about that is a defect in this template; it is what the
-    #     view feature can express today.
+    # month, group by Vehicle, SUM TripKm". ONE substitution remains, and it
+    # is stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
+    # predicate, so this is a rolling thirty days and the title says so.
+    #
+    # The sum IS here. Grouped by vehicle and collapsed, SharePoint renders
+    # a per-group subtotal as well as an overall one, which is exactly the
+    # fleet-review figure the table asked for. An earlier revision of this
+    # template said "THERE IS NO SUM ... the per-vehicle total is an
+    # export"; that was true only until the aggregation mechanism was
+    # verified against a live tenant.
     - title: "Last 30 days by vehicle"
       fields: ["@identity", OdoStart, OdoEnd, TripKm]
       where:
         - { field: DepartedAt, op: geq, value: today-30 }
       group_by: { field: Vehicle, collapsed: true }
+      totals:
+        TripKm: sum
       sort:
         - { field: DepartedAt, direction: desc }
       widths:

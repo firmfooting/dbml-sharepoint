@@ -223,11 +223,14 @@ views:
         RecordedBy: 160
     # The published table called this "Monthly report" and asked for items
     # "closed in month", grouped by FeedbackType, showing both day-counts
-    # and Outcome. Two substitutions, both stated in 30-deploy/DEPLOY.md:
-    # CAML has no calendar-month predicate, so this is a rolling thirty
-    # days and the title says so rather than implying a calendar boundary;
-    # and `totals:` does not exist in this tool, so there is no mean or
-    # count row under a group. Both day-counts are per row, with bars.
+    # and Outcome. ONE substitution remains, stated in 30-deploy/DEPLOY.md:
+    # CAML has no calendar-month predicate, so this is a rolling thirty days
+    # and the title says so rather than implying a calendar boundary.
+    #
+    # Both clocks are averaged per feedback type, which is the number this
+    # report is read for — the acknowledgement clock especially, since it is
+    # the one most organisations fail first. Means, not sums: adding up
+    # day-counts across complaints answers nothing.
     - title: "Closed last 30 days"
       fields: [Title, FeedbackType, Severity, ReceivedDate, AcknowledgedDate,
                ClosedDate, DaysToAcknowledge, DaysToClose, Outcome, Handler]
@@ -235,6 +238,9 @@ views:
         - { field: Status, op: eq, value: "Closed" }
         - { field: ClosedDate, op: geq, value: today-30 }
       group_by: { field: FeedbackType, collapsed: true }
+      totals:
+        DaysToAcknowledge: avg
+        DaysToClose: avg
       sort:
         - { field: ClosedDate, direction: desc }
       widths:

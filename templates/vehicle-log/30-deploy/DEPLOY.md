@@ -72,14 +72,13 @@ site that already holds real trips.
         which is the real idiom, gives the same continuous log book, and
         absorbs a new car with no work.
       - **"Monthly km by vehicle"** asked for trips in a calendar month,
-        grouped by vehicle, with `TripKm` **summed**. Neither half is
-        available. CAML has no calendar-month predicate, so the shipped
-        **Last 30 days by vehicle** is a rolling window and its title
-        says so. And **there is no sum**: column aggregations are not a
-        capability this tool ships, so each trip's kilometres appear per
-        row with a bar, and the per-vehicle total for a fleet review or an
-        FBT return is an export from the view rather than a figure on the
-        screen. Plan the quarterly fleet review around that.
+        grouped by vehicle, with `TripKm` **summed**. The sum is there:
+        the view groups by vehicle and collapses, so SharePoint shows a
+        kilometre total under each vehicle and one for the whole window —
+        the fleet-review figure. Only the calendar half was substituted:
+        CAML has no calendar-month predicate, so **Last 30 days by
+        vehicle** is a rolling window and its title says so. For a
+        financial-year or true calendar-month figure, still export.
 - [ ] **My trips** shows only your own trips, and shows a colleague only
       theirs. It uses SharePoint's own current-user filter — one view for
       everybody, not one per driver.

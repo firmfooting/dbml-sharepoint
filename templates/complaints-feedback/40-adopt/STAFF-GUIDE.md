@@ -54,7 +54,7 @@ SLA table in your head.
 
 - **Closed last 30 days** — grouped by type, with both clocks and the
   outcome. This is the monthly pack's raw material. It is a *rolling*
-  thirty days, not a calendar month, and it carries no totals; see
+  thirty days rather than a calendar month; see
   governance before you quote a figure from it.
 - **The learning shelf** — every closed item, newest first, with what
   changed because of it in the row. This is the one that matters.

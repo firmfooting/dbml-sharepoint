@@ -238,12 +238,14 @@ views:
         Status: 220
         CompletedDate: 170
     # The published table called this "Turnaround report" and asked for
-    # completions "in month" with DaysToComplete shown. Two substitutions,
-    # both stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
-    # predicate, so this is a rolling ninety days; and `totals:` does not
-    # exist in this tool, so there is no sum or average row under each
-    # category group. The day-count column and its bar are per row, and
-    # the monthly figure is still an export.
+    # completions "in month" with DaysToComplete shown. ONE substitution
+    # remains, stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
+    # predicate, so this is a rolling ninety days.
+    #
+    # The per-category figure IS here, as a mean rather than a sum — adding
+    # up day-counts answers nothing, and "how long does this team take" is
+    # the question the report exists for. Grouped and collapsed, SharePoint
+    # renders it per category as well as overall.
     - title: "Turnaround"
       fields: [Title, Category, Priority, RequestedBy, AssignedTo,
                RequestedDate, CompletedDate, DaysToComplete, Status]
@@ -251,6 +253,8 @@ views:
         - { field: Status, op: in, value: ["Completed", "Declined"] }
         - { field: CompletedDate, op: geq, value: today-90 }
       group_by: { field: Category, collapsed: true }
+      totals:
+        DaysToComplete: avg
       sort:
         - { field: CompletedDate, direction: desc }
       widths:

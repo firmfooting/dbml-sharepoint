@@ -103,10 +103,14 @@ the moment a figure leaves this list for a board pack:
 - **"Closed last 30 days" is a rolling window, not a calendar month.**
   CAML has no calendar-month predicate. On the first business day of a
   month the rolling and calendar answers differ noticeably.
-- **There are no totals.** The view groups by feedback type and shows each
-  item's own day-counts; there is no mean, median or count row under a
-  group. Column aggregations are not a capability this tool ships. Export
-  the view, or use the generated reporting bundle, and total it there.
+- **Both response clocks are averaged on the screen.** The view groups by
+  feedback type, collapsed, and shows a mean Days To Acknowledge and a
+  mean Days To Close under each type as well as overall. That is the
+  committee figure; it needs no export.
+  A **median** does need one — SharePoint aggregates mean, count, sum, min
+  and max, and a median is not among them. If your board reads medians
+  because a single very old complaint distorts a mean, take that from the
+  generated reporting bundle and say so in the pack.
 
 ## Lifecycle
 
