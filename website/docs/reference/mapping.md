@@ -177,31 +177,41 @@ Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
 
-:::warning A header cannot read the item's fields
+:::warning Field references in a header: one known-good form, one that failed
 
-Keep `header:` and `footer:` JSON **static**. A `[$FieldName]` reference
-in one does not behave the way it does in `column_formatting`:
+Headers **can** read item fields — the PnP
+[`status-header`](https://github.com/pnp/list-formatting/tree/master/form-samples/status-header-footer)
+sample does it, using a **bare** reference as the whole property value:
 
-- **`[$Title]` fails the whole header.** SharePoint reports
-  `title not part of data object` and renders *nothing* — not a blank
-  line, the entire header disappears. One bad reference takes the icon,
-  the strapline and the link down with it.
-- **Other fields render blank silently.** A calculated column reference
-  produced an empty string even on saved items that had a value, with no
-  error anywhere.
+```json
+{ "elmType": "div", "txtContent": "[$Title]" },
+{ "attributes": { "title": "[$Status]",
+                  "class": "=if([$Status] == 'Done', 'ms-bgColor-greenLight', '…')" } }
+```
 
-Both were established on a live tenant (2026-07-28) by bisecting a header
-down to static text and adding one construct at a time, with
-`"debugMode": true` set so SharePoint logged its own reason. A static
-header rendered; every variant carrying a field reference did not.
+What failed here, on a live tenant (2026-07-28), was a `[$Title]`
+reference **inside a composed expression**:
 
-This is invisible from the deploy side: the formatter saves, reads back
-byte-identical, and the phase reports verified. Only the rendered form
-shows it — the same shape as the `ShowInEditForm` trap in
-[`form_visibility`](#form_visibility).
+```json
+{ "txtContent": "='Risk: ' + [$Title]" }
+```
 
-Put anything that must vary per item in `column_formatting` on the field
-itself, inside a body section, where field references do work.
+SharePoint logged `title not part of data object` and rendered **nothing**
+— not a blank line, the entire header, taking the icon, strapline and link
+with it. A second reference, to a **calculated** column, rendered blank
+with no error at all, even on saved items that had a value.
+
+The exact boundary is not established. Bare references demonstrably work
+and one composed expression demonstrably did not, but PnP's sample also
+uses `[$Status]` inside `=if(...)` successfully — so "no expressions" is
+not the rule either, and `Title` may simply be absent from the form's data
+object under that name. Treat a header field reference as **needing a
+render check on a real form**, and prefer the bare form PnP proves.
+
+Whatever the rule, the failure is invisible from the deploy side: the
+formatter saves, reads back byte-identical, and the phase reports it
+verified. Only the rendered form shows it — the same shape as the
+`ShowInEditForm` trap in [`form_visibility`](#form_visibility).
 
 :::
 
