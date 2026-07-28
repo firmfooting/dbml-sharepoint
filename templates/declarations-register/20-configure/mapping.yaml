@@ -82,10 +82,469 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (views and
+# indexes key on them); the deployer renames the display Title after
+# create. Auto PascalCase splitting handles every column on both lists
+# correctly, so there are no overrides.
+display_names:
+  mode: auto
+
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md) — status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
-# template.
+# template. Tokens map by the ROLE a member plays in its lifecycle.
 column_formatting:
   Interest:
-    Status: { style: severity, map: { Declared: low, "Assessed - no action": good, "Assessed - managed": good, Ceased: muted } }
+    # Two changes to the shipped map. "Declared" moves from `low` to
+    # `neutral`: it is the intake band by definition — a declaration
+    # nobody has assessed yet, against a ten-day assessment SLA in
+    # 50-govern — and the "Awaiting assessment" view exists precisely to
+    # empty it. And "Assessed - managed" moves off `good`: it shared a
+    # token with "Assessed - no action", which erased the only distinction
+    # on this list that carries an ongoing obligation. A managed conflict
+    # needs a written plan and an annual review; that is the
+    # needs-attention role, and it is the row a reviewer must not skim
+    # past.
+    Status:
+      style: severity
+      map:
+        "Declared": neutral
+        "Assessed - no action": good
+        "Assessed - managed": warning
+        "Ceased": muted
+    # Guarded on Ceased, the terminal status. Rows at "Declared" and
+    # "Assessed - no action" carry no review date at all, so the guard
+    # only has to name the one state where a date exists and has stopped
+    # meaning anything.
+    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Ceased] } }
+    # DeclaredDate and CeasedDate are deliberately unformatted: both are
+    # historical stamps with no late state.
+  GiftBenefit:
+    # "Pending decision" is the style guide's own example of the
+    # needs-attention band, and it is the only row on this list anybody
+    # has to act on. Surrendered and Declined share `good` deliberately:
+    # they are different acts with the same result, which is that nothing
+    # is held — and what is held is the question this register answers.
+    # Retained is `low` rather than `good` for the same reason: it is the
+    # outcome that stays on the books and reads out in the annual
+    # disclosure.
+    Decision:
+      style: severity
+      map:
+        "Pending decision": warning
+        "Declared - retained": low
+        "Declared - surrendered": good
+        "Declined": good
+    # A data-bar keyed to 50-govern's threshold ladder, which tops out at
+    # $150: anything at or over the "integrity owner decides, default
+    # surrender" line reads as a nearly full bar at a glance. This is the
+    # one currency column in the theme that gets a bar, and the reason is
+    # that it HAS a defensible max — contract-register's AnnualValue and
+    # grants-register's AmountSought do not, and are left plain.
+    #
+    # EDIT THIS `max` IF YOU EDIT THE THRESHOLDS. A bar scaled to
+    # somebody else's ladder is a bar that means nothing.
+    EstimatedValue: { style: data-bar, max: 200 }
+    # OfferedDate is deliberately unformatted. It is when the offer was
+    # made — a fact, never a deadline. The thing with a clock on it is the
+    # decision, and that is what the "Pending decisions" view is for.
+
+# Every lens on each list shows the same identifying columns before its own
+# payload, so each spine is declared once (§1.9).
+field_sets:
+  Interest:
+    identity: [Title, InterestType, DeclaredBy, Status, DeclaredDate]
+  GiftBenefit:
+    identity: [Title, GiftCategory, OfferedTo, OfferedBy, Decision]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are keyed on INTERNAL names — the build
+# rewrites them to display titles, because ColumnWidth binds by display
+# name and an internal name silently resets.
+views:
+  Interest:
+    - title: "Live interests"
+      default: true
+      fields: ["@identity", ReviewDate, Detail]
+      where:
+        - { field: Status, op: neq, value: "Ceased" }
+      group_by: { field: DeclaredBy, collapsed: true }
+      sort:
+        - { field: DeclaredDate, direction: desc }
+      widths:
+        Title: 300
+        InterestType: 220
+        DeclaredBy: 160
+        Status: 160
+        DeclaredDate: 170
+        ReviewDate: 160
+        Detail: 200
+    # The annual attestation, made a filter rather than a project. The
+    # `me` sentinel is the only way a person column can be compared in a
+    # view at all: CAML's <UserID/> supplies the accessor that the operand
+    # rules otherwise demand and CAML otherwise refuses.
+    - title: "My interests"
+      fields: ["@identity", ReviewDate, CeasedDate, Detail]
+      where:
+        - { field: DeclaredBy, op: eq, value: me }
+      sort:
+        - { field: DeclaredDate, direction: desc }
+      widths:
+        Title: 300
+        InterestType: 220
+        DeclaredBy: 160
+        Status: 160
+        DeclaredDate: 170
+        ReviewDate: 160
+        CeasedDate: 160
+        Detail: 200
+    # Not in the old "Recommended views" table, and the gap it fills is
+    # 50-govern's ten-business-day assessment SLA — which had a deadline
+    # and no queue to read it from. Oldest first, because the oldest
+    # unassessed declaration is the one closest to breaching it.
+    - title: "Awaiting assessment"
+      fields: ["@identity", Detail]
+      where:
+        - { field: Status, op: eq, value: "Declared" }
+      sort:
+        - { field: DeclaredDate, direction: asc }
+      widths:
+        Title: 300
+        InterestType: 220
+        DeclaredBy: 160
+        Status: 160
+        DeclaredDate: 170
+        Detail: 200
+    # today+30 is a ROLLING thirty days, not "this month" — CAML has no
+    # calendar-period predicate, and the cadence that reads this is
+    # monthly, so rolling is also the honest reading. ManagementPlan is in
+    # this view rather than the others because reviewing a managed
+    # interest means reading the plan.
+    - title: "Reviews due"
+      fields: ["@identity", ReviewDate, ManagementPlan]
+      where:
+        - { field: Status, op: eq, value: "Assessed - managed" }
+        - { field: ReviewDate, op: leq, value: today+30 }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 280
+        InterestType: 220
+        DeclaredBy: 160
+        Status: 160
+        DeclaredDate: 170
+        ReviewDate: 160
+        ManagementPlan: 200
+    - title: "Ceased"
+      fields: ["@identity", CeasedDate, Detail]
+      where:
+        - { field: Status, op: eq, value: "Ceased" }
+      sort:
+        - { field: CeasedDate, direction: desc }
+      widths:
+        Title: 280
+        InterestType: 220
+        DeclaredBy: 160
+        Status: 160
+        DeclaredDate: 170
+        CeasedDate: 160
+        Detail: 200
+  GiftBenefit:
+    # A ROLLING twelve months, not a calendar year. CAML has no
+    # calendar-period predicate, and the two readings differ on 1 July —
+    # which anyone reconciling an annual disclosure pack will notice.
+    - title: "Last 12 months"
+      default: true
+      fields: ["@identity", OfferedDate, EstimatedValue, DecisionBy]
+      where:
+        - { field: OfferedDate, op: geq, value: today-365 }
+      sort:
+        - { field: OfferedDate, direction: desc }
+      widths:
+        Title: 300
+        GiftCategory: 220
+        OfferedTo: 160
+        OfferedBy: 200
+        Decision: 160
+        OfferedDate: 170
+        EstimatedValue: 150
+        DecisionBy: 160
+    # No date window, deliberately. A pending decision from fourteen
+    # months ago is worse than one from last week, not less relevant, and
+    # a window would hide exactly the rows the monthly clearance exists
+    # for. Oldest first for the same reason.
+    - title: "Pending decisions"
+      fields: ["@identity", OfferedDate, EstimatedValue, Detail]
+      where:
+        - { field: Decision, op: eq, value: "Pending decision" }
+      sort:
+        - { field: OfferedDate, direction: asc }
+      widths:
+        Title: 300
+        GiftCategory: 220
+        OfferedTo: 160
+        OfferedBy: 200
+        Decision: 160
+        OfferedDate: 170
+        EstimatedValue: 150
+        Detail: 200
+    # Same rolling window as the default, different question: the default
+    # asks what happened and when, this asks what was worth most. The
+    # executive report reads down from the top of this one.
+    - title: "Annual disclosure"
+      fields: ["@identity", EstimatedValue, OfferedDate, DecisionBy]
+      where:
+        - { field: OfferedDate, op: geq, value: today-365 }
+      sort:
+        - { field: EstimatedValue, direction: desc }
+      widths:
+        Title: 280
+        GiftCategory: 220
+        OfferedTo: 160
+        OfferedBy: 200
+        Decision: 160
+        EstimatedValue: 150
+        OfferedDate: 170
+        DecisionBy: 160
+    # 50-govern's annual report asks for patterns, and names repeat
+    # offerors specifically. That is a grouping, not a filter, and it
+    # deliberately has no date window: the pattern is the whole history.
+    - title: "By offeror"
+      fields: ["@identity", OfferedDate, EstimatedValue]
+      group_by: { field: OfferedBy, collapsed: true }
+      sort:
+        - { field: OfferedDate, direction: desc }
+      widths:
+        Title: 280
+        GiftCategory: 220
+        OfferedTo: 160
+        OfferedBy: 200
+        Decision: 160
+        OfferedDate: 170
+        EstimatedValue: 150
+
+# Form layouts: a strapline header and a sectioned body per list. Per-field
+# description hints render on the NEW form only — the edit form suppresses
+# column descriptions (platform limitation). Section field lists are
+# authored with INTERNAL names; the build rewrites them to display titles.
+#
+# Deliberately NOT declared on either list: a row-level formatter. §1.6
+# allows at most one per list and only where a single worst state exists.
+# Neither list has one: an overdue review already escalates in its own
+# cell, and the worst gift row is a compound of value, offeror and
+# pending-ness that no single column names. A wash competing with the
+# cell-level signals would read as noise.
+form_formatting:
+  Interest:
+    header: formatting/interest-form-header.json
+    body: formatting/interest-form-body.json
+  GiftBenefit:
+    header: formatting/giftbenefit-form-header.json
+    body: formatting/giftbenefit-form-body.json
+
+# The assessment half of each form does not belong to the person
+# declaring. 50-govern is explicit — the declarer never assesses their own
+# declaration, and the person offered a gift never decides their own gift —
+# and both lists deploy with staff on a submit-only permission level, so
+# the New form is the ONLY form most people will ever see. Taking the
+# assessment fields off it is what makes that rule structural rather than
+# cultural.
+#
+# Status and Decision both carry a NOT NULL default, which is what makes
+# `new: false` legal on them: a required column with no default hidden
+# from the New form would fail every save, and the build proves that
+# before it happens.
+#
+# Changing a status back does NOT clear values already entered —
+# SharePoint has no such mechanism — so these fields hide while keeping
+# whatever was typed.
+form_visibility:
+  Interest:
+    columns:
+      Status: { new: false }
+      ManagementPlan:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Assessed - managed" }
+      ReviewDate:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Assessed - managed" }
+      CeasedDate:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Ceased" }
+  GiftBenefit:
+    columns:
+      Decision: { new: false }
+      DecisionBy:
+        new: false
+        when:
+          - { field: Decision, op: neq, value: "Pending decision" }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule has to share one message.
+column_validation:
+  Interest:
+    columns:
+      # A declaration is evidence of when you told them. A future date on
+      # it is either a typo or a claim nobody should be able to make.
+      DeclaredDate:
+        when:
+          - { field: DeclaredDate, op: leq, value: today }
+        message: "A declaration cannot have been made in the future. Use today's date, or the date you actually declared it."
+      CeasedDate:
+        when:
+          - { field: CeasedDate, op: leq, value: today }
+        message: "An interest cannot have ceased in the future. Record the cessation when it happens, not when it is expected."
+  GiftBenefit:
+    columns:
+      OfferedDate:
+        when:
+          - { field: OfferedDate, op: leq, value: today }
+        message: "An offer cannot have been made in the future. Use the date it was actually offered."
+      EstimatedValue:
+        when:
+          - { field: EstimatedValue, op: geq, value: 0 }
+        message: "Estimated value cannot be negative. It is a best estimate of what the gift or benefit is worth, not what it cost us."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# TWO rules on Interest, chained: a list has ONE ValidationFormula, the
+# top-level list is an AND, and each is an implication — `if A then B` is
+# `any_of[not A, B]`.
+#
+# GiftBenefit gets NO list rule, and the reason is worth recording. The one
+# cross-column rule it wants — a decided gift needs a DecisionBy — cannot
+# be written: SharePoint validation formulas cannot reference a person
+# column at all, so the build refuses it rather than emitting a formula
+# that would be rejected at save. It stays a governance check; see
+# 50-govern/GOVERNANCE.md.
+list_validation:
+  Interest:
+    when:
+      # 50-govern's second data-quality rule, the half a formula can
+      # reach. A managed conflict with no review date drops out of the
+      # cadence silently and stays managed on paper only.
+      - any_of:
+          - { field: Status, op: neq, value: "Assessed - managed" }
+          - { field: ReviewDate, op: is_not_null }
+      # Rule 1: cessation is a status WITH A DATE. Without the date the
+      # register cannot say when the conflict stopped applying, which is
+      # the only question anyone asks of a ceased interest.
+      - any_of:
+          - { field: Status, op: neq, value: "Ceased" }
+          - { field: CeasedDate, op: is_not_null }
+    message: "This declaration cannot be saved yet. Check both: an interest assessed as managed needs a Review Date, and a ceased interest needs the Ceased Date. The management plan itself cannot be checked here - see the governance rules."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# review and disclosure surfaces land on whatever day the demo runs; "@me"
+# is the pasting operator.
+#
+# Coverage: one interest per Status member and one offer per Decision
+# member, with the same offeror appearing twice so "By offeror" shows the
+# repeat pattern 50-govern's annual report is looking for.
+demo_items:
+  Interest:
+    - key: dr-board
+      values:
+        Title: "[DEMO] Director of a community housing board that leases from us"
+        InterestType: "Board / committee role"
+        DeclaredBy: "@me"
+        DeclaredDate: "today-200"
+        Detail: "Demo row. Appointed to the board in March. The organisation leases two properties from us under an agreement renewed every three years."
+        Status: "Assessed - managed"
+        ManagementPlan: "Demo row. Recusal from any decision touching the lease or its renewal; the property portfolio report goes to the deputy instead. Reviewed annually."
+        ReviewDate: "today+20"
+    - key: dr-supplier
+      values:
+        Title: "[DEMO] Family member owns the stationery supplier on the panel"
+        InterestType: "Supplier relationship"
+        DeclaredBy: "@me"
+        DeclaredDate: "today-45"
+        Detail: "Demo row. Sibling is a co-owner. The supplier sits on the office consumables panel and is not one I approve purchases from."
+        Status: "Assessed - managed"
+        ManagementPlan: "Demo row. Purchasing from that panel reassigned; declared to the panel review each cycle."
+        ReviewDate: "today+320"
+    - key: dr-secondary
+      values:
+        Title: "[DEMO] Weekend consulting work in an unrelated sector"
+        InterestType: "Secondary employment"
+        DeclaredBy: "@me"
+        DeclaredDate: "today-6"
+        Detail: "Demo row. Two days a month, no overlap with our service area or suppliers. Declared on taking it up."
+        Status: "Declared"
+    - key: dr-recruit
+      values:
+        Title: "[DEMO] Close personal relationship with a candidate in a current recruitment"
+        InterestType: "Close personal relationship"
+        DeclaredBy: "@me"
+        DeclaredDate: "today-90"
+        Detail: "Demo row. Declared the day the shortlist was circulated. I am not on the panel and have no line of sight to the role."
+        Status: "Assessed - no action"
+    - key: dr-shares
+      values:
+        Title: "[DEMO] Shareholding in a company that formerly tendered"
+        InterestType: "Financial interest"
+        DeclaredBy: "@me"
+        DeclaredDate: "today-500"
+        Detail: "Demo row. Small parcel held since before joining. The company tendered unsuccessfully two years ago and has not tendered since."
+        Status: "Ceased"
+        CeasedDate: "today-30"
+  GiftBenefit:
+    - key: dr-dinner
+      values:
+        Title: "[DEMO] Dinner invitation from a software vendor"
+        GiftCategory: "Hospitality"
+        OfferedTo: "@me"
+        OfferedBy: "[DEMO] Northwind Systems - account manager"
+        OfferedDate: "today-20"
+        EstimatedValue: 120
+        Decision: "Declared - retained"
+        DecisionBy: "@me"
+        Detail: "Demo row. End-of-implementation dinner, six attendees including two of our team. No procurement open with this vendor at the time."
+    - key: dr-hamper
+      values:
+        Title: "[DEMO] Christmas hamper from a cleaning contractor"
+        GiftCategory: "Gift"
+        OfferedTo: "@me"
+        OfferedBy: "[DEMO] Sparkle Facilities - operations manager"
+        OfferedDate: "today-40"
+        EstimatedValue: 85
+        Decision: "Declared - surrendered"
+        DecisionBy: "@me"
+        Detail: "Demo row. Sent unsolicited to reception. Surrendered to the staff raffle."
+    - key: dr-conference
+      values:
+        Title: "[DEMO] Flights and accommodation to a vendor user conference"
+        GiftCategory: "Travel / accommodation"
+        OfferedTo: "@me"
+        OfferedBy: "[DEMO] Northwind Systems - account manager"
+        OfferedDate: "today-8"
+        EstimatedValue: 2400
+        Decision: "Pending decision"
+        Detail: "Demo row. Interstate, two nights. Well above the threshold, so nothing is accepted until the integrity owner decides. Same offeror as the dinner above, which is the pattern the register is meant to surface."
+    - key: dr-tickets
+      values:
+        Title: "[DEMO] Two tickets to a sporting fixture from a current tenderer"
+        GiftCategory: "Other benefit"
+        OfferedTo: "@me"
+        OfferedBy: "[DEMO] Copperline Telecom - bid manager"
+        OfferedDate: "today-70"
+        EstimatedValue: 300
+        Decision: "Declined"
+        DecisionBy: "@me"
+        Detail: "Demo row. Offered while their tender was live. Declined on the spot and declared anyway - a declined offer is as much a record as an accepted one."
+    - key: dr-voucher
+      values:
+        Title: "[DEMO] Coffee voucher from a training provider"
+        GiftCategory: "Prize / honorarium"
+        OfferedTo: "@me"
+        OfferedBy: "[DEMO] Regional Training Co"
+        OfferedDate: "today-300"
+        EstimatedValue: 25
+        Decision: "Declared - retained"
+        DecisionBy: "@me"
+        Detail: "Demo row. Token draw prize at a workshop. Under the token threshold; retained."

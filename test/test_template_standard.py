@@ -47,7 +47,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "audit-actions", "change-register", "complaints-feedback",
     "credentialing-register",
-    "declarations-register", "equipment-maintenance",
+    "equipment-maintenance",
     "improvement-register", "incident-management",
     "measures-register", "meeting-actions", "onboarding-tracker",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
@@ -83,6 +83,20 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # Two standalone registers with no link between them, and the same
+    # shape either way: the person declares, somebody else decides. The
+    # beat boundary is the permission boundary — everything after the
+    # first section is off the New form.
+    ("declarations-register", "Interest"): {
+        "The interest": "Identify",
+        "Assessment": "Assess",
+        "Review and cessation": "Govern",
+    },
+    ("declarations-register", "GiftBenefit"): {
+        "The offer": "Identify",
+        "Value and context": "Assess",
+        "The decision": "Act",
     },
     # Both halves of the grant lifecycle run Identify -> Act -> Govern.
     # There is no Assess beat on either: the bid/no-bid assessment happens
