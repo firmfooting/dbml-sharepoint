@@ -163,7 +163,10 @@ operands already are.
   `group_by: { fields: [SourceType, SourceInstrument], collapsed: true }`
   for two; declaring both spellings at once is an error rather than a
   precedence rule, and a third level is refused rather than silently
-  dropped. Both render as FieldRefs inside a single `<GroupBy>`.
+  dropped. Both render as FieldRefs inside a single `<GroupBy>`. **Every
+  group column must also appear in the view's `fields`** — SharePoint
+  groups by a column the view does not display and then has nothing to
+  label the group headers with, so the view renders groups nobody can read.
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see
@@ -238,6 +241,35 @@ form_formatting:
 Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
+
+### The last section is a catch-all, and that shapes two build rules
+
+SharePoint documents the behaviour that matters most here: *"A column not
+referenced in any of the sections will be automatically referenced in the
+last section"*, and *"New columns added will be automatically referenced in
+the last section"*
+([Configure the list form](https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-configuration#configure-custom-body-with-one-or-more-sections)).
+
+So **you cannot hide a column by leaving it out of every section** — it
+moves, it does not disappear. Two consequences are enforced:
+
+- **A column in no section is a warning, not an error.** The form still
+  renders it. What is lost is the guarantee that the arrangement you
+  declared is the arrangement you deploy, and every column added later
+  lands in that same last section. Reference every column explicitly, and
+  if you want an overflow bucket, declare one deliberately as the last
+  section — Microsoft's own idiom is a section named "Others" with an empty
+  `fields` array.
+- **A section whose every column is hidden from every form is an error** —
+  it renders as a heading with nothing under it. This is *not* asserted of
+  the **last** section, because unreferenced columns land there, so only an
+  earlier section can be provably empty. `templates/risk-register`'s
+  **System** section is exactly that shape: it is last, it holds only
+  `MatrixVersion`, and its DEPLOY.md documents the bare heading on the New
+  form as cosmetic and expected.
+
+To hide a column from a form, declare it — `form_visibility` with
+`new: false` and `existing: false`. Omission is not exclusion.
 
 :::tip Header field references: what works, and the one thing that does not
 

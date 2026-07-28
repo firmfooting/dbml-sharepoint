@@ -273,5 +273,20 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{ctx}: widths[{width_col}] must be between 16 and "
                         f"2000 pixels (got {width_px}).",
                     ))
+            # group_by is already checked against the entity's rendered
+            # columns above, which is the weaker question. SharePoint groups
+            # by a column the view does not display and then has nothing to
+            # label the group headers with, so the view renders groups
+            # nobody can read. Guarded on view_rendered so an unknown column
+            # reports once, as "not a rendered column", rather than twice.
+            for group_col in (view.group_by.fields if view.group_by else []):
+                if group_col in view_rendered and group_col not in view.fields:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: group_by references {group_col!r}, which is not "
+                        f"one of this view's fields — SharePoint groups by the "
+                        f"column and then cannot display it, so the group headers "
+                        f"read as unlabelled. Add {group_col} to fields.",
+                    ))
 
     return findings

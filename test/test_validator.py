@@ -2560,3 +2560,102 @@ def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> 
         f"belongs only in analysis/typemap.py, with everything else "
         f"deriving from CALCULATED_TYPES"
     )
+
+
+# --- Three refusals for mistakes a deploy cannot see -------------------------
+#
+# A fourth was considered and NOT added: refusing a `widths` key that names a
+# field the view does not display already exists above.
+
+
+def test_group_by_must_be_one_of_the_views_own_fields(tmp_path: Path) -> None:
+    """group_by is otherwise checked only against the entity's columns.
+    SharePoint groups by a column the view does not display and then has
+    nothing to label the group headers with."""
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: By status\n"
+        "      fields: [Title]\n"
+        "      group_by: { field: Status }\n",
+    )
+    assert any(
+        "group_by" in f.message and "Status" in f.message for f in errors
+    ), errors
+
+
+def test_group_by_in_the_views_fields_is_accepted(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: By status\n"
+        "      fields: [Title, Status]\n"
+        "      group_by: { field: Status }\n",
+    )
+    assert not [f for f in errors if "group_by" in f.message], errors
+
+
+def test_a_body_section_hidden_from_every_form_is_refused(tmp_path: Path) -> None:
+    """The section renders as a heading with nothing under it. Asserted of a
+    NON-LAST section: Learn documents that unreferenced columns are appended
+    to the last one, so only an earlier section can be provably empty."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_visibility:\n"
+        "  Project:\n"
+        "    columns:\n"
+        "      Score: { new: false, existing: false }\n"
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Hidden, fields: [Score] }\n"
+        "        - { displayname: Everything else, fields: [Title, Band] }\n",
+    )
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert any(
+        "Hidden" in f.message and "bare heading" in f.message for f in errors
+    ), errors
+
+
+def test_the_last_section_may_be_empty_because_it_is_the_catch_all(tmp_path: Path) -> None:
+    """Learn: "A column not referenced in any of the sections will be
+    automatically referenced in the last section." risk-register's System
+    section is exactly this shape and its DEPLOY.md documents the bare
+    heading on the New form as cosmetic and expected."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_visibility:\n"
+        "  Project:\n"
+        "    columns:\n"
+        "      Score: { new: false, existing: false }\n"
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Everything else, fields: [Title, Band] }\n"
+        "        - { displayname: System, fields: [Score] }\n",
+    )
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert not [f for f in errors if "bare heading" in f.message], errors
+
+
+def test_a_column_in_no_section_warns_rather_than_failing(tmp_path: Path) -> None:
+    """It is drift, not breakage: SharePoint appends the column to the last
+    section, so the form renders it. What is lost is the guarantee that the
+    declared arrangement is the deployed one — and every column added later
+    lands in that same section."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Main, fields: [Title] }\n",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert not [f for f in findings if f.severity == "error"], findings
+    warnings = [f for f in findings if f.severity == "warning"]
+    assert any("Score" in f.message and "Band" in f.message for f in warnings), warnings
