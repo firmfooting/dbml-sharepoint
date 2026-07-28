@@ -147,12 +147,13 @@ against Microsoft's published MDL2 icon source, which is what `iconName`
 resolves against. The template sweep asserts that every shipped form
 header's icon is a member.
 
-The check earns itself: of the first thirty-five names proposed for that
-set, five did not exist. `Calendar`, `Key`, `Flow`, `Scales` and
-`AddFriend` all read as obviously real and are not. Adding a name means
-verifying it in the catalogue first, then adding it to that module — an
-offline test suite can assert membership, but it cannot check a catalogue,
-which is exactly why the set is small, central and reviewed.
+Names that read as obviously real and do not exist include `Calendar`,
+`Key`, `Flow`, `Scales`, `AddFriend`, `Handshake` and `Signature` — the
+last two being the first two anyone reaches for on a contract register.
+Adding a name means verifying it in the catalogue first, then adding it to
+that module: an offline test suite can assert membership, but it cannot
+check a catalogue, which is exactly why the set is small, central and
+reviewed.
 
 ## Authoring rules
 

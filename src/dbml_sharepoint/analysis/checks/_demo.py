@@ -88,6 +88,25 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
                     continue
                 if isinstance(value, dict):
+                    # A hyperlink takes a record too — {url, description} —
+                    # so the object form is not exclusively a lookup
+                    # reference, and the demo_ref rule must not claim it.
+                    if col_type == "hyperlink":
+                        unknown = set(value) - {"url", "description"}
+                        if unknown or "url" not in value:
+                            findings.append(Finding(
+                                "error",
+                                f"{ctx}: {col_name} is a hyperlink; an object value "
+                                f"must be {{url: <address>, description: <label>}} "
+                                f"with 'description' optional. Got keys "
+                                f"{sorted(value)}.",
+                            ))
+                        elif not str(value["url"]).strip():
+                            findings.append(Finding(
+                                "error",
+                                f"{ctx}: {col_name} hyperlink 'url' is empty.",
+                            ))
+                        continue
                     if set(value) != {"demo_ref"}:
                         findings.append(Finding(
                             "error",
