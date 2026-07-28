@@ -299,9 +299,45 @@ def test_risk_register_save_rules_split_by_what_they_can_reference() -> None:
         "rejects every new risk"
     )
 
-    # The cross-column rule stays cross-column, and stays the only one.
+    # The single list slot carries all three cross-column rules, chained.
     list_rule = mapping.list_validation["Risk"]
-    assert _condition_fields(list_rule.when) == {"RiskResponse", "ToleranceEndDate"}, (
-        "the list rule is the tolerance implication; anything self-"
-        "referencing added here would spend the single shared message"
-    )
+    assert _condition_fields(list_rule.when) == {
+        "RiskResponse", "ToleranceEndDate",       # Tolerate needs its end date
+        "Status", "Likelihood", "Consequence",    # past Provisional means assessed
+        "OverallControlEffectiveness",            # Closed needs controls that hold
+    }, "a chained list rule was dropped, or a self-referencing one crept in"
+    # Every operand is a type SharePoint can actually read in a validation
+    # formula. Person, calculated and multi-line columns are refused at
+    # build time, so a rule reaching for RiskOwner or ClosureStatement is a
+    # rule that cannot exist — worth failing here with the reason.
+    schema = parse_dbml(RISK / "10-design" / "schema.dbml")
+    types = {c.name: c.type for c in next(
+        t for t in schema.tables if t.name == "Risk").columns}
+    unusable = {"person", "richtext", "longtext",
+                "calculated_text", "calculated_number", "calculated_date"}
+    for name in _condition_fields(list_rule.when):
+        assert types[name] not in unusable, (
+            f"{name} is {types[name]}, which SharePoint cannot read in a "
+            f"validation formula"
+        )
+
+
+def test_risk_register_demo_rows_satisfy_every_save_rule() -> None:
+    """Seeded rows are written by deploy, so a rule they break is a rule
+    that breaks the demo — and `--seed` is how a reviewer first sees the
+    template work. The chained list rule made this reachable: adding a
+    cross-column rule can retrospectively invalidate demo data written
+    before it existed, and nothing else would catch that until a paste."""
+    bundle = _risk_bundle()
+    closure_ok = {"Eliminated or within appetite", "All reasonable controls in place"}
+    for row in bundle.mapping.demo_items["Risk"]:
+        v = row.values
+        assert v.get("RiskResponse") != "Tolerate" or v.get("ToleranceEndDate"), (
+            f"{row.key}: tolerates without an end date"
+        )
+        assert v.get("Status") == "Provisional" or (
+            v.get("Likelihood") and v.get("Consequence")
+        ), f"{row.key}: past Provisional without being assessed"
+        assert v.get("Status") != "Closed" or (
+            v.get("OverallControlEffectiveness") in closure_ok
+        ), f"{row.key}: closed without controls that hold"

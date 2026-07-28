@@ -109,11 +109,38 @@ its own run and re-seals afterwards; nobody else should need to.
    refuses to save without them.
 2. Consequence is "worst credible", agreed at review — not re-argued
    weekly.
-3. A Tolerate response always carries a Tolerance End Date (enforced); a
-   Closed risk always carries a real Closure Statement (governance check
-   only — see above).
-4. Closed risks keep their history; a recurrence is a new row, with
+3. Closed risks keep their history; a recurrence is a new row, with
    `SourceReference` or `Detail` naming the old one.
+
+### What the register enforces, and what it cannot
+
+Four rules are enforced at save. Three are cross-column and therefore
+share a single message, because SharePoint gives a list one validation
+formula; the fourth reads only its own column and so keeps its own.
+
+| Rule | Where |
+|---|---|
+| A Tolerate response carries a Tolerance End Date | list (shared message) |
+| A risk past Provisional has both Likelihood and Consequence | list (shared message) |
+| A Closed risk has controls rated *All reasonable controls in place* or better | list (shared message) |
+| Last Reviewed Date is never in the future | column (own message) |
+
+**Two things remain governance checks, and both are platform limits rather
+than choices.**
+
+*A Closed risk carries a real Closure Statement.* Validation formulas
+cannot read multi-line columns — plain or rich text alike, so retyping it
+as plain text would not help. An RR Risk Manager reads it before the
+status moves.
+
+*Residual is at or below target at closure.* `LevelsAboveTarget` is a
+calculated column, and validation formulas cannot read those either. The
+**Above target** view is the compensating control: a Closed risk should
+never have been in it.
+
+Enforcing the third rule at all is new. The `OverallControlEffectiveness`
+column description has always stated it; until it was declared, nothing
+checked it.
 
 ## Lifecycle
 

@@ -92,12 +92,19 @@ site that already holds real risks.
       **Tolerate** and the date appears; switch to **Manage** and it
       disappears again, keeping whatever was typed. `LastReviewedDate` is
       absent on New and present on Edit.
-- [ ] With `RiskResponse` on **Tolerate**, save with `ToleranceEndDate`
-      empty. Expected refusal: *"A Tolerate response is always for a set
-      period: record the Tolerance End Date, and have the Risk Sponsor
-      reassess before it."* The field is on screen when this fires — that
-      pairing is the point of the visibility rule, and a refusal naming a
-      field the author cannot see is the failure it exists to prevent.
+- [ ] The list carries **three** chained save rules sharing one message,
+      because SharePoint gives a list a single validation formula. Try each:
+      set `RiskResponse` to **Tolerate** with `ToleranceEndDate` empty; move
+      `Status` off **Provisional** with `Likelihood` or `Consequence` blank;
+      set `Status` to **Closed** with `OverallControlEffectiveness` at
+      *Partially effective* or worse. All three are refused, all three show
+      the same message naming all three checks — that is the platform
+      limit, not a defect, and it is why a rule that reads only its own
+      column belongs in `column_validation` where it keeps its own message.
+      For Tolerate, note the date field is on screen when the refusal
+      fires: a rejection naming a field the author cannot see is what the
+      visibility rule exists to prevent.
+- [ ] `LastReviewedDate` refuses a future date, with its own message.
 - [ ] On an existing risk, set `Status` to **Closed** and confirm
       `ClosureStatement` appears.
 - [ ] As an ordinary Member: read-only. As **RR Risk Managers**: Contribute.

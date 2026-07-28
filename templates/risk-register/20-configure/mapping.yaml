@@ -345,11 +345,40 @@ column_validation:
 # (see 50-govern/GOVERNANCE.md).
 list_validation:
   Risk:
+    # THREE rules, chained. A list has ONE ValidationFormula, so every
+    # cross-column rule shares this slot — the top-level list is an AND, so
+    # they compose, and each is written as an implication: `if A then B` is
+    # `any_of[not A, B]`, which is why every branch below starts with the
+    # case the rule does not apply to.
+    #
+    # They also share ONE message, which is the real cost and the reason a
+    # rule belongs on its column whenever it can reference only that column
+    # (see column_validation above). The message therefore names all three
+    # checks rather than describing one, because SharePoint cannot tell the
+    # author which branch failed and a message that guesses would be wrong
+    # two times in three.
     when:
+      # Tolerate is always for a set period, so it needs its end date.
       - any_of:
           - { field: RiskResponse, op: neq, value: "Tolerate" }
           - { field: ToleranceEndDate, op: is_not_null }
-    message: "A Tolerate response is always for a set period: record the Tolerance End Date, and have the Risk Sponsor reassess before it."
+      # A risk past Provisional must actually be assessed. Without both
+      # inputs there is no rating and no score, so the row cannot be ranked
+      # in the default view, cannot appear in "Above target", and has no
+      # NextReviewDue — it is a risk the register can no longer manage.
+      - any_of:
+          - { field: Status, op: eq, value: "Provisional" }
+          - all_of:
+              - { field: Likelihood, op: is_not_null }
+              - { field: Consequence, op: is_not_null }
+      # Closure needs controls that hold. The schema note on
+      # OverallControlEffectiveness has always stated this; until now
+      # nothing enforced it.
+      - any_of:
+          - { field: Status, op: neq, value: "Closed" }
+          - { field: OverallControlEffectiveness, op: in,
+              value: ["Eliminated or within appetite", "All reasonable controls in place"] }
+    message: "This risk cannot be saved yet. Check all three: a Tolerate response needs a Tolerance End Date; a risk past Provisional needs both Likelihood and Consequence; and a risk can only be Closed once its controls are rated 'All reasonable controls in place' or better."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] " — the marker rollback.js trusts to delete

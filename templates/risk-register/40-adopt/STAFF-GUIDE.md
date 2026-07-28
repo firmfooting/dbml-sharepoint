@@ -28,6 +28,13 @@ the full cause → event → consequence story in **Detail**.
    unopened is something to chase the Sponsor about, not something to
    re-save yourself.
 
+Provisional is the one status that tolerates a half-finished risk. Past
+it, the register requires both **Likelihood** and **Consequence**: without
+them there is no rating and no score, so the risk cannot be ranked in
+**Open by score**, never appears in **Above target**, and has no next
+review date. It would be a risk the register has stopped managing while
+still appearing to hold it.
+
 ## Target Risk Rating and Levels Above Target
 
 **Target Risk Rating** is where you are aiming, in line with your
@@ -101,7 +108,13 @@ controls verified effective. The field appears once you set Status to
 Closed, and is absent when raising a new risk, since closing something you
 are still describing is not a thing anyone does.
 
-It is a rich-text field, so unlike the Tolerance End Date rule above, the
-register cannot enforce that you filled it in — an RR Risk Manager checks
-it before moving Status to Closed. See `50-govern/GOVERNANCE.md` for the
+The register **does** enforce that a closed risk has controls that hold:
+Overall Control Effectiveness must read *All reasonable controls in place*
+or *Eliminated or within appetite* before Status will accept Closed. A
+risk you are still managing your way out of is not closed, it is open.
+
+It cannot enforce the statement itself. Closure Statement is a multi-line
+field, and SharePoint validation formulas cannot read those — a limit of
+the platform, not a choice. An RR Risk Manager checks it before moving
+Status to Closed. See `50-govern/GOVERNANCE.md` for the
 enforcement boundary in full.
