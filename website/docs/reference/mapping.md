@@ -199,7 +199,13 @@ display_names:
 
 Internal names stay authoritative (they are what the schema, lookups
 and reporting bind to); `auto` derives human display titles from
-PascalCase names, with per-column overrides.
+PascalCase names, with per-column overrides. Overrides earn their place
+where splitting PascalCase reads badly — `TripKm`, `WWCCExpiry`,
+`DocumentUrl` — rather than as a second naming scheme.
+
+Settle titles before the first deploy. Renaming a deployed column is not
+harmful, but a title changed in the SharePoint UI instead of here is drift:
+the next re-paste detects it, reverts it and reports having done so.
 
 ## `column_formatting`
 
@@ -241,6 +247,13 @@ form_formatting:
 Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
+
+A header's `iconName` must name a real Fluent icon: SharePoint renders an
+unknown one as nothing at all, with no error in the build, the deploy or
+the browser console. The shipped templates draw theirs from one verified
+vocabulary, and the reasoning — plus the five plausible-looking names that
+turned out not to exist — is in
+[the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
 
 ### The last section is a catch-all, and that shapes two build rules
 
