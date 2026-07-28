@@ -18,7 +18,8 @@ against the checklist below. Template-specific notes follow.
       them.
 - [ ] `20-configure/formatting/risk-form-header.json` carries a literal
       placeholder, `https://REPLACE-WITH-PROJECT-RISK-PROCESS-URL`, as the
-      "Project risk process guide" link shown on every New and Edit form.
+      "Project risk process guide" link shown on every New, Edit **and
+      Display** form — the header formatter applies to all three.
       **Set it to your organisation's real risk-process document, or delete
       that link element entirely, before you deploy** — every form you
       hand to a risk owner would otherwise carry a dead link.
@@ -64,11 +65,15 @@ site that already holds real risks.
       - Very Likely + Business Critical → **Extreme / 24**
       - Clear Likelihood → `ResidualRiskRating` and `RiskScore` both go
         **blank** (unrated is visible, not defaulted).
-- [ ] The New form shows five sections: **Describe the risk**, **Assess the
-      risk**, **Response and controls**, **Governance**, **System**.
-- [ ] `MatrixVersion` is absent from the New and Edit forms and present on
-      the Display form — it is the audit stamp for which matrix version
-      rated the row, not something a risk owner sets.
+- [ ] The New form shows four sections: **Describe the risk**, **Assess the
+      risk**, **Response and controls**, **Governance**. **System** holds
+      only `MatrixVersion`, which is off the New form, so that section does
+      not appear there; it shows on Edit and Display.
+- [ ] `MatrixVersion` is absent from the New form and present on the Edit
+      and Display forms — it is the audit stamp for which matrix version
+      rated the row, not something a risk owner sets at creation, but it
+      must stay editable so an owner can re-stamp it on an old row during
+      the matrix-revision procedure in `50-govern/GOVERNANCE.md`.
 - [ ] `ResidualRiskRating`, `RiskScore`, `LevelsAboveTarget` and
       `NextReviewDue` are calculated and never appear on the New or Edit
       form either.

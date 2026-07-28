@@ -20,8 +20,9 @@ the full cause → event → consequence story in **Detail**.
    *as it is with those controls*, not the naked nightmare.
 3. Pick **Likelihood** and **Consequence**. The rating and score appear by
    themselves: **ResidualRiskRating** and **RiskScore** are calculated from
-   the matrix, not typed in — they are not on the form at all. If a rating
-   feels wrong, argue with Likelihood and Consequence, not the matrix.
+   the matrix, not typed in — they are not on the New or Edit form. If a
+   rating feels wrong, argue with Likelihood and Consequence, not the
+   matrix.
 4. Save, and tell the **Risk Sponsor**. Moving Status from Provisional to
    **Open** is the Sponsor's step, not yours — a Provisional risk sitting
    unopened is something to chase the Sponsor about, not something to

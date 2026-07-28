@@ -130,9 +130,12 @@ column_formatting:
     ToleranceEndDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
 
 # Declared views (deployed and reconciled by the views phase; undeclared
-# views are never touched). The default is the "open work" view. "Above
-# target" and "Tolerance expiring" carry the closure and tolerance lenses.
-# Widths are pixel ColumnWidth per view, keys are INTERNAL names (the build
+# views are never touched). Five governance lenses on the same list: "Open
+# by score" is the default, ranking live work by matrix score; "Reviews
+# due" surfaces what needs a look soon; "Above target" and "Tolerance
+# expiring" flag risks sitting above appetite or nearing a tolerance
+# deadline; "Closed risks" is the closed-out history. Widths are pixel
+# ColumnWidth per view, keys are INTERNAL names (the build
 # rewrites them to display titles — ColumnWidth binds by display name, and
 # internal names silently reset). Rating pills ~160, dates ~140-180, people
 # ~160, status chips ~100-110, Title widest on sparser views.
@@ -148,7 +151,10 @@ views:
         - { field: RiskScore, direction: desc }
       # ONE row-level signal, reserved for Extreme. Everything else stays
       # cell-level: a second wash for above-target rows duplicated the LAT
-      # cell's own escalation and read as noise on High rows.
+      # cell's own escalation and read as noise on High rows. The wash reads
+      # ResidualRiskRating, so it must stay in this view's `fields:` list —
+      # view formatting can only read columns the view itself displays;
+      # drop it from `fields:` and the wash stops firing with a clean build.
       formatting: formatting/row-extreme.json
       widths:
         Title: 280
@@ -166,6 +172,7 @@ views:
                NextReviewDue, LastReviewedDate]
       where:
         - { field: NextReviewDue, op: leq, value: today+30 }
+        - { field: Status, op: neq, value: "Closed" }
       sort:
         - { field: NextReviewDue, direction: asc }
       widths:
@@ -230,8 +237,13 @@ views:
         RiskOwner: 160
         LastReviewedDate: 180
 
-# The auto-stamped matrix version leaves the NEW and EDIT forms; the
-# Display form keeps it for audit.
+# The auto-stamped matrix version leaves the NEW form only; it stays on the
+# Edit and Display forms (existing: true, the default — `existing:` cannot
+# separate the two, see website/docs/reference/mapping.md). It must remain
+# editable: the matrix-revision procedure in 50-govern/GOVERNANCE.md has a
+# risk owner re-stamp MatrixVersion on their own row by hand once a
+# revision blanks their rating, and that only works if the column is still
+# on a form they can save.
 #
 # Deliberately NOT declared: any rule conditioned on ResidualRiskRating.
 # Conditional show/hide cannot read a calculated column — the formula stays
@@ -243,7 +255,7 @@ views:
 form_visibility:
   Risk:
     columns:
-      MatrixVersion: hidden
+      MatrixVersion: { new: false }
 
 # Form layouts: a strapline header and a sectioned body. SharePoint renders
 # per-field description hints inside sectioned forms on the NEW form only —

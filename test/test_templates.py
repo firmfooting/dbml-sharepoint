@@ -10,6 +10,7 @@ band it was written for. Those are invisible to a build that exits 0.
 from pathlib import Path
 
 from dbml_sharepoint.analysis.validator import MAX_CALCULATED_FORMULA
+from dbml_sharepoint.generators.jsgen import _rewrite_formula_refs
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 
@@ -89,8 +90,13 @@ def test_every_risk_formula_is_version_guarded_and_within_the_length_limit() -> 
     """The MatrixVersion guard is the entire reason that column exists: it
     stops a matrix revision silently re-rating historical rows. A formula
     over the ceiling is refused by SharePoint part-way through provisioning,
-    which a build cannot detect."""
-    formulas = _risk_bundle().mapping.calculated_formulas["Risk"]
+    which a build cannot detect. SharePoint receives formulas AFTER
+    display-name rewriting (internal names are rewritten to display titles
+    at build time — see jsgen._rewrite_formula_refs), and a rewritten
+    formula is longer than the authored one, so the ceiling is checked
+    against the rewritten string, not the authored one."""
+    bundle = _risk_bundle()
+    formulas = bundle.mapping.calculated_formulas["Risk"]
     assert set(formulas) == {
         "ResidualRiskRating", "RiskScore", "LevelsAboveTarget", "NextReviewDue",
     }, sorted(formulas)
@@ -98,9 +104,16 @@ def test_every_risk_formula_is_version_guarded_and_within_the_length_limit() -> 
         assert '[MatrixVersion]<>"1.0"' in formulas[name], (
             f"{name} lost its matrix-version guard"
         )
+    schema = parse_dbml(RISK / "10-design" / "schema.dbml")
+    risk = next(t for t in schema.tables if t.name == "Risk")
+    display_map = {
+        c.name: bundle.mapping.display_name_for("Risk", c.name) for c in risk.columns
+    }
     for name, formula in formulas.items():
-        assert len(formula) <= MAX_CALCULATED_FORMULA, (
-            f"{name} is {len(formula)} chars, over the {MAX_CALCULATED_FORMULA} ceiling"
+        rewritten = _rewrite_formula_refs(formula, display_map)
+        assert len(rewritten) <= MAX_CALCULATED_FORMULA, (
+            f"{name} is {len(rewritten)} chars after display-name rewriting "
+            f"(SharePoint's own formula), over the {MAX_CALCULATED_FORMULA} ceiling"
         )
 
 

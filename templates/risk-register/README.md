@@ -23,9 +23,13 @@ clinical, project — which is what makes it a whole-of-business quick win.
 
 Four columns are calculated and never appear on the New or Edit form —
 `ResidualRiskRating`, `RiskScore`, `LevelsAboveTarget`, `NextReviewDue` —
-because a person cannot type over the matrix. Everything else is entered by
-a person; the form groups them into the same sections as the table above,
-plus a fifth, system-only section for `MatrixVersion`.
+because a person cannot type over the matrix. `MatrixVersion` is also off
+the New form (it stamps itself), but unlike those four it stays on Edit and
+Display, in its own fifth, system-only section — a risk owner cannot see it
+while raising a risk, but it stays correctable on an existing row, which
+the matrix-revision procedure in `50-govern/GOVERNANCE.md` depends on.
+Everything else is entered by a person; the form groups them into the same
+sections as the table above.
 
 **Five declared views**, deployed with the paste — nothing to build by
 hand: *Open by score* (the default), *Reviews due*, *Above target*,

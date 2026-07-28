@@ -93,10 +93,9 @@ Work the folders in order: **design** what you're deploying (rename columns,
 prune what you don't need), **configure** it for your site (prefix, security),
 **deploy** it (administrator), **adopt** it (staff), **govern** it (owners).
 
-**Column titles deploy as the internal name.** Only `tiered-huddle` sets
-`display_names:` (it has to: the `" (retired)"` suffix a retired column's
-title carries only reaches SharePoint under `mode: auto`). Everywhere else a
-column declared `ReceivedDate` appears on the form,
+**Column titles deploy as the internal name — unless a template sets
+`display_names:`.** A template without that section leaves a column
+declared `ReceivedDate` appearing on the form,
 in views and in the reporting bundle as exactly `ReceivedDate` — not
 "Received Date". The staff guides write field names in prose ("set the
 received date"), so read those as pointing at the run-together column
@@ -165,7 +164,8 @@ dbml-sharepoint build \
    error: read it, fix the stated cause, paste the same script again —
    reruns verify-and-skip completed work.
 5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
-6. Create the views listed under **Recommended views** in that DEPLOY.md.
+6. If that DEPLOY.md has a **Recommended views** table, create the views it
+   lists.
 
 **Recommended views are not deployed — you create them.** Every list gets
 an unfiltered *All Items* recovery view containing all rendered columns. It
