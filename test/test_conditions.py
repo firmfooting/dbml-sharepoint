@@ -816,3 +816,39 @@ def test_a_hyperlink_operand_is_fine_in_a_view_filter() -> None:
     assert to_caml(condition, {"Doc": "hyperlink"}) == (
         '<IsNotNull><FieldRef Name="Doc"/></IsNotNull>'
     )
+
+
+def test_a_person_column_may_be_null_tested_without_an_accessor() -> None:
+    """Emptiness is a property of the FIELD, not of a name, an email or an
+    id — all three are absent together, so there is nothing for an accessor
+    to choose between. CAML's IsNull takes a bare FieldRef and no Value.
+
+    Without this, "organisations with no owner" — which
+    stakeholder-contacts' governance document asks for by name — was
+    inexpressible: the accessor rules demanded a property and CAML refuses
+    every property.
+    """
+    assert _problems([{"field": "Owner", "op": "is_null"}], CAML) == []
+    condition = parse_condition([{"field": "Owner", "op": "is_null"}], "c")
+    assert to_caml(condition, TYPES) == '<IsNull><FieldRef Name="Owner"/></IsNull>'
+
+
+def test_a_lookup_column_may_be_null_tested_without_an_accessor() -> None:
+    """Same argument, same mechanism — an absent lookup has neither a value
+    nor an id."""
+    assert _problems([{"field": "Parent", "op": "is_not_null"}], CAML) == []
+
+
+def test_a_person_null_test_still_refuses_an_accessor() -> None:
+    """The exemption is for the ACCESSOR being unnecessary, not for CAML
+    having gained the ability to reach sub-properties."""
+    condition = parse_condition(
+        [{"field": "Owner", "property": "email", "op": "is_null"}], "c",
+    )
+    with pytest.raises(ValueError, match="sub-propert"):
+        to_caml(condition, TYPES)
+
+
+def test_a_person_comparison_still_needs_an_accessor() -> None:
+    """Unchanged: only the null tests are exempt."""
+    assert "needs 'property'" in _problems([{"field": "Owner", "op": "neq", "value": ""}])[0]

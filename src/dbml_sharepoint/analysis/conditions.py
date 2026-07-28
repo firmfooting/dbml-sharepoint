@@ -723,6 +723,16 @@ def _operand_problems(
                 f"against it; use one of {', '.join(sorted(_ME_OPS))}",
             )
         return problems
+    # A null test needs no accessor either, and for the same reason `me`
+    # needs none: emptiness is a property of the FIELD, not of a name, an
+    # email or an id — all three are absent together. CAML's IsNull takes a
+    # bare FieldRef and no Value, so there is nothing for an accessor to
+    # change. Without this, "organisations with no owner" — a view
+    # stakeholder-contacts' governance doc asks for by name — was
+    # inexpressible: the accessor rules demanded a property and CAML
+    # refuses every property.
+    if kind in PROPERTY_ACCESSORS and leaf.op in _VALUELESS_OPS and not leaf.property:
+        return problems
     if kind in PROPERTY_ACCESSORS:
         allowed = PROPERTY_ACCESSORS[kind]
         if not leaf.property:

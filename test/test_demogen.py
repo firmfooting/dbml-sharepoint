@@ -144,3 +144,37 @@ def test_demo_script_contract(tmp_path: Path) -> None:
     assert "async function fetchWithRetry(" in js
     assert "const spHeaders = (digest, extra = {})" in js
     assert "await fetch(apiUrl" not in js
+
+
+def test_a_hyperlink_demo_value_becomes_a_field_url_value_record() -> None:
+    """A SharePoint URL column is a record over REST (SP.FieldUrlValue —
+    Url plus Description), not a scalar, and a bare string is rejected at
+    create time. Before this, a hyperlink column could not be seeded at
+    all: four templates in the people theme shipped their EvidenceUrl and
+    MinutesUrl blank because of it."""
+    from dbml_sharepoint.generators.demogen import _field_plan
+
+    plan = _field_plan("hyperlink", "EvidenceUrl", "https://example.invalid/a.pdf")
+    assert plan == {
+        "name": "EvidenceUrl",
+        "kind": "url",
+        "value": {
+            "url": "https://example.invalid/a.pdf",
+            "description": "https://example.invalid/a.pdf",
+        },
+    }
+
+
+def test_a_hyperlink_demo_value_may_carry_its_own_description() -> None:
+    from dbml_sharepoint.generators.demogen import _field_plan
+
+    plan = _field_plan(
+        "hyperlink",
+        "MinutesUrl",
+        {"url": "https://example.invalid/m.docx", "description": "March minutes"},
+    )
+    assert plan["kind"] == "url"
+    assert plan["value"] == {
+        "url": "https://example.invalid/m.docx",
+        "description": "March minutes",
+    }

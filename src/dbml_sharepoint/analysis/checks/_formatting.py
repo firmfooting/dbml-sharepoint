@@ -94,7 +94,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{ctx}: calculated: true on {style} expects "
                     f"{calculated_type_for_style}, not {target_type}.",
                 ))
-            if style in ("severity", "pill"):
+            if style in ("severity", "pill") and types_by_col.get(col_name) == "boolean":
+                # Both styles compare @currentField against QUOTED strings.
+                # A SharePoint Yes/No column is a boolean, so every branch
+                # of the generated =if chain is false and the cell renders
+                # unstyled — no error in the build, the deploy or the
+                # console. Found by the stakeholder-contacts uplift, which
+                # wanted a chip on IsActive and got nothing.
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: {style} on a Yes/No column matches nothing. The style "
+                    f"compares against quoted strings and a boolean is not one, so "
+                    f"every branch is false and the cell renders unstyled — silently. "
+                    f"Use a bespoke formatter testing the value's truthiness.",
+                ))
+            elif style in ("severity", "pill"):
                 members = style_enum_members.get(types_by_col.get(col_name, ""))
                 if members is not None:
                     for unknown in sorted(set(spec.get("map", {})) - members):
