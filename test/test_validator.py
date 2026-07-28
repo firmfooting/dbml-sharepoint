@@ -2717,3 +2717,77 @@ def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
         "DocumentLibrary" in f.message and "no file behind them" in f.message
         for f in errors
     ), errors
+
+
+# --- Declared view totals ---------------------------------------------------
+
+
+def test_a_total_on_a_column_the_view_does_not_show_is_refused(tmp_path: Path) -> None:
+    """The widths failure shape exactly: SharePoint accepts the property and
+    renders nothing, because the view has no column to put a figure under."""
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title]\n"
+        "      totals: { SortOrder: sum }\n",
+    )
+    assert any("SortOrder" in f.message and "totals" in f.message for f in errors), errors
+
+
+def test_summing_a_choice_column_is_refused_and_points_at_count(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status]\n"
+        "      totals: { Status: sum }\n",
+    )
+    assert any(
+        "Status" in f.message and "count" in f.message for f in errors
+    ), errors
+
+
+def test_counting_a_choice_column_is_allowed(tmp_path: Path) -> None:
+    """count counts ROWS, not values, so it is legal on any displayed
+    column — which is why it is excluded from the numeric-only set rather
+    than sharing the numeric rule."""
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status]\n"
+        "      totals: { Status: count }\n",
+    )
+    assert not [f for f in errors if "totals" in f.message], errors
+
+
+def test_summing_a_numeric_column_is_allowed(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, SortOrder]\n"
+        "      totals: { SortOrder: sum }\n",
+    )
+    assert not [f for f in errors if "totals" in f.message], errors
+
+
+def test_a_total_on_a_calculated_number_is_allowed(tmp_path: Path) -> None:
+    """Three of the columns this feature exists for are calculated
+    day-counts. The `string;#` prefix that complicates calculated TEXT is a
+    column-formatting concern and never reaches a view's Aggregations."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Score]\n"
+        "      totals: { Score: avg }\n",
+    )
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert not [f for f in errors if "totals" in f.message], errors

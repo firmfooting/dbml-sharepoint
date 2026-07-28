@@ -2107,3 +2107,64 @@ def test_group_by_refuses_an_empty_fields_list(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="non-empty"):
         load_mapping(tmp_path / "m.yaml")
+
+
+# --- Declared view totals ---------------------------------------------------
+
+
+def test_totals_parse(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Totals\n"
+            "      fields: [Title, SortOrder]\n"
+            "      totals: { SortOrder: sum }\n",
+        ),
+        encoding="utf-8",
+    )
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert bundle.mapping.views["Project"][0].totals == {"SortOrder": "sum"}
+
+
+def test_totals_default_to_empty(tmp_path: Path) -> None:
+    """Empty means the live Aggregations property is never touched, so the
+    default has to be an empty mapping rather than None — the deploy reads
+    it as "nothing declared", not as "declare nothing"."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml("views:\n  Project:\n    - title: V\n      fields: [Title]\n"),
+        encoding="utf-8",
+    )
+    assert load_mapping(tmp_path / "m.yaml").mapping.views["Project"][0].totals == {}
+
+
+def test_totals_refuse_an_unknown_function(tmp_path: Path) -> None:
+    """SharePoint has no median. Unchecked, it would be written into the
+    Aggregations property as a string and quietly produce nothing."""
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Bad\n"
+            "      fields: [Title, SortOrder]\n"
+            "      totals: { SortOrder: median }\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="median"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_totals_must_be_a_mapping(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        _views_yaml(
+            "views:\n"
+            "  Project:\n"
+            "    - title: Bad\n"
+            "      fields: [Title, SortOrder]\n"
+            "      totals: [SortOrder]\n",
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must be a mapping"):
+        load_mapping(tmp_path / "m.yaml")

@@ -178,6 +178,31 @@ def _scalar(col: Column, description: str) -> SPField:
             )
 
 
+# Declared view aggregations: the authored name, and SharePoint's own
+# spelling of it. The renderer owns the translation, exactly as it does for
+# a sort direction (`desc` -> Ascending="FALSE") — the mapping vocabulary is
+# short and lowercase throughout, and SharePoint's is neither.
+#
+# SP also offers StdDev and Var. Both are omitted deliberately: nothing in
+# the library wants them, a standard deviation under a SharePoint view is a
+# figure almost nobody reading a committee pack can interpret, and an unused
+# function is an unverified one. Adding either is two lines and a probe run.
+#
+# Mechanism verified against a live tenant on 2026-07-29 —
+# test/manual/view-aggregations-probe.js.
+TOTAL_FUNCTIONS: dict[str, str] = {
+    "sum": "Sum",
+    "count": "Count",
+    "avg": "Average",
+    "min": "Min",
+    "max": "Max",
+}
+
+# `count` is excluded because it counts ROWS, not values, so it is legal on
+# any column a view displays. The other four need something to add up.
+NUMERIC_ONLY_TOTALS = frozenset({"sum", "avg", "min", "max"})
+
+
 def format_description(note: str) -> str:
     if not note:
         return ""

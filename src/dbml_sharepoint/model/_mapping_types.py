@@ -201,6 +201,11 @@ class ViewDef:
     # display titles — SP's ColumnWidth binds by display name). Empty = the
     # live widths are never touched.
     widths: dict[str, int] = field(default_factory=dict)
+    # Optional per-column aggregations, INTERNAL names, values from
+    # typemap.TOTAL_FUNCTIONS. Empty = the live Aggregations property is
+    # never touched, matching widths and formatting — so DELETING a totals
+    # block does not remove a total from an already-deployed view.
+    totals: dict[str, str] = field(default_factory=dict)
     # The `field_sets` entries this view's `fields` was expanded from, in
     # reference order, de-duplicated. Populated by _expand_field_sets at
     # load; empty when the view named its columns directly. The manifest

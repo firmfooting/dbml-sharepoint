@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.conditions import (
     effective_column_types,
     validate_condition,
 )
+from dbml_sharepoint.analysis.typemap import NUMERIC_ONLY_TOTALS
 from dbml_sharepoint.analysis.validator import (
     SYSTEM_COLUMNS,
     Finding,
@@ -15,6 +16,19 @@ from dbml_sharepoint.analysis.validator import (
     formatter_field_refs,
 )
 from dbml_sharepoint.model.mapping_loader import view_url_slug
+
+# What SharePoint can add up. A calculated_number is included deliberately:
+# three of the five columns declared totals exist for in this library are
+# calculated day-counts, and the `string;#` prefix that complicates
+# calculated text is a COLUMN-formatting concern that never reaches a
+# view's Aggregations property.
+_NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
+
+# Columns with no aggregation semantics in any function, including count.
+# Separated from the numeric rule so the message can say "not at all"
+# rather than pointing at `count` as an alternative that is also useless
+# here.
+_UNAGGREGATABLE = frozenset({"person", "richtext", "longtext", "hyperlink"})
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -272,6 +286,32 @@ def check(vc: ValidationContext) -> list[Finding]:
                         "error",
                         f"{ctx}: widths[{width_col}] must be between 16 and "
                         f"2000 pixels (got {width_px}).",
+                    ))
+            # Totals bind to a displayed column, like widths — SharePoint
+            # accepts an Aggregations entry naming a field the view has no
+            # column for, and then renders no figure.
+            for total_col, func in view.totals.items():
+                if total_col not in view.fields:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: totals references {total_col!r}, which is not one "
+                        f"of this view's fields — SharePoint has no column to put "
+                        f"the figure under, so no total appears.",
+                    ))
+                    continue
+                col_type = types_by_col.get(total_col, "")
+                if col_type in _UNAGGREGATABLE:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: totals[{total_col}] cannot be aggregated at all — "
+                        f"{total_col!r} is a {col_type} column.",
+                    ))
+                elif func in NUMERIC_ONLY_TOTALS and col_type not in _NUMERIC_FOR_TOTALS:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: totals[{total_col}] = {func!r} needs a numeric "
+                        f"column; {total_col!r} is {col_type}. Use 'count', which "
+                        f"counts rows rather than adding values.",
                     ))
             # group_by is already checked against the entity's rendered
             # columns above, which is the weaker question. SharePoint groups
