@@ -1404,10 +1404,11 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
     bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     assert [view["title"] for view in schema_json["views"]] == [
-        "All Items", "Open risks",
+        "Open risks", "All Items",
     ]
-    all_items, declared = schema_json["views"]
+    declared, all_items = schema_json["views"]
     assert all_items["set_default"] is False
+    assert all_items["hidden"] is True
     assert all_items["caml_query"] == ""
     assert declared == {
         "list": "APP_Risk",
@@ -1421,6 +1422,7 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         ),
         "row_limit": 100,
         "set_default": True,
+        "hidden": False,
         "formatting": None,
         "widths": None,
         "url_slug": "OpenRisks",
@@ -1480,6 +1482,7 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
         "caml_query": "",
         "row_limit": None,
         "set_default": True,
+        "hidden": False,
         "formatting": None,
         "widths": None,
         "url_slug": "AllItems",
@@ -1578,6 +1581,9 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
     assert "removeallviewfields" in js
     assert "addviewfield('${odataName(name)}')" in js
     assert "DefaultView: true" in js
+    assert "Hidden: view.hidden" in js
+    assert "actual.Hidden !== view.hidden" in js
+    assert "$select=Id,Title,DefaultView,Hidden,RowLimit" in js
     # verification + fail-closed error routing
     assert "did not retain declared view setting(s)" in js
     assert "phase: '3.1'" in js
@@ -1818,7 +1824,10 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
     )
-    assert "$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter" in js
+    assert (
+        "$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter"
+        in js
+    )
     assert "view.formatting != null" in js
     assert "CustomFormatter: view.formatting" in js
     # The view CustomFormatter lives in the view schema XML like ViewQuery,

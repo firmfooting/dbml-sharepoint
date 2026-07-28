@@ -191,7 +191,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       views[`${listTitle} ${title}`] ||= {
         Id: '44444444-4444-4444-4444-444444444444',
         Title: title, DefaultView: true, RowLimit: 30, ViewQuery: '',
-        PersonalView: false, CustomFormatter: null,
+        Hidden: false, PersonalView: false, CustomFormatter: null,
         ServerRelativeUrl: `/sites/test/Lists/${listTitle}/AllItems.aspx`,
         ViewFields: { Items: { results: ['Title'] } },
       }
@@ -331,7 +331,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
             state.ViewFields.Items.results.push(added);
           } else if (opts.body) {
             const parsed = JSON.parse(opts.body);
-            for (const key of ['Title', 'DefaultView', 'RowLimit', 'ViewQuery']) {
+            for (const key of ['Title', 'DefaultView', 'Hidden', 'RowLimit', 'ViewQuery']) {
               if (parsed[key] !== undefined) state[key] = parsed[key];
             }
           }

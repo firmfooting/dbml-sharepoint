@@ -227,7 +227,7 @@ def test_manifest_lists_declared_views(tmp_path: Path) -> None:
     )
     assert f"## Phase {pn('views')}: views" in md
     assert "- Views to provision: 2" in md
-    assert "- **All Items** on APP_Risk" in md
+    assert "- **All Items** on APP_Risk [hidden]" in md
     assert "**Open risks** on APP_Risk (default)" in md
     assert "Title, Status, DueDate" in md
     assert "other views are" in md and "never modified" in md

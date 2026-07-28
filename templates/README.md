@@ -168,7 +168,8 @@ dbml-sharepoint build \
 6. Create the views listed under **Recommended views** in that DEPLOY.md.
 
 **Recommended views are not deployed — you create them.** Every list gets
-an unfiltered *All Items* recovery view containing all rendered columns. A
+an unfiltered *All Items* recovery view containing all rendered columns. It
+is hidden from the modern view bar when an authored view is the default. A
 template with no `views:` block gets that view and nothing else, and
 every "Recommended views" table is a specification for views you build in
 the SharePoint UI (or add to

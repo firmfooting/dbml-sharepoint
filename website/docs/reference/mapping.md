@@ -123,8 +123,9 @@ views:
 - Every deployed list also gets a managed **All Items** recovery view. It
   has no filter and contains every rendered schema column plus `ID`,
   `Created`, `Modified`, `Author` and `Editor`. It is the default view only
-  when no authored view declares `default: true`; the title is reserved and
-  cannot be overridden in `views:`.
+  when no authored view declares `default: true`; otherwise it is hidden from
+  the modern view bar. The title is reserved and cannot be overridden in
+  `views:`.
 - Other undeclared views are user content and are never touched.
 
 ## `display_names`

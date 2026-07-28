@@ -547,7 +547,14 @@ def build_schema_json(
                 ],
                 default=not any(view.default for view in declared_views),
             )
-            views_to_render.insert(0, all_items)
+            # A live list's built-in All Items may still hold DefaultView.
+            # SharePoint will not reliably hide the current default, so an
+            # authored default must be reconciled first. A recovery view that
+            # is itself the default stays first and visible.
+            if all_items.default:
+                views_to_render.insert(0, all_items)
+            else:
+                views_to_render.append(all_items)
         for view in views_to_render:
             views_out.append({
                 "list": list_title,
@@ -556,6 +563,9 @@ def build_schema_json(
                 "caml_query": _view_caml_query(view, column_types),
                 "row_limit": view.row_limit,
                 "set_default": view.default,
+                # All Items is a recovery/audit view. Keep it out of modern
+                # view tabs when an authored default provides the working UI.
+                "hidden": view.title == "All Items" and not view.default,
                 "formatting": (
                     json.dumps(view.formatting, separators=(",", ":"), sort_keys=True)
                     if view.formatting is not None

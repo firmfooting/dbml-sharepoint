@@ -169,5 +169,5 @@ Shared read-only shape probes: readListShape / readFieldShape with per-list cach
 
 *Phase 3.1 (PRESENTATION) — views*
 
-Fields created through the REST field collection join no view, so a fresh list shows a Title-only default view. Every list gets a generated, unfiltered All Items recovery view containing its complete rendered schema; authored views are managed alongside it. Other views are user content and are never touched (unlike exact-mode ACLs).
+Fields created through the REST field collection join no view, so a fresh list shows a Title-only default view. Every list gets a generated, unfiltered All Items recovery view containing its complete rendered schema; when an authored default exists the recovery view is hidden from the modern view bar. Authored views are managed alongside it. Other views are user content and are never touched (unlike exact-mode ACLs).
 

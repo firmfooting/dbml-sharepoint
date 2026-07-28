@@ -738,8 +738,25 @@
   "seed_items": [],
   "views": [
     {
+      "caml_query": "\u003cWhere\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
+      "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
+      "hidden": false,
+      "list": "APP_Project",
+      "row_limit": 100,
+      "set_default": true,
+      "title": "Open projects",
+      "url_slug": "OpenProjects",
+      "view_fields": [
+        "Title",
+        "Status",
+        "SortOrder"
+      ],
+      "widths": null
+    },
+    {
       "caml_query": "",
       "formatting": null,
+      "hidden": true,
       "list": "APP_Project",
       "row_limit": null,
       "set_default": false,
@@ -758,23 +775,9 @@
       "widths": null
     },
     {
-      "caml_query": "\u003cWhere\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
-      "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
-      "list": "APP_Project",
-      "row_limit": 100,
-      "set_default": true,
-      "title": "Open projects",
-      "url_slug": "OpenProjects",
-      "view_fields": [
-        "Title",
-        "Status",
-        "SortOrder"
-      ],
-      "widths": null
-    },
-    {
       "caml_query": "",
       "formatting": null,
+      "hidden": false,
       "list": "APP_Task",
       "row_limit": null,
       "set_default": true,
@@ -795,6 +798,7 @@
     {
       "caml_query": "\u003cGroupBy Collapse=\"FALSE\"\u003e\u003cFieldRef Name=\"Project\"/\u003e\u003c/GroupBy\u003e\u003cWhere\u003e\u003cLeq\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003cValue Type=\"DateTime\"\u003e\u003cToday OffsetDays=\"30\"/\u003e\u003c/Value\u003e\u003c/Leq\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003c/OrderBy\u003e",
       "formatting": null,
+      "hidden": false,
       "list": "APP_Task",
       "row_limit": null,
       "set_default": false,
@@ -810,6 +814,7 @@
     {
       "caml_query": "",
       "formatting": null,
+      "hidden": false,
       "list": "APP_AppSettings",
       "row_limit": null,
       "set_default": true,
@@ -2130,8 +2135,9 @@
   // Fields created through the REST field collection join no view, so a
   // fresh list shows a Title-only default view. Every list gets a generated,
   // unfiltered All Items recovery view containing its complete rendered
-  // schema; authored views are managed alongside it. Other views are user
-  // content and are never touched (unlike exact-mode ACLs).
+  // schema; when an authored default exists the recovery view is hidden from
+  // the modern view bar. Authored views are managed alongside it. Other views
+  // are user content and are never touched (unlike exact-mode ACLs).
   log('INFO', 'Group 3 — PRESENTATION');
   log('INFO', 'Starting Phase 3.1: views.');
   // Readback normalization: SP collapses nothing between tags but DOES write
@@ -2154,7 +2160,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -2172,7 +2178,7 @@
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {
@@ -2212,6 +2218,7 @@
           __metadata: { type: 'SP.View' },
           Title: view.url_slug,
           PersonalView: false,
+          Hidden: view.hidden,
           Paged: true,
           ViewQuery: view.caml_query,
         };
@@ -2274,6 +2281,9 @@
         if (view.row_limit != null && existing.RowLimit !== view.row_limit) {
           patchBody.RowLimit = view.row_limit;
         }
+        if (existing.Hidden !== view.hidden) {
+          patchBody.Hidden = view.hidden;
+        }
         if (Object.keys(patchBody).length > 1) {
           await mergeView(viewUrl, patchBody, viewDigest);
         }
@@ -2327,6 +2337,9 @@
         drifted.push(`RowLimit (declared ${view.row_limit}; readback ${actual.RowLimit})`);
       }
       if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
+      if (actual.Hidden !== view.hidden) {
+        drifted.push(`Hidden (declared ${view.hidden}; readback ${actual.Hidden})`);
+      }
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
         drifted.push(`CustomFormatter (declared ${JSON.stringify(view.formatting)}; readback ${JSON.stringify(actual.CustomFormatter)})`);

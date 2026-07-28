@@ -147,14 +147,14 @@ _(none configured)_
 
 {% if views %}
 {% for v in views %}
-- **{{ v.title }}** on {{ v.list }}{{ ' (default)' if v.set_default else '' }}{{ ' [row-formatted]' if v.formatting else '' }}: {{ v.view_fields | join(', ') }}{{ ' — ' + v.summary if v.summary else '' }}{{ ' — expanded from field sets: ' + v.expanded_from if v.expanded_from else '' }}
+- **{{ v.title }}** on {{ v.list }}{{ ' (default)' if v.set_default else '' }}{{ ' [hidden]' if v.hidden else '' }}{{ ' [row-formatted]' if v.formatting else '' }}: {{ v.view_fields | join(', ') }}{{ ' — ' + v.summary if v.summary else '' }}{{ ' — expanded from field sets: ' + v.expanded_from if v.expanded_from else '' }}
 {% endfor %}
 
 The generated **All Items** recovery view is unfiltered and contains every
 rendered schema and supported system column. It is the default only when no
-authored view claims that slot. Managed views are created or reconciled
-exactly (columns, order, query, row limit, default flag); other views are
-never modified.
+authored view claims that slot; otherwise it is hidden from the modern view
+bar. Managed views are created or reconciled exactly (columns, order, query,
+row limit, default and hidden flags); other views are never modified.
 Field lists are shown RESOLVED: a view declared with `@setname` prints the
 columns the set expanded to, and names the sets it used.
 {% else %}
