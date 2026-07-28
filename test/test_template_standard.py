@@ -61,11 +61,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # rather than four different ways; see the header comment in
 # `templates/policy-library/20-configure/mapping.yaml`.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "complaints-feedback",
-    "equipment-maintenance", "incident-management",
-    "policy-library", "routine-checks",
-    "service-requests", "switchboard-log",
-    "vehicle-log", "visitor-log",
+    "policy-library",
 })
 
 # §1.2. Order never changes; a small list may collapse the middle beats but
@@ -303,6 +299,104 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "What happened": "Identify",
         "What was said": "Assess",
         "Our record": "Govern",
+    },
+    # --- Operations & service ------------------------------------------
+    # A visit has nothing to assess: the middle beat collapses, which §1.2
+    # permits and names visitor-log as the case for.
+    ("visitor-log", "Visit"): {
+        "Who is visiting": "Identify",
+        "On site": "Act",
+        "Induction": "Govern",
+    },
+    ("service-requests", "Request"): {
+        "Describe the request": "Identify",
+        "Triage": "Assess",
+        "Resolution": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("complaints-feedback", "Feedback"): {
+        "What was raised": "Identify",
+        "Triage": "Assess",
+        "Response": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    # A reference list has one idea, so it gets one section. Collapsing to
+    # a single beat is what §1.2 permits at the small end.
+    ("asset-register", "Location"): {
+        "The place": "Identify",
+    },
+    ("asset-register", "Asset"): {
+        "What it is": "Identify",
+        "Where it is": "Act",
+        "Purchase and warranty": "Govern",
+        "System": "System",
+    },
+    ("vehicle-log", "Vehicle"): {
+        "The vehicle": "Identify",
+        "In service": "Govern",
+    },
+    ("vehicle-log", "Trip"): {
+        "The trip": "Identify",
+        "Out and back": "Act",
+        "System": "System",
+    },
+    ("routine-checks", "CheckPoint"): {
+        "The checkpoint": "Identify",
+        "What good looks like": "Assess",
+        "Ownership": "Govern",
+    },
+    ("routine-checks", "CheckEntry"): {
+        "The check": "Identify",
+        "What you found": "Assess",
+        "What you did": "Act",
+        "Ownership": "Govern",
+    },
+    ("equipment-maintenance", "Equipment"): {
+        "The item": "Identify",
+        "The schedule": "Assess",
+        "In service": "Govern",
+    },
+    ("equipment-maintenance", "MaintenanceEvent"): {
+        "The work": "Identify",
+        "Outcome": "Assess",
+        "Evidence": "Govern",
+    },
+    ("incident-management", "Incident"): {
+        "What happened": "Identify",
+        "Triage": "Assess",
+        "Resolution": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("incident-management", "CorrectiveAction"): {
+        "The action": "Identify",
+        "Progress": "Act",
+        "Ownership": "Govern",
+    },
+    ("switchboard-log", "CodeEvent"): {
+        "The code": "Identify",
+        "Times": "Assess",
+        "What switchboard did": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("switchboard-log", "MessageLog"): {
+        "The call": "Identify",
+        "Urgency": "Assess",
+        "Relay": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("switchboard-log", "Key"): {
+        "The key": "Identify",
+        "Who may take it": "Govern",
+    },
+    ("switchboard-log", "KeyMovement"): {
+        "The movement": "Identify",
+        "Out and back": "Act",
+        "Ownership": "Govern",
     },
 }
 

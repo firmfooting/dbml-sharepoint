@@ -61,6 +61,13 @@ FLEET_ICONS: frozenset[str] = frozenset({
     "Message",
     "ClipboardList",
     "Warning",
+    # Added 2026-07-28 with the operations & service theme, each checked
+    # against the same catalogue as the names above before admission:
+    # a service request IS a ticket, an incident IS the triangle, and an
+    # emergency code is announced rather than merely warned about.
+    "Ticket",
+    "IncidentTriangle",
+    "Ringer",
     # People and relationships
     "Contact",
     "ContactCard",
