@@ -51,7 +51,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "grants-register", "improvement-register", "incident-management",
     "measures-register",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
-    "service-requests", "stakeholder-contacts", "switchboard-log",
+    "service-requests", "switchboard-log",
     "vehicle-log", "visitor-log",
 })
 
@@ -154,6 +154,23 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "The action": "Identify",
         "Owner and date": "Act",
         "Progress": "Govern",
+    },
+    # "What was said" is the Assess beat on a log whose whole job is
+    # judgement: the summary is what a colleague picking up the thread
+    # actually reads.
+    ("stakeholder-contacts", "Organisation"): {
+        "The organisation": "Identify",
+        "Ownership": "Govern",
+    },
+    ("stakeholder-contacts", "Contact"): {
+        "The person": "Identify",
+        "How to reach them": "Act",
+        "Standing and notes": "Govern",
+    },
+    ("stakeholder-contacts", "Interaction"): {
+        "What happened": "Identify",
+        "What was said": "Assess",
+        "Our record": "Govern",
     },
 }
 
