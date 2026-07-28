@@ -39,4 +39,10 @@ Table Measure {
   Status      measure_status     [not null, default: 'Active']
   ReviewDate  date               [note: 'Next definition/usefulness review — at least annual']
   Notes       richtext           [note: 'Definition change history (dated), known data caveats']
+
+  indexes {
+    Status
+    MeasureArea
+    Frequency
+  }
 }

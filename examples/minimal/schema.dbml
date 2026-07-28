@@ -13,4 +13,8 @@ Table Ticket {
   Status    ticket_status [not null, default: 'Open']
   Owner     person        [note: 'Who is handling this']
   DueDate   date
+
+  indexes {
+    Status
+  }
 }

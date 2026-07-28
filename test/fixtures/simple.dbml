@@ -21,6 +21,10 @@ Table Task {
   Title     nvarchar   [not null]
   Project   int        [ref: > Project.Id, not null]
   DueDate   date       [note: 'Optional due date.']
+
+  indexes {
+    DueDate
+  }
 }
 
 Table AppSettings {

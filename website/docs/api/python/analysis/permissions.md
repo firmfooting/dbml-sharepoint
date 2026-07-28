@@ -18,7 +18,7 @@ BASE_PERMISSIONS = {'EmptyMask': 0, 'ViewListItems': 1, 'AddListItems': 2, 'Edit
 ### `HighLow`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class HighLow:
     high: str
     low: str

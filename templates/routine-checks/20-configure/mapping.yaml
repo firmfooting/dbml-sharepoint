@@ -7,10 +7,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  CheckPoint: [CheckType, Active]
-  CheckEntry: [CheckPoint, CheckedAt, Result]
-
 versioning:
   default:
     enable_versioning: true

@@ -1,6 +1,7 @@
 """Command-line interface for dbml-sharepoint."""
 
 import datetime as dt
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlparse
@@ -50,6 +51,37 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
 # A bad config file fails as one of these. Deliberately not `Exception`:
 # an unexpected error is a bug in the tool and must keep its traceback.
 _CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
+
+_REPORT_FILES = ("REPORTING.md", "DATA-DICTIONARY.md")
+# (subdirectory, glob) pairs naming everything `report` writes below `out`.
+_REPORT_DIRECTORY_CONTENTS = (("powerquery", "*.pq"), ("sql", "views.sql"))
+
+
+def _clear_report_output(out: Path) -> None:
+    """Remove the artifacts this command writes, and nothing else.
+
+    Deliberately not `rmtree` on powerquery/ and sql/. Those names are
+    generic, `--out` is routinely aimed at a directory the operator also
+    keeps their own work in, and a hand-written migration sitting beside
+    views.sql is not this command's to delete. Remove by the names `report`
+    generates, then drop each directory only if emptying it left nothing
+    behind.
+
+    `*.pq` is the one broad pattern, and it is deliberate: a stale query
+    from a list that has left the schema is indistinguishable from a
+    hand-written one, and leaving it is the worse failure — it documents a
+    list that no longer exists. The docs say so; `--out` is not the place
+    to keep your own .pq files.
+    """
+    for dirname, pattern in _REPORT_DIRECTORY_CONTENTS:
+        directory = out / dirname
+        for path in sorted(directory.glob(pattern)):
+            if path.is_file():
+                path.unlink()
+        with suppress(OSError):
+            directory.rmdir()  # refuses when the operator left anything here
+    for filename in _REPORT_FILES:
+        (out / filename).unlink(missing_ok=True)
 
 
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
@@ -278,11 +310,6 @@ def report(
         )
         raise typer.Exit(code=2)
 
-    pq_dir = out / "powerquery"
-    sql_dir = out / "sql"
-    pq_dir.mkdir(parents=True, exist_ok=True)
-    sql_dir.mkdir(parents=True, exist_ok=True)
-
     generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     dictionary_kwargs: dict[str, Any] = dict(
         release=release_obj,
@@ -291,31 +318,61 @@ def report(
         source_mapping=mapping.name,
     )
 
-    queries = generate_powerquery(parsed_schema, bundle, site_role)
-    queries.update(
-        generate_dictionary_powerquery(
+    # Render everything before writing anything. This command does not
+    # validate — it documents the contract as "assumes a schema that `build`
+    # accepts" — so the generators are the first thing to meet a schema
+    # mistake, and they signal one by raising: an unmapped column type, a
+    # composite DBML index. Unhandled, that printed a traceback for a typo
+    # in a file the operator hand-edited, which is exactly what
+    # `_config_error` exists to prevent on the loading side. Generating up
+    # front also keeps a failure from leaving a half-written report set
+    # behind, where the stale files outlive the error on the terminal.
+    try:
+        queries = generate_powerquery(parsed_schema, bundle, site_role)
+        queries.update(
+            generate_dictionary_powerquery(
+                parsed_schema, bundle, site_role, **dictionary_kwargs,
+            ),
+        )
+        views_sql = (
+            generate_sql_views(parsed_schema, bundle, site_role)
+            + "\n"
+            + generate_dictionary_sql(
+                parsed_schema, bundle, site_role, **dictionary_kwargs,
+            )
+        )
+        reporting_md = generate_reporting_md(parsed_schema, bundle, site_role)
+        dictionary_md = generate_data_dictionary(
             parsed_schema, bundle, site_role, **dictionary_kwargs,
-        ),
-    )
+        )
+    except ValueError as exc:
+        # The schema was read and refused, so whatever is in `out` describes
+        # a schema that no longer exists — clear it rather than leave a stale
+        # set looking current. Only reachable once the config loaded and the
+        # role resolved: a mistyped --schema path or an unknown --site-role
+        # never learns anything about the report, and must not destroy the
+        # last good one on its way out.
+        _clear_report_output(out)
+        typer.echo(
+            f"[ERROR] schema {schema}: {exc}\n"
+            "Run `build --dry-run` for the full validation report.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    # Drop the previous set so a list removed from the schema does not leave
+    # its .pq file behind, outliving the schema that justified it.
+    _clear_report_output(out)
+
+    pq_dir = out / "powerquery"
+    sql_dir = out / "sql"
+    pq_dir.mkdir(parents=True, exist_ok=True)
+    sql_dir.mkdir(parents=True, exist_ok=True)
     for filename, content in queries.items():
         (pq_dir / filename).write_text(content, encoding="utf-8")
-    (sql_dir / "views.sql").write_text(
-        generate_sql_views(parsed_schema, bundle, site_role)
-        + "\n"
-        + generate_dictionary_sql(
-            parsed_schema, bundle, site_role, **dictionary_kwargs,
-        ),
-        encoding="utf-8",
-    )
-    (out / "REPORTING.md").write_text(
-        generate_reporting_md(parsed_schema, bundle, site_role), encoding="utf-8",
-    )
-    (out / "DATA-DICTIONARY.md").write_text(
-        generate_data_dictionary(
-            parsed_schema, bundle, site_role, **dictionary_kwargs,
-        ),
-        encoding="utf-8",
-    )
+    (sql_dir / "views.sql").write_text(views_sql, encoding="utf-8")
+    (out / "REPORTING.md").write_text(reporting_md, encoding="utf-8")
+    (out / "DATA-DICTIONARY.md").write_text(dictionary_md, encoding="utf-8")
     typer.echo(
         f"Generated {len(queries)} Power Query file(s), sql/views.sql, "
         f"REPORTING.md and DATA-DICTIONARY.md in {out}.",

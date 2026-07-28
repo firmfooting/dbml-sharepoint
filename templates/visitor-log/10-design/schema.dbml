@@ -28,4 +28,10 @@ Table Visit {
   // Governance sets the induction requirement for contractors and students.
   InductionSighted boolean      [default: false, note: 'Contractors and students: tick once their site induction has been confirmed, before any work starts']
   BadgeRef         nvarchar     [note: 'Visitor badge number if you issue them']
+
+  indexes {
+    SignedInAt
+    VisitorType
+    VisitLocation
+  }
 }

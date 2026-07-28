@@ -47,6 +47,12 @@ Table Interest {
   ManagementPlan richtext        [note: 'Set at assessment: how the conflict is managed (recusal, reallocation, information barriers)']
   ReviewDate     date            [note: 'Next review — at least annual while the interest is live']
   CeasedDate     date
+
+  indexes {
+    Status
+    DeclaredBy
+    ReviewDate
+  }
 }
 
 Table GiftBenefit {
@@ -60,4 +66,10 @@ Table GiftBenefit {
   Decision      gift_decision [not null, default: 'Pending decision']
   DecisionBy    person        [note: 'Who decided (per the threshold rules)']
   Detail        nvarchar      [note: 'Context: occasion, whether others attended, anything relevant to perception']
+
+  indexes {
+    Decision
+    OfferedTo
+    OfferedDate
+  }
 }

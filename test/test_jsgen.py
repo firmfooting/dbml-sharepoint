@@ -39,6 +39,81 @@ def test_generated_deploy_js_contains_lifecycle_markers() -> None:
     assert "0.1.0-test" in js  # release tag rendered
 
 
+def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Status nvarchar\n"
+        "  indexes { Status }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    output = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
+
+
+def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> None:
+    """Single-value Choice and Lookup fields support SharePoint uniqueness."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Enum status {\n"
+        "  Open\n"
+        "  Closed\n"
+        "}\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Status status [not null, unique]\n"
+        "  Project int [not null, unique, ref: > Project.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+
+    output = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    task = next(item for item in output["lists"] if item["title"] == "APP_Task")
+    fields = {field["title"]: field for field in task["fields_phase1"]}
+
+    for name in ("Status", "Project"):
+        assert fields[name]["body"]["EnforceUniqueValues"] is True
+        assert fields[name]["body"]["Indexed"] is True
+
+    # The Choice field is POSTed as this body, so its flags are set at
+    # creation. A lookup cannot be: SharePoint only accepts it through
+    # AddField, whose SP.FieldCreationInformation carries neither property.
+    # Both therefore arrive by the MERGE reconcileDeclaredField issues right
+    # after creation — assert the split so a future change that drops that
+    # reconcile call cannot leave a [unique] lookup silently non-unique.
+    creation = fields["Project"]["lookup_creation_parameters"]
+    assert "EnforceUniqueValues" not in creation
+    assert "Indexed" not in creation
+    assert "lookup_creation_parameters" not in fields["Status"]
+
+
 def test_simple_deploy_js_matches_golden() -> None:
     """Golden-file regression: deploy.js from simple.dbml must match
     test/fixtures/expected/simple-deploy.js byte-for-byte.

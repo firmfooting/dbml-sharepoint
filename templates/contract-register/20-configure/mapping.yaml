@@ -6,10 +6,6 @@ entities:
 
 cross_site_reference_columns: []
 
-# The register's working filters: expiring soon, by status, by owner-ish.
-indexed_columns:
-  Contract: [Status, EndDate, ContractType]
-
 versioning:
   default:
     enable_versioning: true

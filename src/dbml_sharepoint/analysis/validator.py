@@ -25,7 +25,7 @@ RESERVED_NAMES = frozenset({
 
 # SharePoint system columns that exist on every list. Formatter [$Field]
 # references and view/form field lists may name them; they are never
-# DBML-declared. Deployer-managed sets (indexed_columns, hidden_on_forms,
+# DBML-declared. Deployer-managed sets (views, form_visibility,
 # display_names) stay strict, as do list-validation formulas (SP support
 # for system columns there is not relied on — fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
@@ -235,7 +235,7 @@ def _check_column(
     # `int [pk, increment]` column, while jsgen and _rendered_columns
     # special-case the NAME — so a differently named one was validated as a
     # real column and never created. Every consequence then validated
-    # clean: per-column declarations deployed nothing, indexed_columns and
+    # clean: per-column declarations deployed nothing, DBML indexes and
     # views.fields emitted calls that fail live, and demo_items wrote to a
     # column that does not exist.
     #
@@ -293,10 +293,11 @@ def _check_column(
             f"{table}.{name}: ref target {col.ref.target_table} not defined.",
         ))
 
-    if col.unique and col.type in {"longtext", "richtext"}:
+    if col.unique and not typemap.supports_unique(col, set(enums)):
         findings.append(Finding(
-            "warning",
-            f"{table}.{name}: unique on {col.type} is silently dropped by SP.",
+            "error",
+            f"{table}.{name}: [unique] is not supported for SharePoint "
+            f"{col.type!r} columns.",
         ))
 
     if col.unique and not col.required and not is_title:

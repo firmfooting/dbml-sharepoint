@@ -25,6 +25,10 @@ Table Vehicle {
   HomeLocation nvarchar       [note: 'Where it lives / where keys are kept']
   Status       vehicle_status [not null, default: 'In service']
   Notes        nvarchar       [note: 'Fuel card ref, e-tag, quirks the next driver should know']
+
+  indexes {
+    Status
+  }
 }
 
 Table Trip {
@@ -42,4 +46,10 @@ Table Trip {
   // calculated_number — formula in mapping.yaml (OdoEnd minus OdoStart).
   TripKm     calculated_number [note: 'Calculated automatically: kilometres travelled, end odometer minus start. Fills itself in once both readings are entered. A negative number means a mis-read odometer — fix the readings']
   Notes      nvarchar  [note: 'Fuel added, damage noticed, warning lights']
+
+  indexes {
+    Vehicle
+    Driver
+    DepartedAt
+  }
 }

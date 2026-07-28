@@ -33,4 +33,10 @@ Table Delegation {
   ReviewDate       date              [not null, note: 'Next scheduled review — delegations drift when nobody looks']
   Status           delegation_status [not null, default: 'Current']
   Notes            nvarchar          [note: 'Supersession trail, interpretation rulings']
+
+  indexes {
+    DelegationArea
+    Status
+    RoleHolder
+  }
 }

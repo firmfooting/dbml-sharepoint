@@ -70,6 +70,10 @@ Enum escalation_priority {
   "Critical"
 }
 
+// BoardDate is [unique], so SharePoint indexes it implicitly. The ordinary
+// board indexes support headline-status views; Escalation indexes its queue,
+// due-date, routing and ownership filters.
+
 // ---------------------------------------------------------------------------
 // Tier 1 — the frontline team huddle. Six streams.
 // ---------------------------------------------------------------------------
@@ -99,6 +103,11 @@ Table Tier1Board {
   ImprovementNote   longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   Recognition       longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
   OtherUpdates      longtext     [note: 'Anything that does not belong to a stream']
+
+  indexes {
+    OverallStatus
+    HuddleHeld
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +139,11 @@ Table Tier2Board {
   ImprovementNote      longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   Recognition          longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
   OtherUpdates         longtext     [note: 'Anything that does not belong to a stream']
+
+  indexes {
+    OverallStatus
+    HuddleHeld
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +190,11 @@ Table Tier3Board {
   CommunicationsNote    longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   Recognition           longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
   OtherUpdates          longtext     [note: 'Anything that does not belong to a stream']
+
+  indexes {
+    OverallStatus
+    HuddleHeld
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -213,4 +232,12 @@ Table Escalation {
   Resolution   nvarchar             [note: 'Required to resolve or close: one line on what was actually done']
   ResolvedDate date                 [note: 'Required to resolve or close']
   Notes        longtext             [note: 'The longer story — discussion, options, who was consulted']
+
+  indexes {
+    Status
+    DueDate
+    RaisedAtTier
+    TargetTier
+    Owner
+  }
 }

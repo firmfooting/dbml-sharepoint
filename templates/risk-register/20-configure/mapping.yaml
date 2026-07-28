@@ -6,13 +6,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  # Physical SharePoint indexes. Keep this list focused on supported columns
-  # used by declared filters/sorts or common header filters. Calculated fields
-  # (RiskScore, ResidualRiskRating, LevelsAboveTarget, NextReviewDue) cannot be
-  # indexed by SharePoint and are rejected by the build validator.
-  Risk: [Status, Category, RiskResponse, ToleranceEndDate, LastReviewedDate]
-
 versioning:
   default:
     enable_versioning: true
@@ -159,8 +152,7 @@ column_formatting:
 # is the default, ranking live work by matrix score; "Review due" surfaces
 # what needs a look soon; "Above target" and "Tolerance due" flag risks
 # sitting above appetite or nearing a tolerance deadline; "Closed" is the
-# closed-out history. renamed_from migrates the longer titles shipped before
-# 1.0 without leaving duplicate views behind. Widths are pixel
+# closed-out history. Widths are pixel
 # ColumnWidth per view, keys are INTERNAL names (the build
 # rewrites them to display titles — ColumnWidth binds by display name, and
 # internal names silently reset). Rating pills ~160, dates ~140-180, people
@@ -168,7 +160,6 @@ column_formatting:
 views:
   Risk:
     - title: "Open"
-      renamed_from: ["Open by score"]
       default: true
       fields: [Title, Category, Likelihood, Consequence, ResidualRiskRating,
                RiskScore, LevelsAboveTarget, RiskOwner, Status, NextReviewDue]
@@ -203,7 +194,6 @@ views:
         Status: 100
         NextReviewDue: 160
     - title: "Review due"
-      renamed_from: ["Reviews due"]
       fields: [Title, RiskOwner, Status, ResidualRiskRating, RiskScore,
                NextReviewDue, LastReviewedDate]
       where:
@@ -241,7 +231,6 @@ views:
         NextReviewDue: 160
         LastReviewedDate: 180
     - title: "Tolerance due"
-      renamed_from: ["Tolerance expiring"]
       fields: [Title, RiskResponse, ToleranceEndDate, ResidualRiskRating,
                RiskOwner, RiskSponsor, Status]
       where:
@@ -269,7 +258,6 @@ views:
     # formulas cannot read those. This column, sortable, is where a closure
     # review sees it: anything greater than 0 here was closed above appetite.
     - title: "Closed"
-      renamed_from: ["Closed risks"]
       fields: [Title, ResidualRiskRating, TargetRiskRating, LevelsAboveTarget,
                OverallControlEffectiveness, ClosureStatement, RiskOwner,
                LastReviewedDate]

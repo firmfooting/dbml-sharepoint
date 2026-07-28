@@ -51,4 +51,11 @@ Table ChangeRequest {
   DaysToDecision calculated_number [note: 'Calculated automatically: the number of days from the requested date to the decision date. Blank until the decision date is entered']
   DecisionNotes  richtext       [note: 'The reasoning — conditions of approval, or why rejected']
   ImplementedDate date          [note: 'When the change actually landed']
+
+  indexes {
+    Status
+    ChangeType
+    Impact
+    RequestedDate
+  }
 }

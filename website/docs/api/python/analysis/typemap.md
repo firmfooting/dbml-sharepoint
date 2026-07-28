@@ -26,10 +26,24 @@ CALCULATED_OUTPUT_TYPES = {'calculated_text': 2, 'calculated_number': 9, 'calcul
 CALCULATED_TYPES = frozenset({'calculated_date', 'calculated_number', 'calculated_text'})
 ```
 
+### `UNIQUE_SUPPORTED_SCALAR_TYPES`
+
+```python
+UNIQUE_SUPPORTED_SCALAR_TYPES = frozenset({'date', 'datetime', 'int', 'number', 'nvarchar', 'person'})
+```
+
+### `supports_unique`
+
+```python
+def supports_unique(col: dbml_sharepoint.model.parser.Column, enum_names: set[str]) -> bool
+```
+
+Whether this DBML column maps to a uniqueness-capable SP field.
+
 ### `SPField`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class SPField:
     name: str
     kind: FieldKind
@@ -56,6 +70,15 @@ SPField(name: str, kind: FieldKind, field_type_kind: int | None, required: bool,
 ```python
 def map_column(col: dbml_sharepoint.model.parser.Column, enum_names: set[str]) -> dbml_sharepoint.analysis.typemap.SPField
 ```
+
+Map a DBML column to its SharePoint field descriptor.
+
+The uniqueness gate runs after the type resolves, not before: an
+unrecognised type is the more useful complaint, and checking `[unique]`
+first answered `blob [unique]` with "unique is not supported for 'blob'
+columns" — true, but it buries the actual mistake. Resolving first also
+keeps the supported-type vocabulary in one place, the match statement
+below, rather than in a second hand-maintained set beside it.
 
 ### `format_description`
 

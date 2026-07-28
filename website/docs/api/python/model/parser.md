@@ -18,7 +18,7 @@ docs/design/requirements/dbml-sharepoint-requirements.md §5.
 ### `Reference`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Reference:
     target_table: str
     target_column: str
@@ -44,17 +44,38 @@ class Column:
 
 A single column on a DBML Table.
 
+### `TableIndex`
+
+```python
+@dataclass(frozen=True)
+class TableIndex:
+    columns: tuple[str, ...]
+    name: str | None = None
+    unique: bool = False
+    type: str | None = None
+    pk: bool = False
+    note: str = ''
+```
+
+A table-level DBML index declaration.
+
+SharePoint accepts only bare single-column indexes. The DBML `name`,
+`unique`, `type`, `pk` and `note` settings are retained only so validation
+can reject them explicitly; declare uniqueness on the column with
+`[unique]` instead.
+
 ### `Table`
 
 ```python
 @dataclass
 class Table:
     name: str
-    columns: list[dbml_sharepoint.model.parser.Column] = list()
+    columns: list[dbml_sharepoint.model.parser.Column] = field(default_factory=list)
+    indexes: list[dbml_sharepoint.model.parser.TableIndex] = field(default_factory=list)
     note: str = ''
 ```
 
-A DBML Table — name, columns, optional table-level note.
+A DBML Table — name, columns, indexes, optional table-level note.
 
 ### `EnumDef`
 
@@ -62,7 +83,7 @@ A DBML Table — name, columns, optional table-level note.
 @dataclass
 class EnumDef:
     name: str
-    members: list[str] = list()
+    members: list[str] = field(default_factory=list)
 ```
 
 A DBML Enum declaration with ordered members.
@@ -72,8 +93,8 @@ A DBML Enum declaration with ordered members.
 ```python
 @dataclass
 class Schema:
-    tables: list[dbml_sharepoint.model.parser.Table] = list()
-    enums: list[dbml_sharepoint.model.parser.EnumDef] = list()
+    tables: list[dbml_sharepoint.model.parser.Table] = field(default_factory=list)
+    enums: list[dbml_sharepoint.model.parser.EnumDef] = field(default_factory=list)
     project_note: str = ''
 ```
 

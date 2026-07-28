@@ -1,6 +1,8 @@
 # test/test_reportgen.py
 from pathlib import Path
 
+import pytest
+
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
     generate_dictionary_powerquery,
@@ -10,7 +12,7 @@ from dbml_sharepoint.generators.reportgen import (
     generate_sql_views,
 )
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
-from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.parser import Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -121,6 +123,14 @@ def test_data_dictionary_documents_every_list_and_column() -> None:
     # Lookup target and helper column are documented.
     assert "APP_Project" in md
     assert "ItemURL" in md
+
+
+def test_data_dictionary_rejects_composite_indexes() -> None:
+    schema, bundle = _simple()
+    task = next(table for table in schema.tables if table.name == "Task")
+    task.indexes = [TableIndex(("Project", "DueDate"))]
+    with pytest.raises(ValueError, match="composite DBML indexes"):
+        generate_data_dictionary(schema, bundle, "default")
 
 
 def test_data_dictionary_includes_calculated_formulas() -> None:

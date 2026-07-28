@@ -38,6 +38,11 @@ Table CheckPoint {
   Instructions    richtext        [note: 'How to perform the check, and what to do if the result is out of range']
   Owner           person          [not null, note: 'Who is accountable for this checkpoint being checked']
   Active          boolean         [default: true, note: 'Uncheck to retire a checkpoint without losing its history']
+
+  indexes {
+    CheckType
+    Active
+  }
 }
 
 Table CheckEntry {
@@ -51,4 +56,10 @@ Table CheckEntry {
   Result      check_result [not null]
   ActionTaken nvarchar     [note: 'REQUIRED in practice for any out-of-range result: what you did, who you told']
   CheckedBy   person       [note: 'Who performed the check (defaults to you)']
+
+  indexes {
+    CheckPoint
+    CheckedAt
+    Result
+  }
 }

@@ -29,4 +29,11 @@ Table Volunteer {
   EmergencyContact  nvarchar         [note: 'Name and phone only — the minimum needed on the day']
   // Privacy rules (governance doc) limit what may be recorded about a volunteer.
   Notes             richtext         [note: 'Availability, relevant skills, role history. Record professional facts only']
+
+  indexes {
+    Status
+    Team
+    PoliceCheckExpiry
+    WWCCExpiry
+  }
 }

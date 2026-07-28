@@ -35,7 +35,7 @@ GROUP_KINDS = ('all_of', 'any_of', 'none_of')
 ### `Leaf`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Leaf:
     field: str
     op: str
@@ -55,7 +55,7 @@ normaliser needs no special cases for either.
 ### `Group`
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class Group:
     kind: typing.Literal['all_of', 'any_of', 'none_of']
     children: tuple['Condition', ...]

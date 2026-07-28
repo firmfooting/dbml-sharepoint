@@ -9,16 +9,6 @@ entities:
 
 cross_site_reference_columns: []
 
-# Boards are filtered by date and headline status on every view; Escalation
-# by queue state, due date, both tier ends and owner. BoardDate is also
-# unique, which SharePoint indexes as a side effect — declared here anyway
-# so the intent is visible in the manifest.
-indexed_columns:
-  Tier1Board: [BoardDate, OverallStatus, HuddleHeld]
-  Tier2Board: [BoardDate, OverallStatus, HuddleHeld]
-  Tier3Board: [BoardDate, OverallStatus, HuddleHeld]
-  Escalation: [Status, DueDate, RaisedAtTier, TargetTier, Owner]
-
 # House default, with the boards trimmed: a daily record edited several
 # times a day burns versions fast, and old versions of a huddle board are
 # worthless.

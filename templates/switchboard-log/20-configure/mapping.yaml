@@ -9,12 +9,6 @@ entities:
 
 cross_site_reference_columns: []
 
-indexed_columns:
-  CodeEvent: [CodeType, AnnouncedAt, IsDrill]
-  MessageLog: [Status, Urgency, TakenAt]
-  Key: [KeyRef, Active]
-  KeyMovement: [Key, Status, IssuedAt]
-
 versioning:
   default:
     enable_versioning: true

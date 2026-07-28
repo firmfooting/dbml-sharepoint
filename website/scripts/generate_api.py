@@ -157,13 +157,16 @@ def render_function(name: str, obj: object) -> str:
 def render_class(name: str, obj: type) -> str:
     out = f"### `{name}`\n\n"
     if dataclasses.is_dataclass(obj):
-        lines = [f"@dataclass\nclass {name}:"]
+        params = obj.__dataclass_params__  # type: ignore[attr-defined]
+        decorator = "@dataclass(frozen=True)" if params.frozen else "@dataclass"
+        lines = [f"{decorator}\nclass {name}:"]
         for f in dataclasses.fields(obj):
             default = ""
             if f.default is not dataclasses.MISSING:
                 default = f" = {f.default!r}"
             elif f.default_factory is not dataclasses.MISSING:
-                default = f" = {getattr(f.default_factory, '__name__', '...')}()"
+                factory = getattr(f.default_factory, "__name__", "...")
+                default = f" = field(default_factory={factory})"
             lines.append(f"    {f.name}: {_type_str(f.type)}{default}")
         out += "```python\n" + "\n".join(lines) + "\n```\n\n"
     out += docstring_block(obj)

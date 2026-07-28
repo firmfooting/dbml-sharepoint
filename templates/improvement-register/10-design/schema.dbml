@@ -49,4 +49,11 @@ Table Improvement {
   AdoptedDate       date                [note: 'When the change became the standard way (or the abandon decision date)']
   // calculated_number — formula in mapping.yaml (RaisedDate -> AdoptedDate); the improvement system watching itself.
   DaysIdeaToOutcome calculated_number   [note: 'Calculated automatically from the raised date and the adopted/abandoned date: how many days the improvement took from idea to outcome. Blank until both dates are set.']
+
+  indexes {
+    Stage
+    Source
+    Owner
+    RaisedDate
+  }
 }
