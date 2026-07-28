@@ -96,12 +96,19 @@ The supported DBML subset is intentionally narrow:
   `Code nvarchar [unique]`. SharePoint creates an index as part of enforcing
   uniqueness, so it counts toward the same per-list limit even when it is
   not repeated in `indexes`. Repeating it in `indexes` is rejected as a
-  redundant declaration.
+  redundant declaration. Supported DBML types are `nvarchar`, `int`, `number`,
+  `date`, `datetime`, named enums (single-value Choice), `person`, and
+  single-value lookup columns. `boolean`, `longtext`, `richtext`, `hyperlink`,
+  and calculated types reject `[unique]` because SharePoint cannot enforce it.
+  This follows Microsoft's documented [unique-column type
+  matrix](https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns).
 - A list may have at most 20 effective declared/unique indexes. Declaring the
   same column twice is an error.
 - Text, Number, Date/DateTime, Boolean, Choice, Lookup and Person columns can
   be declared. Multiple-lines-of-text, Hyperlink and Calculated columns
   cannot be indexed and fail validation.
+  See Microsoft's [supported and unsupported index column
+  types](https://support.microsoft.com/en-US/SharePoint/data-and-lists/add-an-index-to-a-list-or-library-column).
 - Lookup and Person indexes do not make those fields suitable as the first
   filter in a large-list threshold query. Prefer a selective scalar field.
 - A mapping `cross_site_reference_columns` entry replaces its logical DBML
@@ -116,8 +123,8 @@ load error rather than a compatibility alias.
 ## Column settings
 
 - `not null` → required column.
-- `unique` → enforce unique values (SharePoint indexes it as a side
-  effect).
+- `unique` → enforce unique values and its implicit index on supported
+  single-value field types; unsupported types fail validation.
 - `default: 'value'` → field default (Choice defaults validated against
   the enum).
 - `note: '...'` → the column description operators see; also feeds the

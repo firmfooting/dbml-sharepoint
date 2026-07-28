@@ -241,25 +241,35 @@ def test_reserved_author_is_error() -> None:
     assert any(f.severity == "error" and "Author" in f.message for f in findings)
 
 
-def test_unique_richtext_is_warning() -> None:
-    table = Table(name="Note", columns=[
+@pytest.mark.parametrize(
+    "column_type",
+    [
+        "longtext",
+        "richtext",
+        "hyperlink",
+        "boolean",
+        "calculated_text",
+        "calculated_number",
+        "calculated_date",
+    ],
+)
+def test_unique_is_rejected_for_unsupported_sharepoint_types(
+    column_type: str,
+) -> None:
+    table = Table(name="Record", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Body", type="richtext", unique=True),
-    ])
-    findings = validate(_schema(table))
-    assert any(f.severity == "warning" and "richtext" in f.message.lower() for f in findings)
-
-
-def test_longtext_is_known_but_unique_is_warning() -> None:
-    table = Table(name="ConnectorState", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="OpaqueValue", type="longtext", unique=True),
+        Column(name="Value", type=column_type, unique=True),
     ])
 
     findings = validate(_schema(table))
 
-    assert not any(f.severity == "error" and "longtext" in f.message for f in findings)
-    assert any(f.severity == "warning" and "longtext" in f.message for f in findings)
+    assert any(
+        finding.severity == "error"
+        and "Value" in finding.message
+        and "unique" in finding.message
+        and "not supported" in finding.message
+        for finding in findings
+    )
 
 
 def test_orphan_enum_is_warning() -> None:
