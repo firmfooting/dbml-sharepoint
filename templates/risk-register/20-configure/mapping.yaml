@@ -306,6 +306,38 @@ form_formatting:
     header: formatting/risk-form-header.json
     body: formatting/risk-form-body.json
 
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has a
+# single ValidationFormula and every cross-column rule has to share one
+# message. So anything expressible on one column belongs here, where the
+# person who broke it is told which rule they broke.
+#
+# SharePoint permits a column formula to reference only the column being
+# validated, so cross-column rules cannot live here at all.
+column_validation:
+  Risk:
+    columns:
+      # LastReviewedDate is the baseline the whole cadence counts from:
+      # NextReviewDue is computed from it, "Reviews due" filters on that,
+      # and the overdue formatting keys off it. A date typed with next
+      # year's year pushes the next review out by a year and drops the
+      # risk off the review queue silently — no error, no empty cell, just
+      # a risk nobody is asked to look at again. That is worth a save rule.
+      #
+      # The rule ADMITS a blank deliberately. The column is hidden from the
+      # New form and filled by its own [today] default, so it should never
+      # be empty at create — but a save rule that cannot pass with the
+      # column empty rejects EVERY new item if that assumption is ever
+      # wrong, and this project has shipped that failure before. A cleared
+      # date is visible (NextReviewDue goes blank and the row leaves the
+      # review views); a list that refuses all new risks is not.
+      LastReviewedDate:
+        when:
+          - any_of:
+              - { field: LastReviewedDate, op: is_null }
+              - { field: LastReviewedDate, op: leq, value: today }
+        message: "A review cannot have happened in the future. Use the date you actually reviewed this risk, or today's date."
+
 # Save-time enforcement, stored on the LIST so it may reference any column.
 # A Tolerate response is always for a set period, so it needs its end date.
 # NOTE: ClosureStatement is rich text, which SP validation formulas cannot

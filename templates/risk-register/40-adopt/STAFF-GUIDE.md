@@ -88,6 +88,11 @@ itself with today's date, which is the baseline every later cadence counts
 from. It appears once the risk exists, which is the only point at which
 moving it means anything.
 
+It will not accept a date in the future. That is not pedantry — Next
+Review Due is counted from it, so a year typed wrong pushes the next
+review out by a year and quietly drops the risk off **Reviews due**, where
+nobody would notice its absence.
+
 ## Closing a risk
 
 Closing needs a **Closure Statement**: why the risk is being closed against

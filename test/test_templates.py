@@ -215,6 +215,15 @@ def _condition_fields(node: object) -> set[str]:
     return {field} if isinstance(field, str) else set()
 
 
+def _condition_ops(node: object) -> set[str]:
+    """Every operator a condition tree uses, at any nesting depth."""
+    children = getattr(node, "children", None)
+    if children is not None:
+        return {op for child in children for op in _condition_ops(child)}
+    op = getattr(node, "op", None)
+    return {op} if isinstance(op, str) else set()
+
+
 def test_risk_register_shows_conditional_fields_only_when_they_apply() -> None:
     """The form asks for what the answer implies, and nothing else.
 
@@ -256,4 +265,43 @@ def test_risk_register_shows_conditional_fields_only_when_they_apply() -> None:
     calculated = {"ResidualRiskRating", "RiskScore", "LevelsAboveTarget", "NextReviewDue"}
     assert not (calculated & set(columns)), (
         f"calculated columns cannot have form visibility: {sorted(calculated & set(columns))}"
+    )
+
+
+def test_risk_register_save_rules_split_by_what_they_can_reference() -> None:
+    """Column rules self-reference; the one list rule is cross-column.
+
+    SharePoint gives a column a single ValidationFormula and a LIST a
+    single ValidationFormula. So every cross-column rule competes for one
+    slot and one message, while per-column rules each keep their own. A
+    self-referencing rule that drifts into `list_validation` costs the
+    template the message that told someone which rule they broke.
+    """
+    mapping = _risk_bundle().mapping
+
+    col_rules = mapping.column_validation["Risk"].columns
+    assert "LastReviewedDate" in col_rules, (
+        "the future-date guard is gone; a mistyped year silently pushes "
+        "NextReviewDue out and drops the risk off the review views"
+    )
+    rule = col_rules["LastReviewedDate"]
+    assert _condition_fields(rule.when) == {"LastReviewedDate"}, (
+        "a column rule may reference only its own column — SharePoint "
+        "refuses anything else, so this belongs in list_validation"
+    )
+    assert rule.message, "a rule with no message fails with SharePoint's generic text"
+
+    # Admits a blank on purpose: the column is hidden from the New form and
+    # filled by its [today] default, and a rule that cannot pass with it
+    # empty would reject every new item if that ever stopped holding.
+    assert "is_null" in _condition_ops(rule.when), (
+        "the rule must admit an empty date, or a create with no default "
+        "rejects every new risk"
+    )
+
+    # The cross-column rule stays cross-column, and stays the only one.
+    list_rule = mapping.list_validation["Risk"]
+    assert _condition_fields(list_rule.when) == {"RiskResponse", "ToleranceEndDate"}, (
+        "the list rule is the tolerance implication; anything self-"
+        "referencing added here would spend the single shared message"
     )
