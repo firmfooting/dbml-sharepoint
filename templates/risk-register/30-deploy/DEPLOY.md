@@ -26,16 +26,13 @@ against the checklist below. Template-specific notes follow.
       Use an **absolute** `https://` address: SharePoint's formatter only
       emits `http://`, `https://`, `mailto:` and `tel:` links, so a
       site-relative path is not a valid substitution here.
-- [ ] If you add a `[$FieldName]` reference to the header, **open a real
-      form and look at it**. Headers can read item fields, but the form
-      that works is the bare one — `"txtContent": "[$Title]"` — as the PnP
-      `status-header` sample uses. A composed expression
-      (`"='Risk: ' + [$Title]"`) made SharePoint discard the *entire*
-      header here, logging `title not part of data object`, and a
-      calculated-column reference rendered blank with no error. None of
-      that is visible from the deploy side: the formatter saves, reads
-      back identical and Phase 3.2 reports it verified. Only the rendered
-      form shows it.
+- [ ] The header shows `Risk: <title>` on a saved risk and `New risk`
+      before the title is filled in, updating live as it is typed. If you
+      add another `[$FieldName]` reference, note that a **calculated**
+      column always resolves empty in a form header — `ResidualRiskRating`,
+      `RiskScore`, `LevelsAboveTarget` and `NextReviewDue` will show
+      nothing there, with no error. Their values reach the form through
+      their own `column_formatting`, in the body sections.
 
 ## Optional: the seeded demonstration build
 

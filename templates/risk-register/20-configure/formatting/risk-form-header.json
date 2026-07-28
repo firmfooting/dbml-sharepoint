@@ -33,7 +33,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
-          "txtContent": "Risk"
+          "txtContent": "=if([$Title] == '', 'New risk', 'Risk: ' + [$Title])"
         },
         {
           "elmType": "div",

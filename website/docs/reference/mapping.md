@@ -177,41 +177,40 @@ Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
 
-:::warning Field references in a header: one known-good form, one that failed
+:::tip Header field references: what works, and the one thing that does not
 
-Headers **can** read item fields — the PnP
-[`status-header`](https://github.com/pnp/list-formatting/tree/master/form-samples/status-header-footer)
-sample does it, using a **bare** reference as the whole property value:
+A header reads item fields the same way column formatting does — bare
+(`"txtContent": "[$Title]"`) or composed
+(`"='Risk: ' + [$Title]"`) — and the value updates live as the user types.
 
-```json
-{ "elmType": "div", "txtContent": "[$Title]" },
-{ "attributes": { "title": "[$Status]",
-                  "class": "=if([$Status] == 'Done', 'ms-bgColor-greenLight', '…')" } }
-```
-
-What failed here, on a live tenant (2026-07-28), was a `[$Title]`
-reference **inside a composed expression**:
+**A blank field is harmless.** Before the item has a value the reference
+resolves to an empty string; nothing is discarded. Guard it only for
+looks, which is also PnP's house style — its
+[event-itinerary-header](https://github.com/pnp/list-formatting/tree/master/form-samples/event-itinerary-header)
+gates every element on `[$Field] != ''`:
 
 ```json
-{ "txtContent": "='Risk: ' + [$Title]" }
+{ "txtContent": "=if([$Title] == '', 'New risk', 'Risk: ' + [$Title])" }
 ```
 
-SharePoint logged `title not part of data object` and rendered **nothing**
-— not a blank line, the entire header, taking the icon, strapline and link
-with it. A second reference, to a **calculated** column, rendered blank
-with no error at all, even on saved items that had a value.
+**A calculated column is the exception: it always resolves empty.**
+Verified on a live tenant against a saved item that had a value. Nothing
+errors — the header renders, that one value is blank. PnP has no
+counter-example anywhere in its samples: the only form sample that even
+declares a `Calculated` column never references it in the header, and
+several column samples use a `=""` calculated column *specifically
+because* it keeps the field off the forms.
 
-The exact boundary is not established. Bare references demonstrably work
-and one composed expression demonstrably did not, but PnP's sample also
-uses `[$Status]` inside `=if(...)` successfully — so "no expressions" is
-not the rule either, and `Title` may simply be absent from the form's data
-object under that name. Treat a header field reference as **needing a
-render check on a real form**, and prefer the bare form PnP proves.
+So put a calculated value on the form through `column_formatting` on the
+column itself, inside a body section. Referencing it from the header
+silently shows nothing.
 
-Whatever the rule, the failure is invisible from the deploy side: the
-formatter saves, reads back byte-identical, and the phase reports it
-verified. Only the rendered form shows it — the same shape as the
-`ShowInEditForm` trap in [`form_visibility`](#form_visibility).
+If you see `… not part of the data object` in the console, that is the
+`"debugMode": true` switch reporting a blank field, not a failure. Take
+`debugMode` out before shipping.
+
+The deploy cannot check any of this: the formatter saves, reads back
+byte-identical and the phase reports it verified whatever the form does.
 
 :::
 
