@@ -2170,3 +2170,95 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
         for f in findings
     )
     assert not [f for f in findings if f.severity == "error"]
+
+
+def test_view_formatting_may_only_read_columns_the_view_displays(tmp_path: Path) -> None:
+    """SharePoint resolves a view formatter's [$Field] against the columns
+    that view renders, not the list's columns — "reference to other fields
+    will work only if they are included in the same view". A reference to a
+    real column the view omits therefore resolves to nothing: the format
+    silently never fires, the build exits 0, and the only symptom is a row
+    wash nobody sees. Catching it needs the VIEW's field list, which is why
+    checking against the table's columns was not enough."""
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title]\n"
+        "      formatting: { additionalRowClass: \"=if([$Status] == 'Open', 'x', '')\" }\n",
+    )
+    assert any(
+        "Status" in f.message and "V" in f.message for f in errors
+    ), f"a formatter reading a column the view does not show must be refused: {errors}"
+
+    # The same reference is fine once the view actually shows the column.
+    ok = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status]\n"
+        "      formatting: { additionalRowClass: \"=if([$Status] == 'Open', 'x', '')\" }\n",
+    )
+    assert ok == [], ok
+
+
+def _calculated_form_inputs(tmp_path: Path, block: str) -> tuple[Schema, MappingBundle]:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Score int\n"
+        "  Band calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Project:\n"
+        "    Band: '=IF([Score]>5,\"High\",\"Low\")'\n"
+        + block,
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_form_header_may_not_read_a_calculated_column(tmp_path: Path) -> None:
+    """A calculated column resolves to an empty string in a form header or
+    footer — verified on a live tenant against a saved item that had a
+    value. Nothing errors: the header renders, that one value is blank. The
+    deploy cannot see it either, because the formatter saves and reads back
+    byte-identical. So the build is the only place it can be caught.
+
+    Body sections are exempt: they list field NAMES rather than reading
+    values, and a calculated column placed in one renders on the Display
+    form exactly as intended."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_formatting:\n"
+        "  Project:\n"
+        "    header: { elmType: div, txtContent: '=[$Band]' }\n",
+    )
+    errors = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
+    ]
+    assert any(
+        "Band" in f.message and "calculated" in f.message.lower() for f in errors
+    ), f"a header reading a calculated column must be refused: {errors}"
+
+    # A non-calculated reference is fine, and so is the same calculated
+    # column named in a body section.
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_formatting:\n"
+        "  Project:\n"
+        "    header: { elmType: div, txtContent: '=[$Title]' }\n"
+        "    body: { sections: [ { displayname: X, fields: [Title, Band] } ] }\n",
+    )
+    ok = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert ok == [], ok

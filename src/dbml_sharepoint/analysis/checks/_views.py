@@ -196,11 +196,28 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error", f"{ctx}: row_limit must be between 1 and 5000.",
                 ))
             if view.formatting is not None:
-                for ref in sorted(formatter_field_refs(view.formatting) - view_rendered):
+                refs = formatter_field_refs(view.formatting)
+                for ref in sorted(refs - view_rendered):
                     findings.append(Finding(
                         "error",
                         f"{ctx}: formatting references [${ref}], which is "
                         f"not a rendered column of {entity_name}.",
+                    ))
+                # A real column the VIEW does not display is the worse case:
+                # SharePoint resolves a view formatter's references against
+                # the columns that view renders, so the reference yields
+                # nothing and the format silently never fires. The build
+                # exits 0, the deploy reports the formatter verified, and
+                # the only symptom is a row wash nobody sees.
+                shown = set(view.fields) | SYSTEM_COLUMNS
+                for ref in sorted((refs & view_rendered) - shown):
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: formatting references [${ref}], which this "
+                        f"view does not display — a view formatter can only "
+                        f"read columns in its own 'fields', so the format "
+                        f"would never fire. Add {ref} to fields, or drop the "
+                        f"reference.",
                     ))
             # Widths bind to columns the view actually shows; a width on an
             # unshown column is dead config the deployer would emit and SP

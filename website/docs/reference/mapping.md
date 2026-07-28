@@ -112,7 +112,14 @@ views:
   nesting existed keeps working unchanged. The same grammar drives
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
-- `formatting` points at a view-level (row) formatter JSON file.
+- `formatting` points at a view-level (row) formatter JSON file. Its
+  `[$Field]` references must be columns **this view displays** — SharePoint
+  resolves them against the view's own fields, so a reference to a column
+  the view omits yields nothing and the format silently never fires. That
+  is a build error rather than a runtime surprise. A calculated column is
+  fine here and needs no `calculated: true`: the `string;#` prefix belongs
+  to column formatting only, see the
+  [style guide](./style-guide.md#styles).
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see
@@ -203,7 +210,13 @@ because* it keeps the field off the forms.
 
 So put a calculated value on the form through `column_formatting` on the
 column itself, inside a body section. Referencing it from the header
-silently shows nothing.
+silently shows nothing — **which is now a build error**, since neither the
+build nor the deploy could otherwise tell you: the formatter saves and
+reads back byte-identical either way.
+
+Body sections are exempt. They list field *names* rather than reading
+values, so a calculated column in a section renders on the Display form
+exactly as intended.
 
 If you see `… not part of the data object` in the console, that is the
 `"debugMode": true` switch reporting a blank field, not a failure. Take
