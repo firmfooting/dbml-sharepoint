@@ -355,7 +355,122 @@ retired_columns:
 # SupplyChainStatus on th3-d01) so the unreported-grey cell is visible — do
 # not fill them in. Every Title carries the [DEMO] marker: rows are matched
 # by Title on re-paste, and rollback treats an all-demo list as removable.
+#
+# Tiers 1 and 2 carry FOUR boards each rather than a fortnight. The point of
+# the long Tier 3 run is the heat grid over time; tiers 1 and 2 only need
+# every declared view to have content, which four days do: a board today, an
+# Amber board for "Attention", a stood-down board for "Not held", and one
+# older board inside the fortnight. Shipping them with none — as this
+# template did until the family standard was applied — left eight declared
+# views demonstrably empty on a seeded site.
 demo_items:
+  Tier1Board:
+    - key: th1-d00
+      values:
+        Title: "[DEMO] Ward huddle — today"
+        BoardDate: "today"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        SafetyStatus: "Green"
+        PeopleStatus: "Green"
+        WorkloadStatus: "Green"
+        EquipmentStatus: "Green"
+        QualityStatus: "Green"
+        ImprovementStatus: "Green"
+        Recognition: "Night team covered two late admissions without delaying the morning round."
+    - key: th1-d01
+      values:
+        Title: "[DEMO] Ward huddle — yesterday"
+        BoardDate: "today-1"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Amber"
+        SafetyStatus: "Green"
+        PeopleStatus: "Amber"
+        PeopleNote: "One vacancy on the late shift for the rest of the week. Bank cover requested."
+        WorkloadStatus: "Amber"
+        WorkloadNote: "Occupancy at 96% since Monday."
+        EquipmentStatus: "Red"
+        EquipmentNote: "Second infusion pump out of service; loan unit arrives tomorrow."
+        QualityStatus: "Green"
+        ImprovementStatus: "Not applicable"
+    - key: th1-d03
+      values:
+        Title: "[DEMO] Ward huddle — stood down"
+        BoardDate: "today-3"
+        Chair: "@me"
+        HuddleHeld: "Stood down"
+        StoodDownReason: "Ward closed to admissions for deep clean; no huddle held."
+    - key: th1-d08
+      values:
+        Title: "[DEMO] Ward huddle — last week"
+        BoardDate: "today-8"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        SafetyStatus: "Green"
+        PeopleStatus: "Green"
+        WorkloadStatus: "Green"
+        EquipmentStatus: "Green"
+        QualityStatus: "Green"
+        ImprovementStatus: "Green"
+  Tier2Board:
+    - key: th2-d00
+      values:
+        Title: "[DEMO] Service board — today"
+        BoardDate: "today"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        SafetyStatus: "Green"
+        QualityStatus: "Green"
+        WorkforceStatus: "Green"
+        DemandCapacityStatus: "Green"
+        EquipmentStatus: "Green"
+        SuppliesStatus: "Green"
+        FinanceStatus: "Green"
+        ImprovementStatus: "Green"
+    - key: th2-d02
+      values:
+        Title: "[DEMO] Service board — escalating"
+        BoardDate: "today-2"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Red"
+        SafetyStatus: "Amber"
+        SafetyNote: "Two falls on the same ward this week; review booked."
+        QualityStatus: "Green"
+        WorkforceStatus: "Red"
+        WorkforceNote: "Escalated to Tier 3: rostering gap across the weekend cannot be filled locally."
+        DemandCapacityStatus: "Amber"
+        DemandCapacityNote: "Referrals up 18% on last month."
+        EquipmentStatus: "Green"
+        SuppliesStatus: "Not applicable"
+        FinanceStatus: "Green"
+        ImprovementStatus: "Green"
+    - key: th2-d05
+      values:
+        Title: "[DEMO] Service board — cancelled"
+        BoardDate: "today-5"
+        Chair: "@me"
+        HuddleHeld: "Cancelled"
+        StoodDownReason: "Chair unavailable and no deputy nominated — the gap this column exists to make visible."
+    - key: th2-d09
+      values:
+        Title: "[DEMO] Service board — last week"
+        BoardDate: "today-9"
+        Chair: "@me"
+        HuddleHeld: "Held"
+        OverallStatus: "Green"
+        SafetyStatus: "Green"
+        QualityStatus: "Green"
+        WorkforceStatus: "Green"
+        DemandCapacityStatus: "Green"
+        EquipmentStatus: "Green"
+        SuppliesStatus: "Green"
+        FinanceStatus: "Green"
+        ImprovementStatus: "Green"
   Tier3Board:
     - key: th3-d13
       values:
