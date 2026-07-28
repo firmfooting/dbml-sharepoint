@@ -167,9 +167,9 @@ dbml-sharepoint build \
 5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
 6. Create the views listed under **Recommended views** in that DEPLOY.md.
 
-**Recommended views are not deployed — you create them.** Only
-`tiered-huddle` declares a `views:` block; everywhere else a fresh deploy
-gives each list SharePoint's default *All Items* view and nothing else, and
+**Recommended views are not deployed — you create them.** Every list gets
+an unfiltered *All Items* recovery view containing all rendered columns. A
+template with no `views:` block gets that view and nothing else, and
 every "Recommended views" table is a specification for views you build in
 the SharePoint UI (or add to
 `mapping.yaml` under [`views:`](../website/docs/reference/mapping.md#views)

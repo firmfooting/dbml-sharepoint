@@ -738,6 +738,26 @@
   "seed_items": [],
   "views": [
     {
+      "caml_query": "",
+      "formatting": null,
+      "list": "APP_Project",
+      "row_limit": null,
+      "set_default": false,
+      "title": "All Items",
+      "url_slug": "AllItems",
+      "view_fields": [
+        "ID",
+        "Title",
+        "Status",
+        "SortOrder",
+        "Created",
+        "Modified",
+        "Author",
+        "Editor"
+      ],
+      "widths": null
+    },
+    {
       "caml_query": "\u003cWhere\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
       "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
       "list": "APP_Project",
@@ -753,6 +773,26 @@
       "widths": null
     },
     {
+      "caml_query": "",
+      "formatting": null,
+      "list": "APP_Task",
+      "row_limit": null,
+      "set_default": true,
+      "title": "All Items",
+      "url_slug": "AllItems",
+      "view_fields": [
+        "ID",
+        "Title",
+        "Project",
+        "DueDate",
+        "Created",
+        "Modified",
+        "Author",
+        "Editor"
+      ],
+      "widths": null
+    },
+    {
       "caml_query": "\u003cGroupBy Collapse=\"FALSE\"\u003e\u003cFieldRef Name=\"Project\"/\u003e\u003c/GroupBy\u003e\u003cWhere\u003e\u003cLeq\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003cValue Type=\"DateTime\"\u003e\u003cToday OffsetDays=\"30\"/\u003e\u003c/Value\u003e\u003c/Leq\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003c/OrderBy\u003e",
       "formatting": null,
       "list": "APP_Task",
@@ -764,6 +804,24 @@
         "Title",
         "Project",
         "DueDate"
+      ],
+      "widths": null
+    },
+    {
+      "caml_query": "",
+      "formatting": null,
+      "list": "APP_AppSettings",
+      "row_limit": null,
+      "set_default": true,
+      "title": "All Items",
+      "url_slug": "AllItems",
+      "view_fields": [
+        "ID",
+        "Title",
+        "Created",
+        "Modified",
+        "Author",
+        "Editor"
       ],
       "widths": null
     }
@@ -2068,10 +2126,11 @@
   }
 
   markPhase('Phase 3.1 — views');
-  // === Phase 3.1: declared views ===
+  // === Phase 3.1: managed views ===
   // Fields created through the REST field collection join no view, so a
-  // fresh list shows a Title-only default view. Declared views are part of
-  // the physical shape and reconcile like fields. Undeclared views are user
+  // fresh list shows a Title-only default view. Every list gets a generated,
+  // unfiltered All Items recovery view containing its complete rendered
+  // schema; authored views are managed alongside it. Other views are user
   // content and are never touched (unlike exact-mode ACLs).
   log('INFO', 'Group 3 — PRESENTATION');
   log('INFO', 'Starting Phase 3.1: views.');
@@ -2347,7 +2406,6 @@
   // writes to the same list race into save conflicts — different lists are
   // independent, so their lanes run concurrently.
   await mapLanes(SCHEMA.views, (view) => view.list, deployView, 4);
-
   markPhase('Phase 3.2 — form formatting');
   // === Phase 3.2: form formatting ===
   // Declared list-form layouts (header/body/footer JSON) live on the list's

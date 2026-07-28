@@ -515,7 +515,26 @@ def build_schema_json(
             })
 
         column_types = {col.name: col.type for col in table.columns}
-        for view in bundle.mapping.views.get(table_name, []):
+        declared_views = bundle.mapping.views.get(table_name, [])
+        views_to_render = list(declared_views)
+        if entity.kind != "DocumentLibrary":
+            emitted_fields = [field["title"] for field in fields_phase1]
+            emitted_fields.extend(
+                lookup["field"]["title"]
+                for lookup in phase2
+                if lookup["list"] == list_title
+            )
+            system_fields = list(SYSTEM_COLUMN_TYPES)
+            all_items = ViewDef(
+                title="All Items",
+                fields=[
+                    "ID", "Title", *emitted_fields,
+                    *(name for name in system_fields if name != "ID"),
+                ],
+                default=not any(view.default for view in declared_views),
+            )
+            views_to_render.insert(0, all_items)
+        for view in views_to_render:
             views_out.append({
                 "list": list_title,
                 "title": view.title,

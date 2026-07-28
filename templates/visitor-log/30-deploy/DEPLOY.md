@@ -12,9 +12,10 @@ Shared procedure: [`templates/README.md`](../../README.md) with
 
 ## Create the views — do this before anyone relies on the list
 
-**The deploy does not create any views.** `mapping.yaml` declares none, so
-after the paste `VI_Visit` has SharePoint's default *All Items* view and
-nothing else. Build these by hand in List settings → Views (or add them to
+**The deploy creates only the unfiltered All Items recovery view.**
+`mapping.yaml` declares no process views, so after the paste `VI_Visit` has
+every column available but none of the working filters below. Build these
+by hand in List settings → Views (or add them to
 `mapping.yaml` under `views:` and redeploy, which is reproducible and what
 you want if you run more than one site).
 

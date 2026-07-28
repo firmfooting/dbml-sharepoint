@@ -1069,6 +1069,24 @@ def test_view_titles_unique_and_single_default(tmp_path: Path) -> None:
     assert any("default" in f.message.lower() for f in errors)
 
 
+def test_all_items_title_is_reserved_for_the_generated_unfiltered_view(
+    tmp_path: Path,
+) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: All Items\n"
+        "      fields: [Title]\n"
+        "      where:\n"
+        "        - { field: Status, op: eq, value: Open }\n",
+    )
+    assert any(
+        "All Items" in f.message and "generated" in f.message
+        for f in errors
+    ), errors
+
+
 def test_view_row_limit_range(tmp_path: Path) -> None:
     errors = _view_errors(
         tmp_path,

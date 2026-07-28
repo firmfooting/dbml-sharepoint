@@ -120,7 +120,12 @@ views:
 - Views are created under a URL slug derived from the title ("Open by
   score" lives at `OpenByScore.aspx`) and renamed to the declared title,
   so view URLs never contain `%20`.
-- Undeclared views are user content and are never touched.
+- Every deployed list also gets a managed **All Items** recovery view. It
+  has no filter and contains every rendered schema column plus `ID`,
+  `Created`, `Modified`, `Author` and `Editor`. It is the default view only
+  when no authored view declares `default: true`; the title is reserved and
+  cannot be overridden in `views:`.
+- Other undeclared views are user content and are never touched.
 
 ## `display_names`
 

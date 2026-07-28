@@ -111,6 +111,13 @@ def check(vc: ValidationContext) -> list[Finding]:
             types_by_col.setdefault(f"{xcol}Abbreviation", "nvarchar")
             types_by_col.setdefault(f"{xcol}SiteUrl", "nvarchar")
         titles = [v.title for v in views]
+        if "All Items" in titles:
+            findings.append(Finding(
+                "error",
+                f"views[{entity_name}]: 'All Items' is generated with every "
+                f"rendered column and no filter; remove the declaration "
+                f"instead of overriding that recovery view.",
+            ))
         for title in sorted({t for t in titles if titles.count(t) > 1}):
             findings.append(Finding(
                 "error", f"views[{entity_name}]: duplicate view title {title!r}.",

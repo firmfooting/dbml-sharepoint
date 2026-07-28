@@ -182,6 +182,20 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       17: 'Calculated' };
     const created = {};   // `${list} ${title}` -> shape
     const listOf = (url) => (url.match(/getbytitle\('([^']+)'\)/) || [])[1];
+    const views = {};
+    const viewOf = (url) => {
+      const match = url.match(/\/views\/getbytitle\('([^']+)'\)/);
+      return match && match[1];
+    };
+    const viewState = (listTitle, title = 'All Items') => (
+      views[`${listTitle} ${title}`] ||= {
+        Id: '44444444-4444-4444-4444-444444444444',
+        Title: title, DefaultView: true, RowLimit: 30, ViewQuery: '',
+        PersonalView: false, CustomFormatter: null,
+        ServerRelativeUrl: `/sites/test/Lists/${listTitle}/AllItems.aspx`,
+        ViewFields: { Items: { results: ['Title'] } },
+      }
+    );
     const fieldShape = (listTitle, name, b) => ({
       Id: '33333333-3333-3333-3333-333333333333',
       InternalName: name, Title: name,
@@ -251,6 +265,18 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           OnlyAllowMembersViewMembership: false } };
       }
       if (url.includes('roledefinitions')) return { d: { results: [{ Id: 1 }] } };
+      // The adopted list starts with SharePoint's built-in Title-only All
+      // Items view. View writes below mutate this state so exact field/query
+      // readback exercises the generated recovery-view behavior.
+      if (url.includes('/views?')) {
+        const listTitle = listOf(url);
+        return { d: { results: [viewState(listTitle)] } };
+      }
+      if (url.includes('/views/getbytitle')) {
+        const state = viewState(listOf(url), viewOf(url));
+        if (url.includes('/viewfields')) return { d: state.ViewFields };
+        return { d: state };
+      }
       // The single list ENUMERATION. This mock's fiction is "any list probe
       // succeeds", which an enumeration cannot express — it would have to
       // know the declared names. Refusing it exercises the documented
@@ -293,6 +319,22 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
         } else if (parsed.Title) {
           created[`${listTitle} ${parsed.Title}`] = fieldShape(listTitle, parsed.Title, parsed);
+        }
+      }
+      if ((opts.method || 'GET') === 'POST' && u.includes('/views/getbytitle')) {
+        const state = viewState(listOf(u), viewOf(u));
+        if (u.includes('/viewfields/removeallviewfields')) {
+          state.ViewFields.Items.results = [];
+        } else {
+          const added = (u.match(/addviewfield\('([^']+)'\)/) || [])[1];
+          if (added) {
+            state.ViewFields.Items.results.push(added);
+          } else if (opts.body) {
+            const parsed = JSON.parse(opts.body);
+            for (const key of ['Title', 'DefaultView', 'RowLimit', 'ViewQuery']) {
+              if (parsed[key] !== undefined) state[key] = parsed[key];
+            }
+          }
         }
       }
       const payload = body(u, opts);

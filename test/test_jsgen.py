@@ -401,6 +401,8 @@ def test_self_lookup_is_deferred_with_addfield_parameters(tmp_path: Path) -> Non
         "Required": False,
         "LookupFieldName": "Title",
     }
+    all_items = next(view for view in schema_json["views"] if view["title"] == "All Items")
+    assert "Parent" in all_items["view_fields"]
 
     js = generate_deploy_js(
         schema=schema,
@@ -1401,7 +1403,13 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
-    assert schema_json["views"] == [{
+    assert [view["title"] for view in schema_json["views"]] == [
+        "All Items", "Open risks",
+    ]
+    all_items, declared = schema_json["views"]
+    assert all_items["set_default"] is False
+    assert all_items["caml_query"] == ""
+    assert declared == {
         "list": "APP_Risk",
         "title": "Open risks",
         "view_fields": ["Title", "Status", "DueDate"],
@@ -1416,7 +1424,7 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         "formatting": None,
         "widths": None,
         "url_slug": "OpenRisks",
-    }]
+    }
 
 
 def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
@@ -1453,15 +1461,29 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
-    assert schema_json["views"][0]["widths"] == {"Title": 240, "Due Date": 150}
+    sized = next(view for view in schema_json["views"] if view["title"] == "Sized")
+    assert sized["widths"] == {"Title": 240, "Due Date": 150}
 
 
-def test_schema_json_views_empty_without_declarations() -> None:
+def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> None:
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "calculated.dbml")
     bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
-    assert build_schema_json(schema, bundle, "default")["views"] == []
+    assert build_schema_json(schema, bundle, "default")["views"] == [{
+        "list": "APP_Risk",
+        "title": "All Items",
+        "view_fields": [
+            "ID", "Title", "Severity", "RiskScore", "RiskBand",
+            "Created", "Modified", "Author", "Editor",
+        ],
+        "caml_query": "",
+        "row_limit": None,
+        "set_default": True,
+        "formatting": None,
+        "widths": None,
+        "url_slug": "AllItems",
+    }]
 
 
 def _generate_views_js(tmp_path: Path) -> str:
@@ -1536,12 +1558,12 @@ def test_view_query_comparison_tolerates_space_before_self_close(
 
 
 def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> None:
-    """Fields created through the REST field collection join no view, so a
-    fresh deployment shows a Title-only default view. Declared views are part
-    of the physical shape: Phase 3.1 creates missing views, reconciles
+    """Fields created through the REST field collection join no view. The
+    generated All Items recovery view and authored views are part of the
+    physical shape: Phase 3.1 creates missing views, reconciles
     ViewQuery/RowLimit/field order/default flag on existing ones (public
     views only — a same-name personal view fails closed), verifies by
-    readback, and never touches undeclared views (user content, unlike exact
+    readback, and never touches other views (user content, unlike exact
     ACLs)."""
     js = _generate_views_js(tmp_path)
     assert f"Starting Phase {pn('views')}: views" in js
@@ -1780,7 +1802,10 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
     )
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
-    row = build_schema_json(schema, bundle, "default")["views"][0]
+    row = next(
+        view for view in build_schema_json(schema, bundle, "default")["views"]
+        if view["title"] == "Hot"
+    )
     assert row["formatting"] == (
         '{"additionalRowClass":"=if([$Score] >= 20, \'sp-css-backgroundColor-BgCoral\', \'\')"}'
     )
@@ -2359,7 +2384,9 @@ def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
-    view_fields = schema_json["views"][0]["view_fields"]
+    view_fields = next(
+        view for view in schema_json["views"] if view["title"] == "Heat grid"
+    )["view_fields"]
     assert view_fields == [
         "Title", "BoardDate", "OperationsStatus", "WorkforceStatus",
     ]

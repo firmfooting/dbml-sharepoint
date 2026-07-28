@@ -226,10 +226,11 @@ def test_manifest_lists_declared_views(tmp_path: Path) -> None:
         generated_at="2026-05-04T00:00:00Z",
     )
     assert f"## Phase {pn('views')}: views" in md
-    assert "- Views to provision: 1" in md
+    assert "- Views to provision: 2" in md
+    assert "- **All Items** on APP_Risk" in md
     assert "**Open risks** on APP_Risk (default)" in md
     assert "Title, Status, DueDate" in md
-    assert "undeclared views are never modified" in md
+    assert "other views are" in md and "never modified" in md
 
 
 def test_manifest_view_bullets_render_one_per_line(tmp_path: Path) -> None:
