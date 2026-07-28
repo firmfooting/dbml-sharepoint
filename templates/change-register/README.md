@@ -12,6 +12,18 @@ inbox, gives approvers a queue instead of an archaeology project, and gives
 auditors the thing they always ask for: who approved this change, when, and
 why. It spans every function because every function changes things.
 
+**Five declared views**, deployed with the paste — nothing to build by
+hand: *In flight* (the default), *Triage queue*, *Awaiting decision*
+(grouped by approver), *Approved, not yet implemented*, *Decision log*.
+`DaysToDecision` renders as a bar against the slowest SLA, coloured by the
+urgency it was supposed to meet — so twelve days reads as fine on a Routine
+change and as a failure on an Emergency one.
+
+**The New form is the submit-only intake made visible.** Impact, status,
+approver and every decision field are off it; a requester describes the
+change and says how urgent it is. The decision fields appear as the status
+moves, so the save rules fire with the field they name on screen.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
@@ -24,4 +36,11 @@ why. It spans every function because every function changes things.
 
 **Customisation points:** `ChangeType` enum; the decision-authority table in
 governance (who may approve what) — the register records authority, it
-doesn't enforce it.
+doesn't enforce it; and the `max:` on the `DaysToDecision` bar, which ships
+set from the slowest SLA in that table.
+
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+that pastes six `[DEMO] `-titled rows — two in triage, one under review,
+one approved and stalled past sixty days, one emergency decided in a day
+and one rejected after three weeks — so every view and every colour band
+renders on a first look. See `30-deploy/DEPLOY.md`.

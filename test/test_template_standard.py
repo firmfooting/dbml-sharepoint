@@ -45,7 +45,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # The twenty-seven templates that have not yet been through a theme branch.
 # Removed by the branch that uplifts them; must reach empty.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "audit-actions", "change-register", "complaints-feedback",
+    "asset-register", "audit-actions", "complaints-feedback",
     "compliance-obligations", "contract-register", "credentialing-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
@@ -100,6 +100,15 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Define it": "Assess",
         "Report it": "Act",
         "Govern it": "Govern",
+    },
+    # Decision and implementation are one beat here, not two: the register's
+    # governance IS its decision trail, and splitting them left the New form
+    # showing a heading with one hidden date under it.
+    ("change-register", "ChangeRequest"): {
+        "Describe the change": "Identify",
+        "Triage": "Assess",
+        "Decision and implementation": "Act",
+        "System": "System",
     },
 }
 
