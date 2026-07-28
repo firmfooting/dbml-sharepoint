@@ -16,7 +16,11 @@ from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import base_permissions_to_high_low
 from dbml_sharepoint.analysis.phases import phases_context
-from dbml_sharepoint.analysis.typemap import format_description, map_column
+from dbml_sharepoint.analysis.typemap import (
+    TOTAL_FUNCTIONS,
+    format_description,
+    map_column,
+)
 from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators._indexes import deployable_index_columns
@@ -204,6 +208,20 @@ def _column_validation(
     rendered = _rewrite_formula_refs(f"={to_validation(declared.when, types)}", display_map)
     return (rendered, declared.message)
 
+
+
+def _view_aggregations(view: ViewDef) -> str:
+    """A declared view's SP.View `Aggregations` property: one FieldRef per
+    totalled column, carrying SharePoint's own spelling of the function.
+
+    Declaration order is preserved because that is the order SharePoint
+    renders the figures in. Empty when nothing is declared, which the
+    deploy reads as "never touch the live property" rather than as
+    "clear it"."""
+    return "".join(
+        f'<FieldRef Name="{name}" Type="{TOTAL_FUNCTIONS[func]}"/>'
+        for name, func in view.totals.items()
+    )
 
 
 def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
@@ -569,6 +587,7 @@ def build_schema_json(
                 "title": view.title,
                 "view_fields": list(view.fields),
                 "caml_query": _view_caml_query(view, column_types),
+                "aggregations": _view_aggregations(view),
                 "row_limit": view.row_limit,
                 "set_default": view.default,
                 "renamed_from": list(view.renamed_from),

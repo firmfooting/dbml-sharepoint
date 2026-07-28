@@ -1597,6 +1597,9 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
             '<Value Type="Text">Closed</Value></Neq></Or></Where>'
             '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
         ),
+        # No totals declared: the empty string is what the deploy reads as
+        # "never touch the live Aggregations property".
+        "aggregations": "",
         "row_limit": 100,
         "set_default": True,
         "renamed_from": ["Active risks"],
@@ -1658,6 +1661,7 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
             "Created", "Modified", "Author", "Editor",
         ],
         "caml_query": "",
+        "aggregations": "",
         "row_limit": None,
         "set_default": True,
         "renamed_from": [],
@@ -2644,3 +2648,39 @@ def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
         "Title", "BoardDate", "OperationsStatus", "WorkforceStatus",
     ]
     assert not any(name.startswith("@") for name in view_fields)
+
+
+# --- Declared view totals ---------------------------------------------------
+
+
+def _aggregations(totals: dict[str, str]) -> str:
+    from dbml_sharepoint.generators.jsgen import _view_aggregations
+    from dbml_sharepoint.model.mapping_loader import ViewDef
+
+    return _view_aggregations(ViewDef(title="V", fields=["Title"], totals=totals))
+
+
+def test_view_aggregations_render_sharepoints_own_spellings() -> None:
+    """`avg` is authored short and rendered `Average`, the same relationship
+    `desc` has with Ascending="FALSE" — the mapping vocabulary is lowercase
+    throughout and SharePoint's is not."""
+    assert _aggregations({"TripKm": "sum", "Days": "avg"}) == (
+        '<FieldRef Name="TripKm" Type="Sum"/><FieldRef Name="Days" Type="Average"/>'
+    )
+
+
+def test_view_aggregations_cover_every_declared_function() -> None:
+    """A function admitted by the loader but unrendered here would be a
+    KeyError at build time; asserted so the two vocabularies cannot drift."""
+    from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
+
+    rendered = _aggregations(dict.fromkeys(TOTAL_FUNCTIONS, "sum") | {
+        name: name for name in TOTAL_FUNCTIONS
+    })
+    for spelling in TOTAL_FUNCTIONS.values():
+        assert f'Type="{spelling}"' in rendered
+
+
+def test_a_view_without_totals_renders_no_aggregations() -> None:
+    """Empty is what the deploy reads as "never touch the live property"."""
+    assert _aggregations({}) == ""

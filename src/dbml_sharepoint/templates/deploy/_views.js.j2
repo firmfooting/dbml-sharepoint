@@ -29,7 +29,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -47,7 +47,7 @@
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,Aggregations,AggregationsStatus,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {
@@ -179,6 +179,21 @@
         if (existing.Hidden !== view.hidden) {
           patchBody.Hidden = view.hidden;
         }
+        // Declared totals only. A view with none keeps whatever is live,
+        // matching CustomFormatter and widths — so deleting a totals block
+        // does NOT clear a deployed total.
+        //
+        // normalizeViewQuery is required here, not tidiness: SP reads back
+        // `<FieldRef Name="X" Type="Sum" />` for the `...Type="Sum"/>` it
+        // was sent, which is the pre-`/>` space that normaliser exists for.
+        // Compared raw, a correct view drifts on every redeploy, rewrites,
+        // reads the same difference back, and fails the phase closed — on
+        // the SECOND run, never the first.
+        if (view.aggregations
+            && normalizeViewQuery(existing.Aggregations) !== normalizeViewQuery(view.aggregations)) {
+          patchBody.Aggregations = view.aggregations;
+          patchBody.AggregationsStatus = 'On';
+        }
         if (Object.keys(patchBody).length > 1) {
           await mergeView(viewUrl, patchBody, viewDigest);
         }
@@ -238,6 +253,17 @@
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
         drifted.push(`CustomFormatter (declared ${JSON.stringify(view.formatting)}; readback ${JSON.stringify(actual.CustomFormatter)})`);
+      }
+      // Both halves are verified: SP renders nothing without the status,
+      // so an Aggregations that matched while the status read Off would be
+      // a view the deploy called correct and the reader sees no total on.
+      if (view.aggregations) {
+        if (normalizeViewQuery(actual.Aggregations) !== normalizeViewQuery(view.aggregations)) {
+          drifted.push(`Aggregations (declared ${JSON.stringify(view.aggregations)}; readback ${JSON.stringify(actual.Aggregations)})`);
+        }
+        if (actual.AggregationsStatus !== 'On') {
+          drifted.push(`AggregationsStatus (declared On; readback ${JSON.stringify(actual.AggregationsStatus)})`);
+        }
       }
       const fieldsMatch = readbackFields.length === view.view_fields.length
         && readbackFields.every((name, index) => name === view.view_fields[index]);

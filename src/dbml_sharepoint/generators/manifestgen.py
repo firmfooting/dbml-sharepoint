@@ -164,6 +164,10 @@ def generate_manifest(
                 ))
             if declared.group_by is not None:
                 parts.append("group by " + " then ".join(declared.group_by.fields))
+            if declared.totals:
+                parts.append("totals: " + ", ".join(
+                    f"{col} {func}" for col, func in declared.totals.items()
+                ))
             return "; ".join(parts)
         return ""
 
