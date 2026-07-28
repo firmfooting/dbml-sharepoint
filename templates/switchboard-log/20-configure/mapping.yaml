@@ -299,6 +299,8 @@ views:
         - { field: Status, op: eq, value: "Relayed" }
         - { field: TakenAt, op: geq, value: today-30 }
       group_by: { field: Urgency, collapsed: true }
+      totals:
+        MinutesToRelay: avg
       sort:
         - { field: TakenAt, direction: desc }
       widths:

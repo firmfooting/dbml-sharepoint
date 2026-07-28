@@ -793,9 +793,19 @@ def test_the_aggregations_comparison_survives_sharepoints_readback_spacing() -> 
     )
 
 
-def test_both_aggregations_comparisons_go_through_the_normaliser() -> None:
+def test_no_aggregations_comparison_is_made_raw() -> None:
     """The write-side and readback-side comparisons are separate call sites
-    and either one raw reintroduces the never-converging redeploy."""
+    and either one left raw reintroduces the never-converging redeploy.
+
+    Asserted as the ABSENCE of a raw comparison rather than the presence of
+    two known-good ones: the first version of this test named the variables
+    (`existing.Aggregations`) and went green-to-red purely because a fix
+    renamed one of them, while saying nothing about a third call site
+    somebody might add later.
+    """
     script = _deploy_js()
-    assert "normalizeViewQuery(existing.Aggregations)" in script
-    assert "normalizeViewQuery(actual.Aggregations)" in script
+    raw = re.findall(r"(?<!normalizeViewQuery\()\b\w+\.Aggregations\s*[!=]==", script)
+    assert not raw, f"Aggregations compared without the normaliser: {raw}"
+    # AggregationsStatus is a plain enum ('On'/'Off') and IS compared raw —
+    # asserted so the regex above cannot be "fixed" by wrapping it too.
+    assert "AggregationsStatus !== 'On'" in script

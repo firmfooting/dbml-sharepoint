@@ -77,11 +77,11 @@ site that already holds real incidents.
         that was a sort-and-squint.
       - **Resolved last 90 days** — the monthly trend review's raw
         material. Two limits, stated because a board figure should not be
-        built on a misunderstanding: it is a **rolling** ninety days, not
-        a calendar quarter (CAML has no calendar predicate), and it
-        carries **no totals** — each incident's own day-count and bar,
-        because column aggregations are not a capability this tool ships.
-        Export for a mean.
+        built on a misunderstanding: it is a **rolling** ninety days,
+        not a calendar quarter, because CAML has no calendar predicate.
+        The mean IS there — `DaysToResolve` is averaged under each
+        category and across the window — so only a quarter-aligned figure
+        needs an export.
 - [ ] An open **Critical** incident washes the whole row dusty rose in
       **Open by severity**. That is the one row-level signal this list
       declares, and the reason it reads is that nothing competes with it.

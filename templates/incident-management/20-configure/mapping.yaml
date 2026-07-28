@@ -214,6 +214,8 @@ views:
         - { field: Status, op: in, value: ["Resolved", "Closed"] }
         - { field: ResolvedDate, op: geq, value: today-90 }
       group_by: { field: Category, collapsed: true }
+      totals:
+        DaysToResolve: avg
       sort:
         - { field: ResolvedDate, direction: desc }
       widths:

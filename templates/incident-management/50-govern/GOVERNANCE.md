@@ -48,9 +48,10 @@ enum and the mapping in step.
 
 - **"Resolved last 90 days" is a rolling window, not a calendar quarter.**
   CAML has no calendar predicate. For a quarter-aligned figure, export.
-- **There are no totals.** The view groups by category and shows each
-  incident's own days-to-resolve with a bar; there is no mean or count row
-  under a group. Column aggregations are not a capability this tool ships.
+- **The mean time to resolve is on the screen.** The view groups by
+  category, collapsed, and averages `DaysToResolve`, so each category's
+  figure and the overall one are both visible. A quarter-aligned figure
+  still needs an export, because the window is a rolling ninety days.
 
 ## What is enforced at save, and what stays a governance check
 

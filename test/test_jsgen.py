@@ -2669,16 +2669,30 @@ def test_view_aggregations_render_sharepoints_own_spellings() -> None:
     )
 
 
-def test_view_aggregations_cover_every_declared_function() -> None:
-    """A function admitted by the loader but unrendered here would be a
-    KeyError at build time; asserted so the two vocabularies cannot drift."""
+def test_every_function_renders_the_spelling_sharepoint_accepts() -> None:
+    """Every SharePoint spelling written out LITERALLY.
+
+    The first version of this test read the expected spellings out of
+    TOTAL_FUNCTIONS itself, which made it tautological: changing `count` to
+    `Cnt` and `min` to `Minimum` — two values SharePoint rejects — left the
+    whole suite green. These are the strings SharePoint accepts in an
+    Aggregations FieldRef, and the only way to keep them honest is to
+    repeat them here rather than derive them.
+    """
+    assert _aggregations({"A": "sum"}) == '<FieldRef Name="A" Type="Sum"/>'
+    assert _aggregations({"A": "count"}) == '<FieldRef Name="A" Type="Count"/>'
+    assert _aggregations({"A": "avg"}) == '<FieldRef Name="A" Type="Average"/>'
+    assert _aggregations({"A": "min"}) == '<FieldRef Name="A" Type="Min"/>'
+    assert _aggregations({"A": "max"}) == '<FieldRef Name="A" Type="Max"/>'
+
+
+def test_every_declared_function_is_pinned_above() -> None:
+    """Guards the guard: a sixth function added to TOTAL_FUNCTIONS without a
+    literal assertion beside it would slip through unrendered-and-untested,
+    which is exactly how the tautological version hid three of five."""
     from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
 
-    rendered = _aggregations(dict.fromkeys(TOTAL_FUNCTIONS, "sum") | {
-        name: name for name in TOTAL_FUNCTIONS
-    })
-    for spelling in TOTAL_FUNCTIONS.values():
-        assert f'Type="{spelling}"' in rendered
+    assert set(TOTAL_FUNCTIONS) == {"sum", "count", "avg", "min", "max"}
 
 
 def test_a_view_without_totals_renders_no_aggregations() -> None:

@@ -180,22 +180,40 @@
           patchBody.Hidden = view.hidden;
         }
         // Declared totals only. A view with none keeps whatever is live,
-        // matching CustomFormatter and widths — so deleting a totals block
-        // does NOT clear a deployed total.
-        //
-        // normalizeViewQuery is required here, not tidiness: SP reads back
-        // `<FieldRef Name="X" Type="Sum" />` for the `...Type="Sum"/>` it
-        // was sent, which is the pre-`/>` space that normaliser exists for.
-        // Compared raw, a correct view drifts on every redeploy, rewrites,
-        // reads the same difference back, and fails the phase closed — on
-        // the SECOND run, never the first.
-        if (view.aggregations
-            && normalizeViewQuery(existing.Aggregations) !== normalizeViewQuery(view.aggregations)) {
-          patchBody.Aggregations = view.aggregations;
-          patchBody.AggregationsStatus = 'On';
-        }
         if (Object.keys(patchBody).length > 1) {
           await mergeView(viewUrl, patchBody, viewDigest);
+        }
+      }
+      // Declared totals. OUTSIDE the create/adopt branch above, like
+      // ViewFields, formatting and the default flag — createViewWithCleanUrl
+      // does not send Aggregations, so a version of this that lived in the
+      // `existing` arm left every FIRST deploy of a totals view failing its
+      // own verify, on exactly the views the feature was built for.
+      //
+      // A view with no declaration keeps whatever is live, matching
+      // CustomFormatter and widths — so deleting a totals block does NOT
+      // clear a deployed total.
+      //
+      // normalizeViewQuery is required here, not tidiness: SP reads back
+      // `<FieldRef Name="X" Type="Sum" />` for the `...Type="Sum"/>` it was
+      // sent, which is the pre-`/>` space that normaliser exists for.
+      // Compared raw, a correct view drifts on every redeploy, rewrites,
+      // reads the same difference back and fails the phase closed.
+      //
+      // The status is part of the CONDITION, not just the payload: SP
+      // renders no figure when AggregationsStatus is Off, so a view whose
+      // XML already matched while the status read Off would be refused by
+      // the verify below and never repaired by this write.
+      if (view.aggregations) {
+        const beforeTotals = existing || await readViewShape(viewUrl);
+        if (!beforeTotals) throw new Error('view disappeared before totals reconciliation');
+        if (normalizeViewQuery(beforeTotals.Aggregations) !== normalizeViewQuery(view.aggregations)
+            || beforeTotals.AggregationsStatus !== 'On') {
+          await mergeView(viewUrl, {
+            __metadata: { type: 'SP.View' },
+            Aggregations: view.aggregations,
+            AggregationsStatus: 'On',
+          }, viewDigest);
         }
       }
       // Declared column set and order, reconciled exactly when drifted.

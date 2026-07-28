@@ -46,6 +46,20 @@
  *   because the simpler mechanism won. The probe is kept for re-running
  *   against a tenant whose behaviour is in doubt.
  *
+ *   TWO QUESTIONS THAT RUN DID NOT ANSWER, added afterwards by an
+ *   adversarial review and STILL OPEN:
+ *
+ *     Q5 — does Aggregations bind by INTERNAL name or by DISPLAY title?
+ *          The sibling ColumnWidth property binds by display title, and
+ *          silently resets when given internal names. This probe's first
+ *          run created a field whose Title equalled its internal name, so
+ *          it could not distinguish the two. Every template that ships
+ *          totals uses display_names: auto, so every totalled column is in
+ *          the untested case. Until Q5 is answered, `totals:` is
+ *          UNVERIFIED for real templates.
+ *     Q6 — do two aggregations on one view both render, in declaration
+ *          order? complaints-feedback ships two; the first run wrote one.
+ *
  *   That first run also found a bug in THIS FILE rather than in SharePoint:
  *   both seeding posts sent `SP.Data.ListItem` instead of the list's own
  *   ListItemEntityTypeFullName, took HTTP 400, and the probe reported
@@ -84,6 +98,8 @@
   expect('Q2', 'GetViewXml/SetViewXml carries an <Aggregations> block');
   expect('Q3', 'the written property reads back unchanged');
   expect('Q4', 'a totals row actually RENDERS (manual: open the view URL and look)');
+  expect('Q5', 'Aggregations binds by INTERNAL name, not display title (manual: look)');
+  expect('Q6', 'two totalled columns both render, in declaration order (manual: look)');
 
   // === Preflight: confirm the site ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
@@ -316,6 +332,70 @@
     );
 
     record('Q4', 'a totals row actually RENDERS', 'MANUAL', `open ${window.location.origin}${viewUrl} and look for a total of 42 under ${AGG_FIELD}`);
+
+    // === Q5/Q6: the naming question, and two columns at once =============
+    //
+    // WHY Q5 MATTERS MORE THAN THE REST. The sibling ColumnWidth property
+    // binds by DISPLAY title — internal names are accepted and silently
+    // reset the widths (live finding, see jsgen). Aggregations is written
+    // with INTERNAL names on the assumption that it does not behave the
+    // same way, and the original run of this probe could not tell: it
+    // created a field whose Title equalled its internal name, so the two
+    // hypotheses were indistinguishable.
+    //
+    // Every template that ships totals uses display_names: auto, so every
+    // totalled column's display title DIFFERS from its internal name —
+    // i.e. all of them are in the case this probe never covered. If the
+    // property binds by display title, the XML round-trips, both verify
+    // halves pass, and no figure renders. That is the exact silent
+    // failure this repository exists to prevent.
+    const SECOND = 'SecondAmount';
+    const second = await post(`${listPath}/fields`, {
+      __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9, Title: SECOND,
+    });
+    if (second.ok) {
+      // Rename the DISPLAY title, leaving the internal name as created —
+      // the same create-then-rename trick deploy.js uses for every column.
+      await post(
+        `${listPath}/fields/getbyinternalnameortitle('${odataName(SECOND)}')`,
+        { __metadata: { type: 'SP.FieldNumber' }, Title: 'Second Amount Display' },
+        { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+      );
+      await post(`${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(SECOND)}')`);
+      const both = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`
+        + `<FieldRef Name="${SECOND}" Type="Average"/>`;
+      const wrote = await post(
+        `${listPath}/views('${viewId}')`,
+        { __metadata: { type: 'SP.View' }, Aggregations: both, AggregationsStatus: 'On' },
+        { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+      );
+      const back = await get(`${listPath}/views('${viewId}')?$select=Aggregations`);
+      record(
+        'Q5',
+        'Aggregations binds by INTERNAL name, not display title',
+        wrote.ok ? 'MANUAL' : 'WRITE REFUSED',
+        wrote.ok
+          ? `wrote Name="${SECOND}" while its DISPLAY title is "Second Amount Display"; `
+            + `readback ${back.ok ? JSON.stringify(back.d.Aggregations) : '(unreadable)'}. `
+            + `OPEN THE VIEW: a figure under "Second Amount Display" means INTERNAL names bind `
+            + `(what the tool assumes). No figure under it means DISPLAY titles bind, and every `
+            + `shipped totals view is silently empty.`
+          : `HTTP ${wrote.status} — ${wrote.error}`,
+      );
+      record(
+        'Q6',
+        'two totalled columns both render, in declaration order',
+        wrote.ok ? 'MANUAL' : 'NOT REACHED',
+        wrote.ok
+          ? 'the same view now declares two aggregations; confirm BOTH figures appear, and that '
+            + 'the readback above preserved declaration order — the deployer compares the string '
+            + 'exactly, so a reordered readback would drift on every redeploy'
+          : 'the two-column write was refused',
+      );
+    } else {
+      record('Q5', 'Aggregations binds by INTERNAL name, not display title', 'NOT ESTABLISHED', `could not add ${SECOND}: HTTP ${second.status} ${second.error}`);
+      record('Q6', 'two totalled columns both render, in declaration order', 'NOT ESTABLISHED', 'the second column could not be created');
+    }
 
     // === Verdict =========================================================
     const mechanism = patched.ok ? 'patch' : (xmlWorked ? 'setviewxml' : 'none');

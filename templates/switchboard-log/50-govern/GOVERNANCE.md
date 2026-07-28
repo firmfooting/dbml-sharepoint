@@ -50,11 +50,12 @@ this list's one row-level signal and is reserved for exactly that.
 
 **Relay times** is where the targets above are checked: relayed messages
 from the last thirty days, grouped by urgency band, each with its own
-minutes-to-relay and a bar. Two limits worth knowing before a figure from
-it goes anywhere: it is a **rolling** thirty days, not a calendar month —
-CAML has no calendar predicate — and it carries **no mean or count** under
-a group, because column aggregations are not a capability this tool ships.
-Export the view for an average.
+minutes-to-relay and a bar, and a **mean minutes-to-relay under each
+urgency band** — which is the number the targets above are actually
+judged on. One limit worth knowing before a figure from it goes anywhere:
+the window is a **rolling** thirty days, not a calendar month, because
+CAML has no calendar predicate. A calendar-month figure still needs an
+export.
 
 ## Key audits
 

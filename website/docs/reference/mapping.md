@@ -176,11 +176,15 @@ operands already are.
   ```
 
   Authored short and lowercase; the build renders SharePoint's own
-  spellings (`avg` → `Average`). **`count` works on any displayed column**
-  because it counts rows rather than values; `sum`, `avg`, `min` and `max`
-  need a numeric column, and calculated numbers qualify. A total on a
-  column the view does not display is a build error — SharePoint would
-  accept it and render nothing, having no column to put the figure under.
+  spellings (`avg` → `Average`). **`count` works on any displayed column**,
+  including person, lookup and hyperlink, because it counts rows rather
+  than values. The arithmetic four — `sum`, `avg`, `min`, `max` — need a
+  numeric column, and calculated numbers qualify. They are refused on a
+  **lookup** even though DBML types one as `int`: what SharePoint stores is
+  a row id, not a quantity, and summing it produces a number that means
+  nothing. A total on a column the view does not display is a build error
+  too — SharePoint accepts it and renders nothing, having no column to put
+  the figure under.
 
   `StdDev` and `Var` exist in SharePoint and are deliberately not offered:
   nothing needed them, and an unused function is an unverified one.

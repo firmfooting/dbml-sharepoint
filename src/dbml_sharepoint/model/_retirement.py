@@ -87,18 +87,20 @@ def _strip_retired_from_view(
     retired: dict[str, RetiredColumn],
     strips: list[RetirementStrip],
 ) -> ViewDef:
-    """A copy of the view with retired columns removed from `fields` and
-    `widths`, recording each removal in `strips`.
+    """A copy of the view with retired columns removed from `fields`,
+    `widths` and `totals`, recording each removal in `strips`.
 
     Retirement must never break a build, so an explicit reference is
     stripped and reported as a warning rather than failing — and stripping
-    the width too keeps the validator's "widths must name one of this
-    view's fields" check honest, which would otherwise turn retirement into
-    an ERROR.
+    the width and the total too keeps the validator's "must name one of
+    this view's fields" checks honest, which would otherwise turn
+    retirement into an ERROR. `totals` was missed when it was added and
+    retiring a totalled column did exactly that.
     """
     named = [name for name in view.fields if name in retired]
     widths_named = [name for name in view.widths if name in retired]
-    if not named and not widths_named:
+    totals_named = [name for name in view.totals if name in retired]
+    if not named and not widths_named and not totals_named:
         return view
     strips += [
         RetirementStrip(
@@ -114,10 +116,18 @@ def _strip_retired_from_view(
         )
         for name in widths_named
     ]
+    strips += [
+        RetirementStrip(
+            entity=entity, column=name,
+            context=f"views[{entity}].{view.title} totals",
+        )
+        for name in totals_named
+    ]
     return replace(
         view,
         fields=[name for name in view.fields if name not in retired],
         widths={col: px for col, px in view.widths.items() if col not in retired},
+        totals={col: fn for col, fn in view.totals.items() if col not in retired},
     )
 
 
