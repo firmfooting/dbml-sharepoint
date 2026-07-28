@@ -163,5 +163,7 @@
   }
   log('DONE', `Deployment complete. Lists +${summary.listsCreated.length}, columns +${summary.columnsCreated}, skipped ${summary.columnsSkipped}, errors ${summary.errors.length}. Elapsed ${summary.elapsedSeconds}s (${requestCount} requests).`);
   console.log(summary);
+  // The IIFE is opened AND closed in deploy.js.j2, which is also where the
+  // try wrapping every phase closes. A phase partial that emitted `})();`
+  // itself would close the function before that finally could run.
   return summary;
-})();

@@ -799,6 +799,36 @@
   // always 'Title', so the list title is the whole key.
   const titlesUnsealedForRun = new Set();
 
+  // The restoration itself, called from the finally in deploy.js.j2 rather
+  // than from PROTECTION. Every phase between PREPARE and PROTECTION can
+  // return early by design — schema errors, lookup errors, ACL errors all
+  // abort before touching more of the site — and each of those returns
+  // used to skip the re-seal, ending the run with a column LESS protected
+  // than it found it. A failed run must not weaken a site, so the
+  // guarantee has to sit on the exit path, which is the only path every
+  // abort shares. Idempotent by construction: PROTECTION normally seals
+  // these on the way past, and this writes only what it finds still open,
+  // so the success path pays one read per unsealed Title and nothing else.
+  async function restoreUnsealedTitles() {
+    for (const listTitle of titlesUnsealedForRun) {
+      try {
+        invalidateFieldShapes(listTitle);  // never trust phase-start state
+        const shape = await readFieldShape(listTitle, 'Title', null);
+        if (shape && shape.Sealed === true) continue;
+        const digest = await getDigest();
+        await patchField(
+          listTitle, 'Title', { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
+        );
+        log('WARN', `Re-sealed the built-in Title on '${listTitle}' while exiting: the run opened it and did not reach the seal phase.`);
+      } catch (err) {
+        // Loud, and recorded: the operator has to know the site was left
+        // open, because nothing else in the run will say so.
+        log('ERROR', `Could not re-seal the built-in Title on '${listTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
+        summary.errors.push({ phase: 'exit', list: listTitle, column: 'Title', error: err.message });
+      }
+    }
+  }
+
   // The ONE constructor for the synthetic Title field. Title is not a
   // declared column — it arrives as list.title_patch — so every consumer of
   // a declared field has to synthesise one. Keep it here: a second copy
@@ -1275,6 +1305,16 @@
     return { aborted: 'insufficient-permissions' };
   }
 
+  // Every phase runs inside this try so that the finally below is reached
+  // by EVERY exit: the normal `return summary` at the end of the last
+  // phase, the seven early returns that abort a broken run, and a throw
+  // nobody caught. Anything a run must hand back regardless of outcome
+  // belongs in that finally and nowhere else — putting it on the success
+  // path is how a failed run came to leave a Title unsealed. The phase
+  // bodies keep their own indentation: they are 3,000 lines of included
+  // partials, and re-indenting them to sit under this try would bury the
+  // change in whitespace.
+  try {
   markPhase('Phase 1.1 — read-only preflight');
   // === Preflight: fail-closed adoption of existing schema objects ===
   // A matching display name is not proof that an existing list or field was
@@ -2887,5 +2927,11 @@
   }
   log('DONE', `Deployment complete. Lists +${summary.listsCreated.length}, columns +${summary.columnsCreated}, skipped ${summary.columnsSkipped}, errors ${summary.errors.length}. Elapsed ${summary.elapsedSeconds}s (${requestCount} requests).`);
   console.log(summary);
+  // The IIFE is opened AND closed in deploy.js.j2, which is also where the
+  // try wrapping every phase closes. A phase partial that emitted `})();`
+  // itself would close the function before that finally could run.
   return summary;
+  } finally {
+    await restoreUnsealedTitles();
+  }
 })();

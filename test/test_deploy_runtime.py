@@ -411,6 +411,79 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
     assert seal_writes[-1] is True, f"the run left Title unsealed: {seal_writes}"
 
 
+# The adopted site again, but every field CREATION is refused. STRUCTURE
+# then records an error per column and takes its early return — the
+# designed abort that skips ACL work on a broken schema. It also skips
+# PROTECTION, which is where a Title unsealed at 1.4 used to be handed
+# back. Only creation is refused: the 1.4 MERGE that unseals Title is a
+# write to an existing field and still succeeds.
+_ABORTING_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    const _passThrough = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const path = u.split('?')[0];
+      const creating = (opts.method || 'GET') === 'POST' && opts.body
+        && (path.endsWith('/fields') || path.endsWith('/fields/addfield'));
+      if (!creating) return _passThrough(url, opts);
+      calls.push({ url: u, method: 'POST', body: opts.body });
+      const payload = { error: { message: { value: 'field creation refused' } } };
+      return {
+        ok: false, status: 400,
+        headers: { get: () => null },
+        json: async () => payload,
+        text: async () => JSON.stringify(payload),
+      };
+    };
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
+    """A failed run must not leave the site less protected than it found it.
+
+    PREPARE unseals an already-sealed built-in Title so the write phases
+    can patch it, and PROTECTION hands it back. Every abort between the
+    two — schema errors, lookup errors, enrolment errors — returns before
+    PROTECTION, so the run ended with a column someone had deliberately
+    sealed left open. Restoration must therefore be on the exit path, not
+    on the success path."""
+    output = _run_deploy(
+        _ABORTING_HARNESS,
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    )
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    # Without this the test could pass by never aborting at all — and a
+    # run that reaches PROTECTION re-seals for the ordinary reason.
+    assert summary.get("aborted"), (
+        f"the run did not abort, so it never tested the abort path: {summary}"
+    )
+    reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
+               if "Starting Phase " in ln]
+    assert "1.4" in reached, f"the maintenance unseal never ran: {reached}"
+    assert "4.1" not in reached, f"the run reached PROTECTION, so it did not abort early: {reached}"
+
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, "harness produced no call log"
+    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+    seal_writes = [
+        json.loads(c["body"])["Sealed"]
+        for c in calls
+        if c["method"] == "POST" and c.get("body")
+        and "getbyinternalnameortitle('Title')" in c["url"]
+        and "Sealed" in c["body"]
+    ]
+    assert seal_writes, "PREPARE never unsealed a Title, so there was nothing to restore"
+    assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
+    assert seal_writes[-1] is True, f"the aborted run left Title unsealed: {seal_writes}"
+
+
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     """The end-to-end guard, and the one that gives the others their value.

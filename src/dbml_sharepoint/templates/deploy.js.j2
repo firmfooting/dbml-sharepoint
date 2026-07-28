@@ -48,6 +48,16 @@
 {% include "deploy/_shape_probes.js.j2" %}
 {% include "deploy/_helpers.js.j2" %}
 {% include "deploy/_field_reconcile.js.j2" %}
+  // Every phase runs inside this try so that the finally below is reached
+  // by EVERY exit: the normal `return summary` at the end of the last
+  // phase, the seven early returns that abort a broken run, and a throw
+  // nobody caught. Anything a run must hand back regardless of outcome
+  // belongs in that finally and nowhere else — putting it on the success
+  // path is how a failed run came to leave a Title unsealed. The phase
+  // bodies keep their own indentation: they are 3,000 lines of included
+  // partials, and re-indenting them to sit under this try would bury the
+  // change in whitespace.
+  try {
 {% for group in phases %}
 {% for step in group.steps %}
 {% set phase = step %}
@@ -55,3 +65,7 @@
 {% include step.template %}
 {% endfor %}
 {% endfor %}
+  } finally {
+    await restoreUnsealedTitles();
+  }
+})();
