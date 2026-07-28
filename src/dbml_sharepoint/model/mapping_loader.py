@@ -13,401 +13,160 @@ the mapping's own `extension:` key).
 """
 
 import json
-import re
-from dataclasses import dataclass, field
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal, cast, get_args
+from typing import Any, cast
 
 import yaml
 
 from dbml_sharepoint.analysis import styles
+from dbml_sharepoint.model._keys import _reject_unknown_keys
+from dbml_sharepoint.model._mapping_types import (
+    _REMOVED_SECTIONS,
+    ENTITY_KINDS,
+    RETIRED_SUFFIX,
+    ColumnValidation,
+    CrossSiteRef,
+    CustomPermissionLevel,
+    DemoItem,
+    EntityKind,
+    EntityMapping,
+    EntitySection,
+    FormFormatting,
+    FormVisibility,
+    ListPermissionPolicy,
+    ListValidation,
+    Mapping,
+    MappingBundle,
+    PermissionsConfig,
+    PolymorphicPattern,
+    Principal,
+    PrincipalKind,
+    ReconcileMode,
+    RetentionPolicy,
+    RetiredColumn,
+    RetirementStrip,
+    RoleAssignment,
+    SiteGroup,
+    SortDirection,
+    Versioning,
+    ViewDef,
+    ViewGroupBy,
+    ViewSort,
+    WatchedList,
+    auto_display_name,
+    view_url_slug,
+)
+from dbml_sharepoint.model._retirement import _apply_retirement, _parse_retired_columns
+from dbml_sharepoint.model.conditions import parse_condition
 
-# Closed vocabularies as Literal types: the loader is the ONE gate that
-# admits these strings, so everything downstream (generators, reporting,
-# comparisons like kind == "DocumentLibrary") type-checks against the
-# real value set instead of trusting a comment.
-type EntityKind = Literal["List", "DocumentLibrary", "HubOnlyList"]
-type SortDirection = Literal["asc", "desc"]
-type PrincipalKind = Literal[
-    "group",
-    "associated_owner_group",
-    "associated_member_group",
-    "associated_visitor_group",
+__all__ = [
+    "ENTITY_KINDS",
+    "KNOWN_SECTIONS",
+    "RETIRED_SUFFIX",
+    "ColumnValidation",
+    "CrossSiteRef",
+    "CustomPermissionLevel",
+    "DemoItem",
+    "EntityKind",
+    "EntityMapping",
+    "EntitySection",
+    "FormFormatting",
+    "FormVisibility",
+    "ListPermissionPolicy",
+    "ListValidation",
+    "Mapping",
+    "MappingBundle",
+    "PermissionsConfig",
+    "PolymorphicPattern",
+    "Principal",
+    "PrincipalKind",
+    "ReconcileMode",
+    "RetentionPolicy",
+    "RetiredColumn",
+    "RetirementStrip",
+    "RoleAssignment",
+    "SiteGroup",
+    "SortDirection",
+    "Versioning",
+    "ViewDef",
+    "ViewGroupBy",
+    "ViewSort",
+    "WatchedList",
+    "auto_display_name",
+    "load_mapping",
+    "view_url_slug",
 ]
-type ReconcileMode = Literal["configured", "exact"]
 
-ENTITY_KINDS: frozenset[str] = frozenset(get_args(EntityKind.__value__))
 
-# Word boundaries for display-name auto mode: break before an uppercase that
-# follows a lowercase/digit, and before the LAST capital of an acronym run
-# ("RiskIDNumber" -> "Risk ID Number").
-_DISPLAY_WORD_BREAK = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
-
-
-def auto_display_name(internal_name: str) -> str:
-    """Human-readable display title derived from a PascalCase internal name."""
-    return _DISPLAY_WORD_BREAK.sub(" ", internal_name)
-
-
-def view_url_slug(title: str) -> str:
-    """URL-safe view page name derived from the declared view title.
-
-    A view's .aspx file name is fixed at creation from its Title, so views
-    are created with this slug and renamed to the declared title afterwards
-    ("Open by score" lives at OpenByScore.aspx, not Open%20by%20score.aspx —
-    the same create-then-rename trick fields use for display titles)."""
-    words = re.split(r"[^A-Za-z0-9]+", title)
-    return "".join(w[:1].upper() + w[1:] for w in words if w)
-
-
-@dataclass(frozen=True)
-class EntityMapping:
-    """SP physical mapping for one entity (kind, base template, site role)."""
-
-    name: str
-    kind: EntityKind
-    base_template: int
-    site_role: str      # any labels you choose, e.g. default | admin
-    singleton: bool = False
-    # The column a lookup INTO this entity should display (SP LookupField). A SP
-    # list has one primary display field; declare it here when it is not the
-    # built-in "Title" (e.g. Membership uses DisplayName). Absent → "Title".
-    display_column: str | None = None
-
-
-@dataclass(frozen=True)
-class CrossSiteRef:
-    """A column to expand into the Choice + URL cross-site triple."""
-
-    entity: str
-    column: str
-
-
-@dataclass(frozen=True)
-class PolymorphicPattern:
-    """A polymorphic column pattern.
-
-    ``list`` is the unprefixed entity name whose ``field`` holds a logical FK
-    discriminated by ``discriminator``. Referential integrity is not enforced
-    by SharePoint; the manifest surfaces these so downstream flows validate
-    them at write time.
-    """
-
-    list: str
-    field: str
-    discriminator: str
-
-
-@dataclass(frozen=True)
-class Versioning:
-    """Default SP list versioning settings."""
-
-    enable_versioning: bool
-    major_version_limit: int
-    enable_minor_versions: bool
-
-
-@dataclass(frozen=True)
-class WatchedList:
-    """A (entity, column) pair watched by W10 status capture."""
-
-    entity: str
-    column: str
-
-
-@dataclass(frozen=True)
-class ViewCondition:
-    """One <Where> condition of a declared view. Conditions are ANDed.
-
-    `op` is validated against the DSL allowlist by validate_against_mapping;
-    `value` is absent for is_null/is_not_null and may be the `today`,
-    `today+N` or `today-N` sentinel on date/datetime columns.
-    """
-
-    field: str
-    op: str
-    value: Any = None
-
-
-@dataclass(frozen=True)
-class ViewSort:
-    """One <OrderBy> entry of a declared view."""
-
-    field: str
-    direction: SortDirection  # enforced structurally at load
-
-
-@dataclass(frozen=True)
-class ViewGroupBy:
-    """The <GroupBy> of a declared view."""
-
-    field: str
-    collapsed: bool = False
-
-
-@dataclass(frozen=True)
-class ViewDef:
-    """One declared SharePoint list view (mapping `views:` section)."""
-
-    title: str
-    fields: list[str]
-    default: bool = False
-    where: list[ViewCondition] = field(default_factory=list)
-    sort: list[ViewSort] = field(default_factory=list)
-    group_by: ViewGroupBy | None = None
-    row_limit: int | None = None
-    # Optional SP row-formatting JSON (SP.View.CustomFormatter); None = the
-    # live property is never touched.
-    formatting: dict[str, Any] | None = None
-    # Optional per-column pixel widths, INTERNAL names (jsgen rewrites to
-    # display titles — SP's ColumnWidth binds by display name). Empty = the
-    # live widths are never touched.
-    widths: dict[str, int] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class DemoItem:
-    """One declared demo/sample row (mapping `demo_items:` section).
-
-    `values` are authored with INTERNAL column names. The value grammar —
-    "@me" (deploying operator) on person columns, "today+N"/"today-N" on
-    date columns, {demo_ref: key} on lookups — is resolved by the generated
-    demo-data.js at RUN time; semantic rules live in the validator. Every
-    Title must start with "[DEMO] ": that marker is what the teardown
-    trusts to distinguish demo rows from real records."""
-
-    key: str
-    values: dict[str, Any]
-
-
-@dataclass(frozen=True)
-class FormFormatting:
-    """Declared list-form layout parts (SP ClientFormCustomFormatter).
-
-    Each part is a formatter JSON object; at least one must be declared.
-    Body section field lists are authored with INTERNAL names; jsgen
-    rewrites them to display titles (SP matches form fields by display)."""
-
-    header: dict[str, Any] | None = None
-    body: dict[str, Any] | None = None
-    footer: dict[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class ListValidation:
-    """Declared SP list validation (ValidationFormula/ValidationMessage).
-
-    Authored with INTERNAL column names; jsgen rewrites references to
-    display names (SP resolves validation formulas by display, like
-    calculated formulas)."""
-
-    formula: str
-    message: str
-
-
-@dataclass(frozen=True)
-class CustomPermissionLevel:
-    """A custom permission level to create at the site."""
-
-    name: str
-    description: str
-    base_permissions: list[str]
-
-
-@dataclass(frozen=True)
-class SiteGroup:
-    """A SharePoint site group to create at the site."""
-
-    name: str
-    description: str
-    owner_group: str
-    allow_members_edit_membership: bool
-    allow_request_to_join_leave: bool
-    auto_accept_request_to_join_leave: bool
-    only_allow_members_view_membership: bool
-    # Optional clean-provision gate. When true, deploy.js proves the reconciled
-    # group has no members during Phase 1.2 and aborts before list creation if it
-    # does. False preserves the existing, non-destructive membership behaviour.
-    require_empty_at_deploy: bool = False
-    # Optional operator self-enrolment. When true, deploy.js adds the running
-    # operator to this group after Phase 1.2 (so later phases hold the group's
-    # list grants, e.g. an empty-by-default Full Control admin group) and
-    # removes them again at the end of the run — unless they were already a
-    # member, in which case membership is left untouched.
-    enroll_operator_during_deploy: bool = False
-
-
-@dataclass(frozen=True)
-class Principal:
-    """A role-assignment target. `kind` is one of:
-    'group' (a named site group, custom or built-in like 'Site Owners'),
-    'associated_owner_group', 'associated_member_group', 'associated_visitor_group'.
-    `name` is required for kind=group, ignored otherwise.
-    """
-
-    kind: PrincipalKind
-    name: str | None = None
-
-
-@dataclass(frozen=True)
-class RoleAssignment:
-    principal: Principal
-    level: str   # built-in name or custom level name
-
-
-@dataclass(frozen=True)
-class ListPermissionPolicy:
-    break_inheritance: bool
-    assignments: list[RoleAssignment]
-    # configured: reconcile stale role levels only for declared principals.
-    # exact: treat declared principal/role pairs as an allowlist and remove
-    # every other direct role binding (except SharePoint's derived Limited
-    # Access binding). Exact is the recommended fail-closed baseline.
-    reconcile_mode: ReconcileMode = "configured"
-
-
-@dataclass
-class PermissionsConfig:
-    levels: list[CustomPermissionLevel]
-    groups: list[SiteGroup]
-    default_policy: ListPermissionPolicy | None
-    overrides: dict[str, ListPermissionPolicy]
-    # Optional site-role scope for default_policy (from
-    # list_permissions.default.site_role). When set, the default applies only
-    # to entities of that site_role; None means every entity. Overrides are
-    # explicit per-entity and are never scope-filtered.
-    default_policy_site_role: str | None = None
-
-
-@dataclass
-class Mapping:
-    """The full schema/sharepoint-mapping.yaml structure."""
-
-    prefix: str
-    prefix_owner: str
-    prefix_registry: str
-    entities: dict[str, EntityMapping]
-    cross_site_reference_columns: list[CrossSiteRef]
-    indexed_columns: dict[str, list[str]]
-    versioning_default: Versioning
-    versioning_overrides: dict[str, dict[str, Any]]
-    enum_sources: dict[str, Path]
-    watched_lists: list[WatchedList]
-    polymorphic_patterns: list[PolymorphicPattern] = field(default_factory=list)
-    retention_policies_source: Path | None = None
-    extension: str | None = None
-    permissions: "PermissionsConfig | None" = None
-    # {entity: {column: formula}} for calculated_text/calculated_number
-    # columns (SP.FieldCalculated). Formulas stay out of DBML (pydbml has no
-    # attribute to carry them); the validator enforces the pairing.
-    calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
-    # {entity: [ViewDef]} — declared list views. Semantic rules (field
-    # existence, operator allowlist, single default) live in the validator.
-    views: dict[str, list[ViewDef]] = field(default_factory=dict)
-    # {entity: [DemoItem]} — declared demo/sample rows, emitted as
-    # demo-data.js ONLY when the build passes --seed. Empty = feature off.
-    demo_items: dict[str, list[DemoItem]] = field(default_factory=dict)
-    # display_names section: internal names stay authoritative; display
-    # titles are renamed after create. mode "auto" splits PascalCase, with
-    # {entity: {column: "Display"}} overrides winning. None = feature off.
-    display_name_mode: str | None = None
-    display_name_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
-    # Raw style specs (dicts with a 'style' key) as declared, kept beside
-    # the expanded formatter JSON so the validator can check map keys
-    # against enum members after load-time expansion.
-    column_style_specs: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
-    # {entity: {column: formatter-JSON dict}} — SP CustomFormatter, declared
-    # per column. Reconciled as a mutable field property; absent = the live
-    # property is never touched.
-    column_formatting: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
-    # {entity: FormFormatting} — declared list-form layouts. Absent = the
-    # live content type's form formatter is never touched.
-    form_formatting: dict[str, FormFormatting] = field(default_factory=dict)
-    # {entity: ListValidation} — save-time enforcement. Absent = untouched.
-    list_validation: dict[str, ListValidation] = field(default_factory=dict)
-    # {entity: [columns]} hidden from NEW and EDIT forms (display form keeps
-    # them for audit). For auto-stamped columns with declared defaults.
-    hidden_on_forms: dict[str, list[str]] = field(default_factory=dict)
-    # {entity: [columns]} hidden from the DISPLAY form too — for system
-    # scores that belong in views, not on the item form. Calculated columns
-    # are valid here (they render on display, never on new/edit).
-    hidden_on_display: dict[str, list[str]] = field(default_factory=dict)
-    # UI hardening (friction, not enforcement — site admins can undo via
-    # API): seal every deployed column (blocks UI schema edits even for
-    # admins; the deployer unseals for its own runs) and block UI deletion
-    # of the list objects.
-    seal_columns: bool = False
-    prevent_list_deletion: bool = False
-
-    def display_name_for(self, entity_name: str, column_name: str) -> str:
-        """Display title for a rendered column: override, else auto-split
-        PascalCase when mode is auto, else the internal name unchanged."""
-        if self.display_name_mode != "auto":
-            return column_name
-        override = self.display_name_overrides.get(entity_name, {}).get(column_name)
-        return override if override is not None else auto_display_name(column_name)
-
-    def entity(self, name: str) -> EntityMapping:
-        if name not in self.entities:
-            raise KeyError(f"Unknown entity in mapping: {name!r}")
-        return self.entities[name]
-
-    def permissions_for_entity(self, entity_name: str) -> "ListPermissionPolicy | None":
-        """Return the per-list permission policy for the given entity name.
-
-        Returns override if present, else the default policy — but the default
-        only applies when its site-role scope (if any) matches the entity's
-        site_role. A default scoped to one role must not re-ACL lists
-        belonging to another role.
-        """
-        if self.permissions is None:
-            return None
-        if entity_name in self.permissions.overrides:
-            return self.permissions.overrides[entity_name]
-        scope = self.permissions.default_policy_site_role
-        if scope is not None:
-            entity = self.entities.get(entity_name)
-            if entity is None or entity.site_role != scope:
-                return None
-        return self.permissions.default_policy
-
-
-@dataclass(frozen=True)
-class RetentionPolicy:
-    """One policy from config/retention-policies.yaml."""
-
-    name: str
-    description: str
-    sp_label: str
-    retain_years: int | None
-    retain_days: int | None
-    trigger: str
-
-
-@dataclass
-class MappingBundle:
-    """Mapping + the generic configs it references, all loaded."""
-
-    mapping: Mapping
-    enum_choices: dict[str, list[str]]
-    retention_policies: dict[str, RetentionPolicy]
-    retention_list_defaults: dict[str, str]
-    # The FULL `extensions: {<name>: {...}}` map, untyped passthrough.
-    # Selection is by RESOLVED extension name via
-    # extension_config_for(), not pre-selected at load time: the active
-    # extension may come from the CLI `--extension` override rather than the
-    # mapping's own `extension:` key.
-    extension_configs: dict[str, dict[str, Any]] = field(default_factory=dict)
-    source_paths: dict[str, Path] = field(default_factory=dict)
-
-    def extension_config_for(self, name: str | None) -> dict[str, Any]:
-        """The named extension's config block; {} when name is None or the
-        mapping declares no block for it. Extensions should call this with
-        their own ``name`` so config selection always matches the extension
-        actually running, regardless of how it was resolved."""
-        if name is None:
-            return {}
-        return self.extension_configs.get(name, {})
+# Every top-level key load_mapping understands. A misspelling must fail
+# rather than be ignored — `form_visibilty:` would otherwise build clean,
+# report "(none declared)" and deploy nothing.
+#
+# EVERY entry here must have a reader in load_mapping or _parse_permissions
+# (or be a _REMOVED_SECTIONS name), and a test asserts it against the
+# loader's own source. Populate this set from the code, never from
+# website/docs/reference/mapping.md: an allow-listed key with no reader is
+# worse than no allow-list, because it makes a section that deploys nothing
+# look supported while the build reports success.
+KNOWN_SECTIONS = frozenset({
+    "prefix", "prefix_owner", "prefix_registry", "entities",
+    "cross_site_reference_columns", "indexed_columns", "versioning",
+    "enum_sources", "watched_lists", "polymorphic_patterns",
+    "retention_policies_source",
+    "extension", "extensions", "calculated_formulas", "views", "display_names",
+    "column_formatting", "form_formatting", "list_validation", "form_visibility",
+    "retired_columns", "field_sets",
+    "style_theme",
+    "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
+    # Permissions are declared as three top-level sections, not one nested
+    # `permissions:` block — see _parse_permissions.
+    "groups", "permission_levels", "list_permissions",
+    *_REMOVED_SECTIONS,
+})
+
+
+_ENTITY_KEYS = frozenset({
+    "kind", "base_template", "site_role", "singleton", "display_column",
+})
+_VERSIONING_KEYS = frozenset({
+    "enable_versioning", "major_version_limit", "enable_minor_versions",
+})
+_VIEW_KEYS = frozenset({
+    "title", "fields", "default", "where", "sort", "group_by", "row_limit",
+    "formatting", "widths",
+})
+_GROUP_KEYS = frozenset({
+    "name", "description", "owner_group", "allow_members_edit_membership",
+    "allow_request_to_join_leave", "auto_accept_request_to_join_leave",
+    "only_allow_members_view_membership", "require_empty_at_deploy",
+    "enroll_operator_during_deploy",
+})
+# `site_role` scopes the DEFAULT policy — which entities it applies to — and
+# is read only there. On an override it was parsed and silently discarded,
+# so an author who had seen it work on the default reasonably expected it to
+# narrow an override too and got a list that was not scoped at all. Rejected
+# rather than implemented: an override is already keyed BY entity, so a
+# site-role scope on one is either redundant or contradicts its own key.
+_POLICY_KEYS = frozenset({"break_inheritance", "reconcile", "assignments"})
+_DEFAULT_POLICY_KEYS = _POLICY_KEYS | {"site_role"}
+
+
+
+
+def _check_versioning_values(block: Any, context: str) -> None:
+    """Type-check one versioning settings block (default or override)."""
+    _reject_unknown_keys(block, _VERSIONING_KEYS, context)
+    for key in ("enable_versioning", "enable_minor_versions"):
+        if key in block and not isinstance(block[key], bool):
+            raise ValueError(
+                f"{context}.{key}: expected true or false, got {block[key]!r}",
+            )
+    limit = block.get("major_version_limit")
+    if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
+        raise ValueError(
+            f"{context}.major_version_limit: expected an integer, got {limit!r}",
+        )
 
 
 def load_mapping(mapping_path: Path) -> MappingBundle:
@@ -417,44 +176,54 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
 
     base_dir = mapping_path.parent
 
-    entities = {
-        name: EntityMapping(
+    entities = {}
+    for name, spec in raw["entities"].items():
+        _reject_unknown_keys(spec, _ENTITY_KEYS, f"entities.{name}")
+        entities[name] = EntityMapping(
             name=name,
             kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
             base_template=int(spec["base_template"]),
             site_role=spec["site_role"],
-            singleton=bool(spec.get("singleton", False)),
+            singleton=_optional_bool(spec, "singleton", f"entities.{name}"),
             display_column=spec.get("display_column"),
         )
-        for name, spec in raw["entities"].items()
-    }
 
-    cross_site = [
-        CrossSiteRef(entity=item["entity"], column=item["column"])
-        for item in raw.get("cross_site_reference_columns", [])
-    ]
+    cross_site = []
+    for i, item in enumerate(raw.get("cross_site_reference_columns") or []):
+        _reject_unknown_keys(item, {"entity", "column"}, f"cross_site_reference_columns[{i}]")
+        cross_site.append(CrossSiteRef(entity=item["entity"], column=item["column"]))
 
-    polymorphic = [
-        PolymorphicPattern(
+    polymorphic = []
+    for i, item in enumerate(raw.get("polymorphic_patterns") or []):
+        _reject_unknown_keys(
+            item, {"list", "field", "discriminator"}, f"polymorphic_patterns[{i}]",
+        )
+        polymorphic.append(PolymorphicPattern(
             list=item["list"],
             field=item["field"],
             discriminator=item["discriminator"],
-        )
-        for item in raw.get("polymorphic_patterns", [])
-    ]
+        ))
 
     versioning = raw.get("versioning") or {}
+    _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
     default_v = versioning.get("default") or {}
+    _check_versioning_values(default_v, "versioning.default")
     versioning_default = Versioning(
-        enable_versioning=bool(default_v.get("enable_versioning", True)),
+        enable_versioning=_strict_bool(default_v, "enable_versioning", "versioning.default"),
         major_version_limit=int(default_v.get("major_version_limit", 500)),
-        enable_minor_versions=bool(default_v.get("enable_minor_versions", False)),
+        enable_minor_versions=_optional_bool(
+            default_v, "enable_minor_versions", "versioning.default",
+        ),
     )
+    # Overrides reach jsgen/reportgen/assessgen as a RAW dict and are read
+    # there with bool()/int(), so their values were never checked anywhere.
+    for override_entity, override in (versioning.get("overrides") or {}).items():
+        _check_versioning_values(override or {}, f"versioning.overrides.{override_entity}")
 
-    watched = [
-        WatchedList(entity=item["entity"], column=item["column"])
-        for item in raw.get("watched_lists", [])
-    ]
+    watched = []
+    for i, item in enumerate(raw.get("watched_lists") or []):
+        _reject_unknown_keys(item, {"entity", "column"}, f"watched_lists[{i}]")
+        watched.append(WatchedList(entity=item["entity"], column=item["column"]))
 
     enum_choices, enum_source_paths = _load_enum_choices(
         base_dir, raw.get("enum_sources") or {},
@@ -489,6 +258,32 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
                 expanded = _load_json_value(base_dir, cf_value, cf_ctx)
             column_formatting.setdefault(cf_entity, {})[cf_col] = expanded
 
+    field_sets = _parse_field_sets(raw.get("field_sets"))
+    # Resolve "@setname" references BEFORE anything downstream sees a view.
+    # Every consumer from here on — retirement folding, the validator,
+    # jsgen — reads a flat list of internal column names.
+    expanded_views = _expand_field_sets(
+        {
+            entity: [
+                _parse_view(item, f"views.{entity}[{i}]", base_dir)
+                for i, item in enumerate(items or [])
+            ]
+            for entity, items in (raw.get("views") or {}).items()
+        },
+        field_sets,
+    )
+
+    unknown_sections = set(raw) - KNOWN_SECTIONS
+    if unknown_sections:
+        raise ValueError(
+            f"unknown mapping section(s) {sorted(unknown_sections)}. Unknown keys used to be "
+            f"ignored, so a misspelled section silently deployed nothing.",
+        )
+
+    for removed, replacement in _REMOVED_SECTIONS.items():
+        if removed in raw:
+            raise ValueError(f"{removed!r} has been replaced by {replacement}")
+
     mapping = Mapping(
         prefix=raw["prefix"],
         prefix_owner=raw.get("prefix_owner", ""),
@@ -508,13 +303,16 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             entity: {col: str(formula) for col, formula in (cols or {}).items()}
             for entity, cols in (raw.get("calculated_formulas") or {}).items()
         },
-        views={
-            entity: [
-                _parse_view(item, f"views.{entity}[{i}]", base_dir)
-                for i, item in enumerate(items or [])
-            ]
-            for entity, items in (raw.get("views") or {}).items()
+        form_visibility={
+            entity: _parse_form_visibility(block, f"form_visibility.{entity}")
+            for entity, block in (raw.get("form_visibility") or {}).items()
         },
+        column_validation={
+            entity: _parse_column_validation(block, f"column_validation.{entity}")
+            for entity, block in (raw.get("column_validation") or {}).items()
+        },
+        views=expanded_views,
+        field_sets=field_sets,
         demo_items={
             entity: [
                 _parse_demo_item(item, f"demo_items.{entity}[{i}]")
@@ -539,17 +337,18 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             entity: _parse_list_validation(rule, f"list_validation.{entity}")
             for entity, rule in (raw.get("list_validation") or {}).items()
         },
-        hidden_on_forms={
-            entity: [str(col) for col in (cols or [])]
-            for entity, cols in (raw.get("hidden_on_forms") or {}).items()
-        },
-        hidden_on_display={
-            entity: [str(col) for col in (cols or [])]
-            for entity, cols in (raw.get("hidden_on_display") or {}).items()
+        retired_columns={
+            entity: _parse_retired_columns(cols, f"retired_columns.{entity}")
+            for entity, cols in (raw.get("retired_columns") or {}).items()
         },
         seal_columns=_optional_bool(raw, "seal_columns", "mapping"),
         prevent_list_deletion=_optional_bool(raw, "prevent_list_deletion", "mapping"),
     )
+
+    # Retirement resolves ONCE, here, into the structures the generators
+    # already consume. `field_sets` expansion rewrites views[].fields
+    # BEFORE this call, so retirement filters the expanded list.
+    _apply_retirement(mapping)
 
     extension_configs: dict[str, dict[str, Any]] = {
         name: dict(block or {}) for name, block in extensions_block.items()
@@ -640,22 +439,40 @@ def _load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]
 
 def _parse_list_validation(rule: Any, context: str) -> ListValidation:
     if not isinstance(rule, dict):
-        raise ValueError(f"{context}: expected a mapping with formula and message")
-    formula = rule.get("formula")
-    message = rule.get("message")
-    if not formula:
-        raise ValueError(f"{context}: 'formula' is required")
-    if not message:
-        raise ValueError(f"{context}: 'message' is required")
-    return ListValidation(formula=str(formula), message=str(message))
+        raise ValueError(f"{context}: expected a mapping with 'when' and 'message'")
+    unknown = set(rule) - {"when", "message"}
+    if "formula" in unknown:
+        raise ValueError(
+            f"{context}: 'formula' has been replaced by 'when', which takes a condition "
+            f"tree instead of a SharePoint formula:\n"
+            f"\n"
+            f"    list_validation:\n"
+            f"      <Entity>:\n"
+            f"        when:\n"
+            f"          - {{ field: <Column>, op: is_not_null }}\n"
+            f"        message: \"<shown to the person whose save failed>\"\n"
+            f"\n"
+            f"See the condition grammar reference for the operator vocabulary.",
+        )
+    if unknown:
+        raise ValueError(f"{context}: unknown key(s) {sorted(unknown)}")
+    for key in ("when", "message"):
+        if not rule.get(key):
+            raise ValueError(f"{context}: {key!r} is required")
+    return ListValidation(
+        when=parse_condition(rule["when"], f"{context}.when"),
+        message=str(rule["message"]),
+    )
+
+
+_RETIREMENT_KEYS = frozenset({"retired", "superseded_by", "reason", "hide_existing"})
+
 
 
 def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormFormatting:
     if not isinstance(parts, dict):
         raise ValueError(f"{context}: expected a mapping of header/body/footer parts")
-    unknown = set(parts) - {"header", "body", "footer"}
-    if unknown:
-        raise ValueError(f"{context}: unknown part(s) {sorted(unknown)}")
+    _reject_unknown_keys(parts, {"header", "body", "footer"}, context)
     loaded = {
         name: _load_json_value(base_dir, value, f"{context}.{name}")
         for name, value in parts.items()
@@ -663,6 +480,11 @@ def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormForm
     }
     if not loaded:
         raise ValueError(f"{context}: declare at least one of header/body/footer")
+    # Every accepted part must be carried. Dropping one here is invisible:
+    # `footer` was allow-listed, loaded and then discarded, so a declaration
+    # validated clean, reported no findings and deployed nothing — and a
+    # footer-only declaration passed the "at least one part" check above and
+    # then emitted an empty formatter.
     return FormFormatting(
         header=loaded.get("header"),
         body=loaded.get("body"),
@@ -674,6 +496,7 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
     section = raw.get("display_names")
     if section is None:
         return None
+    _reject_unknown_keys(section, {"mode", "overrides"}, "display_names")
     mode = section.get("mode")
     if mode != "auto":
         raise ValueError(
@@ -683,26 +506,104 @@ def _parse_display_name_mode(raw: dict[str, Any]) -> str | None:
     return "auto"
 
 
+
+def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
+    if not isinstance(block, dict):
+        raise ValueError(f"{context}: expected a mapping with 'columns'")
+    _reject_unknown_keys(block, {"reconcile", "columns"}, context)
+    reconcile = str(block.get("reconcile", "exact"))
+    if reconcile not in ("exact", "declared"):
+        raise ValueError(
+            f"{context}.reconcile: expected 'exact' or 'declared', got {reconcile!r}",
+        )
+    columns = block.get("columns")
+    if columns is None:
+        columns = {}
+    if not isinstance(columns, dict):
+        raise ValueError(f"{context}.columns: expected a mapping of column name to declaration")
+    return reconcile, columns
+
+
+def _strict_bool(raw: dict[str, Any], key: str, context: str) -> bool:
+    """Read a boolean without truthiness-coercing malformed YAML.
+
+    `bool("false")` is True, so a quoted boolean would silently mean its
+    opposite — and a visibility flag reading backwards hides nothing while
+    reporting success.
+    """
+    value = raw.get(key, True)
+    if not isinstance(value, bool):
+        raise ValueError(f"{context}.{key}: expected true or false, got {value!r}")
+    return value
+
+
+def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibility]:
+    reconcile, raw_columns = _entity_section(block, context)
+    columns: dict[str, FormVisibility] = {}
+    for name, raw in raw_columns.items():
+        where = f"{context}.columns.{name}"
+        if isinstance(raw, str):
+            if raw not in ("hidden", "visible"):
+                raise ValueError(
+                    f"{where}: expected 'hidden', 'visible' or a mapping, got {raw!r}",
+                )
+            columns[name] = FormVisibility(new=raw == "visible", existing=raw == "visible")
+            continue
+        if not isinstance(raw, dict):
+            raise ValueError(f"{where}: expected 'hidden', 'visible' or a mapping")
+        _reject_unknown_keys(raw, {"new", "existing", "when"}, where)
+        columns[name] = FormVisibility(
+            new=_strict_bool(raw, "new", where),
+            existing=_strict_bool(raw, "existing", where),
+            # An empty `when` is a mistake, not an absence — the same
+            # declaration errors in column_validation and as an empty group.
+            when=parse_condition(raw["when"], f"{where}.when") if "when" in raw else None,
+        )
+    return EntitySection(reconcile=reconcile, columns=columns)
+
+
+def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnValidation]:
+    reconcile, raw_columns = _entity_section(block, context)
+    columns: dict[str, ColumnValidation] = {}
+    for name, raw in raw_columns.items():
+        where = f"{context}.columns.{name}"
+        if not isinstance(raw, dict):
+            raise ValueError(f"{where}: expected a mapping with 'when' and 'message'")
+        _reject_unknown_keys(raw, {"when", "message"}, where)
+        for key in ("when", "message"):
+            if not raw.get(key):
+                raise ValueError(
+                    f"{where}: {key!r} is required — a rule with no message fails the save "
+                    f"with SharePoint's generic text, which tells the author nothing",
+                )
+        columns[name] = ColumnValidation(
+            when=parse_condition(raw["when"], f"{where}.when"),
+            message=str(raw["message"]),
+        )
+    return EntitySection(reconcile=reconcile, columns=columns)
+
+
 def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     """Parse one declared view. Structural checks only (title/fields present,
     sort direction shape); semantic rules need the schema and live in
     validate_against_mapping."""
     if not isinstance(raw_view, dict):
         raise ValueError(f"{context}: view must be a mapping, got {type(raw_view).__name__}")
+    _reject_unknown_keys(raw_view, _VIEW_KEYS, context)
     title = raw_view.get("title")
     if not title:
         raise ValueError(f"{context}: view 'title' is required")
     fields = raw_view.get("fields")
     if not isinstance(fields, list) or not fields or not all(isinstance(f, str) for f in fields):
         raise ValueError(f"{context}: view 'fields' must be a non-empty list of column names")
-    where = [
-        ViewCondition(
-            field=str(cond["field"]), op=str(cond.get("op", "")), value=cond.get("value"),
-        )
-        for cond in (raw_view.get("where") or [])
-    ]
+    where = (
+        parse_condition(raw_view["where"], f"{context}.where")
+        if "where" in raw_view
+        else None
+    )
     sort: list[ViewSort] = []
-    for entry in raw_view.get("sort") or []:
+    for i, entry in enumerate(raw_view.get("sort") or []):
+        _reject_unknown_keys(entry, {"field", "direction"}, f"{context}.sort[{i}]")
         direction = str(entry.get("direction", "asc"))
         if direction not in {"asc", "desc"}:
             raise ValueError(
@@ -710,10 +611,12 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             )
         sort.append(ViewSort(field=str(entry["field"]), direction=cast("SortDirection", direction)))
     raw_group = raw_view.get("group_by")
+    if raw_group is not None:
+        _reject_unknown_keys(raw_group, {"field", "collapsed"}, f"{context}.group_by")
     group_by = (
         ViewGroupBy(
             field=str(raw_group["field"]),
-            collapsed=bool(raw_group.get("collapsed", False)),
+            collapsed=_optional_bool(raw_group, "collapsed", f"{context}.group_by"),
         )
         if raw_group is not None
         else None
@@ -738,7 +641,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     return ViewDef(
         title=str(title),
         fields=[str(f) for f in fields],
-        default=bool(raw_view.get("default", False)),
+        default=_optional_bool(raw_view, "default", context),
         where=where,
         sort=sort,
         group_by=group_by,
@@ -752,6 +655,82 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
     )
 
 
+def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
+    """Structural parse of the `field_sets:` section.
+
+    Shape only — an unknown entity, an undeclared column, an '@' in a set
+    name and an empty set are semantic and live in the validator, which
+    reports them as findings beside the view checks. A declaration mistake
+    should hand the operator a manifest full of findings, not a traceback.
+    """
+    parsed: dict[str, dict[str, list[str]]] = {}
+    for entity, sets in (raw_sets or {}).items():
+        if not isinstance(sets, dict):
+            raise ValueError(
+                f"field_sets.{entity}: expected a mapping of set name to "
+                f"column list, got {type(sets).__name__}",
+            )
+        parsed[str(entity)] = {}
+        for set_name, columns in sets.items():
+            if not isinstance(columns, list) or not all(
+                isinstance(col, str) for col in columns
+            ):
+                raise ValueError(
+                    f"field_sets.{entity}.{set_name}: expected a list of "
+                    f"column names",
+                )
+            parsed[str(entity)][str(set_name)] = [str(col) for col in columns]
+    return parsed
+
+
+def _expand_field_sets(
+    views: dict[str, list[ViewDef]],
+    field_sets: dict[str, dict[str, list[str]]],
+) -> dict[str, list[ViewDef]]:
+    """Resolve every "@setname" entry in a view's `fields` into the columns
+    that set declares, on the same entity.
+
+    Expansion is in declaration order and duplicates are dropped keeping
+    FIRST position, so ["@header", "BoardDate"] is a no-op rather than an
+    error. Sets do NOT nest — one level only, deliberately: a set member
+    that itself looks like a reference is left literal and the validator
+    reports it. An "@name" with no matching set on the entity is likewise
+    left in place untouched, so nothing is silently dropped; the validator
+    names it and cli.py aborts before jsgen is ever reached.
+
+    Applies to `fields` ONLY. `widths`, `sort`, `group_by` and `where`
+    continue to name columns directly — a set has no meaningful expansion
+    there.
+
+    Runs BEFORE _apply_retirement so retirement filters the already-expanded
+    list: a view that pulls in a set containing a retired column must end up
+    without that column.
+    """
+    expanded: dict[str, list[ViewDef]] = {}
+    for entity, entity_views in views.items():
+        sets = field_sets.get(entity, {})
+        rebuilt: list[ViewDef] = []
+        for view in entity_views:
+            fields: list[str] = []
+            seen: set[str] = set()
+            used: list[str] = []
+            for entry in view.fields:
+                if entry.startswith("@") and entry[1:] in sets:
+                    set_name = entry[1:]
+                    if set_name not in used:
+                        used.append(set_name)
+                    members = sets[set_name]
+                else:
+                    members = [entry]
+                for name in members:
+                    if name not in seen:
+                        seen.add(name)
+                        fields.append(name)
+            rebuilt.append(replace(view, fields=fields, expanded_sets=used))
+        expanded[entity] = rebuilt
+    return expanded
+
+
 def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:
     """Structural parse of one demo row (title marker, value grammar and
     column semantics are validated against the schema in the validator)."""
@@ -759,6 +738,7 @@ def _parse_demo_item(raw_item: Any, context: str) -> DemoItem:
         raise ValueError(
             f"{context}: demo item must be a mapping, got {type(raw_item).__name__}",
         )
+    _reject_unknown_keys(raw_item, {"key", "values"}, context)
     key = raw_item.get("key")
     if not key or not isinstance(key, str):
         raise ValueError(f"{context}: demo item 'key' is required (a string)")
@@ -798,6 +778,7 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
             f"{context}: principal must be a mapping, "
             f"got {type(raw_principal).__name__}",
         )
+    _reject_unknown_keys(raw_principal, {"kind", "name"}, context)
     kind = raw_principal.get("kind")
     if kind not in _PRINCIPAL_KINDS:
         raise ValueError(
@@ -814,9 +795,20 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
     )
 
 
-def _parse_policy(raw_policy: Any, context: str) -> ListPermissionPolicy:
+def _parse_policy(
+    raw_policy: Any, context: str, *, allow_site_role: bool = False,
+) -> ListPermissionPolicy:
     """Parse a list permission policy dict."""
-    break_inheritance = bool(raw_policy.get("break_inheritance", True))
+    _reject_unknown_keys(
+        raw_policy,
+        _DEFAULT_POLICY_KEYS if allow_site_role else _POLICY_KEYS,
+        context,
+    )
+    # Read STRICTLY, and before the reconcile guard below. bool("false") is
+    # True, so a lenient read coerces the quoted spelling to True and the
+    # guard then tests the coerced value — breaking inheritance the author
+    # asked to keep.
+    break_inheritance = _strict_bool(raw_policy, "break_inheritance", context)
     reconcile_mode = cast("ReconcileMode", str(raw_policy.get("reconcile", "configured")))
     if reconcile_mode not in {"configured", "exact"}:
         raise ValueError(
@@ -830,7 +822,10 @@ def _parse_policy(raw_policy: Any, context: str) -> ListPermissionPolicy:
         )
     assignments: list[RoleAssignment] = []
     for i, raw_a in enumerate(raw_policy.get("assignments", [])):
-        principal = _parse_principal(raw_a.get("principal", {}), f"{context}.assignments[{i}]")
+        _reject_unknown_keys(raw_a, {"principal", "level"}, f"{context}.assignments[{i}]")
+        principal = _parse_principal(
+            raw_a.get("principal", {}), f"{context}.assignments[{i}].principal",
+        )
         level = raw_a.get("level")
         if not level:
             raise ValueError(f"{context}.assignments[{i}]: 'level' is required")
@@ -856,6 +851,14 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
     raw_levels = raw.get("permission_levels", [])
     raw_groups = raw.get("groups", [])
     raw_list_perms = raw.get("list_permissions") or {}
+    _reject_unknown_keys(raw_list_perms, {"default", "overrides"}, "list_permissions")
+
+    for i, lvl in enumerate(raw_levels):
+        _reject_unknown_keys(
+            lvl, {"name", "description", "base_permissions"}, f"permission_levels[{i}]",
+        )
+    for i, grp in enumerate(raw_groups):
+        _reject_unknown_keys(grp, _GROUP_KEYS, f"groups[{i}]")
 
     levels = [
         CustomPermissionLevel(
@@ -871,17 +874,17 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
             name=grp["name"],
             description=grp.get("description", ""),
             owner_group=grp.get("owner_group", "Site Owners"),
-            allow_members_edit_membership=bool(
-                grp.get("allow_members_edit_membership", False),
+            allow_members_edit_membership=_optional_bool(
+                grp, "allow_members_edit_membership", f"groups[{i}]",
             ),
-            allow_request_to_join_leave=bool(
-                grp.get("allow_request_to_join_leave", False),
+            allow_request_to_join_leave=_optional_bool(
+                grp, "allow_request_to_join_leave", f"groups[{i}]",
             ),
-            auto_accept_request_to_join_leave=bool(
-                grp.get("auto_accept_request_to_join_leave", False),
+            auto_accept_request_to_join_leave=_optional_bool(
+                grp, "auto_accept_request_to_join_leave", f"groups[{i}]",
             ),
-            only_allow_members_view_membership=bool(
-                grp.get("only_allow_members_view_membership", False),
+            only_allow_members_view_membership=_optional_bool(
+                grp, "only_allow_members_view_membership", f"groups[{i}]",
             ),
             require_empty_at_deploy=_optional_bool(
                 grp, "require_empty_at_deploy", f"groups[{i}]",
@@ -897,7 +900,9 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
     default_policy_site_role: str | None = None
     raw_default = raw_list_perms.get("default")
     if raw_default is not None:
-        default_policy = _parse_policy(raw_default, "list_permissions.default")
+        default_policy = _parse_policy(
+            raw_default, "list_permissions.default", allow_site_role=True,
+        )
         raw_scope = raw_default.get("site_role")
         default_policy_site_role = str(raw_scope) if raw_scope is not None else None
 

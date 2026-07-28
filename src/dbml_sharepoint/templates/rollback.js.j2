@@ -168,10 +168,9 @@
           log('INFO', `'${name}': ${count} item(s), all '[DEMO] '-marked — demo-only content; recycling the demo rows, then deleting the list.`);
           await recycleItems(name, true);
         } else {
-          // Re-prompt PER non-empty list (A6): the old single global unlock made
-          // one DELETE NON-EMPTY authorise deleting every remaining non-empty list
-          // — too coarse for a live site. Each non-empty list is now
-          // confirmed on its own.
+          // Re-prompt PER non-empty list. A single global unlock would let one
+          // DELETE NON-EMPTY authorise deleting every remaining non-empty list,
+          // which is too coarse for a live site.
           const override = prompt(`'${name}' has ${count} items. Type DELETE NON-EMPTY to delete THIS list AND its items (recycled first, restorable; you will be asked again for each non-empty list), or anything else to skip:`);
           if (override !== 'DELETE NON-EMPTY') {
             summary.skipped.push({ list: name, reason: 'non-empty', items: count });

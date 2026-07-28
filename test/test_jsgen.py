@@ -5,7 +5,7 @@ from typing import Any, ClassVar
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
-from dbml_sharepoint.generators.jsgen import generate_deploy_js
+from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import CrossSiteRef, MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Column, Reference, Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
@@ -48,7 +48,7 @@ def test_simple_deploy_js_matches_golden() -> None:
         # from the repository root
         python -c "
         from pathlib import Path
-        from dbml_sharepoint.generators.jsgen import generate_deploy_js
+        from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
         from dbml_sharepoint.model.mapping_loader import load_mapping
         from dbml_sharepoint.model.parser import parse_dbml
         from dbml_sharepoint.model.release import load_release
@@ -401,6 +401,8 @@ def test_self_lookup_is_deferred_with_addfield_parameters(tmp_path: Path) -> Non
         "Required": False,
         "LookupFieldName": "Title",
     }
+    all_items = next(view for view in schema_json["views"] if view["title"] == "All Items")
+    assert "Parent" in all_items["view_fields"]
 
     js = generate_deploy_js(
         schema=schema,
@@ -1022,6 +1024,91 @@ def test_cross_site_column_without_extension_is_error_finding() -> None:
     )
 
 
+def test_generated_condition_fields_are_typed_in_schema_output(tmp_path: Path) -> None:
+    """Built-in Title and cross-site expansion fields can drive conditions
+    even though neither appears as an ordinary rendered DBML column."""
+
+    class Expansion(BaseExtension):
+        def expand_column(
+            self, table: Any, column: Any, bundle: Any,
+        ) -> list[dict[str, Any]] | None:
+            return [
+                {
+                    "title": "UnitAbbreviation",
+                    "body": {
+                        "__metadata": {"type": "SP.FieldChoice"},
+                        "Title": "UnitAbbreviation",
+                        "FieldTypeKind": 6,
+                        "Choices": {"results": ["A"]},
+                        "Required": False,
+                    },
+                },
+                {
+                    "title": "UnitSiteUrl",
+                    "body": {
+                        "__metadata": {"type": "SP.FieldUrl"},
+                        "Title": "UnitSiteUrl",
+                        "FieldTypeKind": 11,
+                        "Required": False,
+                    },
+                },
+            ]
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Unit {\n"
+        "  Id int [pk, increment]\n"
+        "}\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Unit int [ref: > Unit.Id]\n"
+        "  Note nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Unit: { kind: List, base_template: 100, site_role: default }\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Risk, column: Unit }\n"
+        "form_visibility:\n"
+        "  Risk:\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        "          any_of:\n"
+        "            - { field: Title, op: eq, value: Named }\n"
+        "            - { field: UnitAbbreviation, op: eq, value: A }\n"
+        "views:\n"
+        "  Risk:\n"
+        "    - title: A unit\n"
+        "      fields: [UnitAbbreviation, Note]\n"
+        "      where: [{ field: UnitAbbreviation, op: eq, value: A }]\n"
+        "list_validation:\n"
+        "  Risk:\n"
+        "    when: [{ field: Title, op: is_not_null }]\n"
+        "    message: A title is required.\n",
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert not [
+        f for f in validate_all(schema, bundle, Expansion()) if f.severity == "error"
+    ]
+    output = build_schema_json(schema, bundle, "default", extension=Expansion())
+    risk = next(item for item in output["lists"] if item["title"] == "APP_Risk")
+    note = next(item for item in risk["fields_phase1"] if item["title"] == "Note")
+    assert "[$Title]" in note["client_validation_formula"]
+    assert "[$UnitAbbreviation]" in note["client_validation_formula"]
+    assert risk["validation_formula"] == "=NOT(ISBLANK([Title]))"
+    unit_view = next(item for item in output["views"] if item["title"] == "A unit")
+    assert '<Value Type="Text">A</Value>' in unit_view["caml_query"]
+
+
 def test_calculated_field_rendered_with_formula_and_output_type() -> None:
     """calculated_* columns render as SP.FieldCalculated with the mapping's
     formula and the right OutputType; they are never marked Required."""
@@ -1278,11 +1365,12 @@ def _caml(view_kwargs: dict[str, Any], column_types: dict[str, str] | None = Non
 
 
 def test_view_caml_condition_sort_and_group() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition, ViewGroupBy, ViewSort
+    from dbml_sharepoint.model.conditions import parse_condition
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy, ViewSort
 
     caml = _caml(
         dict(
-            where=[ViewCondition(field="Status", op="neq", value="Closed")],
+            where=parse_condition([{"field": "Status", "op": "neq", "value": "Closed"}], "w"),
             sort=[ViewSort(field="RiskScore", direction="desc")],
             group_by=ViewGroupBy(field="Impact", collapsed=True),
         ),
@@ -1290,21 +1378,25 @@ def test_view_caml_condition_sort_and_group() -> None:
     )
     assert caml == (
         '<GroupBy Collapse="TRUE"><FieldRef Name="Impact"/></GroupBy>'
-        '<Where><Neq><FieldRef Name="Status"/>'
-        '<Value Type="Text">Closed</Value></Neq></Where>'
+        '<Where><Or><IsNull><FieldRef Name="Status"/></IsNull>'
+        '<Neq><FieldRef Name="Status"/>'
+        '<Value Type="Text">Closed</Value></Neq></Or></Where>'
         '<OrderBy><FieldRef Name="RiskScore" Ascending="FALSE"/></OrderBy>'
     )
 
 
 def test_view_caml_ands_multiple_conditions() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition
+    from dbml_sharepoint.model.conditions import parse_condition
 
     caml = _caml(
-        dict(where=[
-            ViewCondition(field="Status", op="eq", value="Open"),
-            ViewCondition(field="SortOrder", op="geq", value=5),
-            ViewCondition(field="Owner", op="is_not_null"),
-        ]),
+        dict(where=parse_condition(
+            [
+                {"field": "Status", "op": "eq", "value": "Open"},
+                {"field": "SortOrder", "op": "geq", "value": 5},
+                {"field": "Owner", "op": "is_not_null"},
+            ],
+            "w",
+        )),
         {"Status": "status_enum", "SortOrder": "int", "Owner": "person"},
     )
     assert caml == (
@@ -1318,11 +1410,12 @@ def test_view_caml_ands_multiple_conditions() -> None:
 
 
 def test_view_caml_today_offsets_and_ascending_sort() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition, ViewSort
+    from dbml_sharepoint.model.conditions import parse_condition
+    from dbml_sharepoint.model.mapping_loader import ViewSort
 
     caml = _caml(
         dict(
-            where=[ViewCondition(field="DueDate", op="leq", value="today+30")],
+            where=parse_condition([{"field": "DueDate", "op": "leq", "value": "today+30"}], "w"),
             sort=[ViewSort(field="DueDate", direction="asc")],
         ),
         {"DueDate": "date"},
@@ -1333,27 +1426,27 @@ def test_view_caml_today_offsets_and_ascending_sort() -> None:
         '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
     )
     bare = _caml(
-        dict(where=[ViewCondition(field="DueDate", op="eq", value="today")]),
+        dict(where=parse_condition([{"field": "DueDate", "op": "eq", "value": "today"}], "w")),
         {"DueDate": "datetime"},
     )
     assert '<Value Type="DateTime"><Today/></Value>' in bare
     minus = _caml(
-        dict(where=[ViewCondition(field="DueDate", op="gt", value="today-7")]),
+        dict(where=parse_condition([{"field": "DueDate", "op": "gt", "value": "today-7"}], "w")),
         {"DueDate": "date"},
     )
     assert '<Today OffsetDays="-7"/>' in minus
 
 
 def test_view_caml_escapes_values_and_maps_boolean() -> None:
-    from dbml_sharepoint.model.mapping_loader import ViewCondition
+    from dbml_sharepoint.model.conditions import parse_condition
 
     caml = _caml(
-        dict(where=[ViewCondition(field="Name", op="eq", value='A & B < "C"')]),
+        dict(where=parse_condition([{"field": "Name", "op": "eq", "value": 'A & B < "C"'}], "w")),
         {"Name": "nvarchar"},
     )
     assert '<Value Type="Text">A &amp; B &lt; &quot;C&quot;</Value>' in caml
     flag = _caml(
-        dict(where=[ViewCondition(field="Active", op="eq", value=True)]),
+        dict(where=parse_condition([{"field": "Active", "op": "eq", "value": True}], "w")),
         {"Active": "boolean"},
     )
     assert '<Value Type="Integer">1</Value>' in flag
@@ -1395,21 +1488,30 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
-    assert schema_json["views"] == [{
+    assert [view["title"] for view in schema_json["views"]] == [
+        "Open risks", "All Items",
+    ]
+    declared, all_items = schema_json["views"]
+    assert all_items["set_default"] is False
+    assert all_items["hidden"] is True
+    assert all_items["caml_query"] == ""
+    assert declared == {
         "list": "APP_Risk",
         "title": "Open risks",
         "view_fields": ["Title", "Status", "DueDate"],
         "caml_query": (
-            '<Where><Neq><FieldRef Name="Status"/>'
-            '<Value Type="Text">Closed</Value></Neq></Where>'
+            '<Where><Or><IsNull><FieldRef Name="Status"/></IsNull>'
+            '<Neq><FieldRef Name="Status"/>'
+            '<Value Type="Text">Closed</Value></Neq></Or></Where>'
             '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
         ),
         "row_limit": 100,
         "set_default": True,
+        "hidden": False,
         "formatting": None,
         "widths": None,
         "url_slug": "OpenRisks",
-    }]
+    }
 
 
 def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
@@ -1446,15 +1548,30 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
-    assert schema_json["views"][0]["widths"] == {"Title": 240, "Due Date": 150}
+    sized = next(view for view in schema_json["views"] if view["title"] == "Sized")
+    assert sized["widths"] == {"Title": 240, "Due Date": 150}
 
 
-def test_schema_json_views_empty_without_declarations() -> None:
+def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> None:
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "calculated.dbml")
     bundle = load_mapping(FIXTURES / "calculated-mapping.yaml")
-    assert build_schema_json(schema, bundle, "default")["views"] == []
+    assert build_schema_json(schema, bundle, "default")["views"] == [{
+        "list": "APP_Risk",
+        "title": "All Items",
+        "view_fields": [
+            "ID", "Title", "Severity", "RiskScore", "RiskBand",
+            "Created", "Modified", "Author", "Editor",
+        ],
+        "caml_query": "",
+        "row_limit": None,
+        "set_default": True,
+        "hidden": False,
+        "formatting": None,
+        "widths": None,
+        "url_slug": "AllItems",
+    }]
 
 
 def _generate_views_js(tmp_path: Path) -> str:
@@ -1529,12 +1646,12 @@ def test_view_query_comparison_tolerates_space_before_self_close(
 
 
 def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> None:
-    """Fields created through the REST field collection join no view, so a
-    fresh deployment shows a Title-only default view. Declared views are part
-    of the physical shape: Phase 3.1 creates missing views, reconciles
+    """Fields created through the REST field collection join no view. The
+    generated All Items recovery view and authored views are part of the
+    physical shape: Phase 3.1 creates missing views, reconciles
     ViewQuery/RowLimit/field order/default flag on existing ones (public
     views only — a same-name personal view fails closed), verifies by
-    readback, and never touches undeclared views (user content, unlike exact
+    readback, and never touches other views (user content, unlike exact
     ACLs)."""
     js = _generate_views_js(tmp_path)
     assert f"Starting Phase {pn('views')}: views" in js
@@ -1549,6 +1666,9 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
     assert "removeallviewfields" in js
     assert "addviewfield('${odataName(name)}')" in js
     assert "DefaultView: true" in js
+    assert "Hidden: view.hidden" in js
+    assert "actual.Hidden !== view.hidden" in js
+    assert "$select=Id,Title,DefaultView,Hidden,RowLimit" in js
     # verification + fail-closed error routing
     assert "did not retain declared view setting(s)" in js
     assert "phase: '3.1'" in js
@@ -1773,7 +1893,10 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
     )
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
-    row = build_schema_json(schema, bundle, "default")["views"][0]
+    row = next(
+        view for view in build_schema_json(schema, bundle, "default")["views"]
+        if view["title"] == "Hot"
+    )
     assert row["formatting"] == (
         '{"additionalRowClass":"=if([$Score] >= 20, \'sp-css-backgroundColor-BgCoral\', \'\')"}'
     )
@@ -1786,7 +1909,10 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
     )
-    assert "$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter" in js
+    assert (
+        "$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter"
+        in js
+    )
     assert "view.formatting != null" in js
     assert "CustomFormatter: view.formatting" in js
     # The view CustomFormatter lives in the view schema XML like ViewQuery,
@@ -1861,6 +1987,59 @@ def test_date_default_today_reaches_field_defaults(tmp_path: Path) -> None:
         if f["title"] == "LastReviewedDate"
     )
     assert field["body"]["DefaultValue"] == "[today]"
+
+
+def test_exact_column_validation_skips_unsupported_field_types(tmp_path: Path) -> None:
+    """Exact reconciliation clears stale rules only where SharePoint exposes
+    ValidationFormula. Writing even an empty formula to Note, Person or
+    Lookup fields fails the whole field MERGE with HTTP 500."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Summary nvarchar\n"
+        "  ReviewDate date\n"
+        "  Detail richtext\n"
+        "  Notes longtext\n"
+        "  Owner person\n"
+        "  Parent int [ref: > Risk.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "column_validation:\n"
+        "  Risk:\n"
+        "    reconcile: exact\n"
+        "    columns:\n"
+        "      Summary:\n"
+        "        when:\n"
+        "          - { field: Summary, op: neq, value: forbidden }\n"
+        "        message: Use a different summary.\n",
+        encoding="utf-8",
+    )
+    out = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    fields = {
+        field["title"]: field
+        for field in out["lists"][0]["fields_phase1"]
+    }
+    fields.update({
+        lookup["field"]["title"]: lookup["field"]
+        for lookup in out["phase2_lookups"]
+    })
+
+    assert fields["Summary"]["validation_formula"] == '=[Summary]<>"forbidden"'
+    assert fields["ReviewDate"]["validation_formula"] == ""
+    for name in ("Detail", "Notes", "Owner", "Parent"):
+        assert fields[name]["validation_formula"] == UNMANAGED, name
+        assert fields[name]["validation_message"] == UNMANAGED, name
 
 
 def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:
@@ -1959,7 +2138,11 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         "  mode: auto\n"
         "list_validation:\n"
         "  Risk:\n"
-        "    formula: '=IF([Status]=\"Closed\",NOT(ISBLANK([ClosureNote])),TRUE)'\n"
+        "    when:\n"
+        "      any_of:\n"
+        "        - none_of:\n"
+        "            - { field: Status, op: eq, value: Closed }\n"
+        "        - { field: ClosureNote, op: is_not_null }\n"
         "    message: Closing needs a closure note.\n",
         encoding="utf-8",
     )
@@ -1969,8 +2152,12 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         lst for lst in build_schema_json(schema, bundle, "default")["lists"]
         if lst["title"] == "APP_Risk"
     )
+    # The implication "if closed then a closure note" as the grammar spells
+    # it — any_of[none_of[antecedent], consequent]. The neq renderer itself
+    # admits blanks, and internal names are rewritten to display names,
+    # which is what SP resolves against.
     assert risk["validation_formula"] == (
-        '=IF([Status]="Closed",NOT(ISBLANK([Closure Note])),TRUE)'
+        '=OR([Status]<>"Closed",NOT(ISBLANK([Closure Note])))'
     )
     assert risk["validation_message"] == "Closing needs a closure note."
 
@@ -2002,57 +2189,6 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
     )
 
 
-def test_hidden_on_forms_flows_to_schema_and_template(tmp_path: Path) -> None:
-    from dbml_sharepoint.generators.jsgen import build_schema_json
-
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Stamp nvarchar [default: 'x']\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "hidden_on_forms:\n"
-        "  Risk: [Stamp]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
-        if lst["title"] == "APP_Risk"
-    )
-    flags = {f["title"]: f["hide_on_forms"] for f in risk["fields_phase1"]}
-    assert flags == {"Stamp": True}
-
-    js = generate_deploy_js(
-        schema=schema, bundle=bundle,
-        release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test",
-        site_role="default",
-        source_dbml="s.dbml",
-        source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
-    )
-    assert "async function enforceFormVisibility" in js
-    assert "setshowinnewform" in js
-    assert "setshowineditform" in js
-    assert "field.hide_on_forms" in js
-    assert "did not retain form visibility" in js
-    # ShowInNewForm/ShowInEditForm are NOT projected by the REST field
-    # resource ($select returns neither — seen live as `undefined`); the
-    # readable source of truth is the SchemaXml attribute, absent = shown.
-    assert "$select=SchemaXml" in js
-    assert 'ShowInNewForm="FALSE"' in js
-    assert 'ShowInEditForm="FALSE"' in js
-    assert "$select=ShowInNewForm" not in js
-
 
 def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
     """List ACLs can LOOK correct while the signed-in operator still deletes
@@ -2073,9 +2209,9 @@ def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
     assert "site collection admin = " in js
     assert "owners of a group-connected site are site collection admins" in js
     # After cleanup, before DONE — enrolment would otherwise inflate rights.
-    assert js.rindex("await removeSelfEnrollments()") < js.index(
-        "Operator effective rights on",
-    ) < js.index("Deployment complete.")
+    diagnostic = js.index("Operator effective rights on")
+    assert js.rfind("await removeSelfEnrollments()", 0, diagnostic) >= 0
+    assert diagnostic < js.index("Deployment complete.")
 
 
 # --- UI hardening: sealed columns + list deletion block ----------------------
@@ -2145,6 +2281,31 @@ def test_template_brackets_writes_with_unseal_and_seal_phases(tmp_path: Path) ->
     ) < js.index(f"Starting Phase {pn('acls')}")
 
 
+def test_exit_restores_every_field_the_run_unsealed(tmp_path: Path) -> None:
+    """Every declared field is opened during PREPARE, not only Title. An
+    abort before PROTECTION must restore every list/column pair this run
+    changed, while leaving fields it found open untouched."""
+    schema, bundle = _hardening_inputs(tmp_path)
+    js = generate_deploy_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    assert "const fieldsUnsealedForRun = new Map();" in js
+    assert "fieldsUnsealedForRun.set(" in js
+    assert "[listTitle, columnTitle]" in js
+    assert "async function restoreUnsealedFields()" in js
+    assert "for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values())" in js
+    finally_block = js.rsplit("} finally {", 1)[1]
+    assert "await restoreUnsealedFields();" in finally_block
+    assert "await removeSelfEnrollments();" in finally_block
+
+
 def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:
     """AllowDeletion=false makes the LIST object undeletable through the UI
     even for admins — friction, not enforcement, honestly labeled. Isolated
@@ -2164,55 +2325,6 @@ def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:
     assert "AllowDeletion: false" in js
     assert "did not retain AllowDeletion" in js
 
-
-def test_hidden_on_display_flows_to_schema_and_template(tmp_path: Path) -> None:
-    """The register use case: CALCULATED system scores hidden from the display
-    form. The flag must ride the field into deploy.js and the template must
-    carry the display setter."""
-    from dbml_sharepoint.generators.jsgen import build_schema_json
-
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Score calculated_number\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "hidden_on_display:\n"
-        "  Risk: [Score]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    risk = next(
-        lst for lst in build_schema_json(schema, bundle, "default")["lists"]
-        if lst["title"] == "APP_Risk"
-    )
-    flags = {f["title"]: f["hide_on_display"] for f in risk["fields_phase1"]}
-    assert flags["Score"] is True
-    assert all(v is False for t, v in flags.items() if t != "Score")
-
-    js = generate_deploy_js(
-        schema=schema, bundle=bundle,
-        release=load_release(FIXTURES / "release.yaml"),
-        site_url="https://example.sharepoint.com/sites/test",
-        site_role="default",
-        source_dbml="s.dbml",
-        source_mtime="2026-05-04T00:00:00Z",
-        generated_at="2026-05-04T00:00:00Z",
-    )
-    assert "setshowindisplayform" in js
-    assert "field.hide_on_display" in js
-    assert "ShowInDisplayForm" in js
 
 
 def test_view_existence_check_enumerates_per_list(tmp_path: Path) -> None:
@@ -2353,3 +2465,76 @@ def test_widths_apply_via_guarded_setviewxml(tmp_path: Path) -> None:
     assert "stripColumnWidth" in js
     assert "widths splice guard" in js
     assert "did not retain declared column widths" in js
+
+
+def test_retired_columns_leave_views_but_stay_deployed() -> None:
+    """The end-to-end proof that retirement needs no jsgen change: the
+    column is still created and still deployer-managed (so the drift audit
+    stays clean) but it is hidden from the New form, carries the retired
+    suffix, and has left every declared view."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema = parse_dbml(FIXTURES / "retired.dbml")
+    bundle = load_mapping(FIXTURES / "retired-mapping.yaml")
+
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    board = next(lst for lst in schema_json["lists"] if lst["title"] == "APP_Board")
+    ops = next(f for f in board["fields_phase1"] if f["title"] == "OperationsStatus")
+    # Present on the Edit and Display forms, absent from New: [$ID] is empty
+    # only while the item is being created.
+    assert ops["client_validation_formula"] == "=if([$ID] != '', 'true', 'false')"
+    assert ops["display_title"] == "Operations Status (retired)"
+    live = next(
+        f for f in board["fields_phase1"] if f["title"] == "SiteServicesStatus"
+    )
+    # `declared` reconcile: a live column of the same list is untouched.
+    assert live["client_validation_formula"] == UNMANAGED
+    assert live["display_title"] == "Site Services Status"
+
+    view = next(v for v in schema_json["views"] if v["title"] == "Heat grid")
+    assert view["view_fields"] == ["BoardDate", "SiteServicesStatus"]
+
+
+def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
+    """jsgen has no field-set awareness by design: ViewDef.fields is always
+    already a flat, resolved, de-duplicated list of internal column names by
+    the time build_schema_json reads it. A failure here means expansion has
+    leaked past the loader."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  BoardDate date\n"
+        "  OperationsStatus nvarchar\n"
+        "  WorkforceStatus nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "field_sets:\n"
+        "  Board:\n"
+        "    header:   [Title, BoardDate]\n"
+        "    statuses: [OperationsStatus, WorkforceStatus]\n"
+        "views:\n"
+        "  Board:\n"
+        "    - title: Heat grid\n"
+        '      fields: ["@header", "@statuses", BoardDate]\n',
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    schema_json = build_schema_json(schema, bundle, "default")
+    view_fields = next(
+        view for view in schema_json["views"] if view["title"] == "Heat grid"
+    )["view_fields"]
+    assert view_fields == [
+        "Title", "BoardDate", "OperationsStatus", "WorkforceStatus",
+    ]
+    assert not any(name.startswith("@") for name in view_fields)

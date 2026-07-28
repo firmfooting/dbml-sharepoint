@@ -84,6 +84,47 @@ def test_demo_plan_types_fields_at_generation(tmp_path: Path) -> None:
     assert js.index('"APP_Risk"') < js.index('"APP_Issue"')
 
 
+def test_bare_today_is_offset_zero(tmp_path: Path) -> None:
+    """The validator accepts a bare `today` on demo date values (it shares
+    the view-condition sentinel, where bare `today` is correct). Generation
+    must accept it too and mean offset 0 — otherwise a demo row declaring
+    `today` passes the build with zero findings and emits the literal
+    string "today" into demo-data.js."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  BoardDate date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "demo_items:\n"
+        "  Board:\n"
+        "    - key: b1\n"
+        "      values:\n"
+        '        Title: "[DEMO] Today"\n'
+        '        BoardDate: "today"\n',
+        encoding="utf-8",
+    )
+    js = generate_demo_js(
+        schema=parse_dbml(tmp_path / "s.dbml"),
+        bundle=load_mapping(tmp_path / "m.yaml"),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert '"kind": "date_offset"' in js
+    assert '"value": 0' in js
+    assert '"value": "today"' not in js
+
+
 def test_demo_script_contract(tmp_path: Path) -> None:
     js = _generate(tmp_path)
     # Site guard + operator identity, like every pasteable script.

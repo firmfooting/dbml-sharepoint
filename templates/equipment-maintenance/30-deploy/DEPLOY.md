@@ -32,10 +32,10 @@ Shared procedure: [`templates/README.md`](../../README.md) with
 
 | List | View | Filter / sort |
 |---|---|---|
-| Equipment | Overdue | NextDueDate < today, Status = In service — THE view; empty is the goal |
+| Equipment | Overdue | NextDueDate < today, Status = `In service` — THE view; empty is the goal |
 | Equipment | Due 60 days | NextDueDate ≤ today+60, sorted ascending — the work plan |
-| Equipment | Out of service | Status = Out of service — reviewed daily |
-| MaintenanceEvent | Failures | Result = Failed, newest first |
+| Equipment | Out of service | Status = `Out of service - awaiting maintenance` — reviewed daily |
+| MaintenanceEvent | Failures | Result = `Failed - removed from service`, newest first |
 | MaintenanceEvent | Per item | Filter by Equipment — the service history an auditor reads |
 
 ## Redeploying

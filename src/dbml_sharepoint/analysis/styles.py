@@ -66,6 +66,36 @@ def _fail(context: str, message: str) -> ValueError:
     return ValueError(f"{context}: {message}")
 
 
+def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> bool:
+    """Read a style-spec boolean without truthiness-coercing bad YAML.
+
+    `bool("false")` is True, so the cautious spelling meant its opposite:
+    `calculated: "false"` switched the calculated-value handling ON, and
+    `icons: "false"` kept the icons it was written to remove.
+    """
+    value = spec.get(key, default)
+    if not isinstance(value, bool):
+        raise _fail(context, f"{key}: expected true or false, got {value!r}")
+    return value
+
+
+def _reject_unknown_keys(spec: dict[str, Any], allowed: set[str], context: str) -> None:
+    """A style spec used to ignore everything it did not recognise.
+
+    Every miss was silent and wrong in the direction that reads as fine: a
+    typo'd `guard:` renders finished rows as overdue, and `calculated:
+    true` — documented as required on a calculated column — changed
+    nothing at all when misspelled, so the values kept their `string;#`
+    prefix and matched no map key.
+    """
+    unknown = set(spec) - allowed
+    if unknown:
+        raise _fail(
+            context,
+            f"unknown key(s) {sorted(unknown)} (known: {sorted(allowed)})",
+        )
+
+
 def _resolve(
     token_name: str, context: str, theme: dict[str, StyleToken] | None,
 ) -> StyleToken:
@@ -102,9 +132,10 @@ def _condition(value: str, calculated: bool, ref: str = "@currentField") -> str:
 def _severity(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
+    _reject_unknown_keys(spec, {"style", "map", "calculated", "icons"}, context)
     value_map = _validated_map(spec, context)
-    calculated = bool(spec.get("calculated", False))
-    icons = bool(spec.get("icons", True))
+    calculated = _bool(spec, "calculated", context, default=False)
+    icons = _bool(spec, "icons", context, default=True)
     tokens = {v: _resolve(t, context, theme) for v, t in value_map.items()}
     fallback = _resolve("muted", context, theme)
     class_pairs = [
@@ -141,6 +172,7 @@ def _severity(
 def _pill(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
+    _reject_unknown_keys(spec, {"style", "map"}, context)
     value_map = _validated_map(spec, context)
     for token_name in value_map.values():
         if theme and token_name in theme:
@@ -172,6 +204,7 @@ def _pill(
 def _data_bar(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
+    _reject_unknown_keys(spec, {"style", "max", "color_by"}, context)
     maximum = spec.get("max")
     if not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0:
         raise _fail(context, "data-bar requires a positive integer 'max'")
@@ -190,8 +223,13 @@ def _data_bar(
         field_name = color_by.get("field")
         if not isinstance(field_name, str) or not field_name:
             raise _fail(context, "color_by requires 'field' (a column internal name)")
+        _reject_unknown_keys(
+            color_by, {"field", "map", "calculated"}, f"{context}.color_by",
+        )
         value_map = _validated_map(color_by, context)
-        calculated = bool(color_by.get("calculated", False))
+        calculated = _bool(
+            color_by, "calculated", f"{context}.color_by", default=False,
+        )
         tokens = {v: _resolve(t, context, theme) for v, t in value_map.items()}
         fallback = _resolve("muted", context, theme)
         ref = f"[${field_name}]"
@@ -225,6 +263,7 @@ def _data_bar(
 
 
 def _trend(spec: dict[str, Any], context: str) -> dict[str, Any]:
+    _reject_unknown_keys(spec, {"style", "against"}, context)
     against = spec.get("against")
     if against is None:
         raise _fail(context, "trend requires 'against' (a column name or a number)")
@@ -254,11 +293,13 @@ def _trend(spec: dict[str, Any], context: str) -> dict[str, Any]:
 def _overdue_date(
     spec: dict[str, Any], context: str, theme: dict[str, StyleToken] | None,
 ) -> dict[str, Any]:
+    _reject_unknown_keys(spec, {"style", "guard"}, context)
     guard = spec.get("guard")
     guard_terms = ""
     if guard is not None:
         if not isinstance(guard, dict) or not guard.get("field"):
             raise _fail(context, "overdue-date guard requires 'field'")
+        _reject_unknown_keys(guard, {"field", "not"}, f"{context}.guard")
         field_name = guard["field"]
         excluded = guard.get("not") or []
         guard_terms = "".join(
@@ -326,6 +367,7 @@ def parse_theme(raw: object, context: str) -> dict[str, StyleToken]:
             raise _fail(context, f"unknown token {name!r} (known: {sorted(TOKENS)})")
         if not isinstance(override, dict):
             raise _fail(context, f"{name}: expected a mapping with classes/icon")
+        _reject_unknown_keys(override, {"classes", "icon"}, f"{context}.{name}")
         classes = override.get("classes")
         if isinstance(classes, list):
             classes = " ".join(str(c) for c in classes)

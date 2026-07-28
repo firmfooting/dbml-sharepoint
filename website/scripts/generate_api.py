@@ -46,12 +46,15 @@ MODULES: list[tuple[str, str]] = [
     ("model.parser", "parse DBML into the in-memory schema"),
     ("model.mapping_loader", "load mapping.yaml and referenced config"),
     ("model.release", "load release.yaml provenance"),
+    ("model.conditions", "the shared condition grammar's types and parser"),
     ("analysis.validator", "fail-closed build-time rules"),
     ("analysis.ordering", "dependency ordering and site filtering"),
     ("analysis.typemap", "DBML types to SharePoint field descriptors"),
     ("analysis.phases", "the deploy-phase manifest"),
     ("analysis.permissions", "SP base-permission bitmask helpers"),
     ("analysis.styles", "the fleet style standard"),
+    ("analysis.conditions", "condition normalisation, validation and rendering"),
+    ("analysis.forms", "composing declared form visibility"),
     ("generators.jsgen", "deploy.js"),
     ("generators.rollbackgen", "rollback.js"),
     ("generators.assessgen", "assess.js and assess-manifest.md"),
@@ -184,6 +187,34 @@ def _type_str(annotation: object) -> str:
     return str(annotation)
 
 
+def stable_repr(obj: object) -> str:
+    """repr with set iteration order removed, at any depth.
+
+    Sorting only top-level sets was not enough: a dict whose VALUES are
+    frozensets fell through to plain repr, so the page differed between
+    processes and the docs looked stale on every other run.
+    """
+    if isinstance(obj, (set, frozenset)):
+        # An empty set has no brace form: repr(set()) is "set()", and
+        # "set({})" is not merely ugly, it evaluates to an empty DICT.
+        # Published docs showing it would teach the wrong literal.
+        if not obj:
+            return f"{type(obj).__name__}()"
+        inner = ", ".join(sorted(stable_repr(x) for x in obj))
+        return f"{type(obj).__name__}({{{inner}}})"
+    if isinstance(obj, dict):
+        items = ", ".join(
+            f"{stable_repr(k)}: {stable_repr(v)}" for k, v in obj.items()
+        )
+        return f"{{{items}}}"
+    if isinstance(obj, tuple):
+        inner = ", ".join(stable_repr(x) for x in obj)
+        return "(" + inner + ("," if len(obj) == 1 else "") + ")"
+    if isinstance(obj, list):
+        return "[" + ", ".join(stable_repr(x) for x in obj) + "]"
+    return repr(obj)
+
+
 def render_constant(name: str, obj: object) -> str:
     if isinstance(obj, Path):
         # Machine-absolute paths are noise (and leak the build machine's
@@ -192,12 +223,8 @@ def render_constant(name: str, obj: object) -> str:
             value = f'Path("{obj.relative_to(SRC).as_posix()}")'
         except ValueError:
             value = f'Path("{obj.name}")'
-    elif isinstance(obj, (set, frozenset)):
-        # Set iteration order is nondeterministic; sort for stable diffs.
-        inner = ", ".join(sorted(repr(x) for x in obj))
-        value = f"{type(obj).__name__}({{{inner}}})"
     else:
-        value = repr(obj)
+        value = stable_repr(obj)
     if len(value) > 200:
         value = value[:200] + "…"
     return f"### `{name}`\n\n```python\n{name} = {value}\n```\n\n"
@@ -343,6 +370,93 @@ def generate_templates_page() -> None:
     (OUT_DIR / "templates.md").write_text(page, encoding="utf-8")
 
 
+
+def generate_conditions_page() -> None:
+    """The condition grammar reference, EXECUTED rather than transcribed.
+
+    Every cell is either a constant read from the module or the actual
+    output of a renderer run on a sample condition. Nothing is typed by
+    hand, so no example can be wrong: change a renderer and the page
+    rewrites itself, and an operator a target cannot express prints as
+    "not supported" because the renderer raised.
+    """
+    conditions = importlib.import_module("dbml_sharepoint.analysis.conditions")
+    model = importlib.import_module("dbml_sharepoint.model.conditions")
+    parse = model.parse_condition
+
+    types = {"Status": "nvarchar", "Count": "number", "Owner": "person", "Note": "nvarchar"}
+    samples: list[tuple[str, dict[str, object]]] = [
+        ("eq", {"field": "Status", "op": "eq", "value": "Open"}),
+        ("neq", {"field": "Status", "op": "neq", "value": "Open"}),
+        ("lt", {"field": "Count", "op": "lt", "value": 5}),
+        ("geq", {"field": "Count", "op": "geq", "value": 5}),
+        ("is_null", {"field": "Note", "op": "is_null"}),
+        ("is_not_null", {"field": "Note", "op": "is_not_null"}),
+        ("in", {"field": "Status", "op": "in", "value": ["A", "B"]}),
+        ("not_in", {"field": "Status", "op": "not_in", "value": ["A", "B"]}),
+        ("contains", {"field": "Note", "op": "contains", "value": "x"}),
+        ("begins_with", {"field": "Note", "op": "begins_with", "value": "ab"}),
+        ("measure: length", {"field": "Note", "measure": "length", "op": "gt", "value": 10}),
+        ("property (person)", {"field": "Owner", "property": "title", "op": "neq", "value": ""}),
+    ]
+    renderers = [
+        ("CAML", conditions.to_caml),
+        ("Expression", conditions.to_expression),
+        ("Validation", conditions.to_validation),
+    ]
+
+    lines: list[str] = [
+        "---", "title: Condition grammar", "sidebar_position: 4", "---", "",
+        "# Condition grammar", "",
+        ":::note Generated",
+        "Every rendering below is produced by running the renderer, not written",
+        "by hand — see `website/scripts/generate_api.py`.",
+        ":::", "",
+        docstring_block(model), "",
+        "## Operators", "",
+        "`views[].where` renders to CAML, `form_visibility.when` to a"
+        " list-formatting expression, and `column_validation.when` /"
+        " `list_validation.when` to a classic validation formula.", "",
+        "| Declared | " + " | ".join(label for label, _ in renderers) + " |",
+        "|---|---|---|---|",
+    ]
+    for label, raw in samples:
+        condition = parse([raw], "sample")
+        cells = []
+        for _, render in renderers:
+            try:
+                cells.append("`" + render(condition, types) + "`")
+            except ValueError as exc:
+                reason = str(exc).split(": ", 1)[-1].split(" (target")[0]
+                cells.append("_not supported — " + md_escape(reason) + "_")
+        lines.append("| `" + label + "` | " + " | ".join(cells) + " |")
+
+    lines += ["", "## Not yet verified", ""]
+    for target, ops in sorted(conditions.DISABLED_PENDING_PROBE.items()):
+        listed = ", ".join("`" + op + "`" for op in sorted(ops))
+        lines += [
+            "On the **" + target + "** target these are refused until confirmed",
+            "against a live tenant: " + listed + ". Plausible from documented syntax",
+            "is not the same as observed, and this project has twice been wrong",
+            "about expression syntax it had not run.", "",
+        ]
+
+    lines += ["## Operand accessors", "", "| Column kind | Required `property` |", "|---|---|"]
+    for kind, accessors in sorted(conditions.PROPERTY_ACCESSORS.items()):
+        listed = ", ".join("`" + a + "`" for a in sorted(accessors))
+        lines.append("| " + kind + " | " + listed + " |")
+
+    lines += [
+        "", "## Bounds", "",
+        "At most **" + str(conditions.MAX_DEPTH) + "** nested groups and **"
+        + str(conditions.MAX_LEAVES) + "** conditions, counted after normalisation —",
+        "negation expands each leaf and `in` expands to one condition per value.", "",
+        "## Normalisation", "",
+        docstring_block(conditions), "",
+    ]
+    (OUT_DIR / "conditions.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def generate_index() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "_category_.json").write_text(
@@ -364,9 +478,16 @@ def generate_index() -> None:
     (OUT_DIR / "index.md").write_text(page, encoding="utf-8")
 
 
-if __name__ == "__main__":
+def write_all() -> None:
+    """Every page in one call, so a staleness test can regenerate and diff
+    without duplicating the entry point's knowledge of what exists."""
     generate_index()
     generate_python_pages()
     generate_templates_page()
+    generate_conditions_page()
+
+
+if __name__ == "__main__":
+    write_all()
     count = len(list((OUT_DIR / "python").rglob("*.md"))) + 2
     print(f"Generated {count} API reference page(s) under {OUT_DIR}")

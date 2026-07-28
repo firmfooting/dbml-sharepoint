@@ -7,9 +7,12 @@ That link always points at the current published version. If you've been
 emailed a policy document, treat it as a photocopy — the register is the
 truth.
 
-You will only ever see **published** versions in the library. Drafts exist,
-but they're invisible to readers until published — so if you can see it,
-it's in force.
+You should only ever see **published** versions in the library — so if you
+can see it, it's in force. That relies on one library setting an
+administrator applies at deploy (*Draft Item Security*, in
+`30-deploy/DEPLOY.md`); if you ever open a document numbered 0.1 or 2.3,
+it is a draft that is **not** in force, and the setting has been missed.
+Tell the policy owner.
 
 ## Authoring (PL Policy Authors)
 
@@ -17,8 +20,10 @@ it's in force.
 
 1. Add the policy to the **register** first — Status **Draft**, an Owner,
    and a placeholder ReviewDate. Unregistered documents don't exist.
-2. Upload the draft to **PL_PolicyDocuments**. It becomes version **0.1** —
-   invisible to ordinary staff. Iterate; each save is 0.2, 0.3 …
+2. Upload the draft to **PL_PolicyDocuments**. It becomes version **0.1**.
+   Iterate; each save is 0.2, 0.3 … Ordinary staff do not see it *provided
+   Draft Item Security is set to "Only users who can edit"* — confirm that
+   once for the library rather than assuming it.
 3. Set the document's PolicyArea and DocStatus as it moves Draft →
    In review → Approved.
 

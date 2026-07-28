@@ -169,3 +169,46 @@ def test_theme_overrides_tokens() -> None:
 def test_theme_rejects_unknown_tokens() -> None:
     with pytest.raises(ValueError):
         parse_theme({"shiny": {"classes": ["x"]}}, "style_theme")
+
+
+@pytest.mark.parametrize("spec, typo", [
+    ({"style": "severity", "map": {"A": "good"}, "calculatd": True}, "calculatd"),
+    ({"style": "severity", "map": {"A": "good"}, "icon": False}, "icon"),
+    ({"style": "pill", "map": {"A": "good"}, "calculated": True}, "calculated"),
+    ({"style": "data-bar", "max": 25, "colour_by": {}}, "colour_by"),
+    ({"style": "data-bar", "max": 25,
+      "color_by": {"field": "R", "map": {"A": "good"}, "calculatd": True}}, "calculatd"),
+    ({"style": "trend", "aginst": "Target"}, "aginst"),
+    ({"style": "overdue-date", "gaurd": {"field": "Status", "not": ["Closed"]}}, "gaurd"),
+    ({"style": "overdue-date", "guard": {"field": "Status", "nott": ["Closed"]}}, "nott"),
+])
+def test_style_spec_unknown_keys_are_rejected(spec: dict[str, Any], typo: str) -> None:
+    """A style spec silently ignored everything it did not recognise. A
+    typo'd `guard:` renders closed rows as overdue — a red flag on work
+    that is finished — and `calculated: true` is documented as required for
+    calculated columns while a misspelling of it changed nothing."""
+    with pytest.raises(ValueError) as err:
+        expand_style(spec, "column_formatting.T.C")
+    assert "column_formatting.T.C" in str(err.value)
+    assert typo in str(err.value)
+
+
+def test_theme_override_unknown_keys_are_rejected() -> None:
+    with pytest.raises(ValueError, match="icons"):
+        parse_theme({"good": {"classes": ["x"], "icons": "Emoji2"}}, "style_theme")
+
+
+@pytest.mark.parametrize("spec, key", [
+    ({"style": "severity", "map": {"A": "good"}, "calculated": "false"}, "calculated"),
+    ({"style": "severity", "map": {"A": "good"}, "icons": "false"}, "icons"),
+    ({"style": "data-bar", "max": 25,
+      "color_by": {"field": "R", "map": {"A": "good"}, "calculated": "false"}},
+     "calculated"),
+])
+def test_quoted_booleans_in_style_specs_are_rejected(spec: dict[str, Any], key: str) -> None:
+    """`bool("false")` is True, so the cautious spelling meant its
+    opposite: `calculated: "false"` switched ON the calculated-value
+    handling, and `icons: "false"` kept the icons it was written to
+    remove."""
+    with pytest.raises(ValueError, match=key):
+        expand_style(spec, "column_formatting.T.C")

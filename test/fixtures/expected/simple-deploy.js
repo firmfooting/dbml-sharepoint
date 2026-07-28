@@ -63,7 +63,7 @@
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   // OData string-literal encoder: SharePoint getbytitle/getbyname take a
   // single-quoted OData literal, where an embedded apostrophe must be
-  // DOUBLED (`''`); encodeURIComponent alone does not escape `'` (A5).
+  // DOUBLED (`''`); encodeURIComponent alone does not escape `'`.
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
   log('INFO', `Running as ${(_spPageContextInfo.userLoginName) || '(unknown)'} on web '${WEB || '(root)'}'.`);
 
@@ -131,7 +131,36 @@
     return cachedDigest;
   }
 
-  async function readListShape(name) {
+  // Which list titles exist, from ONE enumeration. A by-title GET for a list
+  // that is not there answers 404, which the browser paints red and an
+  // operator reads as a failure — on a first deploy EVERY list probe is that
+  // 404. Enumerating once tells us absence locally, so a clean run stays
+  // clean. Null means "not yet known"; invalidateListShapes() after any
+  // list create or delete.
+  let knownListTitles = null;
+  const invalidateListShapes = () => { knownListTitles = null; };
+  async function ensureKnownListTitles() {
+    if (knownListTitles) return knownListTitles;
+    const r = await fetchWithRetry(apiUrl('web/lists?$select=Title&$top=5000'), {
+      headers: { 'Accept': 'application/json;odata=verbose' },
+    });
+    // Deliberately not fatal: if the enumeration is refused we fall back to
+    // per-list probing, which is noisier but still correct.
+    if (!r.ok) return null;
+    const j = await r.json();
+    knownListTitles = new Set(
+      ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
+    );
+    return knownListTitles;
+  }
+
+  async function readListShape(name, fresh = false) {
+    // Verification after a write passes fresh=true and always asks the
+    // server: a cache must never be able to confirm our own write.
+    if (!fresh) {
+      const titles = await ensureKnownListTitles();
+      if (titles && !titles.has(name)) return null;
+    }
     const select = [
       'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
       'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit', 'ValidationFormula', 'ValidationMessage',
@@ -205,7 +234,18 @@
     });
     if (!r.ok) {
       const text = await r.text();
-      if (r.status === 404 || isAbsent400(r.status, text)) return new Map();
+      if (r.status === 404 || isAbsent400(r.status, text)) {
+        // Cache the ABSENCE too. Leaving it uncached made every column in a
+        // bulk loop re-enumerate an absent list: a first deploy paid one
+        // 404 per declared column per phase — 88 red console lines in
+        // maintenance unseal alone — which is the exact cost this cache
+        // exists to remove. Safe because every field-touching phase opens
+        // with invalidateFieldShapes(), so a list created later in the run
+        // is re-read at the next phase boundary rather than staying absent.
+        const empty = new Map();
+        fieldShapesByList[listName] = empty;
+        return empty;
+      }
       throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
@@ -553,12 +593,13 @@
               "type": "SP.FieldChoice"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": "{\"$schema\":\"https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json\",\"attributes\":{\"class\":\"=if(@currentField == \u0027Open\u0027, \u0027sp-css-backgroundColor-BgLightBlue\u0027, \u0027sp-css-backgroundColor-BgMintGreen\u0027)\"},\"elmType\":\"div\",\"txtContent\":\"@currentField\"}",
           "display_title": "Status",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "seal": false,
-          "title": "Status"
+          "title": "Status",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         },
         {
           "body": {
@@ -570,12 +611,13 @@
               "type": "SP.FieldNumber"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
           "display_title": "Sort Order",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "seal": false,
-          "title": "SortOrder"
+          "title": "SortOrder",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
       "kind": "List",
@@ -589,7 +631,7 @@
           "type": "SP.FieldText"
         }
       },
-      "validation_formula": "=IF([Status]=\"Closed\",[Sort Order]\u003e=0,TRUE)",
+      "validation_formula": "=OR([Status]\u003c\u003e\"Closed\",[Sort Order]\u003e=0)",
       "validation_message": "A closed project needs a non-negative sort order."
     },
     {
@@ -609,10 +651,9 @@
               "type": "SP.FieldLookup"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
           "display_title": "Project",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "lookup_creation_parameters": {
             "FieldTypeKind": 7,
             "LookupFieldName": "Title",
@@ -624,7 +665,9 @@
           },
           "seal": false,
           "target_list": "APP_Project",
-          "title": "Project"
+          "title": "Project",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         },
         {
           "body": {
@@ -636,12 +679,13 @@
               "type": "SP.FieldDateTime"
             }
           },
+          "client_validation_formula": "__dbmlsp_unmanaged__",
           "custom_formatter": null,
           "display_title": "Due Date",
-          "hide_on_display": false,
-          "hide_on_forms": false,
           "seal": false,
-          "title": "DueDate"
+          "title": "DueDate",
+          "validation_formula": "__dbmlsp_unmanaged__",
+          "validation_message": "__dbmlsp_unmanaged__"
         }
       ],
       "kind": "List",
@@ -694,8 +738,9 @@
   "seed_items": [],
   "views": [
     {
-      "caml_query": "\u003cWhere\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
+      "caml_query": "\u003cWhere\u003e\u003cOr\u003e\u003cIsNull\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003c/IsNull\u003e\u003cNeq\u003e\u003cFieldRef Name=\"Status\"/\u003e\u003cValue Type=\"Text\"\u003eClosed\u003c/Value\u003e\u003c/Neq\u003e\u003c/Or\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"SortOrder\"/\u003e\u003c/OrderBy\u003e",
       "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
+      "hidden": false,
       "list": "APP_Project",
       "row_limit": 100,
       "set_default": true,
@@ -709,8 +754,51 @@
       "widths": null
     },
     {
+      "caml_query": "",
+      "formatting": null,
+      "hidden": true,
+      "list": "APP_Project",
+      "row_limit": null,
+      "set_default": false,
+      "title": "All Items",
+      "url_slug": "AllItems",
+      "view_fields": [
+        "ID",
+        "Title",
+        "Status",
+        "SortOrder",
+        "Created",
+        "Modified",
+        "Author",
+        "Editor"
+      ],
+      "widths": null
+    },
+    {
+      "caml_query": "",
+      "formatting": null,
+      "hidden": false,
+      "list": "APP_Task",
+      "row_limit": null,
+      "set_default": true,
+      "title": "All Items",
+      "url_slug": "AllItems",
+      "view_fields": [
+        "ID",
+        "Title",
+        "Project",
+        "DueDate",
+        "Created",
+        "Modified",
+        "Author",
+        "Editor"
+      ],
+      "widths": null
+    },
+    {
       "caml_query": "\u003cGroupBy Collapse=\"FALSE\"\u003e\u003cFieldRef Name=\"Project\"/\u003e\u003c/GroupBy\u003e\u003cWhere\u003e\u003cLeq\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003cValue Type=\"DateTime\"\u003e\u003cToday OffsetDays=\"30\"/\u003e\u003c/Value\u003e\u003c/Leq\u003e\u003c/Where\u003e\u003cOrderBy\u003e\u003cFieldRef Name=\"DueDate\"/\u003e\u003c/OrderBy\u003e",
       "formatting": null,
+      "hidden": false,
       "list": "APP_Task",
       "row_limit": null,
       "set_default": false,
@@ -720,6 +808,25 @@
         "Title",
         "Project",
         "DueDate"
+      ],
+      "widths": null
+    },
+    {
+      "caml_query": "",
+      "formatting": null,
+      "hidden": false,
+      "list": "APP_AppSettings",
+      "row_limit": null,
+      "set_default": true,
+      "title": "All Items",
+      "url_slug": "AllItems",
+      "view_fields": [
+        "ID",
+        "Title",
+        "Created",
+        "Modified",
+        "Author",
+        "Editor"
       ],
       "widths": null
     }
@@ -743,6 +850,77 @@
     'Formula', 'OutputType',
   ];
 
+  // Distinguishes "clear this value" from "not managed here". Declared
+  // before any consumer: the synthetic Title patch in _lists.js.j2 needs it
+  // too, and a caller that omits it is treated as managed.
+  const UNMANAGED = "__dbmlsp_unmanaged__";
+
+  // Every field this run changed from sealed to unsealed. The value retains
+  // the pair while the key makes repeat encounters idempotent. Exit cleanup
+  // restores exactly these fields and never seals one it found open.
+  const fieldsUnsealedForRun = new Map();
+
+  // The restoration itself, called from the finally in deploy.js.j2 rather
+  // than from PROTECTION. Every phase between PREPARE and PROTECTION can
+  // return early by design — schema errors, lookup errors, ACL errors all
+  // abort before touching more of the site — and each of those returns
+  // used to skip the re-seal, ending the run with a column LESS protected
+  // than it found it. A failed run must not weaken a site, so the
+  // guarantee has to sit on the exit path, which is the only path every
+  // abort shares. Idempotent by construction: PROTECTION normally seals
+  // these on the way past, and this writes only what it finds still open,
+  // so the success path pays one field enumeration per affected list.
+  async function restoreUnsealedFields() {
+    const byList = new Map();
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (!byList.has(listTitle)) byList.set(listTitle, []);
+      byList.get(listTitle).push(columnTitle);
+    }
+    for (const [listTitle, columns] of byList.entries()) {
+      invalidateFieldShapes(listTitle);  // never trust phase-start state
+      for (const columnTitle of columns) {
+        try {
+          const shape = await readFieldShape(listTitle, columnTitle, null);
+          if (shape && shape.Sealed === true) continue;
+          const digest = await getDigest();
+          await patchField(
+            listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
+          );
+          log('WARN', `Re-sealed '${listTitle}.${columnTitle}' while exiting: the run opened it and did not reach the seal phase.`);
+        } catch (err) {
+          // Loud, and recorded: the operator has to know the site was left
+          // open, because nothing else in the run will say so.
+          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
+          summary.errors.push({ phase: 'exit', list: listTitle, column: columnTitle, error: err.message });
+        }
+      }
+    }
+  }
+
+  // The ONE constructor for the synthetic Title field. Title is not a
+  // declared column — it arrives as list.title_patch — so every consumer of
+  // a declared field has to synthesise one. Keep it here: a second copy
+  // elsewhere will drift out of step with this one.
+  function syntheticTitleField(list) {
+    return {
+      title: 'Title',
+      body: { ...list.title_patch, FieldTypeKind: 2 },
+      // Title is not a declared field, so it carries no declared formulas.
+      // All three sentinels must be explicit — `undefined !== UNMANAGED`
+      // reads as "managed", which MERGEs an empty message onto the built-in
+      // Title column and aborts the phase.
+      client_validation_formula: UNMANAGED,
+      validation_formula: UNMANAGED,
+      validation_message: UNMANAGED,
+      // Answers the impostor guard only. The built-in Title exists on every
+      // SharePoint list and can never be a same-named impostor, so a sealed
+      // Title must not fail the shape check. The tool does not own Title's
+      // seal state: the PREPARE unseal opens it only if it is already
+      // sealed, and PROTECTION restores exactly what was found.
+      seal: true,
+    };
+  }
+
   // SharePoint stores a calculated field's Formula in the field schema XML
   // and returns it with XML character entities intact (`<>` reads back as
   // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
@@ -765,7 +943,7 @@
   // brackets on both sides, but only OUTSIDE string literals (split keeps
   // `"..."` tokens, with `""` as the escaped quote, at odd indices):
   // bracket text inside a quoted constant is data, not a reference.
-  const canonicalFormula = (value) => xmlDecode(value)
+  const canonicalFormula = (value) => xmlDecode(typeof value === 'string' ? value : '')
     .split(/("(?:""|[^"])*")/)
     .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
     .join('');
@@ -806,10 +984,7 @@
   }
 
   function declaredFieldsForList(list) {
-    const titleField = {
-      title: 'Title',
-      body: { ...list.title_patch, FieldTypeKind: 2 },
-    };
+    const titleField = syntheticTitleField(list);
     const deferred = SCHEMA.phase2_lookups
       .filter(lookup => lookup.list === list.title)
       .map(lookup => lookup.field);
@@ -855,7 +1030,7 @@
       ValidationFormula: list.validation_formula,
       ValidationMessage: list.validation_message,
     }, digest);
-    const verify = await readListShape(list.title);
+    const verify = await readListShape(list.title, true);
     if (!verify
         || canonicalFormula(verify.ValidationFormula || '') !== canonicalFormula(list.validation_formula)
         || (verify.ValidationMessage || '') !== (list.validation_message || '')) {
@@ -901,7 +1076,7 @@
         __metadata: { type: 'SP.List' },
         ...desired,
       }, digest);
-      actual = await readListShape(list.title);
+      actual = await readListShape(list.title, true);
       if (!actual) throw new Error(`Declared list '${list.title}' disappeared after settings MERGE`);
       assertListImmutableShape(list, actual);
       if (listSettingsMismatch(actual, desired)) {
@@ -980,57 +1155,129 @@
     }
   }
 
-  // Declared form visibility: auto-stamped columns are removed from the NEW
-  // and EDIT forms (the display form keeps them for audit). SP exposes this
-  // through POST setter methods, not writable properties; a null read means
-  // "shown".
-  async function enforceFormVisibility(listName, field, digest) {
-    const visUrl = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
-    // ShowInNewForm/ShowInEditForm are NOT projected by the REST field
-    // resource ($select returns neither); the readable source of truth is
-    // the SchemaXml attribute — absent means "shown".
-    const readVisibility = async () => {
-      const r = await fetchWithRetry(`${visUrl}?$select=SchemaXml`, {
+  // Declared form behaviour. Two properties, opposite round-trip
+  // behaviour, both verified against a live tenant:
+  //
+  //   ClientValidationFormula  conditional + per-form visibility.
+  //                            Reads back BYTE-IDENTICAL, so compare raw.
+  //   ValidationFormula        save-time rule. NORMALISED on save (brackets
+  //                            stripped, whitespace removed), so compare
+  //                            canonically or every redeploy reports drift
+  //                            that is not there.
+  //
+  // SchemaXml's ShowInNewForm/ShowInEditForm are deliberately NOT written.
+  // Saving the form designer migrates them into FieldLink.Hidden, which
+  // hides a column from EVERY form and is not writable over REST — so a
+  // per-form declaration would silently become hide-everywhere the first
+  // time anyone opened the designer.
+  async function enforceDeclaredFormulas(listName, field, digest) {
+    const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
+    const read = async () => {
+      const r = await fetchWithRetry(`${url}?$select=ClientValidationFormula,ClientValidationMessage,ValidationFormula,ValidationMessage`, {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(`form visibility probe failed: HTTP ${r.status} ${text}`);
-      }
-      const j = await r.json();
-      const xml = String((j && j.d && j.d.SchemaXml) || '');
-      return {
-        shownOnNew: !/ShowInNewForm="FALSE"/i.test(xml),
-        shownOnEdit: !/ShowInEditForm="FALSE"/i.test(xml),
-        shownOnDisplay: !/ShowInDisplayForm="FALSE"/i.test(xml),
-      };
+      if (!r.ok) throw new Error(`formula probe failed: HTTP ${r.status} ${await r.text()}`);
+      return (await r.json()).d;
     };
-    const current = await readVisibility();
-    const setters = [];
-    if (field.hide_on_forms) {
-      setters.push([current.shownOnNew, 'setshowinnewform'], [current.shownOnEdit, 'setshowineditform']);
+
+    const body = { '__metadata': { 'type': 'SP.Field' } };
+    let wanted = false;
+    if (field.client_validation_formula !== UNMANAGED) {
+      body.ClientValidationFormula = field.client_validation_formula;
+      // Cleared alongside: a message beside a visibility formula is a
+      // property whose interaction with it was never observed, and leaving
+      // one in an unknown state next to a repurposed property is how a
+      // surprise arrives later.
+      body.ClientValidationMessage = '';
+      wanted = true;
     }
-    if (field.hide_on_display) {
-      setters.push([current.shownOnDisplay, 'setshowindisplayform']);
+    if (field.validation_formula !== UNMANAGED) {
+      body.ValidationFormula = field.validation_formula;
+      body.ValidationMessage = field.validation_message;
+      wanted = true;
     }
-    for (const [shown, method] of setters) {
-      if (shown) {
-        const r = await fetchWithRetry(`${visUrl}/${method}(false)`, {
-          method: 'POST', headers: spHeaders(digest),
-        });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(`${method}(false) failed: HTTP ${r.status} ${text}`);
-        }
-      }
+    if (!wanted) return;
+
+    const before = await read();
+    const same = (a, b) => (a || '') === (b || '');
+    const alreadyRight =
+      (field.client_validation_formula === UNMANAGED
+        || (same(before.ClientValidationFormula, field.client_validation_formula)
+            && same(before.ClientValidationMessage, '')))
+      && (field.validation_formula === UNMANAGED
+        || (canonicalFormula(before.ValidationFormula || '') === canonicalFormula(field.validation_formula)
+            && same(before.ValidationMessage, field.validation_message)));
+    if (alreadyRight) return;
+
+    // Log what is being REPLACED before replacing it. `before` was read,
+    // compared and discarded, and on success nothing was logged at all —
+    // so a deploy that removed or rewrote an existing formula left no
+    // record of what had been there. Under `reconcile: exact` an
+    // undeclared column's formula is cleared outright, which is precisely
+    // the case where the prior value is the only thing anyone would want
+    // back. Only non-empty priors are logged: a first-time write has
+    // nothing to say.
+    const replaced = [];
+    if (field.client_validation_formula !== UNMANAGED
+        && (before.ClientValidationFormula || '') !== ''
+        && !same(before.ClientValidationFormula, field.client_validation_formula)) {
+      replaced.push(`ClientValidationFormula was ${JSON.stringify(before.ClientValidationFormula)}`);
     }
-    const verify = await readVisibility();
-    const stillShown = [];
-    if (field.hide_on_forms && verify.shownOnNew) stillShown.push('new form');
-    if (field.hide_on_forms && verify.shownOnEdit) stillShown.push('edit form');
-    if (field.hide_on_display && verify.shownOnDisplay) stillShown.push('display form');
-    if (stillShown.length > 0) {
-      throw new Error(`did not retain form visibility (still shown on: ${stillShown.join(', ')})`);
+    if (field.validation_formula !== UNMANAGED
+        && (before.ValidationFormula || '') !== ''
+        && canonicalFormula(before.ValidationFormula || '') !== canonicalFormula(field.validation_formula)) {
+      replaced.push(`ValidationFormula was ${JSON.stringify(before.ValidationFormula)}`);
+    }
+    if (field.validation_formula !== UNMANAGED
+        && (before.ValidationMessage || '') !== ''
+        && !same(before.ValidationMessage, field.validation_message)) {
+      replaced.push(`ValidationMessage was ${JSON.stringify(before.ValidationMessage)}`);
+    }
+    if (replaced.length > 0) {
+      const action = field.client_validation_formula === '' && field.validation_formula === ''
+        ? 'clearing' : 'overwriting';
+      log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas — ${replaced.join('; ')}`);
+    }
+
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${await r.text()}`);
+
+    // A SEALED column accepts the write, reports success and discards it,
+    // so the read-back is the only evidence the change landed.
+    const after = await read();
+    if (field.client_validation_formula !== UNMANAGED
+        && !same(after.ClientValidationFormula, field.client_validation_formula)) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ClientValidationFormula `
+        + `(declared ${JSON.stringify(field.client_validation_formula)}; readback ${JSON.stringify(after.ClientValidationFormula)})`,
+      );
+    }
+    if (field.client_validation_formula !== UNMANAGED
+        && !same(after.ClientValidationMessage, '')) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ClientValidationMessage `
+        + `(declared ""; readback ${JSON.stringify(after.ClientValidationMessage)})`,
+      );
+    }
+    if (field.validation_formula !== UNMANAGED
+        && canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(field.validation_formula)) {
+      // Both values are logged: SharePoint's normalisation may do more than
+      // has been observed, and a bare failure would need another probe.
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ValidationFormula `
+        + `(declared ${JSON.stringify(field.validation_formula)}; readback ${JSON.stringify(after.ValidationFormula)})`,
+      );
+    }
+    if (field.validation_formula !== UNMANAGED
+        && !same(after.ValidationMessage, field.validation_message)) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ValidationMessage `
+        + `(declared ${JSON.stringify(field.validation_message)}; readback ${JSON.stringify(after.ValidationMessage)})`,
+      );
     }
   }
 
@@ -1112,9 +1359,7 @@
     if (drifted.length > 0) {
       throw new Error(`Field '${listName}.${field.title}' did not retain declared mutable setting(s): ${drifted.join(', ')}`);
     }
-    if (field.hide_on_forms || field.hide_on_display) {
-      await enforceFormVisibility(listName, field, digest);
-    }
+    await enforceDeclaredFormulas(listName, field, digest);
     return true;
   }
 
@@ -1141,7 +1386,38 @@
       : 'Current user lacks ManageLists on this site.');
     return { aborted: 'insufficient-permissions' };
   }
-
+  // Run-scoped privilege is exit-scoped too. Keep the state and cleanup
+  // outside the phase try so an unexpected throw can still remove every
+  // membership this deployment added.
+  const selfEnrollments = [];
+  async function removeSelfEnrollments() {
+    for (const enrollment of selfEnrollments.splice(0)) {
+      try {
+        const digestR = await getDigest();
+        const removeResp = await fetchWithRetry(apiUrl(`web/sitegroups(${enrollment.groupId})/users/removebyid(${enrollment.userId})`), {
+          method: 'POST',
+          headers: spHeaders(digestR),
+        });
+        if (!removeResp.ok) {
+          const text = await removeResp.text();
+          throw new Error(`HTTP ${removeResp.status} ${text}`);
+        }
+        log('INFO', `Removed operator from '${enrollment.groupName}' (run-scoped enrolment).`);
+      } catch (err) {
+        log('ERROR', `Could not remove the operator from '${enrollment.groupName}': ${err.message}. Remove yourself in Site permissions > Groups.`);
+      }
+    }
+  }
+  // Every phase runs inside this try so that the finally below is reached
+  // by EVERY exit: the normal `return summary` at the end of the last
+  // phase, the seven early returns that abort a broken run, and a throw
+  // nobody caught. Anything a run must hand back regardless of outcome
+  // belongs in that finally and nowhere else — putting it on the success
+  // path is how a failed run came to leave a Title unsealed. The phase
+  // bodies keep their own indentation: they are 3,000 lines of included
+  // partials, and re-indenting them to sit under this try would bury the
+  // change in whitespace.
+  try {
   markPhase('Phase 1.1 — read-only preflight');
   // === Preflight: fail-closed adoption of existing schema objects ===
   // A matching display name is not proof that an existing list or field was
@@ -1488,25 +1764,6 @@
   // member is left untouched. Only principals who can already manage the
   // group (its Site-Owners owner) can benefit; this adds no new authority.
   log('INFO', 'Starting Phase 1.3: operator self-enrolment.');
-  const selfEnrollments = [];
-  async function removeSelfEnrollments() {
-    for (const enrollment of selfEnrollments.splice(0)) {
-      try {
-        const digestR = await getDigest();
-        const removeResp = await fetchWithRetry(apiUrl(`web/sitegroups(${enrollment.groupId})/users/removebyid(${enrollment.userId})`), {
-          method: 'POST',
-          headers: spHeaders(digestR),
-        });
-        if (!removeResp.ok) {
-          const text = await removeResp.text();
-          throw new Error(`HTTP ${removeResp.status} ${text}`);
-        }
-        log('INFO', `Removed operator from '${enrollment.groupName}' (run-scoped enrolment).`);
-      } catch (err) {
-        log('ERROR', `Could not remove the operator from '${enrollment.groupName}': ${err.message}. Remove yourself in Site permissions > Groups.`);
-      }
-    }
-  }
   {
     const enrollGroups = SCHEMA.groups.filter(g => g.enroll_operator_during_deploy);
     for (const grp of enrollGroups) {
@@ -1550,10 +1807,8 @@
   }
   if (summary.errors.length > 0) {
     log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
-
   markPhase('Phase 1.4 — maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY
@@ -1572,6 +1827,16 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
+    // The built-in Title is not a declared column, so it was never in this
+    // set — and Phase 1 writes list.title_patch to it. A Title sealed by
+    // anything other than this tool therefore made the run un-completable
+    // and un-repairable: the write failed, and the only maintenance path
+    // that can unseal walked declared columns only. Probed unconditionally
+    // (the loop below writes ONLY if it finds Sealed true), so a normal
+    // site pays one read and nothing changes.
+    for (const list of SCHEMA.lists) {
+      if (list.title_patch) sealDeclared.push([list.title, 'Title']);
+    }
     if (sealDeclared.length > 0) {
       log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
       let unsealedCount = 0;
@@ -1584,6 +1849,12 @@
             const unsealDigest = await getDigest();
             await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
             unsealedCount += 1;
+            // Record only after the write succeeds. The exit path restores
+            // every field this run actually opened, including ordinary
+            // declared columns when a later phase aborts before PROTECTION.
+            fieldsUnsealedForRun.set(
+              `${listTitle}\u0000${columnTitle}`, [listTitle, columnTitle],
+            );
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
@@ -1593,7 +1864,6 @@
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
     }
   }
-
   markPhase('Phase 2.1 — list creation');
   // === Phase 2.1: lists + non-lookup columns + same-site lookups ===
   log('INFO', 'Group 2 — STRUCTURE');
@@ -1613,7 +1883,7 @@
     try {
       // Refresh the digest per list: a long Phase 2.1 (hundreds of field POSTs)
       // can outlive a single FormDigestValue (~30 min), so re-fetch per list
-      // rather than reuse the one fetched before the loop (A4).
+      // rather than reuse the one fetched before the loop.
       digest = await getDigest();
       let createdThisRun = false;
       let listShape = await readListShape(list.title);
@@ -1641,6 +1911,7 @@
           throw new Error(`List '${list.title}' create returned an invalid response`);
         }
         createdThisRun = true;
+        invalidateListShapes();  // the enumeration no longer knows every list
         summary.listsCreated.push(list.title);
       }
       listShape = await reconcileListShape(list, digest);
@@ -1714,7 +1985,7 @@
     try {
       let laneDigest = await getDigest();
       for (const col of list.fields_phase1) {
-        // Guard each field independently (A4): one field's failure (a transient
+        // Guard each field independently: one field's failure (a transient
         // 429/403, or a missing lookup target) must not abandon the list's
         // remaining columns and its Title patch. Existing fields are never
         // trusted by name alone: immutable identity is checked before safely
@@ -1766,11 +2037,9 @@
       }
 
       if (list.title_patch) {
-        const titleField = {
-          title: 'Title',
-          body: { ...list.title_patch, FieldTypeKind: 2 },
-        };
-        await reconcileDeclaredField(list.title, titleField, null, laneDigest, false);
+        await reconcileDeclaredField(
+          list.title, syntheticTitleField(list), null, laneDigest, false,
+        );
       }
 
       laneDigest = await getDigest();
@@ -1783,10 +2052,8 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-1-schema-errors' };
   }
-
   markPhase('Phase 2.2 — deferred lookups');
   // === Phase 2.2: deferred lookups ===
   log('INFO', 'Starting Phase 2.2: deferred lookups.');
@@ -1794,7 +2061,7 @@
   digest = await getDigest();
   for (const lookup of SCHEMA.phase2_lookups) {
     try {
-      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      digest = await getDigest();  // refresh per item (digest lifetime)
       const targetGuid = listGuids[lookup.target_list];
       if (!targetGuid) throw new Error(`Lookup target ${lookup.target_list} missing.`);
       if (await reconcileDeclaredField(
@@ -1827,17 +2094,15 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Phase 2.2 lookup reconciliation failed; aborting before indexes and ACL work.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-2-schema-errors' };
   }
-
   markPhase('Phase 2.3 — indexed columns');
   // === Phase 2.3: indexed columns ===
   log('INFO', 'Starting Phase 2.3: indexed columns.');
   digest = await getDigest();
   for (const idx of SCHEMA.indexed_columns) {
     try {
-      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      digest = await getDigest();  // refresh per item (digest lifetime)
       await patchField(idx.list, idx.field, { __metadata: { type: 'SP.Field' }, Indexed: true }, digest);
     } catch (err) {
       log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);
@@ -1880,11 +2145,13 @@
   }
 
   markPhase('Phase 3.1 — views');
-  // === Phase 3.1: declared views ===
+  // === Phase 3.1: managed views ===
   // Fields created through the REST field collection join no view, so a
-  // fresh list shows a Title-only default view. Declared views are part of
-  // the physical shape and reconcile like fields. Undeclared views are user
-  // content and are never touched (unlike exact-mode ACLs).
+  // fresh list shows a Title-only default view. Every list gets a generated,
+  // unfiltered All Items recovery view containing its complete rendered
+  // schema; when an authored default exists the recovery view is hidden from
+  // the modern view bar. Authored views are managed alongside it. Other views
+  // are user content and are never touched (unlike exact-mode ACLs).
   log('INFO', 'Group 3 — PRESENTATION');
   log('INFO', 'Starting Phase 3.1: views.');
   // Readback normalization: SP collapses nothing between tags but DOES write
@@ -1907,7 +2174,7 @@
     }
   }
   async function readViewShape(viewUrl) {
-    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
+    const r = await fetchWithRetry(`${viewUrl}?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`, {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
     if (r.status === 404) return null;
@@ -1925,7 +2192,7 @@
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
-      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
+      const r = await fetchWithRetry(apiUrl(`${listPath}/views?$select=Id,Title,DefaultView,Hidden,RowLimit,ViewQuery,PersonalView,CustomFormatter,ServerRelativeUrl,ViewFields&$expand=ViewFields`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) {
@@ -1965,6 +2232,7 @@
           __metadata: { type: 'SP.View' },
           Title: view.url_slug,
           PersonalView: false,
+          Hidden: view.hidden,
           Paged: true,
           ViewQuery: view.caml_query,
         };
@@ -2027,6 +2295,9 @@
         if (view.row_limit != null && existing.RowLimit !== view.row_limit) {
           patchBody.RowLimit = view.row_limit;
         }
+        if (existing.Hidden !== view.hidden) {
+          patchBody.Hidden = view.hidden;
+        }
         if (Object.keys(patchBody).length > 1) {
           await mergeView(viewUrl, patchBody, viewDigest);
         }
@@ -2080,6 +2351,9 @@
         drifted.push(`RowLimit (declared ${view.row_limit}; readback ${actual.RowLimit})`);
       }
       if (view.set_default && !actual.DefaultView) drifted.push('DefaultView (declared true; readback false)');
+      if (actual.Hidden !== view.hidden) {
+        drifted.push(`Hidden (declared ${view.hidden}; readback ${actual.Hidden})`);
+      }
       if (view.formatting != null
           && canonicalViewFormatter(actual.CustomFormatter) !== canonicalViewFormatter(view.formatting)) {
         drifted.push(`CustomFormatter (declared ${JSON.stringify(view.formatting)}; readback ${JSON.stringify(actual.CustomFormatter)})`);
@@ -2159,7 +2433,6 @@
   // writes to the same list race into save conflicts — different lists are
   // independent, so their lanes run concurrently.
   await mapLanes(SCHEMA.views, (view) => view.list, deployView, 4);
-
   markPhase('Phase 3.2 — form formatting');
   // === Phase 3.2: form formatting ===
   // Declared list-form layouts (header/body/footer JSON) live on the list's
@@ -2252,6 +2525,11 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
+    // Declared fields are already present above. Add the built-in Titles
+    // PREPARE opened; the tool does not otherwise own their seal state.
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (columnTitle === 'Title') sealDeclared.push([listTitle, columnTitle]);
+    }
     let sealedCount = 0;
     // One lane per list (field MERGEs on the same list race into save
     // conflicts; lists are independent). After a lane's writes, ONE fresh
@@ -2300,7 +2578,6 @@
       log('INFO', `Phase 4.1 complete: ${sealDeclared.length} column(s) sealed and verified (${sealedCount} newly sealed).`);
     }
   }
-
   markPhase('Phase 4.2 — role inheritance and assignments');
   // === Phase 4.2: break inheritance + role assignments ===
   log('INFO', 'Starting Phase 4.2: role inheritance and assignments.');
@@ -2570,10 +2847,8 @@
   // repair checklist and the rerunnable deployment can be attempted again.
   if (summary.errors.length > 0) {
     log('ERROR', 'Deployment has unresolved schema or ACL errors; aborting before seed items.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'pre-seed-errors' };
   }
-
   markPhase('Phase 5.1 — seed items');
   // === Phase 5.1: seed singleton list items (extension-provided) ===
   log('INFO', 'Group 5 — DATA');
@@ -2695,7 +2970,6 @@
 
   if (summary.errors.length > 0) {
     log('ERROR', 'Singleton seed verification failed; deployment is not activation-ready.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'phase-5-seed-errors' };
   }
 
@@ -2735,5 +3009,14 @@
   }
   log('DONE', `Deployment complete. Lists +${summary.listsCreated.length}, columns +${summary.columnsCreated}, skipped ${summary.columnsSkipped}, errors ${summary.errors.length}. Elapsed ${summary.elapsedSeconds}s (${requestCount} requests).`);
   console.log(summary);
+  // The IIFE is opened AND closed in deploy.js.j2, which is also where the
+  // try wrapping every phase closes. A phase partial that emitted `})();`
+  // itself would close the function before that finally could run.
   return summary;
+  } finally {
+    // Restore field protection before dropping the temporary membership
+    // that may be what authorises those writes.
+    await restoreUnsealedFields();
+    await removeSelfEnrollments();
+  }
 })();

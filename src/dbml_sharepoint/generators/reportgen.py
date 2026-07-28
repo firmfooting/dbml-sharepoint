@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from dbml_sharepoint import __version__
+from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
@@ -531,23 +532,72 @@ def _sp_type_cell(
     return sp.kind
 
 
+def _form_behaviour_cells(
+    table_name: str, column: str, bundle: MappingBundle,
+) -> tuple[str, str]:
+    """(populated when, save rule) for one column, in prose.
+
+    Described through `describe()`, never in a target's syntax. This is the
+    artefact a report author reads, and `[$ID] != ''` tells them nothing —
+    it is a SharePoint list-formatting expression they would first have to
+    identify as one. The declaration is theirs to understand; the mechanism
+    carrying it is not.
+    """
+    populated = "—"
+    section = bundle.mapping.form_visibility.get(table_name)
+    declared = section.columns.get(column) if section else None
+    if declared is not None:
+        when = describe(declared.when) if declared.when is not None else ""
+        if not declared.new and not declared.existing:
+            populated = "Never on a form"
+        elif not declared.new:
+            populated = "Only after creation" + (f", and when {when}" if when else "")
+        elif not declared.existing:
+            populated = "Only at creation" + (f", and when {when}" if when else "")
+        elif when:
+            populated = f"When {when}"
+        else:
+            populated = "Always"
+
+    rule = "—"
+    cv_section = bundle.mapping.column_validation.get(table_name)
+    cv = cv_section.columns.get(column) if cv_section else None
+    if cv is not None:
+        rule = f"{describe(cv.when)} — {cv.message}"
+    return populated, rule
+
+
 def _column_rows_for_table(
     table: Table,
     bundle: MappingBundle,
     enum_names: set[str],
     enum_members: dict[str, list[str]],
     cross_site_keys: set[tuple[str, str]],
-) -> list[tuple[str, str, str, str, str, str]]:
-    """Plain-text dictionary rows for one table:
-    (column, type, required, unique, default, description)."""
+) -> list[tuple[str, str, str, str, str, str, str, str, str, str]]:
+    """Plain-text dictionary rows for one table: (column, type, required,
+    unique, default, retired, superseded by, populated when, save rule,
+    description).
+
+    Retired columns are still listed, and the generated list queries still
+    select them: history is the entire point of retiring rather than
+    deleting.
+    """
     formulas = bundle.mapping.calculated_formulas.get(table.name, {})
-    rows: list[tuple[str, str, str, str, str, str]] = []
+    retired = bundle.mapping.retired_columns.get(table.name, {})
+    rows: list[tuple[str, str, str, str, str, str, str, str, str, str]] = []
     for col in table.columns:
+        populated, rule = _form_behaviour_cells(table.name, col.name, bundle)
+        spec = retired.get(col.name)
+        # The bare-list declaration form carries no date; "yes" still says
+        # the column is retired.
+        retired_cell = (spec.retired or "yes") if spec is not None else "—"
+        superseded_cell = (spec.superseded_by or "—") if spec is not None else "—"
         if (table.name, col.name) in cross_site_keys:
             rows.append((
                 col.name,
                 "Cross-site reference (extension-expanded at deploy time)",
                 "—", "—", "—",
+                retired_cell, superseded_cell, populated, rule,
                 col.note or "—",
             ))
             continue
@@ -559,6 +609,10 @@ def _column_rows_for_table(
             "yes" if sp.required else "—",
             "yes" if sp.unique else "—",
             str(sp.default) if sp.default is not None else "—",
+            retired_cell,
+            superseded_cell,
+            populated,
+            rule,
             sp.description or (
                 "SharePoint item identifier." if sp.kind == "Skip" else "—"
             ),
@@ -657,17 +711,21 @@ def generate_data_dictionary(
         if table.note:
             lines += [_md_cell(table.note), ""]
         lines += [
-            "| Column | SharePoint type | Required | Unique | Default | Description |",
-            "|---|---|---|---|---|---|",
+            "| Column | SharePoint type | Required | Unique | Default | "
+            "Retired | Superseded by | Populated when | Save rule | Description |",
+            "|---|---|---|---|---|---|---|---|---|---|",
         ]
-        for name, type_cell, required, unique, default, description in (
-            _column_rows_for_table(
-                table, bundle, enum_names, enum_members, cross_site_keys,
-            )
+        for (
+            name, type_cell, required, unique, default,
+            retired, superseded_by, populated, rule, description,
+        ) in _column_rows_for_table(
+            table, bundle, enum_names, enum_members, cross_site_keys,
         ):
             lines.append(
                 f"| {name} | {_md_cell(type_cell)} | {required} | {unique} | "
-                f"{_md_cell(default)} | {_md_cell(description)} |",
+                f"{_md_cell(default)} | {retired} | {superseded_by} | "
+                f"{_md_cell(populated)} | {_md_cell(rule)} | "
+                f"{_md_cell(description)} |",
             )
         details: list[str] = []
         indexed = mapping.indexed_columns.get(table.name, [])
@@ -717,9 +775,10 @@ def generate_data_dictionary(
 
 def _dictionary_rows(
     schema: Schema, bundle: MappingBundle, site_role: str,
-) -> list[tuple[str, str, str, str, str, str, str]]:
-    """(list, column, type, required, unique, default, description) for every
-    column in the site role, in schema order."""
+) -> list[tuple[str, str, str, str, str, str, str, str, str, str, str]]:
+    """(list, column, type, required, unique, default, retired, superseded
+    by, populated when, save rule, description) for every column in the site
+    role, in schema order."""
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = {
@@ -727,7 +786,7 @@ def _dictionary_rows(
         for xref in bundle.mapping.cross_site_reference_columns
     }
     prefix = bundle.mapping.prefix
-    rows: list[tuple[str, str, str, str, str, str, str]] = []
+    rows: list[tuple[str, str, str, str, str, str, str, str, str, str, str]] = []
     for table in _tables_for_role(schema, bundle, site_role):
         for row in _column_rows_for_table(
             table, bundle, enum_names, enum_members, cross_site_keys,
@@ -783,7 +842,8 @@ def _render_user_added_columns_m(plans: list[_ListPlan]) -> str:
             "let",
             "    Source = #table(",
             "        type table [List = text, InternalName = text, "
-            "DisplayName = text, Type = text],",
+            "DisplayName = text, Type = text, PopulatedWhenFormula = text, "
+            "SaveRuleFormula = text],",
             "        {}",
             "    )",
             "in",
@@ -816,8 +876,13 @@ def _render_user_added_columns_m(plans: list[_ListPlan]) -> str:
         "        let",
         "            Fields = OData.Feed(",
         "                SiteUrl & \"/_api/web/lists/getbytitle('\" & listTitle & \"')/fields\"",
+        # The two formula properties ride along on a call this query already
+        # makes on every refresh, turning the drift audit into a refresh-time
+        # check that the DEPLOYED form contract still matches the dictionary
+        # beside it. The declarations are otherwise visible only at build time.
         "                    & \"?$select=InternalName,Title,TypeAsString,"
-        "Hidden,ReadOnlyField,CanBeDeleted\",",
+        "Hidden,ReadOnlyField,CanBeDeleted,ClientValidationFormula,"
+        "ValidationFormula\",",
         "                null,",
         '                [Implementation = "2.0"]',
         "            ),",
@@ -829,8 +894,11 @@ def _render_user_added_columns_m(plans: list[_ListPlan]) -> str:
         "            ),",
         "            Named = Table.RenameColumns(",
         "                Table.SelectColumns(UserAdded, "
-        '{"InternalName", "Title", "TypeAsString"}),',
-        '                {{"Title", "DisplayName"}, {"TypeAsString", "Type"}}',
+        '{"InternalName", "Title", "TypeAsString", '
+        '"ClientValidationFormula", "ValidationFormula"}),',
+        '                {{"Title", "DisplayName"}, {"TypeAsString", "Type"}, '
+        '{"ClientValidationFormula", "PopulatedWhenFormula"}, '
+        '{"ValidationFormula", "SaveRuleFormula"}}',
         "            ),",
         '            Tagged = Table.AddColumn(Named, "List", each listTitle, type text)',
         "        in",
@@ -841,7 +909,7 @@ def _render_user_added_columns_m(plans: list[_ListPlan]) -> str:
         '    Sorted = Table.Sort(Combined, {{"List", Order.Ascending}, '
         '{"InternalName", Order.Ascending}}),',
         '    Final = Table.ReorderColumns(Sorted, {"List", "InternalName", '
-        '"DisplayName", "Type"})',
+        '"DisplayName", "Type", "PopulatedWhenFormula", "SaveRuleFormula"})',
         "in",
         "    Final",
         "",
@@ -881,7 +949,9 @@ def generate_dictionary_powerquery(
             "Load and add a report page with a table visual over this query "
             "(sorted by SortOrder) to surface the data dictionary in the report.",
             "SortOrder = Int64.Type, List = text, Column = text, Type = text, "
-            "Required = text, Unique = text, Default = text, Description = text",
+            "Required = text, Unique = text, Default = text, "
+            "Retired = text, SupersededBy = text, "
+            "PopulatedWhen = text, SaveRule = text, Description = text",
             dd_rows,
         ),
         "_ModelInfo.pq": _render_m_table(
@@ -984,7 +1054,8 @@ def generate_dictionary_sql(
         _render_sql_values_view(
             f"vw_{prefix}DataDictionary",
             ["SortOrder", "List", "Column", "Type",
-             "Required", "Unique", "Default", "Description"],
+             "Required", "Unique", "Default", "Retired", "SupersededBy",
+             "PopulatedWhen", "SaveRule", "Description"],
             dd_rows,
         )
         + "\n"

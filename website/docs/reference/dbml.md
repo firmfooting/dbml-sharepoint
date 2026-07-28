@@ -75,8 +75,26 @@ relationships use the mapping's `cross_site_reference_columns` pattern
 
 Surfaced at build time by the validator, not discovered at deploy time:
 
-- Calculated columns cannot reference Lookup or Person columns, or
-  `[Today]`.
 - Lookups are same-site only.
 - A schema *upgrade* whose immutable shapes changed (types, lookup
   targets, list templates) fails closed for explicit migration.
+- A calculated formula referencing a name that is not a column of the
+  entity is refused, naming the reference.
+
+:::warning Calculated formulas: check the operand types yourself
+
+SharePoint does not allow a calculated column to reference a **Lookup** or
+**Person** column, and the validator does **not** catch it. Verified:
+`OwnerCopy: '=[Owner]'` over a `person` column builds with exit 0 and zero
+findings. SharePoint rejects it at paste time with an HTTP 500, part-way
+through provisioning.
+
+The reference check is a name check, not a type check — it verifies the
+name is a column of the entity and nothing more. `[Today]` happens to be
+caught only because no column is called `Today`.
+
+Until this is a build error, treat the operands of every
+`calculated_formulas` entry as your responsibility: single-select Choice,
+Text, Number, Boolean and Date columns of the same list only.
+
+:::

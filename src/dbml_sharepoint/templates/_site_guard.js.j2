@@ -23,6 +23,6 @@
   const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
   // OData string-literal encoder: SharePoint getbytitle/getbyname take a
   // single-quoted OData literal, where an embedded apostrophe must be
-  // DOUBLED (`''`); encodeURIComponent alone does not escape `'` (A5).
+  // DOUBLED (`''`); encodeURIComponent alone does not escape `'`.
   const odataName = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
   log('INFO', `Running as ${(_spPageContextInfo.userLoginName) || '(unknown)'} on web '${WEB || '(root)'}'.`);

@@ -1,0 +1,23 @@
+{
+  "sections": [
+    {
+      "displayname": "Header",
+      "fields": ["Title", "BoardDate", "Chair", "HuddleHeld", "StoodDownReason", "OverallStatus"]
+    },
+    {
+      "displayname": "Streams",
+      "fields": [
+        "SafetyStatus", "SafetyNote",
+        "PeopleStatus", "PeopleNote",
+        "WorkloadStatus", "WorkloadNote",
+        "EquipmentStatus", "EquipmentNote",
+        "QualityStatus", "QualityNote",
+        "ImprovementStatus", "ImprovementNote"
+      ]
+    },
+    {
+      "displayname": "Wrap-up",
+      "fields": ["Recognition", "OtherUpdates"]
+    }
+  ]
+}

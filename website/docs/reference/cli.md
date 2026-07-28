@@ -29,13 +29,32 @@ manifests, reporting, INDEX.md, checksums.txt — plus demo-data.js with
 
 Behaviour worth knowing:
 
-- Validation errors refuse the build (exit 2) — the manifest lists every
-  finding.
+- Validation errors refuse the build — the manifest lists every finding.
 - `--site-role` is checked against the roles the mapping actually
   declares; a misspelled role is an error, never a silently empty
   deploy plan.
+- `--dry-run` still writes `deploy-manifest.md`, so you can read the
+  findings and the deployment plan. It is the JS that is withheld.
 - An extension that requires its own project CLI causes `build` to exit
   with instructions rather than emitting a half-configured bundle.
+
+## Exit codes
+
+Measured, because a CI gate keys on these:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success, including a `--dry-run` that found no errors |
+| `1` | The build refused: validation errors, or an unreadable/invalid input file |
+| `2` | Usage error — a missing required option, or a `--site-role` the mapping does not declare |
+
+A validation failure exits **1**, not 2. `2` is the usage-error code
+`typer` raises before the pipeline runs at all. Gate on non-zero rather
+than on a specific code.
+
+An invalid `mapping.yaml` currently prints a Python traceback above the
+one useful sentence. The message at the bottom is the actionable part; the
+frames above it are noise, not a crash.
 
 ## `report`
 

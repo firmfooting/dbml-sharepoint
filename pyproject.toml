@@ -80,6 +80,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "test/**" = ["S101"]           # pytest asserts
 "website/scripts/**" = ["T20"] # generator scripts report via print
+"test/manual/render_probes.py" = ["T20"]     # generator script, reports via print
+"test/test_probes.py" = ["S603", "S607"]     # runs `node --check` on our own files
 
 [tool.mypy]
 python_version = "3.13"

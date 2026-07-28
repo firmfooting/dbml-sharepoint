@@ -2,10 +2,12 @@
 
 import datetime as dt
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 from urllib.parse import urlparse
 
 import typer
+import yaml
+from pyparsing.exceptions import ParseBaseException
 
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import SeedRequiresDemoItemsError, clear_generated, emit_bundle
@@ -20,9 +22,9 @@ from dbml_sharepoint.generators.reportgen import (
     generate_reporting_md,
     generate_sql_views,
 )
-from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.parser import parse_dbml
-from dbml_sharepoint.model.release import load_release
+from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.release import Release, load_release
 
 app = typer.Typer(
     name="dbml-sharepoint",
@@ -45,8 +47,57 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
 }
 
 
+# A bad config file fails as one of these. Deliberately not `Exception`:
+# an unexpected error is a bug in the tool and must keep its traceback.
+_CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
+
+
+def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
+    detail = f"missing required key {exc}" if isinstance(exc, KeyError) else str(exc)
+    typer.echo(f"[ERROR] {what} {path}: {detail}", err=True)
+    # 1, not 2. The documented contract reserves 2 for the usage errors
+    # typer raises BEFORE the pipeline runs — a missing option, an unknown
+    # --site-role — and gives 1 to "the build refused", which explicitly
+    # includes an unreadable or invalid input file. A bad config is a
+    # refused build, not a misuse of the command line, and a CI gate keying
+    # on the documented table would have mis-classified it.
+    raise typer.Exit(code=1) from exc
+
+
+def _load_config(
+    schema: Path, mapping: Path, release: Path | None,
+) -> tuple[Schema, MappingBundle, Release | None]:
+    """Load the three config files, reporting a bad one as a message.
+
+    Any of these can fail on a typo in a file the operator edited by hand,
+    and an unhandled exception rendered ~20 lines of loader internals above
+    the single sentence saying what is wrong. The person who hits it is a
+    SharePoint admin editing YAML: not one frame of that stack is
+    actionable, and the semantic (post-load) errors beside it are already
+    clean one-liners — so the contrast made a config typo look like a crash
+    in the tool rather than a mistake in the file.
+
+    This CLI has no verbosity flag, so the traceback is not tucked behind
+    one. Inventing `--traceback` here would advertise an option the rest of
+    the interface does not have.
+    """
+    try:
+        parsed_schema = parse_dbml(schema)
+    except _CONFIG_ERRORS as exc:
+        _config_error("schema", schema, exc)
+    try:
+        bundle = load_mapping(mapping)
+    except _CONFIG_ERRORS as exc:
+        _config_error("mapping", mapping, exc)
+    try:
+        release_obj = load_release(release) if release is not None else None
+    except _CONFIG_ERRORS as exc:
+        _config_error("release", release, exc)
+    return parsed_schema, bundle, release_obj
+
+
 def validate_site_url(site_url: str) -> None:
-    """Reject a malformed or non-https ``--site-url`` at parse time (A5).
+    """Reject a malformed or non-https ``--site-url`` at parse time.
 
     The URL is interpolated into the generated deploy.js (as ``SITE_URL`` and in
     the site-match preflight comparison), so it must be a well-formed absolute
@@ -88,9 +139,9 @@ def build(
     """Generate deploy.js + manifest from the DBML schema and mapping."""
     clear_generated(out, reporting=True)
     validate_site_url(site_url)
-    parsed_schema = parse_dbml(schema)
-    bundle = load_mapping(mapping)
-    release_obj = load_release(release)
+    parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
+    if release_obj is None:  # unreachable: --release is a required option
+        raise typer.BadParameter("--release is required for `build`.")
     ext = resolve_extension(extension or bundle.mapping.extension)
 
     if ext.requires_project_cli:
@@ -214,9 +265,7 @@ def report(
     DATA-DICTIONARY.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
     """
-    parsed_schema = parse_dbml(schema)
-    bundle = load_mapping(mapping)
-    release_obj = load_release(release) if release is not None else None
+    parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
 
     # Same data-driven role vocabulary as `build`: a misspelled role would
     # otherwise silently produce an empty report set (exit 0).

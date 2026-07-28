@@ -147,11 +147,16 @@ _(none configured)_
 
 {% if views %}
 {% for v in views %}
-- **{{ v.title }}** on {{ v.list }}{{ ' (default)' if v.set_default else '' }}{{ ' [row-formatted]' if v.formatting else '' }}: {{ v.view_fields | join(', ') }}{{ ' — ' + v.summary if v.summary else '' }}
+- **{{ v.title }}** on {{ v.list }}{{ ' (default)' if v.set_default else '' }}{{ ' [hidden]' if v.hidden else '' }}{{ ' [row-formatted]' if v.formatting else '' }}: {{ v.view_fields | join(', ') }}{{ ' — ' + v.summary if v.summary else '' }}{{ ' — expanded from field sets: ' + v.expanded_from if v.expanded_from else '' }}
 {% endfor %}
 
-Declared views are created or reconciled exactly (columns, order, query,
-row limit, default flag); undeclared views are never modified.
+The generated **All Items** recovery view is unfiltered and contains every
+rendered schema and supported system column. It is the default only when no
+authored view claims that slot; otherwise it is hidden from the modern view
+bar. Managed views are created or reconciled exactly (columns, order, query,
+row limit, default and hidden flags); other views are never modified.
+Field lists are shown RESOLVED: a view declared with `@setname` prints the
+columns the set expanded to, and names the sets it used.
 {% else %}
 _(none declared)_
 {% endif %}
@@ -165,6 +170,85 @@ _(none declared)_
 
 Declared column formats (SP CustomFormatter JSON) are reconciled with the
 field; columns without a declaration keep any hand-applied format.
+{% else %}
+_(none declared)_
+{% endif %}
+
+{% if retired_columns %}
+## Retired columns
+
+Declared in `retired_columns:`. These columns keep their data and stay
+declared, sealed and deployer-managed - so the `_UserAddedColumns.pq` drift
+audit stays clean - but they are hidden from the New form, dropped from every
+declared view and from any form body section, and their display title carries
+a `(retired)` suffix. **Never delete them from the DBML:** deleting the
+declaration does not delete anything on the site, it leaves a live, visible,
+deletable column the schema no longer declares.
+
+| List | Column | Display title | Retired | Superseded by | Reason |
+|------|--------|---------------|---------|---------------|--------|
+{% for r in retired_columns %}
+| {{ r.list }} | {{ r.column }} | {{ r.display }} | {{ r.retired }} | {{ r.superseded_by }} | {{ r.reason }} |
+{% endfor %}
+
+{% endif %}
+## Form visibility
+
+{% if form_visibility %}
+{% for fv in form_visibility %}
+- {{ fv.list }}.{{ fv.column }}{% if fv.cleared %} — cleared{% else %}
+  `{{ fv.formula }}`{% endif %}
+
+{% endfor %}
+{% if reconcile_modes.form_visibility %}
+Reconcile: {% for list_title, mode in reconcile_modes.form_visibility.items() %}{{ list_title }} `{{ mode }}`{% if not loop.last %}, {% endif %}{% endfor %}. `exact` CLEARS the formula on every declared column of that list without an entry.
+{% endif %}
+
+Per-form and conditional visibility ride a single field property
+(ClientValidationFormula), so both are composed into the one formula shown.
+"cleared" means the declaration is authoritative for that list and the
+column has no entry, so any existing formula is removed. SchemaXml
+ShowIn*Form is deliberately never written: saving the form designer
+migrates it into FieldLink.Hidden, which hides a column from every form
+and cannot be undone over REST.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## Column validation
+
+{% if column_validation %}
+{% for cv in column_validation %}
+- {{ cv.list }}.{{ cv.column }}{% if cv.cleared %} — cleared{% else %}
+  `{{ cv.formula }}`
+  message: {{ cv.message }}{% endif %}
+
+{% endfor %}
+{% if reconcile_modes.column_validation %}
+Reconcile: {% for list_title, mode in reconcile_modes.column_validation.items() %}{{ list_title }} `{{ mode }}`{% if not loop.last %}, {% endif %}{% endfor %}. `exact` CLEARS the rule on every declared column of that list without an entry.
+{% endif %}
+
+Save-time rules on the field (ValidationFormula/ValidationMessage), a
+different property from the visibility formula above, so the two do not
+interfere. SharePoint normalises these on save, so the deploy compares
+them canonically.
+{% else %}
+_(none declared)_
+{% endif %}
+
+## List validation
+
+{% if list_validation %}
+{% for lv in list_validation %}
+- {{ lv.list }} — {{ lv.described }}
+  message: {{ lv.message }}
+
+{% endfor %}
+The cross-column sibling of the per-column rules above, stored on the
+LIST (ValidationFormula/ValidationMessage) rather than on a field, so it
+may reference any column. Shown as the declared condition rather than the
+rendered formula: the condition is what was authored, and the SharePoint
+syntax carrying it is a renderer detail.
 {% else %}
 _(none declared)_
 {% endif %}

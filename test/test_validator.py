@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+import pytest
+
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate,
@@ -138,6 +140,28 @@ RESERVED_NAMES = {"Created", "Modified", "Editor", "Author", "Attachments", "_UI
 
 def _schema(*tables: Table, enums: list[EnumDef] | None = None) -> Schema:
     return Schema(tables=list(tables), enums=enums or [])
+
+
+def _bundle_with_formulas(
+    formulas: dict[str, dict[str, str]], *entity_names: str,
+) -> MappingBundle:
+    """A minimal bundle declaring the named entities plus calculated formulas."""
+    mapping = Mapping(
+        prefix="APP_", prefix_owner="", prefix_registry="",
+        entities={
+            name: EntityMapping(
+                name=name, kind="List", base_template=100, site_role="default",
+            )
+            for name in entity_names
+        },
+        cross_site_reference_columns=[], indexed_columns={},
+        versioning_default=Versioning(True, 500, False), versioning_overrides={},
+        enum_sources={}, watched_lists=[], calculated_formulas=formulas,
+    )
+    return MappingBundle(
+        mapping=mapping, enum_choices={}, retention_policies={},
+        retention_list_defaults={},
+    )
 
 
 def test_unknown_ref_target_is_error() -> None:
@@ -1008,6 +1032,122 @@ def test_view_url_slug_must_be_nonempty(tmp_path: Path) -> None:
     assert any("slug" in f.message and "empty" in f.message for f in errors)
 
 
+@pytest.mark.parametrize("title", ["AllItems", "All-Items", "all items"])
+def test_authored_views_cannot_take_the_generated_all_items_url(
+    tmp_path: Path, title: str,
+) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        f"    - title: {title}\n"
+        "      fields: [Title]\n",
+    )
+    assert any("AllItems.aspx" in f.message for f in errors)
+
+
+def test_cross_site_expansion_cannot_collide_with_declared_columns(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Unit {\n"
+        "  Id int [pk, increment]\n"
+        "}\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Unit int [ref: > Unit.Id]\n"
+        "  UnitAbbreviation nvarchar\n"
+        "  UnitSiteUrl hyperlink\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Unit: { kind: List, base_template: 100, site_role: default }\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Project, column: Unit }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    collisions = [f.message for f in findings if "collides" in f.message]
+    assert any("UnitAbbreviation" in message for message in collisions)
+    assert any("UnitSiteUrl" in message for message in collisions)
+
+
+def test_demo_refs_and_calendar_dates_are_validated_before_generation(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Parent {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Parent int [ref: > Parent.Id]\n"
+        "  Previous int [ref: > Task.Id]\n"
+        "  Note nvarchar\n"
+        "  DueDate date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Parent: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "demo_items:\n"
+        "  Parent:\n"
+        "    - { key: p1, values: { Title: '[DEMO] Parent' } }\n"
+        "  Task:\n"
+        "    - key: t1\n"
+        "      values:\n"
+        "        Title: '[DEMO] First'\n"
+        "        Previous: { demo_ref: t2 }\n"
+        "        Note: { demo_ref: t1 }\n"
+        "        DueDate: '2026-02-31'\n"
+        "    - key: t2\n"
+        "      values:\n"
+        "        Title: '[DEMO] Second'\n"
+        "        Parent: { demo_ref: t1 }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    errors = [f.message for f in findings if f.severity == "error"]
+    assert any("Previous" in message and "before" in message for message in errors)
+    assert any("Note" in message and "lookup" in message for message in errors)
+    assert any(
+        "Parent" in message and "Task" in message and "targets" in message
+        for message in errors
+    )
+    assert any("2026-02-31" in message and "calendar" in message for message in errors)
+
+
+def test_rendered_validation_formula_length_is_checked(tmp_path: Path) -> None:
+    values = ", ".join(f"'value-{i}-{'x' * 40}'" for i in range(24))
+    errors = _view_errors(
+        tmp_path,
+        "list_validation:\n"
+        "  Project:\n"
+        f"    when: [{{ field: Status, op: in, value: [{values}] }}]\n"
+        "    message: Too long.\n"
+        "column_validation:\n"
+        "  Project:\n"
+        "    columns:\n"
+        "      Status:\n"
+        f"        when: [{{ field: Status, op: in, value: [{values}] }}]\n"
+        "        message: Too long.\n",
+    )
+    overlong = [f.message for f in errors if "1024" in f.message]
+    assert any("list_validation" in message for message in overlong)
+    assert any("column_validation" in message for message in overlong)
+
+
 def test_view_today_sentinel_only_on_date_columns(tmp_path: Path) -> None:
     errors = _view_errors(
         tmp_path,
@@ -1045,6 +1185,24 @@ def test_view_titles_unique_and_single_default(tmp_path: Path) -> None:
     )
     assert any("duplicate" in f.message.lower() for f in errors)
     assert any("default" in f.message.lower() for f in errors)
+
+
+def test_all_items_title_is_reserved_for_the_generated_unfiltered_view(
+    tmp_path: Path,
+) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: All Items\n"
+        "      fields: [Title]\n"
+        "      where:\n"
+        "        - { field: Status, op: eq, value: Open }\n",
+    )
+    assert any(
+        "All Items" in f.message and "generated" in f.message
+        for f in errors
+    ), errors
 
 
 def test_view_row_limit_range(tmp_path: Path) -> None:
@@ -1168,10 +1326,12 @@ def test_list_validation_rules_validated(tmp_path: Path) -> None:
         tmp_path,
         "list_validation:\n"
         "  Widget:\n"
-        "    formula: '=TRUE'\n"
+        "    when:\n"
+        "      - { field: Title, op: is_not_null }\n"
         "    message: x\n"
         "  Project:\n"
-        "    formula: '=IF([Ghost]=\"x\",TRUE,[DueDate]>[SortOrder])'\n"
+        "    when:\n"
+        "      - { field: Ghost, op: eq, value: x }\n"
         "    message: x\n",
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
@@ -1201,7 +1361,9 @@ def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> Non
         "    Score: '=1'\n"
         "list_validation:\n"
         "  Risk:\n"
-        "    formula: '=IF([Score]>0,NOT(ISBLANK([Owner])),TRUE)'\n"
+        "    when:\n"
+        "      - { field: Score, op: gt, value: 0 }\n"
+        "      - { field: Owner, op: is_not_null }\n"
         "    message: x\n",
         encoding="utf-8",
     )
@@ -1212,77 +1374,6 @@ def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> Non
     assert any("Owner" in f.message and "person" in f.message.lower() for f in errors)
 
 
-def test_hidden_on_forms_validated(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Stamp nvarchar [default: 'x']\n"
-        "  MustFill nvarchar [not null]\n"
-        "  Score calculated_number\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "hidden_on_forms:\n"
-        "  Widget: [Anything]\n"
-        "  Risk: [Ghost, Score, MustFill, Stamp]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    findings = validate_against_mapping(schema, bundle)
-    errors = [f for f in findings if f.severity == "error"]
-    warnings = [f for f in findings if f.severity == "warning"]
-    assert any("Widget" in f.message and "hidden_on_forms" in f.message for f in errors)
-    assert any("Ghost" in f.message for f in errors)
-    assert any("Score" in f.message and "calculated" in f.message.lower() for f in errors)
-    # Required without a default would block every save — warn loudly.
-    assert any("MustFill" in f.message and "required" in f.message.lower() for f in warnings)
-    assert not any("Stamp" in f.message for f in errors + warnings)
-
-
-def test_hidden_on_display_validated(tmp_path: Path) -> None:
-    """Display-form hiding accepts CALCULATED columns (they render on the
-    display form, unlike new/edit where SP never shows them) but still
-    rejects unknown entities and unrendered columns."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Stamp nvarchar [default: 'x']\n"
-        "  Score calculated_number\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "hidden_on_display:\n"
-        "  Widget: [Anything]\n"
-        "  Risk: [Ghost, Score, Stamp]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    findings = validate_against_mapping(schema, bundle)
-    errors = [f for f in findings if f.severity == "error"]
-    assert any("Widget" in f.message and "hidden_on_display" in f.message for f in errors)
-    assert any("Ghost" in f.message and "hidden_on_display" in f.message for f in errors)
-    assert not any("Score" in f.message for f in errors)
-    assert not any("Stamp" in f.message for f in errors)
 
 
 def test_today_offset_valid_on_calculated_date(tmp_path: Path) -> None:
@@ -1318,3 +1409,764 @@ def test_today_offset_valid_on_calculated_date(tmp_path: Path) -> None:
     assert not any(
         "offsets apply only" in f.message for f in findings if f.severity == "error"
     )
+
+
+def test_watched_list_column_must_exist() -> None:
+    """watched_lists is validated nowhere: a misspelled column simply
+    never fires the status capture it was declared for."""
+    from dbml_sharepoint.model.mapping_loader import WatchedList
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.watched_lists = [WatchedList(entity="Task", column="NoSuchColumn")]
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "NoSuchColumn" in f.message and "watched_lists" in f.message
+        for f in findings
+    )
+
+
+def test_polymorphic_pattern_columns_must_exist() -> None:
+    """The manifest surfaces these so downstream flows validate the logical
+    FK. A misspelled field or discriminator publishes a contract against a
+    column that does not exist."""
+    from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.polymorphic_patterns = [
+        PolymorphicPattern(list="Task", field="NoSuchField", discriminator="NoSuchType"),
+    ]
+    findings = validate_against_mapping(schema, bundle)
+    messages = [f.message for f in findings if f.severity == "error"]
+    assert any("NoSuchField" in m and "polymorphic_patterns" in m for m in messages)
+    assert any("NoSuchType" in m for m in messages)
+
+
+def test_watched_list_entity_must_exist() -> None:
+    from dbml_sharepoint.model.mapping_loader import WatchedList
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.watched_lists = [WatchedList(entity="Tsak", column="Status")]
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "Tsak" in f.message and "watched_lists" in f.message
+        for f in findings
+    )
+
+
+def test_polymorphic_pattern_entity_must_exist() -> None:
+    from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.polymorphic_patterns = [
+        PolymorphicPattern(list="Tsak", field="Status", discriminator="Status"),
+    ]
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "Tsak" in f.message and "polymorphic_patterns" in f.message
+        for f in findings
+    )
+
+
+def test_versioning_override_entity_must_exist() -> None:
+    """A misspelled entity under `versioning.overrides` leaves the real
+    list on the defaults — versioning ON when the author turned it off —
+    and nothing reads the orphan block, so nothing reported it."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    bundle.mapping.versioning_overrides["Tsak"] = {"enable_versioning": False}
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "Tsak" in f.message and "versioning" in f.message
+        for f in findings
+    )
+
+
+def test_auto_increment_column_not_named_id_is_rejected() -> None:
+    """typemap skips any `int [pk, increment]` column, while jsgen and the
+    rendered-column oracle special-case the NAME "Id". So `TicketId int
+    [pk, increment]` was validated as a real column and never created, and
+    every consequence validated clean: form_visibility, column_validation
+    and column_formatting deployed nothing; indexed_columns and
+    views.fields emitted calls that 400 live; demo_items wrote to a column
+    that does not exist."""
+    table = Table(name="Ticket", columns=[
+        Column(name="TicketId", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    findings = validate(_schema(table))
+    assert any(
+        f.severity == "error" and "TicketId" in f.message and "Id" in f.message
+        for f in findings
+    ), findings
+
+
+def test_auto_increment_column_named_id_is_accepted() -> None:
+    table = Table(name="Ticket", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    assert [f for f in validate(_schema(table)) if f.severity == "error"] == []
+
+
+def test_column_named_id_that_is_not_the_identity_is_rejected() -> None:
+    """The inverse: SharePoint reserves ID on every list, so a plain
+    `Id nvarchar` was emitted as a Text field against a name that already
+    exists. RESERVED_NAMES omitted it."""
+    table = Table(name="Ticket", columns=[
+        Column(name="Id", type="nvarchar"),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    findings = validate(_schema(table))
+    assert any(
+        f.severity == "error" and "Id" in f.message for f in findings
+    ), findings
+
+
+def test_calculated_formula_referencing_id_is_rejected() -> None:
+    """The reference check compared against the raw DBML column set rather
+    than the RENDERED one. `Id int [pk, increment]` is skipped at render
+    time — typemap returns Skip and jsgen continues — so a formula naming
+    [Id] passed validation and was posted against a column the deploy never
+    creates. SharePoint answers HTTP 500 mid-paste, which is exactly what
+    this check's own comment says it exists to prevent."""
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Ref", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Ref": '=CONCATENATE("R-",[Id])'}}, "Risk")
+    findings = validate_against_mapping(_schema(table), bundle)
+    assert any(
+        f.severity == "error" and "[Id]" in f.message for f in findings
+    ), findings
+
+
+def test_calculated_formula_referencing_a_phase_two_lookup_is_rejected() -> None:
+    """jsgen orders calculated fields only within fields_phase1 and ignores
+    phase2_lookups, so a formula naming a DEFERRED lookup was emitted in
+    Phase 1 — before the column it references exists. A self-referencing
+    lookup is always deferred, so this is reachable from any hierarchy."""
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Parent", type="int", ref=Reference(target_table="Risk", target_column="Id")),
+        Column(name="Label", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Label": '=CONCATENATE([Title],[Parent])'}}, "Risk")
+    findings = validate_against_mapping(_schema(table), bundle)
+    assert any(
+        f.severity == "error" and "Parent" in f.message and "Label" in f.message
+        for f in findings
+    ), findings
+
+
+def test_calculated_formula_referencing_a_phase_one_column_is_fine() -> None:
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Label", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Label": "=CONCATENATE([Title])"}}, "Risk")
+    assert [
+        f for f in validate_against_mapping(_schema(table), bundle) if f.severity == "error"
+    ] == []
+
+
+# --- Retired columns --------------------------------------------------------
+
+
+def test_calculated_formula_pairing_guards_the_retirement_carve_out(
+    tmp_path: Path,
+) -> None:
+    """GUARD. `_apply_retirement` (model/mapping_loader.py) skips the
+    form_visibility fold for calculated columns, and identifies them by
+    their `calculated_formulas` keys — the loader has never seen the DBML
+    and cannot read column types. That is correct ONLY while those keys are
+    exactly the set of `calculated_*` columns.
+
+    Both directions of that pairing are asserted below. If you are here
+    because you relaxed one of them, go and read `_apply_retirement`'s
+    carve-out first: loosening either rule silently lets a calculated
+    column reach form_visibility, where the validator rejects it, making
+    retiring that column an unfixable build error.
+    """
+    # Direction 1: a calculated column with NO formula must error.
+    (tmp_path / "no-formula.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "  Route calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "no-formula.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "no-formula.dbml"),
+        load_mapping(tmp_path / "no-formula.yaml"),
+    )
+    assert any(
+        "Board.Route" in f.message and "has no" in f.message and "formula" in f.message
+        for f in findings if f.severity == "error"
+    )
+
+    # Direction 2: a formula targeting a NON-calculated column must error.
+    (tmp_path / "wrong-target.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "wrong-target.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Board:\n"
+        "    BoardDate: '=1'\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "wrong-target.dbml"),
+        load_mapping(tmp_path / "wrong-target.yaml"),
+    )
+    assert any(
+        "calculated_formulas[Board]" in f.message and "'BoardDate'" in f.message
+        for f in findings if f.severity == "error"
+    )
+
+
+def test_retired_columns_errors(tmp_path: Path) -> None:
+    """Fail closed where a retirement mistake would break the list. The
+    not-null-with-no-default case is the load-bearing one: retirement hides
+    the column from the New form, so every subsequent save would fail."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Enum rag {\n"
+        '  "Green"\n'
+        '  "Amber"\n'
+        "}\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date [not null]\n"
+        "  OperationsStatus rag\n"
+        "  SiteServicesStatus rag\n"
+        "  MustFill nvarchar [not null]\n"
+        "  Route calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Board:\n"
+        "    Route: '=[OperationsStatus]'\n"
+        "list_validation:\n"
+        "  Board:\n"
+        "    when:\n"
+        "      - { field: OperationsStatus, op: is_not_null }\n"
+        '    message: "Give a status."\n'
+        "column_validation:\n"
+        "  Board:\n"
+        "    reconcile: declared\n"
+        "    columns:\n"
+        "      OperationsStatus:\n"
+        "        when: [{ field: OperationsStatus, op: is_not_null }]\n"
+        '        message: "Needed."\n'
+        "retired_columns:\n"
+        "  Widget: [Anything]\n"
+        "  Board:\n"
+        "    Ghost:\n"
+        "      retired: 2026-09-01\n"
+        "    OperationsStatus:\n"
+        "      retired: not-a-date\n"
+        "      superseded_by: OperationsStatus\n"
+        "    MustFill:\n"
+        "      retired: 2026-09-01\n"
+        "      superseded_by: Nowhere\n"
+        "    SiteServicesStatus:\n"
+        "      retired: 2026-09-01\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    errors = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
+    ]
+
+    def has(*needles: str) -> bool:
+        return any(all(n in f.message for n in needles) for f in errors)
+
+    # Unknown entity, and a column the DBML does not declare.
+    assert has("retired_columns[Widget]", "unknown entity")
+    assert has("retired_columns[Board]", "'Ghost'", "not a rendered column")
+    # Unparseable retirement date.
+    assert has("retired_columns[Board].OperationsStatus", "not an ISO date")
+    # superseded_by pointing at itself, and at nothing.
+    assert has("retired_columns[Board].OperationsStatus", "the retired column itself")
+    assert has("retired_columns[Board].MustFill", "'Nowhere'", "not a rendered column")
+    # not null with no declared default — the escalation, reported against
+    # retirement rather than against a form_visibility section nobody wrote.
+    assert has("retired_columns[Board]", "'MustFill'", "every save would fail")
+    # Live formulas referencing a retired column.
+    assert has("calculated_formulas[Board].Route", "[OperationsStatus]", "retired")
+    assert has("list_validation[Board]", "OperationsStatus", "retired")
+    # A save rule ON a retired column: retirement hides it from the new form,
+    # so is_not_null there rejects every new item with no field to satisfy
+    # it. The list silently stops accepting rows.
+    assert has("column_validation[Board].OperationsStatus", "retired", "every new item")
+
+
+def test_retired_supersession_may_not_name_another_retirement(tmp_path: Path) -> None:
+    """Superseding one dead column with another leaves the operator with no
+    live destination for the data."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  OldA nvarchar\n"
+        "  OldB nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "retired_columns:\n"
+        "  Board:\n"
+        "    OldA:\n"
+        "      retired: 2026-09-01\n"
+        "      superseded_by: OldB\n"
+        "    OldB:\n"
+        "      retired: 2026-09-01\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    errors = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
+    ]
+    assert any(
+        "retired_columns[Board].OldA" in f.message and "itself retired" in f.message
+        for f in errors
+    )
+
+
+def test_retiring_an_undeployable_column_is_rejected(tmp_path: Path) -> None:
+    """Retirement resolves into a per-column declaration, and the built-in
+    Title never receives one — it is provisioned through its own patch. A
+    retirement that cannot be carried out must say so rather than validate
+    clean and deploy nothing."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "retired_columns:\n"
+        "  Board: [Title]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    errors = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
+    ]
+    assert any(
+        "retired_columns[Board]" in f.message and "'Title'" in f.message
+        for f in errors
+    )
+    # The message is the one the undeployable-column rule already owns, so
+    # the two cannot drift; only the context says where to fix it.
+    assert any("its own patch" in f.message for f in errors)
+
+
+def test_retired_calculated_column_is_not_an_unfixable_build_error(
+    tmp_path: Path,
+) -> None:
+    """Retiring a calculated column must be possible. It is never folded
+    into form_visibility, so the validator's "calculated columns never
+    appear on entry forms" error must not fire."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "  Route calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Board:\n"
+        "    Route: '=[BoardDate]'\n"
+        "retired_columns:\n"
+        "  Board:\n"
+        "    Route:\n"
+        "      retired: 2026-09-01\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    findings = validate_against_mapping(schema, bundle)
+    assert not [f for f in findings if f.severity == "error"]
+    assert "Board" not in bundle.mapping.form_visibility
+
+
+def test_retired_calculated_column_without_a_formula_reports_only_root_cause(
+    tmp_path: Path,
+) -> None:
+    """The one wrong answer the loader's calculated-column heuristic can
+    give. The author declared a calculated column and forgot its formula,
+    so `_apply_retirement` cannot tell it is calculated and folds it into
+    form_visibility. The build must report the missing formula and NOTHING
+    else — blaming the author for a form_visibility entry they never wrote
+    buries the error they can actually act on."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "  Route calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "retired_columns:\n"
+        "  Board: [Route]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    # The loader could not know Route was calculated, so it DID fold it.
+    assert "Route" in bundle.mapping.form_visibility["Board"].columns
+
+    errors = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
+    ]
+    assert len(errors) == 1, [f.message for f in errors]
+    assert "Board.Route" in errors[0].message
+    assert "calculated_formulas.Board.Route" in errors[0].message
+
+
+def test_retired_columns_warnings(tmp_path: Path) -> None:
+    """Warn where a retirement mistake only wastes something. Retirement
+    must never break a build: a stale view or width reference is stripped
+    and reported, not rejected. A column_formatting entry on a retired
+    column is KEPT deliberately — historical values still render with their
+    severity colours wherever the column is still shown."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Enum rag {\n"
+        '  "Green"\n'
+        '  "Amber"\n'
+        "}\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  BoardDate date\n"
+        "  OperationsStatus rag\n"
+        "  Stamp nvarchar [not null, default: 'x']\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "display_names:\n"
+        "  mode: auto\n"
+        "indexed_columns:\n"
+        "  Board: [OperationsStatus]\n"
+        "column_formatting:\n"
+        "  Board:\n"
+        "    OperationsStatus: { style: severity, map: { Green: good } }\n"
+        "form_formatting:\n"
+        "  Board:\n"
+        "    body:\n"
+        "      sections:\n"
+        '        - displayname: "Header"\n'
+        "          fields: [BoardDate, OperationsStatus]\n"
+        "views:\n"
+        "  Board:\n"
+        '    - title: "Heat grid"\n'
+        "      fields: [BoardDate, OperationsStatus]\n"
+        "      widths: { OperationsStatus: 120 }\n"
+        '    - title: "Statuses only"\n'
+        "      fields: [OperationsStatus]\n"
+        "retired_columns:\n"
+        "  Board:\n"
+        "    OperationsStatus:\n"
+        "      retired: 2026-09-01\n"
+        "    Stamp:\n"
+        "      retired: 2026-09-01\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    findings = validate_against_mapping(schema, bundle)
+    warnings = [f for f in findings if f.severity == "warning"]
+
+    def warned(*needles: str) -> bool:
+        return any(all(n in f.message for n in needles) for f in warnings)
+
+    # not null WITH a default: saves succeed, the default is stamped forever.
+    assert warned("retired_columns[Board]", "'Stamp'", "stamped with")
+    # A dead index is dead weight against a finite per-list budget.
+    assert warned("retired_columns[Board]", "'OperationsStatus'", "indexed_columns")
+    # Stripped view field, width and form-section references — reported,
+    # never rejected. One generic loop over retirement_strips covers all
+    # three; the context string is what distinguishes them.
+    assert warned("views[Board].Heat grid fields", "stripped it")
+    assert warned("views[Board].Heat grid widths", "stripped it")
+    assert warned("form_formatting[Board].body sections", "stripped it")
+    # A view left with no fields at all.
+    assert warned("views[Board].Statuses only", "every declared field")
+    # Never an error: retirement must not break a build.
+    assert not [f for f in findings if f.severity == "error"]
+    # column_formatting on a retired column is kept, not flagged.
+    assert not warned("column_formatting")
+
+
+def test_retirement_without_display_names_warns_the_suffix_is_inert(
+    tmp_path: Path,
+) -> None:
+    """display_name_for ignores overrides unless mode is auto, so without a
+    display_names section the ' (retired)' suffix never reaches SharePoint."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  OldColumn nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "retired_columns:\n"
+        "  Board: [OldColumn]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    warnings = [
+        f for f in validate_against_mapping(schema, bundle) if f.severity == "warning"
+    ]
+    assert any(
+        "display_names is not enabled" in f.message and "(retired)" in f.message
+        for f in warnings
+    )
+
+
+def test_retirement_replacing_a_form_visibility_declaration_warns(
+    tmp_path: Path,
+) -> None:
+    """The fold overwrites a hand-written declaration for a retired column.
+    Silent mutation of the author's own YAML is exactly what the strip
+    record exists to surface."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Board {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  OldColumn nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Board: { kind: List, base_template: 100, site_role: default }\n"
+        "form_visibility:\n"
+        "  Board:\n"
+        "    columns:\n"
+        "      OldColumn: visible\n"
+        "retired_columns:\n"
+        "  Board: [OldColumn]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "warning"
+        and "form_visibility[Board].columns" in f.message
+        and "stripped it" in f.message
+        for f in findings
+    )
+
+
+# --- Field sets -------------------------------------------------------------
+
+
+def test_field_set_on_unknown_entity_is_error(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Widget:\n    header: [Title]\n",
+    )
+    assert any(
+        "field_sets" in f.message
+        and "Widget" in f.message
+        and "unknown entity" in f.message
+        for f in errors
+    )
+
+
+def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
+    """The declaration message is the one that says where to fix it."""
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: [Title, Nope]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header"]\n',
+    )
+    assert any(
+        "field_sets[Project].header" in f.message and "Nope" in f.message
+        for f in errors
+    )
+    assert not any("'Title'" in f.message for f in errors)
+
+
+def test_view_referencing_an_undeclared_field_set_is_error(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: [Title]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@headr"]\n',
+    )
+    assert any("@headr" in f.message and "field set" in f.message for f in errors)
+    # One precise error, not that plus a confusing "not a rendered column".
+    assert not any(
+        "rendered column" in f.message and "headr" in f.message for f in errors
+    )
+
+
+def test_field_set_name_cannot_contain_the_reference_marker(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        'field_sets:\n  Project:\n    "hea@der": [Title]\n',
+    )
+    assert any(
+        "field_sets[Project].hea@der" in f.message and "'@'" in f.message
+        for f in errors
+    )
+
+
+def test_empty_field_set_is_error(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: []\n",
+    )
+    assert any(
+        "field_sets[Project].header" in f.message and "empty" in f.message
+        for f in errors
+    )
+
+
+def test_valid_field_set_produces_no_errors(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "field_sets:\n  Project:\n    header: [Title, Status]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header", DueDate]\n',
+    )
+    assert errors == []
+
+
+def test_unreferenced_field_set_is_a_warning(tmp_path: Path) -> None:
+    """Dead config wastes nothing but the reader's time, so it warns rather
+    than failing the build — the fail-closed line is drawn at declarations
+    that would break the list."""
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "field_sets:\n"
+        "  Project:\n"
+        "    header: [Title]\n"
+        "    orphan: [Status]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header"]\n',
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "warning"
+        and "field_sets[Project].orphan" in f.message
+        and "@orphan" in f.message
+        for f in findings
+    )
+    assert not any("field_sets[Project].header" in f.message for f in findings)
+
+
+def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
+    """Expansion runs first, so the column is stripped from every view that
+    pulls the set in and the strip is recorded against the VIEW. The set
+    itself is where the author fixes it, so it gets its own warning naming
+    the set — otherwise the only report points at a view that no longer
+    mentions the column."""
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "field_sets:\n"
+        "  Project:\n"
+        "    header: [Title, Status]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        '      fields: ["@header"]\n'
+        "retired_columns:\n"
+        "  Project:\n"
+        "    Status:\n"
+        "      retired: 2026-09-01\n",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert bundle.mapping.views["Project"][0].fields == ["Title"]
+    assert any(
+        f.severity == "warning"
+        and "field_sets[Project].header" in f.message
+        and "'Status'" in f.message
+        and "retired" in f.message
+        for f in findings
+    )
+    assert not [f for f in findings if f.severity == "error"]

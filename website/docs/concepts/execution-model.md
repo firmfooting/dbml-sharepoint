@@ -67,13 +67,21 @@ run concurrently (bounded). Never parallelise same-list schema writes.
 Rerunning any script must be safe:
 
 - **Existing objects are adopted, never assumed.** A list or field that
-  already exists is adopted only when its *immutable* shape (type kind,
-  lookup target, formula, base template) provably matches the
-  declaration. A mismatch fails that object closed with a named error —
-  explicit migration beats silent mutation.
+  already exists is adopted only when its *immutable* shape provably
+  matches the declaration. A mismatch fails that object closed with a
+  named error — explicit migration beats silent mutation. The immutable
+  set is: internal name, `TypeAsString`, `ReadOnlyField`, unexpected
+  sealing, the lookup's target list and target field, and the list's base
+  template.
 - **Mutable settings are reconciled narrowly.** Only drifted declared
   settings are sent (narrow MERGE), and every write is read back and
-  compared before the phase reports success.
+  compared before the phase reports success. A calculated column's
+  `Formula` is **in this group, not the immutable one** — drift is
+  overwritten with the declaration rather than failing the object closed.
+  So is a Choice column's `Choices`. Both then fail the phase if the write
+  does not stick, with the declared and read-back values named in the
+  error, but the intended outcome is convergence on the mapping, not
+  refusal.
 - **Content is never touched.** Undeclared views, user rows and user
   columns are user content; deploy.js reconciles only what the mapping
   declares (the one exception is `reconcile: exact` ACL mode, which the

@@ -1,6 +1,6 @@
 ---
 title: reportgen
-sidebar_position: 15
+sidebar_position: 18
 ---
 
 # `dbml_sharepoint.generators.reportgen`
@@ -32,7 +32,7 @@ site-user id and display name.
 ### `generate_powerquery`
 
 ```python
-def generate_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, site_role: str) -> dict[str, str]
+def generate_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str) -> dict[str, str]
 ```
 
 One M query per list for the site role: {filename: query text}.
@@ -40,7 +40,7 @@ One M query per list for the site role: {filename: query text}.
 ### `generate_sql_views`
 
 ```python
-def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, site_role: str) -> str
+def generate_sql_views(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str) -> str
 ```
 
 A single SQLCMD script: typed view per list + _Enriched join views.
@@ -48,7 +48,7 @@ A single SQLCMD script: typed view per list + _Enriched join views.
 ### `generate_reporting_md`
 
 ```python
-def generate_reporting_md(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, site_role: str) -> str
+def generate_reporting_md(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str) -> str
 ```
 
 Usage instructions + the Power BI relationship table.
@@ -56,7 +56,7 @@ Usage instructions + the Power BI relationship table.
 ### `generate_data_dictionary`
 
 ```python
-def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
+def generate_data_dictionary(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
 ```
 
 Companion data dictionary: deployment/schema metadata + every list and
@@ -66,7 +66,7 @@ formulas, indexing, versioning and the query-layer helper columns.
 ### `generate_dictionary_powerquery`
 
 ```python
-def generate_dictionary_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> dict[str, str]
+def generate_dictionary_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> dict[str, str]
 ```
 
 The data dictionary as report-loadable M queries, so any report can
@@ -77,7 +77,7 @@ surface it as a page: _DataDictionary (one row per column), _ModelInfo
 ### `generate_dictionary_sql`
 
 ```python
-def generate_dictionary_sql(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
+def generate_dictionary_sql(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None = None, generated_at: str = '', source_schema: str = '', source_mapping: str = '') -> str
 ```
 
 The data dictionary as SQL views built from embedded VALUES rows (no
@@ -87,7 +87,7 @@ dictionary page.
 ### `emit_reporting`
 
 ```python
-def emit_reporting(out: pathlib.Path, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str) -> list[str]
+def emit_reporting(out: pathlib.Path, schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str, *, release: dbml_sharepoint.model.release.Release | None, generated_at: str, source_schema: str, source_mapping: str) -> list[str]
 ```
 
 Write the reporting bundle under ``out/reporting/`` and return the

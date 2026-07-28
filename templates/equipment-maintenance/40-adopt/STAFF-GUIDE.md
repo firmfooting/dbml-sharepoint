@@ -30,7 +30,9 @@ never two people.
 - **Passed with actions**: the actions go in the event Notes *and* get an
   owner — an action noted nowhere else is an action lost.
 - **Failed - removed from service**: set the equipment row's Status to
-  **Out of service** in the same minute, and physically tag the item.
+  **Out of service - awaiting maintenance** in the same minute (that is
+  the whole value — there is no plain "Out of service"), and physically
+  tag the item.
   Register first, sticker second — people trust the sticker; auditors
   trust the register; keep them agreeing.
 - Back in service only after a passing event: record it, restore Status,

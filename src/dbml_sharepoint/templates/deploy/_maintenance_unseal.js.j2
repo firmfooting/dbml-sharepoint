@@ -18,6 +18,16 @@
     for (const lookup of SCHEMA.phase2_lookups) {
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
+    // The built-in Title is not a declared column, so it was never in this
+    // set — and Phase 1 writes list.title_patch to it. A Title sealed by
+    // anything other than this tool therefore made the run un-completable
+    // and un-repairable: the write failed, and the only maintenance path
+    // that can unseal walked declared columns only. Probed unconditionally
+    // (the loop below writes ONLY if it finds Sealed true), so a normal
+    // site pays one read and nothing changes.
+    for (const list of SCHEMA.lists) {
+      if (list.title_patch) sealDeclared.push([list.title, 'Title']);
+    }
     if (sealDeclared.length > 0) {
       log('INFO', `Maintenance unseal: checking ${sealDeclared.length} declared-seal column(s).`);
       let unsealedCount = 0;
@@ -30,6 +40,12 @@
             const unsealDigest = await getDigest();
             await patchField(listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: false }, unsealDigest);
             unsealedCount += 1;
+            // Record only after the write succeeds. The exit path restores
+            // every field this run actually opened, including ordinary
+            // declared columns when a later phase aborts before PROTECTION.
+            fieldsUnsealedForRun.set(
+              `${listTitle}\u0000${columnTitle}`, [listTitle, columnTitle],
+            );
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
@@ -39,4 +55,3 @@
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
     }
   }
-
