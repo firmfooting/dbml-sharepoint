@@ -72,10 +72,379 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Internal names stay authoritative (the lookup, the indexes and the
+# reporting bundle bind to them); only display titles change.
+# "EquipLocation" exists to keep a bare "Location" out of the DBML, and
+# auto-splitting renders a URL column's title as "Evidence Url".
+display_names:
+  mode: auto
+  overrides:
+    Equipment:
+      EquipLocation: "Location"
+    MaintenanceEvent:
+      EvidenceUrl: "Evidence URL"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md), tokens mapped by the ROLE a member plays.
+#
+# "Out of service - awaiting maintenance" was mapped `neutral` before this
+# uplift, which put an item withdrawn from clinical use in the same grey as
+# a draft. The role table places Out of service under `severe`, and that is
+# where it belongs: this is the state the register exists to make
+# unmissable.
+#
+# NextDueDate carries the fleet's deadline treatment. Its guard names
+# Retired ONLY — an out-of-service item whose test date has passed is
+# still overdue, and arguably the most urgent row in the register, so it
+# keeps shouting. Only a retired item stops mattering.
+#
+# Deliberately NOT formatted: FrequencyMonths. It is a configuration
+# setting, not a measurement of the item, and a bar drawn over "12" would
+# invite a reader to compare intervals as if longer were worse.
+# EquipmentType and EventType classify rather than sequence, so neither
+# takes colour either.
 column_formatting:
   Equipment:
-    Status: { style: severity, map: { "In service": low, "Out of service - awaiting maintenance": neutral, Retired: muted } }
+    Status:
+      style: severity
+      map:
+        "In service": low
+        "Out of service - awaiting maintenance": severe
+        "Retired": muted
+    NextDueDate:
+      style: overdue-date
+      guard: { field: Status, not: ["Retired"] }
+  MaintenanceEvent:
+    Result:
+      style: severity
+      map:
+        "Passed": good
+        "Passed with actions": warning
+        "Failed - removed from service": blocked
+
+# The identifying spine each list's views open with.
+field_sets:
+  Equipment:
+    identity: [Title, EquipmentTag, EquipmentType, EquipLocation,
+               ServiceProvider, FrequencyMonths, NextDueDate, Status]
+  MaintenanceEvent:
+    identity: [Title, Equipment, EventType, EventDate, PerformedBy, Result]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view, keyed on
+# INTERNAL names — the build rewrites them to display titles, and
+# ColumnWidth binds by display name.
+views:
+  Equipment:
+    - title: "The schedule"
+      default: true
+      fields: ["@identity"]
+      where:
+        - { field: Status, op: neq, value: "Retired" }
+      sort:
+        - { field: NextDueDate, direction: asc }
+      widths:
+        Title: 280
+        EquipmentTag: 150
+        EquipmentType: 220
+        EquipLocation: 180
+        ServiceProvider: 200
+        FrequencyMonths: 150
+        NextDueDate: 170
+        Status: 220
+    # THE view. Its target state on a live register is EMPTY, and that is
+    # not a contradiction with the demo data: a seeded site ships one
+    # genuinely overdue item precisely so an adopter can see the view work
+    # before they trust it. 30-deploy/DEPLOY.md says so at the point where
+    # it matters.
+    #
+    # Status = In service, not "not Retired", and the difference is the
+    # point: this view is "still in use and out of test", which is the
+    # clinical and legal exposure. An item already withdrawn from service
+    # is overdue too, and it is in "Out of service" below, where somebody
+    # is already looking.
+    - title: "Overdue"
+      fields: ["@identity", Notes]
+      where:
+        - { field: NextDueDate, op: lt, value: today }
+        - { field: Status, op: eq, value: "In service" }
+      sort:
+        - { field: NextDueDate, direction: asc }
+      widths:
+        Title: 260
+        EquipmentTag: 150
+        EquipmentType: 220
+        EquipLocation: 180
+        ServiceProvider: 200
+        FrequencyMonths: 150
+        NextDueDate: 170
+        Status: 220
+        Notes: 200
+    - title: "Due 60 days"
+      fields: ["@identity"]
+      where:
+        - { field: Status, op: neq, value: "Retired" }
+        - { field: NextDueDate, op: leq, value: today+60 }
+      sort:
+        - { field: NextDueDate, direction: asc }
+      widths:
+        Title: 280
+        EquipmentTag: 150
+        EquipmentType: 220
+        EquipLocation: 180
+        ServiceProvider: 200
+        FrequencyMonths: 150
+        NextDueDate: 170
+        Status: 220
+    - title: "Out of service"
+      fields: ["@identity", Notes]
+      where:
+        - { field: Status, op: eq, value: "Out of service - awaiting maintenance" }
+      sort:
+        - { field: NextDueDate, direction: asc }
+      widths:
+        Title: 260
+        EquipmentTag: 150
+        EquipmentType: 220
+        EquipLocation: 180
+        ServiceProvider: 200
+        FrequencyMonths: 150
+        NextDueDate: 170
+        Status: 220
+        Notes: 200
+  MaintenanceEvent:
+    # The published table promised "Per item" — a view filtered to one
+    # piece of equipment, described as the service history an auditor
+    # reads. A static view cannot filter to one parent: building it meant
+    # hard-coding one item into a filter that rots, or one view per item.
+    # Per §2.4 of the family standard it ships as ONE view grouped on the
+    # Equipment lookup, collapsed — and it is the DEFAULT, because
+    # 50-govern/GOVERNANCE.md names accreditors and insurers as this
+    # view's audience and their first click should not be a view picker.
+    - title: "Service history"
+      default: true
+      fields: ["@identity", EvidenceUrl, Notes]
+      group_by: { field: Equipment, collapsed: true }
+      sort:
+        - { field: EventDate, direction: desc }
+      widths:
+        Title: 260
+        Equipment: 240
+        EventType: 220
+        EventDate: 160
+        PerformedBy: 200
+        Result: 220
+        EvidenceUrl: 180
+        Notes: 200
+    - title: "Failures"
+      fields: ["@identity", EvidenceUrl, Notes]
+      where:
+        - { field: Result, op: eq, value: "Failed - removed from service" }
+      sort:
+        - { field: EventDate, direction: desc }
+      widths:
+        Title: 260
+        Equipment: 240
+        EventType: 220
+        EventDate: 160
+        PerformedBy: 200
+        Result: 220
+        EvidenceUrl: 180
+        Notes: 200
+    # "Passed with actions" is the result that quietly goes nowhere: the
+    # item stays in service, nothing is overdue, and the actions live in a
+    # Notes field nobody opens. Governance says an action noted nowhere
+    # else is an action lost; this is where they are read.
+    - title: "Actions arising"
+      fields: ["@identity", EvidenceUrl, Notes]
+      where:
+        - { field: Result, op: eq, value: "Passed with actions" }
+      sort:
+        - { field: EventDate, direction: desc }
+      widths:
+        Title: 260
+        Equipment: 240
+        EventType: 220
+        EventDate: 160
+        PerformedBy: 200
+        Result: 220
+        EvidenceUrl: 180
+        Notes: 200
+
+# Deliberately NOT declared: form_visibility.
+#
+# Neither list has a conditional field. Every column on an equipment row is
+# true of it from the moment it is registered, and every column on an event
+# is part of the same act of recording. The standard asks for conditional
+# visibility WHERE a field is conditional, and inventing a condition to
+# have one would make the form react for no reason.
+
+# Form layouts: a strapline header and three sections each. Per-field
+# description hints render on the NEW form only — SharePoint suppresses
+# column descriptions on the Edit form. Section field lists are authored
+# with INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  Equipment:
+    header: formatting/equipment-form-header.json
+    body: formatting/equipment-form-body.json
+  MaintenanceEvent:
+    header: formatting/event-form-header.json
+    body: formatting/event-form-body.json
+
+# Per-column save rules, each with its own message.
+column_validation:
+  Equipment:
+    columns:
+      FrequencyMonths:
+        when:
+          - { field: FrequencyMonths, op: geq, value: 1 }
+        message: "A maintenance interval must be at least one month. An interval of zero is a schedule that never advances."
+  MaintenanceEvent:
+    columns:
+      EventDate:
+        when:
+          - { field: EventDate, op: leq, value: today }
+        message: "A maintenance event cannot be dated in the future. Record it when the work has been done."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column. Anything other than a clean pass leaves something for somebody to
+# do, and Notes is where it goes — governance's evidence standard calls an
+# action noted nowhere else an action lost, and a failure with no
+# explanation is a row an auditor will ask about.
+#
+# EvidenceUrl is NOT in this rule even though the evidence standard wants
+# it on every event. A URL column is a compound value and SharePoint
+# validation formulas do not read one; making it required would have to be
+# a `not null` in the schema, which then refuses to record any historical
+# event whose paperwork predates the register. It stays a governance check.
+#
+# Deliberately NOT enforced on Equipment: "an in-service item has a
+# future-or-today NextDueDate", which is governance's data-quality rule 1.
+# As a save rule it would refuse to store an OVERDUE item — the exact state
+# the Overdue view exists to surface, and the one a real register must be
+# able to hold. A rule that makes the problem unrecordable does not fix it.
+list_validation:
+  MaintenanceEvent:
+    when:
+      any_of:
+        - { field: Result, op: eq, value: "Passed" }
+        - { field: Notes, op: is_not_null }
+    message: "An event that passed with actions, or failed, needs a note: what arose, what was done, and who owns what is left."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Equipment is created first
+# and the events reference items by demo key.
+#
+# ONE ITEM IS DELIBERATELY OVERDUE, and it is the point of the seed. The
+# Overdue view's target on a live register is empty, but a view that demos
+# empty teaches the adopter it does not work — which is precisely the
+# failure the family standard's demo-coverage bar exists to prevent. The
+# infusion pump is eighteen days out of test and still in service, which is
+# both the clinical exposure this register is bought for and the only way
+# to see the view, the red date and the severity colour render at once.
+#
+# EvidenceUrl carries no demo value on purpose: a SharePoint URL column
+# takes a compound {Url, Description} value, and the demo writer emits
+# literals. A demo row with a bare string there would fail at the paste
+# rather than in the build.
+demo_items:
+  Equipment:
+    - key: em-pump
+      values:
+        Title: "[DEMO] Infusion pump - ward 2 north"
+        EquipmentTag: "[DEMO] BIO-0442"
+        EquipmentType: "Biomedical / clinical"
+        EquipLocation: "Ward 2 north - equipment bay"
+        ServiceProvider: "Regional biomedical service"
+        FrequencyMonths: 12
+        NextDueDate: "today-18"
+        Status: "In service"
+        Notes: "Demo row. Eighteen days past its annual service and still in service - this is the row the Overdue view exists for."
+    - key: em-defib
+      values:
+        Title: "[DEMO] Defibrillator - main reception"
+        EquipmentTag: "[DEMO] BIO-0118"
+        EquipmentType: "Biomedical / clinical"
+        EquipLocation: "Main reception - wall cabinet"
+        ServiceProvider: "Regional biomedical service"
+        FrequencyMonths: 12
+        NextDueDate: "today+35"
+        Status: "In service"
+        Notes: "Demo row. Pad expiry tracked with the service; both fall due together."
+    - key: em-extinguisher
+      values:
+        Title: "[DEMO] Fire extinguisher set - clinic wing"
+        EquipmentTag: "[DEMO] FIRE-0203"
+        EquipmentType: "Fire and emergency"
+        EquipLocation: "Clinic wing - corridors 1 and 2"
+        ServiceProvider: "Contracted fire services provider"
+        FrequencyMonths: 6
+        NextDueDate: "today+150"
+        Status: "In service"
+        Notes: "Demo row. Six-monthly under the fire-services contract."
+    - key: em-testtag
+      values:
+        Title: "[DEMO] Portable suction unit"
+        EquipmentTag: "[DEMO] ELEC-0771"
+        EquipmentType: "Electrical - test and tag"
+        EquipLocation: "Treatment room 2"
+        ServiceProvider: "Internal maintenance team"
+        FrequencyMonths: 12
+        NextDueDate: "today-5"
+        Status: "Out of service - awaiting maintenance"
+        Notes: "Demo row. Failed its test and tag; withdrawn and physically tagged the same minute the result was recorded."
+    - key: em-ahu
+      values:
+        Title: "[DEMO] Air handling unit - old wing"
+        EquipmentTag: "[DEMO] PLANT-0012"
+        EquipmentType: "Plant - HVAC / utilities"
+        EquipLocation: "Old wing - roof plant"
+        ServiceProvider: "Contracted mechanical services"
+        FrequencyMonths: 6
+        NextDueDate: "today-900"
+        Status: "Retired"
+        Notes: "Demo row. Decommissioned with the old wing. History kept; tag never reused."
+  MaintenanceEvent:
+    - key: em-ev-pump-annual
+      values:
+        Title: "[DEMO] Annual preventive service"
+        Equipment: { demo_ref: em-pump }
+        EventType: "Preventive maintenance"
+        EventDate: "today-380"
+        PerformedBy: "Regional biomedical service - technician J. Alvarez"
+        Result: "Passed"
+    - key: em-ev-extinguisher
+      values:
+        Title: "[DEMO] Six-monthly inspection"
+        Equipment: { demo_ref: em-extinguisher }
+        EventType: "Inspection"
+        EventDate: "today-45"
+        PerformedBy: "Contracted fire services provider"
+        Result: "Passed"
+    - key: em-ev-defib-cal
+      values:
+        Title: "[DEMO] Annual calibration"
+        Equipment: { demo_ref: em-defib }
+        EventType: "Calibration"
+        EventDate: "today-30"
+        PerformedBy: "Regional biomedical service - technician P. Nkemelu"
+        Result: "Passed with actions"
+        Notes: "Demo row. Passed. Pads expire in four months - replacement ordered, facilities coordinator owns the swap."
+    - key: em-ev-testtag-fail
+      values:
+        Title: "[DEMO] Annual test and tag - failed"
+        Equipment: { demo_ref: em-testtag }
+        EventType: "Test and tag"
+        EventDate: "today-5"
+        PerformedBy: "Internal maintenance team - R. Okafor"
+        Result: "Failed - removed from service"
+        Notes: "Demo row. Earth continuity out of tolerance. Unit withdrawn, physically tagged, equipment row set to Out of service the same minute. Quote requested for repair."
+    - key: em-ev-pump-repair
+      values:
+        Title: "[DEMO] Corrective repair - occlusion alarm"
+        Equipment: { demo_ref: em-pump }
+        EventType: "Corrective repair"
+        EventDate: "today-90"
+        PerformedBy: "Regional biomedical service - technician J. Alvarez"
+        Result: "Passed"

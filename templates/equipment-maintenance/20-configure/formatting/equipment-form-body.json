@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The item",
+      "fields": ["Title", "EquipmentTag", "EquipmentType", "EquipLocation"]
+    },
+    {
+      "displayname": "The schedule",
+      "fields": ["FrequencyMonths", "NextDueDate", "ServiceProvider"]
+    },
+    {
+      "displayname": "In service",
+      "fields": ["Status", "Notes"]
+    }
+  ]
+}

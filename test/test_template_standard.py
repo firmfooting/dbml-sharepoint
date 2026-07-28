@@ -47,7 +47,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "audit-actions", "change-register",
     "compliance-obligations", "contract-register", "credentialing-register",
-    "declarations-register", "delegations-register", "equipment-maintenance",
+    "declarations-register", "delegations-register",
     "grants-register", "improvement-register", "incident-management",
     "measures-register", "meeting-actions", "onboarding-tracker",
     "policy-library", "process-register", "project-pipeline",
@@ -141,6 +141,16 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "What you found": "Assess",
         "What you did": "Act",
         "Ownership": "Govern",
+    },
+    ("equipment-maintenance", "Equipment"): {
+        "The item": "Identify",
+        "The schedule": "Assess",
+        "In service": "Govern",
+    },
+    ("equipment-maintenance", "MaintenanceEvent"): {
+        "The work": "Identify",
+        "Outcome": "Assess",
+        "Evidence": "Govern",
     },
 }
 
