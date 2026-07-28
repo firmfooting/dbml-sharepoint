@@ -92,10 +92,39 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Backend internal names stay exactly as authored in the DBML (probes,
+# views, indexes and formulas all key on them); the deployer renames the
+# display Title after create — "ResidualRiskRating" shows as "Residual Risk
+# Rating". Auto PascalCase splitting handles every column here correctly,
+# so there are no overrides.
+display_names:
+  mode: auto
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md) — SharePoint's own severity boxes and icons, tokens
+# resolved by the style library. levels-above-target stays a bespoke file
+# (numeric severity ranges); it draws only on standard classes.
 column_formatting:
   Risk:
     Status: { style: severity, map: { Provisional: neutral, Open: low, Closed: good } }
+    ResidualRiskRating: { style: severity, calculated: true,
+                          map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
+    TargetRiskRating: { style: severity,
+                        map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
+    # Data-bar with the fill translated from the rating column via the
+    # severity tokens (style standard `color_by`) — the same map the rating
+    # columns declare, so bar and rating cell can never disagree.
+    RiskScore: { style: data-bar, max: 25,
+                 color_by: { field: ResidualRiskRating, calculated: true,
+                             map: { Low: good, Medium: warning, High: severe, Extreme: blocked } } }
+    LevelsAboveTarget: formatting/levels-above-target.json
+    OverallControlEffectiveness:
+      style: severity
+      map:
+        "Eliminated or within appetite": good
+        "All reasonable controls in place": low
+        "Partially effective": warning
+        "Inadequate": severe
+        "Uncontrolled": blocked
+    NextReviewDue: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+    ToleranceEndDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }

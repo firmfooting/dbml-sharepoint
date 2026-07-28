@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json",
+  "elmType": "div",
+  "style": { "display": "=if(@currentField == '', 'none', 'flex')", "border-radius": "4px", "margin": "1px 4px 1px 0" },
+  "attributes": {
+    "class": "=if(@currentField <= 0, 'sp-field-severity--good', if(@currentField == 1, 'sp-field-severity--warning', 'sp-field-severity--severeWarning')) + ' ms-fontColor-neutralSecondary'"
+  },
+  "children": [
+    {
+      "elmType": "span",
+      "style": { "display": "inline-block", "padding": "0 4px" },
+      "attributes": {
+        "iconName": "=if(@currentField <= 0, 'CheckMark', if(@currentField == 1, 'Error', 'Warning'))"
+      }
+    },
+    {
+      "elmType": "span",
+      "txtContent": "@currentField"
+    }
+  ]
+}
