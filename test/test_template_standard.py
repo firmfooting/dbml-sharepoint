@@ -49,7 +49,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "compliance-obligations", "contract-register", "credentialing-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
-    "measures-register", "meeting-actions", "onboarding-tracker",
+    "measures-register", "meeting-actions",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
     "vehicle-log", "visitor-log",
@@ -110,6 +110,18 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "When": "Assess",
         "Evidence": "Act",
         "Currency and notes": "Govern",
+    },
+    # Both lists collapse Assess: an onboarding record is not rated, it is
+    # scheduled. The middle beat is where the work is scheduled and owned.
+    ("onboarding-tracker", "Starter"): {
+        "The hire": "Identify",
+        "Start and ownership": "Act",
+        "Progress": "Govern",
+    },
+    ("onboarding-tracker", "OnboardingTask"): {
+        "The task": "Identify",
+        "Who and when": "Act",
+        "Outcome": "Govern",
     },
 }
 

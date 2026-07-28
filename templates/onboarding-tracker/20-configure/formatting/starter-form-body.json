@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The hire",
+      "fields": ["Title", "Role", "Department", "Notes"]
+    },
+    {
+      "displayname": "Start and ownership",
+      "fields": ["StartDate", "Manager"]
+    },
+    {
+      "displayname": "Progress",
+      "fields": ["Status"]
+    }
+  ]
+}
