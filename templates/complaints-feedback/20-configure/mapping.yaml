@@ -90,10 +90,349 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Auto PascalCase splitting handles every column here correctly, so there
+# are no overrides. Internal names stay authoritative for views, formulas
+# and reporting.
+display_names:
+  mode: auto
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md), tokens mapped by the ROLE a member plays rather than by
+# what it is called.
+#
+# Responded was mapped `good` before this uplift. It is not: the person has
+# been answered and the item is still open, so it belongs with the rest of
+# in-motion on `low`. Only Closed is green, which is what makes the green
+# mean something.
+#
+# Severity uses the same good/warning/severe ladder as risk-register's
+# rating columns, so a Standard item is green for the same reason a Low
+# risk is — it is the mildest band, not a happy outcome.
+#
+# Outcome is a pill rather than a second severity box: two full-height
+# severity treatments on one row compete, and the outcome is a finding
+# rather than a state. Its colour tracks how much the organisation has to
+# learn from the item, which is the register's actual purpose.
+#
+# Both day-count bars take their fill from Severity through the standard
+# `color_by` translation. Three days to acknowledge is fine on a Standard
+# item and a breach on a Critical one, and the bar says which without the
+# reader having to remember the SLA table.
 column_formatting:
   Feedback:
-    Status: { style: severity, map: { Received: neutral, Acknowledged: low, Investigating: low, Responded: good, Closed: good } }
+    Status:
+      style: severity
+      map:
+        "Received": neutral
+        "Acknowledged": low
+        "Investigating": low
+        "Responded": low
+        "Closed": good
+    Severity:
+      style: severity
+      map: { "Standard": good, "Serious": warning, "Critical": severe }
+    Outcome:
+      style: pill
+      map:
+        "Resolved - upheld": severe
+        "Resolved - partially upheld": warning
+        "Resolved - not upheld": good
+        "Referred externally": low
+        "Withdrawn": muted
+        "No response required": muted
+    # max 10 is double the slowest acknowledgement target (5 business days
+    # for Standard), so a breach shows without the bar clipping.
+    DaysToAcknowledge:
+      style: data-bar
+      max: 10
+      calculated: true
+      color_by:
+        field: Severity
+        map: { "Standard": good, "Serious": warning, "Critical": severe }
+    # max 30 is the Standard close target.
+    DaysToClose:
+      style: data-bar
+      max: 30
+      calculated: true
+      color_by:
+        field: Severity
+        map: { "Standard": good, "Serious": warning, "Critical": severe }
+
+# The identifying spine every working view opens with — four of the five
+# views below use it, past §1.9's three-repetition threshold.
+field_sets:
+  Feedback:
+    identity: [Title, FeedbackType, Severity, ReceivedDate, Handler, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view, keyed on
+# INTERNAL names — the build rewrites them to display titles, and
+# ColumnWidth binds by display name.
+views:
+  Feedback:
+    - title: "Open by handler"
+      default: true
+      fields: ["@identity", AcknowledgedDate, DaysToAcknowledge, Channel]
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+      group_by: { field: Handler, collapsed: true }
+      sort:
+        - { field: ReceivedDate, direction: asc }
+      widths:
+        Title: 280
+        FeedbackType: 130
+        Severity: 160
+        ReceivedDate: 160
+        Handler: 160
+        Status: 130
+        AcknowledgedDate: 180
+        DaysToAcknowledge: 150
+        Channel: 130
+    - title: "Triage"
+      fields: ["@identity", Channel, RecordedBy]
+      where:
+        - { field: Status, op: eq, value: "Received" }
+      sort:
+        - { field: ReceivedDate, direction: asc }
+      widths:
+        Title: 300
+        FeedbackType: 130
+        Severity: 160
+        ReceivedDate: 160
+        Handler: 160
+        Status: 130
+        Channel: 130
+        RecordedBy: 160
+    # The SLA most organisations fail first, and the only one a complainant
+    # experiences directly.
+    - title: "Unacknowledged"
+      fields: ["@identity", AcknowledgedDate, RecordedBy]
+      where:
+        - { field: AcknowledgedDate, op: is_null }
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: ReceivedDate, direction: asc }
+      widths:
+        Title: 300
+        FeedbackType: 130
+        Severity: 160
+        ReceivedDate: 160
+        Handler: 160
+        Status: 130
+        AcknowledgedDate: 180
+        RecordedBy: 160
+    # The published table called this "Monthly report" and asked for items
+    # "closed in month", grouped by FeedbackType, showing both day-counts
+    # and Outcome. Two substitutions, both stated in 30-deploy/DEPLOY.md:
+    # CAML has no calendar-month predicate, so this is a rolling thirty
+    # days and the title says so rather than implying a calendar boundary;
+    # and `totals:` does not exist in this tool, so there is no mean or
+    # count row under a group. Both day-counts are per row, with bars.
+    - title: "Closed last 30 days"
+      fields: [Title, FeedbackType, Severity, ReceivedDate, AcknowledgedDate,
+               ClosedDate, DaysToAcknowledge, DaysToClose, Outcome, Handler]
+      where:
+        - { field: Status, op: eq, value: "Closed" }
+        - { field: ClosedDate, op: geq, value: today-30 }
+      group_by: { field: FeedbackType, collapsed: true }
+      sort:
+        - { field: ClosedDate, direction: desc }
+      widths:
+        Title: 240
+        FeedbackType: 130
+        Severity: 160
+        ReceivedDate: 160
+        AcknowledgedDate: 180
+        ClosedDate: 160
+        DaysToAcknowledge: 150
+        DaysToClose: 150
+        Outcome: 220
+        Handler: 160
+    # The point of the register. Every closed item, newest first, with what
+    # changed because of it in the row rather than one click away.
+    - title: "The learning shelf"
+      fields: [Title, FeedbackType, Severity, Outcome, Learning, ClosedDate, Handler]
+      where:
+        - { field: Status, op: eq, value: "Closed" }
+      sort:
+        - { field: ClosedDate, direction: desc }
+      widths:
+        Title: 260
+        FeedbackType: 130
+        Severity: 160
+        Outcome: 220
+        Learning: 200
+        ClosedDate: 160
+        Handler: 160
+
+# A recorder sees the New form and nothing else, so the New form must ask
+# only what a recorder can honestly answer at the counter. Handler,
+# acknowledgement, outcome, closure and learning are all handler acts, and
+# every one of them is off the New form; three of them appear on the Edit
+# form only once the status they belong to has been set.
+#
+# reconcile: exact makes this file authoritative for the whole list —
+# every other column's conditional formula is cleared on each deploy.
+form_visibility:
+  Feedback:
+    reconcile: exact
+    columns:
+      Handler: { new: false }
+      AcknowledgedDate: { new: false }
+      Outcome:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Responded", "Closed"] }
+      ClosedDate:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Closed" }
+      Learning:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Closed" }
+
+# Form layout: a strapline header and five sections following the standard
+# arc. Per-field description hints render on the NEW form only —
+# SharePoint suppresses column descriptions on the Edit form. Section field
+# lists are authored with INTERNAL names; the build rewrites them.
+form_formatting:
+  Feedback:
+    header: formatting/feedback-form-header.json
+    body: formatting/feedback-form-body.json
+
+# Per-column save rules, each with its own message. All three clocks run
+# from ReceivedDate, so a date typed with next year's year does not merely
+# look wrong — it produces a negative day-count and an item that never
+# appears in the report window.
+column_validation:
+  Feedback:
+    columns:
+      ReceivedDate:
+        when:
+          - { field: ReceivedDate, op: leq, value: today }
+        message: "Feedback cannot be received in the future. Use the day it actually arrived."
+      AcknowledgedDate:
+        when:
+          - { field: AcknowledgedDate, op: leq, value: today }
+        message: "An acknowledgement cannot be dated in the future. Leave it blank until you have actually contacted the person."
+      ClosedDate:
+        when:
+          - { field: ClosedDate, op: leq, value: today }
+        message: "A closure cannot be dated in the future."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column. TWO rules, chained: a list has one ValidationFormula, the
+# top-level list is an AND, so they compose and share one message. Each is
+# written as an implication — `if A then B` is `any_of[not A, B]`.
+#
+# NOTE: `Learning` is rich text, which SharePoint validation formulas
+# cannot reference at all, so "fill in Learning at closure" stays a
+# governance check. So does the acknowledgement TIMEFRAME: the day-counts
+# are calculated columns, and validation formulas cannot read those either.
+list_validation:
+  Feedback:
+    when:
+      # An item that has moved past Received has been acknowledged, so it
+      # has an acknowledgement date. Without one, DaysToAcknowledge is
+      # blank and the item is invisible in the one measure a complainant
+      # actually experiences.
+      - any_of:
+          - { field: Status, op: eq, value: "Received" }
+          - { field: AcknowledgedDate, op: is_not_null }
+      # Closure needs an outcome and a date. An item closed with neither is
+      # an item that left the queue without ever being answered.
+      - any_of:
+          - { field: Status, op: neq, value: "Closed" }
+          - all_of:
+              - { field: Outcome, op: is_not_null }
+              - { field: ClosedDate, op: is_not_null }
+    message: "This item cannot be saved yet. Check both: anything past Received needs an Acknowledged Date, and a Closed item needs an Outcome and a Closed Date."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Titles are neutral and
+# factual, and carry no names, exactly as the staff guide asks of real
+# ones. Dates are today-N so both clocks and the rolling report window
+# land wherever the demo runs. Coverage: one row per Status and one per
+# Severity, an unacknowledged item so Triage and Unacknowledged both fill,
+# and two closed items inside the thirty-day window.
+demo_items:
+  Feedback:
+    - key: cf-received
+      values:
+        Title: "[DEMO] Complaint - waiting time at reception"
+        FeedbackType: "Complaint"
+        Severity: "Serious"
+        Status: "Received"
+        ReceivedDate: "today-1"
+        Channel: "In person"
+        Detail: "Demo row. Reported a 50-minute wait at reception with no explanation offered and no seating available."
+        RecordedBy: "@me"
+    - key: cf-acknowledged
+      values:
+        Title: "[DEMO] Complaint - medication collection delayed twice"
+        FeedbackType: "Complaint"
+        Severity: "Critical"
+        Status: "Acknowledged"
+        ReceivedDate: "today-3"
+        Channel: "Phone"
+        Detail: "Demo row. Two consecutive collections were not ready at the agreed time. Alleged impact on the person's treatment."
+        RecordedBy: "@me"
+        Handler: "@me"
+        AcknowledgedDate: "today-3"
+    - key: cf-investigating
+      values:
+        Title: "[DEMO] Complaint - car park lighting out on the east side"
+        FeedbackType: "Complaint"
+        Severity: "Standard"
+        Status: "Investigating"
+        ReceivedDate: "today-8"
+        Channel: "Email"
+        Detail: "Demo row. Half the east car park has been unlit for a fortnight; raised as a safety concern for evening visitors."
+        RecordedBy: "@me"
+        Handler: "@me"
+        AcknowledgedDate: "today-6"
+    - key: cf-responded
+      values:
+        Title: "[DEMO] Suggestion - publish the clinic running-late board"
+        FeedbackType: "Suggestion"
+        Severity: "Standard"
+        Status: "Responded"
+        ReceivedDate: "today-20"
+        Channel: "Survey"
+        Detail: "Demo row. Suggested a visible board showing how far behind each clinic is running."
+        RecordedBy: "@me"
+        Handler: "@me"
+        AcknowledgedDate: "today-18"
+        Outcome: "Resolved - partially upheld"
+    - key: cf-closed-upheld
+      values:
+        Title: "[DEMO] Complaint - phone unanswered during the lunch hour"
+        FeedbackType: "Complaint"
+        Severity: "Serious"
+        Status: "Closed"
+        ReceivedDate: "today-25"
+        Channel: "Phone"
+        Detail: "Demo row. Four calls between 12:30 and 13:15 went unanswered across three separate days."
+        RecordedBy: "@me"
+        Handler: "@me"
+        AcknowledgedDate: "today-24"
+        ClosedDate: "today-10"
+        Outcome: "Resolved - upheld"
+        Learning: "Demo row. Reception cover roster amended so the desk is never single-staffed between 12:00 and 14:00. Change effective from the next roster cycle."
+    - key: cf-compliment
+      values:
+        Title: "[DEMO] Compliment - overnight team handled a difficult admission well"
+        FeedbackType: "Compliment"
+        Severity: "Standard"
+        Status: "Closed"
+        ReceivedDate: "today-12"
+        Channel: "Letter"
+        Detail: "Demo row. Family wrote to thank the overnight team for how a distressing late admission was handled."
+        RecordedBy: "@me"
+        Handler: "@me"
+        AcknowledgedDate: "today-12"
+        ClosedDate: "today-11"
+        Outcome: "No response required"
+        Learning: "Demo row. Passed to the team and read at the next huddle. Nothing to change - recorded so the trend data is not a misery index."

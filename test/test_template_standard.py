@@ -45,7 +45,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # The twenty-seven templates that have not yet been through a theme branch.
 # Removed by the branch that uplifts them; must reach empty.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "audit-actions", "change-register", "complaints-feedback",
+    "asset-register", "audit-actions", "change-register",
     "compliance-obligations", "contract-register", "credentialing-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
@@ -101,6 +101,13 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Describe the request": "Identify",
         "Triage": "Assess",
         "Resolution": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("complaints-feedback", "Feedback"): {
+        "What was raised": "Identify",
+        "Triage": "Assess",
+        "Response": "Act",
         "Ownership": "Govern",
         "System": "System",
     },
