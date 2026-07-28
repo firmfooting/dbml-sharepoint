@@ -16,6 +16,20 @@ the quiet catastrophes: the critical process living in one person's
 spreadsheet, the paper form nobody can find the master of. Six months
 later, `DigitisationStatus` is your programme dashboard.
 
+**Four declared views**, deployed with the paste — nothing to build by
+hand: *The worklist* (the default, ranked by score), *Programme dashboard*
+(grouped by status), *By function*, and *Key-person risk* — critical
+processes still on paper or in a spreadsheet, which is the slide leadership
+remembers. The score renders as a bar out of 9, coloured from the **Pain
+level** beside it, so a severely painful process reads red whatever its
+criticality drags the number down to. The review date turns red once
+overdue, and stops shouting once a process is digitised or ruled out.
+
+**One save rule and one column rule.** A process that is Planned, In
+progress or Digitised needs a **Target state** — a plan with nowhere named
+is not a plan — and a review date cannot be set more than twelve months
+out, because the inventory refresh is annual.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
@@ -27,5 +41,13 @@ later, `DigitisationStatus` is your programme dashboard.
 | 5 | `50-govern/` | Scoring definitions, programme cadence, done-means-done |
 
 **Customisation points:** `CurrentState` reflects your reality (add your
-legacy systems by name if that helps honesty); the scoring definitions in
-governance are the calibration that makes scores comparable across teams.
+legacy systems by name if that helps honesty — but re-read the
+*Key-person risk* filter in `mapping.yaml`, which names two of those
+members); the scoring definitions in governance are the calibration that
+makes scores comparable across teams.
+
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+that pastes six `[DEMO] `-titled rows across four functions, covering all
+five current states and all six digitisation statuses, with two landing in
+*Key-person risk* — so every view, every colour band and the score bar
+render on a first look. See `30-deploy/DEPLOY.md`.
