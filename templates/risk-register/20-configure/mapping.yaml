@@ -7,7 +7,7 @@ entities:
 cross_site_reference_columns: []
 
 indexed_columns:
-  Risk: [Status, Category, ReviewDate]
+  Risk: [Status, Category]
 
 versioning:
   default:
@@ -20,22 +20,30 @@ enum_sources: {}
 watched_lists: []
 
 # The 5x5 matrix, encoded cell-by-cell (rows = likelihood Rare..Almost
-# certain; columns = consequence Insignificant..Severe):
+# Certain; columns = consequence Minor..Business Critical):
 #
-#                Insig  Minor  Moderate  Major  Severe
-#  Rare           Low    Low     Low     Medium Medium
-#  Unlikely       Low    Low     Medium  Medium High
-#  Possible       Low    Medium  Medium  High   High
-#  Likely         Medium Medium  High    High   Extreme
-#  Almost certain Medium High    High    Extreme Extreme
+#                 Minor   Moderate  Substantial  Major    Business Critical
+#  Rare           Low     Low       Low          Medium   Medium
+#  Unlikely       Low     Low       Medium       Medium   High
+#  Likely         Low     Medium    Medium       High     High
+#  Very Likely    Medium  Medium    High         High     Extreme
+#  Almost Certain Medium  High      High         Extreme  Extreme
 #
-# RiskScore is the simple index product (1-25) for sorting. CHANGE CONTROL:
-# SharePoint recalculates every existing row when a formula changes — read
-# 50-govern/GOVERNANCE.md before editing these cells.
+# RiskScore is the matrix score 1-25 for sorting. Both are guarded on
+# MatrixVersion: a row stamped to an older matrix shows blank rather than
+# being silently re-rated. LevelsAboveTarget and NextReviewDue read
+# ResidualRiskRating, itself calculated — SharePoint permits calc-on-calc
+# and jsgen provisions them in dependency order (_order_calculated_after_
+# references), so declaration order here does not matter.
+#
+# CHANGE CONTROL: SharePoint recalculates every existing row when a formula
+# changes — read 50-govern/GOVERNANCE.md before editing these cells.
 calculated_formulas:
   Risk:
-    RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Possible",3,IF([Likelihood]="Likely",4,5))))*IF([Consequence]="Insignificant",1,IF([Consequence]="Minor",2,IF([Consequence]="Moderate",3,IF([Consequence]="Major",4,5)))))'
-    RiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence])),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Possible",3,IF([Likelihood]="Likely",4,5))))-1)*5+IF([Consequence]="Insignificant",1,IF([Consequence]="Minor",2,IF([Consequence]="Moderate",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
+    ResidualRiskRating: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence]),[MatrixVersion]<>"1.0"),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),"Low","Low","Low","Medium","Medium","Low","Low","Medium","Medium","High","Low","Medium","Medium","High","High","Medium","Medium","High","High","Extreme","Medium","High","High","Extreme","Extreme"))'
+    RiskScore: '=IF(OR(ISBLANK([Likelihood]),ISBLANK([Consequence]),[MatrixVersion]<>"1.0"),"",CHOOSE((IF([Likelihood]="Rare",1,IF([Likelihood]="Unlikely",2,IF([Likelihood]="Likely",3,IF([Likelihood]="Very Likely",4,5))))-1)*5+IF([Consequence]="Minor",1,IF([Consequence]="Moderate",2,IF([Consequence]="Substantial",3,IF([Consequence]="Major",4,5)))),1,4,6,13,15,2,5,11,14,21,3,9,12,19,22,7,10,17,20,24,8,16,18,23,25))'
+    LevelsAboveTarget: '=IF(OR([ResidualRiskRating]="",ISBLANK([TargetRiskRating])),"",IF([ResidualRiskRating]="Low",1,IF([ResidualRiskRating]="Medium",2,IF([ResidualRiskRating]="High",3,4)))-IF([TargetRiskRating]="Low",1,IF([TargetRiskRating]="Medium",2,IF([TargetRiskRating]="High",3,4))))'
+    NextReviewDue: '=IF(OR(ISBLANK([LastReviewedDate]),[ResidualRiskRating]=""),"",DATE(YEAR([LastReviewedDate]),MONTH([LastReviewedDate])+IF(OR([ResidualRiskRating]="High",[ResidualRiskRating]="Extreme",[OverallControlEffectiveness]="Inadequate",[OverallControlEffectiveness]="Uncontrolled",AND(NOT(ISBLANK([TargetRiskRating])),IF([ResidualRiskRating]="Low",1,IF([ResidualRiskRating]="Medium",2,IF([ResidualRiskRating]="High",3,4)))-IF([TargetRiskRating]="Low",1,IF([TargetRiskRating]="Medium",2,IF([TargetRiskRating]="High",3,4)))>=2)),3,IF(OR([RiskResponse]="Manage",[RiskResponse]="Tolerate",[OverallControlEffectiveness]="Partially effective"),6,12)),DAY([LastReviewedDate])))'
 
 # Security: risks are maintained by a managers group; everyone reads.
 groups:
@@ -90,4 +98,4 @@ prevent_list_deletion: true
 # template.
 column_formatting:
   Risk:
-    Status: { style: severity, map: { Open: low, Treating: low, Accepted: good, Closed: good } }
+    Status: { style: severity, map: { Provisional: neutral, Open: low, Closed: good } }

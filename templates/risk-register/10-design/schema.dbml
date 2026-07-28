@@ -7,53 +7,105 @@ Project risk_register { database_type: 'SharePoint Online Lists' }
 
 Enum risk_category {
   "Strategic"
+  "Enterprise"
   "Operational"
-  "Financial"
-  "Compliance / legal"
-  "Reputational"
-  "Safety"
-  "Information / cyber"
+  "Clinical"
+  "Project"
 }
 
+// Matrix rows 1-5. Assessed WITH current controls in effect.
 Enum risk_likelihood {
   "Rare"
   "Unlikely"
-  "Possible"
   "Likely"
-  "Almost certain"
+  "Very Likely"
+  "Almost Certain"
 }
 
+// Matrix columns 1-5: the highest reasonable consequence.
 Enum risk_consequence {
-  "Insignificant"
   "Minor"
   "Moderate"
+  "Substantial"
   "Major"
-  "Severe"
+  "Business Critical"
 }
 
+// The four rating bands, used for both the residual and the target rating.
+Enum risk_rating {
+  "Low"
+  "Medium"
+  "High"
+  "Extreme"
+}
+
+// Register lifecycle. New risks are Provisional until the sponsor opens them;
+// Status is lifecycle only — the chosen strategy is RiskResponse.
 Enum risk_status {
+  "Provisional"
   "Open"
-  "Treating"
-  "Accepted"
   "Closed"
+}
+
+Enum risk_response {
+  "Accept"
+  "Manage"
+  "Tolerate"
+  "Transfer"
+  "Terminate"
+  "Monitor"
+}
+
+// Combined strength of all controls. Members are deliberately short: they
+// appear as string literals inside the NextReviewDue formula, where longer
+// wording costs formula budget for no benefit.
+Enum control_effectiveness {
+  "Eliminated or within appetite"
+  "All reasonable controls in place"
+  "Partially effective"
+  "Inadequate"
+  "Uncontrolled"
+}
+
+// Matrix versions whose cells may have produced a rating. Seeded with the
+// CURRENT version only. When the matrix revs, APPEND the new version here,
+// move the column default, update the version literal in the two matrix
+// formulas, and rebuild — all in one change. Never remove old members, or
+// historical rows lose a valid stamp. The formulas are version-guarded
+// ([MatrixVersion]<>"1.0" shows blank), so replacing them at a rev cannot
+// silently re-rate rows stamped to an older matrix.
+Enum matrix_version {
+  "1.0"
 }
 
 Table Risk {
   Id          int              [pk, increment]
   Title       nvarchar         [not null, note: 'The risk, stated as an uncertain event: "Key supplier fails mid-contract"']
-  Category    risk_category    [not null]
   Detail      richtext         [note: 'Cause -> event -> consequence. What could trigger it, what happens if it does']
-  Likelihood  risk_likelihood  [note: 'How likely, given current controls']
-  Consequence risk_consequence [note: 'Worst credible impact, given current controls']
-  // Calculated column — the 5x5 matrix formula lives in mapping.yaml so the
-  // rating cannot drift from the governance matrix. Matrix cells are under
-  // change control: read 50-govern/GOVERNANCE.md before editing them.
-  RiskRating  calculated_text  [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme. Blank until both are set']
-  // Calculated column — formula in mapping.yaml; score = likelihood index (1-5) x consequence index (1-5).
-  RiskScore   calculated_number [note: 'Calculated automatically from Likelihood and Consequence: a score from 1 to 25, useful for sorting. Blank until both are set']
-  Owner       person           [not null, note: 'Who is accountable for managing this risk']
-  Status      risk_status      [not null, default: 'Open']
-  Controls    richtext         [note: 'What is currently in place that keeps the rating where it is']
+  Category    risk_category    [not null]
+  Likelihood  risk_likelihood  [note: 'How likely the assessed consequence is, with current controls in effect']
+  Consequence risk_consequence [note: 'The highest reasonable consequence, with current controls in effect']
+  // Calculated — the 5x5 matrix formula lives in mapping.yaml so the rating
+  // cannot drift from the governance matrix. Matrix cells are under change
+  // control: read 50-govern/GOVERNANCE.md before editing them.
+  ResidualRiskRating calculated_text [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme. Blank until both are set']
+  // Calculated — the matrix score 1-25, for prioritisation.
+  RiskScore   calculated_number [note: 'Calculated automatically: the matrix score 1-25. Sort the register by this, highest first. Blank until Likelihood and Consequence are set']
+  // A target is an appetite decision, not a derivation — which is why this
+  // one IS a manual choice.
+  TargetRiskRating risk_rating [note: 'The rating you are aiming to reach, in line with risk appetite. Set by judgement, not calculated']
+  LevelsAboveTarget calculated_number [note: 'Calculated automatically: how many rating levels the residual risk sits above the target (negative means below). Two or more levels above means at-least-quarterly review. Blank until both ratings are set']
+  MatrixVersion matrix_version [not null, default: '1.0', note: 'Which version of the risk matrix rated this row. Filled automatically - change it only if you re-assess the risk under a newer matrix version']
+  RiskOwner   person           [not null, note: 'Manages the risk day to day']
+  RiskSponsor person           [note: 'Accountable for the risk; approves opening, tolerance and closure']
+  Status      risk_status      [not null, default: 'Provisional', note: 'New risks start as Provisional; the Risk Sponsor moves them to Open. Close only when the closure criteria are met, recording the reasons in Closure Statement']
+  RiskResponse risk_response   [note: 'The current response. Tolerate is always for a set period and needs Risk Sponsor approval']
+  ToleranceEndDate date        [note: 'Required when the response is Tolerate: when the tolerance period ends. The Risk Sponsor must reassess and re-endorse before it']
+  Controls    richtext         [note: 'What is currently in place that keeps the rating where it is. Record only material controls']
   Treatment   richtext         [note: 'Planned actions to reduce likelihood or consequence, with owners and dates']
-  ReviewDate  date             [not null, note: 'Next scheduled review — cadence by rating, see governance']
+  OverallControlEffectiveness control_effectiveness [note: 'The combined strength of all controls. A risk can only close when this is "Eliminated or within appetite" or "All reasonable controls in place". Inadequate or Uncontrolled means at-least-quarterly review']
+  ClosureStatement richtext    [note: 'Required at closure: why the risk is being closed against the closure criteria - residual at or below target, all actions closed, controls effective']
+  NextReviewDue calculated_date [note: 'Calculated from the review cadence: quarterly for Extreme/High, inadequate or uncontrolled controls, or 2+ levels above target; bi-annual under active management, tolerance, or partially-effective controls; otherwise annual - counted from Last Reviewed Date. Review SOONER on contextual change. Completing a review = update Last Reviewed Date']
+  LastReviewedDate date        [default: '[today]', note: 'When this risk was last reviewed. Fills automatically when the risk is created - update it each time you complete a review']
+  SourceReference nvarchar     [note: 'The reference for this risk in whatever system of record it was escalated to, if any']
 }
