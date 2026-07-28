@@ -278,11 +278,6 @@ def report(
         )
         raise typer.Exit(code=2)
 
-    pq_dir = out / "powerquery"
-    sql_dir = out / "sql"
-    pq_dir.mkdir(parents=True, exist_ok=True)
-    sql_dir.mkdir(parents=True, exist_ok=True)
-
     generated_at = dt.datetime.now(dt.UTC).isoformat(timespec="seconds")
     dictionary_kwargs: dict[str, Any] = dict(
         release=release_obj,
@@ -291,31 +286,50 @@ def report(
         source_mapping=mapping.name,
     )
 
-    queries = generate_powerquery(parsed_schema, bundle, site_role)
-    queries.update(
-        generate_dictionary_powerquery(
+    # Render everything before writing anything. This command does not
+    # validate — it documents the contract as "assumes a schema that `build`
+    # accepts" — so the generators are the first thing to meet a schema
+    # mistake, and they signal one by raising: an unmapped column type, a
+    # composite DBML index. Unhandled, that printed a traceback for a typo
+    # in a file the operator hand-edited, which is exactly what
+    # `_config_error` exists to prevent on the loading side. Generating up
+    # front also keeps a failure from leaving a half-written report set
+    # behind, where the stale files outlive the error on the terminal.
+    try:
+        queries = generate_powerquery(parsed_schema, bundle, site_role)
+        queries.update(
+            generate_dictionary_powerquery(
+                parsed_schema, bundle, site_role, **dictionary_kwargs,
+            ),
+        )
+        views_sql = (
+            generate_sql_views(parsed_schema, bundle, site_role)
+            + "\n"
+            + generate_dictionary_sql(
+                parsed_schema, bundle, site_role, **dictionary_kwargs,
+            )
+        )
+        reporting_md = generate_reporting_md(parsed_schema, bundle, site_role)
+        dictionary_md = generate_data_dictionary(
             parsed_schema, bundle, site_role, **dictionary_kwargs,
-        ),
-    )
+        )
+    except ValueError as exc:
+        typer.echo(
+            f"[ERROR] schema {schema}: {exc}\n"
+            "Run `build --dry-run` for the full validation report.",
+            err=True,
+        )
+        raise typer.Exit(code=1) from exc
+
+    pq_dir = out / "powerquery"
+    sql_dir = out / "sql"
+    pq_dir.mkdir(parents=True, exist_ok=True)
+    sql_dir.mkdir(parents=True, exist_ok=True)
     for filename, content in queries.items():
         (pq_dir / filename).write_text(content, encoding="utf-8")
-    (sql_dir / "views.sql").write_text(
-        generate_sql_views(parsed_schema, bundle, site_role)
-        + "\n"
-        + generate_dictionary_sql(
-            parsed_schema, bundle, site_role, **dictionary_kwargs,
-        ),
-        encoding="utf-8",
-    )
-    (out / "REPORTING.md").write_text(
-        generate_reporting_md(parsed_schema, bundle, site_role), encoding="utf-8",
-    )
-    (out / "DATA-DICTIONARY.md").write_text(
-        generate_data_dictionary(
-            parsed_schema, bundle, site_role, **dictionary_kwargs,
-        ),
-        encoding="utf-8",
-    )
+    (sql_dir / "views.sql").write_text(views_sql, encoding="utf-8")
+    (out / "REPORTING.md").write_text(reporting_md, encoding="utf-8")
+    (out / "DATA-DICTIONARY.md").write_text(dictionary_md, encoding="utf-8")
     typer.echo(
         f"Generated {len(queries)} Power Query file(s), sql/views.sql, "
         f"REPORTING.md and DATA-DICTIONARY.md in {out}.",

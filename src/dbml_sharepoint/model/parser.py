@@ -92,7 +92,15 @@ def parse_dbml(path: Path) -> Schema:
         # These pydbml semantic errors do not inherit from ValueError or its
         # parser exception types, so normal CLI config-error handling would
         # otherwise miss them and print a traceback for a schema typo.
-        detail = str(exc).replace(' table "{self.name}".', ".")
+        #
+        # pydbml's index message ends in an unformatted f-string fragment —
+        # a literal `{self.name}` where the table name belongs. Drop the
+        # whole clause, preposition included, rather than leaving the
+        # sentence hanging on "not defined in.". The caller names the file,
+        # which is the part an author actually needs. If pydbml ever fixes
+        # the placeholder, this no longer matches and the real (better)
+        # message passes through untouched.
+        detail = str(exc).replace(' in table "{self.name}".', ".")
         raise ValueError(detail) from exc
     schema = Schema()
 
