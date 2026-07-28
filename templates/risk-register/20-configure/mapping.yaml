@@ -171,10 +171,18 @@ views:
         - { field: RiskScore, direction: desc }
       # ONE row-level signal, reserved for Extreme. Everything else stays
       # cell-level: a second wash for above-target rows duplicated the LAT
-      # cell's own escalation and read as noise on High rows. The wash reads
-      # ResidualRiskRating, so it must stay in this view's `fields:` list —
-      # view formatting can only read columns the view itself displays;
-      # drop it from `fields:` and the wash stops firing with a clean build.
+      # cell's own escalation and read as noise on High rows.
+      #
+      # The wash reads ResidualRiskRating, so it must stay in this view's
+      # `fields:` list — view formatting can only read columns the view
+      # displays. Drop it from fields and the wash stops firing with a
+      # clean build.
+      #
+      # It compares with `==` even though the column is calculated. That is
+      # correct HERE and would be wrong in column_formatting: the `string;#`
+      # prefix that makes `calculated: true` necessary there does not reach
+      # a view formatter's [$Field] reference. Confirmed on a live list —
+      # see the note in website/docs/reference/style-guide.md.
       formatting: formatting/row-extreme.json
       widths:
         Title: 280
