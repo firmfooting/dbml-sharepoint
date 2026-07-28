@@ -33,7 +33,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
-          "txtContent": "='Risk: ' + [$Title]"
+          "txtContent": "Risk"
         },
         {
           "elmType": "div",
@@ -48,21 +48,6 @@
             "href": "https://REPLACE-WITH-PROJECT-RISK-PROCESS-URL",
             "class": "ms-fontColor-themePrimary ms-fontSize-12 ms-fontWeight-semibold"
           }
-        },
-        {
-          "elmType": "div",
-          "style": { "display": "=if([$ResidualRiskRating] == '', 'none', 'flex')", "flex-wrap": "wrap", "margin-top": "6px" },
-          "children": [
-            {
-              "elmType": "div",
-              "attributes": { "class": "=if(indexOf([$ResidualRiskRating], 'Extreme') >= 0, 'sp-field-severity--blocked', if(indexOf([$ResidualRiskRating], 'High') >= 0, 'sp-field-severity--severeWarning', if(indexOf([$ResidualRiskRating], 'Medium') >= 0, 'sp-field-severity--warning', 'sp-field-severity--good'))) + ' ms-fontColor-neutralSecondary'" },
-              "style": { "display": "inline-flex", "align-items": "center", "padding": "4px 10px", "border-radius": "4px", "font-weight": "600" },
-              "children": [
-                { "elmType": "span", "style": { "display": "inline-block", "padding": "0 4px" }, "attributes": { "iconName": "=if(indexOf([$ResidualRiskRating], 'Extreme') >= 0, 'ErrorBadge', if(indexOf([$ResidualRiskRating], 'High') >= 0, 'Warning', if(indexOf([$ResidualRiskRating], 'Medium') >= 0, 'Error', 'CheckMark')))" } },
-                { "elmType": "span", "txtContent": "='Residual: ' + if(indexOf([$ResidualRiskRating], ';#') >= 0, substring([$ResidualRiskRating], indexOf([$ResidualRiskRating], ';#') + 2, 1000), [$ResidualRiskRating])" }
-              ]
-            }
-          ]
         }
       ]
     }

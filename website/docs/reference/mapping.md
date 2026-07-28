@@ -177,6 +177,34 @@ Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
 
+:::warning A header cannot read the item's fields
+
+Keep `header:` and `footer:` JSON **static**. A `[$FieldName]` reference
+in one does not behave the way it does in `column_formatting`:
+
+- **`[$Title]` fails the whole header.** SharePoint reports
+  `title not part of data object` and renders *nothing* — not a blank
+  line, the entire header disappears. One bad reference takes the icon,
+  the strapline and the link down with it.
+- **Other fields render blank silently.** A calculated column reference
+  produced an empty string even on saved items that had a value, with no
+  error anywhere.
+
+Both were established on a live tenant (2026-07-28) by bisecting a header
+down to static text and adding one construct at a time, with
+`"debugMode": true` set so SharePoint logged its own reason. A static
+header rendered; every variant carrying a field reference did not.
+
+This is invisible from the deploy side: the formatter saves, reads back
+byte-identical, and the phase reports verified. Only the rendered form
+shows it — the same shape as the `ShowInEditForm` trap in
+[`form_visibility`](#form_visibility).
+
+Put anything that must vary per item in `column_formatting` on the field
+itself, inside a body section, where field references do work.
+
+:::
+
 ## `form_visibility`
 
 Which columns appear on which forms, and under what conditions.

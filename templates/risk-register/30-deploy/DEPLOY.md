@@ -23,6 +23,18 @@ against the checklist below. Template-specific notes follow.
       **Set it to your organisation's real risk-process document, or delete
       that link element entirely, before you deploy** — every form you
       hand to a risk owner would otherwise carry a dead link.
+      Use an **absolute** `https://` address: SharePoint's formatter only
+      emits `http://`, `https://`, `mailto:` and `tel:` links, so a
+      site-relative path is not a valid substitution here.
+- [ ] Keep the header **static** if you edit it. A `[$FieldName]`
+      reference does not work in a form header the way it does in column
+      formatting: `[$Title]` makes SharePoint discard the *entire* header
+      (`title not part of data object`), and other fields render blank
+      with no error at all. This is invisible from the deploy side — the
+      formatter saves, reads back identical and Phase 3.2 reports it
+      verified. Only the rendered form shows it. Anything that must vary
+      per item belongs in `column_formatting` on the field, inside a body
+      section.
 
 ## Optional: the seeded demonstration build
 
