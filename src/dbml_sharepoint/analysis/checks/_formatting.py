@@ -75,6 +75,25 @@ def check(vc: ValidationContext) -> list[Finding]:
         for col_name, spec in spec_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             style = spec.get("style")
+            style_name = style if isinstance(style, str) else ""
+            calculated_type_for_style = {
+                "severity": "calculated_text",
+                "data-bar": "calculated_number",
+                "overdue-date": "calculated_date",
+            }.get(style_name)
+            target_type = types_by_col.get(col_name)
+            if target_type == calculated_type_for_style and spec.get("calculated") is not True:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: {style} on {target_type} requires calculated: true "
+                    "to decode SharePoint's typed formatter value.",
+                ))
+            elif spec.get("calculated") is True and target_type != calculated_type_for_style:
+                findings.append(Finding(
+                    "error",
+                    f"{ctx}: calculated: true on {style} expects "
+                    f"{calculated_type_for_style}, not {target_type}.",
+                ))
             if style in ("severity", "pill"):
                 members = style_enum_members.get(types_by_col.get(col_name, ""))
                 if members is not None:

@@ -167,7 +167,7 @@ into SharePoint's own formatter JSON, using only documented
 column_formatting:
   Risk:
     Status:    { style: severity, map: { Open: low, Closed: good } }
-    RiskScore: { style: data-bar, max: 25 }
+    RiskScore: { style: data-bar, max: 25, calculated: true }
     DueDate:   { style: overdue-date, guard: { field: Status, not: [Closed] } }
 ```
 
@@ -177,6 +177,12 @@ Available styles: `severity`, `pill`, `data-bar`, `trend`,
 where a parameterised style does not fit; the validator checks either
 form. The [style guide](style-guide.md) defines the tokens, icon rules
 and authoring rules in full.
+
+Set `calculated: true` when `severity`, `data-bar`, or `overdue-date`
+formats a `calculated_text`, `calculated_number`, or `calculated_date`
+target respectively. SharePoint exposes calculated values to column
+formatters as typed `type;#value` strings; the flag selects the matching
+decode before comparison, arithmetic, display, or date conversion.
 
 ## `form_formatting`
 

@@ -91,13 +91,17 @@ def check(vc: ValidationContext) -> list[Finding]:
     # unknown name (or a cross-site LOGICAL name, which is expanded to
     # <col>Abbreviation / <col>SiteUrl and never exists itself) would only
     # fail late, in the browser.
-    for entity_name, indexed in bundle.mapping.indexed_columns.items():
+    for entity_name in sorted(set(bundle.mapping.indexed_columns) - set(tables_by_name)):
+        findings.append(Finding(
+            "error",
+            f"indexed_columns references unknown entity: {entity_name}",
+        ))
+    # Visit every deployed entity, not only those with an explicit mapping
+    # entry: unique DBML columns create implicit SharePoint indexes too.
+    for entity_name in bundle.mapping.entities:
+        indexed = bundle.mapping.indexed_columns.get(entity_name, [])
         indexed_table = tables_by_name.get(entity_name)
         if indexed_table is None:
-            findings.append(Finding(
-                "error",
-                f"indexed_columns references unknown entity: {entity_name}",
-            ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
         rendered = _rendered_columns(indexed_table, xcols)

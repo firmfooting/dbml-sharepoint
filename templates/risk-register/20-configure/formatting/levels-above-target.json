@@ -3,19 +3,19 @@
   "elmType": "div",
   "style": { "display": "=if(@currentField == '', 'none', 'flex')", "border-radius": "4px", "margin": "1px 4px 1px 0" },
   "attributes": {
-    "class": "=if(@currentField <= 0, 'sp-field-severity--good', if(@currentField == 1, 'sp-field-severity--warning', 'sp-field-severity--severeWarning')) + ' ms-fontColor-neutralSecondary'"
+    "class": "=if(Number(substring(@currentField,indexOf(@currentField,';#')+2,1000)) <= 0, 'sp-field-severity--good', if(Number(substring(@currentField,indexOf(@currentField,';#')+2,1000)) == 1, 'sp-field-severity--warning', 'sp-field-severity--severeWarning')) + ' ms-fontColor-neutralSecondary'"
   },
   "children": [
     {
       "elmType": "span",
       "style": { "display": "inline-block", "padding": "0 4px" },
       "attributes": {
-        "iconName": "=if(@currentField <= 0, 'CheckMark', if(@currentField == 1, 'Error', 'Warning'))"
+        "iconName": "=if(Number(substring(@currentField,indexOf(@currentField,';#')+2,1000)) <= 0, 'CheckMark', if(Number(substring(@currentField,indexOf(@currentField,';#')+2,1000)) == 1, 'Error', 'Warning'))"
       }
     },
     {
       "elmType": "span",
-      "txtContent": "@currentField"
+      "txtContent": "=Number(substring(@currentField,indexOf(@currentField,';#')+2,1000))"
     }
   ]
 }

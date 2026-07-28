@@ -94,6 +94,38 @@ def test_data_bar_color_by_map_keys_must_be_enum_members(tmp_path: Path) -> None
     assert not any("'Low'" in f.message for f in findings if f.severity == "error")
 
 
+def test_calculated_number_and_date_styles_require_decoding(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Risk {\n"
+        "  Id int [pk, increment]\n"
+        "  Score calculated_number\n"
+        "  Due calculated_date\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "calculated_formulas:\n"
+        "  Risk:\n"
+        "    Score: '=1'\n"
+        "    Due: '=DATE(2026,1,1)'\n"
+        "column_formatting:\n"
+        "  Risk:\n"
+        "    Score: { style: data-bar, max: 25 }\n"
+        "    Due: { style: overdue-date }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    errors = [f.message for f in findings if f.severity == "error"]
+    assert any("Score" in message and "calculated: true" in message for message in errors)
+    assert any("Due" in message and "calculated: true" in message for message in errors)
+
+
 def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
     """[$Created]/[$Modified]/[$ID]/[$Author]/[$Editor] always exist on a
     list; formatter references to them must not be rejected, while a
@@ -445,6 +477,28 @@ def test_indexed_columns_reject_duplicates_and_more_than_twenty(tmp_path: Path) 
     assert any(
         f.severity == "error" and "Col0" in f.message and "duplicate" in f.message
         for f in findings
+    )
+    assert any(
+        f.severity == "error" and "21" in f.message and "20" in f.message
+        for f in findings
+    )
+
+
+def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path: Path) -> None:
+    columns = "".join(f"  Col{i} nvarchar [unique]\n" for i in range(21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Wide {{\n  Id int [pk, increment]\n{columns}}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Wide: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
     )
     assert any(
         f.severity == "error" and "21" in f.message and "20" in f.message

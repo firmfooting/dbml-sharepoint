@@ -138,7 +138,7 @@ column_formatting:
     # Data-bar with the fill translated from the rating column via the
     # severity tokens (style standard `color_by`) — the same map the rating
     # columns declare, so bar and rating cell can never disagree.
-    RiskScore: { style: data-bar, max: 25,
+    RiskScore: { style: data-bar, max: 25, calculated: true,
                  color_by: { field: ResidualRiskRating, calculated: true,
                              map: { Low: good, Medium: warning, High: severe, Extreme: blocked } } }
     LevelsAboveTarget: formatting/levels-above-target.json
@@ -150,7 +150,8 @@ column_formatting:
         "Partially effective": warning
         "Inadequate": severe
         "Uncontrolled": blocked
-    NextReviewDue: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+    NextReviewDue: { style: overdue-date, calculated: true,
+                     guard: { field: Status, not: [Closed] } }
     ToleranceEndDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
 
 # Declared views (deployed and reconciled by the views phase; undeclared
