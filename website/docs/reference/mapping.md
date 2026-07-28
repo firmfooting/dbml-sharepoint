@@ -115,6 +115,39 @@ views:
   nesting existed keeps working unchanged. The same grammar drives
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
+
+:::tip `me` — the current-user sentinel, and the only way to filter a person column
+
+```yaml
+where:
+  - { field: RequestedBy, op: eq, value: me }     # "My requests"
+```
+
+A person column takes no `property` here, and **refuses one**. That is not
+an inconsistency with the accessor rules elsewhere — it is what makes the
+filter possible at all.
+
+Ordinarily a person operand must declare `property: title | email | id`,
+because there is no defensible default between the three. But CAML cannot
+reach a person's sub-properties at all, so every accessor it might be given
+is refused too. Between those two rules, a person column could not appear in
+a view filter in any form.
+
+`me` resolves that: CAML's `<UserID/>` compares the person field's user id
+natively, so the sentinel **supplies** the accessor rather than declaring
+one. Hence no `property`, and only `eq` / `neq` — `<UserID/>` is an identity,
+so ordering or substring-matching against it is meaningless rather than
+merely unsupported.
+
+Scope, exactly as `today`'s: it means the current user only on a **person**
+column (on a text column it is someone literally called "me"), and only in
+`views[].where`. It is refused in `form_visibility.when`, because a
+show/hide formula is evaluated against the item's field values rather than
+against the signed-in user — the rule would save, read back equal, pass the
+phase and never fire. It is refused in validation formulas because person
+operands already are.
+
+:::
 - `formatting` points at a view-level (row) formatter JSON file. Its
   `[$Field]` references must be columns **this view displays** — SharePoint
   resolves them against the view's own fields, so a reference to a column

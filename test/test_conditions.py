@@ -729,3 +729,64 @@ def test_negating_negative_operators_does_not_admit_nulls() -> None:
     assert "IsNull" not in to_caml(not_in, {"Status": "nvarchar"})
     assert to_validation(neq, {"Status": "nvarchar"}) == '[Status]="Closed"'
     assert to_validation(not_in, {"Status": "nvarchar"}) == 'OR([Status]="A",[Status]="B")'
+
+
+# --- The `me` sentinel ------------------------------------------------------
+#
+# A person column could not appear in a view filter at all before this: the
+# operand rules require an accessor (no defensible default between a name,
+# an email and an id) and CAML refuses every accessor. `me` resolves the
+# deadlock rather than working around it — <UserID/> compares the person
+# field's user id natively, which IS the missing accessor, supplied by the
+# sentinel instead of declared.
+
+
+def test_me_renders_the_current_user_on_a_person_column() -> None:
+    """'My requests', 'My trips' and 'My function's queue' are published in
+    three templates' recommended views and have never been buildable."""
+    condition = parse_condition([{"field": "Owner", "op": "eq", "value": "me"}], "c")
+    assert to_caml(condition, TYPES) == (
+        '<Eq><FieldRef Name="Owner"/><Value Type="Integer"><UserID/></Value></Eq>'
+    )
+
+
+def test_me_needs_no_accessor_and_refuses_one() -> None:
+    """The sentinel IS the accessor. `property: email` beside it would ask
+    to compare an email address against a user id."""
+    assert _problems([{"field": "Owner", "op": "eq", "value": "me"}], CAML) == []
+    bad = _problems(
+        [{"field": "Owner", "property": "email", "op": "eq", "value": "me"}], CAML,
+    )
+    assert any("'me'" in problem for problem in bad), bad
+
+
+def test_me_on_a_text_column_is_the_literal_word() -> None:
+    """Same rule `today` follows: a sentinel means itself only on the column
+    type it belongs to. On text it is someone literally called 'me'."""
+    condition = parse_condition([{"field": "Status", "op": "eq", "value": "me"}], "c")
+    assert '<Value Type="Text">me</Value>' in to_caml(condition, TYPES)
+
+
+def test_me_is_refused_for_conditional_visibility() -> None:
+    """A show/hide formula is evaluated against the item's field values and
+    has no verified current-user equivalent. It would save, read back equal,
+    pass the phase and never fire — the failure this whole grammar exists to
+    make impossible."""
+    condition = parse_condition([{"field": "Owner", "op": "eq", "value": "me"}], "c")
+    with pytest.raises(ValueError, match="'me'"):
+        to_expression(condition, TYPES)
+
+
+def test_me_is_refused_in_validation_formulas() -> None:
+    """Person operands are already refused there outright; asserted so the
+    sentinel cannot later be routed around that gate."""
+    condition = parse_condition([{"field": "Owner", "op": "eq", "value": "me"}], "c")
+    with pytest.raises(ValueError, match="person"):
+        to_validation(condition, TYPES)
+
+
+def test_me_supports_only_equality() -> None:
+    """<UserID/> is an identity, so ordering and substring comparisons
+    against it are meaningless rather than merely unsupported."""
+    bad = _problems([{"field": "Owner", "op": "contains", "value": "me"}], CAML)
+    assert any("'me'" in problem for problem in bad), bad
