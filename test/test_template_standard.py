@@ -48,7 +48,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "audit-actions", "change-register", "complaints-feedback",
     "credentialing-register",
     "declarations-register", "equipment-maintenance",
-    "grants-register", "improvement-register", "incident-management",
+    "improvement-register", "incident-management",
     "measures-register", "meeting-actions", "onboarding-tracker",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
@@ -83,6 +83,20 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # Both halves of the grant lifecycle run Identify -> Act -> Govern.
+    # There is no Assess beat on either: the bid/no-bid assessment happens
+    # before a row exists (50-govern's ten-minute test), and an obligation
+    # is not assessed at all — it is either filed or it is not.
+    ("grants-register", "Submission"): {
+        "The bid": "Identify",
+        "Submission and outcome": "Act",
+        "Delivery": "Govern",
+    },
+    ("grants-register", "Acquittal"): {
+        "The obligation": "Identify",
+        "Preparing and filing": "Act",
+        "Escalation notes": "Govern",
     },
     # Three beats. There is no Act on a register that transcribes rather
     # than decides — the doctrine is that authority is created in the

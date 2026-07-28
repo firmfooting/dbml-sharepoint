@@ -65,3 +65,477 @@ list_permissions:
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
+
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes and the Submission lookup all key on them); the deployer renames
+# the display Title after create. Two overrides: the initialisms in
+# AgreementUrl and EvidenceUrl auto-split to "Url", and AcqStatus is an
+# abbreviation the splitter cannot expand.
+display_names:
+  mode: auto
+  overrides:
+    Submission:
+      AgreementUrl: "Agreement URL"
+    Acquittal:
+      AcqStatus: "Acquittal Status"
+      EvidenceUrl: "Evidence URL"
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# website/docs/reference/style-guide.md). This template had NO
+# column_formatting at all, which on a register whose entire pitch is
+# "the mid-term report due in 14 months is remembered by nobody" meant an
+# overdue acquittal rendered in exactly the same grey as an accepted one.
+column_formatting:
+  Submission:
+    # Tokens by ROLE. "Submitted" sits in the in-motion band rather than
+    # the intake band the style guide's example list puts it in: in most
+    # templates Submitted means "arrived here, not yet triaged", and here
+    # it means "lodged with the funder, who is deciding" — which is the
+    # under-review role. "Withdrawn" and "Unsuccessful" are different
+    # kinds of ending and are coloured as such: we stopped, versus they
+    # said no.
+    Outcome:
+      style: severity
+      map:
+        "In preparation": neutral
+        "Submitted": low
+        "Successful": good
+        "Unsuccessful": muted
+        "Withdrawn": blocked
+    # The round deadline. Guarded on everything past preparation: once a
+    # bid is lodged, withdrawn or decided, the closing date is history and
+    # a date that keeps shouting after the row is finished trains people to
+    # ignore the colour.
+    DueDate:
+      style: overdue-date
+      guard: { field: Outcome, not: ["Submitted", "Successful", "Unsuccessful", "Withdrawn"] }
+    # AmountSought and AmountAwarded are deliberately NOT data-bars. A
+    # data-bar needs an explicit `max`, and a grant portfolio has no
+    # defensible one: a bar scaled to somebody else's rounds reads as full
+    # or empty for everyone. SubmittedDate and ProjectEndDate are
+    # deliberately unformatted too — neither has a late state. The end of
+    # funded activity is not a deadline; the obligations that trail it are,
+    # and those are rows on the other list.
+  Acquittal:
+    # "Submitted" is `warning` here and `low` on Submission, which looks
+    # inconsistent and is not. The staff guide's monthly sweep says to
+    # chase the funder's acceptance where that is a thing, so a submitted
+    # acquittal is a row still WAITING on someone — the needs-attention
+    # role. A submitted bid is not waiting on us at all.
+    AcqStatus:
+      style: severity
+      map:
+        "Upcoming": neutral
+        "In preparation": low
+        "Submitted": warning
+        "Accepted by funder": good
+        "Overdue": severe
+    # Guarded once the thing has actually been filed. An Overdue row keeps
+    # both signals — the status chip and the red date — and they agree,
+    # which is the point: 50-govern treats an overdue acquittal as a
+    # funder-relationship incident rather than an admin slip.
+    DueDate:
+      style: overdue-date
+      guard: { field: AcqStatus, not: ["Submitted", "Accepted by funder"] }
+
+# Every lens on each list shows the same identifying columns before its own
+# payload, so each spine is declared once (§1.9).
+field_sets:
+  Submission:
+    identity: [Title, Funder, GrantOwner, Outcome]
+  Acquittal:
+    identity: [Title, Submission, AcqStatus, DueDate]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). These are the five rows the old "Recommended
+# views" table asked the adopter to build by hand, plus a history lens on
+# each list. Widths are keyed on INTERNAL names — the build rewrites them
+# to display titles, because ColumnWidth binds by display name and an
+# internal name silently resets.
+views:
+  Submission:
+    # The pipeline is the coordinator's daily list, so it is the default.
+    - title: "Pipeline"
+      default: true
+      fields: ["@identity", DueDate, AmountSought, SubmittedDate]
+      where:
+        - { field: Outcome, op: in, value: ["In preparation", "Submitted"] }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Funder: 200
+        GrantOwner: 160
+        Outcome: 160
+        DueDate: 160
+        AmountSought: 150
+        SubmittedDate: 170
+    - title: "Live grants"
+      fields: ["@identity", AmountAwarded, ProjectEndDate, AgreementUrl]
+      where:
+        - { field: Outcome, op: eq, value: "Successful" }
+        - { field: ProjectEndDate, op: geq, value: today }
+      sort:
+        - { field: ProjectEndDate, direction: asc }
+      widths:
+        Title: 280
+        Funder: 200
+        GrantOwner: 160
+        Outcome: 160
+        AmountAwarded: 150
+        ProjectEndDate: 170
+        AgreementUrl: 180
+    # 50-govern calls this the relationship file: every submission and
+    # outcome for one funder, in one place, before any meeting with them.
+    # No filter, deliberately — a lost bid is part of that history.
+    - title: "By funder"
+      fields: ["@identity", AmountSought, AmountAwarded, SubmittedDate]
+      group_by: { field: Funder, collapsed: true }
+      sort:
+        - { field: SubmittedDate, direction: desc }
+      widths:
+        Title: 280
+        Funder: 200
+        GrantOwner: 160
+        Outcome: 160
+        AmountSought: 150
+        AmountAwarded: 150
+        SubmittedDate: 170
+    # The history lens, and the one 50-govern's strategy input reads:
+    # unsuccessful-bid debriefs live in ProjectSummary, so it is in this
+    # view rather than the others.
+    - title: "Lost bids"
+      fields: ["@identity", AmountSought, SubmittedDate, ProjectSummary]
+      where:
+        - { field: Outcome, op: in, value: ["Unsuccessful", "Withdrawn"] }
+      sort:
+        - { field: SubmittedDate, direction: desc }
+      widths:
+        Title: 280
+        Funder: 200
+        GrantOwner: 160
+        Outcome: 160
+        AmountSought: 150
+        SubmittedDate: 170
+        ProjectSummary: 200
+  Acquittal:
+    # The default is everything not yet accepted, rather than the ninety-day
+    # window: an OVERDUE obligation is outside that window by definition,
+    # and a default view that hides the worst rows on the list is the
+    # opposite of what a default is for.
+    #
+    # This list's ONE row-level signal (§1.6) lives here. It reads
+    # AcqStatus, so that column must stay in this view's `fields` — view
+    # formatting can only read columns the view displays, and dropping it
+    # would stop the wash firing with a clean build. It compares with `==`
+    # even though a severity map elsewhere needs contains-matching: the
+    # `string;#` prefix is a COLUMN-formatting thing and never reaches a
+    # view formatter's [$Field].
+    - title: "Open obligations"
+      default: true
+      fields: ["@identity", ResponsibleTo, SubmittedDate]
+      where:
+        - { field: AcqStatus, op: neq, value: "Accepted by funder" }
+      sort:
+        - { field: DueDate, direction: asc }
+      formatting: formatting/row-overdue.json
+      widths:
+        Title: 300
+        Submission: 220
+        AcqStatus: 160
+        DueDate: 160
+        ResponsibleTo: 200
+        SubmittedDate: 170
+    # THE view, per the old table. today+90 is a ROLLING ninety days, not
+    # "next quarter" — CAML has no calendar-period predicate, and the
+    # monthly sweep in 40-adopt is what reads this, so rolling is also the
+    # honest reading.
+    - title: "Due 90 days"
+      fields: ["@identity", ResponsibleTo]
+      where:
+        - { field: AcqStatus, op: in, value: ["Upcoming", "In preparation"] }
+        - { field: DueDate, op: leq, value: today+90 }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Submission: 220
+        AcqStatus: 160
+        DueDate: 160
+        ResponsibleTo: 200
+    - title: "Overdue"
+      fields: ["@identity", ResponsibleTo, Notes]
+      where:
+        - { field: AcqStatus, op: eq, value: "Overdue" }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Submission: 220
+        AcqStatus: 160
+        DueDate: 160
+        ResponsibleTo: 200
+        Notes: 200
+    # A static view cannot filter to one parent, so "the obligations of
+    # THIS grant" is one grouped view on the lookup rather than one view
+    # per grant — the real SharePoint idiom, and it stays correct as grants
+    # are added. The group column is in `fields`, because SharePoint groups
+    # by a column the view does not display and then has nothing to label
+    # the headers with.
+    - title: "By grant"
+      fields: ["@identity", ResponsibleTo, SubmittedDate]
+      group_by: { field: Submission, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Submission: 220
+        AcqStatus: 160
+        DueDate: 160
+        ResponsibleTo: 200
+        SubmittedDate: 170
+    # Funders audit years later, so the filed history is a first-class
+    # view rather than something to reconstruct from All Items.
+    - title: "Filed"
+      fields: ["@identity", SubmittedDate, EvidenceUrl]
+      where:
+        - { field: AcqStatus, op: in, value: ["Submitted", "Accepted by funder"] }
+      sort:
+        - { field: SubmittedDate, direction: desc }
+      widths:
+        Title: 280
+        Submission: 220
+        AcqStatus: 160
+        DueDate: 160
+        SubmittedDate: 170
+        EvidenceUrl: 180
+
+# Form layouts: a strapline header and a sectioned body per list. Per-field
+# description hints render on the NEW form only — the edit form suppresses
+# column descriptions (platform limitation). Section field lists are
+# authored with INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  Submission:
+    header: formatting/submission-form-header.json
+    body: formatting/submission-form-body.json
+  Acquittal:
+    header: formatting/acquittal-form-header.json
+    body: formatting/acquittal-form-body.json
+
+# The post-award half of the Submission form does not exist until there is
+# an award. Showing AmountAwarded, the agreement link and the project end
+# date on a bid in preparation invites someone to fill in a number the
+# funder has not agreed to, which is exactly what 50-govern's third
+# data-quality rule is about ("from the agreement, not the announcement").
+#
+# Changing an outcome back does NOT clear values already entered —
+# SharePoint has no such mechanism — so these fields hide while keeping
+# whatever was typed.
+form_visibility:
+  Submission:
+    columns:
+      SubmittedDate:
+        when:
+          - { field: Outcome, op: neq, value: "In preparation" }
+      AmountAwarded:
+        when:
+          - { field: Outcome, op: eq, value: "Successful" }
+      AgreementUrl:
+        when:
+          - { field: Outcome, op: eq, value: "Successful" }
+      ProjectEndDate:
+        when:
+          - { field: Outcome, op: eq, value: "Successful" }
+  Acquittal:
+    columns:
+      SubmittedDate:
+        when:
+          - { field: AcqStatus, op: in, value: ["Submitted", "Accepted by funder"] }
+      EvidenceUrl:
+        when:
+          - { field: AcqStatus, op: in, value: ["Submitted", "Accepted by funder"] }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule has to share one message.
+column_validation:
+  Submission:
+    columns:
+      AmountSought:
+        when:
+          - { field: AmountSought, op: geq, value: 0 }
+        message: "Amount sought cannot be negative. Leave it blank if the round does not name a figure."
+      AmountAwarded:
+        when:
+          - { field: AmountAwarded, op: geq, value: 0 }
+        message: "Amount awarded cannot be negative. It comes from the signed agreement, not the announcement."
+      SubmittedDate:
+        when:
+          - { field: SubmittedDate, op: leq, value: today }
+        message: "A bid cannot have been lodged in the future. Use the date it actually went to the funder."
+  Acquittal:
+    columns:
+      SubmittedDate:
+        when:
+          - { field: SubmittedDate, op: leq, value: today }
+        message: "An obligation cannot have been filed in the future. Use the date it actually went to the funder."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# Each list has ONE ValidationFormula, the top-level list is an AND, and
+# each rule is written as an implication — `if A then B` is
+# `any_of[not A, B]`, which is why every branch starts with the case the
+# rule does not apply to.
+#
+# NOT enforceable, and therefore still governance checks (see
+# 50-govern/GOVERNANCE.md): the linked agreement on a successful bid, the
+# filed copy on a submitted acquittal, and the debrief on a lost one. The
+# first two are hyperlink columns and the third is rich text. Rich text is
+# refused outright by the build; hyperlink operands are accepted by this
+# tool but have never been read back from a live tenant inside a validation
+# formula, and this repository does not ship a rule it has not seen work.
+list_validation:
+  Submission:
+    when:
+      # Anything the funder has actually received has a lodgement date.
+      # Withdrawn is exempt: a bid can be withdrawn before it is lodged.
+      - any_of:
+          - { field: Outcome, op: not_in, value: ["Submitted", "Successful", "Unsuccessful"] }
+          - { field: SubmittedDate, op: is_not_null }
+      # 50-govern's third data-quality rule. A successful bid with no
+      # awarded amount is the row that later gets reconciled against the
+      # press release instead of the agreement.
+      - any_of:
+          - { field: Outcome, op: neq, value: "Successful" }
+          - { field: AmountAwarded, op: is_not_null }
+    message: "This submission cannot be saved yet. Check both: anything the funder has received (Submitted, Successful or Unsuccessful) needs a Submitted Date, and a Successful bid needs the Amount Awarded from the signed agreement."
+  Acquittal:
+    when:
+      # 50-govern's second data-quality rule, the half of it a formula can
+      # reach. The other half — the filed, linked copy — is a hyperlink
+      # column and stays a governance check.
+      - any_of:
+          - { field: AcqStatus, op: not_in, value: ["Submitted", "Accepted by funder"] }
+          - { field: SubmittedDate, op: is_not_null }
+    message: "An obligation that has been filed needs the date it was filed. Add the Evidence URL as well — the list cannot check that one, and an acquittal nobody can produce a copy of is the same as one that was never sent."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# deadline surfaces land on whatever day the demo runs; "@me" is the
+# pasting operator; { demo_ref: key } resolves to the Id of the submission
+# created under that key.
+#
+# Coverage: one submission per Outcome member, two of them under one funder
+# so "By funder" has a group with history in it, and TWO successful grants
+# so "By grant" on the obligations list has more than one group. One
+# obligation per AcqStatus member, including the overdue row that drives
+# the row wash.
+demo_items:
+  Submission:
+    - key: gr-theatre
+      values:
+        Title: "[DEMO] Regional Health Infrastructure Fund - theatre upgrade"
+        Funder: "[DEMO] State Health Infrastructure Office"
+        GrantOwner: "@me"
+        AmountSought: 850000
+        DueDate: "today-420"
+        SubmittedDate: "today-425"
+        Outcome: "Successful"
+        AmountAwarded: 720000
+        AgreementUrl: "https://example.sharepoint.com/sites/grants/demo-theatre-agreement.pdf"
+        ProjectSummary: "Demo row. Replacement of two theatre lights and an anaesthetic machine, with a twelve-month commissioning programme. Awarded at 85 per cent of the amount sought; scope reduced to two lights."
+        ProjectEndDate: "today+300"
+    - key: gr-youth
+      values:
+        Title: "[DEMO] Youth Mental Health Outreach"
+        Funder: "[DEMO] Primary Health Network"
+        GrantOwner: "@me"
+        AmountSought: 300000
+        DueDate: "today-620"
+        SubmittedDate: "today-625"
+        Outcome: "Successful"
+        AmountAwarded: 300000
+        AgreementUrl: "https://example.sharepoint.com/sites/grants/demo-youth-agreement.pdf"
+        ProjectSummary: "Demo row. Two outreach workers covering four schools. Funded activity has ended; the obligations trail it by six months, which is the usual shape and the reason this register exists."
+        ProjectEndDate: "today-30"
+    - key: gr-transport
+      values:
+        Title: "[DEMO] Community Transport Expansion Grant"
+        Funder: "[DEMO] Department of Communities"
+        GrantOwner: "@me"
+        AmountSought: 120000
+        DueDate: "today-10"
+        SubmittedDate: "today-12"
+        Outcome: "Submitted"
+        ProjectSummary: "Demo row. Two additional vehicles and a volunteer driver programme. Outcome expected within eight weeks."
+    - key: gr-telehealth
+      values:
+        Title: "[DEMO] Rural Telehealth Innovation Round"
+        Funder: "[DEMO] Primary Health Network"
+        GrantOwner: "@me"
+        AmountSought: 65000
+        DueDate: "today+25"
+        Outcome: "In preparation"
+        ProjectSummary: "Demo row. Consultation rooms fitted for telehealth at the two smallest sites."
+    - key: gr-respite
+      values:
+        Title: "[DEMO] Carer Respite Pilot"
+        Funder: "[DEMO] Department of Communities"
+        GrantOwner: "@me"
+        AmountSought: 90000
+        DueDate: "today-260"
+        SubmittedDate: "today-265"
+        Outcome: "Unsuccessful"
+        ProjectSummary: "Demo row. Debrief: the funder wanted a co-design partner named at submission and we described the process instead. Feedback also noted the evaluation plan was thin. Both are fixable next round."
+    - key: gr-digital
+      values:
+        Title: "[DEMO] Digital Inclusion Seed Fund"
+        Funder: "[DEMO] Regional Foundation"
+        GrantOwner: "@me"
+        AmountSought: 40000
+        DueDate: "today-150"
+        Outcome: "Withdrawn"
+        ProjectSummary: "Demo row. Withdrawn before lodgement: the reporting obligations in the draft agreement cost more than the grant was worth, which is question three of the bid/no-bid test doing its job."
+  Acquittal:
+    - key: ac-midterm
+      values:
+        Title: "[DEMO] Mid-term progress report"
+        Submission: { demo_ref: gr-theatre }
+        DueDate: "today+35"
+        AcqStatus: "Upcoming"
+        ResponsibleTo: "Funder portal - infrastructure grants module"
+    - key: ac-financial
+      values:
+        Title: "[DEMO] Audited financial acquittal"
+        Submission: { demo_ref: gr-theatre }
+        DueDate: "today+70"
+        AcqStatus: "In preparation"
+        ResponsibleTo: "Funder portal - infrastructure grants module"
+        Notes: "Demo row. Auditor booked; the draft statement is with finance."
+    - key: ac-q1
+      values:
+        Title: "[DEMO] Quarter 1 expenditure statement"
+        Submission: { demo_ref: gr-theatre }
+        DueDate: "today-110"
+        AcqStatus: "Submitted"
+        ResponsibleTo: "Funder portal - infrastructure grants module"
+        SubmittedDate: "today-112"
+        EvidenceUrl: "https://example.sharepoint.com/sites/grants/demo-q1-statement.pdf"
+        Notes: "Demo row. Lodged; the funder has not yet confirmed acceptance, which is why this still reads as needing attention."
+    - key: ac-final
+      values:
+        Title: "[DEMO] Final outcomes report"
+        Submission: { demo_ref: gr-youth }
+        DueDate: "today-20"
+        AcqStatus: "Overdue"
+        ResponsibleTo: "Contract manager, by email"
+        Notes: "Demo row. Funder contacted proactively on the second day; recovery date agreed for the end of next week."
+    - key: ac-commence
+      values:
+        Title: "[DEMO] Project commencement report"
+        Submission: { demo_ref: gr-youth }
+        DueDate: "today-300"
+        AcqStatus: "Accepted by funder"
+        ResponsibleTo: "Contract manager, by email"
+        SubmittedDate: "today-302"
+        EvidenceUrl: "https://example.sharepoint.com/sites/grants/demo-commencement.pdf"

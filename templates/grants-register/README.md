@@ -17,6 +17,14 @@ week it's due. Missed acquittals damage the relationship that wins the
 turns post-award obligations into a due-date view, loaded once from each
 funding agreement on the day it's signed.
 
+**Nine views deploy with the lists** — a pipeline, live grants, the funder
+relationship file and a lost-bids shelf on one side; open obligations,
+*Due 90 days*, *Overdue*, *By grant* and a filed history on the other. An
+overdue obligation tints its whole row. A successful bid cannot be saved
+without the awarded amount, and a filed obligation cannot be saved without
+the date it was filed. Build with `--seed` and eleven demo rows show every
+view, every colour and the overdue wash working before you load a thing.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
