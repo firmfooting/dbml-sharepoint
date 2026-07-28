@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "displayname": "Describe the risk",
+      "fields": ["Title", "Detail", "Category"]
+    },
+    {
+      "displayname": "Assess the risk",
+      "fields": ["Likelihood", "Consequence", "ResidualRiskRating", "TargetRiskRating", "LastReviewedDate"]
+    },
+    {
+      "displayname": "Response and controls",
+      "fields": ["RiskResponse", "ToleranceEndDate", "Controls", "Treatment", "OverallControlEffectiveness", "ClosureStatement"]
+    },
+    {
+      "displayname": "Governance",
+      "fields": ["RiskOwner", "RiskSponsor", "Status", "NextReviewDue", "SourceReference"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["MatrixVersion"]
+    }
+  ]
+}

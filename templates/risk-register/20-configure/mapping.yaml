@@ -229,3 +229,41 @@ views:
         ClosureStatement: 200
         RiskOwner: 160
         LastReviewedDate: 180
+
+# The auto-stamped matrix version leaves the NEW and EDIT forms; the
+# Display form keeps it for audit.
+#
+# Deliberately NOT declared: any rule conditioned on ResidualRiskRating.
+# Conditional show/hide cannot read a calculated column — the formula stays
+# syntactically valid, so it saves, the readback compares equal and the
+# phase passes, but the form never reacts. The build refuses it; see the
+# note in analysis/conditions.py, which names this register's most natural
+# rule ("show Treatment only when the rating is High or Extreme") as
+# exactly that trap.
+form_visibility:
+  Risk:
+    columns:
+      MatrixVersion: hidden
+
+# Form layouts: a strapline header and a sectioned body. SharePoint renders
+# per-field description hints inside sectioned forms on the NEW form only —
+# the edit form suppresses column descriptions (platform limitation).
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+form_formatting:
+  Risk:
+    header: formatting/risk-form-header.json
+    body: formatting/risk-form-body.json
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# A Tolerate response is always for a set period, so it needs its end date.
+# NOTE: ClosureStatement is rich text, which SP validation formulas cannot
+# reference — the closure-statement requirement stays a governance check
+# (see 50-govern/GOVERNANCE.md).
+list_validation:
+  Risk:
+    when:
+      - any_of:
+          - { field: RiskResponse, op: neq, value: "Tolerate" }
+          - { field: ToleranceEndDate, op: is_not_null }
+    message: "A Tolerate response is always for a set period: record the Tolerance End Date, and have the Risk Sponsor reassess before it."
