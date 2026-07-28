@@ -82,7 +82,7 @@ Table Risk {
   Id          int              [pk, increment]
   Title       nvarchar         [not null, note: 'The risk, stated as an uncertain event: "Key supplier fails mid-contract"']
   Detail      richtext         [note: 'Cause -> event -> consequence. What could trigger it, what happens if it does']
-  Category    risk_category    [not null]
+  Category    risk_category    [note: 'The main area this risk relates to. Choose the closest fit, or leave blank until the risk has been classified']
   Likelihood  risk_likelihood  [note: 'How likely the assessed consequence is, with current controls in effect']
   Consequence risk_consequence [note: 'The highest reasonable consequence, with current controls in effect']
   // Calculated — the 5x5 matrix formula lives in mapping.yaml so the rating
