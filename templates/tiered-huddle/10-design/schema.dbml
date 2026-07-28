@@ -1,0 +1,216 @@
+// ============================================================================
+// Tiered huddle boards — the daily operating system.
+// One row per day per tier, one status column per reporting stream, plus a
+// cross-tier escalation list.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+// WHY A LIST PER TIER, not one list with a Tier column:
+//   - each tier reports different things, so one shared list would carry a
+//     majority of blank columns belonging to another tier;
+//   - BoardDate can be unique per tier, so two rows for one day are
+//     impossible (SharePoint uniqueness is single-column);
+//   - a blank stream column then unambiguously means UNREPORTED for that
+//     tier, which is the control this whole design exists to give you.
+// Running only two tiers? Delete the board list you do not need, here and in
+// mapping.yaml, BEFORE the first deploy.
+//
+// WHY STREAMS ARE COLUMNS, not rows on a shared "stream report" list: an
+// unreported stream has to be visible. As a column it is a blank cell in the
+// grid; as a row it is simply absent, and absence is invisible.
+//
+// NO LOOKUPS between the boards and Escalation, deliberately: a SharePoint
+// lookup can target only one list, and RaisedAtTier + RaisedDate + Stream
+// locates an escalation's origin without coupling four lists together.
+// ============================================================================
+
+Project tiered_huddle { database_type: 'SharePoint Online Lists' }
+
+// Blank is a REAL value on the stream columns: it means the stream did not
+// report. "Not applicable" is the explicit "nothing to report by design".
+Enum rag_status {
+  "Green"
+  "Amber"
+  "Red"
+  "Not applicable"
+}
+
+Enum huddle_held {
+  "Held"
+  "Stood down"
+  "Cancelled"
+}
+
+// Four members though three boards ship, so escalation to an existing
+// governance committee at Tier 4 works without a schema change.
+Enum tier {
+  "Tier 1"
+  "Tier 2"
+  "Tier 3"
+  "Tier 4"
+}
+
+Enum escalation_direction {
+  "Escalated up"
+  "Delegated down"
+  "Referred sideways"
+}
+
+Enum escalation_status {
+  "Open"
+  "In progress"
+  "Resolved"
+  "Returned to tier"
+  "Closed"
+}
+
+Enum escalation_priority {
+  "Low"
+  "Medium"
+  "High"
+  "Critical"
+}
+
+// ---------------------------------------------------------------------------
+// Tier 1 — the frontline team huddle. Six streams.
+// ---------------------------------------------------------------------------
+Table Tier1Board {
+  Id                int          [pk, increment]
+  // SharePoint always creates Title; declared optional because the date is
+  // the key and demanding a title on a daily record is pure overhead.
+  Title             nvarchar     [note: 'Optional — the date is what identifies this board']
+  BoardDate         date         [not null, unique, note: 'The day this board covers; one row per day']
+  Chair             person       [not null, note: 'Who ran the huddle today']
+  HuddleHeld        huddle_held  [not null, default: 'Held', note: 'Held, or say why it was not']
+  StoodDownReason   nvarchar     [note: 'Why there was no huddle today']
+  OverallStatus     rag_status   [note: 'Your call on the day overall; not calculated from the stream columns']
+  // Stream pair per reporting stream. Status is deliberately nullable with
+  // no default: blank means UNREPORTED and renders grey in the grid.
+  SafetyStatus      rag_status   [note: 'Leave blank if safety did not report; blank is a visible gap, not a pass']
+  SafetyNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  PeopleStatus      rag_status   [note: 'Leave blank if people did not report; blank is a visible gap, not a pass']
+  PeopleNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  WorkloadStatus    rag_status   [note: 'Leave blank if workload did not report; blank is a visible gap, not a pass']
+  WorkloadNote      longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  EquipmentStatus   rag_status   [note: 'Leave blank if equipment did not report; blank is a visible gap, not a pass']
+  EquipmentNote     longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  QualityStatus     rag_status   [note: 'Leave blank if quality did not report; blank is a visible gap, not a pass']
+  QualityNote       longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  ImprovementStatus rag_status   [note: 'Leave blank if improvement did not report; blank is a visible gap, not a pass']
+  ImprovementNote   longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  Recognition       longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
+  OtherUpdates      longtext     [note: 'Anything that does not belong to a stream']
+}
+
+// ---------------------------------------------------------------------------
+// Tier 2 — the department or service huddle. Eight streams.
+// ---------------------------------------------------------------------------
+Table Tier2Board {
+  Id                   int          [pk, increment]
+  Title                nvarchar     [note: 'Optional — the date is what identifies this board']
+  BoardDate            date         [not null, unique, note: 'The day this board covers; one row per day']
+  Chair                person       [not null, note: 'Who ran the huddle today']
+  HuddleHeld           huddle_held  [not null, default: 'Held', note: 'Held, or say why it was not']
+  StoodDownReason      nvarchar     [note: 'Why there was no huddle today']
+  OverallStatus        rag_status   [note: 'Your call on the day overall; not calculated from the stream columns']
+  SafetyStatus         rag_status   [note: 'Leave blank if safety did not report; blank is a visible gap, not a pass']
+  SafetyNote           longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  QualityStatus        rag_status   [note: 'Leave blank if quality did not report; blank is a visible gap, not a pass']
+  QualityNote          longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  WorkforceStatus      rag_status   [note: 'Leave blank if workforce did not report; blank is a visible gap, not a pass']
+  WorkforceNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  DemandCapacityStatus rag_status   [note: 'Leave blank if demand and capacity did not report; blank is a visible gap, not a pass']
+  DemandCapacityNote   longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  EquipmentStatus      rag_status   [note: 'Leave blank if equipment did not report; blank is a visible gap, not a pass']
+  EquipmentNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  SuppliesStatus       rag_status   [note: 'Leave blank if supplies did not report; blank is a visible gap, not a pass']
+  SuppliesNote         longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  FinanceStatus        rag_status   [note: 'Leave blank if finance did not report; blank is a visible gap, not a pass']
+  FinanceNote          longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  ImprovementStatus    rag_status   [note: 'Leave blank if improvement did not report; blank is a visible gap, not a pass']
+  ImprovementNote      longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  Recognition          longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
+  OtherUpdates         longtext     [note: 'Anything that does not belong to a stream']
+}
+
+// ---------------------------------------------------------------------------
+// Tier 3 — the site or executive huddle. Ten live streams, plus one retired
+// pair kept as a worked example of the retirement mechanism (see below).
+// ---------------------------------------------------------------------------
+Table Tier3Board {
+  Id                    int          [pk, increment]
+  Title                 nvarchar     [note: 'Optional — the date is what identifies this board']
+  BoardDate             date         [not null, unique, note: 'The day this board covers; one row per day']
+  Chair                 person       [not null, note: 'Who ran the huddle today']
+  HuddleHeld            huddle_held  [not null, default: 'Held', note: 'Held, or say why it was not']
+  StoodDownReason       nvarchar     [note: 'Why there was no huddle today']
+  OverallStatus         rag_status   [note: 'Your call on the day overall; not calculated from the stream columns']
+  OperationsStatus      rag_status   [note: 'Leave blank if operations did not report; blank is a visible gap, not a pass']
+  OperationsNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  WorkforceStatus       rag_status   [note: 'Leave blank if workforce did not report; blank is a visible gap, not a pass']
+  WorkforceNote         longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  QualitySafetyStatus   rag_status   [note: 'Leave blank if quality and safety did not report; blank is a visible gap, not a pass']
+  QualitySafetyNote     longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  FacilitiesStatus      rag_status   [note: 'Leave blank if facilities did not report; blank is a visible gap, not a pass']
+  FacilitiesNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  // RETIRED STREAM, kept deliberately as the worked example that
+  // retired_columns: in mapping.yaml points at. Environment folded into
+  // Facilities. The declaration STAYS here: deleting it would not delete
+  // anything on a deployed site, it would just leave a live column the
+  // schema no longer knows about, which the _UserAddedColumns.pq drift
+  // audit then reports forever. See 30-deploy/DEPLOY.md.
+  // Never deployed this template before? Then nothing exists yet and you
+  // may delete this pair and its retired_columns entry outright.
+  EnvironmentStatus     rag_status   [note: 'Retired — kept so the history stays readable; use Facilities instead']
+  EnvironmentNote       longtext     [note: 'Retired — kept so the history stays readable; use Facilities instead']
+  TechnologyStatus      rag_status   [note: 'Leave blank if technology did not report; blank is a visible gap, not a pass']
+  TechnologyNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  FinanceStatus         rag_status   [note: 'Leave blank if finance did not report; blank is a visible gap, not a pass']
+  FinanceNote           longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  SupplyChainStatus     rag_status   [note: 'Leave blank if supply chain did not report; blank is a visible gap, not a pass']
+  SupplyChainNote       longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  ServiceDeliveryStatus rag_status   [note: 'Leave blank if service delivery did not report; blank is a visible gap, not a pass']
+  ServiceDeliveryNote   longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  ComplianceStatus      rag_status   [note: 'Leave blank if compliance did not report; blank is a visible gap, not a pass']
+  ComplianceNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  CommunicationsStatus  rag_status   [note: 'Leave blank if communications did not report; blank is a visible gap, not a pass']
+  CommunicationsNote    longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
+  Recognition           longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
+  OtherUpdates          longtext     [note: 'Anything that does not belong to a stream']
+}
+
+// ---------------------------------------------------------------------------
+// Escalation — what could not be resolved at the tier that raised it.
+// Items travel in both directions: up when a tier cannot fix something,
+// down when work belongs closer to the front line, and back again as
+// "Returned to tier" when the target tier hands it back.
+// ---------------------------------------------------------------------------
+Table Escalation {
+  Id           int                  [pk, increment]
+  Title        nvarchar             [not null, note: 'The issue in one line, stated as the problem to solve']
+  RaisedDate   date                 [not null, note: 'The huddle date this was raised at']
+  RaisedAtTier tier                 [not null, note: 'The tier that raised it']
+  // Plain text, not a Choice: stream vocabularies differ per tier and change
+  // over time, and a Choice covering the union strands rows on every rename.
+  // Text groups perfectly well in views and never strands anything.
+  Stream       nvarchar             [note: 'The reporting stream it came from, named as it appears on the board']
+  Direction    escalation_direction [not null, note: 'Escalated up, delegated down, or referred sideways']
+  TargetTier   tier                 [not null, note: 'The tier being asked to act']
+  // Calculated column; formula lives in mapping.yaml. Declared AFTER both
+  // operands so they exist at creation time. ASCII arrow deliberately, so
+  // the generated formula carries no encoding question.
+  // Both operands are single-select Choice. Microsoft documents neither
+  // that this works nor that it does not, so it was probed against a live
+  // tenant (test/manual/calculated-choice-operand.js): the column is
+  // accepted, renders correctly, and survives a choice value containing
+  // & " <. A blank operand yields "Tier 1 -> " rather than an error.
+  Route        calculated_text      [note: 'Filled in automatically from the two tier fields; leave it alone']
+  Owner        person               [not null, note: 'One named person, never a team']
+  DueDate      date                 [note: 'When the target tier has agreed to come back']
+  Priority     escalation_priority  [not null, default: 'Medium', note: 'Drives the response time your governance document sets']
+  Status       escalation_status    [not null, default: 'Open', note: 'Returned to tier means the target tier handed it back']
+  // nvarchar, not longtext: the list validation rule references this
+  // column, and SharePoint validation cannot reference multi-line columns.
+  Resolution   nvarchar             [note: 'Required to resolve or close: one line on what was actually done']
+  ResolvedDate date                 [note: 'Required to resolve or close']
+  Notes        longtext             [note: 'The longer story — discussion, options, who was consulted']
+}

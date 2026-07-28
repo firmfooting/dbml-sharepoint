@@ -10,25 +10,6 @@
   log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
-  const selfEnrollments = [];
-  async function removeSelfEnrollments() {
-    for (const enrollment of selfEnrollments.splice(0)) {
-      try {
-        const digestR = await getDigest();
-        const removeResp = await fetchWithRetry(apiUrl(`web/sitegroups(${enrollment.groupId})/users/removebyid(${enrollment.userId})`), {
-          method: 'POST',
-          headers: spHeaders(digestR),
-        });
-        if (!removeResp.ok) {
-          const text = await removeResp.text();
-          throw new Error(`HTTP ${removeResp.status} ${text}`);
-        }
-        log('INFO', `Removed operator from '${enrollment.groupName}' (run-scoped enrolment).`);
-      } catch (err) {
-        log('ERROR', `Could not remove the operator from '${enrollment.groupName}': ${err.message}. Remove yourself in Site permissions > Groups.`);
-      }
-    }
-  }
   {
     const enrollGroups = SCHEMA.groups.filter(g => g.enroll_operator_during_deploy);
     for (const grp of enrollGroups) {
@@ -72,7 +53,5 @@
   }
   if (summary.errors.length > 0) {
     log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
-    await removeSelfEnrollments();
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
-

@@ -1,0 +1,16 @@
+prefix: "APP_"
+entities:
+  Board: { kind: List, base_template: 100, site_role: default }
+display_names:
+  mode: auto
+retired_columns:
+  Board:
+    OperationsStatus:
+      retired: 2026-09-01
+      superseded_by: SiteServicesStatus
+      reason: "Merged into Site Services at the September board review"
+views:
+  Board:
+    - title: "Heat grid"
+      default: true
+      fields: [BoardDate, OperationsStatus, SiteServicesStatus]

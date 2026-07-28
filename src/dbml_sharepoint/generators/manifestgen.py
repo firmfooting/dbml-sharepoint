@@ -4,9 +4,11 @@
 import json
 from typing import Any
 
+from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.analysis.validator import Finding
 from dbml_sharepoint.extension import ManifestExtras
+from dbml_sharepoint.generators.jsgen import UNMANAGED
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -50,6 +52,88 @@ def generate_manifest(
         if f.get("custom_formatter") is not None
     ]
 
+    # The manifest describes ONE build: the lists this site_role deploys.
+    # schema_json is already filtered to that role; bundle.mapping is not.
+    # Every inventory driven straight off the mapping therefore announced
+    # rules, retirements, reconcile modes and polymorphic columns on lists
+    # that appear nowhere in this build's own deploy.js — the manifest and
+    # the script disagreeing, in the artefact an operator reads to decide
+    # whether to paste the script. Anything below that starts from
+    # bundle.mapping passes through here first.
+    deployed_titles = {lst["title"] for lst in schema_json["lists"]}
+
+    def _deployed(entity: str) -> bool:
+        return f"{bundle.mapping.prefix}{entity}" in deployed_titles
+
+    # Every field the deploy actually writes, per list. Iterating
+    # fields_phase1 alone made the manifest blind to deferred lookups:
+    # jsgen puts the identical keys on phase2_lookups and deploy.js writes
+    # them, so a declaration on a self-referencing or circular lookup
+    # deployed while the review artefact reported "(none declared)" — the
+    # inverse of a silent drop, and just as misleading to the person
+    # signing off the run.
+    def _written_fields(lst: dict[str, Any]) -> list[dict[str, Any]]:
+        deferred = [
+            lookup["field"]
+            for lookup in schema_json["phase2_lookups"]
+            if lookup["list"] == lst["title"]
+        ]
+        return [*lst["fields_phase1"], *deferred]
+
+    # Form behaviour, per list. The composed formula is printed in full:
+    # an operator reading the manifest should be able to see what will be
+    # written without inferring it from a declaration two files away.
+    form_visibility = [
+        {
+            "list": lst["title"],
+            "column": f["title"],
+            "formula": f["client_validation_formula"],
+            "cleared": f["client_validation_formula"] == "",
+        }
+        for lst in schema_json["lists"]
+        for f in _written_fields(lst)
+        if f.get("client_validation_formula", UNMANAGED) != UNMANAGED
+    ]
+    column_validation = [
+        {
+            "list": lst["title"],
+            "column": f["title"],
+            "formula": f["validation_formula"],
+            "message": f["validation_message"],
+            "cleared": f["validation_formula"] == "",
+        }
+        for lst in schema_json["lists"]
+        for f in _written_fields(lst)
+        if f.get("validation_formula", UNMANAGED) != UNMANAGED
+    ]
+    # Both sections reconcile, and both default to `exact` — which CLEARS
+    # every undeclared column of that list. Reporting the mode for
+    # form_visibility only meant a column_validation block silently running
+    # exact wiped rules with no mode shown anywhere in the artefact.
+    reconcile_modes = {
+        "form_visibility": {
+            f"{bundle.mapping.prefix}{entity}": section.reconcile
+            for entity, section in bundle.mapping.form_visibility.items()
+            if _deployed(entity)
+        },
+        "column_validation": {
+            f"{bundle.mapping.prefix}{entity}": section.reconcile
+            for entity, section in bundle.mapping.column_validation.items()
+            if _deployed(entity)
+        },
+    }
+    # The cross-column sibling had no section at all, so a save rule
+    # governing the whole list deployed unannounced.
+    list_validation = [
+        {
+            "list": f"{bundle.mapping.prefix}{entity}",
+            "described": describe(rule.when),
+            "message": rule.message,
+        }
+        for entity, rule in bundle.mapping.list_validation.items()
+        if _deployed(entity)
+    ]
+
     def _form_parts(client_formatter: str) -> str:
         keys = list(json.loads(client_formatter))
         order = ["headerJSONFormatter", "bodyJSONFormatter", "footerJSONFormatter"]
@@ -72,12 +156,8 @@ def generate_manifest(
             if declared.title != view_title:
                 continue
             parts: list[str] = []
-            if declared.where:
-                parts.append("filter: " + " AND ".join(
-                    f"{cond.field} {cond.op}"
-                    + ("" if cond.op in ("is_null", "is_not_null") else f" {cond.value}")
-                    for cond in declared.where
-                ))
+            if declared.where is not None:
+                parts.append(f"filter: {describe(declared.where)}")
             if declared.sort:
                 parts.append("sort: " + ", ".join(
                     f"{entry.field} {entry.direction}" for entry in declared.sort
@@ -87,9 +167,38 @@ def generate_manifest(
             return "; ".join(parts)
         return ""
 
+    def _view_expanded_from(list_title: str, view_title: str) -> str:
+        """The field sets a view's column list was expanded from. The
+        manifest prints the RESOLVED fields, so without this the operator
+        cannot see the indirection that produced them."""
+        entity = list_title.removeprefix(bundle.mapping.prefix)
+        for declared in bundle.mapping.views.get(entity, []):
+            if declared.title == view_title:
+                return ", ".join(declared.expanded_sets)
+        return ""
+
     views = [
-        {**view, "summary": _view_summary(view["list"], view["title"])}
+        {
+            **view,
+            "summary": _view_summary(view["list"], view["title"]),
+            "expanded_from": _view_expanded_from(view["list"], view["title"]),
+        }
         for view in schema_json["views"]
+    ]
+    # Retirement is a load-time mutation of the author's own declarations;
+    # the manifest is where the operator sees what was rewritten and why.
+    retired_columns = [
+        {
+            "list": bundle.mapping.prefix + entity,
+            "column": column,
+            "display": bundle.mapping.display_name_for(entity, column),
+            "retired": spec.retired or "—",
+            "superseded_by": spec.superseded_by or "—",
+            "reason": spec.reason or "—",
+        }
+        for entity, cols in bundle.mapping.retired_columns.items()
+        if _deployed(entity)
+        for column, spec in cols.items()
     ]
     # Polymorphic patterns are data-driven: unprefixed entity names in the mapping, rendered
     # with the prefix so the manifest names the physical SP list.
@@ -100,7 +209,19 @@ def generate_manifest(
             "discriminator": p.discriminator,
         }
         for p in bundle.mapping.polymorphic_patterns
+        if _deployed(p.list)
     ]
+    # Retention keys are authored in config/retention-policies.yaml and are
+    # loose about form: some name the entity, some the prefixed list title.
+    # Resolve both. A key matching no declared entity at all is KEPT — that
+    # is a typo the operator needs to see, not a role leak to hide, and
+    # dropping it would trade one silent disagreement for another.
+    retention = {
+        key: policy
+        for key, policy in bundle.retention_list_defaults.items()
+        if (entity := key.removeprefix(bundle.mapping.prefix)) not in bundle.mapping.entities
+        or _deployed(entity)
+    }
     extras = manifest_extras if manifest_extras is not None else ManifestExtras()
     return template.render(
         phase_num=phase_numbers(),
@@ -118,8 +239,13 @@ def generate_manifest(
         indexed=schema_json["indexed_columns"],
         views=views,
         formatted_columns=formatted_columns,
+        retired_columns=retired_columns,
+        form_visibility=form_visibility,
+        column_validation=column_validation,
+        reconcile_modes=reconcile_modes,
+        list_validation=list_validation,
         form_formatting=form_formatting,
-        retention=bundle.retention_list_defaults,
+        retention=retention,
         prefix=bundle.mapping.prefix,
         schema_json=schema_json,
         seed_items=schema_json["seed_items"],

@@ -9,7 +9,7 @@
   digest = await getDigest();
   for (const idx of SCHEMA.indexed_columns) {
     try {
-      digest = await getDigest();  // refresh per item (A4: digest lifetime)
+      digest = await getDigest();  // refresh per item (digest lifetime)
       await patchField(idx.list, idx.field, { __metadata: { type: 'SP.Field' }, Indexed: true }, digest);
     } catch (err) {
       log('ERROR', `Index ${idx.list}.${idx.field}: ${err.message}`);

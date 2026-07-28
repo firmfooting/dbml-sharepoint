@@ -1,6 +1,6 @@
 ---
 title: validator
-sidebar_position: 4
+sidebar_position: 5
 ---
 
 # `dbml_sharepoint.analysis.validator`
@@ -12,7 +12,7 @@ Validation rules for the parsed schema.
 ### `RESERVED_NAMES`
 
 ```python
-RESERVED_NAMES = frozenset({'Attachments', 'Author', 'Created', 'Editor', 'Modified', '_UIVersion'})
+RESERVED_NAMES = frozenset({'Attachments', 'Author', 'Created', 'Editor', 'ID', 'Id', 'Modified', '_UIVersion'})
 ```
 
 ### `SYSTEM_COLUMNS`
@@ -98,13 +98,19 @@ def validate(schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoin
 ### `validate_against_mapping`
 
 ```python
-def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle) -> list[dbml_sharepoint.analysis.validator.Finding]
+def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle) -> list[dbml_sharepoint.analysis.validator.Finding]
 ```
+
+Cross-check the mapping against the schema.
+
+Each family of rules lives in its own module under analysis.checks;
+this walks them in declared order and concatenates what they report.
+Order is part of the contract — see that package's docstring.
 
 ### `validate_all`
 
 ```python
-def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_loader.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.validator.Finding]
+def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.validator.Finding]
 ```
 
 Run every validation stage: core schema rules, mapping cross-checks,

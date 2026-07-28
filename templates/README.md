@@ -55,7 +55,7 @@ your own schema for the worst ones → define how you'll know it worked
 | [equipment-maintenance](equipment-maintenance/) | Testing / preventive maintenance | Next-due schedule with evidence-linked history; the Overdue view's target is empty |
 | [routine-checks](routine-checks/) | Digitised paper checklists | Fridge temps, trolley checks, rounds — timestamped, attributed, acted on |
 | [switchboard-log](switchboard-log/) | Switchboard / after-hours desk | The three paper books digitised: code log (calculated duration), message book (relay times), key register |
-| [visitor-log](visitor-log/) | Front-desk sign-in | The On-site-now view IS the evacuation muster list; contractor induction flag |
+| [visitor-log](visitor-log/) | Front-desk sign-in | An On-site-now view (which you create — see its DEPLOY.md) becomes the evacuation muster list; contractor induction flag |
 | [vehicle-log](vehicle-log/) | Pool-car log books | Calculated kilometres from odometer readings; the Purpose column is your FBT substantiation |
 
 ## Theme: People & relationships
@@ -63,6 +63,7 @@ your own schema for the worst ones → define how you'll know it worked
 | Template | Process | Highlights |
 |---|---|---|
 | [meeting-actions](meeting-actions/) | Meetings, decisions, actions | The fastest payback in the library — deploy before your next meeting |
+| [tiered-huddle](tiered-huddle/) | Daily tiered huddle boards + escalation | The wall chart, live — one row per day per tier, one column per stream, and a blank cell that means *unreported*; add or retire a stream without losing history |
 | [onboarding-tracker](onboarding-tracker/) | New-starter coordination | HR + IT + facilities + finance queues from one record |
 | [training-register](training-register/) | Training & certification compliance | Course catalogue + per-person records, expiry tracking |
 | [stakeholder-contacts](stakeholder-contacts/) | External relationships & interactions | CRM-shaped without CRM weight; privacy governance included |
@@ -79,6 +80,7 @@ your own schema for the worst ones → define how you'll know it worked
   20-configure/        The physical and release configuration
       mapping.yaml       — prefix, indexes, versioning, formulas, security model
       release.yaml       — the version stamped into every deployed artefact
+      formatting/        — optional; formatter JSON referenced by mapping.yaml
   30-deploy/           Administrator guidance
       DEPLOY.md          — build, paste, verify; template-specific checks
   40-adopt/            Staff education
@@ -91,6 +93,30 @@ Work the folders in order: **design** what you're deploying (rename columns,
 prune what you don't need), **configure** it for your site (prefix, security),
 **deploy** it (administrator), **adopt** it (staff), **govern** it (owners).
 
+**Column titles deploy as the internal name.** Only `tiered-huddle` sets
+`display_names:` (it has to: the `" (retired)"` suffix a retired column's
+title carries only reaches SharePoint under `mode: auto`). Everywhere else a
+column declared `ReceivedDate` appears on the form,
+in views and in the reporting bundle as exactly `ReceivedDate` — not
+"Received Date". The staff guides write field names in prose ("set the
+received date"), so read those as pointing at the run-together column
+beside them. If you want spaced titles, add one section to `mapping.yaml`
+and redeploy:
+
+```yaml
+display_names:
+  mode: auto              # ReceivedDate -> "Received Date"
+  overrides:
+    Contract:
+      DocumentUrl: "Document link"   # where auto-splitting reads badly
+```
+
+Internal names stay authoritative either way — the schema, lookups and
+reporting all bind to them — so this changes only what people see. Do it
+before first deploy if you are going to: a rename afterwards is drift the
+next re-paste reverts, and the DEPLOY.md checklists all name columns by
+their internal name.
+
 **Notes are form text.** A column's `note:` deploys as the SharePoint column
 Description, which the modern list form shows as help text under the input at
 data-entry time — so every note is written as a plain-language hint for the
@@ -99,6 +125,16 @@ automatically: … Leave as-is."). Design rationale and mechanics live in `//`
 comments beside the columns, which never deploy. When you customise a
 template, keep that split: if it isn't something a staff member should read
 on the form, it belongs in a comment, not a note.
+
+**Formatter JSON: inline or referenced.** Anywhere `mapping.yaml` takes a
+formatter object — `column_formatting` overrides, `views[].formatting`, and
+each `form_formatting` part — it accepts either an inline mapping or a
+relative path to a `.json` file, resolved against `20-configure/`. Keep short
+formatters inline where they read as part of the declaration; put long ones
+(a multi-section form body, a bespoke row formatter) in
+`20-configure/formatting/` so `mapping.yaml` stays readable. Both forms
+deploy identically. The directory is optional — omit it when every formatter
+is inline.
 
 ## Deploying any template (shared procedure)
 
@@ -129,6 +165,20 @@ dbml-sharepoint build \
    error: read it, fix the stated cause, paste the same script again —
    reruns verify-and-skip completed work.
 5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
+6. Create the views listed under **Recommended views** in that DEPLOY.md.
+
+**Recommended views are not deployed — you create them.** Every list gets
+an unfiltered *All Items* recovery view containing all rendered columns. It
+is hidden from the modern view bar when an authored view is the default. A
+template with no `views:` block gets that view and nothing else, and
+every "Recommended views" table is a specification for views you build in
+the SharePoint UI (or add to
+`mapping.yaml` under [`views:`](../website/docs/reference/mapping.md#views)
+and redeploy, which is the reproducible option). Nothing in such a
+template's DEPLOY, STAFF-GUIDE or GOVERNANCE file will work until you have
+made them — so make them before you hand the list to anyone, and treat any
+document that names a view as depending on that step. A template with a
+`views:` block has no such table: its views arrive with the paste.
 
 ## The shared security model
 
@@ -148,12 +198,56 @@ columns are sealed** (SharePoint refuses UI schema edits and deletion of
 sealed columns, even for site admins — the deploy script unseals for its
 own run and re-seals, with verification, in Phase 4.1) and **every list
 carries `AllowDeletion = false`** ("Delete this list" disappears for
-everyone). Display-name renames remain possible on sealed columns;
-they are drift, reverted and reported on the next re-paste. `rollback.js` stays usable: it clears the deletion block per
+everyone). `rollback.js` stays usable: it clears the deletion block per
 list only after you confirm that list's deletion, and restores the block
 if a delete fails. This is friction + tamper-evidence, not enforcement —
 a site collection admin can flip both back via API, and a redeploy
-re-asserts and reports the drift.
+re-asserts sealing and the deletion block and reports having done so.
+
+Two things remain possible on a sealed column, and the deployer treats
+them very differently:
+
+- **Display-name renames.** Detected: reverted and reported on the next
+  re-paste.
+- **Hiding it from the forms** via "Edit form → Edit columns". **Not
+  detected and not repaired.** That toggle writes the content type's
+  `FieldLink.Hidden` rather than anything on the field, so field-level
+  sealing never covered it — a live probe confirmed an operator can untick
+  a **sealed** column this way. Nothing in the deployer reads, writes,
+  probes or reports that property today: a redeploy runs clean and says
+  nothing about it. Re-tick the column in the same "Edit columns" panel to
+  put it back.
+
+  Being unrepaired here is an implementation gap, not a limit. REST refuses
+  the write outright (*"The type SP.FieldLink does not support HTTP PATCH
+  method"*), but the CSOM path —
+  `ContentTypes.GetById(...).FieldLinks.GetById(...).Hidden = false` then
+  `ContentType.Update(false)` — was validated end to end on a live tenant
+  against an ordinary column, a UI-hidden column and a UI-hidden sealed
+  column, each with a confirming read-back. `deploy.js` already uses CSOM
+  `ProcessQuery` for site-group ownership, so the mechanism is established.
+  It simply is not wired to this property yet.
+
+**Declared form visibility is detected.** `form_visibility:` and
+`column_validation:` in `mapping.yaml` write field properties, not field
+links, and those *are* read back, compared and reverted on every deploy.
+So a column whose visibility you declared is protected; a column somebody
+hid by hand through the designer is not. The two states look identical to
+someone filling in the form, which is the argument for declaring the
+behaviour you want rather than leaving it to whoever last opened the
+designer. See
+[the mapping reference](../website/docs/reference/mapping.md#form_visibility).
+
+**One open question, recorded rather than answered.** A site that was
+deployed by an older version of this tool using the removed
+`hidden_on_forms:` key has SchemaXml `ShowIn*Form` attributes that the
+current deployer neither writes nor clears. A column can therefore stay
+hidden because of a setting no current declaration mentions, while the
+manifest reports its formula as cleared. Whether the deployer should clear
+those attributes once on migration is a real decision — it is a write to a
+property the tool has otherwise stopped touching, on sites whose operators
+did not ask for it — and it has not been made. If you are migrating such a
+site, check the affected columns in the form designer by hand.
 
 Detection is continuous on the reporting side: every generated reporting
 bundle ships `_UserAddedColumns.pq` (reads each list's live field
@@ -164,7 +258,7 @@ queries and keep it on the report's documentation page.
 
 Status columns across the templates render as SharePoint's own severity
 boxes with icons per the deployer's style standard (see
-[docs/STYLE-GUIDE.md](../docs/STYLE-GUIDE.md)) — consistent colours and
+[the style guide](../website/docs/reference/style-guide.md)) — consistent colours and
 iconography fleet-wide, using only Microsoft's documented formatting
 classes.
 
@@ -172,8 +266,11 @@ classes.
 
 - **Prefix** (`mapping.yaml`): pick something short and unique per site —
   two lists with the same internal name cannot coexist.
-- **Columns**: delete what you won't use *before* first deploy; removing a
-  column later is a manual SharePoint operation.
+- **Columns**: delete what you won't use *before* first deploy. Afterwards,
+  deleting the declaration strands a live column the schema no longer knows
+  about — retire it instead, with
+  [`retired_columns:`](../website/docs/reference/mapping.md#retired_columns),
+  which keeps the data and the drift audit intact.
 - **Choices**: edit enum members in `schema.dbml` to your organisation's
   vocabulary now — renaming a choice later strands existing rows on the old
   value.

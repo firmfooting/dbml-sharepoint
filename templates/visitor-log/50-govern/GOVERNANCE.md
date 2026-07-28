@@ -11,6 +11,12 @@
 
 ## The muster procedure (rehearse it)
 
+**Before anything else: confirm *On site now* exists.** The deploy creates
+the list, not the views — `30-deploy/DEPLOY.md` specifies *On site now* and
+the administrator builds it there. Sign the procedure off only once you
+have opened that view yourself on a phone. Everything below assumes it is
+there.
+
 Every evacuation drill includes the register: wardens open *On site now*
 at the assembly point and check visitors off by name with their hosts.
 A drill that skips the visitor muster is rehearsing the easy part. After

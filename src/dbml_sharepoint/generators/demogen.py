@@ -20,7 +20,11 @@ from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
-_TODAY_OFFSET = re.compile(r"^today([+-]\d+)$")
+# Offset optional, matching analysis.validator._TODAY_SENTINEL. The two
+# must agree: the validator gates what may be declared, this decides what
+# is generated, and a value the validator accepts but this rejects would
+# pass the build with zero findings and emit the literal string "today".
+_TODAY_OFFSET = re.compile(r"^today([+-]\d+)?$")
 
 # The Title marker is the in-record demo notice: visible in every view and
 # form header, and the marker rollback.js trusts. (Per-row list-item
@@ -40,7 +44,7 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any]:
     if col_type in _DATE_TYPES and isinstance(value, str):
         m = _TODAY_OFFSET.match(value)
         if m:
-            return {"name": name, "kind": "date_offset", "value": int(m.group(1))}
+            return {"name": name, "kind": "date_offset", "value": int(m.group(1) or 0)}
     return {"name": name, "kind": "literal", "value": value}
 
 

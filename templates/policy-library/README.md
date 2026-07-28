@@ -9,8 +9,14 @@ gives every policy an owner, a status and a next-review date.
 staleness: documents nobody owns, reviews nobody schedules, staff following
 a version that was superseded two years ago. The register makes review
 dates a filterable fact; the library's major/minor versioning separates
-what staff see (published, 1.0/2.0) from what authors are drafting
+published policies (1.0, 2.0) from what authors are iterating on
 (1.1, 1.2 …).
+
+> **Minor versions alone do not hide drafts from readers.** The deploy
+> enables major and minor versioning; it does **not** set *Draft Item
+> Security*, which SharePoint leaves at "Any user who can read items". So
+> until an administrator changes it by hand, a reader with Read access can
+> open a 0.1 draft. `30-deploy/DEPLOY.md` has the one-time step.
 
 **Work the folders in order:**
 

@@ -65,7 +65,7 @@ Shared SP WRITE-request headers. Included only by scripts that make writes (depl
 
 Included by: `assess.js.j2`, `demo.js.j2`, `deploy.js.j2`, `rollback.js.j2`
 
-Shared provenance header fields — rendered INSIDE each script's leading block comment. Expects: source_dbml, site_url, release, generated_at; optional: source_mtime, site_role. comment_safe (A5) guards every raw interpolation against a crafted `*/`.
+Shared provenance header fields — rendered INSIDE each script's leading block comment. Expects: source_dbml, site_url, release, generated_at; optional: source_mtime, site_role. comment_safe  guards every raw interpolation against a crafted `*/`.
 
 ### `_site_guard.js.j2`
 
@@ -169,5 +169,5 @@ Shared read-only shape probes: readListShape / readFieldShape with per-list cach
 
 *Phase 3.1 (PRESENTATION) — views*
 
-Fields created through the REST field collection join no view, so a fresh list shows a Title-only default view. Declared views are part of the physical shape and reconcile like fields. Undeclared views are user content and are never touched (unlike exact-mode ACLs).
+Fields created through the REST field collection join no view, so a fresh list shows a Title-only default view. Every list gets a generated, unfiltered All Items recovery view containing its complete rendered schema; when an authored default exists the recovery view is hidden from the modern view bar. Authored views are managed alongside it. Other views are user content and are never touched (unlike exact-mode ACLs).
 

@@ -23,6 +23,7 @@ to EVERY .j2 file (not just the ones generator tests happen to render):
 import importlib.util
 import re
 import sys
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -46,6 +47,10 @@ KNOWN_CONTEXT = {
     "site_url", "site_role", "release", "source_dbml", "source_mtime", "generated_at",
     # jsgen (deploy.js)
     "schema_json", "phases",
+    # The marker distinguishing "clear this value" from "not managed here".
+    # Passed in rather than hard-coded on both sides so the two can never
+    # disagree about what unmanaged looks like.
+    "unmanaged_sentinel",
     # demogen
     "demo_plan", "demo_title_prefix",
     # rollbackgen
@@ -55,6 +60,8 @@ KNOWN_CONTEXT = {
     # manifestgen
     "phase_num", "counts", "findings", "polymorphic", "lists", "phase2",
     "indexed", "views", "formatted_columns", "form_formatting", "retention",
+    "retired_columns",
+    "form_visibility", "column_validation", "reconcile_modes", "list_validation",
     "prefix", "seed_items", "extra_sections", "extra_warnings",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
@@ -158,3 +165,32 @@ def test_no_orphan_templates(env: Environment) -> None:
     )
     orphans = sorted(set(ALL_TEMPLATES) - referenced)
     assert not orphans, f"templates nothing references: {orphans}"
+
+
+def test_generated_api_docs_are_current(tmp_path: Path) -> None:
+    """The generator is deterministic by design, so a committed page that
+    differs from a fresh run means someone changed the code and did not
+    regenerate.
+
+    Without this the promise in generate_api.py's own docstring — "docs
+    drift shows up as a git diff" — is unenforced: forgetting to run it is
+    completely silent, which is how a reference page starts describing code
+    that no longer exists.
+    """
+    generate_api = _load_generate_api()
+    committed: Path = generate_api.OUT_DIR
+    try:
+        generate_api.OUT_DIR = tmp_path  # type: ignore[attr-defined]
+        generate_api.write_all()
+    finally:
+        generate_api.OUT_DIR = committed  # type: ignore[attr-defined]
+
+    def pages(root: Path) -> dict[Path, str]:
+        return {q.relative_to(root): q.read_text(encoding="utf-8") for q in root.rglob("*.md")}
+
+    fresh = pages(tmp_path)
+    have = pages(committed)
+    assert have == fresh, (
+        "generated API docs are stale — regenerate with:\n"
+        "  uv run python website/scripts/generate_api.py"
+    )

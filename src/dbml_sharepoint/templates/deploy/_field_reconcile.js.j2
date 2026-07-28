@@ -21,6 +21,77 @@
     'Formula', 'OutputType',
   ];
 
+  // Distinguishes "clear this value" from "not managed here". Declared
+  // before any consumer: the synthetic Title patch in _lists.js.j2 needs it
+  // too, and a caller that omits it is treated as managed.
+  const UNMANAGED = {{ unmanaged_sentinel | tojson }};
+
+  // Every field this run changed from sealed to unsealed. The value retains
+  // the pair while the key makes repeat encounters idempotent. Exit cleanup
+  // restores exactly these fields and never seals one it found open.
+  const fieldsUnsealedForRun = new Map();
+
+  // The restoration itself, called from the finally in deploy.js.j2 rather
+  // than from PROTECTION. Every phase between PREPARE and PROTECTION can
+  // return early by design — schema errors, lookup errors, ACL errors all
+  // abort before touching more of the site — and each of those returns
+  // used to skip the re-seal, ending the run with a column LESS protected
+  // than it found it. A failed run must not weaken a site, so the
+  // guarantee has to sit on the exit path, which is the only path every
+  // abort shares. Idempotent by construction: PROTECTION normally seals
+  // these on the way past, and this writes only what it finds still open,
+  // so the success path pays one field enumeration per affected list.
+  async function restoreUnsealedFields() {
+    const byList = new Map();
+    for (const [listTitle, columnTitle] of fieldsUnsealedForRun.values()) {
+      if (!byList.has(listTitle)) byList.set(listTitle, []);
+      byList.get(listTitle).push(columnTitle);
+    }
+    for (const [listTitle, columns] of byList.entries()) {
+      invalidateFieldShapes(listTitle);  // never trust phase-start state
+      for (const columnTitle of columns) {
+        try {
+          const shape = await readFieldShape(listTitle, columnTitle, null);
+          if (shape && shape.Sealed === true) continue;
+          const digest = await getDigest();
+          await patchField(
+            listTitle, columnTitle, { __metadata: { type: 'SP.Field' }, Sealed: true }, digest,
+          );
+          log('WARN', `Re-sealed '${listTitle}.${columnTitle}' while exiting: the run opened it and did not reach the seal phase.`);
+        } catch (err) {
+          // Loud, and recorded: the operator has to know the site was left
+          // open, because nothing else in the run will say so.
+          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
+          summary.errors.push({ phase: 'exit', list: listTitle, column: columnTitle, error: err.message });
+        }
+      }
+    }
+  }
+
+  // The ONE constructor for the synthetic Title field. Title is not a
+  // declared column — it arrives as list.title_patch — so every consumer of
+  // a declared field has to synthesise one. Keep it here: a second copy
+  // elsewhere will drift out of step with this one.
+  function syntheticTitleField(list) {
+    return {
+      title: 'Title',
+      body: { ...list.title_patch, FieldTypeKind: 2 },
+      // Title is not a declared field, so it carries no declared formulas.
+      // All three sentinels must be explicit — `undefined !== UNMANAGED`
+      // reads as "managed", which MERGEs an empty message onto the built-in
+      // Title column and aborts the phase.
+      client_validation_formula: UNMANAGED,
+      validation_formula: UNMANAGED,
+      validation_message: UNMANAGED,
+      // Answers the impostor guard only. The built-in Title exists on every
+      // SharePoint list and can never be a same-named impostor, so a sealed
+      // Title must not fail the shape check. The tool does not own Title's
+      // seal state: the PREPARE unseal opens it only if it is already
+      // sealed, and PROTECTION restores exactly what was found.
+      seal: true,
+    };
+  }
+
   // SharePoint stores a calculated field's Formula in the field schema XML
   // and returns it with XML character entities intact (`<>` reads back as
   // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
@@ -43,7 +114,7 @@
   // brackets on both sides, but only OUTSIDE string literals (split keeps
   // `"..."` tokens, with `""` as the escaped quote, at odd indices):
   // bracket text inside a quoted constant is data, not a reference.
-  const canonicalFormula = (value) => xmlDecode(value)
+  const canonicalFormula = (value) => xmlDecode(typeof value === 'string' ? value : '')
     .split(/("(?:""|[^"])*")/)
     .map((token, i) => (i % 2 === 1 ? token : token.replace(/\[([A-Za-z0-9_]+)\]/g, '$1')))
     .join('');
@@ -84,10 +155,7 @@
   }
 
   function declaredFieldsForList(list) {
-    const titleField = {
-      title: 'Title',
-      body: { ...list.title_patch, FieldTypeKind: 2 },
-    };
+    const titleField = syntheticTitleField(list);
     const deferred = SCHEMA.phase2_lookups
       .filter(lookup => lookup.list === list.title)
       .map(lookup => lookup.field);
@@ -133,7 +201,7 @@
       ValidationFormula: list.validation_formula,
       ValidationMessage: list.validation_message,
     }, digest);
-    const verify = await readListShape(list.title);
+    const verify = await readListShape(list.title, true);
     if (!verify
         || canonicalFormula(verify.ValidationFormula || '') !== canonicalFormula(list.validation_formula)
         || (verify.ValidationMessage || '') !== (list.validation_message || '')) {
@@ -179,7 +247,7 @@
         __metadata: { type: 'SP.List' },
         ...desired,
       }, digest);
-      actual = await readListShape(list.title);
+      actual = await readListShape(list.title, true);
       if (!actual) throw new Error(`Declared list '${list.title}' disappeared after settings MERGE`);
       assertListImmutableShape(list, actual);
       if (listSettingsMismatch(actual, desired)) {
@@ -258,57 +326,129 @@
     }
   }
 
-  // Declared form visibility: auto-stamped columns are removed from the NEW
-  // and EDIT forms (the display form keeps them for audit). SP exposes this
-  // through POST setter methods, not writable properties; a null read means
-  // "shown".
-  async function enforceFormVisibility(listName, field, digest) {
-    const visUrl = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
-    // ShowInNewForm/ShowInEditForm are NOT projected by the REST field
-    // resource ($select returns neither); the readable source of truth is
-    // the SchemaXml attribute — absent means "shown".
-    const readVisibility = async () => {
-      const r = await fetchWithRetry(`${visUrl}?$select=SchemaXml`, {
+  // Declared form behaviour. Two properties, opposite round-trip
+  // behaviour, both verified against a live tenant:
+  //
+  //   ClientValidationFormula  conditional + per-form visibility.
+  //                            Reads back BYTE-IDENTICAL, so compare raw.
+  //   ValidationFormula        save-time rule. NORMALISED on save (brackets
+  //                            stripped, whitespace removed), so compare
+  //                            canonically or every redeploy reports drift
+  //                            that is not there.
+  //
+  // SchemaXml's ShowInNewForm/ShowInEditForm are deliberately NOT written.
+  // Saving the form designer migrates them into FieldLink.Hidden, which
+  // hides a column from EVERY form and is not writable over REST — so a
+  // per-form declaration would silently become hide-everywhere the first
+  // time anyone opened the designer.
+  async function enforceDeclaredFormulas(listName, field, digest) {
+    const url = apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(field.title)}')`);
+    const read = async () => {
+      const r = await fetchWithRetry(`${url}?$select=ClientValidationFormula,ClientValidationMessage,ValidationFormula,ValidationMessage`, {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
-      if (!r.ok) {
-        const text = await r.text();
-        throw new Error(`form visibility probe failed: HTTP ${r.status} ${text}`);
-      }
-      const j = await r.json();
-      const xml = String((j && j.d && j.d.SchemaXml) || '');
-      return {
-        shownOnNew: !/ShowInNewForm="FALSE"/i.test(xml),
-        shownOnEdit: !/ShowInEditForm="FALSE"/i.test(xml),
-        shownOnDisplay: !/ShowInDisplayForm="FALSE"/i.test(xml),
-      };
+      if (!r.ok) throw new Error(`formula probe failed: HTTP ${r.status} ${await r.text()}`);
+      return (await r.json()).d;
     };
-    const current = await readVisibility();
-    const setters = [];
-    if (field.hide_on_forms) {
-      setters.push([current.shownOnNew, 'setshowinnewform'], [current.shownOnEdit, 'setshowineditform']);
+
+    const body = { '__metadata': { 'type': 'SP.Field' } };
+    let wanted = false;
+    if (field.client_validation_formula !== UNMANAGED) {
+      body.ClientValidationFormula = field.client_validation_formula;
+      // Cleared alongside: a message beside a visibility formula is a
+      // property whose interaction with it was never observed, and leaving
+      // one in an unknown state next to a repurposed property is how a
+      // surprise arrives later.
+      body.ClientValidationMessage = '';
+      wanted = true;
     }
-    if (field.hide_on_display) {
-      setters.push([current.shownOnDisplay, 'setshowindisplayform']);
+    if (field.validation_formula !== UNMANAGED) {
+      body.ValidationFormula = field.validation_formula;
+      body.ValidationMessage = field.validation_message;
+      wanted = true;
     }
-    for (const [shown, method] of setters) {
-      if (shown) {
-        const r = await fetchWithRetry(`${visUrl}/${method}(false)`, {
-          method: 'POST', headers: spHeaders(digest),
-        });
-        if (!r.ok) {
-          const text = await r.text();
-          throw new Error(`${method}(false) failed: HTTP ${r.status} ${text}`);
-        }
-      }
+    if (!wanted) return;
+
+    const before = await read();
+    const same = (a, b) => (a || '') === (b || '');
+    const alreadyRight =
+      (field.client_validation_formula === UNMANAGED
+        || (same(before.ClientValidationFormula, field.client_validation_formula)
+            && same(before.ClientValidationMessage, '')))
+      && (field.validation_formula === UNMANAGED
+        || (canonicalFormula(before.ValidationFormula || '') === canonicalFormula(field.validation_formula)
+            && same(before.ValidationMessage, field.validation_message)));
+    if (alreadyRight) return;
+
+    // Log what is being REPLACED before replacing it. `before` was read,
+    // compared and discarded, and on success nothing was logged at all —
+    // so a deploy that removed or rewrote an existing formula left no
+    // record of what had been there. Under `reconcile: exact` an
+    // undeclared column's formula is cleared outright, which is precisely
+    // the case where the prior value is the only thing anyone would want
+    // back. Only non-empty priors are logged: a first-time write has
+    // nothing to say.
+    const replaced = [];
+    if (field.client_validation_formula !== UNMANAGED
+        && (before.ClientValidationFormula || '') !== ''
+        && !same(before.ClientValidationFormula, field.client_validation_formula)) {
+      replaced.push(`ClientValidationFormula was ${JSON.stringify(before.ClientValidationFormula)}`);
     }
-    const verify = await readVisibility();
-    const stillShown = [];
-    if (field.hide_on_forms && verify.shownOnNew) stillShown.push('new form');
-    if (field.hide_on_forms && verify.shownOnEdit) stillShown.push('edit form');
-    if (field.hide_on_display && verify.shownOnDisplay) stillShown.push('display form');
-    if (stillShown.length > 0) {
-      throw new Error(`did not retain form visibility (still shown on: ${stillShown.join(', ')})`);
+    if (field.validation_formula !== UNMANAGED
+        && (before.ValidationFormula || '') !== ''
+        && canonicalFormula(before.ValidationFormula || '') !== canonicalFormula(field.validation_formula)) {
+      replaced.push(`ValidationFormula was ${JSON.stringify(before.ValidationFormula)}`);
+    }
+    if (field.validation_formula !== UNMANAGED
+        && (before.ValidationMessage || '') !== ''
+        && !same(before.ValidationMessage, field.validation_message)) {
+      replaced.push(`ValidationMessage was ${JSON.stringify(before.ValidationMessage)}`);
+    }
+    if (replaced.length > 0) {
+      const action = field.client_validation_formula === '' && field.validation_formula === ''
+        ? 'clearing' : 'overwriting';
+      log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas — ${replaced.join('; ')}`);
+    }
+
+    const r = await fetchWithRetry(url, {
+      method: 'POST',
+      headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${await r.text()}`);
+
+    // A SEALED column accepts the write, reports success and discards it,
+    // so the read-back is the only evidence the change landed.
+    const after = await read();
+    if (field.client_validation_formula !== UNMANAGED
+        && !same(after.ClientValidationFormula, field.client_validation_formula)) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ClientValidationFormula `
+        + `(declared ${JSON.stringify(field.client_validation_formula)}; readback ${JSON.stringify(after.ClientValidationFormula)})`,
+      );
+    }
+    if (field.client_validation_formula !== UNMANAGED
+        && !same(after.ClientValidationMessage, '')) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ClientValidationMessage `
+        + `(declared ""; readback ${JSON.stringify(after.ClientValidationMessage)})`,
+      );
+    }
+    if (field.validation_formula !== UNMANAGED
+        && canonicalFormula(after.ValidationFormula || '') !== canonicalFormula(field.validation_formula)) {
+      // Both values are logged: SharePoint's normalisation may do more than
+      // has been observed, and a bare failure would need another probe.
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ValidationFormula `
+        + `(declared ${JSON.stringify(field.validation_formula)}; readback ${JSON.stringify(after.ValidationFormula)})`,
+      );
+    }
+    if (field.validation_formula !== UNMANAGED
+        && !same(after.ValidationMessage, field.validation_message)) {
+      throw new Error(
+        `Field '${listName}.${field.title}' did not retain ValidationMessage `
+        + `(declared ${JSON.stringify(field.validation_message)}; readback ${JSON.stringify(after.ValidationMessage)})`,
+      );
     }
   }
 
@@ -390,9 +530,7 @@
     if (drifted.length > 0) {
       throw new Error(`Field '${listName}.${field.title}' did not retain declared mutable setting(s): ${drifted.join(', ')}`);
     }
-    if (field.hide_on_forms || field.hide_on_display) {
-      await enforceFormVisibility(listName, field, digest);
-    }
+    await enforceDeclaredFormulas(listName, field, digest);
     return true;
   }
 
@@ -419,4 +557,3 @@
       : 'Current user lacks ManageLists on this site.');
     return { aborted: 'insufficient-permissions' };
   }
-

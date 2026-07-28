@@ -5,8 +5,14 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from xml.sax.saxutils import escape as _xml_escape
 
+from dbml_sharepoint.analysis.conditions import (
+    SYSTEM_COLUMN_TYPES,
+    effective_column_types,
+    to_caml,
+    to_validation,
+)
+from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import base_permissions_to_high_low
 from dbml_sharepoint.analysis.phases import phases_context
@@ -14,7 +20,10 @@ from dbml_sharepoint.analysis.typemap import format_description, map_column
 from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
 from dbml_sharepoint.model.mapping_loader import (
+    ColumnValidation,
     EntityMapping,
+    EntitySection,
+    FormVisibility,
     MappingBundle,
     ViewDef,
     view_url_slug,
@@ -81,6 +90,7 @@ def generate_deploy_js(
         generated_at=generated_at,
         schema_json=schema_json,
         phases=phases_context(),
+        unmanaged_sentinel=UNMANAGED,
     )
 
 
@@ -110,38 +120,95 @@ def _rewrite_formula_refs(formula: str, display_by_col: dict[str, str]) -> str:
 
 # CAML fragments for the declared-view DSL. Operators/columns are validated
 # at build time (validate_against_mapping), so rendering can be direct.
-_CAML_OP_TAGS = {
-    "eq": "Eq", "neq": "Neq", "lt": "Lt", "leq": "Leq",
-    "gt": "Gt", "geq": "Geq", "is_null": "IsNull", "is_not_null": "IsNotNull",
-}
-_CAML_NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
-_CAML_DATE_TYPES = frozenset({"date", "datetime"})
-_TODAY_VALUE = re.compile(r"^today(?:([+-])(\d+))?$")
+
+# `declared` reconcile leaves an undeclared column alone, which is not the
+# same as clearing it; the deploy script must be able to tell them apart.
+UNMANAGED = "__dbmlsp_unmanaged__"
+
+# SP rejects ValidationFormula even when the desired value is an empty
+# string on these field kinds. This is a property-surface capability, not
+# merely an operand rule: exact reconciliation must not attempt to CLEAR a
+# formula the field type cannot carry. Confirmed live for Note (HTTP 500,
+# "This field type does not support validation formulas"); Lookup, User and
+# Calculated are already refused as validation operands for the same platform
+# limitation.
+_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 17, 20})
 
 
-def _caml_value(column_type: str, value: Any) -> str:
-    if column_type == "boolean":
-        truthy = value in (True, 1, "1")
-        return f'<Value Type="Integer">{"1" if truthy else "0"}</Value>'
-    if column_type in _CAML_NUMBER_TYPES:
-        return f'<Value Type="Number">{_xml_escape(str(value))}</Value>'
-    if column_type in _CAML_DATE_TYPES:
-        match = _TODAY_VALUE.match(value) if isinstance(value, str) else None
-        if match:
-            sign, days = match.group(1), match.group(2)
-            if days is None:
-                return '<Value Type="DateTime"><Today/></Value>'
-            offset = days if sign == "+" else f"-{days}"
-            return f'<Value Type="DateTime"><Today OffsetDays="{offset}"/></Value>'
-        return f'<Value Type="DateTime">{_xml_escape(str(value))}</Value>'
-    escaped = _xml_escape(str(value), {'"': "&quot;"})
-    return f'<Value Type="Text">{escaped}</Value>'
+def _section_target[T](
+    section: EntitySection[T] | None,
+    column: str,
+    *,
+    is_calculated: bool,
+) -> tuple[T, bool] | tuple[None, bool]:
+    """What a per-column section wants done to one column.
+
+    Returns (declaration, clear):
+      (None, False)  — not managed here; the live value is never touched
+      (None, True)   — `reconcile: exact` with no entry, so CLEAR it
+      (decl, False)  — render the declaration
+
+    Shared by both sections deliberately, so the calculated-column exclusion
+    cannot apply to one and not the other. Clearing a calculated column is a
+    no-op write — it never reaches an entry form, which is why declaring one
+    is a build error — but the manifest would report a clear that never
+    happened, and two siblings disagreeing about one rule is how the wrong
+    one gets "fixed" later.
+    """
+    if section is None or is_calculated:
+        return None, False
+    declared = section.columns.get(column)
+    if declared is None:
+        return None, section.reconcile == "exact"
+    return declared, False
+
+
+def _visibility_formula(
+    section: "EntitySection[FormVisibility] | None",
+    column: str,
+    types: dict[str, str],
+    *,
+    is_calculated: bool = False,
+) -> str:
+    """The composed formula for a column, "" to clear it, or UNMANAGED.
+
+    Under `reconcile: exact` an undeclared column is cleared rather than
+    left alone, so deployed state follows the declaration rather than the
+    history of edits to it.
+    """
+    declared, clear = _section_target(section, column, is_calculated=is_calculated)
+    if declared is None:
+        return "" if clear else UNMANAGED
+    return compose_visibility(
+        new=declared.new, existing=declared.existing, when=declared.when, types=types,
+    )
+
+
+def _column_validation(
+    section: "EntitySection[ColumnValidation] | None",
+    column: str,
+    types: dict[str, str],
+    display_map: dict[str, str],
+    *,
+    field_type_kind: int,
+    is_calculated: bool = False,
+) -> tuple[str, str]:
+    if field_type_kind in _COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS:
+        return (UNMANAGED, UNMANAGED)
+    declared, clear = _section_target(section, column, is_calculated=is_calculated)
+    if declared is None:
+        return ("", "") if clear else (UNMANAGED, UNMANAGED)
+    # SP resolves validation formulas by DISPLAY name, exactly as it does
+    # for the list-level rule and for calculated columns.
+    rendered = _rewrite_formula_refs(f"={to_validation(declared.when, types)}", display_map)
+    return (rendered, declared.message)
+
 
 
 def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
-    """Render a declared view's ViewQuery inner XML: <GroupBy> then <Where>
-    (conditions folded left-associatively into binary <And>) then <OrderBy>
-    (ascending is CAML's default; only descending carries the attribute)."""
+    """Render a declared view's ViewQuery inner XML: <GroupBy>, then <Where>
+    from the shared condition grammar, then <OrderBy> (ascending is CAML's
+    default; only descending carries the attribute)."""
     parts: list[str] = []
     if view.group_by is not None:
         collapse = "TRUE" if view.group_by.collapsed else "FALSE"
@@ -149,20 +216,12 @@ def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
             f'<GroupBy Collapse="{collapse}">'
             f'<FieldRef Name="{view.group_by.field}"/></GroupBy>',
         )
-    if view.where:
-        rendered: list[str] = []
-        for cond in view.where:
-            tag = _CAML_OP_TAGS[cond.op]
-            field_ref = f'<FieldRef Name="{cond.field}"/>'
-            if cond.op in ("is_null", "is_not_null"):
-                rendered.append(f"<{tag}>{field_ref}</{tag}>")
-            else:
-                value = _caml_value(column_types.get(cond.field, ""), cond.value)
-                rendered.append(f"<{tag}>{field_ref}{value}</{tag}>")
-        combined = rendered[0]
-        for nxt in rendered[1:]:
-            combined = f"<And>{combined}{nxt}</And>"
-        parts.append(f"<Where>{combined}</Where>")
+    if view.where is not None:
+        # System columns are renderable in a view but never declared in
+        # DBML; without their types a Created comparison would render as
+        # Type="Text" and the view would answer with the wrong rows.
+        types = {**SYSTEM_COLUMN_TYPES, **column_types}
+        parts.append(f"<Where>{to_caml(view.where, types)}</Where>")
     if view.sort:
         refs = "".join(
             f'<FieldRef Name="{entry.field}"/>' if entry.direction == "asc"
@@ -344,12 +403,29 @@ def build_schema_json(
             for f in fields_phase1
         }
         table_formatting = bundle.mapping.column_formatting.get(table_name, {})
-        hidden_cols = set(bundle.mapping.hidden_on_forms.get(table_name, []))
-        hidden_display_cols = set(bundle.mapping.hidden_on_display.get(table_name, []))
+        # form_visibility carries per-column visibility as a composed
+        # ClientValidationFormula. Never write SchemaXml ShowIn*Form:
+        # saving the form designer migrates it into FieldLink.Hidden,
+        # which hides a column from EVERY form and cannot be undone
+        # over REST.
+        visibility = bundle.mapping.form_visibility.get(table_name)
+        validation = bundle.mapping.column_validation.get(table_name)
+        col_types = effective_column_types(
+            {c.name: c.type for c in table.columns},
+            {name for entity_name, name in cross_site_keys if entity_name == table_name},
+        )
+        calculated_here = bundle.mapping.calculated_formulas.get(table_name, {})
         for f in fields_phase1:
             f["display_title"] = display_map[f["title"]]
-            f["hide_on_forms"] = f["title"] in hidden_cols
-            f["hide_on_display"] = f["title"] in hidden_display_cols
+            is_calculated = f["title"] in calculated_here
+            f["client_validation_formula"] = _visibility_formula(
+                visibility, f["title"], col_types, is_calculated=is_calculated,
+            )
+            f["validation_formula"], f["validation_message"] = _column_validation(
+                validation, f["title"], col_types, display_map,
+                field_type_kind=f["body"]["FieldTypeKind"],
+                is_calculated=is_calculated,
+            )
             f["seal"] = bundle.mapping.seal_columns
             if "Formula" in f["body"]:
                 f["body"]["Formula"] = _rewrite_formula_refs(f["body"]["Formula"], display_map)
@@ -370,11 +446,18 @@ def build_schema_json(
                     if deferred_formatter is not None
                     else None
                 )
-                deferred["field"]["hide_on_forms"] = (
-                    deferred["field"]["title"] in hidden_cols
+                deferred_calculated = deferred["field"]["title"] in calculated_here
+                deferred["field"]["client_validation_formula"] = _visibility_formula(
+                    visibility, deferred["field"]["title"], col_types,
+                    is_calculated=deferred_calculated,
                 )
-                deferred["field"]["hide_on_display"] = (
-                    deferred["field"]["title"] in hidden_display_cols
+                (
+                    deferred["field"]["validation_formula"],
+                    deferred["field"]["validation_message"],
+                ) = _column_validation(
+                    validation, deferred["field"]["title"], col_types, display_map,
+                    field_type_kind=deferred["field"]["body"]["FieldTypeKind"],
+                    is_calculated=deferred_calculated,
                 )
                 deferred["field"]["seal"] = bundle.mapping.seal_columns
 
@@ -382,7 +465,7 @@ def build_schema_json(
             # No DBML Title column: the built-in Title on a base-template list is
             # Required by default, which blocks programmatic inserts (a flow
             # creating a row without Title gets HTTP 400) and forces manual
-            # entry. Patch it optional (A4).
+            # entry. Patch it optional.
             title_patch = {
                 "__metadata": {"type": "SP.FieldText"},
                 "Required": False,
@@ -401,7 +484,12 @@ def build_schema_json(
             "fields_phase1": fields_phase1,
             "title_patch": title_patch,
             "validation_formula": (
-                _rewrite_formula_refs(declared_validation.formula, display_map)
+                # SP resolves validation formulas by DISPLAY name, like
+                # calculated formulas, so names are rewritten after the
+                # grammar renders them.
+                _rewrite_formula_refs(
+                    f"={to_validation(declared_validation.when, col_types)}", display_map,
+                )
                 if declared_validation is not None
                 else None
             ),
@@ -444,8 +532,37 @@ def build_schema_json(
                 ),
             })
 
-        column_types = {col.name: col.type for col in table.columns}
-        for view in bundle.mapping.views.get(table_name, []):
+        column_types = effective_column_types(
+            {col.name: col.type for col in table.columns},
+            {name for entity_name, name in cross_site_keys if entity_name == table_name},
+        )
+        declared_views = bundle.mapping.views.get(table_name, [])
+        views_to_render = list(declared_views)
+        if entity.kind != "DocumentLibrary":
+            emitted_fields = [field["title"] for field in fields_phase1]
+            emitted_fields.extend(
+                lookup["field"]["title"]
+                for lookup in phase2
+                if lookup["list"] == list_title
+            )
+            system_fields = list(SYSTEM_COLUMN_TYPES)
+            all_items = ViewDef(
+                title="All Items",
+                fields=[
+                    "ID", "Title", *emitted_fields,
+                    *(name for name in system_fields if name != "ID"),
+                ],
+                default=not any(view.default for view in declared_views),
+            )
+            # A live list's built-in All Items may still hold DefaultView.
+            # SharePoint will not reliably hide the current default, so an
+            # authored default must be reconciled first. A recovery view that
+            # is itself the default stays first and visible.
+            if all_items.default:
+                views_to_render.insert(0, all_items)
+            else:
+                views_to_render.append(all_items)
+        for view in views_to_render:
             views_out.append({
                 "list": list_title,
                 "title": view.title,
@@ -453,6 +570,9 @@ def build_schema_json(
                 "caml_query": _view_caml_query(view, column_types),
                 "row_limit": view.row_limit,
                 "set_default": view.default,
+                # All Items is a recovery/audit view. Keep it out of modern
+                # view tabs when an authored default provides the working UI.
+                "hidden": view.title == "All Items" and not view.default,
                 "formatting": (
                     json.dumps(view.formatting, separators=(",", ":"), sort_keys=True)
                     if view.formatting is not None
@@ -602,8 +722,8 @@ def _field_body(
         case "DateTime":
             body["DisplayFormat"] = 0 if sp.date_only else 1
             # SP dynamic defaults ("[today]") and literal dates both ride
-            # DefaultValue; previously the DateTime branch dropped defaults
-            # the typemap carried.
+            # DefaultValue, so this branch must carry whatever the typemap
+            # resolved rather than handling only literals.
             if sp.default is not None:
                 body["DefaultValue"] = str(sp.default)
         case "Boolean":
@@ -617,7 +737,7 @@ def _field_body(
             # Display the target list's primary field. Defaults to the built-in
             # "Title", but a target whose mapping declares display_column (e.g.
             # Membership → DisplayName) renders that instead — a bare "Title"
-            # would show blank on lists that never populate Title (A1).
+            # shows blank on lists that never populate Title.
             target_entity = (
                 entities.get(sp.target_list) if entities and sp.target_list else None
             )

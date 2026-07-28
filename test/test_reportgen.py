@@ -431,3 +431,152 @@ def test_calculated_date_reports_as_date(tmp_path: Path) -> None:
         "NextReviewDue" in line and " DATE" in line
         for line in sql.splitlines()
     ), sql
+
+
+# --- Declared form behaviour in the reporting bundle -------------------------
+#
+# reportgen was not in the form_visibility branch's diff at all: bundles were
+# byte-identical with and without every declaration. An analyst seeing a
+# 100%-blank column could not tell it was hidden by design from a column
+# that nobody fills in, and a save rule that governs the data was invisible
+# to everyone who consumes the data.
+
+
+def _declared(tmp_path: Path) -> tuple[Schema, MappingBundle]:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Escalation {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Route nvarchar\n"
+        "  Resolution nvarchar\n"
+        "  Status nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
+        "form_visibility:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Route: hidden\n"
+        "      Resolution:\n"
+        "        new: false\n"
+        "        when:\n"
+        "          - { field: Status, op: eq, value: Resolved }\n"
+        "column_validation:\n"
+        "  Escalation:\n"
+        "    columns:\n"
+        "      Resolution:\n"
+        "        when:\n"
+        "          - { field: Resolution, measure: length, op: gt, value: 10 }\n"
+        "        message: Give at least a sentence.\n",
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def test_data_dictionary_reports_form_visibility_and_save_rules(tmp_path: Path) -> None:
+    schema, bundle = _declared(tmp_path)
+    doc = generate_data_dictionary(schema, bundle, "default")
+    assert "Populated when" in doc
+    assert "Save rule" in doc
+    # Described, never target syntax: `[$ID] != ''` means nothing to a
+    # report author, and it is the one thing they must not have to decode.
+    assert "[$ID]" not in doc
+    assert "Never on a form" in doc                    # Route: hidden
+    assert "Status eq 'Resolved'" in doc               # the when tree, described
+    assert "Give at least a sentence." in doc          # the author's own message
+    assert "length(Resolution) gt 10" in doc
+
+
+def test_dictionary_powerquery_and_sql_carry_the_same_two_columns(tmp_path: Path) -> None:
+    """The analyst consuming the bundle sees what the form does, not just
+    what the column is."""
+    schema, bundle = _declared(tmp_path)
+    pq = generate_dictionary_powerquery(schema, bundle, "default")["_DataDictionary.pq"]
+    assert "PopulatedWhen = text" in pq
+    assert "SaveRule = text" in pq
+    assert "Give at least a sentence." in pq
+    sql = generate_dictionary_sql(schema, bundle, "default")
+    assert "PopulatedWhen" in sql
+    assert "SaveRule" in sql
+
+
+def test_user_added_columns_selects_the_deployed_formula_properties(tmp_path: Path) -> None:
+    """_UserAddedColumns is the only LIVE query in the bundle and already
+    calls /fields on every refresh. Selecting the two formula properties
+    turns it into a refresh-time check that the deployed contract still
+    matches the dictionary — for free."""
+    schema, bundle = _declared(tmp_path)
+    pq = generate_dictionary_powerquery(schema, bundle, "default")["_UserAddedColumns.pq"]
+    assert "ClientValidationFormula" in pq
+    assert "ValidationFormula" in pq
+
+
+def test_undeclared_columns_read_as_dashes_not_blanks(tmp_path: Path) -> None:
+    """Absence must be legible. An empty cell reads as missing data — the
+    analyst cannot tell "no rule declared" from "the generator did not
+    know", which is the same ambiguity this whole change exists to remove."""
+    schema, bundle = _declared(tmp_path)
+    doc = generate_data_dictionary(schema, bundle, "default")
+
+    def cells(column: str) -> list[str]:
+        row = next(ln for ln in doc.splitlines() if ln.startswith(f"| {column} |"))
+        return [c.strip() for c in row.split("|")]
+
+    # Columns 8 and 9 are Populated when / Save rule (6 and 7 are the
+    # retirement pair, which this mapping declares for nothing).
+    assert cells("Status")[8] == "—"
+    assert cells("Status")[9] == "—"
+    assert cells("Resolution")[8] != "—"
+    assert cells("Resolution")[9] != "—"
+
+
+def _retired() -> tuple[Schema, MappingBundle]:
+    return (
+        parse_dbml(FIXTURES / "retired.dbml"),
+        load_mapping(FIXTURES / "retired-mapping.yaml"),
+    )
+
+
+def test_data_dictionary_documents_retirement() -> None:
+    schema, bundle = _retired()
+    md = generate_data_dictionary(schema, bundle, "default")
+    assert "| Retired | Superseded by |" in md
+    assert "| 2026-09-01 | SiteServicesStatus |" in md
+    # A live column carries the em-dash placeholder, not a blank cell.
+    assert "| SiteServicesStatus | Choice" in md
+
+
+def test_dictionary_powerquery_and_sql_carry_retirement() -> None:
+    schema, bundle = _retired()
+    dd = generate_dictionary_powerquery(schema, bundle, "default")["_DataDictionary.pq"]
+    assert "Retired = text, SupersededBy = text" in dd
+    assert '"2026-09-01", "SiteServicesStatus"' in dd
+    sql = generate_dictionary_sql(schema, bundle, "default")
+    assert "[Retired]" in sql
+    assert "[SupersededBy]" in sql
+    assert "N'2026-09-01'" in sql
+
+
+def test_user_added_columns_still_expects_retired_columns() -> None:
+    """The whole point of retiring rather than deleting: the column stays
+    declared, so the live drift audit must keep expecting it. A row for a
+    retired column would erode the "any row here means investigate"
+    contract on every refresh, forever."""
+    schema, bundle = _retired()
+    q = generate_dictionary_powerquery(schema, bundle, "default")["_UserAddedColumns.pq"]
+    assert '"OperationsStatus"' in q
+    sql = generate_dictionary_sql(schema, bundle, "default")
+    assert "N'OperationsStatus'" in sql
+
+
+def test_powerquery_still_selects_retired_columns() -> None:
+    """History is the entire point; the list query must keep selecting the
+    retired column."""
+    schema, bundle = _retired()
+    q = generate_powerquery(schema, bundle, "default")["APP_Board.pq"]
+    assert "OperationsStatus" in q

@@ -29,7 +29,13 @@ form_formatting:
 
 list_validation:
   Project:
-    formula: '=IF([Status]="Closed",[SortOrder]>=0,TRUE)'
+    # "if closed then SortOrder >= 0" — an implication, which the grammar
+    # spells as any_of[none_of[antecedent], consequent].
+    when:
+      any_of:
+        - none_of:
+            - { field: Status, op: eq, value: "Closed" }
+        - { field: SortOrder, op: geq, value: 0 }
     message: "A closed project needs a non-negative sort order."
 
 views:

@@ -38,10 +38,15 @@ Record the actual approver and date in the register row's Notes every time.
 
 ## Access rationale
 
-Readers see only published majors (library draft-visibility follows minor
-versioning); authors contribute; schema rights confined to the empty admin
-group. Approval authority is process, not permissions — SharePoint doesn't
-enforce your delegations; this document does.
+Readers see only published majors **once *Draft Item Security* is set to
+"Only users who can edit"** — draft visibility does *not* follow minor
+versioning; it is a separate library property, SharePoint defaults it to
+"Any user who can read items", and the deploy does not write it. That
+one-time step is in `30-deploy/DEPLOY.md`, it survives redeploys, and it is
+the log owner's to verify: without it the Read-level access below exposes
+every unapproved draft. Authors contribute; schema rights confined to the
+empty admin group. Approval authority is process, not permissions —
+SharePoint doesn't enforce your delegations; this document does.
 
 ## Lifecycle
 

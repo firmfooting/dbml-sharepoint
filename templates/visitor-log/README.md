@@ -4,8 +4,14 @@
 
 The front-desk sign-in book, digitised: one list (`VI_Visit`) recording who
 is on site, hosted by whom, since when — with the sign-out that paper books
-never collect. The *On site now* view is the **evacuation muster list**,
-which is the real reason this is safety infrastructure, not admin.
+never collect. An *On site now* view over that list becomes the
+**evacuation muster list**, which is the real reason this is safety
+infrastructure, not admin.
+
+> **The deploy creates the list, not the views.** *On site now* is
+> specified in `30-deploy/DEPLOY.md` and you create it there. Nothing this
+> template says about evacuation is true until you have. Do it before the
+> first drill, not after.
 
 **The value case.** The paper book fails exactly when it matters: at the
 assembly point, upside down in the rain, with half the sign-outs missing.

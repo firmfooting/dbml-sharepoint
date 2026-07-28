@@ -1,0 +1,17 @@
+Project t {
+  database_type: 'SharePoint Online'
+}
+
+Enum rag {
+  "Green"
+  "Amber"
+  "Red"
+}
+
+Table Board {
+  Id int [pk, increment]
+  Title nvarchar
+  BoardDate date [not null]
+  OperationsStatus rag
+  SiteServicesStatus rag
+}
