@@ -86,12 +86,418 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Auto PascalCase splitting handles every column on both lists correctly,
+# so there are no overrides. Internal names stay authoritative for the
+# lookup, the indexes, the formula and the reporting bundle.
+display_names:
+  mode: auto
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md), tokens mapped by the ROLE a member plays.
+#
+# Two changes from what this template shipped with, both from the role
+# table rather than from taste:
+#   - Reported was `warning`. It is the intake state, not a problem: an
+#     unread report and a report that has been read and found alarming
+#     looked identical, which is exactly backwards for a triage queue.
+#     It is now `neutral`.
+#   - Resolved is `low`, not `good`. The staff guide is explicit that an
+#     incident closes only when every linked corrective action is Done or
+#     Cancelled, so Resolved is in motion and Closed is the finish. Only
+#     Closed is green, which is what makes the green mean something.
+#
+# Severity uses the same good/warning/severe/blocked ladder as
+# risk-register's rating columns, so a Minor incident is green for the
+# same reason a Low risk is: it is the mildest band, not a good outcome.
+#
+# DaysToResolve takes its bar fill from Severity, so eight days is green on
+# a Minor incident and red on a Critical one without the reader holding the
+# triage SLA table in their head.
 column_formatting:
   Incident:
-    Status: { style: severity, map: { Reported: warning, Triaged: low, "In progress": low, Resolved: good, Closed: good } }
+    Status:
+      style: severity
+      map:
+        "Reported": neutral
+        "Triaged": low
+        "In progress": low
+        "Resolved": low
+        "Closed": good
+    Severity:
+      style: severity
+      map: { "Minor": good, "Moderate": warning, "Major": severe, "Critical": blocked }
+    DaysToResolve:
+      style: data-bar
+      max: 30
+      calculated: true
+      color_by:
+        field: Severity
+        map: { "Minor": good, "Moderate": warning, "Major": severe, "Critical": blocked }
   CorrectiveAction:
-    Status: { style: severity, map: { Open: low, "In progress": low, Done: good, Cancelled: muted } }
+    Status:
+      style: severity
+      map: { "Open": low, "In progress": low, "Done": good, "Cancelled": muted }
+    DueDate:
+      style: overdue-date
+      guard: { field: Status, not: ["Done", "Cancelled"] }
+
+# The identifying spine each list's views open with.
+field_sets:
+  Incident:
+    identity: [Title, Category, Severity, Status, ReportedBy, ReportedDate, Handler]
+  CorrectiveAction:
+    identity: [Title, Incident, Status, AssignedTo, DueDate]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view, keyed on
+# INTERNAL names — the build rewrites them to display titles, and
+# ColumnWidth binds by display name.
+views:
+  Incident:
+    - title: "Open by severity"
+      default: true
+      fields: ["@identity", OccurredDate]
+      where:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+      group_by: { field: Severity, collapsed: true }
+      sort:
+        - { field: ReportedDate, direction: asc }
+      # ONE row-level signal, reserved for Critical (§1.6). An open
+      # Critical incident is the drop-everything row and it has no view of
+      # its own, so the wash is where it earns its place — the same shape
+      # as risk-register's Extreme wash, for the same reason.
+      #
+      # The wash reads [$Severity], so Severity must stay in this view's
+      # `fields`: a view formatter can only read the columns its own view
+      # displays, and dropping it would leave the wash silently never
+      # firing with a clean build.
+      #
+      # It compares with `==` because Severity is a plain Choice column and
+      # a view formatter's [$Field] arrives clean. `calculated: true` and
+      # contains-matching belong to COLUMN formatting over calculated
+      # columns, and would be wrong here.
+      formatting: formatting/row-critical.json
+      widths:
+        Title: 280
+        Category: 180
+        Severity: 160
+        Status: 130
+        ReportedBy: 160
+        ReportedDate: 160
+        Handler: 160
+        OccurredDate: 160
+    - title: "Triage queue"
+      fields: ["@identity", OccurredDate]
+      where:
+        - { field: Status, op: eq, value: "Reported" }
+      sort:
+        - { field: ReportedDate, direction: asc }
+      widths:
+        Title: 300
+        Category: 180
+        Severity: 160
+        Status: 130
+        ReportedBy: 160
+        ReportedDate: 160
+        Handler: 160
+        OccurredDate: 160
+    # The monthly trend review's raw material. CAML has no calendar-month
+    # predicate, so this is a rolling ninety days and the title says so
+    # rather than implying a calendar boundary; and there is no total or
+    # mean row under a group, because column aggregations are not a
+    # capability this tool ships. Each incident carries its own day-count
+    # and a bar coloured by severity.
+    - title: "Resolved last 90 days"
+      fields: [Title, Category, Severity, Status, Handler, ReportedDate,
+               ResolvedDate, DaysToResolve]
+      where:
+        - { field: Status, op: in, value: ["Resolved", "Closed"] }
+        - { field: ResolvedDate, op: geq, value: today-90 }
+      group_by: { field: Category, collapsed: true }
+      sort:
+        - { field: ResolvedDate, direction: desc }
+      widths:
+        Title: 260
+        Category: 180
+        Severity: 160
+        Status: 130
+        Handler: 160
+        ReportedDate: 160
+        ResolvedDate: 160
+        DaysToResolve: 150
+  CorrectiveAction:
+    - title: "Open actions"
+      default: true
+      fields: ["@identity", DoneDate]
+      where:
+        - { field: Status, op: not_in, value: ["Done", "Cancelled"] }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Incident: 240
+        Status: 130
+        AssignedTo: 160
+        DueDate: 160
+        DoneDate: 160
+    - title: "Overdue"
+      fields: ["@identity", DoneDate]
+      where:
+        - { field: Status, op: not_in, value: ["Done", "Cancelled"] }
+        - { field: DueDate, op: lt, value: today }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Incident: 240
+        Status: 130
+        AssignedTo: 160
+        DueDate: 160
+        DoneDate: 160
+    # Governance chases overdue actions BY NAME. This is the view that
+    # makes that a two-minute job rather than a sort-and-squint.
+    - title: "By owner"
+      fields: ["@identity", DoneDate]
+      where:
+        - { field: Status, op: not_in, value: ["Done", "Cancelled"] }
+      group_by: { field: AssignedTo, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Incident: 240
+        Status: 130
+        AssignedTo: 160
+        DueDate: 160
+        DoneDate: 160
+    # An incident closes only when every linked action is Done or
+    # Cancelled, and until now nothing showed you that. Grouped on the
+    # Incident lookup and collapsed: expand the incident, read the four
+    # actions, close it or don't. It is also the quarterly sample's view —
+    # "check corrective actions were real, not paperwork" needs the actions
+    # of one incident in one place.
+    - title: "By incident"
+      fields: ["@identity", DoneDate, Notes]
+      group_by: { field: Incident, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 260
+        Incident: 240
+        Status: 130
+        AssignedTo: 160
+        DueDate: 160
+        DoneDate: 160
+        Notes: 200
+
+# The New form is what an ordinary staff member sees, once, in three
+# minutes, on a bad day. Everything that belongs to triage or resolution is
+# off it: a reporter who is asked who the handler is and when it was
+# resolved learns that the form is not for them.
+#
+# reconcile: exact makes this file authoritative for the whole list —
+# every other column's conditional formula is cleared on each deploy.
+form_visibility:
+  Incident:
+    reconcile: exact
+    columns:
+      Handler: { new: false }
+      ResolvedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Resolved", "Closed"] }
+  CorrectiveAction:
+    reconcile: exact
+    columns:
+      DoneDate:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Done" }
+
+# Form layouts: a strapline header and sections on both lists. Per-field
+# description hints render on the NEW form only — SharePoint suppresses
+# column descriptions on the Edit form. Section field lists are authored
+# with INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  Incident:
+    header: formatting/incident-form-header.json
+    body: formatting/incident-form-body.json
+  CorrectiveAction:
+    header: formatting/action-form-header.json
+    body: formatting/action-form-body.json
+
+# Per-column save rules, each with its own message. All three incident
+# dates feed the resolution clock or the trend window, and a date typed
+# with next year's year silently removes the incident from the report.
+column_validation:
+  Incident:
+    columns:
+      ReportedDate:
+        when:
+          - { field: ReportedDate, op: leq, value: today }
+        message: "An incident cannot be reported in the future. Use today's date."
+      OccurredDate:
+        when:
+          - { field: OccurredDate, op: leq, value: today }
+        message: "An incident cannot have occurred in the future. Leave it blank if it happened on the day it was reported."
+      ResolvedDate:
+        when:
+          - { field: ResolvedDate, op: leq, value: today }
+        message: "An incident cannot be resolved in the future. Leave it blank until it actually is."
+  CorrectiveAction:
+    columns:
+      DoneDate:
+        when:
+          - { field: DoneDate, op: leq, value: today }
+        message: "An action cannot be completed in the future. Leave it blank until it is done."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column. Both are governance's data-quality rule 2, in the parts a formula
+# can reach.
+#
+# NOT enforceable, and 50-govern/GOVERNANCE.md says so rather than leaving
+# it to be discovered:
+#   - "Every incident past Reported has a Handler" (rule 1). Handler is a
+#     person column, and SharePoint validation formulas cannot reference
+#     person columns at all — not as an operand, not as a null test.
+#   - "Closed requires all linked actions terminal" (the rest of rule 2).
+#     The actions are on another list, and a save rule reaches only its
+#     own. The "By incident" view is the reconciliation.
+#   - "A cancelled action says why in Notes". Notes is rich text, which
+#     validation formulas cannot reference either.
+list_validation:
+  Incident:
+    when:
+      any_of:
+        - { field: Status, op: not_in, value: ["Resolved", "Closed"] }
+        - { field: ResolvedDate, op: is_not_null }
+    message: "Resolving or closing an incident needs a Resolved Date - it is what the days-to-resolve figure and the trend report are both counted from."
+  CorrectiveAction:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Done" }
+        - { field: DoneDate, op: is_not_null }
+    message: "An action marked Done needs a Done Date."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Incidents are created
+# first and the actions reference them by demo key. Coverage: one incident
+# per Status and one per Severity — including the open Critical one that
+# drives the row wash — and one action per Status, including an overdue one
+# hanging off that same Critical incident, which is the pairing the whole
+# template exists to make visible.
+#
+# Nothing here is clinical. This register is for corporate and non-clinical
+# incidents; the healthcare note in 50-govern/GOVERNANCE.md is emphatic
+# about that, and demo data that blurred it would undermine the document.
+demo_items:
+  Incident:
+    - key: in-critical
+      values:
+        Title: "[DEMO] Ladder left blocking the fire exit, Store B"
+        Category: "Safety"
+        Severity: "Critical"
+        Status: "In progress"
+        ReportedBy: "@me"
+        ReportedDate: "today-3"
+        OccurredDate: "today-3"
+        Detail: "Demo row. A contractor's ladder and two pallets were found across the Store B fire exit at 16:40. The exit was cleared immediately and the contractor supervisor was called to site."
+        Handler: "@me"
+    - key: in-security
+      values:
+        Title: "[DEMO] External door found propped open overnight"
+        Category: "Security"
+        Severity: "Major"
+        Status: "Triaged"
+        ReportedBy: "@me"
+        ReportedDate: "today-5"
+        OccurredDate: "today-6"
+        Detail: "Demo row. The rear delivery door was found wedged open at the 06:00 round. No sign of entry; camera footage requested."
+        Handler: "@me"
+    - key: in-it
+      values:
+        Title: "[DEMO] Shared mailbox rules deleting incoming referrals"
+        Category: "IT / systems"
+        Severity: "Minor"
+        Status: "Reported"
+        ReportedBy: "@me"
+        ReportedDate: "today-1"
+        Detail: "Demo row. Two referrals sent to the shared mailbox were not in the inbox but were in Deleted Items. A rule appears to be misfiring."
+    - key: in-facilities
+      values:
+        Title: "[DEMO] Water ingress in the level 1 corridor after storm"
+        Category: "Facilities"
+        Severity: "Moderate"
+        Status: "In progress"
+        ReportedBy: "@me"
+        ReportedDate: "today-10"
+        OccurredDate: "today-11"
+        Detail: "Demo row. Water tracked under the corridor skirting after overnight rain. Area cordoned and dried; roof contractor engaged."
+        Handler: "@me"
+    - key: in-process
+      values:
+        Title: "[DEMO] Purchase approved outside the delegation threshold"
+        Category: "Process failure"
+        Severity: "Moderate"
+        Status: "Resolved"
+        ReportedBy: "@me"
+        ReportedDate: "today-25"
+        OccurredDate: "today-28"
+        Detail: "Demo row. An order was approved one level below the required delegation. Goods were legitimate and received; the approval path was wrong."
+        Handler: "@me"
+        ResolvedDate: "today-18"
+    - key: in-closed
+      values:
+        Title: "[DEMO] Trip hazard from lifting floor tile, main corridor"
+        Category: "Safety"
+        Severity: "Minor"
+        Status: "Closed"
+        ReportedBy: "@me"
+        ReportedDate: "today-60"
+        OccurredDate: "today-60"
+        Detail: "Demo row. A lifting vinyl tile at the corridor junction. Taped and signed the same hour, replaced within the week."
+        Handler: "@me"
+        ResolvedDate: "today-50"
+  CorrectiveAction:
+    - key: in-ca-overdue
+      values:
+        Title: "[DEMO] Reissue the contractor site rules on exit keeping"
+        Incident: { demo_ref: in-critical }
+        Status: "Open"
+        AssignedTo: "@me"
+        DueDate: "today-4"
+        Notes: "Demo row. Overdue. This is the pairing the register exists to make visible - a Critical incident with an action nobody has done."
+    - key: in-ca-inprogress
+      values:
+        Title: "[DEMO] Add fire-exit clearance to the daily security round"
+        Incident: { demo_ref: in-critical }
+        Status: "In progress"
+        AssignedTo: "@me"
+        DueDate: "today+10"
+        Notes: "Demo row. Drafted with the checks owner; goes live with the next round update."
+    - key: in-ca-open
+      values:
+        Title: "[DEMO] Fit a self-closing mechanism to the rear delivery door"
+        Incident: { demo_ref: in-security }
+        Status: "Open"
+        AssignedTo: "@me"
+        DueDate: "today+21"
+        Notes: "Demo row. Quote requested from the contracted locksmith."
+    - key: in-ca-done
+      values:
+        Title: "[DEMO] Retrain the ordering team on delegation thresholds"
+        Incident: { demo_ref: in-process }
+        Status: "Done"
+        AssignedTo: "@me"
+        DueDate: "today-20"
+        DoneDate: "today-19"
+        Notes: "Demo row. Session run with all four approvers; the delegation table is now printed at each desk. Attendance list filed with the training register."
+    - key: in-ca-cancelled
+      values:
+        Title: "[DEMO] Install a permanent corridor drainage channel"
+        Incident: { demo_ref: in-facilities }
+        Status: "Cancelled"
+        AssignedTo: "@me"
+        DueDate: "today-2"
+        Notes: "Demo row. Cancelled - the roof repair removed the cause, so the drainage work is no longer warranted. Superseded rather than abandoned."
