@@ -136,7 +136,7 @@ by a person, at the point the status moves.
 *Residual is at or below target at closure.* `LevelsAboveTarget` is a
 calculated column, and validation formulas cannot read those either.
 
-The compensating control is the **Closed risks** view, which carries
+The compensating control is the **Closed** view, which carries
 `LevelsAboveTarget` for exactly this purpose: anything above 0 there was
 closed above appetite, and closure review is where that gets caught. It is
 *not* the **Above target** view, which filters out closed risks — a risk

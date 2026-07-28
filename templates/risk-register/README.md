@@ -32,8 +32,17 @@ matrix-revision procedure in `50-govern/GOVERNANCE.md` can re-stamp them.
 The form groups all columns into the same sections as the table above.
 
 **Five declared views**, deployed with the paste — nothing to build by
-hand: *Open by score* (the default), *Reviews due*, *Above target*,
-*Tolerance expiring*, *Closed risks*.
+hand: *Open* (the default), *Review due*, *Above target*, *Tolerance due*,
+*Closed*. The shorter labels keep more views visible in the modern toolbar;
+existing sites migrate from the original longer titles on the next deploy.
+
+**Five supported SharePoint indexes** are declared in `mapping.yaml`:
+`Status`, `Category`, `RiskResponse`, `ToleranceEndDate` and
+`LastReviewedDate`. They are physical deployment settings rather than DBML
+column attributes. SharePoint cannot index the calculated `RiskScore`,
+`ResidualRiskRating`, `LevelsAboveTarget` or `NextReviewDue` columns, so the
+views driven by those calculations are not guaranteed to scale beyond the
+list-view threshold without redesigning those values as persisted fields.
 
 **Work the folders in order:**
 

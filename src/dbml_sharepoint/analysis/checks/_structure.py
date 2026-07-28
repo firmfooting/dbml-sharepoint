@@ -11,6 +11,12 @@ from dbml_sharepoint.analysis.validator import (
     formula_column_refs,
 )
 
+_UNSUPPORTED_INDEX_TYPES = {
+    "longtext": "Multiple lines of text (Note)",
+    "richtext": "Multiple lines of text (Note)",
+    "hyperlink": "Hyperlink",
+}
+
 
 def check(vc: ValidationContext) -> list[Finding]:
     schema = vc.schema
@@ -95,6 +101,26 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
         rendered = _rendered_columns(indexed_table, xcols)
+        for duplicate in sorted({name for name in indexed if indexed.count(name) > 1}):
+            findings.append(Finding(
+                "error",
+                f"indexed_columns[{entity_name}]: duplicate index target "
+                f"{duplicate!r}.",
+            ))
+        # Unique fields carry an implicit SharePoint index and count toward
+        # the same per-list ceiling as explicit declarations.
+        effective_indexes = set(indexed) | {
+            col.name for col in indexed_table.columns
+            if col.unique and col.name in rendered
+        }
+        if len(effective_indexes) > 20:
+            findings.append(Finding(
+                "error",
+                f"indexed_columns[{entity_name}]: {len(effective_indexes)} "
+                f"effective indexes exceed SharePoint's limit of 20 "
+                f"(including unique columns).",
+            ))
+        columns_by_name = {col.name: col for col in indexed_table.columns}
         for col_name in indexed:
             if col_name not in rendered:
                 hint = (
@@ -107,6 +133,22 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error",
                     f"indexed_columns[{entity_name}]: {col_name!r} is not a "
                     f"rendered column of {entity_name}{hint}.",
+                ))
+                continue
+            if any(col_name == f"{xcol}SiteUrl" for xcol in xcols):
+                findings.append(Finding(
+                    "error",
+                    f"indexed_columns[{entity_name}]: {col_name!r} renders "
+                    f"as a Hyperlink column, which SharePoint cannot index.",
+                ))
+                continue
+            column = columns_by_name.get(col_name)
+            if column is not None and column.type in _UNSUPPORTED_INDEX_TYPES:
+                findings.append(Finding(
+                    "error",
+                    f"indexed_columns[{entity_name}]: {col_name!r} is a "
+                    f"{_UNSUPPORTED_INDEX_TYPES[column.type]} column, which SharePoint "
+                    f"cannot index.",
                 ))
 
     # watched_lists, polymorphic_patterns and versioning.overrides were the
@@ -168,7 +210,8 @@ def check(vc: ValidationContext) -> list[Finding]:
     # Calculated columns (SP.FieldCalculated): every calculated_* column must
     # have a formula in the mapping, every mapping formula must target a
     # calculated_* column, formulas must satisfy SP's constraints, and
-    # calculated columns cannot be indexed (SP does not support it).
+    # calculated columns cannot be indexed (handled here separately from the
+    # other unsupported index field kinds checked above).
     calc_columns_by_table: dict[str, set[str]] = {}
     for table in schema.tables:
         for col in table.columns:

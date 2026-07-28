@@ -13,8 +13,8 @@ The plan is generation-time typed: each field carries a `kind` so the
 script knows whether to write a literal, resolve the deploying operator
 (person columns take `<Name>Id`), resolve a demo_ref to a created item's
 Id (lookups also take `<Name>Id`), or compute a run-time date from a
-`today±N` offset — cadence-derived demo surfaces (Reviews due, overdue
-formatting, Tolerance expiring) must land on whatever day the demo runs.
+`today±N` offset — cadence-derived demo surfaces (Review due, overdue
+formatting, Tolerance due) must land on whatever day the demo runs.
 The '[DEMO] ' Title marker (validated mandatory) is the in-record notice
 and the teardown contract.
 

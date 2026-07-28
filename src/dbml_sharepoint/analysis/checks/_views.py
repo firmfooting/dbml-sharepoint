@@ -121,6 +121,40 @@ def check(vc: ValidationContext) -> list[Finding]:
             findings.append(Finding(
                 "error", f"views[{entity_name}]: duplicate view title {title!r}.",
             ))
+        previous_claims: dict[str, list[str]] = {}
+        for view in views:
+            for previous in view.renamed_from:
+                ctx = f"views[{entity_name}].{view.title}.renamed_from"
+                if not previous.strip():
+                    findings.append(Finding(
+                        "error", f"{ctx}: previous titles cannot be empty.",
+                    ))
+                if previous == view.title:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: {previous!r} is the view's own title, not a "
+                        f"previous title.",
+                    ))
+                if previous == "All Items":
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: 'All Items' is reserved for the generated "
+                        f"recovery view and cannot be adopted.",
+                    ))
+                if previous in titles and previous != view.title:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: {previous!r} is another declared view's "
+                        f"current title.",
+                    ))
+                previous_claims.setdefault(previous, []).append(view.title)
+        for previous, claimants in previous_claims.items():
+            if len(claimants) > 1:
+                findings.append(Finding(
+                    "error",
+                    f"views[{entity_name}]: previous title {previous!r} is "
+                    f"claimed by more than one view ({', '.join(claimants)}).",
+                ))
         defaults = [v.title for v in views if v.default]
         if len(defaults) > 1:
             findings.append(Finding(

@@ -73,8 +73,8 @@
           if (refId == null) throw new Error(`demo_ref '${f.value}' has no created item`);
           body[`${f.name}Id`] = refId;
         } else if (f.kind === 'date_offset') {
-          // Resolved at RUN time so cadence-derived surfaces (Reviews due,
-          // overdue, Tolerance expiring) land on whatever day the demo runs.
+          // Resolved at RUN time so cadence-derived surfaces (Review due,
+          // overdue, Tolerance due) land on whatever day the demo runs.
           body[f.name] = new Date(Date.now() + f.value * 86400000).toISOString();
         }
       }

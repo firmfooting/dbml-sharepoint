@@ -38,7 +38,7 @@ the full cause → event → consequence story in **Detail**.
 Provisional is the one status that tolerates a half-finished risk. Past
 it, the register requires both **Likelihood** and **Consequence**: without
 them there is no rating and no score, so the risk cannot be ranked in
-**Open by score**, never appears in **Above target**, and has no next
+**Open**, never appears in **Above target**, and has no next
 review date. It would be a risk the register has stopped managing while
 still appearing to hold it.
 
@@ -105,7 +105,7 @@ risk without that baseline has no next review date.
 
 It will not accept a date in the future. That is not pedantry — Next
 Review Due is counted from it, so a year typed wrong pushes the next
-review out by a year and quietly drops the risk off **Reviews due**, where
+review out by a year and quietly drops the risk off **Review due**, where
 nobody would notice its absence.
 
 ## Closing a risk

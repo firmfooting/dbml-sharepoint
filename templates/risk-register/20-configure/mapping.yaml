@@ -7,7 +7,11 @@ entities:
 cross_site_reference_columns: []
 
 indexed_columns:
-  Risk: [Status, Category]
+  # Physical SharePoint indexes. Keep this list focused on supported columns
+  # used by declared filters/sorts or common header filters. Calculated fields
+  # (RiskScore, ResidualRiskRating, LevelsAboveTarget, NextReviewDue) cannot be
+  # indexed by SharePoint and are rejected by the build validator.
+  Risk: [Status, Category, RiskResponse, ToleranceEndDate, LastReviewedDate]
 
 versioning:
   default:
@@ -150,18 +154,20 @@ column_formatting:
     ToleranceEndDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
 
 # Declared views (deployed and reconciled by the views phase; undeclared
-# views are never touched). Five governance lenses on the same list: "Open
-# by score" is the default, ranking live work by matrix score; "Reviews
-# due" surfaces what needs a look soon; "Above target" and "Tolerance
-# expiring" flag risks sitting above appetite or nearing a tolerance
-# deadline; "Closed risks" is the closed-out history. Widths are pixel
+# views are never touched). Five governance lenses on the same list: "Open"
+# is the default, ranking live work by matrix score; "Review due" surfaces
+# what needs a look soon; "Above target" and "Tolerance due" flag risks
+# sitting above appetite or nearing a tolerance deadline; "Closed" is the
+# closed-out history. renamed_from migrates the longer titles shipped before
+# 1.0 without leaving duplicate views behind. Widths are pixel
 # ColumnWidth per view, keys are INTERNAL names (the build
 # rewrites them to display titles — ColumnWidth binds by display name, and
 # internal names silently reset). Rating pills ~160, dates ~140-180, people
 # ~160, status chips ~100-110, Title widest on sparser views.
 views:
   Risk:
-    - title: "Open by score"
+    - title: "Open"
+      renamed_from: ["Open by score"]
       default: true
       fields: [Title, Category, Likelihood, Consequence, ResidualRiskRating,
                RiskScore, LevelsAboveTarget, RiskOwner, Status, NextReviewDue]
@@ -195,12 +201,13 @@ views:
         RiskOwner: 160
         Status: 100
         NextReviewDue: 160
-    - title: "Reviews due"
+    - title: "Review due"
+      renamed_from: ["Reviews due"]
       fields: [Title, RiskOwner, Status, ResidualRiskRating, RiskScore,
                NextReviewDue, LastReviewedDate]
       where:
-        - { field: NextReviewDue, op: leq, value: today+30 }
         - { field: Status, op: neq, value: "Closed" }
+        - { field: NextReviewDue, op: leq, value: today+30 }
       sort:
         - { field: NextReviewDue, direction: asc }
       widths:
@@ -216,8 +223,8 @@ views:
                RiskScore, OverallControlEffectiveness, RiskOwner, Status,
                NextReviewDue, LastReviewedDate]
       where:
-        - { field: LevelsAboveTarget, op: gt, value: 0 }
         - { field: Status, op: neq, value: "Closed" }
+        - { field: LevelsAboveTarget, op: gt, value: 0 }
       sort:
         - { field: LevelsAboveTarget, direction: desc }
         - { field: RiskScore, direction: desc }
@@ -232,7 +239,8 @@ views:
         Status: 100
         NextReviewDue: 160
         LastReviewedDate: 180
-    - title: "Tolerance expiring"
+    - title: "Tolerance due"
+      renamed_from: ["Tolerance expiring"]
       fields: [Title, RiskResponse, ToleranceEndDate, ResidualRiskRating,
                RiskOwner, RiskSponsor, Status]
       where:
@@ -259,7 +267,8 @@ views:
     # target at save, because LevelsAboveTarget is calculated and validation
     # formulas cannot read those. This column, sortable, is where a closure
     # review sees it: anything greater than 0 here was closed above appetite.
-    - title: "Closed risks"
+    - title: "Closed"
+      renamed_from: ["Closed risks"]
       fields: [Title, ResidualRiskRating, TargetRiskRating, LevelsAboveTarget,
                OverallControlEffectiveness, ClosureStatement, RiskOwner,
                LastReviewedDate]
@@ -343,7 +352,7 @@ column_validation:
   Risk:
     columns:
       # LastReviewedDate is the baseline the whole cadence counts from:
-      # NextReviewDue is computed from it, "Reviews due" filters on that,
+      # NextReviewDue is computed from it, "Review due" filters on that,
       # and the overdue formatting keys off it. A date typed with next
       # year's year pushes the next review out by a year and drops the
       # risk off the review queue silently — no error, no empty cell, just
@@ -400,7 +409,7 @@ list_validation:
               # A target is required at closure or the audit signal is
               # blank. LevelsAboveTarget returns "" when TargetRiskRating
               # is empty, so a risk closed with no target shows nothing in
-              # the "Closed risks" column that exists to reveal an
+              # the "Closed" column that exists to reveal an
               # above-appetite closure — the compensating control for the
               # one closure criterion SharePoint cannot check would be
               # silently empty exactly where it is needed.

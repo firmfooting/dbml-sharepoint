@@ -742,6 +742,7 @@
       "formatting": "{\"additionalRowClass\":\"=if([$Status] == \u0027Closed\u0027, \u0027sp-css-backgroundColor-BgLightGray\u0027, \u0027\u0027)\"}",
       "hidden": false,
       "list": "APP_Project",
+      "renamed_from": [],
       "row_limit": 100,
       "set_default": true,
       "title": "Open projects",
@@ -758,6 +759,7 @@
       "formatting": null,
       "hidden": true,
       "list": "APP_Project",
+      "renamed_from": [],
       "row_limit": null,
       "set_default": false,
       "title": "All Items",
@@ -779,6 +781,7 @@
       "formatting": null,
       "hidden": false,
       "list": "APP_Task",
+      "renamed_from": [],
       "row_limit": null,
       "set_default": true,
       "title": "All Items",
@@ -800,6 +803,7 @@
       "formatting": null,
       "hidden": false,
       "list": "APP_Task",
+      "renamed_from": [],
       "row_limit": null,
       "set_default": false,
       "title": "Due soon",
@@ -816,6 +820,7 @@
       "formatting": null,
       "hidden": false,
       "list": "APP_AppSettings",
+      "renamed_from": [],
       "row_limit": null,
       "set_default": true,
       "title": "All Items",
@@ -2239,13 +2244,27 @@
         if (view.row_limit != null) createBody.RowLimit = view.row_limit;
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
-      let existing = (await listViewShapes(listPath)).find((v) => v.Title === view.title) || null;
+      const listedViews = await listViewShapes(listPath);
+      let existing = listedViews.find((v) => v.Title === view.title) || null;
+      const previousMatches = listedViews.filter(
+        (v) => view.renamed_from.includes(v.Title),
+      );
+      if (previousMatches.length > 1) {
+        throw new Error(`multiple previous-title views exist for '${view.title}': ${previousMatches.map((v) => v.Title).join(', ')}`);
+      }
+      if (existing && previousMatches.length > 0) {
+        throw new Error(`both current view '${view.title}' and previous-title view '${previousMatches[0].Title}' exist; refusing to choose or delete either`);
+      }
+      if (!existing && previousMatches.length === 1) {
+        existing = previousMatches[0];
+        log('INFO', `[Phase 3.1] Adopting previous view title '${existing.Title}' on '${view.list}' as '${view.title}'.`);
+      }
       // A slug-titled view already sitting on the clean URL is our own
       // half-finished migration (we only ever create with Title=slug):
       // adopt it instead of creating a second page. A FOREIGN view on that
       // URL is never touched — the create below would get a suffixed .aspx
       // and the URL drift gate fails the view closed.
-      const halfMigrated = (await listViewShapes(listPath)).find(
+      const halfMigrated = listedViews.find(
         (v) => v.Title === view.url_slug && urlBasename(v) === desiredBasename,
       ) || null;
       if (!existing) {
@@ -2286,6 +2305,18 @@
           }
           existing = await readViewShape(viewUrl);
           if (!existing) throw new Error('view disappeared during URL migration');
+        } else if (existing.Title !== view.title) {
+          // A rename whose old and new titles collapse to the same URL slug
+          // needs no page recreation; update by immutable view Id because
+          // getbytitle(new) cannot resolve until after this write.
+          const viewByIdUrl = apiUrl(`${listPath}/views('${existing.Id}')`);
+          await mergeView(
+            viewByIdUrl,
+            { __metadata: { type: 'SP.View' }, Title: view.title },
+            viewDigest,
+          );
+          existing = await readViewShape(viewUrl);
+          if (!existing) throw new Error('view disappeared during title migration');
         }
         // Narrow MERGE: send only drifted declared settings.
         const patchBody = { __metadata: { type: 'SP.View' } };

@@ -91,6 +91,7 @@ with the sets it expanded from — nothing hides behind the indirection.
 views:
   Risk:
     - title: "Open by score"
+      renamed_from: ["Active risks"]
       default: true
       fields: [Title, Category, RiskScore, Status]
       where:
@@ -129,6 +130,11 @@ views:
 - Views are created under a URL slug derived from the title ("Open by
   score" lives at `OpenByScore.aspx`) and renamed to the declared title,
   so view URLs never contain `%20`.
+- `renamed_from` declares prior deployer-managed titles. If the current title
+  is absent and exactly one prior title exists, deployment adopts it and
+  migrates it to the current title and URL. If both exist, or multiple prior
+  titles exist, deployment fails closed rather than deleting an ambiguous
+  view. Keep aliases declared so sites that skip releases can still upgrade.
 - Every deployed list also gets a managed **All Items** recovery view. It
   has no filter and contains every rendered schema column plus `ID`,
   `Created`, `Modified`, `Author` and `Editor`. It is the default view only
@@ -635,7 +641,7 @@ Lookup/Person references, no `[Today]`) are enforced at build time.
 
 ```yaml
 indexed_columns:
-  Risk: [Status]
+  Risk: [Status, Category, ReviewDate]
 
 versioning:
   default:
@@ -654,6 +660,15 @@ polymorphic_patterns: []           # discriminator-typed reference columns
 watched_lists: []                  # lists to flag in the manifest for watching
 retention_policies_source: null    # documented retention posture (manifest)
 ```
+
+`indexed_columns` is the source of truth for ordinary SharePoint indexes;
+it is a physical mapping concern and is not written in DBML. DBML `[unique]`
+still implies an index because SharePoint enforces uniqueness through one.
+The build rejects duplicate targets, more than 20 effective indexes per list,
+calculated columns, multiple-lines-of-text columns, hyperlinks and generated
+`SiteUrl` fields. Lookup and Person columns are technically indexable, but
+Microsoft notes that their indexes do not avoid list-view-threshold failures;
+prefer a supported scalar column as a view's first selective filter.
 
 ## Protection
 

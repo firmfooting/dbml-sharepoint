@@ -74,11 +74,14 @@ site that already holds real risks.
 
 ## After the paste — verification checklist
 
-- [ ] `RR_Risk` exists and all five declared views appear: **Open by
-      score** (the default), **Reviews due**, **Above target**,
-      **Tolerance expiring**, **Closed risks**. If you seeded, none of them
+- [ ] `RR_Risk` exists and all five declared views appear: **Open** (the
+      default), **Review due**, **Above target**, **Tolerance due**,
+      **Closed**. If you seeded, none of them
       is empty. The generated **All Items** recovery view is hidden from the
       modern view bar because this template has an authored default.
+- [ ] List Settings → Indexed columns shows `Status`, `Category`,
+      `RiskResponse`, `ToleranceEndDate` and `LastReviewedDate`. The build
+      manifest lists the same five under **indexed columns**.
 - [ ] Matrix spot-checks on a test risk:
       - Rare + Minor → **Low / 1**
       - Unlikely + Substantial → **Medium / 11**

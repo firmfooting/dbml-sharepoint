@@ -364,8 +364,8 @@ def test_indexed_column_unknown_column_is_error() -> None:
 
 def test_indexed_column_cross_site_logical_name_is_error() -> None:
     """A cross-site column's LOGICAL name never exists in SP — it is expanded
-    to <col>Abbreviation / <col>SiteUrl. Indexing the logical name must be an
-    error; indexing an expanded name is valid."""
+    to <col>Abbreviation / <col>SiteUrl. The Text abbreviation is indexable;
+    the Hyperlink URL and nonexistent logical name are not."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.mapping.cross_site_reference_columns.append(
@@ -380,11 +380,75 @@ def test_indexed_column_cross_site_logical_name_is_error() -> None:
         for f in findings
     )
 
-    # Expanded names are the real rendered fields and must pass.
+    # The expanded abbreviation is Text and indexable. SiteUrl is a
+    # Hyperlink, which SharePoint does not support as an index target.
     bundle.mapping.indexed_columns["Task"] = ["ProjectAbbreviation", "ProjectSiteUrl"]
     findings = validate_against_mapping(schema, bundle)
+    assert any(
+        f.severity == "error" and "ProjectSiteUrl" in f.message
+        and "Hyperlink" in f.message for f in findings
+    )
     assert not any(
-        f.severity == "error" and "indexed_columns" in f.message for f in findings
+        f.severity == "error" and "ProjectAbbreviation" in f.message for f in findings
+    )
+
+
+def test_indexed_columns_reject_unsupported_field_types(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Notes longtext\n"
+        "  Url hyperlink\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "indexed_columns:\n"
+        "  Task: [Notes, Url]\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert any(
+        f.severity == "error" and "Notes" in f.message and "Note" in f.message
+        for f in findings
+    )
+    assert any(
+        f.severity == "error" and "Url" in f.message and "Hyperlink" in f.message
+        for f in findings
+    )
+
+
+def test_indexed_columns_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> None:
+    columns = "".join(f"  Col{i} nvarchar\n" for i in range(21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Wide {{\n  Id int [pk, increment]\n{columns}}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Wide: { kind: List, base_template: 100, site_role: default }\n"
+        "indexed_columns:\n"
+        f"  Wide: [{', '.join(f'Col{i}' for i in range(21))}, Col0]\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert any(
+        f.severity == "error" and "Col0" in f.message and "duplicate" in f.message
+        for f in findings
+    )
+    assert any(
+        f.severity == "error" and "21" in f.message and "20" in f.message
+        for f in findings
     )
 
 
@@ -890,6 +954,24 @@ def test_view_on_unknown_entity_is_error(tmp_path: Path) -> None:
         "views:\n  Widget:\n    - title: V\n      fields: [Title]\n",
     )
     assert any("Widget" in f.message and "views" in f.message for f in errors)
+
+
+def test_view_previous_titles_cannot_collide_or_claim_all_items(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: Open\n"
+        "      renamed_from: [Open, All Items, Legacy]\n"
+        "      fields: [Title]\n"
+        "    - title: Closed\n"
+        "      renamed_from: [Legacy, Open]\n"
+        "      fields: [Title]\n",
+    )
+    assert any("Open" in f.message and "own title" in f.message for f in errors)
+    assert any("All Items" in f.message and "reserved" in f.message for f in errors)
+    assert any("Legacy" in f.message and "more than one" in f.message for f in errors)
+    assert any("Open" in f.message and "current title" in f.message for f in errors)
 
 
 def test_view_field_references_must_be_rendered_columns(tmp_path: Path) -> None:

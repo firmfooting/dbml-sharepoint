@@ -1476,6 +1476,7 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         "views:\n"
         "  Risk:\n"
         "    - title: Open risks\n"
+        "      renamed_from: [Active risks]\n"
         "      default: true\n"
         "      fields: [Title, Status, DueDate]\n"
         "      where:\n"
@@ -1507,6 +1508,7 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
         ),
         "row_limit": 100,
         "set_default": True,
+        "renamed_from": ["Active risks"],
         "hidden": False,
         "formatting": None,
         "widths": None,
@@ -1567,6 +1569,7 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
         "caml_query": "",
         "row_limit": None,
         "set_default": True,
+        "renamed_from": [],
         "hidden": False,
         "formatting": None,
         "widths": None,
@@ -1666,6 +1669,8 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
     assert "removeallviewfields" in js
     assert "addviewfield('${odataName(name)}')" in js
     assert "DefaultView: true" in js
+    assert "view.renamed_from.includes(v.Title)" in js
+    assert "multiple previous-title views exist" in js
     assert "Hidden: view.hidden" in js
     assert "actual.Hidden !== view.hidden" in js
     assert "$select=Id,Title,DefaultView,Hidden,RowLimit" in js
