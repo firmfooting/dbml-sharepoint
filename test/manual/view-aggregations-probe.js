@@ -34,6 +34,26 @@
  *   closing. So set CLEANUP_AT_END = false, run, then OPEN THE VIEW URL
  *   the probe prints and LOOK for the totals row under the Amount column.
  *   Re-run with CLEANUP_AT_END = true to remove the list.
+ *
+ * ANSWERED, 2026-07-29, against a live SharePoint Online site:
+ *
+ *   seeded=ok mechanism=patch readback=ok rendered=yes
+ *
+ *   A REST MERGE of SP.View with Aggregations and AggregationsStatus is
+ *   accepted (HTTP 204), reads back as
+ *   `<FieldRef Name="Amount" Type="Sum" />` with AggregationsStatus `On`,
+ *   and the view renders a totals row. SetViewXml was never attempted
+ *   because the simpler mechanism won. The probe is kept for re-running
+ *   against a tenant whose behaviour is in doubt.
+ *
+ *   That first run also found a bug in THIS FILE rather than in SharePoint:
+ *   both seeding posts sent `SP.Data.ListItem` instead of the list's own
+ *   ListItemEntityTypeFullName, took HTTP 400, and the probe reported
+ *   "Seeded two rows" because it never read the responses. The operator
+ *   answered Q4 by adding rows by hand. A probe that prints an unchecked
+ *   claim is worse than no probe, so seeding is now Q0 — posted, counted
+ *   and read back — and a failed seed downgrades the verdict line rather
+ *   than sitting quietly beneath it.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -59,6 +79,7 @@
     }
     log('INFO', `${id}: ${observed}${detail ? ` — ${detail}` : ''}`);
   };
+  expect('Q0', 'two rows actually seeded, so the manual check has something to total');
   expect('Q1', 'REST PATCH of SP.View Aggregations/AggregationsStatus is accepted');
   expect('Q2', 'GetViewXml/SetViewXml carries an <Aggregations> block');
   expect('Q3', 'the written property reads back unchanged');
@@ -138,6 +159,18 @@
     if (!r.ok) return { ok: false, status: r.status, error: spError(await r.text()) };
     return { ok: true, status: r.status, d: (await r.json()).d };
   }
+  // An item POST's __metadata.type must be the LIST'S OWN entity type
+  // (SP.Data.<MangledListName>ListItem), not the generic SP.Data.ListItem —
+  // which the first version of this probe sent, earning two HTTP 400s that
+  // it then reported as "Seeded two rows". deploy.js has always resolved
+  // this properly; the probe did not.
+  async function entityTypeFor(listTitle) {
+    const r = await get(
+      `web/lists/getbytitle('${odataName(listTitle)}')?$select=ListItemEntityTypeFullName`,
+    );
+    if (!r.ok) throw new Error(`could not resolve the item entity type: ${r.error}`);
+    return r.d.ListItemEntityTypeFullName;
+  }
 
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
   let createdList = false;
@@ -168,14 +201,35 @@
       record('Q1', 'setup', 'ABORTED', `could not add ${AGG_FIELD}: HTTP ${field.status} ${field.error}`);
       throw new Error('setup failed');
     }
+    // Seed, and CHECK. The first version of this probe fired these two
+    // posts, ignored their responses and logged "Seeded two rows"; both had
+    // returned HTTP 400 and the list was empty for the manual step that
+    // followed. A probe that reports an unchecked claim is worse than no
+    // probe, so the seeded count is now a recorded question of its own and
+    // is read back from the list rather than assumed.
+    const itemType = await entityTypeFor(PROBE_LIST);
+    const seedErrors = [];
     for (const amount of [10, 32]) {
-      await post(`${listPath}/items`, {
-        __metadata: { type: 'SP.Data.ListItem' },
+      const seeded = await post(`${listPath}/items`, {
+        __metadata: { type: itemType },
         Title: `probe ${amount}`,
         [AGG_FIELD]: amount,
       });
+      if (!seeded.ok) seedErrors.push(`${amount}: HTTP ${seeded.status} ${seeded.error}`);
     }
-    log('INFO', `Seeded two rows; ${AGG_TYPE} of ${AGG_FIELD} should be 42.`);
+    const counted = await get(`${listPath}/ItemCount`);
+    const rowCount = counted.ok ? Number(counted.d.ItemCount) : NaN;
+    record(
+      'Q0',
+      'two rows actually seeded, so the manual check has something to total',
+      rowCount === 2 ? 'SEEDED' : 'FAILED',
+      seedErrors.length
+        ? `${seedErrors.join('; ')} (ItemCount=${rowCount})`
+        : `ItemCount=${rowCount}; ${AGG_TYPE} of ${AGG_FIELD} should be 42`,
+    );
+    if (rowCount !== 2) {
+      log('ERROR', 'The list is not correctly seeded — Q4 cannot be answered by looking at it. Fix this before trusting the verdict.');
+    }
 
     const view = await post(`${listPath}/views`, {
       __metadata: { type: 'SP.View' },
@@ -266,9 +320,16 @@
     // === Verdict =========================================================
     const mechanism = patched.ok ? 'patch' : (xmlWorked ? 'setviewxml' : 'none');
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
-    log('VERDICT', `mechanism=${mechanism} readback=${matches ? 'ok' : 'mismatch'} rendered=<fill in after looking>`);
+    log(
+      'VERDICT',
+      `seeded=${rowCount === 2 ? 'ok' : 'FAILED'} mechanism=${mechanism} `
+      + `readback=${matches ? 'ok' : 'mismatch'} rendered=<fill in after looking>`,
+    );
+    if (rowCount !== 2) {
+      log('ERROR', 'seeded=FAILED — an empty list shows no totals row whether the feature works or not, so `rendered=no` from this run would mean nothing. Fix the seeding and re-run before reporting.');
+    }
     log('INFO', 'Paste the VERDICT line back, with rendered= set to yes or no.');
-    return { mechanism, readback: matches ? 'ok' : 'mismatch', viewUrl, results };
+    return { seeded: rowCount, mechanism, readback: matches ? 'ok' : 'mismatch', viewUrl, results };
   } finally {
     if (createdList && CLEANUP_AT_END) {
       const gone = await post(listPath, undefined, { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
