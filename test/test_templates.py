@@ -200,3 +200,60 @@ def test_risk_register_demo_rows_cover_every_rating_band() -> None:
         f"only {sorted(set(resolved.values()))} of the four rating bands "
         f"are covered by the demo rows: {resolved}"
     )
+
+
+def _condition_fields(node: object) -> set[str]:
+    """Every column a condition tree reads, at any nesting depth.
+
+    The grammar's nodes are a Leaf/Group union, and a group may hold
+    groups — so walking beats indexing `.children` and assuming one level.
+    """
+    children = getattr(node, "children", None)
+    if children is not None:
+        return {name for child in children for name in _condition_fields(child)}
+    field = getattr(node, "field", None)
+    return {field} if isinstance(field, str) else set()
+
+
+def test_risk_register_shows_conditional_fields_only_when_they_apply() -> None:
+    """The form asks for what the answer implies, and nothing else.
+
+    Two of these pair a visibility rule with a save rule, and the pairing
+    is the point: `ToleranceEndDate` is mandatory exactly when the response
+    is Tolerate, so showing it any other time produces a field nobody needs
+    and a rejection whose cause is off-screen. Drop the visibility rule and
+    the save rule starts firing on forms that never displayed the column it
+    names — which is how a list stops accepting rows for reasons its
+    authors cannot see.
+    """
+    columns = _risk_bundle().mapping.form_visibility["Risk"].columns
+
+    tolerance = columns["ToleranceEndDate"]
+    assert tolerance.when is not None, (
+        "ToleranceEndDate must be conditional, not always shown"
+    )
+    fields = _condition_fields(tolerance.when)
+    assert fields == {"RiskResponse"}, (
+        f"the tolerance date is gated on the response, not {sorted(fields)}"
+    )
+
+    # Nobody closes a risk at creation, so this is off New entirely AND
+    # gated on Status once the item exists. Both halves matter.
+    closure = columns["ClosureStatement"]
+    assert closure.new is False, "ClosureStatement must not appear on the New form"
+    assert closure.when is not None, "ClosureStatement must be gated on Status"
+    assert _condition_fields(closure.when) == {"Status"}, (
+        "ClosureStatement must be gated on Status"
+    )
+
+    # Auto-stamped at creation by its own default; visible afterwards so a
+    # completed review can move it forward.
+    assert columns["LastReviewedDate"].new is False
+    assert columns["LastReviewedDate"].existing is True
+
+    # A calculated column can never carry a visibility rule (the build
+    # rejects it) and never renders on an entry form, so none may appear.
+    calculated = {"ResidualRiskRating", "RiskScore", "LevelsAboveTarget", "NextReviewDue"}
+    assert not (calculated & set(columns)), (
+        f"calculated columns cannot have form visibility: {sorted(calculated & set(columns))}"
+    )

@@ -46,9 +46,15 @@ how severe the risk is in absolute terms.
 
 **RiskResponse** is the strategy — Accept, Manage, Tolerate, Transfer,
 Terminate or Monitor. **Tolerate is always for a set period**: choose it
-and the register refuses to save without a **Tolerance End Date**, because
-a Tolerate with no expiry is really just an unrecorded Accept. Your Risk
-Sponsor should reassess and re-endorse before that date arrives.
+and a **Tolerance End Date** field appears, which the register then refuses
+to save without — a Tolerate with no expiry is really just an unrecorded
+Accept. Your Risk Sponsor should reassess and re-endorse before that date
+arrives.
+
+The date field is only on the form while Tolerate is selected, so you will
+not see it otherwise. If you switch away from Tolerate the field
+disappears but keeps whatever you last typed; nothing is lost if you
+switch back.
 
 **Treatment** is what you will *change*, with owners and dates — distinct
 from **Controls**, what already exists. When a treatment lands, re-rate:
@@ -77,11 +83,20 @@ update Last Reviewed Date last, once you're done. Review sooner than the
 cadence if anything material changes in between — the date is a ceiling,
 not a target.
 
+You will not see Last Reviewed Date when raising a new risk: it fills
+itself with today's date, which is the baseline every later cadence counts
+from. It appears once the risk exists, which is the only point at which
+moving it means anything.
+
 ## Closing a risk
 
 Closing needs a **Closure Statement**: why the risk is being closed against
 the closure criteria — residual at or below target, all actions closed,
-controls verified effective. It is a rich-text field, so unlike the
-Tolerance End Date rule above, the register cannot enforce that you filled
-it in — an RR Risk Manager checks it before moving Status to Closed. See
-`50-govern/GOVERNANCE.md` for the enforcement boundary in full.
+controls verified effective. The field appears once you set Status to
+Closed, and is absent when raising a new risk, since closing something you
+are still describing is not a thing anyone does.
+
+It is a rich-text field, so unlike the Tolerance End Date rule above, the
+register cannot enforce that you filled it in — an RR Risk Manager checks
+it before moving Status to Closed. See `50-govern/GOVERNANCE.md` for the
+enforcement boundary in full.

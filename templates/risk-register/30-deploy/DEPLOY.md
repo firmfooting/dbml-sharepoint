@@ -87,10 +87,19 @@ site that already holds real risks.
 - [ ] `ResidualRiskRating`, `RiskScore`, `LevelsAboveTarget` and
       `NextReviewDue` are calculated and never appear on the New or Edit
       form either.
-- [ ] Set `RiskResponse` to **Tolerate** and save with `ToleranceEndDate`
+- [ ] The form reacts as you fill it in. On a New form, `ToleranceEndDate`
+      and `ClosureStatement` are both absent. Set `RiskResponse` to
+      **Tolerate** and the date appears; switch to **Manage** and it
+      disappears again, keeping whatever was typed. `LastReviewedDate` is
+      absent on New and present on Edit.
+- [ ] With `RiskResponse` on **Tolerate**, save with `ToleranceEndDate`
       empty. Expected refusal: *"A Tolerate response is always for a set
       period: record the Tolerance End Date, and have the Risk Sponsor
-      reassess before it."*
+      reassess before it."* The field is on screen when this fires — that
+      pairing is the point of the visibility rule, and a refusal naming a
+      field the author cannot see is the failure it exists to prevent.
+- [ ] On an existing risk, set `Status` to **Closed** and confirm
+      `ClosureStatement` appears.
 - [ ] As an ordinary Member: read-only. As **RR Risk Managers**: Contribute.
 - [ ] Populate **RR Risk Managers**; delete the test risk.
 - [ ] Even as an owner: changing a deployed column's type, choices or

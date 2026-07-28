@@ -36,6 +36,16 @@ watched_lists: []
 # and jsgen provisions them in dependency order (_order_calculated_after_
 # references), so declaration order here does not matter.
 #
+# KNOWN, ACCEPTED: NextReviewDue adds months with
+# DATE(YEAR(d), MONTH(d)+N, DAY(d)), which OVERFLOWS at month end rather
+# than clamping — a review completed 31 January falls due 1 May rather
+# than 30 April, and 31 August + 6 months lands 3 March. The slip is one
+# to three days on a cadence of three months or more, against a column
+# whose own description says to review sooner on contextual change, so it
+# is not worth the formula budget an end-of-month-safe construction costs.
+# Tracked as issue #5; revisit if the cadence ever drives an obligation
+# that is counted in days.
+#
 # CHANGE CONTROL: SharePoint recalculates every existing row when a formula
 # changes — read 50-govern/GOVERNANCE.md before editing these cells.
 calculated_formulas:
@@ -208,6 +218,11 @@ views:
       fields: [Title, RiskResponse, ToleranceEndDate, ResidualRiskRating,
                RiskOwner, RiskSponsor, Status]
       where:
+        # RiskResponse is part of the filter, not decoration: nothing clears
+        # ToleranceEndDate when a risk moves off Tolerate, so a date-only
+        # filter re-surfaces every risk that was EVER tolerated as soon as
+        # its old end date enters the window.
+        - { field: RiskResponse, op: eq, value: "Tolerate" }
         - { field: ToleranceEndDate, op: leq, value: today+30 }
         - { field: Status, op: neq, value: "Closed" }
       sort:
@@ -256,6 +271,30 @@ form_visibility:
   Risk:
     columns:
       MatrixVersion: { new: false }
+      # A tolerance period only exists while the response IS Tolerate, so
+      # the date only appears then. This pairs with the save rule below:
+      # the field is visible exactly when it is mandatory, instead of
+      # sitting on every form and firing a rejection whose cause the
+      # author cannot see.
+      #
+      # Changing the response back does NOT clear an end date already
+      # entered — SharePoint has no such mechanism — so the field hides
+      # while keeping its value. That stale date is why the "Tolerance
+      # expiring" view filters on RiskResponse as well as the date.
+      ToleranceEndDate:
+        when:
+          - { field: RiskResponse, op: eq, value: "Tolerate" }
+      # Nobody closes a risk at creation, and the closure criteria are a
+      # governance act. Off the New form entirely, and on the edit form
+      # only once the author has actually selected Closed.
+      ClosureStatement:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Closed" }
+      # Stamped with today at creation by the column's own default. Showing
+      # it on the New form only invites someone to back-date the baseline
+      # every review cadence is then counted from.
+      LastReviewedDate: { new: false }
 
 # Form layouts: a strapline header and a sectioned body. SharePoint renders
 # per-field description hints inside sectioned forms on the NEW form only —
