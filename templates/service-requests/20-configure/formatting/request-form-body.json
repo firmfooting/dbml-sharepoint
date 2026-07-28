@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "displayname": "Describe the request",
+      "fields": ["Title", "Category", "RequestLocation", "Detail"]
+    },
+    {
+      "displayname": "Triage",
+      "fields": ["Priority", "Status"]
+    },
+    {
+      "displayname": "Resolution",
+      "fields": ["CompletedDate", "Resolution"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["RequestedBy", "RequestedDate", "AssignedTo"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["DaysToComplete"]
+    }
+  ]
+}

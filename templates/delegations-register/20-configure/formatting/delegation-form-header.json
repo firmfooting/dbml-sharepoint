@@ -1,0 +1,57 @@
+{
+  "elmType": "div",
+  "attributes": { "class": "ms-borderColor-neutralTertiary" },
+  "style": {
+    "width": "99%",
+    "border-top-width": "0px",
+    "border-bottom-width": "1px",
+    "border-left-width": "0px",
+    "border-right-width": "0px",
+    "border-style": "solid",
+    "margin-bottom": "16px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": { "display": "flex", "box-sizing": "border-box", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": {
+            "iconName": "Permissions",
+            "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+            "title": "Delegation"
+          },
+          "style": { "flex": "none", "padding": "0px", "height": "auto" }
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "style": { "box-sizing": "border-box", "width": "100%", "text-align": "left", "padding": "4px 8px", "overflow": "hidden" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
+          "txtContent": "=if([$Title] == '', 'New delegation', 'Delegation: ' + [$Title])"
+        },
+        {
+          "elmType": "div",
+          "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+          "txtContent": "This register transcribes the instrument, it never creates authority — copy the limit and conditions verbatim and cite the clause."
+        },
+        {
+          "elmType": "a",
+          "attributes": {
+            "class": "ms-fontColor-themePrimary ms-fontSize-12",
+            "href": "https://REPLACE-WITH-INSTRUMENT-OF-DELEGATION-URL",
+            "target": "_blank",
+            "title": "Open the approved instrument of delegation"
+          },
+          "style": { "display": "inline-block", "padding-top": "4px" },
+          "txtContent": "Open the instrument of delegation"
+        }
+      ]
+    }
+  ]
+}

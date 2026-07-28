@@ -53,6 +53,48 @@ policy-library pairing), the people affected were shown it, and
 2. TestNotes are dated and append-only in practice.
 3. Redirected items always name their destination register.
 
+### What is enforced at save, and what stays a governance check
+
+**Refused at save:**
+
+| Rule | Where it lives |
+|---|---|
+| An Adopted or Abandoned improvement has an AdoptedDate | `list_validation` |
+| An Adopted improvement has a MeasureAfter | `list_validation` |
+| MeasureBefore is present | the column's own `not null` — it has always been enforced |
+| RaisedDate is not in the future | `column_validation` on `RaisedDate` |
+| AdoptedDate is not in the future | `column_validation` on `AdoptedDate` |
+
+The two list rules share one message, because SharePoint gives a list a
+single validation formula and cannot say which branch failed. The two date
+rules read only their own column, so they sit there and keep their own
+wording — and they earn it: the median `DaysIdeaToOutcome` is a quarterly
+report line computed from those two dates and nothing else.
+
+**Still a governance check, and not by choice:**
+
+- **"No Testing without a prediction in ChangeIdea."** `ChangeIdea` is a
+  multi-line column, and SharePoint validation formulas cannot read those
+  at all — nor can they tell a prediction from a paragraph. The improvement
+  lead reads it at triage; the form's description hint asks for it on the
+  New form, where SharePoint still shows column descriptions.
+- **Three of the four adoption criteria.** "The measure moved as
+  predicted", "the new way replaced the old way" and "the people affected
+  were shown it" are judgements. Only `MeasureAfter` being recorded is a
+  column a formula can read, and it is the one that is enforced. Anything
+  less stays Testing, and that remains a decision a person makes.
+- **Rule 2, dated append-only TestNotes.** Multi-line again, and
+  "append-only in practice" is a habit rather than a state. Item version
+  history is the audit trail if one is ever needed.
+- **Rule 3, redirected items naming their destination.** A redirect is
+  recorded as Abandoned with the destination in TestNotes; the register
+  cannot check that a free-text pointer points anywhere.
+- **The cycle time cannot be validated against anything.**
+  `DaysIdeaToOutcome` is calculated, and SharePoint validation formulas
+  cannot read calculated columns — nor can conditional show/hide, which is
+  why nothing on this form appears or disappears in response to how long a
+  cycle has taken. Both would save cleanly, read back equal and never fire.
+
 ## Lifecycle
 
 Keep everything — Adopted is your evidence base, Abandoned your paid-for

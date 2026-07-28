@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "displayname": "What happened",
+      "fields": ["Title", "Category", "OccurredDate", "ReportedDate", "Detail"]
+    },
+    {
+      "displayname": "Triage",
+      "fields": ["Severity", "Status"]
+    },
+    {
+      "displayname": "Resolution",
+      "fields": ["ResolvedDate"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["ReportedBy", "Handler"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["DaysToResolve"]
+    }
+  ]
+}

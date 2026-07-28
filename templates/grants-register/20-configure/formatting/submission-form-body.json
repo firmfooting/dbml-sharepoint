@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The bid",
+      "fields": ["Title", "Funder", "AmountSought", "ProjectSummary"]
+    },
+    {
+      "displayname": "Submission and outcome",
+      "fields": ["DueDate", "SubmittedDate", "Outcome", "AmountAwarded", "AgreementUrl"]
+    },
+    {
+      "displayname": "Delivery",
+      "fields": ["GrantOwner", "ProjectEndDate"]
+    }
+  ]
+}

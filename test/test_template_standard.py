@@ -47,16 +47,21 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 # count: four theme branches shrank this set in parallel, and a number in
 # the comment would have been wrong on three of them and a merge conflict
 # on all four.
+#
+# `policy-library` is the one entry that is NOT simply awaiting its turn.
+# Its `PolicyRegister` half is uplifted in full; its `PolicyDocuments` half
+# is a `kind: DocumentLibrary`, and three parts of the standard do not
+# describe one — a view and a form body cannot name `FileLeafRef` (it is
+# not a rendered column, so the build refuses it), and the header's
+# `[$Title]` line reads empty on a library, where SharePoint does not
+# populate Title from the file name. Demo data for a library WAS worse than
+# unbuildable — it generated cleanly and posted an item with no file behind
+# it — which is now a build error in its own right. The template stays on
+# this roster until libraries are designed for once, for the whole fleet,
+# rather than four different ways; see the header comment in
+# `templates/policy-library/20-configure/mapping.yaml`.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "asset-register", "audit-actions", "change-register",
-    "complaints-feedback", "compliance-obligations", "contract-register",
-    "credentialing-register", "declarations-register",
-    "delegations-register", "equipment-maintenance", "grants-register",
-    "improvement-register", "incident-management", "measures-register",
-    "meeting-actions", "onboarding-tracker", "policy-library",
-    "process-register", "project-pipeline", "routine-checks",
-    "service-requests", "stakeholder-contacts", "switchboard-log",
-    "training-register", "vehicle-log", "visitor-log", "volunteer-register",
+    "policy-library",
 })
 
 # §1.2. Order never changes; a small list may collapse the middle beats but
@@ -172,6 +177,227 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Where it goes": "Act",
         "Outcome": "Govern",
     },
+    # === Process digitisation & improvement ==================================
+    # Five single-list templates that deliberately read as siblings: name the
+    # thing, assess it against the definitions, act, govern, and a System
+    # section holding the calculated score where one exists. measures-register
+    # has no calculated column and no auto-stamp, so it collapses System away
+    # rather than shipping an empty heading.
+    ("measures-register", "Measure"): {
+        "Name the measure": "Identify",
+        "Define it": "Assess",
+        "Report it": "Act",
+        "Govern it": "Govern",
+    },
+    # Decision and implementation are one beat here, not two: the register's
+    # governance IS its decision trail, and splitting them left the New form
+    # showing a heading with one hidden date under it.
+    ("change-register", "ChangeRequest"): {
+        "Describe the change": "Identify",
+        "Triage": "Assess",
+        "Decision and implementation": "Act",
+        "System": "System",
+    },
+    ("project-pipeline", "Proposal"): {
+        "The idea": "Identify",
+        "Scoping": "Assess",
+        "Decision and delivery": "Act",
+        "System": "System",
+    },
+    ("improvement-register", "Improvement"): {
+        "The idea": "Identify",
+        "Plan the test": "Assess",
+        "Test and outcome": "Act",
+        "System": "System",
+    },
+    ("process-register", "BusinessProcess"): {
+        "Name the process": "Identify",
+        "Score it": "Assess",
+        "Digitise it": "Act",
+        "Review": "Govern",
+        "System": "System",
+    },
+    # People & relationships. "Checks and clearances" is the Assess beat
+    # even though nothing is scored there: the checks ARE the assessment
+    # this register performs, and Active is the decision they gate.
+    ("volunteer-register", "Volunteer"): {
+        "Who they are": "Identify",
+        "Checks and clearances": "Assess",
+        "In the programme": "Act",
+        "Coordination": "Govern",
+    },
+    # The catalogue never reaches Govern: a Course row is a definition, and
+    # the governance that acts on it lives on TrainingRecord.
+    ("training-register", "Course"): {
+        "The course": "Identify",
+        "Requirement and validity": "Assess",
+        "Booking and content": "Act",
+    },
+    ("training-register", "TrainingRecord"): {
+        "Who and what": "Identify",
+        "When": "Assess",
+        "Evidence": "Act",
+        "Currency and notes": "Govern",
+    },
+    # Both lists collapse Assess: an onboarding record is not rated, it is
+    # scheduled. The middle beat is where the work is scheduled and owned.
+    ("onboarding-tracker", "Starter"): {
+        "The hire": "Identify",
+        "Start and ownership": "Act",
+        "Progress": "Govern",
+    },
+    ("onboarding-tracker", "OnboardingTask"): {
+        "The task": "Identify",
+        "Who and when": "Act",
+        "Outcome": "Govern",
+    },
+    # "Registration" and "Issue and expiry" are the Assess beat: on this
+    # register the assessment IS the documentary evidence, and the Act beat
+    # is what the organisation then does with it — grant a scope, or link
+    # the sighted proof.
+    ("credentialing-register", "Practitioner"): {
+        "The practitioner": "Identify",
+        "Registration": "Assess",
+        "Scope of practice": "Act",
+        "Standing": "Govern",
+    },
+    ("credentialing-register", "Credential"): {
+        "The credential": "Identify",
+        "Issue and expiry": "Assess",
+        "Evidence": "Act",
+        "Standing": "Govern",
+    },
+    # Meeting collapses to two beats and Decision to two, in both cases
+    # because there is genuinely nothing in the middle: a meeting is a fact
+    # plus its record, and a decision is a statement plus its reasoning.
+    ("meeting-actions", "Meeting"): {
+        "The meeting": "Identify",
+        "The record": "Govern",
+    },
+    ("meeting-actions", "Decision"): {
+        "The decision": "Identify",
+        "Why": "Assess",
+    },
+    ("meeting-actions", "ActionItem"): {
+        "The action": "Identify",
+        "Owner and date": "Act",
+        "Progress": "Govern",
+    },
+    # "What was said" is the Assess beat on a log whose whole job is
+    # judgement: the summary is what a colleague picking up the thread
+    # actually reads.
+    ("stakeholder-contacts", "Organisation"): {
+        "The organisation": "Identify",
+        "Ownership": "Govern",
+    },
+    ("stakeholder-contacts", "Contact"): {
+        "The person": "Identify",
+        "How to reach them": "Act",
+        "Standing and notes": "Govern",
+    },
+    ("stakeholder-contacts", "Interaction"): {
+        "What happened": "Identify",
+        "What was said": "Assess",
+        "Our record": "Govern",
+    },
+    # --- Operations & service ------------------------------------------
+    # A visit has nothing to assess: the middle beat collapses, which §1.2
+    # permits and names visitor-log as the case for.
+    ("visitor-log", "Visit"): {
+        "Who is visiting": "Identify",
+        "On site": "Act",
+        "Induction": "Govern",
+    },
+    ("service-requests", "Request"): {
+        "Describe the request": "Identify",
+        "Triage": "Assess",
+        "Resolution": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("complaints-feedback", "Feedback"): {
+        "What was raised": "Identify",
+        "Triage": "Assess",
+        "Response": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    # A reference list has one idea, so it gets one section. Collapsing to
+    # a single beat is what §1.2 permits at the small end.
+    ("asset-register", "Location"): {
+        "The place": "Identify",
+    },
+    ("asset-register", "Asset"): {
+        "What it is": "Identify",
+        "Where it is": "Act",
+        "Purchase and warranty": "Govern",
+        "System": "System",
+    },
+    ("vehicle-log", "Vehicle"): {
+        "The vehicle": "Identify",
+        "In service": "Govern",
+    },
+    ("vehicle-log", "Trip"): {
+        "The trip": "Identify",
+        "Out and back": "Act",
+        "System": "System",
+    },
+    ("routine-checks", "CheckPoint"): {
+        "The checkpoint": "Identify",
+        "What good looks like": "Assess",
+        "Ownership": "Govern",
+    },
+    ("routine-checks", "CheckEntry"): {
+        "The check": "Identify",
+        "What you found": "Assess",
+        "What you did": "Act",
+        "Ownership": "Govern",
+    },
+    ("equipment-maintenance", "Equipment"): {
+        "The item": "Identify",
+        "The schedule": "Assess",
+        "In service": "Govern",
+    },
+    ("equipment-maintenance", "MaintenanceEvent"): {
+        "The work": "Identify",
+        "Outcome": "Assess",
+        "Evidence": "Govern",
+    },
+    ("incident-management", "Incident"): {
+        "What happened": "Identify",
+        "Triage": "Assess",
+        "Resolution": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("incident-management", "CorrectiveAction"): {
+        "The action": "Identify",
+        "Progress": "Act",
+        "Ownership": "Govern",
+    },
+    ("switchboard-log", "CodeEvent"): {
+        "The code": "Identify",
+        "Times": "Assess",
+        "What switchboard did": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("switchboard-log", "MessageLog"): {
+        "The call": "Identify",
+        "Urgency": "Assess",
+        "Relay": "Act",
+        "Ownership": "Govern",
+        "System": "System",
+    },
+    ("switchboard-log", "Key"): {
+        "The key": "Identify",
+        "Who may take it": "Govern",
+    },
+    ("switchboard-log", "KeyMovement"): {
+        "The movement": "Identify",
+        "Out and back": "Act",
+        "Ownership": "Govern",
+    },
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a
@@ -280,6 +506,43 @@ def test_at_least_the_exemplars_are_uplifted() -> None:
     """The two templates every theme branch copies from are always in scope."""
     assert set(_uplifted()) >= {"risk-register", "tiered-huddle"}
 
+
+# The roster's floor, pinned. Every template on it needs a reason recorded
+# beside it, and the four theme branches have now landed, so the only
+# admissible reason left is the document-library gap in the standard itself
+# — not "we ran out of time" and not "this one is awkward".
+ROSTER_EXCEPTIONS: frozenset[str] = frozenset({"policy-library"})
+
+
+def test_the_roster_holds_only_its_documented_exception() -> None:
+    """The spec said this set must reach empty when the last theme branch
+    landed. It reached one, for a reason the spec did not anticipate:
+    `policy-library`'s `PolicyDocuments` half is a document library, and
+    three parts of the standard do not describe one (see the comment on
+    NOT_YET_UPLIFTED).
+
+    So the aspiration becomes a check. Adding a template here now fails
+    unless it is also added to ROSTER_EXCEPTIONS, which is a deliberate,
+    reviewable act — and the empty set stays the goal rather than becoming
+    a place to put anything inconvenient.
+    """
+    undocumented = NOT_YET_UPLIFTED - ROSTER_EXCEPTIONS
+    assert not undocumented, (
+        f"{sorted(undocumented)} are on NOT_YET_UPLIFTED with no recorded reason. "
+        f"The roster is not a way out of the standard: uplift the template, or "
+        f"document why it cannot be and add it to ROSTER_EXCEPTIONS."
+    )
+
+
+def test_the_roster_exceptions_are_still_needed() -> None:
+    """The mirror of the rule above. An exception left behind after its
+    template is uplifted would quietly exempt that template from every
+    assertion in this file."""
+    stale = ROSTER_EXCEPTIONS - NOT_YET_UPLIFTED
+    assert not stale, (
+        f"{sorted(stale)} are documented exceptions but no longer on the roster — "
+        f"delete them from ROSTER_EXCEPTIONS."
+    )
 
 
 def test_the_declared_section_beats_are_arc_beats() -> None:

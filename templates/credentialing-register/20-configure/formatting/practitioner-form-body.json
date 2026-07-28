@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The practitioner",
+      "fields": ["Title", "Discipline", "Role"]
+    },
+    {
+      "displayname": "Registration",
+      "fields": ["RegistrationNumber", "RegistrationExpiry"]
+    },
+    {
+      "displayname": "Scope of practice",
+      "fields": ["ScopeSummary", "ScopeApprovedDate", "ScopeReviewDate"]
+    },
+    {
+      "displayname": "Standing",
+      "fields": ["Status", "Notes"]
+    }
+  ]
+}

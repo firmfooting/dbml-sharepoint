@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "The meeting",
+      "fields": ["Title", "MeetingType", "MeetingDate", "Chair"]
+    },
+    {
+      "displayname": "The record",
+      "fields": ["MinutesUrl", "Notes"]
+    }
+  ]
+}

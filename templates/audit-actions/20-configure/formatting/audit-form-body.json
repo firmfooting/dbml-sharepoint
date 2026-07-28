@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "The review",
+      "fields": ["Title", "AuditType", "Auditor", "ReportDate", "ReportUrl"]
+    },
+    {
+      "displayname": "Response",
+      "fields": ["Sponsor", "Notes"]
+    }
+  ]
+}

@@ -63,3 +63,299 @@ list_permissions:
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
+
+# Backend internal names stay exactly as authored in the DBML (views and
+# indexes key on them); the deployer renames the display Title after
+# create. Auto PascalCase splitting handles every column here except the
+# initialism in EvidenceUrl, which auto-splits to "Evidence Url".
+display_names:
+  mode: auto
+  overrides:
+    Obligation:
+      EvidenceUrl: "Evidence URL"
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# website/docs/reference/style-guide.md). This template had NO
+# column_formatting at all, so a register whose whole purpose is to make a
+# gap visible rendered every status as identical grey text.
+column_formatting:
+  Obligation:
+    # Tokens by ROLE, not by word. "Not assessed" is the intake band — a
+    # row nobody has looked at yet, which is exactly what it means here and
+    # why the staff guide insists on leaving it there rather than guessing
+    # optimistically. "Not applicable" is the superseded band: still
+    # reviewed, but carrying no duty today.
+    ComplianceStatus:
+      style: severity
+      map:
+        "Not assessed": neutral
+        "Compliant": good
+        "Partially compliant": warning
+        "Non-compliant": severe
+        "Not applicable": muted
+    # The deadline, and deliberately UNGUARDED. Every other register in
+    # this theme guards its overdue date on a terminal status, because a
+    # date that keeps shouting after the row is finished trains people to
+    # ignore the colour. This register has no terminal status: 50-govern
+    # puts "Not applicable" on a review cycle like any other row, because
+    # applicability is exactly the thing that changes. Guarding on it would
+    # silence the rows most likely to have gone stale.
+    ReviewDate: { style: overdue-date }
+    # LastAssessedDate is deliberately unformatted. It is a historical
+    # stamp, not a deadline — there is no state in which it is "late", and
+    # an overdue-date treatment on it would colour every mature row red.
+
+# Every lens shows the same five identifying columns before its own
+# payload, so the spine is declared once (§1.9).
+field_sets:
+  Obligation:
+    identity: [Title, SourceType, SourceInstrument, Owner, ComplianceStatus]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). These are the five rows the old "Recommended
+# views" table asked the adopter to build by hand, now with filters, sorts,
+# grouping and pixel widths. Widths are keyed on INTERNAL names — the build
+# rewrites them to display titles, because ColumnWidth binds by display
+# name and an internal name silently resets.
+#
+# "By owner" is the DEFAULT rather than an unfiltered register view. The
+# alternative was a sixth, filterless view, and §1.4 allows a default plus
+# four lenses; more to the point, this register has no row that stops
+# mattering, so an unfiltered list and a grouped-by-owner list contain
+# exactly the same rows. Grouping is what makes the daily question — "which
+# of these are mine" — answerable at a glance.
+views:
+  Obligation:
+    - title: "By owner"
+      default: true
+      fields: ["@identity", ReviewDate, LastAssessedDate]
+      group_by: { field: Owner, collapsed: true }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 300
+        SourceType: 220
+        SourceInstrument: 220
+        Owner: 160
+        ComplianceStatus: 160
+        ReviewDate: 160
+        LastAssessedDate: 180
+    # The executive view, and the worklist 50-govern's remediation rules
+    # run on. Sorted by status ascending, which puts Non-compliant above
+    # Partially compliant alphabetically — the order that happens to be the
+    # order of severity here, and is asserted by nothing, so check it if you
+    # rename either member.
+    - title: "The gap list"
+      fields: ["@identity", ReviewDate, Notes]
+      where:
+        - { field: ComplianceStatus, op: in, value: ["Non-compliant", "Partially compliant"] }
+      sort:
+        - { field: ComplianceStatus, direction: asc }
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 280
+        SourceType: 220
+        SourceInstrument: 220
+        Owner: 160
+        ComplianceStatus: 160
+        ReviewDate: 160
+        Notes: 200
+    - title: "Not yet assessed"
+      fields: ["@identity", ReviewDate]
+      where:
+        - { field: ComplianceStatus, op: eq, value: "Not assessed" }
+      group_by: { field: Owner, collapsed: true }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 300
+        SourceType: 220
+        SourceInstrument: 220
+        Owner: 160
+        ComplianceStatus: 160
+        ReviewDate: 160
+    # today+60 is a ROLLING sixty days, not "next quarter". CAML has no
+    # calendar-period predicate; 50-govern's cycles are per-row anyway, so
+    # rolling is also the honest reading.
+    - title: "Reviews due"
+      fields: ["@identity", ReviewDate, LastAssessedDate]
+      where:
+        - { field: ReviewDate, op: leq, value: today+60 }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 280
+        SourceType: 220
+        SourceInstrument: 220
+        Owner: 160
+        ComplianceStatus: 160
+        ReviewDate: 160
+        LastAssessedDate: 180
+    # The accreditation pack, and the view two-level group_by was built
+    # for. SharePoint's own ceiling is two levels, which is exactly what
+    # this needs: instrument type, then the named instrument inside it.
+    # Both group columns are in `fields` — SharePoint groups by a column
+    # the view does not display and then has nothing to label the headers
+    # with.
+    - title: "By source"
+      fields: ["@identity", ReviewDate, EvidenceUrl]
+      group_by: { fields: [SourceType, SourceInstrument], collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        SourceType: 220
+        SourceInstrument: 220
+        Owner: 160
+        ComplianceStatus: 160
+        ReviewDate: 160
+        EvidenceUrl: 180
+
+# Form layouts: a strapline header and a sectioned body. Per-field
+# description hints render on the NEW form only — the edit form suppresses
+# column descriptions (platform limitation). Section field lists are
+# authored with INTERNAL names; the build rewrites them to display titles.
+#
+# NO guide link in the header, and that is a decision rather than an
+# omission. The standard permits one where a template genuinely points at
+# an external document, and this register points at DOZENS — a different
+# instrument per row, which is what SourceInstrument and EvidenceUrl are
+# for. A single header link could only ever be a placeholder the adopter
+# must remember to fix, on the form every obligation owner opens.
+form_formatting:
+  Obligation:
+    header: formatting/obligation-form-header.json
+    body: formatting/obligation-form-body.json
+
+# An assessment date only exists once an assessment has happened. Off the
+# form until the status leaves "Not assessed", which is also exactly when
+# the save rule below starts requiring it — the field is visible precisely
+# when it is mandatory, rather than sitting on every form and firing a
+# rejection whose cause the author cannot see.
+#
+# Changing the status back to "Not assessed" does NOT clear a date already
+# entered — SharePoint has no such mechanism — so the field hides while
+# keeping its value.
+form_visibility:
+  Obligation:
+    columns:
+      LastAssessedDate:
+        when:
+          - { field: ComplianceStatus, op: neq, value: "Not assessed" }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule has to share one message.
+column_validation:
+  Obligation:
+    columns:
+      # 50-govern's assessment standard is that a status is real only when
+      # set against sighted evidence AND dated. A date typed with next
+      # year's year dates an assessment that has not happened, and nothing
+      # downstream can tell.
+      LastAssessedDate:
+        when:
+          - { field: LastAssessedDate, op: leq, value: today }
+        message: "An assessment cannot have happened in the future. Use the date you actually sighted the evidence."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# TWO rules, chained: a list has ONE ValidationFormula, the top-level list
+# is an AND, and each is written as an implication — `if A then B` is
+# `any_of[not A, B]`, which is why every branch starts with the case the
+# rule does not apply to.
+#
+# They share ONE message, which is the cost of the shared slot, so the
+# message names both checks rather than describing one: SharePoint cannot
+# tell the author which branch failed.
+#
+# NOT enforceable, and therefore still a governance check (see
+# 50-govern/GOVERNANCE.md): the remediation pointer a gap row must carry.
+# It lives in Notes, which is rich text, and SharePoint validation formulas
+# cannot reference a multi-line column at all.
+list_validation:
+  Obligation:
+    when:
+      # Data-quality rule 1: no status other than "Not assessed" without a
+      # date. A status set without one is a claim with no provenance, and
+      # the register's entire answer to "how do you know you comply?" is
+      # provenance.
+      - any_of:
+          - { field: ComplianceStatus, op: eq, value: "Not assessed" }
+          - { field: LastAssessedDate, op: is_not_null }
+      # …and the other half of the same rule: evidence. "Not applicable" is
+      # excluded because its reasoning belongs in Notes, which validation
+      # cannot read — requiring EvidenceNotes there would ask for evidence
+      # of a duty that does not apply.
+      - any_of:
+          - { field: ComplianceStatus, op: not_in,
+              value: ["Compliant", "Partially compliant", "Non-compliant"] }
+          - { field: EvidenceNotes, op: is_not_null }
+    message: "This obligation cannot be saved yet. Check both: any status other than 'Not assessed' needs a Last Assessed Date, and Compliant, Partially compliant or Non-compliant also needs Evidence Notes saying what the evidence is and where it lives."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# review surfaces land on whatever day the demo runs; "@me" is the pasting
+# operator.
+#
+# Coverage: one row per ComplianceStatus member, four of the five source
+# types, and TWO instruments under one type — without that the "By source"
+# view demonstrates two-level grouping with only one level of content.
+demo_items:
+  Obligation:
+    - key: co-breach
+      values:
+        Title: "[DEMO] Report notifiable data breaches to the regulator within 72 hours"
+        SourceInstrument: "[DEMO] Privacy Act 1988 (Cth), Part IIIC"
+        SourceType: "Legislation / regulation"
+        ObligationDetail: "Demo row. An eligible data breach is assessed within 30 days and, if notifiable, reported to the regulator and to affected individuals within 72 hours of the assessment concluding."
+        Owner: "@me"
+        ComplianceStatus: "Compliant"
+        EvidenceUrl: "https://example.sharepoint.com/sites/compliance/demo-breach-procedure.pdf"
+        EvidenceNotes: "Demo row. Breach response procedure v4, plus the two desktop exercises run this year."
+        LastAssessedDate: "today-40"
+        ReviewDate: "today+320"
+    - key: co-food
+      values:
+        Title: "[DEMO] Maintain a current food safety program at each kitchen"
+        SourceInstrument: "[DEMO] Food Standards Code, Standard 3.3.1"
+        SourceType: "Legislation / regulation"
+        ObligationDetail: "Demo row. Each site kitchen holds a documented food safety program, audited annually by an approved auditor."
+        Owner: "@me"
+        ComplianceStatus: "Partially compliant"
+        EvidenceNotes: "Demo row. Two of three kitchens hold a current program; the third lapsed at the last audit."
+        LastAssessedDate: "today-70"
+        ReviewDate: "today+20"
+        Notes: "Demo row. Gap: the north site program has not been reissued since the kitchen refit. Remediation raised on the improvement register."
+    - key: co-screening
+      values:
+        Title: "[DEMO] Screen every admitted person for pressure-injury risk within 8 hours"
+        SourceInstrument: "[DEMO] NSQHS Standards, Action 5.21"
+        SourceType: "Accreditation standard"
+        ObligationDetail: "Demo row. A validated screening tool is completed and recorded in the clinical record within eight hours of admission."
+        Owner: "@me"
+        ComplianceStatus: "Non-compliant"
+        EvidenceNotes: "Demo row. Audit of 40 admissions found screening recorded in 22."
+        LastAssessedDate: "today-15"
+        ReviewDate: "today+30"
+        Notes: "Demo row. Gap: no prompt in the admission workflow. Remediation owner and date recorded on the change register."
+    - key: co-acquittal
+      values:
+        Title: "[DEMO] Submit the quarterly acquittal within 30 days of quarter end"
+        SourceInstrument: "[DEMO] Community Services Funding Agreement 2025-28, clause 14.2"
+        SourceType: "Funding agreement / contract"
+        ObligationDetail: "Demo row. A financial and performance acquittal is lodged in the funder's portal within thirty days of each quarter end."
+        Owner: "@me"
+        ComplianceStatus: "Not assessed"
+        ReviewDate: "today+45"
+    - key: co-classification
+      values:
+        Title: "[DEMO] Pay the correct classification rate under the award"
+        SourceInstrument: "[DEMO] Social, Community, Home Care and Disability Services Award, Schedule B"
+        SourceType: "Industrial instrument"
+        ObligationDetail: "Demo row. Classification levels are reviewed at appointment and at each anniversary, and the rate paid matches the level."
+        Owner: "@me"
+        ComplianceStatus: "Not applicable"
+        LastAssessedDate: "today-200"
+        ReviewDate: "today+540"
+        Notes: "Demo row. Not applicable while every role sits under the enterprise agreement rather than the award. Reviewed on cycle because that is exactly the fact that changes."

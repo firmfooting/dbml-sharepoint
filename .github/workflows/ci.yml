@@ -71,6 +71,13 @@ jobs:
         # never seeded, and CI stays green saying so.
         run: |
           set -euo pipefail
+          # The library's own size, counted the same way the build step
+          # above counts it, so neither side of the assertion below is a
+          # number somebody has to remember to update.
+          expected=0
+          for schema in templates/*/10-design/schema.dbml; do
+            expected=$((expected + 1))
+          done
           found=0
           for mapping in templates/*/20-configure/mapping.yaml; do
             grep -q '^demo_items:' "$mapping" || continue
@@ -88,8 +95,14 @@ jobs:
             node --check "build/$t-seed/demo-data.js"
             echo "::endgroup::"
           done
-          echo "Seeded $found bundle(s)."
-          test "$found" -ge 2
+          echo "Seeded $found of $expected template(s)."
+          # Every template ships demo_items — it is part of the family
+          # standard, not a feature some of them happen to use — so the
+          # honest assertion is equality, not a floor. A floor written when
+          # two templates seeded stays green while twenty-seven stop, which
+          # is the same open failure a hardcoded roster gives you, spelled
+          # as a number instead of a list.
+          test "$found" -eq "$expected"
 
   docs:
     # onBrokenLinks/onBrokenMarkdownLinks are 'throw', so this build is

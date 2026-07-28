@@ -74,12 +74,664 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Internal names stay authoritative (the lookup, the indexes, both
+# formulas and the reporting bundle bind to them); only display titles
+# change. Two overrides: auto-splitting turns "IsDrill" into "Is Drill",
+# which is a question rather than a column heading, and "CodeLocation"
+# exists to keep a bare "Location" out of the DBML.
+display_names:
+  mode: auto
+  overrides:
+    CodeEvent:
+      IsDrill: "Drill"
+      CodeLocation: "Location"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md), tokens mapped by the ROLE a member plays.
+#
+# AllClearAt is a bespoke file, and it is the third and most consequential
+# instance of this theme's blank-means-something pattern (visitor-log's
+# SignedOutAt and vehicle-log's ReturnedAt are the others). A blank cell
+# here is not missing data: it is a code that has not been stood down.
+# Where the other two render blank in the `low` treatment — a visitor is on
+# site, a car is out, both unremarkable — this one renders `severe` with a
+# warning icon and the word "Running", because a code with no all-clear is
+# either live or an incomplete record, and governance calls the missing
+# all-clear "the classic gap".
+#
+# "Pending relay" was mapped `neutral` before this uplift. A message
+# waiting to reach an on-call manager at 2 a.m. is the definition of needs
+# attention; the role table puts Waiting on `warning`, and that is where it
+# goes. "Closed - no relay needed" takes `muted` rather than a second
+# green — it is a decision that no relay was required, not a relay.
+#
+# MinutesToRelay takes its bar fill from Urgency, so twenty minutes reads
+# green on a Routine message and red on an Emergency one without the
+# operator consulting the escalation table.
+#
+# Deliberately NOT formatted: CodeType (nine emergency codes with no
+# gradient between them — a colour ladder over them would invent a
+# hierarchy your procedures do not have), and the two boolean columns,
+# which SharePoint renders as Yes/No and which no style in the library
+# covers.
 column_formatting:
+  CodeEvent:
+    AllClearAt: formatting/all-clear-at.json
+    DurationMinutes: { style: data-bar, max: 120, calculated: true }
   MessageLog:
-    Status: { style: severity, map: { "Pending relay": neutral, Relayed: good, "Closed - no relay needed": good } }
+    Urgency:
+      style: pill
+      map: { "Routine": neutral, "Urgent": warning, "Emergency": blocked }
+    Status:
+      style: severity
+      map:
+        "Pending relay": warning
+        "Relayed": good
+        "Closed - no relay needed": muted
+    MinutesToRelay:
+      style: data-bar
+      max: 60
+      calculated: true
+      color_by:
+        field: Urgency
+        map: { "Routine": neutral, "Urgent": warning, "Emergency": blocked }
   KeyMovement:
-    Status: { style: severity, map: { Out: low, Returned: good } }
+    Status:
+      style: severity
+      map: { "Out": low, "Returned": good }
+
+# The identifying spine each list's views open with. Three of the four
+# lists have three or more views sharing one, which is §1.9's threshold;
+# Key has two and names its columns directly.
+field_sets:
+  CodeEvent:
+    identity: [Title, CodeType, CodeLocation, IsDrill, AnnouncedAt, AllClearAt, AnnouncedBy]
+  MessageLog:
+    identity: [Title, TakenAt, CallerName, ForWhom, Urgency, Status, TakenBy]
+  KeyMovement:
+    identity: [Title, Key, IssuedTo, IssuedAt, Status, ReturnedAt, IssuedBy]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Twelve across four lists. Widths are pixel
+# ColumnWidth per view, keyed on INTERNAL names — the build rewrites them
+# to display titles, and ColumnWidth binds by display name.
+views:
+  CodeEvent:
+    - title: "Code log"
+      default: true
+      fields: ["@identity", DurationMinutes, InitiatedBy]
+      sort:
+        - { field: AnnouncedAt, direction: desc }
+      widths:
+        Title: 280
+        CodeType: 220
+        CodeLocation: 200
+        IsDrill: 110
+        AnnouncedAt: 180
+        AllClearAt: 180
+        AnnouncedBy: 160
+        DurationMinutes: 150
+        InitiatedBy: 200
+    - title: "Real events only"
+      fields: ["@identity", DurationMinutes, InitiatedBy]
+      where:
+        - { field: IsDrill, op: eq, value: false }
+      sort:
+        - { field: AnnouncedAt, direction: desc }
+      widths:
+        Title: 280
+        CodeType: 220
+        CodeLocation: 200
+        IsDrill: 110
+        AnnouncedAt: 180
+        AllClearAt: 180
+        AnnouncedBy: 160
+        DurationMinutes: 150
+        InitiatedBy: 200
+    # Governance asks for drill coverage per code type, and says the
+    # IsDrill filter should make the coverage GAP visible in one view.
+    # A flat filtered list cannot show a gap; grouping by code type can —
+    # a type with no group is a type nobody has drilled.
+    - title: "Drills"
+      fields: ["@identity", DurationMinutes]
+      where:
+        - { field: IsDrill, op: eq, value: true }
+      group_by: { field: CodeType, collapsed: true }
+      sort:
+        - { field: AnnouncedAt, direction: desc }
+      widths:
+        Title: 280
+        CodeType: 220
+        CodeLocation: 200
+        IsDrill: 110
+        AnnouncedAt: 180
+        AllClearAt: 180
+        AnnouncedBy: 160
+        DurationMinutes: 150
+    # The missing all-clear is what governance calls the classic gap: the
+    # code ended, the operator moved on, and the row says the code is still
+    # running. On a live board this view is either the current emergency or
+    # this morning's tidy-up, and either way somebody has to look.
+    - title: "Still running"
+      fields: ["@identity", InitiatedBy]
+      where:
+        - { field: AllClearAt, op: is_null }
+      sort:
+        - { field: AnnouncedAt, direction: asc }
+      widths:
+        Title: 280
+        CodeType: 220
+        CodeLocation: 200
+        IsDrill: 110
+        AnnouncedAt: 180
+        AllClearAt: 180
+        AnnouncedBy: 160
+        InitiatedBy: 200
+  MessageLog:
+    # The live board every operator watches, and the first thing checked at
+    # handover.
+    #
+    # The published table asked for "Urgency then oldest". SharePoint sorts
+    # a Choice column as text, and this enum sorts Emergency, Routine,
+    # Urgent — so neither direction gives the intended order, and there is
+    # no numeric rank column to sort on. The view sorts oldest first, and
+    # urgency is carried by the pill and by the row wash instead, which is
+    # the honest substitution. 30-deploy/DEPLOY.md says so.
+    #
+    # THE ROW WASH LIVES HERE, and it is this list's one row-level signal
+    # (§1.6). An Emergency message still pending relay at 2 a.m. is the
+    # drop-everything row. The formatter reads [$Urgency], so Urgency must
+    # stay in this view's `fields`: a view formatter can only see the
+    # columns its own view displays. It compares with `==` because Urgency
+    # is a plain Choice column and a view formatter's [$Field] arrives
+    # clean — the `string;#` prefix belongs to column formatting over
+    # calculated columns and would be wrong here.
+    - title: "Pending relay"
+      default: true
+      fields: ["@identity", CallerContact, RelayedTo, RelayedAt]
+      where:
+        - { field: Status, op: eq, value: "Pending relay" }
+      sort:
+        - { field: TakenAt, direction: asc }
+      formatting: formatting/row-emergency.json
+      widths:
+        Title: 260
+        TakenAt: 180
+        CallerName: 200
+        ForWhom: 200
+        Urgency: 130
+        Status: 220
+        TakenBy: 160
+        CallerContact: 160
+        RelayedTo: 200
+        RelayedAt: 180
+    # The published table promised an "Overnight report" filtered to the
+    # last 24 hours. CAML has no rolling-hours predicate — `today-1` is
+    # midnight yesterday, so this view is the last one to two days
+    # depending on when it is opened. That is right for a morning handover
+    # and wrong for an exact 24-hour count; 30-deploy/DEPLOY.md says which.
+    - title: "Last 24 hours"
+      fields: ["@identity", CallerContact, RelayedTo, RelayedAt, MinutesToRelay]
+      where:
+        - { field: TakenAt, op: geq, value: today-1 }
+      sort:
+        - { field: TakenAt, direction: desc }
+      widths:
+        Title: 240
+        TakenAt: 180
+        CallerName: 200
+        ForWhom: 200
+        Urgency: 130
+        Status: 220
+        TakenBy: 160
+        CallerContact: 160
+        RelayedTo: 200
+        RelayedAt: 180
+        MinutesToRelay: 150
+    # Governance publishes a relay target per urgency band. This is where
+    # the manager finds out whether the targets are met — grouped by band,
+    # rolling thirty days, with each message's own minutes and a bar. There
+    # is no mean under a group: column aggregations are not a capability
+    # this tool ships.
+    - title: "Relay times"
+      fields: ["@identity", RelayedTo, RelayedAt, MinutesToRelay]
+      where:
+        - { field: Status, op: eq, value: "Relayed" }
+        - { field: TakenAt, op: geq, value: today-30 }
+      group_by: { field: Urgency, collapsed: true }
+      totals:
+        MinutesToRelay: avg
+      sort:
+        - { field: TakenAt, direction: desc }
+      widths:
+        Title: 240
+        TakenAt: 180
+        CallerName: 200
+        ForWhom: 200
+        Urgency: 130
+        Status: 220
+        TakenBy: 160
+        RelayedTo: 200
+        RelayedAt: 180
+        MinutesToRelay: 150
+  Key:
+    - title: "The key register"
+      default: true
+      fields: [Title, KeyRef, Covers, Restrictions, Active]
+      where:
+        - { field: Active, op: eq, value: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        KeyRef: 130
+        Covers: 240
+        Restrictions: 280
+        Active: 110
+    # A lost or retired key is unticked, never deleted — the movements
+    # against it are security evidence, and the lock-change decision is
+    # recorded here. This is where those keys live.
+    - title: "Retired and lost keys"
+      fields: [Title, KeyRef, Covers, Restrictions, Active]
+      where:
+        - { field: Active, op: eq, value: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        KeyRef: 130
+        Covers: 240
+        Restrictions: 280
+        Active: 110
+  KeyMovement:
+    # The glance that answers "who has it?", and the second thing checked
+    # at handover.
+    - title: "Keys out now"
+      default: true
+      fields: ["@identity", Notes]
+      where:
+        - { field: Status, op: eq, value: "Out" }
+      sort:
+        - { field: IssuedAt, direction: asc }
+      widths:
+        Title: 240
+        Key: 220
+        IssuedTo: 240
+        IssuedAt: 180
+        Status: 130
+        ReturnedAt: 180
+        IssuedBy: 160
+        Notes: 200
+    # Governance chases any key out longer than its purpose warrants. A key
+    # issued before midnight this morning and still out is that chase list.
+    - title: "Out since before today"
+      fields: ["@identity", Notes]
+      where:
+        - { field: Status, op: eq, value: "Out" }
+        - { field: IssuedAt, op: lt, value: today }
+      sort:
+        - { field: IssuedAt, direction: asc }
+      widths:
+        Title: 240
+        Key: 220
+        IssuedTo: 240
+        IssuedAt: 180
+        Status: 130
+        ReturnedAt: 180
+        IssuedBy: 160
+        Notes: 200
+    # Every movement ever, grouped under its key and collapsed. This is the
+    # quarterly catalogue audit's working surface: pick the key, expand it,
+    # read its whole history. A per-key FILTER is not buildable — SharePoint
+    # has no per-parent view — and grouping is the idiom that replaces it
+    # (§2.4), one view rather than one per key.
+    - title: "By key"
+      fields: ["@identity", Notes]
+      group_by: { field: Key, collapsed: true }
+      sort:
+        - { field: IssuedAt, direction: desc }
+      widths:
+        Title: 240
+        Key: 220
+        IssuedTo: 240
+        IssuedAt: 180
+        Status: 130
+        ReturnedAt: 180
+        IssuedBy: 160
+        Notes: 200
+
+# Three of the four lists are filled in two passes, and the forms follow
+# the operators' guide rather than the schema. During a code the operator's
+# job is the code: two fields and save, the rest at stand-down. A message
+# is taken, then relayed, then recorded. A key goes out, then comes back.
+# Each second-pass field is off the New form, and the relay and return
+# fields also wait until the status that gives them meaning.
+#
+# reconcile: exact makes this file authoritative for each list — every
+# other column's conditional formula is cleared on each deploy.
+form_visibility:
+  CodeEvent:
+    reconcile: exact
+    columns:
+      AllClearAt: { new: false }
+      EventNotes: { new: false }
+  MessageLog:
+    reconcile: exact
+    columns:
+      RelayedTo:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Relayed" }
+      RelayedAt:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Relayed" }
+  KeyMovement:
+    reconcile: exact
+    columns:
+      ReturnedAt:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Returned" }
+
+# Form layouts: a strapline header and sections on all four lists. The
+# KeyMovement title line falls back to "Key movement" rather than "New key
+# movement", because Title is optional there — a movement is identified by
+# its key and its time, so an empty Title does not mean the row is new.
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+form_formatting:
+  CodeEvent:
+    header: formatting/codeevent-form-header.json
+    body: formatting/codeevent-form-body.json
+  MessageLog:
+    header: formatting/messagelog-form-header.json
+    body: formatting/messagelog-form-body.json
+  Key:
+    header: formatting/key-form-header.json
+    body: formatting/key-form-body.json
+  KeyMovement:
+    header: formatting/keymovement-form-header.json
+    body: formatting/keymovement-form-body.json
+
+# Per-column save rules, each with its own message. Every one of these
+# columns is a DATETIME, and TODAY() in a SharePoint validation formula is
+# midnight — so `leq today` would reject everything stamped after 00:00,
+# which at a switchboard is everything. `today+1` is the midnight
+# allowance: any time today passes, next month does not.
+#
+# The switchboard record is only trusted because it is contemporaneous, so
+# a mistyped year on a code announcement is not a cosmetic error: it moves
+# an emergency activation out of the committee's monthly window entirely.
+column_validation:
+  CodeEvent:
+    columns:
+      AnnouncedAt:
+        when:
+          - { field: AnnouncedAt, op: leq, value: today+1 }
+        message: "A code cannot be announced in the future. Use the time the announcement was actually made."
+      AllClearAt:
+        when:
+          - { field: AllClearAt, op: leq, value: today+1 }
+        message: "An all-clear cannot be in the future. Leave it blank until stand-down is announced."
+  MessageLog:
+    columns:
+      TakenAt:
+        when:
+          - { field: TakenAt, op: leq, value: today+1 }
+        message: "A message cannot be taken in the future. Use the time the call came in."
+      RelayedAt:
+        when:
+          - { field: RelayedAt, op: leq, value: today+1 }
+        message: "A relay cannot be in the future. Leave it blank until someone has actually received the message."
+  KeyMovement:
+    columns:
+      IssuedAt:
+        when:
+          - { field: IssuedAt, op: leq, value: today+1 }
+        message: "A key cannot be issued in the future. Use the time it left the switch."
+      ReturnedAt:
+        when:
+          - { field: ReturnedAt, op: leq, value: today+1 }
+        message: "A return cannot be in the future. Leave it blank until the key is physically back."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column.
+#
+# MessageLog is governance's data-quality rule 3 — messages record who
+# ACTUALLY received them, not who was attempted — and it is the rule the
+# whole message book stands on. "Left voicemail" is not relayed; a message
+# marked Relayed with no name and no time is a 2 a.m. call with no trail,
+# which is the failure the register exists to prevent.
+#
+# KeyMovement: a movement marked Returned with no return time leaves the
+# key register unable to say when it came back, which is the one question
+# a security audit asks.
+#
+# Deliberately NOT declared on CodeEvent: the completeness rule the
+# switchboard manager checks within a business day (times, all-clear,
+# notes) is not expressible. EventNotes is rich text, which SharePoint
+# validation formulas cannot reference at all; and requiring an AllClearAt
+# would refuse to save the row at the moment a code is ANNOUNCED, which is
+# precisely when it must be recorded. The "Still running" view is the
+# control instead, and 50-govern/GOVERNANCE.md says so.
+list_validation:
+  MessageLog:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Relayed" }
+        - all_of:
+            - { field: RelayedTo, op: is_not_null }
+            - { field: RelayedAt, op: is_not_null }
+    message: "A relayed message records who actually received it and when. If you only left a voicemail, it is still Pending relay."
+  KeyMovement:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Returned" }
+        - { field: ReturnedAt, op: is_not_null }
+    message: "A key marked Returned needs the time it came back."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Keys are created before
+# the movements that reference them. Coverage: every Status and Urgency
+# member, real events and drills on both sides of the IsDrill filter, a
+# code still running so the "Running" treatment is visible, and an
+# Emergency message still pending so the row wash fires.
+#
+# Nothing here contains clinical detail. Operators log what switchboard
+# DID; the healthcare note in 50-govern/GOVERNANCE.md is emphatic about
+# that boundary and demo data that blurred it would undermine the document
+# it sits beside.
+demo_items:
+  CodeEvent:
+    - key: sb-code-orange-drill
+      values:
+        Title: "[DEMO] Code Orange - evacuation drill, administration wing"
+        CodeType: "Code Orange - evacuation"
+        CodeLocation: "Administration wing, levels 1 and 2"
+        IsDrill: true
+        AnnouncedAt: "today-45"
+        AllClearAt: "today-45"
+        AnnouncedBy: "@me"
+        InitiatedBy: "Emergency planning committee - scheduled drill"
+        EventNotes: "Demo row. Announced 10:02, all-clear 10:31. Two wardens reported by radio; the level 2 warden phone did not answer and was followed up. Assembly point roll took 14 minutes."
+    - key: sb-code-black-real
+      values:
+        Title: "[DEMO] Code Black - personal threat, main reception"
+        CodeType: "Code Black - personal threat"
+        CodeLocation: "Main reception"
+        IsDrill: false
+        AnnouncedAt: "today-20"
+        AllClearAt: "today-20"
+        AnnouncedBy: "@me"
+        InitiatedBy: "Reception, ext 2001"
+        EventNotes: "Demo row. Security paged and attended within three minutes. Police not required. Duty manager notified and attended. Switchboard held the line open with reception throughout."
+    - key: sb-code-red-drill
+      values:
+        Title: "[DEMO] Code Red - fire drill, clinic wing"
+        CodeType: "Code Red - fire / smoke"
+        CodeLocation: "Clinic wing, ground floor"
+        IsDrill: true
+        AnnouncedAt: "today-9"
+        AllClearAt: "today-9"
+        AnnouncedBy: "@me"
+        InitiatedBy: "Fire safety adviser - scheduled drill"
+        EventNotes: "Demo row. Announced 14:15, all-clear 14:34. Fire panel silenced by the fire safety adviser. One extinguisher found out of position and reported to maintenance."
+    - key: sb-code-blue-real
+      values:
+        Title: "[DEMO] Code Blue - Ward 2 north"
+        CodeType: "Code Blue - medical emergency"
+        CodeLocation: "Ward 2 north, bed bay 4"
+        IsDrill: false
+        AnnouncedAt: "today-2"
+        AllClearAt: "today-2"
+        AnnouncedBy: "@me"
+        InitiatedBy: "Ward 2 north nurse in charge, ext 2214"
+        EventNotes: "Demo row. Announced 03:20, response team paged on the first attempt, all-clear 03:47. Switchboard logged the page acknowledgements and notified the after-hours manager."
+    - key: sb-code-yellow-running
+      values:
+        Title: "[DEMO] Code Yellow - water leak, level 1 plant room"
+        CodeType: "Code Yellow - internal emergency"
+        CodeLocation: "Level 1 plant room"
+        IsDrill: false
+        AnnouncedAt: "today"
+        AnnouncedBy: "@me"
+        InitiatedBy: "Maintenance, ext 2440"
+  MessageLog:
+    - key: sb-msg-closed
+      values:
+        Title: "[DEMO] Supplier confirming a delivery window"
+        TakenAt: "today-8"
+        CallerName: "[DEMO] Northbridge Supplies, dispatch"
+        CallerContact: "03 5555 0142"
+        ForWhom: "Stores coordinator"
+        MessageDetail: "Demo row. Delivery moved to Thursday morning. Caller said no call-back needed and the stores email had already been sent."
+        Urgency: "Routine"
+        Status: "Closed - no relay needed"
+        TakenBy: "@me"
+    - key: sb-msg-relayed-routine
+      values:
+        Title: "[DEMO] Contractor confirming Saturday access"
+        TakenAt: "today-5"
+        CallerName: "[DEMO] Kestrel Electrical, D. Whitcombe"
+        CallerContact: "0400 555 118"
+        ForWhom: "Facilities coordinator"
+        MessageDetail: "Demo row. Confirming two electricians on site 07:00 Saturday for the switchboard testing. Needs the plant room key left at the switch."
+        Urgency: "Routine"
+        Status: "Relayed"
+        RelayedTo: "Facilities coordinator, in person at 08:15"
+        RelayedAt: "today-5"
+        TakenBy: "@me"
+    - key: sb-msg-relayed-urgent
+      values:
+        Title: "[DEMO] Locum agency - replacement for the night shift"
+        TakenAt: "today-2"
+        CallerName: "[DEMO] Southern Locum Agency, T. Brennan"
+        CallerContact: "1300 555 007"
+        ForWhom: "After-hours nurse manager"
+        MessageDetail: "Demo row. Agency cannot fill the Thursday night shift and needs a decision on splitting it across two half shifts before 09:00."
+        Urgency: "Urgent"
+        Status: "Relayed"
+        RelayedTo: "After-hours nurse manager, by phone, answered"
+        RelayedAt: "today-2"
+        TakenBy: "@me"
+    - key: sb-msg-urgent-pending
+      values:
+        Title: "[DEMO] Pathology courier delayed"
+        TakenAt: "today-1"
+        CallerName: "[DEMO] Regional Pathology, courier desk"
+        CallerContact: "03 5555 0330"
+        ForWhom: "Laboratory manager"
+        MessageDetail: "Demo row. Courier delayed by roadworks; collection now 30 to 45 minutes late. Asked that the lab be told so the samples are not left out."
+        Urgency: "Urgent"
+        Status: "Pending relay"
+        TakenBy: "@me"
+    - key: sb-msg-emergency-pending
+      values:
+        Title: "[DEMO] Water authority - mains shutdown in two hours"
+        TakenAt: "today"
+        CallerName: "[DEMO] Regional Water, incident line"
+        CallerContact: "1800 555 900"
+        ForWhom: "On-call facilities manager"
+        MessageDetail: "Demo row. Emergency main repair. Site water off from 22:00 for up to six hours. Caller needs acknowledgement from a named site contact before they proceed."
+        Urgency: "Emergency"
+        Status: "Pending relay"
+        TakenBy: "@me"
+  Key:
+    - key: sb-key-pharmacy
+      values:
+        Title: "[DEMO] Pharmacy main"
+        KeyRef: "[DEMO] K-014"
+        Covers: "Pharmacy dispensary door and the imprest cupboard"
+        Restrictions: "Pharmacist or the on-call director only. Sight ID for anyone not known to the operator."
+        Active: true
+    - key: sb-key-master
+      values:
+        Title: "[DEMO] Master - admin wing"
+        KeyRef: "[DEMO] K-002"
+        Covers: "All administration offices, levels 1 and 2"
+        Restrictions: "Named managers and after-hours cleaning supervisor. Not to leave site."
+        Active: true
+    - key: sb-key-plant
+      values:
+        Title: "[DEMO] Plant room"
+        KeyRef: "[DEMO] K-031"
+        Covers: "Level 1 plant room and the roof access hatch"
+        Restrictions: "Maintenance staff and contractors with a current permit. Check the permit before issuing."
+        Active: true
+    - key: sb-key-oldstore
+      values:
+        Title: "[DEMO] Old store room"
+        KeyRef: "[DEMO] K-008"
+        Covers: "Former store room, ground floor"
+        Restrictions: "Reported lost. Lock changed; this tag is void and is kept so its movement history stays readable."
+        Active: false
+  KeyMovement:
+    - key: sb-km-pharmacy-old
+      values:
+        Title: "[DEMO] Imprest top-up"
+        Key: { demo_ref: sb-key-pharmacy }
+        IssuedTo: "S. Mehta, on-call pharmacist"
+        IssuedAt: "today-10"
+        Status: "Returned"
+        ReturnedAt: "today-10"
+        IssuedBy: "@me"
+        Notes: "Demo row. ID sighted. Out 21:40, back 22:15."
+    - key: sb-km-plant-old
+      values:
+        Title: "[DEMO] Boiler pressure check"
+        Key: { demo_ref: sb-key-plant }
+        IssuedTo: "R. Okafor, maintenance"
+        IssuedAt: "today-6"
+        Status: "Returned"
+        ReturnedAt: "today-6"
+        IssuedBy: "@me"
+    - key: sb-km-master-old
+      values:
+        Title: "[DEMO] After-hours cleaning round"
+        Key: { demo_ref: sb-key-master }
+        IssuedTo: "L. Petrov, cleaning supervisor, Brightway Services"
+        IssuedAt: "today-3"
+        Status: "Returned"
+        ReturnedAt: "today-3"
+        IssuedBy: "@me"
+        Notes: "Demo row. Regular Wednesday round. Key back at the switch before the supervisor left site."
+    - key: sb-km-pharmacy-out
+      values:
+        Title: "[DEMO] Overnight dispensing - still out"
+        Key: { demo_ref: sb-key-pharmacy }
+        IssuedTo: "S. Mehta, on-call pharmacist"
+        IssuedAt: "today-1"
+        Status: "Out"
+        IssuedBy: "@me"
+        Notes: "Demo row. Issued 23:10 and not yet back at the switch. This is the row the out-since-before-today chase finds."
+    - key: sb-km-plant-out
+      values:
+        Title: "[DEMO] Leak response - plant room"
+        Key: { demo_ref: sb-key-plant }
+        IssuedTo: "R. Okafor, maintenance"
+        IssuedAt: "today"
+        Status: "Out"
+        IssuedBy: "@me"
+        Notes: "Demo row. Issued for the Code Yellow water leak; expected back at stand-down."

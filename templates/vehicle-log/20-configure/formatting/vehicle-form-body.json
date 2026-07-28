@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "The vehicle",
+      "fields": ["Title", "Rego", "MakeModel"]
+    },
+    {
+      "displayname": "In service",
+      "fields": ["HomeLocation", "Status", "Notes"]
+    }
+  ]
+}

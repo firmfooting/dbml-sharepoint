@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The check",
+      "fields": ["Title", "CheckPoint", "CheckedAt"]
+    },
+    {
+      "displayname": "What you found",
+      "fields": ["Reading", "Result"]
+    },
+    {
+      "displayname": "What you did",
+      "fields": ["ActionTaken"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["CheckedBy"]
+    }
+  ]
+}
