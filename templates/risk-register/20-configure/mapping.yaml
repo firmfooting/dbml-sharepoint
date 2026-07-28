@@ -128,3 +128,104 @@ column_formatting:
         "Uncontrolled": blocked
     NextReviewDue: { style: overdue-date, guard: { field: Status, not: [Closed] } }
     ToleranceEndDate: { style: overdue-date, guard: { field: Status, not: [Closed] } }
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). The default is the "open work" view. "Above
+# target" and "Tolerance expiring" carry the closure and tolerance lenses.
+# Widths are pixel ColumnWidth per view, keys are INTERNAL names (the build
+# rewrites them to display titles — ColumnWidth binds by display name, and
+# internal names silently reset). Rating pills ~160, dates ~140-180, people
+# ~160, status chips ~100-110, Title widest on sparser views.
+views:
+  Risk:
+    - title: "Open by score"
+      default: true
+      fields: [Title, Category, Likelihood, Consequence, ResidualRiskRating,
+               RiskScore, LevelsAboveTarget, RiskOwner, Status, NextReviewDue]
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: RiskScore, direction: desc }
+      # ONE row-level signal, reserved for Extreme. Everything else stays
+      # cell-level: a second wash for above-target rows duplicated the LAT
+      # cell's own escalation and read as noise on High rows.
+      formatting: formatting/row-extreme.json
+      widths:
+        Title: 280
+        Category: 130
+        Likelihood: 110
+        Consequence: 120
+        ResidualRiskRating: 160
+        RiskScore: 140
+        LevelsAboveTarget: 150
+        RiskOwner: 160
+        Status: 100
+        NextReviewDue: 160
+    - title: "Reviews due"
+      fields: [Title, RiskOwner, Status, ResidualRiskRating, RiskScore,
+               NextReviewDue, LastReviewedDate]
+      where:
+        - { field: NextReviewDue, op: leq, value: today+30 }
+      sort:
+        - { field: NextReviewDue, direction: asc }
+      widths:
+        Title: 300
+        RiskOwner: 160
+        Status: 100
+        ResidualRiskRating: 160
+        RiskScore: 140
+        NextReviewDue: 160
+        LastReviewedDate: 180
+    - title: "Above target"
+      fields: [Title, ResidualRiskRating, TargetRiskRating, LevelsAboveTarget,
+               RiskScore, OverallControlEffectiveness, RiskOwner, Status,
+               NextReviewDue, LastReviewedDate]
+      where:
+        - { field: LevelsAboveTarget, op: gt, value: 0 }
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: LevelsAboveTarget, direction: desc }
+        - { field: RiskScore, direction: desc }
+      widths:
+        Title: 260
+        ResidualRiskRating: 160
+        TargetRiskRating: 160
+        LevelsAboveTarget: 150
+        RiskScore: 140
+        OverallControlEffectiveness: 220
+        RiskOwner: 160
+        Status: 100
+        NextReviewDue: 160
+        LastReviewedDate: 180
+    - title: "Tolerance expiring"
+      fields: [Title, RiskResponse, ToleranceEndDate, ResidualRiskRating,
+               RiskOwner, RiskSponsor, Status]
+      where:
+        - { field: ToleranceEndDate, op: leq, value: today+30 }
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: ToleranceEndDate, direction: asc }
+      widths:
+        Title: 300
+        RiskResponse: 130
+        ToleranceEndDate: 170
+        ResidualRiskRating: 160
+        RiskOwner: 160
+        RiskSponsor: 160
+        Status: 100
+    - title: "Closed risks"
+      fields: [Title, ResidualRiskRating, TargetRiskRating,
+               OverallControlEffectiveness, ClosureStatement, RiskOwner,
+               LastReviewedDate]
+      where:
+        - { field: Status, op: eq, value: "Closed" }
+      sort:
+        - { field: LastReviewedDate, direction: desc }
+      widths:
+        Title: 240
+        ResidualRiskRating: 160
+        TargetRiskRating: 160
+        OverallControlEffectiveness: 220
+        ClosureStatement: 200
+        RiskOwner: 160
+        LastReviewedDate: 180

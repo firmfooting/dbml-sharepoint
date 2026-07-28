@@ -56,3 +56,28 @@ def test_every_risk_formula_is_version_guarded_and_within_the_length_limit() -> 
         assert len(formula) <= MAX_CALCULATED_FORMULA, (
             f"{name} is {len(formula)} chars, over the {MAX_CALCULATED_FORMULA} ceiling"
         )
+
+
+def test_risk_register_declares_its_five_working_views() -> None:
+    """The default view is what everyone lands on, and the other four are
+    the register's governance lenses. A view silently dropped leaves the
+    list on SharePoint's untouched "All Items", which shows every column
+    unsorted — and the build still exits 0."""
+    views = _risk_bundle().mapping.views["Risk"]
+    titles = [v.title for v in views]
+    assert titles == [
+        "Open by score", "Reviews due", "Above target",
+        "Tolerance expiring", "Closed risks",
+    ], titles
+    default = [v for v in views if v.default]
+    assert len(default) == 1 and default[0].title == "Open by score", (
+        f"exactly one default view, and it must be the open-work view: {default}"
+    )
+    # Every view carries widths: SharePoint's own defaults truncate the
+    # rating pills and the Title column at the widths this register needs.
+    for view in views:
+        assert view.widths, f"{view.title} declares no column widths"
+        assert set(view.widths) <= set(view.fields), (
+            f"{view.title} sets a width for a column it does not show: "
+            f"{sorted(set(view.widths) - set(view.fields))}"
+        )
