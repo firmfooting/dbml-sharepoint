@@ -50,7 +50,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
     "meeting-actions", "onboarding-tracker",
-    "policy-library", "process-register", "project-pipeline", "routine-checks",
+    "policy-library", "process-register", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
     "training-register", "vehicle-log", "visitor-log", "volunteer-register",
 })
@@ -108,6 +108,12 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Describe the change": "Identify",
         "Triage": "Assess",
         "Decision and implementation": "Act",
+        "System": "System",
+    },
+    ("project-pipeline", "Proposal"): {
+        "The idea": "Identify",
+        "Scoping": "Assess",
+        "Decision and delivery": "Act",
         "System": "System",
     },
 }
