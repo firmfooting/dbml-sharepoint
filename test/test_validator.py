@@ -1546,6 +1546,13 @@ def test_retired_columns_errors(tmp_path: Path) -> None:
         "    when:\n"
         "      - { field: OperationsStatus, op: is_not_null }\n"
         '    message: "Give a status."\n'
+        "column_validation:\n"
+        "  Board:\n"
+        "    reconcile: declared\n"
+        "    columns:\n"
+        "      OperationsStatus:\n"
+        "        when: [{ field: OperationsStatus, op: is_not_null }]\n"
+        '        message: "Needed."\n'
         "retired_columns:\n"
         "  Widget: [Anything]\n"
         "  Board:\n"
@@ -1584,6 +1591,10 @@ def test_retired_columns_errors(tmp_path: Path) -> None:
     # Live formulas referencing a retired column.
     assert has("calculated_formulas[Board].Route", "[OperationsStatus]", "retired")
     assert has("list_validation[Board]", "OperationsStatus", "retired")
+    # A save rule ON a retired column: retirement hides it from the new form,
+    # so is_not_null there rejects every new item with no field to satisfy
+    # it. The list silently stops accepting rows.
+    assert has("column_validation[Board].OperationsStatus", "retired", "every new item")
 
 
 def test_retired_supersession_may_not_name_another_retirement(tmp_path: Path) -> None:

@@ -132,6 +132,27 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{ref}, which is retired.",
                 ))
 
+        # A save rule ON a retired column, rather than one referencing it.
+        # Retirement hides the column from the NEW form, so a rule the blank
+        # value fails — is_not_null being the obvious one — rejects every new
+        # item with no field on the form to satisfy it. The list stops
+        # accepting rows, and nothing in the build says why.
+        #
+        # An error rather than a silent clear: dropping someone's declared
+        # save rule to make a deploy succeed is the kind of quiet repair this
+        # project keeps removing. Retire the column or drop the rule, but
+        # the author decides which.
+        validation_section = bundle.mapping.column_validation.get(entity_name)
+        if validation_section is not None:
+            for ruled in sorted(set(validation_section.columns) & set(retired_cols)):
+                findings.append(Finding(
+                    "error",
+                    f"column_validation[{entity_name}].{ruled}: {ruled!r} is retired, "
+                    f"so it is hidden on the new form — a save rule on it cannot "
+                    f"be satisfied there and would reject every new item. "
+                    f"Remove the rule, or the retirement.",
+                ))
+
     # Declarations the load-time fold rewrote. The structures no longer
     # carry the reference, so the record on the mapping is the only source.
     findings.extend(
