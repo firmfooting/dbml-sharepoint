@@ -42,8 +42,11 @@ from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 
-# The twenty-seven templates that have not yet been through a theme branch.
-# Removed by the branch that uplifts them; must reach empty.
+# The templates that have not yet been through a theme branch. Removed by
+# the branch that uplifts them; must reach empty. Deliberately carries no
+# count: four theme branches shrink this set in parallel, and a number in
+# the comment would be wrong on three of them and a merge conflict on all
+# four.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "audit-actions", "complaints-feedback",
     "compliance-obligations", "contract-register", "credentialing-register",
