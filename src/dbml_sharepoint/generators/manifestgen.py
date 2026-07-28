@@ -163,7 +163,7 @@ def generate_manifest(
                     f"{entry.field} {entry.direction}" for entry in declared.sort
                 ))
             if declared.group_by is not None:
-                parts.append(f"group by {declared.group_by.field}")
+                parts.append("group by " + " then ".join(declared.group_by.fields))
             return "; ".join(parts)
         return ""
 

@@ -1447,7 +1447,7 @@ def test_view_caml_condition_sort_and_group() -> None:
         dict(
             where=parse_condition([{"field": "Status", "op": "neq", "value": "Closed"}], "w"),
             sort=[ViewSort(field="RiskScore", direction="desc")],
-            group_by=ViewGroupBy(field="Impact", collapsed=True),
+            group_by=ViewGroupBy(fields=["Impact"], collapsed=True),
         ),
         {"Status": "status_enum", "RiskScore": "calculated_number", "Impact": "impact_enum"},
     )
@@ -1457,6 +1457,22 @@ def test_view_caml_condition_sort_and_group() -> None:
         '<Neq><FieldRef Name="Status"/>'
         '<Value Type="Text">Closed</Value></Neq></Or></Where>'
         '<OrderBy><FieldRef Name="RiskScore" Ascending="FALSE"/></OrderBy>'
+    )
+
+
+def test_view_caml_renders_two_group_levels_in_one_groupby() -> None:
+    """SharePoint takes both FieldRefs inside ONE GroupBy — two GroupBy
+    elements would be malformed CAML, not a deeper grouping."""
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+
+    caml = _caml(
+        dict(group_by=ViewGroupBy(fields=["SourceType", "SourceInstrument"], collapsed=False)),
+        {"SourceType": "source_enum", "SourceInstrument": "nvarchar"},
+    )
+    assert caml == (
+        '<GroupBy Collapse="FALSE">'
+        '<FieldRef Name="SourceType"/><FieldRef Name="SourceInstrument"/>'
+        "</GroupBy>"
     )
 
 

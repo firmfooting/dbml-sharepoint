@@ -158,6 +158,12 @@ operands already are.
   no `calculated: true`: the `string;#` prefix belongs to column formatting
   only, see the
   [style guide](./style-guide.md#styles).
+- `group_by` groups the view by one or two columns — SharePoint's own
+  ceiling is two. Write `group_by: { field: Area }` for one level, or
+  `group_by: { fields: [SourceType, SourceInstrument], collapsed: true }`
+  for two; declaring both spellings at once is an error rather than a
+  precedence rule, and a third level is refused rather than silently
+  dropped. Both render as FieldRefs inside a single `<GroupBy>`.
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see

@@ -167,9 +167,14 @@ class ViewSort:
 
 @dataclass(frozen=True)
 class ViewGroupBy:
-    """The <GroupBy> of a declared view."""
+    """The <GroupBy> of a declared view.
 
-    field: str
+    SharePoint groups by up to two levels. Authoring accepts `field:` for
+    one or `fields:` for one or two; both land here as a list, because two
+    accessors for one concept is how the two drift apart.
+    """
+
+    fields: list[str]
     collapsed: bool = False
 
 

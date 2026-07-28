@@ -200,7 +200,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             referenced = (
                 [("fields", name) for name in view.fields if not name.startswith("@")]
                 + [("sort", sort.field) for sort in view.sort]
-                + ([("group_by", view.group_by.field)] if view.group_by else [])
+                + [
+                    ("group_by", name)
+                    for name in (view.group_by.fields if view.group_by else [])
+                ]
             )
             for part, name in referenced:
                 if name not in view_rendered:

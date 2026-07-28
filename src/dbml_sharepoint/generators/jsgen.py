@@ -213,10 +213,10 @@ def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
     parts: list[str] = []
     if view.group_by is not None:
         collapse = "TRUE" if view.group_by.collapsed else "FALSE"
-        parts.append(
-            f'<GroupBy Collapse="{collapse}">'
-            f'<FieldRef Name="{view.group_by.field}"/></GroupBy>',
-        )
+        # One or two FieldRefs in one GroupBy — SharePoint's own two-level
+        # ceiling is enforced at load, so anything reaching here is valid.
+        refs = "".join(f'<FieldRef Name="{name}"/>' for name in view.group_by.fields)
+        parts.append(f'<GroupBy Collapse="{collapse}">{refs}</GroupBy>')
     if view.where is not None:
         # System columns are renderable in a view but never declared in
         # DBML; without their types a Created comparison would render as
