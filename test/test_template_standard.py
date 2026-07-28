@@ -47,7 +47,7 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "audit-actions", "change-register", "complaints-feedback",
     "credentialing-register",
-    "declarations-register", "delegations-register", "equipment-maintenance",
+    "declarations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
     "measures-register", "meeting-actions", "onboarding-tracker",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
@@ -83,6 +83,15 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # Three beats. There is no Act on a register that transcribes rather
+    # than decides — the doctrine is that authority is created in the
+    # instrument and only mirrored here — and nothing is auto-stamped, so
+    # no System either.
+    ("delegations-register", "Delegation"): {
+        "The authority": "Identify",
+        "Limit and conditions": "Assess",
+        "Source and review": "Govern",
     },
     # No System beat: nothing on this list is auto-stamped. Every column is
     # authored by a coordinator or an obligation owner, so a System section

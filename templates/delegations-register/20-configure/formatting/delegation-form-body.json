@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The authority",
+      "fields": ["Title", "DelegationArea", "RoleHolder"]
+    },
+    {
+      "displayname": "Limit and conditions",
+      "fields": ["DelegationLimit", "Conditions"]
+    },
+    {
+      "displayname": "Source and review",
+      "fields": ["SourceInstrument", "ApprovedDate", "ReviewDate", "Status", "Notes"]
+    }
+  ]
+}
