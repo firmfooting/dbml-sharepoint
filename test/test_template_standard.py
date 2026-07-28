@@ -44,6 +44,18 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 
 # The twenty-seven templates that have not yet been through a theme branch.
 # Removed by the branch that uplifts them; must reach empty.
+#
+# `policy-library` is the one entry here that is NOT simply awaiting its
+# turn. Its `PolicyRegister` half is uplifted in full; its `PolicyDocuments`
+# half is a `kind: DocumentLibrary`, and three parts of the standard do not
+# describe one — a view and a form body cannot name `FileLeafRef` (it is
+# not a rendered column, so the build refuses it), and the header's
+# `[$Title]` line reads empty on a library, where SharePoint does not
+# populate Title from the file name. Demo data for a library is worse than
+# unbuildable: it generates cleanly and posts an item with no file behind
+# it. The template stays on this roster until that is decided once, for the
+# whole fleet, rather than four different ways — see the header comment in
+# `templates/policy-library/20-configure/mapping.yaml`.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "asset-register", "change-register", "complaints-feedback",
     "credentialing-register",
@@ -83,6 +95,16 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # Declared ahead of the sweep reaching it: policy-library is still on
+    # NOT_YET_UPLIFTED because of its document-library half, so nothing here
+    # is asserted yet — but PolicyRegister IS uplifted and its arc should
+    # not have to be rediscovered when the library question is settled.
+    ("policy-library", "PolicyRegister"): {
+        "The policy": "Identify",
+        "The current version": "Act",
+        "Review and history": "Govern",
+        "System": "System",
     },
     # The audit row is a header record — a report and who answers for it —
     # so it collapses to Identify -> Govern. The recommendation carries the
