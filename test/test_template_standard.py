@@ -49,7 +49,7 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
     "compliance-obligations", "contract-register",
     "declarations-register", "delegations-register", "equipment-maintenance",
     "grants-register", "improvement-register", "incident-management",
-    "measures-register", "meeting-actions",
+    "measures-register",
     "policy-library", "process-register", "project-pipeline", "routine-checks",
     "service-requests", "stakeholder-contacts", "switchboard-log",
     "vehicle-log", "visitor-log",
@@ -138,6 +138,22 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Issue and expiry": "Assess",
         "Evidence": "Act",
         "Standing": "Govern",
+    },
+    # Meeting collapses to two beats and Decision to two, in both cases
+    # because there is genuinely nothing in the middle: a meeting is a fact
+    # plus its record, and a decision is a statement plus its reasoning.
+    ("meeting-actions", "Meeting"): {
+        "The meeting": "Identify",
+        "The record": "Govern",
+    },
+    ("meeting-actions", "Decision"): {
+        "The decision": "Identify",
+        "Why": "Assess",
+    },
+    ("meeting-actions", "ActionItem"): {
+        "The action": "Identify",
+        "Owner and date": "Act",
+        "Progress": "Govern",
     },
 }
 
