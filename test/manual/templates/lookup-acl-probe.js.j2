@@ -151,20 +151,38 @@
     // not quietly passed.
     const target = await spGet(`web/lists/getbytitle('${TARGET}')/items?$select=Title&$top=5`);
     const isAdmin = me.ok && me.body && me.body.IsSiteAdmin === true;
-    if (isAdmin) {
+    // Only 401/403 is a DENIAL. A 429 or a 500 also fails, and reading
+    // either as "denied" would let K2 run believing a premise it has not
+    // established — the throttled case would then report the lookup value
+    // withheld from an account that was never actually refused anything.
+    const deniedTarget = target.status === 401 || target.status === 403;
+    if (!me.ok) {
+      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+             'NOT ESTABLISHED',
+             `could not read web/currentuser (HTTP ${me.status}), so this run cannot `
+             + 'even say who it is running as, let alone whether they are privileged.');
+    } else if (isAdmin) {
       record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
              'NOT ESTABLISHED',
              `this account is a site collection administrator (${who}). SharePoint `
              + 'does not apply broken inheritance to one, so nothing below can be '
              + 'read as evidence. Re-run pass 2 as a non-privileged account.');
+    } else if (target.ok) {
+      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+             'FAIL',
+             `the account READ ${TARGET} (HTTP ${target.status}), so inheritance was `
+             + 'not broken as intended and K2/K3 prove nothing about a denied reader');
+    } else if (!deniedTarget) {
+      record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
+             'NOT ESTABLISHED',
+             `the target read failed with HTTP ${target.status}, which is not an access `
+             + 'denial. A throttled or erroring request is not evidence that the ACL '
+             + 'holds. Re-run.');
     } else {
       record('K1', 'CONTROL: is the second account actually denied the TARGET list?',
-             target.ok ? 'FAIL' : 'PASS',
-             target.ok
-               ? `the account READ ${TARGET} (HTTP 200), so inheritance was not broken `
-                 + 'as intended and K2/K3 prove nothing about a denied reader'
-               : `refused with HTTP ${target.status}, so the account is denied the `
-                 + `target list. Running as: ${who}`);
+             'PASS',
+             `refused with HTTP ${target.status}, so the account is denied the `
+             + `target list. Running as: ${who}`);
     }
 
     // K4 — the other control, asked before K2 so the read-out order is the
@@ -172,14 +190,27 @@
     const source = await spGet(
       `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}Id&$top=10`);
     const rows = (source.ok && source.body && source.body.value) || [];
+    // Reading the list is not enough. K2 concludes "withheld" from the
+    // ABSENCE of a string, so the row that would carry it has to be proven
+    // present and linked first — otherwise a deleted fixture, or one past
+    // the page limit, reads as a clean security result.
+    const fixture = rows.find((r) => r.Title === 'dbmlsp-probe-source-row');
+    const fixtureLinked = Boolean(fixture && fixture[`${LOOKUP}Id`]);
     record('K4', 'CONTROL: can the denied account read the SOURCE list at all?',
-           source.ok ? 'PASS' : 'FAIL',
-           source.ok
-             ? `read ${rows.length} row(s) from ${SOURCE}`
-             : `refused with HTTP ${source.status} — K2 and K3 are silent for the `
-               + 'wrong reason. Grant this account read on the source list and re-run.');
+           !source.ok ? 'FAIL' : fixtureLinked ? 'PASS' : 'NOT ESTABLISHED',
+           !source.ok
+             ? `refused with HTTP ${source.status} — K2 and K3 are silent for the `
+               + 'wrong reason. Grant this account read on the source list and re-run.'
+             : fixtureLinked
+               ? `read ${rows.length} row(s), including the linked fixture row `
+                 + `(${LOOKUP}Id=${fixture[`${LOOKUP}Id`]})`
+               : `read ${rows.length} row(s) from ${SOURCE}, but the linked fixture row `
+                 + `'dbmlsp-probe-source-row' is ${fixture ? 'present without a lookup id'
+                                                          : 'not among them'}. K2 would `
+                 + 'be reading the absence of a string that was never going to be there. '
+                 + 'Re-run the setup pass.');
 
-    if (!source.ok || isAdmin || target.ok) {
+    if (!me.ok || !source.ok || !fixtureLinked || isAdmin || target.ok || !deniedTarget) {
       record('K2', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
              'NOT ESTABLISHED', 'a control above did not hold — see K1 and K4');
       record('K3', 'Does $expand on the lookup reach the target row\'s other columns?',
