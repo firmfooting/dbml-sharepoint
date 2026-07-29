@@ -1,0 +1,402 @@
+# Service evidence register — physical mapping.
+#
+# Access is restricted by design: no grant reaches site Members or Owners.
+# A register that characterises another organisation's performance carries
+# fairness and defamation exposure, and restricting it is also what makes
+# people willing to write frankly in it.
+prefix: "SE_"
+
+entities:
+  ServiceIssue: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# How long they took to respond about their own responsiveness. INT() rather
+# than DATEDIF() because it is exact on date serials and unambiguous when one
+# operand is a datetime.
+calculated_formulas:
+  ServiceIssue:
+    DaysToResponse: '=IF(OR(ISBLANK([RaisedDate]),ISBLANK([ResponseDate])),"",INT([ResponseDate])-INT([RaisedDate]))'
+
+groups:
+  - name: "SE Evidence Contributors"
+    description: "Staff who log service events and their follow-ups. Can add and read; cannot edit after saving. Configure read-own item-level access before adding members."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+  - name: "SE Evidence Curators"
+    description: "The small group that reviews events, assembles themes and decides what is raised with the provider."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+  - name: "SE List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+
+permission_levels:
+  - name: "SE Log Only"
+    description: "Add and read according to list item-level settings; no edit, delete or schema rights."
+    base_permissions:
+      - AddListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+
+# The default policy is the one ServiceEvent and FollowUp use. ServiceIssue
+# overrides it below: what you intend to raise, at what level and when is not
+# something everyone who can log an event should read.
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "SE Evidence Contributors" }
+        level: "SE Log Only"
+      - principal: { kind: group, name: "SE Evidence Curators" }
+        level: "Contribute"
+      - principal: { kind: group, name: "SE List Administrators" }
+        level: "Full Control"
+  overrides:
+    ServiceIssue:
+      break_inheritance: true
+      reconcile: exact
+      assignments:
+        - principal: { kind: group, name: "SE Evidence Curators" }
+          level: "Contribute"
+        - principal: { kind: group, name: "SE List Administrators" }
+          level: "Full Control"
+
+seal_columns: true
+prevent_list_deletion: true
+
+display_names:
+  mode: auto
+  overrides:
+    ServiceIssue:
+      Title: "The theme"
+      IssueSummary: "The pattern"
+      EventCount: "Supporting events"
+      CommitmentEngaged: "Commitment engaged"
+      RaisedWith: "Raised with (role or forum)"
+      BusinessConsequence: "Consequence for us"
+
+column_formatting:
+  ServiceIssue:
+    Status:
+      style: severity
+      map:
+        Assembling: neutral
+        "Ready to raise": low
+        Raised: warning
+        "Response received": low
+        "Remedy agreed": good
+        Resolved: good
+        Unresolved: severe
+        Closed: muted
+    Materiality:
+      style: severity
+      map:
+        Irritant: neutral
+        Material: low
+        Serious: warning
+        "Critical to service": severe
+    EscalationLevel:
+      style: pill
+      map:
+        "Operational contact": neutral
+        "Service desk or first line": neutral
+        "Service manager": low
+        "Relationship or contract manager": warning
+        Executive: severe
+        "Formal contract mechanism": severe
+    RemedyDueDate:
+      style: overdue-date
+      guard: { field: Status, not: [Assembling, "Ready to raise", Raised, "Response received", Resolved, Closed] }
+    NextReviewDue:
+      style: overdue-date
+      guard: { field: Status, not: [Resolved, Closed] }
+
+# Four views: the working list, the two things that need chasing, and the
+# history. There is no portfolio dashboard - the All Items view is the
+# reporting surface.
+views:
+  ServiceIssue:
+    - title: "Open issues"
+      default: true
+      fields: [Title, Provider, ServiceAffected, Materiality, Status,
+               EscalationLevel, IssueOwner, EventCount, RemedyDueDate]
+      where:
+        - { field: Status, op: not_in, value: [Resolved, Unresolved, Closed] }
+      sort:
+        - { field: FirstObserved, direction: asc }
+      # The template's ONE row-level signal (§1.4). Materiality rather than
+      # Status = Unresolved, because Unresolved is a concluded state and the
+      # wash would have landed on a history view where nobody is working.
+      # Same shape as risk-register's Extreme and incident-management's
+      # Critical: a severity wash on the view people actually use.
+      formatting: formatting/row-issue-critical.json
+      widths:
+        Title: 300
+        Provider: 180
+        ServiceAffected: 220
+        Materiality: 150
+        Status: 160
+        EscalationLevel: 230
+        IssueOwner: 170
+        EventCount: 120
+        RemedyDueDate: 160
+    - title: "Awaiting response"
+      fields: [Title, Provider, Materiality, RaisedDate, RaisedWith,
+               EscalationLevel, IssueOwner]
+      where:
+        - { field: Status, op: eq, value: Raised }
+      sort:
+        - { field: RaisedDate, direction: asc }
+      widths:
+        Title: 300
+        Provider: 180
+        Materiality: 150
+        RaisedDate: 150
+        RaisedWith: 240
+        EscalationLevel: 230
+        IssueOwner: 170
+    - title: "Remedies due"
+      fields: [Title, Provider, Materiality, RemedyAgreed, RemedyDueDate,
+               IssueOwner, Status]
+      where:
+        - { field: Status, op: eq, value: "Remedy agreed" }
+        - { field: RemedyDueDate, op: leq, value: today+30 }
+      sort:
+        - { field: RemedyDueDate, direction: asc }
+      widths:
+        Title: 280
+        Provider: 180
+        Materiality: 150
+        RemedyAgreed: 300
+        RemedyDueDate: 160
+        IssueOwner: 170
+        Status: 160
+    - title: "Concluded"
+      fields: [Title, Provider, ServiceAffected, Materiality, Status,
+               EscalationLevel, ClosedDate, Outcome]
+      where:
+        - { field: Status, op: in, value: [Resolved, Unresolved, Closed] }
+      sort:
+        - { field: ClosedDate, direction: desc }
+      widths:
+        Title: 280
+        Provider: 180
+        ServiceAffected: 220
+        Materiality: 150
+        Status: 160
+        EscalationLevel: 230
+        ClosedDate: 150
+        Outcome: 320
+
+# The New form asks for the pattern and its weight. Everything about raising
+# it appears as the theme reaches that stage.
+form_visibility:
+  ServiceIssue:
+    reconcile: exact
+    columns:
+      Status: { new: false }
+      RaisedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Raised, "Response received", "Remedy agreed", Resolved, Unresolved, Closed] }
+      RaisedWith:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Raised, "Response received", "Remedy agreed", Resolved, Unresolved, Closed] }
+      EscalationLevel:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Raised, "Response received", "Remedy agreed", Resolved, Unresolved, Closed] }
+      ResponseDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Response received", "Remedy agreed", Resolved, Unresolved, Closed] }
+      ResponseSummary:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Response received", "Remedy agreed", Resolved, Unresolved, Closed] }
+      RemedyAgreed:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Remedy agreed", Resolved, Unresolved, Closed] }
+      RemedyDueDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Remedy agreed", Resolved, Unresolved, Closed] }
+      NextReviewDue: { new: false }
+      Outcome:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Resolved, Unresolved, Closed] }
+      ClosedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Resolved, Unresolved, Closed] }
+
+form_formatting:
+  ServiceIssue:
+    header: formatting/service-issue-form-header.json
+    body: formatting/service-issue-form-body.json
+
+# Every date column here is a DATE rather than a DATETIME, so `leq today` is
+# correct: SharePoint's TODAY() is midnight, which only bites on datetime
+# columns (see ServiceEvent.OccurredAt, which uses the today+1 allowance).
+column_validation:
+  ServiceIssue:
+    reconcile: exact
+    columns:
+      FirstObserved:
+        when:
+          - { field: FirstObserved, op: leq, value: today }
+        message: "Use the date of the earliest event that supports this theme; it cannot be in the future."
+      RaisedDate:
+        when:
+          any_of:
+            - { field: RaisedDate, op: is_null }
+            - { field: RaisedDate, op: leq, value: today }
+        message: "Use the date you actually raised it; it cannot be in the future."
+      ClosedDate:
+        when:
+          any_of:
+            - { field: ClosedDate, op: is_null }
+            - { field: ClosedDate, op: leq, value: today }
+        message: "Use the date this was closed; it cannot be in the future."
+
+# Each stage needs the facts that stage is about, and nothing else. Leaving
+# Assembling needs at least one supporting event, because a theme with no
+# events behind it is an opinion.
+#
+# WHAT THIS RULE CANNOT REACH, and why the message does not claim it can:
+# SharePoint refuses a validation formula that references a multi-line
+# column, which the build reports as an error rather than discovering on a
+# live tenant. So ResponseSummary, RemedyAgreed and Outcome cannot be
+# required here even though each is the substance of its stage. Each stage
+# is gated on its DATE instead — you cannot record a response date without
+# having had a response — and the narrative fields are carried by the form
+# notes and the review cadence in 50-govern/GOVERNANCE.md. A message that
+# promised more than the formula enforces would be worse than the gap.
+list_validation:
+  ServiceIssue:
+    when:
+      - any_of:
+          - { field: Status, op: eq, value: Assembling }
+          - { field: EventCount, op: geq, value: 1 }
+      - any_of:
+          - { field: Status, op: in, value: [Assembling, "Ready to raise"] }
+          - all_of:
+              - { field: RaisedDate, op: is_not_null }
+              - { field: RaisedWith, op: is_not_null }
+      - any_of:
+          - { field: Status, op: in, value: [Assembling, "Ready to raise", Raised] }
+          - { field: ResponseDate, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: "Remedy agreed" }
+          - { field: RemedyDueDate, op: is_not_null }
+      - any_of:
+          - { field: Status, op: not_in, value: [Resolved, Unresolved, Closed] }
+          - { field: ClosedDate, op: is_not_null }
+    message: "Check the stage: leaving Assembling needs at least one supporting event; Raised needs the date it was raised and the forum or role it went to; Response received needs the date they responded; Remedy agreed needs the date the remedy falls due; concluding needs a closed date."
+
+demo_items:
+  ServiceIssue:
+    - key: se-issue-assembling
+      values:
+        Title: "[DEMO] Access requests for new starters are not completed before day one"
+        Provider: "[DEMO] Example Service Partner"
+        ServiceAffected: "Access, accounts or permissions"
+        IssueSummary: "Demo row. New starters are repeatedly unable to work on their first day because access requests submitted well in advance are not completed. The pattern has held across the last quarter and is being assembled for the next service review."
+        FirstObserved: "today-70"
+        Materiality: Irritant
+        EventCount: 3
+        CommitmentEngaged: "[DEMO] Five working days for standard access requests"
+        BusinessConsequence: "Demo row. Managers absorb the first day of every new starter as lost supervision time, and the team's own onboarding looks unprepared to the person joining."
+        Status: Assembling
+        IssueOwner: "@me"
+        NextReviewDue: "today+14"
+    - key: se-issue-raised
+      values:
+        Title: "[DEMO] Requests are closed without the work being done"
+        Provider: "[DEMO] Example Service Partner"
+        ServiceAffected: "Requests or help desk"
+        IssueSummary: "Demo row. Requests are being marked resolved without contact and without the underlying work being completed, so the same request is raised two or three times before it is actioned. Raised at the last service review."
+        FirstObserved: "today-120"
+        Materiality: Serious
+        EventCount: 9
+        CommitmentEngaged: "[DEMO] Resolution confirmed with the requester before closure"
+        BusinessConsequence: "Demo row. Reported resolution figures cannot be relied on, and staff have stopped raising small requests at all, which hides the real volume."
+        Status: Raised
+        RaisedDate: "today-21"
+        RaisedWith: "[DEMO] Monthly service review - service delivery manager"
+        EscalationLevel: "Service manager"
+        IssueOwner: "@me"
+        NextReviewDue: "today+7"
+    - key: se-issue-remedy
+      values:
+        Title: "[DEMO] Repeated unplanned interruptions to a core system during business hours"
+        Provider: "[DEMO] Example Service Partner"
+        ServiceAffected: "Systems, applications or tools"
+        IssueSummary: "Demo row. A core system has been interrupted without notice several times inside business hours. A remedy has been agreed: changes affecting this system move to the agreed window, with notice."
+        FirstObserved: "today-95"
+        Materiality: "Critical to service"
+        EventCount: 6
+        CommitmentEngaged: "[DEMO] Changes to core systems outside business hours with five days notice"
+        BusinessConsequence: "Demo row. Each interruption stops front-line work outright, and the loss is concentrated in the busiest part of the day."
+        Status: "Remedy agreed"
+        RaisedDate: "today-40"
+        RaisedWith: "[DEMO] Contract management meeting - relationship manager"
+        EscalationLevel: "Relationship or contract manager"
+        ResponseDate: "today-33"
+        ResponseSummary: "Demo row. The provider accepted that three of the six interruptions were avoidable and attributed them to a change process that did not check the business calendar."
+        RemedyAgreed: "Demo row. Changes affecting this system move to the agreed maintenance window, with five working days notice, from the start of next month."
+        RemedyDueDate: "today+12"
+        IssueOwner: "@me"
+        NextReviewDue: "today+12"
+    - key: se-issue-unresolved
+      values:
+        Title: "[DEMO] Charges appear for services that were not requested"
+        Provider: "[DEMO] Example Service Partner"
+        ServiceAffected: "Billing or charging"
+        IssueSummary: "Demo row. Charges appeared across two quarters for services nobody could identify as requested. Raised twice and escalated; no reconciliation was provided."
+        FirstObserved: "today-200"
+        Materiality: Material
+        EventCount: 4
+        CommitmentEngaged: "[DEMO] Itemised charges traceable to an approved request"
+        BusinessConsequence: "Demo row. The budget holder cannot certify the spend, which is a problem for our own financial controls regardless of the amount."
+        Status: Unresolved
+        RaisedDate: "today-150"
+        RaisedWith: "[DEMO] Executive service governance forum"
+        EscalationLevel: Executive
+        ResponseDate: "today-120"
+        ResponseSummary: "Demo row. The provider undertook to reconcile the charges and did not do so within the period agreed."
+        Outcome: "Demo row. Closed as unresolved and carried into the contract review; no reconciliation was ever produced."
+        ClosedDate: "today-30"
+        IssueOwner: "@me"

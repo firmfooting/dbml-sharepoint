@@ -1,0 +1,4 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/sp/view-formatting.schema.json",
+  "additionalRowClass": "=if([$Materiality] == 'Critical to service', 'ms-bgColor-themeLighter ms-fontColor-neutralPrimary', '')"
+}

@@ -421,6 +421,19 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Out and back": "Act",
         "Ownership": "Govern",
     },
+    # === Service evidence register ==========================================
+    # An issue is a theme rather than an occurrence, so the arc runs whole and
+    # spends two consecutive sections on Act. Splitting the raise from the
+    # response is what lets the response half stay off the form until there is
+    # a response to record.
+    ("service-evidence-register", "ServiceIssue"): {
+        "The pattern": "Identify",
+        "Weight and evidence": "Assess",
+        "Raising it": "Act",
+        "Response and remedy": "Act",
+        "Ownership and closure": "Govern",
+        "System": "System",
+    },
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a

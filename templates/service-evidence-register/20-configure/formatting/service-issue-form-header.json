@@ -1,0 +1,69 @@
+{
+  "elmType": "div",
+  "attributes": { "class": "ms-borderColor-neutralTertiary" },
+  "style": {
+    "width": "99%",
+    "border-top-width": "0px",
+    "border-bottom-width": "1px",
+    "border-left-width": "0px",
+    "border-right-width": "0px",
+    "border-style": "solid",
+    "margin-bottom": "16px",
+    "padding-bottom": "8px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": { "display": "flex", "box-sizing": "border-box", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": {
+            "iconName": "ReportDocument",
+            "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+            "title": "Service issue"
+          },
+          "style": { "flex": "none", "padding": "0px", "height": "auto" }
+        },
+        {
+          "elmType": "div",
+          "style": { "box-sizing": "border-box", "width": "100%", "text-align": "left", "padding": "4px 8px", "overflow": "hidden" },
+          "children": [
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
+              "txtContent": "=if([$Title] == '', 'New service issue', 'Issue: ' + [$Title])"
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "One theme, the evidence behind it, and what happened when it was raised. Describe conduct and events; name roles rather than individuals."
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "=if([$Provider] == '', '', [$Provider] + '  |  Status: ' + if([$Status] == '', 'Assembling', [$Status]) + if([$EventCount] == '', '', '  |  Supporting events: ' + toString([$EventCount])))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "attributes": { "class": "ms-bgColor-themeLighter ms-fontColor-neutralPrimary" },
+      "style": { "padding": "8px 10px", "margin": "6px 0px", "display": "flex", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "span",
+          "attributes": { "iconName": "Warning", "class": "ms-fontColor-themePrimary ms-fontSize-16" },
+          "style": { "margin-right": "8px" }
+        },
+        {
+          "elmType": "span",
+          "attributes": { "class": "ms-fontSize-12 ms-fontWeight-semibold" },
+          "txtContent": "Write every line as though the provider will read it, because one day they may. Record what happened and what it cost, not what you think of anyone."
+        }
+      ]
+    }
+  ]
+}
