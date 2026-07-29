@@ -455,44 +455,51 @@ form_formatting:
     body: formatting/keymovement-form-body.json
 
 # Per-column save rules, each with its own message. Every one of these
-# columns is a DATETIME, and TODAY() in a SharePoint validation formula is
-# midnight — so `leq today` would reject everything stamped after 00:00,
-# which at a switchboard is everything. `today+1` is the midnight
-# allowance: any time today passes, next month does not.
+# columns is a DATETIME, and `now` renders as NOW() in a validation formula
+# — verified on a live tenant on 2026-07-29
+# (test/manual/datetime-sentinel-probe.js), against Microsoft's own formula
+# reference, which says Lists do not support NOW(). True of calculated
+# columns, false here.
 #
-# The switchboard record is only trusted because it is contemporaneous, so
-# a mistyped year on a code announcement is not a cosmetic error: it moves
-# an emergency activation out of the committee's monthly window entirely.
+# `now` rather than `today`, because TODAY() in a validation formula is
+# midnight: `leq today` on a datetime rejects everything stamped after
+# 00:00, which at a switchboard is everything. The whole-day alternative,
+# `today+1`, permits up to twenty-four hours of future-dating.
+#
+# Exactness matters more here than anywhere else in the library. The
+# switchboard record is only trusted because it is contemporaneous, and a
+# mistyped year on a code announcement is not a cosmetic error: it moves an
+# emergency activation out of the committee's monthly window entirely.
 column_validation:
   CodeEvent:
     columns:
       AnnouncedAt:
         when:
-          - { field: AnnouncedAt, op: leq, value: today+1 }
+          - { field: AnnouncedAt, op: leq, value: now }
         message: "A code cannot be announced in the future. Use the time the announcement was actually made."
       AllClearAt:
         when:
-          - { field: AllClearAt, op: leq, value: today+1 }
+          - { field: AllClearAt, op: leq, value: now }
         message: "An all-clear cannot be in the future. Leave it blank until stand-down is announced."
   MessageLog:
     columns:
       TakenAt:
         when:
-          - { field: TakenAt, op: leq, value: today+1 }
+          - { field: TakenAt, op: leq, value: now }
         message: "A message cannot be taken in the future. Use the time the call came in."
       RelayedAt:
         when:
-          - { field: RelayedAt, op: leq, value: today+1 }
+          - { field: RelayedAt, op: leq, value: now }
         message: "A relay cannot be in the future. Leave it blank until someone has actually received the message."
   KeyMovement:
     columns:
       IssuedAt:
         when:
-          - { field: IssuedAt, op: leq, value: today+1 }
+          - { field: IssuedAt, op: leq, value: now }
         message: "A key cannot be issued in the future. Use the time it left the switch."
       ReturnedAt:
         when:
-          - { field: ReturnedAt, op: leq, value: today+1 }
+          - { field: ReturnedAt, op: leq, value: now }
         message: "A return cannot be in the future. Leave it blank until the key is physically back."
 
 # Save-time enforcement, on the LIST so it may reference more than one

@@ -207,22 +207,27 @@ form_formatting:
     header: formatting/visit-form-header.json
     body: formatting/visit-form-body.json
 
-# Per-column save rules, each with its own message.
+# Per-column save rules, each with its own message. Every column here is a
+# DATETIME, and `now` renders as NOW() in a validation formula — verified
+# against a live tenant on 2026-07-29
+# (test/manual/datetime-sentinel-probe.js), against Microsoft's own formula
+# reference, which says Lists do not support NOW(). That is true of
+# calculated columns and false here.
 #
-# TODAY() in a SharePoint validation formula is midnight, so `leq today`
-# on a DATETIME column would reject every sign-in stamped after 00:00 —
-# that is, all of them. `today+1` is the midnight allowance: anything up
-# to the end of today passes, and next month's date does not.
+# `now` rather than `today`, because TODAY() in a validation formula is
+# midnight: `leq today` on a datetime rejects everything stamped after
+# 00:00. The whole-day alternative, `today+1`, permits up to twenty-four
+# hours of future-dating depending on the time of day. `now` is exact.
 column_validation:
   Visit:
     columns:
       SignedInAt:
         when:
-          - { field: SignedInAt, op: leq, value: today+1 }
+          - { field: SignedInAt, op: leq, value: now }
         message: "A sign-in cannot be in the future. Use the time they actually arrived."
       SignedOutAt:
         when:
-          - { field: SignedOutAt, op: leq, value: today+1 }
+          - { field: SignedOutAt, op: leq, value: now }
         message: "A sign-out cannot be in the future. Leave it blank until they actually leave."
 
 # Deliberately NOT declared: list_validation.

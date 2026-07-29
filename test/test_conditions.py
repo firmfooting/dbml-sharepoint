@@ -1,6 +1,9 @@
 # test/test_conditions.py
 """The shared condition grammar: parse, normalise, render."""
 
+import datetime as dt
+from pathlib import Path
+
 import pytest
 
 from dbml_sharepoint.analysis.conditions import (
@@ -240,6 +243,8 @@ def test_measure_tree_counts_depth_and_leaves() -> None:
 TYPES = {
     "Status": "nvarchar", "Count": "number", "Owner": "person",
     "Note": "nvarchar", "Parent": "int", "Due": "date", "Flag": "boolean",
+    # A DATETIME, which `now` needs and `Due` deliberately is not.
+    "OccurredAt": "datetime",
 }
 
 
@@ -352,6 +357,288 @@ def test_today_sentinel_is_rejected_by_the_expression_target() -> None:
     assert to_validation(condition, TYPES) == "[Due]<TODAY()"
     with pytest.raises(ValueError, match="expression"):
         to_expression(condition, TYPES)
+
+
+def test_now_renders_now_in_a_validation_formula() -> None:
+    """The one target where the evidence reaches all the way to behaviour.
+
+    test/manual/datetime-sentinel-probe.js set `=[ProbeWhen]<=NOW()` on a
+    live tenant on 2026-07-29: SharePoint returned 204, read it back, and
+    then REFUSED an item stamped three hours in the future. That is not a
+    round-trip claim, it is the rule working.
+
+    It also contradicts Microsoft's own formula reference, which says Lists
+    and libraries do not support NOW(). True of calculated columns, where
+    the value would go stale between saves; false in a validation formula,
+    which is evaluated at save.
+    """
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
+    )
+    assert to_validation(condition, TYPES) == "[OccurredAt]<=NOW()"
+
+
+def test_now_renders_the_instant_in_caml_without_using_now() -> None:
+    """CAML gets `<Today/>` with IncludeTimeValue="TRUE" — NOT the `<Now/>`
+    element Learn documents beside it.
+
+    The decisive evidence was an A/B rather than an absence. Two views over
+    the SAME list, at the same moment, each with columns, differing only in
+    that element: the `<Today/>`+IncludeTimeValue view listed two rows in
+    the browser, the `<Now/>` view listed none. A negative control had
+    already shown SharePoint silently accepts an INVENTED element there and
+    returns nothing, which is the signature `<Now/>` matches.
+
+    And it was verified where it SHIPS. The first observations came from an
+    ad-hoc CamlQuery; the deploy writes a view's stored ViewQuery, which
+    SharePoint rewrites on save. So the probe read the stored query back —
+    the attribute survived — and re-ran that XML for the same two rows.
+    """
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
+    )
+    caml = to_caml(condition, TYPES)
+    assert 'IncludeTimeValue="TRUE"' in caml
+    assert "<Today/>" in caml
+    assert "<Now/>" not in caml, "the element Learn documents returns nothing"
+
+
+def test_now_is_refused_on_the_expression_target() -> None:
+    """@now stores and reads back intact, so it is not obviously absent —
+    but whether a show/hide rule built on it FIRES is a rendering behaviour
+    no probe has seen, and this target already produced one formula
+    (`length()`) that stored perfectly and evaluated false for every value.
+    """
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
+    )
+    with pytest.raises(ValueError, match="VERIFIED client-side"):
+        to_expression(condition, TYPES)
+
+
+def test_now_on_a_date_column_is_refused_and_names_today() -> None:
+    """A DATE column has no time of day, so `now` on one is `today` written
+    confusingly. Without this it would render as the literal string "now"
+    inside a DateTime value — which SharePoint accepts and answers with the
+    wrong rows, the failure shape this whole module exists to prevent."""
+    condition = parse_condition([{"field": "Due", "op": "leq", "value": "now"}], "ctx")
+    for render in (to_caml, to_validation):
+        with pytest.raises(ValueError, match="use 'today'"):
+            render(condition, TYPES)
+
+
+def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
+    """`now` is the one sentinel here whose every rendering contradicts a
+    published Microsoft source, so the evidence has to stay findable.
+
+    Not a style check: if the probe were trimmed of the rows that
+    established this, the comments in conditions.py would be citing a run
+    nobody could reproduce — the same failure as a build error naming a
+    probe that does not ask the question.
+    """
+    probe = Path(__file__).parent / "manual" / "datetime-sentinel-probe.js"
+    text = probe.read_text(encoding="utf-8")
+    for marker in ("NOW()", "IncludeTimeValue", "C6", "C7", "ViewQuery"):
+        assert marker in text, f"the probe of record no longer mentions {marker}"
+
+
+def test_now_takes_no_offset_form_and_says_so() -> None:
+    """`today±N` has a verified rendering; `now±N` does not, and unverified
+    is treated as unknown.
+
+    Asserting merely that it does not become `NOW()+1` is not enough: the
+    value would then render as the literal string "now+1" inside a DateTime
+    value, which SharePoint accepts and answers with no rows. So the
+    refusal itself is demanded, and the message must name the offset form
+    rather than reading as a generic typo complaint.
+    """
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now+1"}], "ctx",
+    )
+    for render in (to_caml, to_validation):
+        with pytest.raises(ValueError, match="takes no offset form"):
+            render(condition, TYPES)
+
+
+def test_an_unparseable_date_literal_is_refused_on_every_target() -> None:
+    """What SharePoint does with an unparseable DateTime operand has not
+    been probed, and that is the reason to refuse rather than a reason to
+    allow: it might reject the view, or take it and filter on something
+    nobody intended, and the second is invisible to the build and to the
+    deploy alike. The build is the only place this can be settled without a
+    tenant, so it is settled here."""
+    condition = parse_condition(
+        [{"field": "Due", "op": "leq", "value": "banana"}], "ctx",
+    )
+    for render in (to_caml, to_validation, to_expression):
+        with pytest.raises(ValueError, match="is not a date"):
+            render(condition, TYPES)
+
+
+def test_real_date_literals_still_pass() -> None:
+    """The mirror. A guard this strict earns its place only if it lets
+    through everything the templates actually write — ISO dates, ISO
+    datetimes, and the trailing-Z form the demo planner emits."""
+    for value in ("2026-07-29", "2026-07-29T14:30:00", "2026-07-29T14:30:00Z"):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
+        )
+        assert value in to_caml(condition, TYPES)
+
+
+def test_a_date_sentinel_refuses_a_text_operator() -> None:
+    """`now` and `today` are points in time, and only comparison, ordering
+    and set membership mean anything against one. Paired with a substring
+    operator the sentinel exemption waved them straight past the literal
+    guard, and the renderers emitted:
+
+        contains + now  ->  ISNUMBER(FIND(NOW(),[OccurredAt]))
+        begins_with     ->  LEFT([OccurredAt],3)=NOW()
+
+    The 3 is `len('now')`: the sentinel's spelling arriving in the formula
+    as a character count, so the comparison is over the word rather than
+    the date. That is decidable from the emitted string alone.
+
+    What SharePoint would DO with either formula is unknown — no probe has
+    sent one — and refusing is the answer that needs no such knowledge.
+    """
+    for value in ("now", "today", "today+7"):
+        for op in ("contains", "not_contains", "begins_with", "not_begins_with"):
+            condition = parse_condition(
+                [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
+            )
+            with pytest.raises(ValueError, match="point in time"):
+                to_validation(condition, TYPES)
+        # CAML renders only the positive two directly, and it did render
+        # them, as
+        # `<Contains><Value Type="DateTime"><Today/></Value></Contains>` —
+        # a substring operator wrapped round a date element, which is not a
+        # shape this project has ever sent to a tenant.
+        for op in ("contains", "begins_with"):
+            condition = parse_condition(
+                [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
+            )
+            with pytest.raises(ValueError, match="point in time"):
+                to_caml(condition, TYPES)
+
+
+def test_a_date_sentinel_still_works_with_every_comparison() -> None:
+    """The mirror. Refusing the substring operators must not touch the
+    operators the sentinel exists for."""
+    for op in ("eq", "neq", "lt", "leq", "gt", "geq"):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": op, "value": "now"}], "ctx",
+        )
+        assert "NOW()" in to_validation(condition, TYPES)
+    members = parse_condition(
+        [{"field": "Due", "op": "in", "value": ["today", "today+1"]}], "ctx",
+    )
+    assert "TODAY()" in to_validation(members, TYPES)
+
+
+def test_a_date_operand_that_is_not_a_string_is_refused() -> None:
+    """The guard used to run only on `str`, and YAML does not hand this
+    module strings. `value: 20260729` arrives as an int and `value: true` as
+    a bool; both stringify straight into `<Value Type="DateTime">` and reach
+    the wire as the same unverified operand 'banana' is refused for."""
+    for bad in (20260729, True, 2026.5):
+        condition = parse_condition(
+            [{"field": "Due", "op": "leq", "value": bad}], "ctx",
+        )
+        for render in (to_caml, to_validation, to_expression):
+            with pytest.raises(ValueError, match="is not a date"):
+                render(condition, TYPES)
+
+
+def test_an_unquoted_yaml_date_is_a_date_object_and_still_passes() -> None:
+    """`value: 2026-07-29` unquoted resolves to a `datetime.date` before this
+    module sees it. `str()` on one is byte-identical to the quoted literal,
+    so it renders unchanged rather than being refused."""
+    condition = parse_condition(
+        [{"field": "Due", "op": "leq", "value": dt.date(2026, 7, 29)}], "ctx",
+    )
+    assert "2026-07-29" in to_caml(condition, TYPES)
+
+
+def test_an_unquoted_yaml_datetime_is_refused_and_says_to_quote_it() -> None:
+    """`value: 2026-07-29T14:30:00` unquoted resolves to a `datetime`, and
+    `str()` on one spells the separator as a SPACE — a form no probe has
+    run. Quoting it gives the `T` spelling that is verified, so the refusal
+    names that rather than claiming the value is not a date."""
+    # Naive on purpose, hence the noqa: an unquoted YAML datetime with no
+    # offset is exactly what PyYAML hands this module, and attaching a tzinfo
+    # would test a value the loader never produces.
+    naive = dt.datetime(2026, 7, 29, 14, 30)  # noqa: DTZ001
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": naive}], "ctx",
+    )
+    for render in (to_caml, to_validation, to_expression):
+        with pytest.raises(ValueError, match="quote it"):
+            render(condition, TYPES)
+
+
+def test_a_null_test_on_a_date_column_needs_no_date() -> None:
+    """`is_null` carries value None by construction, and widening the guard
+    past `str` must not read that as a bad date."""
+    condition = parse_condition([{"field": "Due", "op": "is_null"}], "ctx")
+    assert to_caml(condition, TYPES) == '<IsNull><FieldRef Name="Due"/></IsNull>'
+
+
+def test_a_date_shape_with_no_verified_rendering_is_refused() -> None:
+    """`fromisoformat` takes ANY single character as the date/time separator,
+    plus basic format and ISO week dates, and the literal is emitted
+    unchanged — so a one-character typo would otherwise reach the wire
+    wearing the guard's approval. Unverified is treated as unknown, the same
+    rule `now±N` follows."""
+    for bad in ("2026-07-29x14:30:00", "20260729", "2026-W01-1", "2026-07-29 14:30:00"):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": "leq", "value": bad}], "ctx",
+        )
+        for render in (to_caml, to_validation, to_expression):
+            with pytest.raises(ValueError, match="is not a date"):
+                render(condition, TYPES)
+
+
+def test_a_padded_date_literal_is_refused_rather_than_trimmed() -> None:
+    """The guard used to `.strip()` before matching while every renderer
+    emitted `str(value)` UNCHANGED, so validation and serialisation ran on
+    different strings: `' 2026-07-29 '` passed the exact-syntax check and
+    then went out to SharePoint still wearing its spaces.
+
+    Refused rather than trimmed, for the reason the branch above refuses an
+    unquoted YAML datetime: this guard names the fix instead of guessing at
+    it. A trailing newline is the same fault from a YAML block scalar.
+    """
+    for bad in (" 2026-07-29 ", "2026-07-29 ", " 2026-07-29", "2026-07-29\n"):
+        condition = parse_condition(
+            [{"field": "Due", "op": "leq", "value": bad}], "ctx",
+        )
+        for render in (to_caml, to_validation, to_expression):
+            with pytest.raises(ValueError, match="surrounding whitespace"):
+                render(condition, TYPES)
+
+
+def test_the_sentinels_were_always_strict_about_whitespace() -> None:
+    """The mirror, and the reason this is a fix rather than a tightening:
+    `' today '` and `' now '` have always been refused, so trimming the
+    date literal alone gave one guard two whitespace policies."""
+    for bad in (" today ", " now "):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": "leq", "value": bad}], "ctx",
+        )
+        with pytest.raises(ValueError, match="is not a date"):
+            to_caml(condition, TYPES)
+
+
+def test_not_in_on_a_date_column_checks_every_member() -> None:
+    """CAML renders `not_in` by looping the members itself, which walked
+    straight past the guard: one bad literal among good ones produced a
+    filter that silently matched nothing."""
+    condition = parse_condition(
+        [{"field": "Due", "op": "not_in", "value": ["2026-07-29", "banana"]}], "ctx",
+    )
+    with pytest.raises(ValueError, match="is not a date"):
+        to_caml(condition, TYPES)
 
 
 def test_operators_pending_probe_are_disabled_for_the_expression_target() -> None:

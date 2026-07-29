@@ -95,6 +95,22 @@
  *   C5   BASELINE — <Today/> without IncludeTimeValue, which is what the
  *        tool emits today. Confirms date granularity is what seven shipped
  *        views are actually getting.
+ *   C6   does a SAVED VIEW whose ViewQuery uses <Today/> +
+ *   C7   IncludeTimeValue keep that query, and return the rows C4 saw?
+ *        C2-C5 all ask through `getitems` with an ad-hoc CamlQuery. The
+ *        deploy writes a view's stored ViewQuery instead; C1 already
+ *        watched SharePoint rewrite that XML on save, and the only element
+ *        ever observed inside a real saved view was <Now/>, which does not
+ *        work. Until C6 and C7 agree with C4, the CAML rendering is
+ *        verified somewhere other than where it would ship. That was why
+ *        `now` was gated for view filters while only C2-C5 had answered;
+ *        C6 and C7 agreed with C4 on the 2026-07-29 run, and the gate was
+ *        lifted on the strength of it.
+ *
+ *        NOTE ON VIEWFIELDS. Every view this probe creates declares them,
+ *        because a view with no fields displays nothing whether or not its
+ *        filter matched. An empty result is only evidence when a non-empty
+ *        one would have been visible.
  *
  *   -- The client-side expression target ------------------------------------
  *   E1   is @now accepted and stored in a ClientValidationFormula
@@ -374,6 +390,8 @@
   expect('C3', "<Now/> WITH IncludeTimeValue='TRUE' discriminates within one day");
   expect('C4', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant");
   expect('C5', 'BASELINE: <Today/> without IncludeTimeValue is date-granular');
+  expect('C6', 'A saved view using <Today/> + IncludeTimeValue keeps its query');
+  expect('C7', '...and that SAVED VIEW returns the instant-discriminated rows');
   expect('E1', '@now is accepted and stored in a ClientValidationFormula');
   expect('Q1', 'A validation literal doubling an embedded " is accepted');
   expect('Q2', '...and rejects an item holding exactly that value');
@@ -799,14 +817,41 @@
   // deploy.js writes ViewQuery and verifies by read-back, so "saves and
   // survives the round trip" is the question that decides whether a `now`
   // sentinel could be shipped at all.
+  // Creating a view is TWO calls, and the second is not optional.
+  //
+  // A view with no ViewFields displays nothing whether or not its filter
+  // matched, so its emptiness is not evidence — an empty result only counts
+  // when a non-empty one would have been visible.
+  //
+  // The fields cannot be passed to the create call as
+  // `ViewFields: { results: [...] }`: that wrapper is the odata=VERBOSE
+  // convention, and this harness sends nometadata, which REJECTS it rather
+  // than ignoring it ("The property 'results' does not exist on type
+  // 'SP.ViewFieldCollection'") — the same trap recorded beside addField in
+  // calculated-choice-operand.js.j2. addviewfield works under either
+  // format.
+  const createView = async (title, query) => {
+    digest = await getDigest();
+    const made = await spPost(`web/lists/getbytitle('${LIST}')/views`, {
+      Title: title, ViewQuery: query, RowLimit: 100,
+    }, digest);
+    if (!made.ok) return { ok: false, status: made.status, text: made.text };
+    for (const column of ['Title', FIELD]) {
+      digest = await getDigest();
+      const added = await spPost(
+        `web/lists/getbytitle('${LIST}')/views/getbytitle('${title}')`
+        + `/viewfields/addviewfield('${column}')`, {}, digest);
+      if (!added.ok) {
+        return { ok: false, status: added.status,
+                 text: `view created but addviewfield('${column}') failed: ${added.text}` };
+      }
+    }
+    return { ok: true, status: made.status, text: made.text };
+  };
+
   const VIEW = 'dbmlsp probe now view';
-  digest = await getDigest();
   const viewQuery = `<Where>${ltWhen('<Now/>', true)}</Where>`;
-  const madeView = await spPost(`web/lists/getbytitle('${LIST}')/views`, {
-    Title: VIEW,
-    ViewQuery: viewQuery,
-    RowLimit: 100,
-  }, digest);
+  const madeView = await createView(VIEW, viewQuery);
   if (!madeView.ok) {
     record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
            'REFUSED', `HTTP ${madeView.status}: ${madeView.text.slice(0, 300)}`);
@@ -852,6 +897,67 @@
     const sane = has(r.titles, 'CAML yesterday');
     record(id, question, sane ? verdictFor(r) : 'SUSPECT — yesterday not returned',
            `${r.viewXml} -> ${JSON.stringify(r.titles)}`);
+  }
+
+  // ---- C6 / C7: the surface the deploy actually writes ----------------
+  // C2-C5 asked their questions through `getitems` with an ad-hoc
+  // CamlQuery. That is NOT what deploy.js writes: it writes a view's stored
+  // ViewQuery, and C1 has already shown SharePoint rewrites that XML on
+  // save. So the rendering the tool would ship has, until here, only ever
+  // been observed somewhere else. These two close that gap.
+  const REAL_VIEW = 'dbmlsp probe today includetime view';
+  if (!camlReady || !SAME_DAY_OK) {
+    for (const id of ['C6', 'C7']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+             !camlReady ? 'the fixture rows could not be created'
+                        : 'time-of-day gate closed — see TZ0');
+    }
+  } else {
+    const realQuery = `<Where>${ltWhen('<Today/>', true)}</Where>`;
+    const madeReal = await createView(REAL_VIEW, realQuery);
+    if (!madeReal.ok) {
+      record('C6', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
+             'REFUSED', `HTTP ${madeReal.status}: ${madeReal.text.slice(0, 300)}`);
+      record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+             'NOT APPLICABLE', 'the view could not be created');
+    } else {
+      const back = await spGet(
+        `web/lists/getbytitle('${LIST}')/views/getbytitle('${REAL_VIEW}')?$select=ViewQuery`);
+      const stored = back.ok && back.body ? (back.body.ViewQuery || '') : '';
+      const kept = stored.includes('IncludeTimeValue') && stored.includes('<Today');
+      record('C6', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
+             kept ? 'PASS' : 'REWRITTEN — the attribute did not survive',
+             `sent ${JSON.stringify(realQuery)}; stored ${JSON.stringify(stored)}`);
+
+      // Re-run the XML SHAREPOINT PERSISTED, not the XML we sent. That is
+      // the whole point: C4 proved the query we author discriminates, and
+      // this proves the query that survives a view save still does. If
+      // SharePoint drops IncludeTimeValue on the way in, C6 catches it; if
+      // it keeps the attribute but stops honouring it, only this does.
+      if (!stored) {
+        record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+               'NOT ESTABLISHED', 'the stored ViewQuery could not be read back');
+      } else {
+        const r = await caml(stored.replace(/^<Where>/, '').replace(/<\/Where>$/, ''), true);
+        if (!r.ok) {
+          record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+                 'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 240)}`);
+        } else {
+          const e = has(r.titles, 'CAML earlier today');
+          const l = has(r.titles, 'CAML later today');
+          record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+                 e && !l ? 'DISCRIMINATES — matches C4'
+                         : e && l ? 'BOTH RETURNED — does NOT match C4'
+                                  : !e && !l ? 'NEITHER RETURNED — does NOT match C4'
+                                             : 'INVERTED',
+                 `re-ran the STORED query and got ${JSON.stringify(r.titles)}. C4 saw `
+                 + '["CAML earlier today","CAML yesterday"] from the authored query. '
+                 + 'Agreement means a view save does not change the meaning; '
+                 + 'disagreement means the CamlQuery result does not transfer, and '
+                 + 'the view-filter rendering would have to be gated again.');
+        }
+      }
+    }
   }
 
   // ---- E1: the client-side expression target --------------------------
@@ -1011,6 +1117,7 @@
   console.log('  and only answers when TZ0 says this browser shares the site day.');
   console.log('  C2/C3 decide whether a `now` sentinel could do anything a view');
   console.log('  cannot already do; C5 confirms what seven shipped views get today.');
+  console.log('  C6/C7 are the ones that lift the CAML gate in conditions.py.');
   if (controlRowLeaked) {
     console.log('');
     console.log('  A CONTROL ROW COULD NOT BE DELETED — see the FAIL above. The CAML');
@@ -1018,5 +1125,24 @@
     console.log('  been there. Treat them as NOT ESTABLISHED, delete the list, and');
     console.log('  re-run before reporting anything from this run.');
   }
+  console.log('\n============ ONE EYES-ON CHECK ============');
+  console.log(`  Open the list and click the view "${REAL_VIEW}".`);
+  console.log('  C7 re-ran the stored query over REST; this confirms the same');
+  console.log('  thing in the surface a person actually uses.');
+  console.log('  Expected: it lists "CAML earlier today" and "CAML yesterday",');
+  console.log('  and does NOT list "CAML later today".');
+  console.log('  what you see: ____________________________________');
+  console.log('  (If the view lists nothing AND has no columns, say so —');
+  console.log('   that is the addviewfield step having failed, not a finding.)');
+  console.log('');
+  console.log(`  Then open "${VIEW}" — the <Now/> one — and edit its filter.`);
+  console.log('  Expected, and confirmed on 2026-07-29: the value box is EMPTY,');
+  console.log('  because the UI cannot represent that element, and typing the');
+  console.log('  token [Now] is refused with "Filter value is not in a supported');
+  console.log('  date format". [Today] and [Me] are accepted there; [Now] is not');
+  console.log('  a token SharePoint has. That is the product contradicting the');
+  console.log('  documentation, from a direction no REST call can reach.');
+  console.log('  what you see: ____________________________________');
+  console.log('==========================================');
   log('INFO', `Done. Delete '${LIST}' when you have copied the results.`);
 })();

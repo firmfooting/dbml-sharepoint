@@ -116,10 +116,10 @@ site that already holds real switchboard records.
       movement**, *Returned At* is absent and appears once Status is
       **Returned**.
 - [ ] Save rules. Every datetime column refuses a future value with its
-      own message — and note the shape: each compares against midnight
-      *tomorrow*, because SharePoint's `TODAY()` is midnight and a rule
-      written against today would refuse everything logged after 00:00,
-      which at a switchboard is everything. The message list refuses
+      own message — and note the shape: each compares against `NOW()`, so
+      the refusal bites within the hour. A whole-day bound would have let a
+      call be logged most of a day early, which at a switchboard is the one
+      thing the timestamp is for. The message list refuses
       **Relayed** with no *Relayed To* or no *Relayed At*; the key
       movement list refuses **Returned** with no *Returned At*.
 - [ ] Two things this register wants that are **not** enforced at save,
