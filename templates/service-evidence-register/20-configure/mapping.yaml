@@ -335,6 +335,13 @@ views:
       where:
         - { field: ResolvedDate, op: is_null }
         - { field: EventNature, op: neq, value: "Single occurrence" }
+        # A rejected or closed event usually has no Resolved Date - nothing
+        # asks for one, because nothing was resolved - so without this it
+        # stays in the chase queue for ever. This view does not show Status,
+        # so the curator would have no way of telling from here, and the
+        # register would have them chasing a provider over an allegation it
+        # had already decided against.
+        - { field: Status, op: not_in, value: [Closed, "Not substantiated"] }
       sort:
         - { field: OccurredAt, direction: asc }
       widths:
@@ -712,6 +719,22 @@ column_validation:
             - { field: ResolvedDate, op: is_null }
             - { field: ResolvedDate, op: leq, value: today }
         message: "Use the date it was resolved; it cannot be in the future. Leave it blank while it is still outstanding."
+      # A mistyped minus sign SUBTRACTS from the group totals on By failure
+      # mode and Evidence pack, which are the figures that go to a service
+      # review. SharePoint accepts a negative Number by default, and an
+      # understated total is the one error here nobody would question.
+      PeopleAffected:
+        when:
+          any_of:
+            - { field: PeopleAffected, op: is_null }
+            - { field: PeopleAffected, op: geq, value: 0 }
+        message: "People affected cannot be negative. Leave it blank if you do not know, or write 1 if it was only you."
+      HoursLost:
+        when:
+          any_of:
+            - { field: HoursLost, op: is_null }
+            - { field: HoursLost, op: geq, value: 0 }
+        message: "Hours lost cannot be negative. Leave it blank if you do not know."
   FollowUp:
     reconcile: exact
     columns:
@@ -823,8 +846,14 @@ list_validation:
           - all_of:
               - { field: RaisedDate, op: is_not_null }
               - { field: RaisedWith, op: is_not_null }
+      # Named by the stages that ATTEST a response rather than by the stages
+      # that precede one. "A provider who never answered" is the whole point
+      # of Unresolved, and the earlier spelling - everything after Raised
+      # needs a response date - made concluding one impossible without
+      # inventing the date. Closed is exempt for the same reason: it is where
+      # a theme goes when it stops being worth pursuing, answered or not.
       - any_of:
-          - { field: Status, op: in, value: [Assembling, "Ready to raise", Raised] }
+          - { field: Status, op: not_in, value: ["Response received", "Remedy agreed", Resolved] }
           - { field: ResponseDate, op: is_not_null }
       - any_of:
           - { field: Status, op: neq, value: "Remedy agreed" }
@@ -832,7 +861,7 @@ list_validation:
       - any_of:
           - { field: Status, op: not_in, value: [Resolved, Unresolved, Closed] }
           - { field: ClosedDate, op: is_not_null }
-    message: "Check the stage: leaving Assembling needs at least one supporting event; Raised needs the date it was raised and the forum or role it went to; Response received needs the date they responded; Remedy agreed needs the date the remedy falls due; concluding needs a closed date."
+    message: "Check the stage: leaving Assembling needs at least one supporting event; Raised needs the date it was raised and the forum or role it went to; Response received, Remedy agreed and Resolved need the date they responded; Remedy agreed needs the date the remedy falls due; concluding needs a closed date. Unresolved and Closed need no response date - a provider who never answered is what Unresolved is for."
 
 demo_items:
   # One deliberately mundane, sector-neutral story across the three lists: a
