@@ -540,9 +540,10 @@ def _check_date_literal(
     raise _reject(
         target,
         f"{value!r} is not a date, the sentinel 'today'/'today±N', or "
-        f"'now'. SharePoint accepts an unparseable date literal and returns "
-        f"nothing, so this is refused here rather than discovered as an "
-        f"empty view{hint}",
+        f"'now'. What SharePoint does with an unparseable date literal has "
+        f"not been probed — it may refuse the view or filter on something "
+        f"nobody intended — so it is refused here, where the answer does not "
+        f"matter{hint}",
         where,
     )
 
@@ -624,8 +625,9 @@ def _combine(parts: list[str], *, conjunction: bool, target: str) -> str:
 def _column_type(field: str, types: dict[str, str], target: str, context: str) -> str:
     """The declared type drives literal rendering, so an unknown column is
     an error rather than a silent 'nvarchar'. A date column defaulting to
-    text renders `<Value Type="Text">today-30</Value>`, which SharePoint
-    accepts and answers with the wrong rows."""
+    text renders `<Value Type="Text">today-30</Value>` — the sentinel as a
+    literal string, which is not the comparison anybody wrote, whatever
+    SharePoint then does with it."""
     if field not in types:
         raise _reject(target, f"no declared type for column {field!r}", context)
     return types[field]

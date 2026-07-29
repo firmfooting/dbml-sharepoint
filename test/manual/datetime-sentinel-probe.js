@@ -102,9 +102,10 @@
  *        watched SharePoint rewrite that XML on save, and the only element
  *        ever observed inside a real saved view was <Now/>, which does not
  *        work. Until C6 and C7 agree with C4, the CAML rendering is
- *        verified somewhere other than where it would ship — which is why
- *        `now` is gated for view filters in conditions.py and enabled for
- *        validation formulas, where the evidence reaches behaviour.
+ *        verified somewhere other than where it would ship. That was why
+ *        `now` was gated for view filters while only C2-C5 had answered;
+ *        C6 and C7 agreed with C4 on the 2026-07-29 run, and the gate was
+ *        lifted on the strength of it.
  *
  *        NOTE ON VIEWFIELDS. Every view this probe creates declares them,
  *        because a view with no fields displays nothing whether or not its
@@ -952,8 +953,8 @@
                  `re-ran the STORED query and got ${JSON.stringify(r.titles)}. C4 saw `
                  + '["CAML earlier today","CAML yesterday"] from the authored query. '
                  + 'Agreement means a view save does not change the meaning; '
-                 + 'disagreement means the CamlQuery result does not transfer and the '
-                 + 'sentinel stays gated for view filters.');
+                 + 'disagreement means the CamlQuery result does not transfer, and '
+                 + 'the view-filter rendering would have to be gated again.');
         }
       }
     }
