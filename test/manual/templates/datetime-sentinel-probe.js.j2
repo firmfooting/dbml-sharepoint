@@ -55,7 +55,14 @@
  *   V6   Under `<= TODAY()+1`, what is the exact ceiling — does TOMORROW
  *        23:00 save? This decides whether the allowance is about 24 hours
  *        or about 48, which is what the comments in five templates should
- *        say and currently do not.
+ *        say and currently do not. The stamp is built in the BROWSER's zone,
+ *        so V6 reports NOT ESTABLISHED unless both candidate site offsets
+ *        from TZ0 agree it lands exactly one site-local day ahead — on a
+ *        different site-local day, either verdict would be about the wrong
+ *        day. V6 HAS NOT BEEN RE-RUN SINCE THAT GATE WAS ADDED. Its recorded
+ *        answer came from a same-zone run, which the gate now permits, so
+ *        the result stands; nothing shipped depends on it either way, since
+ *        V3 already settles whether the allowance is needed at all.
  *
  *   -- CAML view filters ---------------------------------------------------
  *   CN   NEGATIVE CONTROL — is a CAML query containing a bogus <Nowww/>
@@ -187,11 +194,13 @@
   const utcHour = new Date().getUTCHours() + new Date().getUTCMinutes() / 60;
   const browserOffsetMin = -new Date().getTimezoneOffset();
   let serverHours = [];
+  let siteOffsetsMin = [];
   let tzEvidence = '';
   if (info) {
     // Windows convention: local + Bias = UTC, so local = UTC - Bias.
     const standardMin = -(info.Bias + (info.StandardBias || 0));
     const daylightMin = -(info.Bias + (info.DaylightBias || 0));
+    siteOffsetsMin = [...new Set([standardMin, daylightMin])];
     serverHours = [...new Set([standardMin, daylightMin])].map(
       (m) => ((utcHour + m / 60) % 24 + 24) % 24);
     const desc = (tz.body.Description || '(no description)');
@@ -270,13 +279,25 @@
   const LATER_TODAY = at(3 * HOUR);
   const YESTERDAY = at(-27 * HOUR);
   const TWO_DAYS = at(51 * HOUR);
-  // Tomorrow at 23:00 in THIS browser's zone, converted to UTC. Read
-  // alongside TZ0: if the zones differ this may be a different site-local
-  // hour, which V6's evidence line records rather than hides.
+  // Tomorrow at 23:00 in THIS browser's zone, converted to UTC.
   const tomorrowLate = new Date();
   tomorrowLate.setDate(tomorrowLate.getDate() + 1);
   tomorrowLate.setHours(23, 0, 0, 0);
   const TOMORROW_2300 = tomorrowLate.toISOString();
+
+  // V6 only means something if that instant is site-local TOMORROW. TODAY()+1
+  // is a date boundary, so what discriminates a 24-hour ceiling from a
+  // 48-hour one is which site-local DAY the stamp falls on — and a stamp
+  // built in the browser's zone can land on a different site-local day.
+  // SharePoint reports Bias and DaylightBias without saying which is in
+  // force, so require BOTH candidates to agree the stamp is exactly one
+  // site-local day ahead. Agreement resolves the ±1h ambiguity outright: if
+  // both offsets put it on day+1, it is on day+1 whichever is live.
+  const siteDayIndex = (ms, offsetMin) => Math.floor((ms + offsetMin * 60000) / 86400000);
+  const nowMs = Date.now();
+  const stampMs = tomorrowLate.getTime();
+  const V6_SAFE = siteOffsetsMin.length > 0 && siteOffsetsMin.every(
+    (m) => siteDayIndex(stampMs, m) - siteDayIndex(nowMs, m) === 1);
 
   const setValidation = async (formula) => {
     digest = await getDigest();
@@ -400,16 +421,26 @@
     // The comments in five templates say "any time today passes, next month
     // does not" and are silent on tomorrow. This is the row that lets them
     // say something true about the actual ceiling.
-    const tomorrowNight = await trySave('V6 tomorrow 23:00', TOMORROW_2300);
-    record('V6', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
-           tomorrowNight.saved ? 'ALLOWANCE IS ~48H' : 'ALLOWANCE IS ~24H',
-           `${TOMORROW_2300} (23:00 tomorrow in THIS browser's zone; read with TZ0) `
-           + (tomorrowNight.saved
-             ? 'SAVED, so TODAY()+1 permits the whole of tomorrow — the allowance is '
-               + 'about 48 hours, not 24, and the template comments should say so. '
-             : 'was REJECTED, so TODAY()+1 is a midnight ceiling and the allowance is '
-               + 'about 24 hours. ')
-           + tomorrowNight.detail);
+    if (!V6_SAFE) {
+      record('V6', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
+             'NOT ESTABLISHED',
+             `${TOMORROW_2300} is 23:00 tomorrow in THIS browser's zone, and the `
+             + 'site offsets in TZ0 do not both put it exactly one site-local day '
+             + 'ahead. Either answer would be about a day this run cannot name, so '
+             + 'neither is recorded. Re-run from a machine in the site zone.');
+    } else {
+      const tomorrowNight = await trySave('V6 tomorrow 23:00', TOMORROW_2300);
+      record('V6', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)',
+             tomorrowNight.saved ? 'ALLOWANCE IS ~48H' : 'ALLOWANCE IS ~24H',
+             `${TOMORROW_2300} (23:00 tomorrow here, and site-local tomorrow under `
+             + 'both candidate offsets in TZ0) '
+             + (tomorrowNight.saved
+               ? 'SAVED, so TODAY()+1 permits the whole of tomorrow — the allowance is '
+                 + 'about 48 hours, not 24, and the template comments should say so. '
+               : 'was REJECTED, so TODAY()+1 is a midnight ceiling and the allowance is '
+                 + 'about 24 hours. ')
+             + tomorrowNight.detail);
+    }
   }
   await clearValidation();
 
@@ -663,7 +694,8 @@
   console.log('  VN and CN must both be PASS. If either is FAIL, the surface it');
   console.log('  guards proved nothing and its rows are unproven, not wrong.');
   console.log('  V3 decides whether the today+1 allowance in five templates is');
-  console.log('  necessary. V6 decides whether it is a 24-hour or 48-hour window.');
+  console.log('  necessary. V6 decides whether it is a 24-hour or 48-hour window,');
+  console.log('  and only answers when TZ0 says this browser shares the site day.');
   console.log('  C2/C3 decide whether a `now` sentinel could do anything a view');
   console.log('  cannot already do; C5 confirms what seven shipped views get today.');
   log('INFO', `Done. Delete '${LIST}' when you have copied the results.`);
