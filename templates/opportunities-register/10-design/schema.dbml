@@ -1,0 +1,194 @@
+// ============================================================================
+// Opportunities register — a thin routing layer for business problems that a
+// project discovers but cannot own. It captures once, routes once, and avoids
+// duplicating clinical, risk, complaints, project or delivery systems.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project opportunities_register { database_type: 'SharePoint Online Lists' }
+
+// The first question is a stop gate, not a risk rating. The second choice is
+// refused at save so urgent or sensitive matters enter their existing pathway.
+Enum safety_screen {
+  "Required pathways checked - safe to record here"
+  "Urgent, sensitive or unsure - use routing guide first"
+}
+
+// A generic starting taxonomy for routing. Replace it with the health
+// service's directorates or facilities before deployment where practical.
+Enum service_area {
+  "Not sure - steward to route"
+  "Whole health service"
+  "Emergency and urgent care"
+  "Inpatient services"
+  "Outpatient and ambulatory care"
+  "Maternity and paediatrics"
+  "Mental health and alcohol or other drugs"
+  "Community and virtual care"
+  "Diagnostics and pharmacy"
+  "Clinical support services"
+  "Corporate and operational support"
+  "Multi-service or external interface"
+  "Other"
+}
+
+Enum opportunity_theme {
+  "Patient, carer or community"
+  "Workforce"
+  "Clinical process"
+  "Access, flow or coordination"
+  "Digital, data or information"
+  "Facilities or equipment"
+  "Corporate or support process"
+  "Governance or compliance"
+  "Other"
+}
+
+Enum project_relationship {
+  "Separate from delivery"
+  "Adoption enabler"
+  "Benefits enabler"
+  "Operational readiness dependency"
+  "Delivery dependency"
+}
+
+// Null means not yet triaged. Every value except Assess here is a short path
+// out of this register; the destination identifier proves the route completed.
+Enum triage_outcome {
+  "Assess here"
+  "Clinical incident or safety system"
+  "Organisational risk system"
+  "Complaint or open disclosure system"
+  "Privacy or cyber process"
+  "Project issue or change control"
+  "Direct hand-off to known owner"
+  "Duplicate or already governed"
+  "Close after screening"
+}
+
+Enum benefit_type {
+  "Patient safety or quality"
+  "Patient or carer experience"
+  "Access or equity"
+  "Workforce wellbeing or capacity"
+  "Time or operational capacity"
+  "Cost or value"
+  "Risk or compliance"
+  "Integrated care"
+}
+
+// These deliberately describe reach, not clinical consequence. Existing
+// safety, risk, statutory and equity priorities override this local score.
+Enum benefit_potential {
+  "Limited"
+  "Material"
+  "Major"
+  "System-wide"
+}
+
+Enum time_criticality {
+  "Flexible"
+  "Within 12 months"
+  "Within 3 months"
+  "Time-sensitive"
+}
+
+Enum effort_band {
+  "Unknown"
+  "Small"
+  "Medium"
+  "Large"
+}
+
+Enum priority_override {
+  "None"
+  "Existing safety or risk priority applies"
+  "Equity or cultural safety consideration"
+  "Service continuity consideration"
+  "Executive or statutory direction"
+}
+
+Enum opportunity_status {
+  "Captured"
+  "Assessing"
+  "Awaiting decision"
+  "Accepted"
+  "Parked"
+  "Transferred"
+  "Not proceeding"
+  "Duplicate"
+}
+
+Enum delivery_route {
+  "Business as usual"
+  "Quality improvement system"
+  "Clinical governance or risk system"
+  "Digital or change governance"
+  "Capital or asset program"
+  "Project or investment pipeline"
+  "Existing initiative"
+  "Other"
+}
+
+Table Opportunity {
+  Id                       int                  [pk, increment]
+  Title                    nvarchar             [not null, note: 'One line describing the problem or improvement outcome in plain language']
+  SafetyScreen             safety_screen        [not null, note: 'Stop if there may be current harm, an incident, complaint, privacy or cyber matter, statutory breach, service interruption, or identifying detail. Use the routing guide first']
+  ProblemStatement         longtext             [not null, note: 'In two to four sentences: what happens, who is affected and why it matters. Do not include patient identifiers, clinical record content or sensitive staff detail']
+  ServiceArea              service_area         [not null, note: 'The service, facility or organisational area best placed to receive triage; choose Not sure rather than guessing']
+  EvidenceLink             hyperlink            [note: 'Optional link to de-identified project evidence in its controlled source system; do not copy sensitive content into this list']
+
+  SourceProject            nvarchar             [not null, note: 'The project that encountered the problem']
+  ProjectReference         hyperlink            [note: 'Optional link to the project page, decision log or approved scope']
+  ScopeBoundary            nvarchar             [note: 'Why the source project cannot own the fix. Optional at submission; a steward confirms it before the item leaves Captured']
+  IdentifiedDate           date                 [not null, default: '[today]', note: 'Filled automatically when the opportunity is captured']
+
+  // Created By is the submitting contact. The fields below are steward-owned
+  // enrichment, intentionally absent from the New form.
+  ProjectContact           person               [note: 'Optional alternate contact if the submitter is not the right person for follow-up']
+  ProjectRelationship      project_relationship [note: 'How the problem relates to the source project; delivery dependencies also enter project issue or change control']
+  Theme                    opportunity_theme    [note: 'A secondary portfolio theme; Service Area remains the routing field']
+  AffectedGroups           nvarchar             [note: 'De-identified groups, services or locations affected']
+  EvidenceSummary          longtext             [note: 'A short de-identified triage summary of evidence and assumptions; detailed evidence stays in the source system']
+
+  TriageOutcome            triage_outcome       [note: 'The shortest valid route. Only Assess here commissions a full opportunity assessment']
+  OpportunityOwner         person               [note: 'The person accountable for assessment or hand-off; naming a person does not grant access']
+  Status                   opportunity_status   [not null, default: 'Captured', note: 'Lifecycle stage maintained by opportunity stewards']
+  NextAction               nvarchar             [note: 'One concrete next action; required only while this register actively owns work']
+  NextActionDue            date                 [note: 'Date the active next action will be completed or reviewed']
+
+  BenefitType              benefit_type         [note: 'Required only for an opportunity commissioned for assessment']
+  BenefitPotential         benefit_potential    [note: 'Credible reach of the benefit, not clinical consequence or risk severity']
+  TimeCriticality          time_criticality     [note: 'When delay materially reduces value; not an emergency or clinical risk rating']
+  EffortBand               effort_band          [note: 'Early order-of-magnitude effort; choose Small, Medium or Large before a decision']
+  StrategicAlignment       nvarchar             [note: 'The health-service objective, obligation or service priority this advances, or No direct alignment']
+  PatientConsumerImpact    nvarchar             [note: 'One line on patient, carer, consumer, access, equity or cultural-safety implications; detailed engagement belongs in the receiving process']
+  BenefitMeasure           nvarchar             [note: 'A practical baseline to target measure for the eventual owner to validate']
+  PriorityOverride         priority_override    [not null, default: 'None', note: 'Use an existing safety, risk, equity, continuity or statutory priority instead of this register score where applicable']
+  PriorityScore            calculated_number    [note: 'Calculated only when no override applies: Benefit Potential x Time Criticality, 1 to 16']
+  PriorityBand             calculated_text      [note: 'Routine, Consider, Prioritise, Prompt decision, or Use existing priority']
+
+  DecisionMaker            person               [note: 'The existing person or forum authorised to decide; this register creates no new committee']
+  DecisionDueDate          date                 [note: 'Required while Awaiting decision']
+  DecisionDate             date                 [note: 'Required for assessed pursue, park or stop decisions; cannot be in the future']
+  DecisionRationale        longtext             [note: 'A concise decision, reason and any conditions; link to a business case where one exists']
+  DeliveryRoute            delivery_route       [note: 'The existing system or accountable process receiving accepted or redirected work']
+  ReviewDueDate            date                 [note: 'Required while Parked; use sparingly and return to a real decision']
+  DestinationReference     nvarchar             [note: 'Required for transfer or duplicate closure: receiving record, control ID, backlog item or work order']
+  DestinationLink          hyperlink            [note: 'Link to the receiving record where the intended audience is authorised to open it']
+  DaysToDecision           calculated_number    [note: 'Calendar days from capture to an assessed decision; blank for direct redirects and hand-offs']
+
+  indexes {
+    Status
+    ServiceArea
+    TriageOutcome
+    SourceProject
+    IdentifiedDate
+    NextActionDue
+    DecisionDueDate
+    ReviewDueDate
+    DeliveryRoute
+    BenefitPotential
+    EffortBand
+  }
+}

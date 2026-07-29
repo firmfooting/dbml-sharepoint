@@ -1,0 +1,93 @@
+{
+  "elmType": "div",
+  "attributes": { "class": "ms-borderColor-neutralTertiary" },
+  "style": {
+    "width": "99%",
+    "border-top-width": "0px",
+    "border-bottom-width": "1px",
+    "border-left-width": "0px",
+    "border-right-width": "0px",
+    "border-style": "solid",
+    "margin-bottom": "16px",
+    "padding-bottom": "8px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": { "display": "flex", "box-sizing": "border-box", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": {
+            "iconName": "Lightbulb",
+            "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+            "title": "Out-of-scope improvement"
+          },
+          "style": { "flex": "none", "padding": "0px", "height": "auto" }
+        },
+        {
+          "elmType": "div",
+          "style": { "box-sizing": "border-box", "width": "100%", "text-align": "left", "padding": "4px 8px", "overflow": "hidden" },
+          "children": [
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
+              "txtContent": "=if([$Title] == '', 'Out-of-scope problem', 'Opportunity: ' + [$Title])"
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "Capture once and route once. This register is not approval, a delivery tracker, or an incident and emergency channel."
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "=if([$SourceProject] == '', '', 'Source project: ' + [$SourceProject] + '  |  Status: ' + if([$Status] == '', 'Captured', [$Status]))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "attributes": { "class": "ms-bgColor-themeLighter ms-fontColor-neutralPrimary" },
+      "style": { "padding": "8px 10px", "margin": "6px 0px", "display": "flex", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "span",
+          "attributes": { "iconName": "Warning", "class": "ms-fontColor-themePrimary ms-fontSize-16" },
+          "style": { "margin-right": "8px" }
+        },
+        {
+          "elmType": "span",
+          "attributes": { "class": "ms-fontSize-12 ms-fontWeight-semibold" },
+          "txtContent": "Current or potential harm, an incident, complaint, privacy or cyber concern, statutory breach, service interruption, or identifying detail? Stop and use the required pathway first."
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "style": { "display": "flex", "gap": "16px", "flex-wrap": "wrap" },
+      "children": [
+        {
+          "elmType": "a",
+          "txtContent": "Urgent and sensitive routing guide",
+          "attributes": {
+            "target": "_blank",
+            "href": "https://REPLACE-WITH-URGENT-ROUTING-URL",
+            "class": "ms-fontColor-themePrimary ms-fontSize-12 ms-fontWeight-semibold"
+          }
+        },
+        {
+          "elmType": "a",
+          "txtContent": "Opportunity triage guide",
+          "attributes": {
+            "target": "_blank",
+            "href": "https://REPLACE-WITH-OPPORTUNITY-PROCESS-URL",
+            "class": "ms-fontColor-themePrimary ms-fontSize-12 ms-fontWeight-semibold"
+          }
+        }
+      ]
+    }
+  ]
+}

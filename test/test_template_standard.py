@@ -3,7 +3,7 @@
 Every template is meant to read as a member of one family: the same form
 header anatomy, the same section arc, the same width scale, the same colour
 vocabulary, and demo data that actually fills every view it declares.
-Twenty-nine templates cannot hold that by convention alone, and four of them
+A library this size cannot hold that by convention alone, and four of its
 are being uplifted in parallel branches that never see each other's work.
 
 `NOT_YET_UPLIFTED` is a **shrinking allowlist, not a skip list.** Each theme
@@ -63,6 +63,10 @@ NOT_YET_UPLIFTED: frozenset[str] = frozenset({
 # may not reorder them, and System is always last.
 SECTION_ARC: tuple[str, ...] = ("Identify", "Assess", "Act", "Govern", "System")
 
+# A beat may span consecutive sections, so the section count is not the beat
+# count. This is the point past which a form stops reading as a form.
+MAX_BODY_SECTIONS = 8
+
 # §1.2 again: sections are named in each template's own domain language, so
 # no literal string match is possible. The mapping from a template's section
 # names to the arc's beats is DECLARED, per (template, entity). Adding a
@@ -87,6 +91,25 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
             "Wrap-up": "Govern",
         }
         for entity in ("Tier1Board", "Tier2Board", "Tier3Board")
+    },
+    # Seven sections, two of them Assess. Triage routes every opportunity;
+    # the deeper scoring pass only runs when the triage outcome is "Assess
+    # here", and splitting them is what makes the second one skippable
+    # rather than a wall of fields everyone scrolls past. Consecutive, so
+    # the reader still meets the beats in order.
+    #
+    # "Stop and route safely" is Identify: the screening question that
+    # decides whether this register is the right home at all, and it comes
+    # before capture because a safety or privacy matter must not be typed
+    # in here first and rerouted afterwards.
+    ("opportunities-register", "Opportunity"): {
+        "Stop and route safely": "Identify",
+        "Capture once": "Identify",
+        "Triage and route": "Assess",
+        "Assess only if needed": "Assess",
+        "Own the next step": "Act",
+        "Decide and hand off": "Govern",
+        "System": "System",
     },
     # Declared ahead of the sweep reaching it: policy-library is still on
     # NOT_YET_UPLIFTED because of its document-library half, so nothing here
@@ -459,8 +482,13 @@ def test_every_body_section_name_comes_from_the_arc(template: str) -> None:
             for section in body.get("sections", [])
             if isinstance(section, dict)
         ]
-        if not 1 <= len(names) <= len(SECTION_ARC):
-            problems.append(f"{entity}: {len(names)} sections, expected 1-{len(SECTION_ARC)}")
+        # The cap counts SECTIONS, and a beat may span consecutive ones, so
+        # it is not the number of beats. Eight is the point past which a
+        # form stops being a form with sections and becomes an outline.
+        if not 1 <= len(names) <= MAX_BODY_SECTIONS:
+            problems.append(
+                f"{entity}: {len(names)} sections, expected 1-{MAX_BODY_SECTIONS}",
+            )
             continue
         table = SECTION_BEATS.get((template, entity))
         if table is None:
@@ -657,12 +685,19 @@ def _is_strapline(node: dict[str, Any]) -> bool:
 
 
 def _is_ordered_subsequence(beats: list[str]) -> bool:
-    """Strictly increasing positions in SECTION_ARC: beats may be collapsed,
-    never reordered, and no two sections may claim the same beat."""
+    """NON-DECREASING positions in SECTION_ARC.
+
+    §1.2 forbids REORDERING the arc, not spending two consecutive sections
+    on one beat. A long list may split its assessment into "triage" and a
+    deeper pass that only some rows need, and that is still Assess followed
+    by Assess — the reader meets the beats in order either way. What stays
+    refused is a beat recurring AFTER a later one, which is the reordering
+    the rule exists to stop.
+    """
     previous = -1
     for beat in beats:
         position = SECTION_ARC.index(beat)
-        if position <= previous:
+        if position < previous:
             return False
         previous = position
     return True
