@@ -2735,3 +2735,63 @@ def test_a_grouped_column_need_not_be_displayed() -> None:
         {"Area": "area_enum"},
     )
     assert caml == '<GroupBy Collapse="TRUE"><FieldRef Name="Area"/></GroupBy>'
+
+
+def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None:
+    """SharePoint refuses ValidationFormula on a URL field even when the
+    value is the empty string: HTTP 500, "This field type does not support
+    validation formulas." Observed on a live tenant, aborting a paste at
+    the field-reconcile phase.
+
+    Under `column_validation: reconcile: exact` the deployer clears the
+    formula on every column NOT declared — so one undeclared hyperlink
+    column stops a deploy that has nothing else wrong with it. The
+    generator must mark those columns unmanaged rather than emit a clear.
+    """
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Thing {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Link hyperlink\n"
+        "  Note nvarchar\n"
+        "  Comment nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Thing: { kind: List, base_template: 100, site_role: default }\n"
+        "column_validation:\n"
+        "  Thing:\n"
+        "    reconcile: exact\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        '          - { field: Note, op: is_not_null }\n'
+        '        message: "Needed."\n',
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.generators.jsgen import UNMANAGED, build_schema_json
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    schema_json = build_schema_json(
+        schema=parse_dbml(tmp_path / "s.dbml"),
+        bundle=load_mapping(tmp_path / "m.yaml"),
+        site_role="default",
+    )
+    fields = {
+        f["title"]: f
+        for lst in schema_json["lists"]
+        for f in lst["fields_phase1"]
+    }
+    assert fields["Link"]["validation_formula"] == UNMANAGED, (
+        "a hyperlink column must be left unmanaged, not sent an empty "
+        "ValidationFormula that SharePoint refuses outright"
+    )
+    # The declared one still deploys, and an undeclared TEXT column is
+    # still cleared — the guard must not become "skip everything".
+    assert fields["Note"]["validation_formula"] != UNMANAGED
+    assert fields["Comment"]["validation_formula"] == ""
