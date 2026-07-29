@@ -431,10 +431,31 @@
       const clearingOnly = (field.validation_formula === '' || field.validation_formula === UNMANAGED)
         && (field.client_validation_formula === '' || field.client_validation_formula === UNMANAGED);
       if (clearingOnly && /does not support validation formulas/i.test(text)) {
+        // A MERGE is atomic, so the refusal applied NONE of this body —
+        // including any ClientValidationFormula clear it also carried,
+        // which a URL field does support. Returning here would report
+        // success while a stale show/hide rule stayed live and the
+        // read-back below never ran. So retry with only the properties
+        // this field type accepts, then fall through and verify.
+        const clientOnly = { '__metadata': body.__metadata };
+        if ('ClientValidationFormula' in body) {
+          clientOnly.ClientValidationFormula = body.ClientValidationFormula;
+          clientOnly.ClientValidationMessage = body.ClientValidationMessage;
+        }
+        if (Object.keys(clientOnly).length > 1) {
+          const retry = await fetchWithRetry(url, {
+            method: 'POST',
+            headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+            body: JSON.stringify(clientOnly),
+          });
+          if (!retry.ok) {
+            throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}; client-only retry also failed: HTTP ${retry.status} ${await retry.text()}`);
+          }
+        }
         log('INFO', `Field '${listName}.${field.title}': field type carries no validation formula, so there is none to clear; continuing.`);
-        return;
+      } else {
+        throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}`);
       }
-      throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}`);
     }
 
     // A SEALED column accepts the write, reports success and discards it,

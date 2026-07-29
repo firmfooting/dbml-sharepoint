@@ -1764,7 +1764,11 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
     assert "removeallviewfields" in js
     assert "addviewfield('${odataName(name)}')" in js
     assert "DefaultView: true" in js
-    assert "view.renamed_from.includes(v.Title)" in js
+    # Case-insensitively: SharePoint resolves a view by title that way and
+    # refuses two views on one list differing only in case, so a previous
+    # title recorded with different casing must still be adopted rather
+    # than left behind while a duplicate is created beside it.
+    assert "view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title))" in js
     assert "multiple previous-title views exist" in js
     assert "Hidden: view.hidden" in js
     assert "actual.Hidden !== view.hidden" in js
