@@ -18,6 +18,17 @@ _UNSUPPORTED_INDEX_TYPES = {
     "hyperlink": "Hyperlink",
 }
 
+# The generic list. It is the only BaseTemplate this tool builds for, and
+# every declaration in the repository is this value.
+#
+# Checked as an ALLOWLIST rather than a denylist on 101. `base_template` is
+# an unconstrained int read straight from the mapping and posted straight to
+# SharePoint, so refusing only the library template would close one integer
+# and leave 109, 119, 851 and the rest one keystroke from the same defect.
+# Stating what this tool builds needs no claim about SharePoint's behaviour,
+# which refusing a specific list of templates would.
+_GENERIC_LIST_TEMPLATE = 100
+
 
 def check(vc: ValidationContext) -> list[Finding]:
     schema = vc.schema
@@ -56,6 +67,27 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"metadata as a 'List' and keep the documents in a library you manage "
                 f"separately, linking to it with a hyperlink column. See issue #14 for "
                 f"the measurements behind this and what support would require.",
+            ))
+        # `elif`, so a DocumentLibrary reports the kind rather than a second
+        # complaint about the 101 it was always going to carry.
+        #
+        # This is the door the message above holds open. An author told to
+        # "model the metadata as a 'List'" who changes `kind` and leaves
+        # `base_template: 101` behind got a GREEN build that provisioned a
+        # real library: `_lists.js.j2` sends BaseTemplate and never sends
+        # `kind`, while every library guard in the build keys on `kind` and
+        # so does not fire. The refusal above would have been bypassed by
+        # the very edit it recommends.
+        elif entity.base_template != _GENERIC_LIST_TEMPLATE:
+            findings.append(Finding(
+                "error",
+                f"entities[{entity_name}]: base_template {entity.base_template} is not "
+                f"supported; this tool builds generic lists (BaseTemplate "
+                f"{_GENERIC_LIST_TEMPLATE}). The create call sends BaseTemplate and "
+                f"never sends 'kind', so SharePoint would provision whatever this "
+                f"number names while the rest of the build treats {entity_name} as a "
+                f"'{entity.kind}'. If you meant a document library, that kind is "
+                f"refused outright — see issue #14.",
             ))
 
     # Every entity in the mapping must exist in the schema.
