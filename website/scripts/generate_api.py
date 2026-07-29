@@ -434,14 +434,29 @@ def generate_conditions_page() -> None:
                 cells.append("_not supported — " + md_escape(reason) + "_")
         lines.append("| `" + label + "` | " + " | ".join(cells) + " |")
 
+    # The heading is unconditional; the SENTENCE under it is not. An empty
+    # set is the good state, and printing a bare header with nothing beneath
+    # it reads as a truncated page rather than as "nothing is pending" —
+    # which is the opposite of the claim the emptiness is meant to make.
     lines += ["", "## Not yet verified", ""]
-    for target, ops in sorted(conditions.DISABLED_PENDING_PROBE.items()):
-        listed = ", ".join("`" + op + "`" for op in sorted(ops))
+    if conditions.DISABLED_PENDING_PROBE:
+        for target, ops in sorted(conditions.DISABLED_PENDING_PROBE.items()):
+            listed = ", ".join("`" + op + "`" for op in sorted(ops))
+            lines += [
+                "On the **" + target + "** target these are refused until confirmed",
+                "against a live tenant: " + listed + ". Plausible from documented syntax",
+                "is not the same as observed, and this project has twice been wrong",
+                "about expression syntax it had not run.", "",
+            ]
+    else:
         lines += [
-            "On the **" + target + "** target these are refused until confirmed",
-            "against a live tenant: " + listed + ". Plausible from documented syntax",
-            "is not the same as observed, and this project has twice been wrong",
-            "about expression syntax it had not run.", "",
+            "Nothing is waiting on a probe that has been written and not run. That",
+            "is what this section reports, and an empty one is the good state — so",
+            "it says so rather than leaving a blank.", "",
+            "It is not a claim that every operator was watched in a form. The four",
+            "text operators were; the comparison and null tests rest on formulas",
+            "harvested from a live tenant rather than on written syntax. Where a",
+            "rendering is derived rather than observed, the source says so.", "",
         ]
 
     lines += ["## Operand accessors", "", "| Column kind | Required `property` |", "|---|---|"]
