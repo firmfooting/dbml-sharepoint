@@ -206,7 +206,19 @@ views:
         DueDate: 160
         Status: 110
         DoneDate: 160
-    - title: "Overdue before start"
+    # The published table called this "Overdue before start". The filter
+    # cannot say "before start": a task's link to its starter is a LOOKUP,
+    # and CAML cannot reach a column on the other list, so the start date
+    # is not filterable from here. Denormalising it onto the task would
+    # make it filterable and would then rot — SharePoint copies nothing
+    # between lists, so the duplicate would be stale the first time a start
+    # date moved, and a stale date on a readiness queue is worse than none.
+    #
+    # So the view is named for what it does: every open task past its due
+    # date, whether or not the starter has begun. That is a superset of the
+    # pre-start failures, and the right one to work — an open onboarding
+    # task overdue three weeks AFTER someone started is not less urgent.
+    - title: "Overdue"
       fields: ["@task", Notes]
       where:
         - { field: Status, op: eq, value: "Open" }
@@ -303,7 +315,8 @@ list_validation:
 #
 # Coverage: four starters spanning every status, and six tasks including
 # one nobody has picked up and which is already overdue with the start
-# date still ahead — the row "Overdue before start" exists to find.
+# date still ahead — the pre-start failure the "Overdue" view exists to
+# surface, and the reason the demo seeds one.
 demo_items:
   Starter:
     - key: str-analyst

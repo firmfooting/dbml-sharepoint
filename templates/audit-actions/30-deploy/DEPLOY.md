@@ -114,10 +114,16 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       Set Status to *Implemented - awaiting evidence* — EvidenceUrl appears
       as you change the value, without saving. Set it to *Closed* —
       ClosedDate appears too.
-- [ ] **Closure needs a ClosedDate** (`list_validation:`). With Status
+- [ ] **Both endings need a ClosedDate** (`list_validation:`). With Status
       *Closed* and ClosedDate empty, saving is refused — `DaysLate` is
       computed from that date, so without it the committee's lateness
-      figure is simply blank. Fill it; it saves.
+      figure is simply blank. Fill it; it saves. **Then try the same with
+      *Risk accepted***: also refused, and for a sharper reason. That
+      status leaves the default and Overdue queues the way a closure does,
+      and **Closed, last 90 days** — the committee's closure report —
+      filters on `ClosedDate`, which a blank cannot satisfy. Without the
+      rule, an accepted recommendation would be in no queue and in no
+      report.
 - [ ] **The EvidenceUrl requirement is NOT a save rule**, and you should
       confirm that rather than assume it: set Status to *Closed* with
       EvidenceUrl empty and a ClosedDate filled, and the row **saves**.

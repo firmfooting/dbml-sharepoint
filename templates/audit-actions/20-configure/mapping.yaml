@@ -256,13 +256,22 @@ column_validation:
 # 50-govern/GOVERNANCE.md and a verification step in 30-deploy/DEPLOY.md,
 # and the "Closed, last 90 days" view shows Evidence URL so an empty one is
 # visible to the committee reading it.
+#
+# BOTH terminal statuses need the date, not just Closed. Risk accepted is
+# an ending too: it leaves the default and Overdue queues the way a closure
+# does, and the "Closed, last 90 days" view — the committee's closure
+# report — filters `ClosedDate >= today-90`. A null cannot satisfy that
+# comparison, so a Risk accepted row saved without a date is absent from
+# every queue AND from the report, which is the one place an accepted risk
+# most needs to be seen. ClosedDate is already on the form for both
+# statuses, so requiring it here adds no rejection an author cannot act on.
 list_validation:
   Recommendation:
     when:
       - any_of:
-          - { field: Status, op: neq, value: "Closed" }
+          - { field: Status, op: not_in, value: ["Closed", "Risk accepted"] }
           - { field: ClosedDate, op: is_not_null }
-    message: "Closing a recommendation needs the Closed Date it was verified on. DaysLate is computed from that date, so without it the committee's lateness figure is blank. The Evidence URL is also required at closure — that one is a governance check, not a save rule; see 50-govern/GOVERNANCE.md."
+    message: "Ending a recommendation needs the Closed Date it was verified or accepted on — for Risk accepted as well as Closed. DaysLate is computed from that date and the closure report filters on it, so without one the row leaves every queue and never reaches the committee. The Evidence URL is also required at closure; that one is a governance check, not a save rule (see 50-govern/GOVERNANCE.md)."
 
 # All five Recommendation lenses show the same six identifying columns
 # before their own payload, so the spine is declared once (§1.9). AU_Audit
