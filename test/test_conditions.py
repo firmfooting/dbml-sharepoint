@@ -486,6 +486,56 @@ def test_real_date_literals_still_pass() -> None:
         assert value in to_caml(condition, TYPES)
 
 
+def test_a_date_sentinel_refuses_a_text_operator() -> None:
+    """`now` and `today` are points in time, and only comparison, ordering
+    and set membership mean anything against one. Paired with a substring
+    operator the sentinel exemption waved them straight past the literal
+    guard, and the renderers emitted:
+
+        contains + now  ->  ISNUMBER(FIND(NOW(),[OccurredAt]))
+        begins_with     ->  LEFT([OccurredAt],3)=NOW()
+
+    The 3 is `len('now')`: the sentinel's spelling arriving in the formula
+    as a character count, so the comparison is over the word rather than
+    the date. That is decidable from the emitted string alone.
+
+    What SharePoint would DO with either formula is unknown — no probe has
+    sent one — and refusing is the answer that needs no such knowledge.
+    """
+    for value in ("now", "today", "today+7"):
+        for op in ("contains", "not_contains", "begins_with", "not_begins_with"):
+            condition = parse_condition(
+                [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
+            )
+            with pytest.raises(ValueError, match="point in time"):
+                to_validation(condition, TYPES)
+        # CAML renders only the positive two directly, and it did render
+        # them, as
+        # `<Contains><Value Type="DateTime"><Today/></Value></Contains>` —
+        # a substring operator wrapped round a date element, which is not a
+        # shape this project has ever sent to a tenant.
+        for op in ("contains", "begins_with"):
+            condition = parse_condition(
+                [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
+            )
+            with pytest.raises(ValueError, match="point in time"):
+                to_caml(condition, TYPES)
+
+
+def test_a_date_sentinel_still_works_with_every_comparison() -> None:
+    """The mirror. Refusing the substring operators must not touch the
+    operators the sentinel exists for."""
+    for op in ("eq", "neq", "lt", "leq", "gt", "geq"):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": op, "value": "now"}], "ctx",
+        )
+        assert "NOW()" in to_validation(condition, TYPES)
+    members = parse_condition(
+        [{"field": "Due", "op": "in", "value": ["today", "today+1"]}], "ctx",
+    )
+    assert "TODAY()" in to_validation(members, TYPES)
+
+
 def test_a_date_operand_that_is_not_a_string_is_refused() -> None:
     """The guard used to run only on `str`, and YAML does not hand this
     module strings. `value: 20260729` arrives as an int and `value: true` as
