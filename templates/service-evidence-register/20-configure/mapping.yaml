@@ -320,9 +320,9 @@ column_formatting:
     #
     # DaysToResponse is in no declared view, so there is nothing to format.
 
-# Four views: the working list, the two things that need chasing, and the
-# history. There is no portfolio dashboard - the All Items view is the
-# reporting surface.
+# Five on the event log, five on the follow-ups, four on the themes: a
+# working list, the things that need chasing, and the history. There is no
+# portfolio dashboard - the All Items view is the reporting surface.
 views:
   ServiceEvent:
     # The default is the chase worklist, because that is the register's daily

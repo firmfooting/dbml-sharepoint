@@ -21,7 +21,7 @@ Two minutes today beats twenty minutes in six months, and it is worth more.
 
 ## Logging an event: the one-minute path
 
-Open **SE Service Event** and press **New**.
+Open **SE_ServiceEvent** and press **New**.
 
 1. **What happened** — one line, plain language.
 2. **Event Nature** — leave it on **Single occurrence** if the thing happened
@@ -80,7 +80,7 @@ so the form will not let you save without it.
 
 ## Every time you chase, add a follow-up
 
-Open **SE Follow Up** and press **New**. Record what you asked, how you asked
+Open **SE_FollowUp** and press **New**. Record what you asked, how you asked
 it, who (by **role**, not by name), how far up the escalation ladder you went,
 and what came back.
 
@@ -106,10 +106,12 @@ in once you have saved it.
 
 ## The views you will actually use
 
-**Outstanding and ageing** is what the list opens on. It shows everything
-still unresolved, oldest first, with overdue response dates in red. This is
-your chase worklist. **When it is empty, that is good news, not a broken
-view.**
+**Outstanding and ageing** is what the list opens on. It is the chase
+worklist, so it shows only what there is still something to do about: events
+with no resolved date, oldest first, with overdue response dates in red. A
+single occurrence is not on it — there is nothing to chase — and neither is
+anything closed or rejected. **When it is empty, that is good news, not a
+broken view.**
 
 **By event** on the follow-up list groups every chase under its request. The
 number beside each group *is* the chase count — nobody maintains it, so it
