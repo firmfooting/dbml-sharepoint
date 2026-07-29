@@ -79,6 +79,19 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # A null test is its own inverse, and a measure is never null —
             # LEN(blank) is 0, so the flipped comparison already matches.
             return flipped
+        if node.op in ("not_contains", "not_begins_with"):
+            # A negative text predicate is ALREADY true for a blank: indexOf
+            # on an empty string is -1, which satisfies both `< 0` and
+            # `!= 0`. Its negation must therefore be false there, and the
+            # null arm below would OR the blank back in — making an authored
+            # rule and its own negation both true for a blank value. Same
+            # reasoning as neq/not_in, and it must stay a separate test:
+            # `_TEXT_OPS` holds all four, and the `flipped.op` half of the
+            # condition below would catch the POSITIVE two by their flips.
+            # For those the null arm is right — `contains` is false for a
+            # blank, so none_of must be true — and dropping it would change
+            # output for a shape that already exists on main.
+            return flipped
         if node.op in ("neq", "not_in") or flipped.op in ("neq", "not_in"):
             # These two inverse operators define the empty value as outside
             # the compared literal/set. Their renderers already carry that
@@ -165,7 +178,12 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 # that does not ask reads as though somebody already checked.
 #
 # EMPTY, and the emptiness is the claim: every operator this tool renders
-# onto the expression target has been watched working in a form.
+# onto the expression target has been watched working in a form — with one
+# stated exception. `not_begins_with` renders `indexOf(...) != 0`, which was
+# not among the probe's candidates; it is the exact negation of the `== 0`
+# that WAS watched, over the same call whose value was watched, so it is
+# derived rather than observed. Named here rather than left for a reader to
+# assume, because the whole worth of this list is that it is honest.
 #
 # It stays here because storage cannot establish anything on this target.
 # SharePoint does not validate ClientValidationFormula on write — a call to
