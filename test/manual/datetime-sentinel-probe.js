@@ -818,20 +818,44 @@
   // deploy.js writes ViewQuery and verifies by read-back, so "saves and
   // survives the round trip" is the question that decides whether a `now`
   // sentinel could be shipped at all.
+  // Creating a view is TWO calls, and the second is not optional.
+  //
+  // Run 1 of this probe created views with no ViewFields, and the operator
+  // reported the view showing "no rows/columns" — which proved nothing,
+  // because a view with no fields displays nothing whether or not its
+  // filter matched. An empty result is only evidence when a non-empty one
+  // would have been visible.
+  //
+  // Run 2 tried to fix that by passing `ViewFields: { results: [...] }` and
+  // every view creation failed with "The property 'results' does not exist
+  // on type 'SP.ViewFieldCollection'". That wrapper is the odata=VERBOSE
+  // convention; this harness sends nometadata, which REJECTS it rather than
+  // ignoring it — the same trap already recorded beside addField in
+  // calculated-choice-operand.js.j2.
+  //
+  // addviewfield is the path that works under either format.
+  const createView = async (title, query) => {
+    digest = await getDigest();
+    const made = await spPost(`web/lists/getbytitle('${LIST}')/views`, {
+      Title: title, ViewQuery: query, RowLimit: 100,
+    }, digest);
+    if (!made.ok) return { ok: false, status: made.status, text: made.text };
+    for (const column of ['Title', FIELD]) {
+      digest = await getDigest();
+      const added = await spPost(
+        `web/lists/getbytitle('${LIST}')/views/getbytitle('${title}')`
+        + `/viewfields/addviewfield('${column}')`, {}, digest);
+      if (!added.ok) {
+        return { ok: false, status: added.status,
+                 text: `view created but addviewfield('${column}') failed: ${added.text}` };
+      }
+    }
+    return { ok: true, status: made.status, text: made.text };
+  };
+
   const VIEW = 'dbmlsp probe now view';
-  digest = await getDigest();
   const viewQuery = `<Where>${ltWhen('<Now/>', true)}</Where>`;
-  // ViewFields is NOT optional here, and the first run of this probe learned
-  // that the hard way: a view created without them renders with no columns,
-  // so it shows nothing whether or not its filter matched — and "no rows"
-  // then means nothing at all. An empty result is only evidence if a
-  // non-empty one would have been visible.
-  const madeView = await spPost(`web/lists/getbytitle('${LIST}')/views`, {
-    Title: VIEW,
-    ViewQuery: viewQuery,
-    ViewFields: { results: ['Title', FIELD] },
-    RowLimit: 100,
-  }, digest);
+  const madeView = await createView(VIEW, viewQuery);
   if (!madeView.ok) {
     record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
            'REFUSED', `HTTP ${madeView.status}: ${madeView.text.slice(0, 300)}`);
@@ -893,14 +917,8 @@
                         : 'time-of-day gate closed — see TZ0');
     }
   } else {
-    digest = await getDigest();
     const realQuery = `<Where>${ltWhen('<Today/>', true)}</Where>`;
-    const madeReal = await spPost(`web/lists/getbytitle('${LIST}')/views`, {
-      Title: REAL_VIEW,
-      ViewQuery: realQuery,
-      ViewFields: { results: ['Title', FIELD] },
-      RowLimit: 100,
-    }, digest);
+    const madeReal = await createView(REAL_VIEW, realQuery);
     if (!madeReal.ok) {
       record('C6', 'A saved view using <Today/> + IncludeTimeValue keeps its query',
              'REFUSED', `HTTP ${madeReal.status}: ${madeReal.text.slice(0, 300)}`);
@@ -915,33 +933,33 @@
              kept ? 'PASS' : 'REWRITTEN — the attribute did not survive',
              `sent ${JSON.stringify(realQuery)}; stored ${JSON.stringify(stored)}`);
 
-      // Reading THROUGH the view, not re-running the CAML by hand. This is
-      // the only row in the file that observes what an operator would
-      // actually see after a deploy.
-      digest = await getDigest();
-      const rendered = await spPost(
-        `web/lists/getbytitle('${LIST}')/RenderListDataAsStream`
-        + `?@viewName='${encodeURIComponent(REAL_VIEW)}'`,
-        { parameters: { RenderOptions: 2, ViewName: REAL_VIEW } }, digest);
-      const rows = rendered.ok && rendered.body && Array.isArray(rendered.body.Row)
-        ? rendered.body.Row.map((r) => r.Title).sort() : null;
-      if (rows === null) {
+      // Re-run the XML SHAREPOINT PERSISTED, not the XML we sent. That is
+      // the whole point: C4 proved the query we author discriminates, and
+      // this proves the query that survives a view save still does. If
+      // SharePoint drops IncludeTimeValue on the way in, C6 catches it; if
+      // it keeps the attribute but stops honouring it, only this does.
+      if (!stored) {
         record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
-               'NOT ESTABLISHED',
-               `RenderListDataAsStream did not answer: HTTP ${rendered.status} `
-               + rendered.text.slice(0, 220));
+               'NOT ESTABLISHED', 'the stored ViewQuery could not be read back');
       } else {
-        const e = rows.includes('CAML earlier today');
-        const l = rows.includes('CAML later today');
-        record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
-               e && !l ? 'DISCRIMINATES — matches C4'
-                       : e && l ? 'BOTH RETURNED — the view does NOT match C4'
-                                : !e && !l ? 'NEITHER RETURNED — the view does NOT match C4'
-                                           : 'INVERTED',
-               `read through the saved view: ${JSON.stringify(rows)}. C4 saw `
-               + '["CAML earlier today","CAML yesterday"] through getitems; if this '
-               + 'row disagrees, the CamlQuery result does not transfer to a view and '
-               + 'the sentinel must stay gated for view filters.');
+        const r = await caml(stored.replace(/^<Where>/, '').replace(/<\/Where>$/, ''), true);
+        if (!r.ok) {
+          record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+                 'REFUSED', `HTTP ${r.status}: ${r.text.slice(0, 240)}`);
+        } else {
+          const e = has(r.titles, 'CAML earlier today');
+          const l = has(r.titles, 'CAML later today');
+          record('C7', '...and that SAVED VIEW returns the instant-discriminated rows',
+                 e && !l ? 'DISCRIMINATES — matches C4'
+                         : e && l ? 'BOTH RETURNED — does NOT match C4'
+                                  : !e && !l ? 'NEITHER RETURNED — does NOT match C4'
+                                             : 'INVERTED',
+                 `re-ran the STORED query and got ${JSON.stringify(r.titles)}. C4 saw `
+                 + '["CAML earlier today","CAML yesterday"] from the authored query. '
+                 + 'Agreement means a view save does not change the meaning; '
+                 + 'disagreement means the CamlQuery result does not transfer and the '
+                 + 'sentinel stays gated for view filters.');
+        }
       }
     }
   }
@@ -1103,6 +1121,7 @@
   console.log('  and only answers when TZ0 says this browser shares the site day.');
   console.log('  C2/C3 decide whether a `now` sentinel could do anything a view');
   console.log('  cannot already do; C5 confirms what seven shipped views get today.');
+  console.log('  C6/C7 are the ones that lift the CAML gate in conditions.py.');
   if (controlRowLeaked) {
     console.log('');
     console.log('  A CONTROL ROW COULD NOT BE DELETED — see the FAIL above. The CAML');
@@ -1110,5 +1129,15 @@
     console.log('  been there. Treat them as NOT ESTABLISHED, delete the list, and');
     console.log('  re-run before reporting anything from this run.');
   }
+  console.log('\n============ ONE EYES-ON CHECK ============');
+  console.log(`  Open the list and click the view "${REAL_VIEW}".`);
+  console.log('  C7 re-ran the stored query over REST; this confirms the same');
+  console.log('  thing in the surface a person actually uses.');
+  console.log('  Expected: it lists "CAML earlier today" and "CAML yesterday",');
+  console.log('  and does NOT list "CAML later today".');
+  console.log('  what you see: ____________________________________');
+  console.log('  (If the view lists nothing AND has no columns, say so —');
+  console.log('   that is the addviewfield step having failed, not a finding.)');
+  console.log('==========================================');
   log('INFO', `Done. Delete '${LIST}' when you have copied the results.`);
 })();
