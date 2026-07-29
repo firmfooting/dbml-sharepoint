@@ -1,0 +1,28 @@
+{
+  "sections": [
+    {
+      "displayname": "What happened",
+      "fields": ["Title", "Provider", "EventNature", "OccurredAt", "ServiceAffected", "FailureMode", "WhatHappened"]
+    },
+    {
+      "displayname": "How you know",
+      "fields": ["BasisOfKnowledge", "ProviderReference", "EvidenceHeld", "EvidenceLink"]
+    },
+    {
+      "displayname": "Impact",
+      "fields": ["Severity", "PeopleAffected", "HoursLost", "ImpactDescription", "ServiceCommitment"]
+    },
+    {
+      "displayname": "Chasing and resolution",
+      "fields": ["RaisedWithProvider", "ResponseDueDate", "LastFollowedUp", "ResolvedDate", "OutcomeForUs"]
+    },
+    {
+      "displayname": "Review and escalation",
+      "fields": ["Status", "ReviewedBy", "ReviewNote", "RelatedIssue"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["LoggedDate", "DaysToLog", "RecordTimeliness", "DaysOutstanding"]
+    }
+  ]
+}

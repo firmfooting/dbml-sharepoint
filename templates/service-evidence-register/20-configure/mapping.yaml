@@ -7,6 +7,7 @@
 prefix: "SE_"
 
 entities:
+  ServiceEvent: { kind: List, base_template: 100, site_role: default }
   ServiceIssue: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
@@ -25,6 +26,17 @@ watched_lists: []
 # than DATEDIF() because it is exact on date serials and unambiguous when one
 # operand is a datetime.
 calculated_formulas:
+  ServiceEvent:
+    # INT() rather than DATEDIF() because OccurredAt is a datetime and
+    # LoggedDate a date; truncating both to their date serials avoids a
+    # fractional-day result.
+    DaysToLog: '=IF(OR(ISBLANK([OccurredAt]),ISBLANK([LoggedDate])),"",INT([LoggedDate])-INT([OccurredAt]))'
+    RecordTimeliness: '=IF(ISBLANK([DaysToLog]),"",IF([DaysToLog]<=0,"Same day",IF([DaysToLog]<=7,"Within a week",IF([DaysToLog]<=30,"Delayed","Retrospective"))))'
+    # SharePoint refuses [Today] in a calculated column, so this can only ever
+    # be the closed-book figure. Blank while outstanding is the honest answer;
+    # the live ageing belongs to the Outstanding and ageing view and to the
+    # @now comparison in the Response Due Date formatter.
+    DaysOutstanding: '=IF(OR(ISBLANK([OccurredAt]),ISBLANK([ResolvedDate])),"",INT([ResolvedDate])-INT([OccurredAt]))'
   ServiceIssue:
     DaysToResponse: '=IF(OR(ISBLANK([RaisedDate]),ISBLANK([ResponseDate])),"",INT([ResponseDate])-INT([RaisedDate]))'
 
@@ -96,6 +108,21 @@ prevent_list_deletion: true
 display_names:
   mode: auto
   overrides:
+    ServiceEvent:
+      Title: "What happened"
+      WhatHappened: "The account"
+      BasisOfKnowledge: "How you know"
+      ProviderReference: "Provider reference"
+      EvidenceLink: "Evidence link"
+      HoursLost: "Hours lost (estimate)"
+      ImpactDescription: "Consequence"
+      ServiceCommitment: "Commitment or expectation"
+      RaisedWithProvider: "Raised with provider"
+      OutcomeForUs: "Outcome for us"
+      ReviewNote: "Reviewer's assessment"
+      RelatedIssue: "Part of theme"
+      DaysToLog: "Days to log"
+      DaysOutstanding: "Days outstanding (once resolved)"
     ServiceIssue:
       Title: "The theme"
       IssueSummary: "The pattern"
@@ -105,6 +132,82 @@ display_names:
       BusinessConsequence: "Consequence for us"
 
 column_formatting:
+  ServiceEvent:
+    Severity:
+      style: severity
+      map: { Minor: neutral, Moderate: low, Major: warning, Critical: severe }
+    Status:
+      style: severity
+      map:
+        Logged: neutral
+        "Under review": low
+        Accepted: good
+        Escalated: warning
+        Closed: muted
+        "Not substantiated": muted
+    EventNature:
+      style: pill
+      map:
+        "Single occurrence": neutral
+        "Unactioned request or ticket": warning
+        "Ongoing or recurring condition": warning
+    BasisOfKnowledge:
+      style: pill
+      map:
+        "I observed or experienced this directly": good
+        "It was reported to me by a colleague": warning
+        "Taken from a system record, ticket or report": good
+        "Taken from written correspondence": good
+    EvidenceHeld:
+      style: severity
+      map:
+        "Attached to this record": good
+        "Provider ticket or system record": good
+        "Email or written correspondence": good
+        "Screenshot or document held elsewhere": low
+        "Contemporaneous note only": warning
+        "None - recollection only": severe
+    # FailureMode is deliberately NOT formatted. It is a taxonomy rather than
+    # a lifecycle or severity column, so the standard does not ask for it;
+    # colouring it by badness would double-encode with Severity, which sits
+    # beside it in every view that shows both; and a fourteen-member map
+    # would be half again the largest in the library. The category is the
+    # information here, not a colour.
+    RaisedWithProvider:
+      style: severity
+      map:
+        "Not yet raised": warning
+        "Raised at the time": good
+        "Raised afterwards": low
+        "Raised through formal escalation": low
+        "Deliberately not raised": muted
+    OutcomeForUs:
+      style: severity
+      map:
+        "Resolved satisfactorily": good
+        "Resolved after escalation": low
+        "Worked around locally": warning
+        "Partially resolved": warning
+        Unresolved: severe
+        "Recurred after resolution": severe
+    RecordTimeliness:
+      style: severity
+      calculated: true
+      map:
+        "Same day": good
+        "Within a week": low
+        Delayed: warning
+        Retrospective: severe
+    # The guard cannot express "this date is not blank", so it excludes the
+    # resolved outcomes instead. A blank OutcomeForUs is not one of them, so
+    # an open item still shows red - which is what we want. A save rule keeps
+    # ResolvedDate and OutcomeForUs consistent so the guard cannot be fooled
+    # by a resolved row with no outcome recorded.
+    ResponseDueDate:
+      style: overdue-date
+      guard:
+        field: OutcomeForUs
+        not: ["Resolved satisfactorily", "Resolved after escalation", "Worked around locally"]
   ServiceIssue:
     Status:
       style: severity
@@ -144,6 +247,102 @@ column_formatting:
 # history. There is no portfolio dashboard - the All Items view is the
 # reporting surface.
 views:
+  ServiceEvent:
+    # The default is the chase worklist, because that is the register's daily
+    # job. An empty one is a welcome signal rather than a broken view.
+    - title: "Outstanding and ageing"
+      default: true
+      fields: [Title, Provider, EventNature, ServiceAffected, FailureMode,
+               OccurredAt, ResponseDueDate, LastFollowedUp, ProviderReference,
+               Severity]
+      where:
+        - { field: ResolvedDate, op: is_null }
+        - { field: EventNature, op: neq, value: "Single occurrence" }
+      sort:
+        - { field: OccurredAt, direction: asc }
+      widths:
+        Title: 300
+        Provider: 170
+        EventNature: 220
+        ServiceAffected: 220
+        FailureMode: 260
+        OccurredAt: 160
+        ResponseDueDate: 160
+        LastFollowedUp: 160
+        ProviderReference: 180
+        Severity: 130
+    - title: "Needs review"
+      fields: [Title, Provider, FailureMode, Severity, BasisOfKnowledge,
+               EvidenceHeld, RecordTimeliness, Author, Status]
+      where:
+        - { field: Status, op: in, value: [Logged, "Under review"] }
+      sort:
+        - { field: OccurredAt, direction: asc }
+      widths:
+        Title: 300
+        Provider: 170
+        FailureMode: 260
+        Severity: 130
+        BasisOfKnowledge: 300
+        EvidenceHeld: 260
+        RecordTimeliness: 150
+        Author: 170
+        Status: 160
+    - title: "By failure mode"
+      fields: [Title, Provider, ServiceAffected, Severity, OccurredAt,
+               PeopleAffected, HoursLost, Status]
+      group_by: { field: FailureMode, collapsed: true }
+      totals:
+        HoursLost: sum
+      sort:
+        - { field: OccurredAt, direction: desc }
+      widths:
+        Title: 300
+        Provider: 170
+        ServiceAffected: 220
+        Severity: 130
+        OccurredAt: 160
+        PeopleAffected: 140
+        HoursLost: 140
+        Status: 160
+    - title: "Evidence pack"
+      fields: [Title, Provider, OccurredAt, FailureMode, Severity,
+               ProviderReference, EvidenceHeld, RecordTimeliness, HoursLost,
+               ServiceCommitment]
+      where:
+        - { field: Status, op: in, value: [Accepted, Escalated] }
+      group_by: { field: RelatedIssue, collapsed: true }
+      totals:
+        HoursLost: sum
+      sort:
+        - { field: OccurredAt, direction: asc }
+      widths:
+        Title: 280
+        Provider: 170
+        OccurredAt: 160
+        FailureMode: 260
+        Severity: 130
+        ProviderReference: 180
+        EvidenceHeld: 260
+        RecordTimeliness: 150
+        HoursLost: 140
+        ServiceCommitment: 280
+    - title: "Closed and not substantiated"
+      fields: [Title, Provider, FailureMode, Status, OutcomeForUs,
+               ReviewedBy, ReviewNote, Modified]
+      where:
+        - { field: Status, op: in, value: [Closed, "Not substantiated"] }
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 280
+        Provider: 170
+        FailureMode: 260
+        Status: 160
+        OutcomeForUs: 200
+        ReviewedBy: 170
+        ReviewNote: 320
+        Modified: 170
   ServiceIssue:
     - title: "Open issues"
       default: true
@@ -220,6 +419,38 @@ views:
 # The New form asks for the pattern and its weight. Everything about raising
 # it appears as the theme reaches that stage.
 form_visibility:
+  ServiceEvent:
+    reconcile: exact
+    columns:
+      # The chase machinery is invisible for a single occurrence, which is
+      # what keeps the one-minute capture path intact.
+      ResponseDueDate:
+        new: false
+        when:
+          - { field: EventNature, op: neq, value: "Single occurrence" }
+      LastFollowedUp:
+        new: false
+        when:
+          - { field: EventNature, op: neq, value: "Single occurrence" }
+      ResolvedDate:
+        new: false
+        when:
+          - { field: EventNature, op: neq, value: "Single occurrence" }
+      OutcomeForUs: { new: false }
+      EvidenceLink:
+        when:
+          - { field: EvidenceHeld, op: in, value: ["Provider ticket or system record", "Email or written correspondence", "Screenshot or document held elsewhere"] }
+      Status: { new: false }
+      ReviewedBy: { new: false }
+      ReviewNote:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Under review", Accepted, Escalated, Closed, "Not substantiated"] }
+      RelatedIssue:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, Escalated] }
+      LoggedDate: { new: false }
   ServiceIssue:
     reconcile: exact
     columns:
@@ -263,14 +494,32 @@ form_visibility:
           - { field: Status, op: in, value: [Resolved, Unresolved, Closed] }
 
 form_formatting:
+  ServiceEvent:
+    header: formatting/service-event-form-header.json
+    body: formatting/service-event-form-body.json
   ServiceIssue:
     header: formatting/service-issue-form-header.json
     body: formatting/service-issue-form-body.json
 
-# Every date column here is a DATE rather than a DATETIME, so `leq today` is
-# correct: SharePoint's TODAY() is midnight, which only bites on datetime
-# columns (see ServiceEvent.OccurredAt, which uses the today+1 allowance).
+# TODAY() in a SharePoint validation formula is midnight. On a DATE column
+# `leq today` is therefore correct; on a DATETIME column it would reject
+# everything stamped after 00:00, which for an event log is every row anybody
+# ever types. OccurredAt is the one DATETIME here and takes the `today+1`
+# midnight allowance: any time today passes, tomorrow does not.
 column_validation:
+  ServiceEvent:
+    reconcile: exact
+    columns:
+      OccurredAt:
+        when:
+          - { field: OccurredAt, op: leq, value: today+1 }
+        message: "Use the date and time it actually happened; it cannot be in the future. For a request that has not been actioned, use the date you raised it."
+      ResolvedDate:
+        when:
+          any_of:
+            - { field: ResolvedDate, op: is_null }
+            - { field: ResolvedDate, op: leq, value: today }
+        message: "Use the date it was resolved; it cannot be in the future. Leave it blank while it is still outstanding."
   ServiceIssue:
     reconcile: exact
     columns:
@@ -305,6 +554,33 @@ column_validation:
 # notes and the review cadence in 50-govern/GOVERNANCE.md. A message that
 # promised more than the formula enforces would be worse than the gap.
 list_validation:
+  # Three rules, each earning its friction.
+  #
+  # The second is the one worth defending. An event may be LOGGED on a
+  # colleague's account with nothing behind it - that is still worth having,
+  # and refusing it would teach people not to log at all. What it may not be
+  # is ACCEPTED as evidence, because a second-hand account with no artefact
+  # is the row a provider takes apart first, and one of those discredits the
+  # forty around it.
+  #
+  # WhatHappened has no minimum-length rule and ReviewNote is not required
+  # for "Not substantiated", both for the same platform reason recorded on
+  # ServiceIssue below: SharePoint refuses a validation formula that
+  # references a multi-line column. The form notes and the review cadence
+  # carry those two expectations instead.
+  ServiceEvent:
+    when:
+      - any_of:
+          - { field: EventNature, op: neq, value: "Unactioned request or ticket" }
+          - { field: ProviderReference, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: Accepted }
+          - { field: BasisOfKnowledge, op: neq, value: "It was reported to me by a colleague" }
+          - { field: EvidenceHeld, op: neq, value: "None - recollection only" }
+      - any_of:
+          - { field: ResolvedDate, op: is_null }
+          - { field: OutcomeForUs, op: is_not_null }
+    message: "Check this record: a request that has not been actioned needs the provider's reference number, because a complaint that cannot say which request is not evidence. A second-hand account with nothing behind it can be logged, but not accepted as evidence. And a resolved date needs the outcome that went with it."
   ServiceIssue:
     when:
       - any_of:
@@ -327,6 +603,146 @@ list_validation:
     message: "Check the stage: leaving Assembling needs at least one supporting event; Raised needs the date it was raised and the forum or role it went to; Response received needs the date they responded; Remedy agreed needs the date the remedy falls due; concluding needs a closed date."
 
 demo_items:
+  # One deliberately mundane, sector-neutral story across the three lists: a
+  # recurring access-provisioning failure, chased four times, escalated, and
+  # partly remedied. Chosen so every declared view returns something and
+  # every formatted column is seen to render.
+  ServiceEvent:
+    - key: se-event-ticket-open
+      values:
+        Title: "[DEMO] Access request for a new starter still not completed after three weeks"
+        Provider: "[DEMO] Example Service Partner"
+        EventNature: "Unactioned request or ticket"
+        OccurredAt: "today-21"
+        ServiceAffected: "Access, accounts or permissions"
+        FailureMode: "No response or acknowledgement"
+        WhatHappened: "Demo row. A standard access request was submitted on the date shown with the full details required. No acknowledgement was received. The person started on time and has been working from a colleague's screen since."
+        BasisOfKnowledge: "I observed or experienced this directly"
+        ProviderReference: "[DEMO] REQ-104882"
+        EvidenceHeld: "Provider ticket or system record"
+        Severity: Major
+        PeopleAffected: 2
+        HoursLost: 14
+        ImpactDescription: "Demo row. A new starter cannot work unsupervised, and a colleague is absorbing the supervision."
+        ServiceCommitment: "[DEMO] Five working days for a standard access request"
+        RaisedWithProvider: "Raised at the time"
+        ResponseDueDate: "today-14"
+        LastFollowedUp: "today-3"
+        Status: Logged
+    - key: se-event-ongoing
+      values:
+        Title: "[DEMO] Shared drive intermittently unavailable each morning"
+        Provider: "[DEMO] Example Service Partner"
+        EventNature: "Ongoing or recurring condition"
+        OccurredAt: "today-45"
+        ServiceAffected: "Connectivity or infrastructure"
+        FailureMode: "Recurrence of a previously reported problem"
+        WhatHappened: "Demo row. The shared drive has been unavailable for roughly twenty minutes at the start of most days since the date shown. It was reported once, closed as resolved, and returned the following week."
+        BasisOfKnowledge: "It was reported to me by a colleague"
+        ProviderReference: "[DEMO] INC-99120"
+        EvidenceHeld: "Email or written correspondence"
+        EvidenceLink: "https://example.invalid/evidence/demo-email-thread"
+        Severity: Moderate
+        PeopleAffected: 18
+        HoursLost: 30
+        ImpactDescription: "Demo row. The first twenty minutes of the day are lost for the team that works from shared files."
+        ServiceCommitment: "[DEMO] Core file services available during business hours"
+        RaisedWithProvider: "Raised afterwards"
+        ResponseDueDate: "today+7"
+        LastFollowedUp: "today-9"
+        Status: "Under review"
+    - key: se-event-accepted
+      values:
+        Title: "[DEMO] Request closed as resolved without the work being done"
+        Provider: "[DEMO] Example Service Partner"
+        EventNature: "Single occurrence"
+        OccurredAt: "today-30"
+        ServiceAffected: "Requests or help desk"
+        FailureMode: "Closed without resolving"
+        WhatHappened: "Demo row. The request was marked resolved on the date shown with no contact and no change to the underlying configuration. It was re-raised the following day and the second request carries a different reference."
+        BasisOfKnowledge: "Taken from a system record, ticket or report"
+        ProviderReference: "[DEMO] REQ-103551"
+        EvidenceHeld: "Attached to this record"
+        Severity: Moderate
+        PeopleAffected: 1
+        HoursLost: 2
+        ImpactDescription: "Demo row. The same request had to be raised twice, and the reported resolution figure counts it as one success."
+        ServiceCommitment: "[DEMO] Resolution confirmed with the requester before closure"
+        RaisedWithProvider: "Raised at the time"
+        ResolvedDate: "today-22"
+        OutcomeForUs: "Resolved after escalation"
+        Status: Accepted
+        ReviewedBy: "@me"
+        ReviewNote: "Demo row. Verified against the provider's own ticket history: closed and re-raised, both references confirmed."
+        RelatedIssue: { demo_ref: se-issue-raised }
+    - key: se-event-escalated
+      values:
+        Title: "[DEMO] Core system taken offline during business hours without notice"
+        Provider: "[DEMO] Example Service Partner"
+        EventNature: "Unactioned request or ticket"
+        OccurredAt: "today-60"
+        ServiceAffected: "Systems, applications or tools"
+        FailureMode: "Change made without notice or agreement"
+        WhatHappened: "Demo row. The system became unavailable at 10:15 on the date shown with no prior notice. It returned at 12:40. A change was confirmed afterwards as the cause."
+        BasisOfKnowledge: "I observed or experienced this directly"
+        ProviderReference: "[DEMO] CHG-20418"
+        EvidenceHeld: "Provider ticket or system record"
+        Severity: Critical
+        PeopleAffected: 60
+        HoursLost: 120
+        ImpactDescription: "Demo row. Front-line work stopped for two and a half hours in the busiest part of the day."
+        ServiceCommitment: "[DEMO] Changes to core systems outside business hours with five days notice"
+        RaisedWithProvider: "Raised through formal escalation"
+        ResponseDueDate: "today-53"
+        LastFollowedUp: "today-45"
+        ResolvedDate: "today-59"
+        OutcomeForUs: "Partially resolved"
+        Status: Escalated
+        ReviewedBy: "@me"
+        ReviewNote: "Demo row. Accepted and escalated: the change record confirms the cause and no notice was issued."
+        RelatedIssue: { demo_ref: se-issue-remedy }
+    - key: se-event-unsubstantiated
+      values:
+        Title: "[DEMO] Reported slow response on the request portal"
+        Provider: "[DEMO] Example Service Partner"
+        EventNature: "Single occurrence"
+        OccurredAt: "today-40"
+        ServiceAffected: "Requests or help desk"
+        FailureMode: "Communication or information quality"
+        WhatHappened: "Demo row. It was mentioned in passing that the request portal had been slow that week. No dates, no reference numbers and no affected requests could be identified afterwards."
+        BasisOfKnowledge: "It was reported to me by a colleague"
+        EvidenceHeld: "None - recollection only"
+        Severity: Minor
+        PeopleAffected: 1
+        HoursLost: 0.5
+        RaisedWithProvider: "Deliberately not raised"
+        Status: "Not substantiated"
+        ReviewedBy: "@me"
+        ReviewNote: "Demo row. Kept, but not substantiated: nothing identifies the requests or the days. This is what an unusable row looks like, and why the form asks how you know."
+    - key: se-event-closed
+      values:
+        Title: "[DEMO] Replacement equipment delivered four days after the agreed date"
+        Provider: "[DEMO] Example Service Partner"
+        EventNature: "Single occurrence"
+        OccurredAt: "today-14"
+        ServiceAffected: "Equipment or physical assets"
+        FailureMode: "Delivered late"
+        WhatHappened: "Demo row. Replacement equipment agreed for delivery on the date shown arrived four working days later. The delay was acknowledged at the time and the interim arrangement worked."
+        BasisOfKnowledge: "Taken from written correspondence"
+        ProviderReference: "[DEMO] REQ-105003"
+        EvidenceHeld: "Screenshot or document held elsewhere"
+        EvidenceLink: "https://example.invalid/evidence/demo-delivery-confirmation"
+        Severity: Minor
+        PeopleAffected: 1
+        HoursLost: 3
+        ImpactDescription: "Demo row. One person worked on a loan device for four days."
+        ServiceCommitment: "[DEMO] Replacement equipment within ten working days"
+        RaisedWithProvider: "Raised at the time"
+        ResolvedDate: "today-8"
+        OutcomeForUs: "Resolved satisfactorily"
+        Status: Closed
+        ReviewedBy: "@me"
+        ReviewNote: "Demo row. Minor, acknowledged and resolved. Logged for completeness, so the register carries the ordinary weeks as well as the bad ones."
   ServiceIssue:
     - key: se-issue-assembling
       values:

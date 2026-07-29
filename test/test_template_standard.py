@@ -422,6 +422,19 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Ownership": "Govern",
     },
     # === Service evidence register ==========================================
+    # Two consecutive Identify sections, which §1.2 permits and this register
+    # depends on: "What happened" is the fact and "How you know" is its
+    # provenance. Merging them is exactly the collapse the whole design exists
+    # to prevent - a row where the account and how you came by it are one
+    # paragraph is an anecdote.
+    ("service-evidence-register", "ServiceEvent"): {
+        "What happened": "Identify",
+        "How you know": "Identify",
+        "Impact": "Assess",
+        "Chasing and resolution": "Act",
+        "Review and escalation": "Govern",
+        "System": "System",
+    },
     # An issue is a theme rather than an occurrence, so the arc runs whole and
     # spends two consecutive sections on Act. Splitting the raise from the
     # response is what lets the response half stay off the form until there is
