@@ -244,13 +244,17 @@
   const junk = await setExpression('ShowNegative', junkFormula);
   const junkStored = junk.ok ? (await readExpression('ShowNegative')).value : null;
   record('X0', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused',
-         junk.ok ? 'FAIL' : 'PASS',
+         junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? `a call to dbmlspNoSuchFunction was ACCEPTED and stored as `
              + `${JSON.stringify(junkStored)} — SharePoint is not validating these `
              + 'formulas on write, so treat every X1-X5 "ACCEPTED" as storage only '
              + 'and rely entirely on the eyes-on table'
-           : `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`);
+           : isRefusal(junk.status)
+             ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+             : `the request failed with HTTP ${junk.status}, which is not the server `
+               + 'refusing the formula, so this control established nothing: '
+               + junk.text.slice(0, 200));
 
   // ---- X1-X5: the candidates ------------------------------------------
   for (const [id, field, label, formula] of CANDIDATES) {

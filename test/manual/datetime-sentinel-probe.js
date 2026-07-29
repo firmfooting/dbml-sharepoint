@@ -185,6 +185,23 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON — never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED — the server saying no to what was sent — or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // 400 only. 401/403 are about who is asking, 408/429 and every 5xx are
+  // about the moment rather than the content, and treating any of them as a
+  // refusal is the same substitution this project keeps having to undo.
+  const isRefusal = (status) => status === 400;
+
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
@@ -521,11 +538,16 @@
   // ---- VN: NEGATIVE CONTROL for the validation surface ----------------
   const bogus = await setValidation('=[NoSuchColumnHere]>0');
   record('VN', 'NEGATIVE CONTROL: a ValidationFormula naming a missing column is refused',
-         bogus.ok ? 'FAIL' : 'PASS',
+         bogus.ok ? 'FAIL' : isRefusal(bogus.status) ? 'PASS' : 'NOT ESTABLISHED',
          bogus.ok
            ? 'a formula referencing a non-existent column was ACCEPTED — this probe '
              + 'cannot detect a refused ValidationFormula, so treat V1 as unproven'
-           : `refused with HTTP ${bogus.status}: ${bogus.text.slice(0, 260)}`);
+           : isRefusal(bogus.status)
+             ? `refused with HTTP ${bogus.status}: ${bogus.text.slice(0, 260)}`
+             : `the request failed with HTTP ${bogus.status}, which is not the server `
+               + 'refusing the formula. This control has not shown that a refusal is '
+               + 'observable, so treat V1-V6 as unproven rather than answered: '
+               + bogus.text.slice(0, 200));
   await clearValidation();
 
   // ---- V1 / V2: NOW() -------------------------------------------------
@@ -740,12 +762,16 @@
   } else {
     const junk = await caml(ltWhen('<Nowww/>', false), false);
     record('CN', 'NEGATIVE CONTROL: CAML containing a bogus <Nowww/> is refused',
-           junk.ok ? 'FAIL' : 'PASS',
+           junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
            junk.ok
              ? `a query containing <Nowww/> was ACCEPTED and returned ${junk.titles.length} `
                + 'row(s) — SharePoint is not validating this element, so C1-C5 prove '
                + 'nothing about <Now/> being real'
-             : `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`);
+             : isRefusal(junk.status)
+               ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+               : `the request failed with HTTP ${junk.status}, which is not the server `
+                 + 'rejecting the element. C1-C7 are unproven rather than answered: '
+                 + junk.text.slice(0, 200));
   }
 
   // ---- C1: the deploy surface -----------------------------------------
@@ -766,10 +792,18 @@
   } else {
     const back = await spGet(
       `web/lists/getbytitle('${LIST}')/views/getbytitle('${VIEW}')?$select=ViewQuery`);
-    const stored = back.ok && back.body ? (back.body.ViewQuery || '') : '';
-    record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
-           stored.includes('<Now') ? 'PASS' : 'ACCEPTED THEN REWRITTEN',
-           `sent ${JSON.stringify(viewQuery)}; stored ${JSON.stringify(stored)}`);
+    if (readFailed(back)) {
+      record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
+             'NOT ESTABLISHED',
+             `the view was created (HTTP ${madeView.status}) but the ViewQuery `
+             + `read-back failed (HTTP ${back.status}). "SharePoint rewrote it" is a `
+             + 'claim, and nothing was read.');
+    } else {
+      const stored = back.body.ViewQuery || '';
+      record('C1', 'A view ViewQuery containing <Now/> saves and reads back intact',
+             stored.includes('<Now') ? 'PASS' : 'ACCEPTED THEN REWRITTEN',
+             `sent ${JSON.stringify(viewQuery)}; stored ${JSON.stringify(stored)}`);
+    }
   }
 
   // ---- C2-C5: what the comparison actually does -----------------------
@@ -814,12 +848,19 @@
   } else {
     const back = await spGet(
       `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ClientValidationFormula`);
-    const stored = back.ok && back.body ? back.body.ClientValidationFormula : null;
-    record('E1', '@now is accepted and stored in a ClientValidationFormula',
-           stored && String(stored).includes('@now') ? 'STORED' : 'ACCEPTED THEN DISCARDED',
-           `reads back ${JSON.stringify(stored)}. STORAGE ONLY — whether the rule `
-           + 'actually fires needs an eyes-on check in the form designer, exactly as '
-           + 'form-visibility-interactive.js does.');
+    if (readFailed(back)) {
+      record('E1', '@now is accepted and stored in a ClientValidationFormula',
+             'NOT ESTABLISHED',
+             `the MERGE returned HTTP ${clientRule.status} but the read-back failed `
+             + `(HTTP ${back.status}), so whether it was stored is unobserved.`);
+    } else {
+      const stored = back.body.ClientValidationFormula;
+      record('E1', '@now is accepted and stored in a ClientValidationFormula',
+             stored && String(stored).includes('@now') ? 'STORED' : 'ACCEPTED THEN DISCARDED',
+             `reads back ${JSON.stringify(stored)}. STORAGE ONLY — whether the rule `
+             + 'actually fires needs an eyes-on check in the form designer, exactly as '
+             + 'form-visibility-interactive.js does.');
+    }
   }
 
   // ---- Q1-Q4: escaping a double quote in a validation literal ---------
@@ -874,10 +915,14 @@
     } else {
       const back = await spGet(
         `${fieldsPath}/getbyinternalnameortitle('${QFIELD}')?$select=ValidationFormula`);
-      const stored = back.ok && back.body ? back.body.ValidationFormula : null;
+      const stored = readFailed(back) ? null : back.body.ValidationFormula;
       record('Q1', 'A validation literal doubling an embedded " is accepted',
-             stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
-             `sent ${JSON.stringify(doubled)}; stored ${JSON.stringify(stored)}`);
+             readFailed(back) ? 'NOT ESTABLISHED'
+                              : stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
+             readFailed(back)
+               ? `sent ${JSON.stringify(doubled)}; the read-back failed (HTTP `
+                 + `${back.status}), so storage is unobserved`
+               : `sent ${JSON.stringify(doubled)}; stored ${JSON.stringify(stored)}`);
 
       // Accepted is not parsed. If the literal were read as He said "" hi ""
       // or truncated at the first quote, the rule would still save happily

@@ -135,6 +135,23 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON — never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED — the server saying no to what was sent — or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // 400 only. 401/403 are about who is asking, 408/429 and every 5xx are
+  // about the moment rather than the content, and treating any of them as a
+  // refusal is the same substitution this project keeps having to undo.
+  const isRefusal = (status) => status === 400;
+
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
@@ -390,13 +407,17 @@
   const junk = await setExpression('ShowNegative', junkFormula);
   const junkStored = junk.ok ? (await readExpression('ShowNegative')).value : null;
   record('X0', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused',
-         junk.ok ? 'FAIL' : 'PASS',
+         junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? `a call to dbmlspNoSuchFunction was ACCEPTED and stored as `
              + `${JSON.stringify(junkStored)} — SharePoint is not validating these `
              + 'formulas on write, so treat every X1-X5 "ACCEPTED" as storage only '
              + 'and rely entirely on the eyes-on table'
-           : `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`);
+           : isRefusal(junk.status)
+             ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+             : `the request failed with HTTP ${junk.status}, which is not the server `
+               + 'refusing the formula, so this control established nothing: '
+               + junk.text.slice(0, 200));
 
   // ---- X1-X5: the candidates ------------------------------------------
   for (const [id, field, label, formula] of CANDIDATES) {

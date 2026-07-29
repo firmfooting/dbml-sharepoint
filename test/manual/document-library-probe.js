@@ -121,6 +121,23 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON — never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED — the server saying no to what was sent — or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // 400 only. 401/403 are about who is asking, 408/429 and every 5xx are
+  // about the moment rather than the content, and treating any of them as a
+  // refusal is the same substitution this project keeps having to undo.
+  const isRefusal = (status) => status === 400;
+
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
@@ -284,12 +301,16 @@
   const junk = await spPost(`${listPath}/items`,
                             { NoSuchColumnAtAll: 'x' }, digest);
   record('LN', 'NEGATIVE CONTROL: an item POST naming a missing column is refused',
-         junk.ok ? 'FAIL' : 'PASS',
+         junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? 'an item POST naming a column that does not exist was ACCEPTED — this '
              + 'probe cannot tell a refused item write from a successful one, so L2 '
              + 'is unproven whichever way it goes'
-           : `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`);
+           : isRefusal(junk.status)
+             ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+             : `the request failed with HTTP ${junk.status}, which is not the server `
+               + 'refusing the write. L2 is unproven rather than answered: '
+               + junk.text.slice(0, 200));
 
   // ---- L2 / L3 / L4: the fileless item --------------------------------
   // This is the exact shape demogen would emit for a library: a plain
@@ -409,7 +430,7 @@
     // A failed READ-BACK is not a refusal. Conflating them would let a
     // throttled GET print "REFUSED" — a claim about the platform — on no
     // observation at all, and report() would count the question answered.
-    if (back.body === null) {
+    if (readFailed(back)) {
       record('L6', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
              `addviewfield('FileLeafRef') returned HTTP ${added.status}, but the `
              + `view-fields read-back failed (HTTP ${back.status}), so this run has `
@@ -472,7 +493,7 @@
       const back = await spGet(
         `${listPath}/contenttypes('${ctId}')?$select=ClientFormCustomFormatter`);
       // Same rule as L6: a read-back that failed is not a discard.
-      if (back.body === null) {
+      if (readFailed(back)) {
         record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
                'NOT ESTABLISHED',
                `the MERGE returned HTTP ${set.status}, but the read-back failed (HTTP `
