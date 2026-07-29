@@ -954,6 +954,15 @@
   console.log('  what you see: ____________________________________');
   console.log('  (If the view lists nothing AND has no columns, say so —');
   console.log('   that is the addviewfield step having failed, not a finding.)');
+  console.log('');
+  console.log(`  Then open "${VIEW}" — the <Now/> one — and edit its filter.`);
+  console.log('  Expected, and confirmed on 2026-07-29: the value box is EMPTY,');
+  console.log('  because the UI cannot represent that element, and typing the');
+  console.log('  token [Now] is refused with "Filter value is not in a supported');
+  console.log('  date format". [Today] and [Me] are accepted there; [Now] is not');
+  console.log('  a token SharePoint has. That is the product contradicting the');
+  console.log('  documentation, from a direction no REST call can reach.');
+  console.log('  what you see: ____________________________________');
   console.log('==========================================');
   log('INFO', `Done. Delete '${LIST}' when you have copied the results.`);
 })();

@@ -156,10 +156,19 @@ For views, Learn documents a `<Now/>` element as a child of `<Value>`
 beside `<Today/>`. **It returns nothing.** Two views were built over the
 same list, at the same moment, with the same columns, differing only in
 that element: the `<Today/>`+`IncludeTimeValue` view listed two rows in the
-browser and the `<Now/>` view listed none. `IncludeTimeValue="TRUE"` is
-what makes the comparison an instant rather than midnight, and it was
-checked in the surface that actually ships — the stored `ViewQuery` read
-back after a view save, since SharePoint rewrites that XML on the way in.
+browser and the `<Now/>` view listed none. The two is diagnostic — plain
+`<Today/>` returns one row on the same data — so `IncludeTimeValue="TRUE"`
+is demonstrably what turns the comparison into an instant rather than
+midnight. It was checked in the surface that actually ships: the stored
+`ViewQuery` read back after a view save, since SharePoint rewrites that XML
+on the way in.
+
+SharePoint's own UI says the same thing from the other side. The `<Now/>`
+view's filter panel shows an **empty** value, because the interface cannot
+represent that element — and a date compared against nothing matches
+nothing. Type the UI's token spelling `[Now]` into that panel and it is
+refused: *"Filter value is not in a supported date format."* `[Today]` and
+`[Me]` are accepted; `[Now]` is not a token SharePoint has.
 
 Most view filters still want `today`. A rolling window ("the last 30 days",
 "signed in today") means a **date**, and `today` is the right sentinel for

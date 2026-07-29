@@ -281,12 +281,27 @@ _NOW = NOW_SENTINEL              # same home, same reason
 #       comparison would have excluded, and the row stamped three hours
 #       later did not.
 #
+#       The two-row result is itself diagnostic. Plain <Today/> with no
+#       IncludeTimeValue returns ONE row on the same data (yesterday only),
+#       so two rows can only mean the attribute is active and the
+#       comparison really is running against the instant.
+#
 #       Verified where it SHIPS, not merely where it was convenient to ask.
 #       C2-C5 used an ad-hoc CamlQuery; the deploy writes a view's stored
 #       ViewQuery, and SharePoint rewrites that XML on save. So C6 read the
 #       stored query back (the attribute survived) and C7 re-ran THAT XML
 #       and got the same two rows — confirmed a third time by eye, in the
 #       view itself.
+#
+#       CORROBORATED BY SHAREPOINT'S OWN UI, from a direction the probe
+#       cannot reach. Opening the <Now/> view's filter panel shows an EMPTY
+#       value — the UI cannot represent that element, and a date comparison
+#       against nothing matches nothing, which is the zero-row result.
+#       Typing the UI's own token spelling, [Now], into that panel is
+#       refused outright: "Filter value is not in a supported date format."
+#       [Today] and [Me] are accepted there; [Now] is not a token SharePoint
+#       has. Microsoft's product contradicts Microsoft's documentation, and
+#       the product wins.
 #
 #   EXPRESSION -> refused, exactly as `today` is.
 #       @now stores and reads back intact, so it is not obviously absent.
