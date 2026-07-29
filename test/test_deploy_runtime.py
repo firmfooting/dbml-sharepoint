@@ -807,3 +807,116 @@ def test_no_aggregations_comparison_is_made_raw() -> None:
     # AggregationsStatus is a plain enum ('On'/'Off') and IS compared raw —
     # asserted so the regex above cannot be "fixed" by wrapping it too.
     assert "AggregationsStatus !== 'On'" in script
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
+    """A clean run must leave a clean console.
+
+    The browser logs a failed request itself, before the script sees the
+    response, and nothing in JavaScript can suppress that — so a handled
+    404 still paints red and an operator reads it as a failure. The only
+    fix is not to make the request: enumerate once, answer absence
+    locally. Lists and views already did; site groups and the field probe
+    did not, and a live first deploy showed four red lines because of it.
+
+    The harness answers every enumeration as EMPTY, which is the state of
+    a brand-new site — so any by-name probe here is one an operator would
+    have seen painted red.
+
+    Covers the two surfaces this harness reaches. The third — a list's
+    role assignments by principal id — is asserted structurally instead,
+    because the mock's principal resolution never returns an Id and so the
+    run never reaches the ACL phase's role-assignment calls. A clause for
+    it here would pass while testing nothing.
+    """
+    script = _HARNESS + "\n" + _deploy_js().replace(
+        "})();", "}))().then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
+        ).replace("(async () => {", "((async () => {", 1)
+    line = next(
+        (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert line is not None, "harness produced no call log"
+    calls = json.loads(line.removeprefix("__CALLS__"))
+    gets = [c["url"] for c in calls if c["method"] == "GET"]
+    # The ACL phase resolves a group's Id by name AFTER creating it, so on
+    # a real run that request succeeds and is not console noise; the mock
+    # creates nothing, which is why it is excluded by its $select rather
+    # than by being overlooked.
+    by_name = [
+        u for u in gets
+        if ("sitegroups/getbyname" in u and "$select=Id" not in u)
+        or ("getbytitle" in u and "/fields?" in u)
+    ]
+    assert not by_name, (
+        "a first deploy probed by name for something it had already "
+        f"enumerated as absent; each is a red console line: {by_name[:5]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_unsupported_formula_tolerance_is_scoped_to_clears() -> None:
+    """The clearing-only guard is a deliberate hole in fail-closed, so its
+    edges are asserted rather than described.
+
+    Extracts the shipped predicate and runs it over every combination: a
+    clear (empty or UNMANAGED on both) may be tolerated; anything that SETS
+    either formula must not be, or a rejected write to a field type that
+    silently drops formulas would be reported as success.
+    """
+    script = _deploy_js()
+    match = re.search(
+        r"const clearingOnly = (.*?);\n", script, re.DOTALL,
+    )
+    assert match, "could not extract the clearingOnly predicate"
+    cases = [
+        ("", "", True),
+        ("__dbmlsp_unmanaged__", "__dbmlsp_unmanaged__", True),
+        ("", "__dbmlsp_unmanaged__", True),
+        ("=[X]>1", "", False),
+        ("", "=[X]>1", False),
+        ("=[X]>1", "=[Y]>1", False),
+        ("__dbmlsp_unmanaged__", "=[Y]>1", False),
+    ]
+    program = (
+        "const UNMANAGED = '__dbmlsp_unmanaged__';\n"
+        "const out = [];\n"
+        f"for (const [v, c] of {json.dumps([[a, b] for a, b, _ in cases])}) {{\n"
+        "  const field = { validation_formula: v, client_validation_formula: c };\n"
+        f"  const clearingOnly = {match.group(1)};\n"
+        "  out.push(clearingOnly);\n"
+        "}\n"
+        "console.log(JSON.stringify(out));"
+    )
+    assert NODE is not None
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "guard.js"
+        path.write_text(program, encoding="utf-8")
+        proc = subprocess.run(  # noqa: S603
+            [NODE, str(path)], capture_output=True, text=True, check=True, timeout=60,
+        )
+    got = json.loads(proc.stdout.strip())
+    expected = [tolerated for _, _, tolerated in cases]
+    assert got == expected, (
+        f"clearingOnly must tolerate only clears; got {got}, expected {expected} "
+        f"for {[(a, b) for a, b, _ in cases]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_clear_still_retries_the_client_properties() -> None:
+    """A MERGE is atomic: the refusal applies none of the body, including a
+    ClientValidationFormula clear the same request carried and which a URL
+    field does accept. Tolerating the refusal without retrying those would
+    report success while a stale show/hide rule stayed live."""
+    script = _deploy_js()
+    assert "client-only retry also failed" in script, (
+        "the tolerant branch must retry the properties the field type accepts"
+    )
+    # And it must not simply return: the read-back below is what proves the
+    # client clear landed.
+    tolerant = script[script.index("const clearingOnly ="):]
+    tolerant = tolerant[: tolerant.index("const after = await read();")]
+    assert "return;" not in tolerant, (
+        "the tolerant branch must fall through to the read-back, not return"
+    )

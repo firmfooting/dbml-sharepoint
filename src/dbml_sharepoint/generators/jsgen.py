@@ -133,11 +133,20 @@ UNMANAGED = "__dbmlsp_unmanaged__"
 # SP rejects ValidationFormula even when the desired value is an empty
 # string on these field kinds. This is a property-surface capability, not
 # merely an operand rule: exact reconciliation must not attempt to CLEAR a
-# formula the field type cannot carry. Confirmed live for Note (HTTP 500,
-# "This field type does not support validation formulas"); Lookup, User and
-# Calculated are already refused as validation operands for the same platform
+# formula the field type cannot carry.
+#
+# Confirmed live, both with HTTP 500 "This field type does not support
+# validation formulas": Note (3) and URL (11). Lookup (7), User (20) and
+# Calculated (17) are refused as validation operands for the same platform
 # limitation.
-_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 17, 20})
+#
+# This set is a hand-kept list of platform facts, so treat it as incomplete
+# by default — Boolean (8) is the one this tool emits whose behaviour is not
+# established either way. The deploy does NOT rely on it being complete: a
+# clear that SharePoint refuses for this reason is treated there as the
+# no-op it is, because a formula the field cannot hold is already absent.
+# This set only avoids making the pointless request.
+_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 11, 17, 20})
 
 
 def _section_target[T](
