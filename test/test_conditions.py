@@ -649,12 +649,19 @@ def test_text_operators_render_through_indexof_on_the_expression_target() -> Non
     render begins_with correctly on a live tenant and are deliberately
     unused: an extra function is an extra thing that has to keep being true.
 
-    Each rendering was watched in a form on 2026-07-29
+    Three of the four renderings were watched in a form on 2026-07-29
     (test/manual/expression-text-operators-probe.js), across four values
     including the empty one, with no deviation from the expected truth
     table. Storage proves nothing on this target — SharePoint accepts a
     call to a function that does not exist — so nothing but that eyes-on
     pass could have established it.
+
+    `!= 0` is the fourth and was NOT a candidate: the probe carried `>= 0`,
+    `< 0`, `== 0`, `startsWith()` and `substring(...) ==`. It is the exact
+    negation of the `== 0` that was watched, over the same indexOf call
+    whose value was watched, so it is DERIVED rather than observed. Said
+    plainly here because a reader who assumes otherwise would be relying on
+    a row the probe never printed.
     """
     expected = {
         "contains": ">= 0",
@@ -1067,6 +1074,43 @@ def test_negating_negative_operators_does_not_admit_nulls() -> None:
     assert "IsNull" not in to_caml(not_in, {"Status": "nvarchar"})
     assert to_validation(neq, {"Status": "nvarchar"}) == '[Status]="Closed"'
     assert to_validation(not_in, {"Status": "nvarchar"}) == 'OR([Status]="A",[Status]="B")'
+
+
+def test_negating_a_negative_text_operator_does_not_admit_nulls_either() -> None:
+    """`not_contains` and `not_begins_with` are TRUE for a blank — indexOf on
+    an empty string is -1, which is both `< 0` and `!= 0` — so their negation
+    must be FALSE there. The null arm `_push` adds for relational operators
+    ORs the blank back in, which made an authored rule and its own negation
+    both true for a blank value. They belong with neq/not_in, whose renderers
+    already carry the empty-value semantic.
+
+    Now that these operators reach the expression target this is reachable
+    from `form_visibility.when`, where the wrong answer shows a field that
+    should be hidden."""
+    types = {"Note": "nvarchar"}
+    for op, expected_expr in (
+        ("not_contains", "indexOf([$Note], 'x') >= 0"),
+        ("not_begins_with", "indexOf([$Note], 'x') == 0"),
+    ):
+        condition = parse_condition(
+            {"none_of": [{"field": "Note", "op": op, "value": "x"}]}, "w",
+        )
+        assert to_expression(condition, types) == expected_expr
+        assert "ISBLANK" not in to_validation(condition, types)
+        assert "IsNull" not in to_caml(condition, types)
+
+
+def test_negating_a_positive_text_operator_still_admits_nulls() -> None:
+    """The mirror, and the reason the exemption names two operators rather
+    than reusing the four-member text set. `contains` is FALSE for a blank,
+    so `none_of` must be TRUE there — which the null arm already delivers.
+    Removing it would change output for a shape that exists on main."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "begins_with", "value": "x"}]}, "w",
+    )
+    assert to_validation(condition, {"Note": "nvarchar"}) == (
+        'OR(ISBLANK([Note]),NOT(LEFT([Note],1)="x"))'
+    )
 
 
 # --- The `me` sentinel ------------------------------------------------------
