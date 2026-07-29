@@ -281,17 +281,23 @@ form_visibility:
       # question. Asking the proposer to name one at creation invites them
       # to nominate somebody who has not agreed.
       Sponsor: { new: false }
-      # The gate record exists once the gate has sat. Both appear the moment
-      # Stage is set to a gate outcome, so the save rule below fires with
-      # the field on screen.
+      # The gate record exists once the gate has sat, and it stays on the
+      # form for every stage DOWNSTREAM of one. In delivery and Delivered
+      # are post-gate stages: listing only the three immediate outcomes
+      # would hide the recorded decision as soon as work started, and a
+      # proposal moved straight to In delivery would be refused by the save
+      # rule below for a missing DecisionDate with no field on screen to
+      # supply it. The visible set must cover every stage the rule fires in.
       DecisionDate:
         new: false
         when:
-          - { field: Stage, op: in, value: ["Approved", "Declined", "Parked"] }
+          - { field: Stage, op: in,
+              value: ["Approved", "Declined", "Parked", "In delivery", "Delivered"] }
       DecisionNotes:
         new: false
         when:
-          - { field: Stage, op: in, value: ["Approved", "Declined", "Parked"] }
+          - { field: Stage, op: in,
+              value: ["Approved", "Declined", "Parked", "In delivery", "Delivered"] }
       DeliveredDate:
         new: false
         when:

@@ -59,21 +59,20 @@ as Closed.
 ## What the lists enforce, and what this document does
 
 Rule 2 is half enforced. The `ClosedDate` requirement is a save rule; the
-`EvidenceUrl` requirement is not, and the reason is worth reading before
-anyone tries to "fix" it.
+`EvidenceUrl` requirement cannot be, and the reason is worth reading
+before anyone tries to "fix" it.
 
-The evidence requirement *was* a save rule. **SharePoint will not accept
-one.** Setting a validation formula that references a URL column is
-refused outright, with a message that names the cause: *"One or more
-column references are not allowed, because the columns are defined as a
-data type that is not supported in formulas."* That was established
-against a live tenant rather than reasoned about — the probe is
+**SharePoint will not accept a save rule against a link column.** Setting
+a validation formula that references one is refused outright, with a
+message that names the cause: *"One or more column references are not
+allowed, because the columns are defined as a data type that is not
+supported in formulas."* That is established against a live tenant rather
+than reasoned about — the probe is
 `test/manual/hyperlink-validation-operand-probe.js`.
 
-So the rule never enforced anything. It would not have failed quietly,
-either: it would have failed the **paste**, at the validation phase, in
-front of whoever was deploying. The build now refuses the operand, which
-turns a failed deploy into a failed build.
+Nor does such a rule fail quietly: it fails the **paste**, at the
+validation phase, in front of whoever is deploying. The build refuses the
+operand, which turns a failed deploy into a failed build.
 
 The requirement itself stands. It is a closure criterion below, a
 verification step in `30-deploy/DEPLOY.md`, and the **Closed, last 90

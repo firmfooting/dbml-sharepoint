@@ -283,18 +283,23 @@ form_visibility:
       # product.
       Status: { new: false }
       Approver: { new: false }
-      # A decision date and its reasoning exist once a decision does. Both
-      # appear the moment Status is set to Approved or Rejected, so the
-      # save rule below fires with the field on screen rather than naming
-      # something the author cannot see.
+      # A decision date and its reasoning exist once a decision does, and
+      # they stay on the form for every state DOWNSTREAM of one. Listing
+      # only Approved and Rejected would hide the recorded decision the
+      # moment a change was implemented — and worse, a manager moving
+      # straight to Implemented or Closed would be refused by the save rule
+      # below for a missing DecisionDate with no field on screen to supply
+      # it. The visible set must cover every state the rule fires in.
       DecisionDate:
         new: false
         when:
-          - { field: Status, op: in, value: ["Approved", "Rejected"] }
+          - { field: Status, op: in,
+              value: ["Approved", "Rejected", "Implemented", "Closed"] }
       DecisionNotes:
         new: false
         when:
-          - { field: Status, op: in, value: ["Approved", "Rejected"] }
+          - { field: Status, op: in,
+              value: ["Approved", "Rejected", "Implemented", "Closed"] }
       ImplementedDate:
         new: false
         when:
