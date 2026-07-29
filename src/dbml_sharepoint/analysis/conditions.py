@@ -194,14 +194,23 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 # that settles one is named in the error — a signpost pointing at a probe
 # that does not ask reads as though somebody already checked.
 #
-# EMPTY, and the emptiness is the claim: every operator this tool renders
-# onto the expression target has been watched working in a form. No
-# exceptions — `not_begins_with` was the last one carried on reasoning rather
-# than sight, and a second pass on 2026-07-29 added it to the probe as X6 and
-# watched it (test/manual/expression-text-operators-probe.js). It was
-# DISCRIMINATING, not merely stored: hidden for a value beginning with the
-# needle, visible for the three that do not. All twenty-four cells of that
-# run's table matched prediction.
+# EMPTY, and what the emptiness means is narrower than it looks: nothing is
+# waiting on a probe that has been WRITTEN AND NOT RUN. It is not a claim
+# that all fourteen operators here were watched.
+#
+# What was watched, on 2026-07-29 and by eye
+# (test/manual/expression-text-operators-probe.js): the four TEXT operators.
+# X6 was the last one carried on reasoning rather than sight, and the second
+# pass added it and found it DISCRIMINATING rather than merely stored —
+# hidden for a value beginning with the needle, visible for the three that
+# do not, with all twenty-four cells of the table matching prediction.
+#
+# The other ten — eq, neq, lt, leq, gt, geq, is_null, is_not_null, in,
+# not_in — predate this list and rest on the form_visibility spec's
+# harvested formulas rather than on a probe of their own. That is a weaker
+# footing than the text four, and it is recorded here rather than smoothed
+# over, because a list whose whole worth is honesty cannot round its own
+# coverage up.
 #
 # It stays here because storage cannot establish anything on this target.
 # SharePoint does not validate ClientValidationFormula on write — a call to
@@ -370,6 +379,23 @@ _ISO_DATE_LITERAL = re.compile(
 # declaring one, which is why it takes no `property` and refuses one.
 _ME = "me"
 _PERSON_TYPES = frozenset({"person"})
+
+# Column types a substring test cannot mean anything on. A DENYLIST, not a
+# whitelist, because a Choice column's declared type IS its enum name — a
+# whitelist would have to know every enum in every schema, and would refuse
+# `contains` on a choice, which is the one non-text case that does make
+# sense.
+#
+# What it stops: the renderers type the needle by the COLUMN, so
+# `contains` on a boolean emitted `indexOf([$Flag], true)` — a substring
+# search for an unquoted boolean — and on a number `indexOf([$Count], 5)`.
+# Neither is a shape any probe has sent: the text-operator probe built its
+# subject as `<Field Type="Text"/>` and every one of its six candidates
+# used a quoted string needle.
+_NON_TEXT_FOR_SUBSTRING = frozenset({
+    "boolean", "int", "number", "date", "datetime", "person",
+    "calculated_number", "calculated_date",
+})
 # <UserID/> is an identity. Ordering it, or asking whether it contains a
 # substring, is meaningless rather than merely unrendered.
 _ME_OPS = frozenset({"eq", "neq"})
@@ -721,6 +747,15 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     # is_not_null on the same column hits — the tool contradicting itself,
     # and routing the author to whichever spelling the guard misses.
     declared_type = _column_type(leaf.field, types, target, where)
+    if leaf.op in _TEXT_OPS and declared_type in _NON_TEXT_FOR_SUBSTRING:
+        raise _reject(
+            target,
+            f"operator {leaf.op!r} is a substring test and {leaf.field!r} is "
+            f"{declared_type!r}, so the needle would be typed as {declared_type!r} "
+            f"and searched for inside a value that is not text. Compare it instead "
+            f"(eq/neq/lt/leq/gt/geq), or test a text column",
+            where,
+        )
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
     if declared_type in forbidden:
         raise _reject(target, f"{leaf.field!r} is {forbidden[declared_type]}", where)

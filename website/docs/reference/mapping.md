@@ -145,9 +145,10 @@ not exist, stores it, and reads it back byte-identical. Nothing in the
 build, the deploy or the browser console reports it — the column simply
 never appears.
 
-Every operator this tool renders onto that target has therefore been
-watched working in a real form, not merely written and read back. Four
-things are still refused there. Three are sentinels: `today`, whose
+No operator reaches that target on documentation alone: the four text
+operators were watched working in a real form, and the comparison and
+null-test operators rest on formulas harvested from a live tenant rather
+than on written syntax. Four things are still refused there. Three are sentinels: `today`, whose
 client-side equivalent `@now` carries datetime rather than date semantics;
 `now`, which stores and reads back intact, but whether a show/hide rule
 built on it fires has not been observed; and `me`, which has no verified
