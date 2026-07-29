@@ -2721,3 +2721,17 @@ def test_every_declared_function_is_pinned_above() -> None:
 def test_a_view_without_totals_renders_no_aggregations() -> None:
     """Empty is what the deploy reads as "never touch the live property"."""
     assert _aggregations({}) == ""
+
+
+def test_a_grouped_column_need_not_be_displayed() -> None:
+    """SharePoint renders the grouped value in the group HEADER, from the
+    GroupBy FieldRef, independently of ViewFields — which is why grouping
+    by a column you do not also list is a normal way to avoid repeating the
+    same value in every row. Nothing may refuse it."""
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+
+    caml = _caml(
+        dict(group_by=ViewGroupBy(fields=["Area"], collapsed=True)),
+        {"Area": "area_enum"},
+    )
+    assert caml == '<GroupBy Collapse="TRUE"><FieldRef Name="Area"/></GroupBy>'

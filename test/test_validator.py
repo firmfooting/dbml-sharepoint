@@ -2568,21 +2568,28 @@ def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> 
 # field the view does not display already exists above.
 
 
-def test_group_by_must_be_one_of_the_views_own_fields(tmp_path: Path) -> None:
-    """group_by is otherwise checked only against the entity's columns.
-    SharePoint groups by a column the view does not display and then has
-    nothing to label the group headers with."""
+def test_group_by_need_not_be_one_of_the_views_own_fields(tmp_path: Path) -> None:
+    """SharePoint renders the grouped value in the group HEADER, from the
+    GroupBy FieldRef itself, so grouping by a column the view does not also
+    list is a normal way to avoid repeating one value in every row.
+
+    Only the weaker rule holds: the column must exist on the entity.
+    """
     errors = _view_errors(
         tmp_path,
-        "views:\n"
-        "  Project:\n"
-        "    - title: By status\n"
-        "      fields: [Title]\n"
+        "views:\n  Project:\n    - title: By status\n      fields: [Title]\n"
         "      group_by: { field: Status }\n",
     )
-    assert any(
-        "group_by" in f.message and "Status" in f.message for f in errors
-    ), errors
+    assert not [f for f in errors if "group_by" in f.message], errors
+
+
+def test_group_by_on_an_unknown_column_is_still_refused(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n  Project:\n    - title: By ghost\n      fields: [Title]\n"
+        "      group_by: { field: Ghost }\n",
+    )
+    assert any("Ghost" in f.message for f in errors), errors
 
 
 def test_group_by_in_the_views_fields_is_accepted(tmp_path: Path) -> None:
@@ -2846,3 +2853,17 @@ def test_a_hyperlink_demo_object_refuses_unknown_keys(tmp_path: Path) -> None:
         tmp_path, '{ url: "https://example.invalid/a.pdf", label: "wrong key" }',
     )
     assert any("label" in f.message for f in errors), errors
+
+
+def test_a_null_hyperlink_url_is_refused(tmp_path: Path) -> None:
+    """`str(None)` is "None" — non-empty, and a perfectly valid-looking
+    string. A coerced emptiness test passes it through to become a link
+    pointing at the word None, so the check is on the STRING, not on its
+    stringification."""
+    errors = _hyperlink_demo(tmp_path, "{ url: null }")
+    assert any("non-empty string" in f.message for f in errors), errors
+
+
+def test_an_empty_hyperlink_url_is_refused(tmp_path: Path) -> None:
+    errors = _hyperlink_demo(tmp_path, '{ url: "   " }')
+    assert any("non-empty string" in f.message for f in errors), errors
