@@ -1,0 +1,301 @@
+// ============================================================================
+// Service evidence register — a contemporaneous record of what an external
+// service provider is actually delivering, the chases it took to get an
+// answer, and the themes worth raising formally.
+//
+// Deliberately domain-neutral: the same register serves a technology
+// arrangement, a payroll bureau, a facilities contractor or a finance shared
+// service. Nothing here names a provider or a sector.
+//
+// The organising principle is that FACT, IMPACT and CHARACTERISATION are
+// separate columns. A row where all three share one text box is an anecdote;
+// a row where they are separate is a business record.
+//
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project service_evidence_register { database_type: 'SharePoint Online Lists' }
+
+// Generic enough to describe any outsourced arrangement. Replace these
+// members with your own service breakdown before first deploy — renaming a
+// choice afterwards strands the rows already on the old value.
+Enum service_domain {
+  "Requests or help desk"
+  "Access, accounts or permissions"
+  "Systems, applications or tools"
+  "Equipment or physical assets"
+  "Connectivity or infrastructure"
+  "Data, records or reporting"
+  "Projects or change delivery"
+  "Advice or professional support"
+  "Onboarding or offboarding"
+  "Billing or charging"
+  "Other"
+}
+
+// One ladder, shared by FollowUp and ServiceIssue, so a single chase and the
+// theme it feeds describe escalation the same way.
+Enum escalation_level {
+  "Operational contact"
+  "Service desk or first line"
+  "Service manager"
+  "Relationship or contract manager"
+  "Executive"
+  "Formal contract mechanism"
+}
+
+// Judged on the pattern, not on the worst single event in it.
+Enum issue_materiality {
+  "Irritant"
+  "Material"
+  "Serious"
+  "Critical to service"
+}
+
+Enum issue_status {
+  "Assembling"
+  "Ready to raise"
+  "Raised"
+  "Response received"
+  "Remedy agreed"
+  "Resolved"
+  "Unresolved"
+  "Closed"
+}
+
+// A theme, not an occurrence: the pattern you take to a review meeting, with
+// the evidence behind it and what happened when you raised it.
+Table ServiceIssue {
+  Id                   int                [pk, increment]
+  Title                nvarchar           [not null, note: 'The theme in one line, as you would say it in the meeting where you raise it. Anyone who logs an event may see this line, so keep the frank version for The pattern']
+  Provider             nvarchar           [not null, note: 'The provider or service arrangement this concerns. Write the name the same way on every record so the grouped views hold together']
+  ServiceAffected      service_domain     [note: 'The part of the service this pattern sits in']
+  IssueSummary         longtext           [not null, note: 'The pattern in three or four sentences: what keeps happening, since when, and what it is costing']
+  FirstObserved        date               [not null, note: 'The date of the earliest event supporting this theme']
+
+  Materiality          issue_materiality  [not null, note: 'How much this matters to the organisation. Judge the pattern, not the worst single event in it']
+  EventCount           int                [note: 'How many logged events support this theme. Fill this in when you assemble the pack; the linked events stay the source of truth']
+  CommitmentEngaged    nvarchar           [note: 'The commitment, target or obligation this pattern bears on. Leave blank if nothing was written down - an unmet reasonable expectation is still worth raising']
+  BusinessConsequence  longtext           [note: 'What the pattern means for the organisation, as distinct from any single event']
+
+  Status               issue_status       [not null, default: 'Assembling', note: 'Where this theme has got to']
+  RaisedDate           date               [note: 'The date you raised it']
+  RaisedWith           nvarchar           [note: 'The forum, role or meeting where it was raised. Name the role rather than the individual']
+  EscalationLevel      escalation_level   [note: 'How far this has been taken']
+
+  ResponseDate         date               [note: 'The date they responded']
+  ResponseSummary      longtext           [note: 'What they said, as close to their words as you can manage']
+  RemedyAgreed         longtext           [note: 'What was agreed, by whom, and by when']
+  RemedyDueDate        date               [note: 'The date the agreed remedy falls due']
+
+  IssueOwner           person             [note: 'The person carrying this issue. Naming someone here does not grant them access']
+  NextReviewDue        date               [note: 'When you will next look at this']
+  Outcome              longtext           [note: 'How it ended, including anything left unresolved']
+  ClosedDate           date               [note: 'The date this theme was closed']
+
+  DaysToResponse       calculated_number  [note: 'Calculated automatically: days from raising it to their response']
+
+  indexes {
+    Status
+    Provider
+    Materiality
+    EscalationLevel
+    RaisedDate
+    RemedyDueDate
+    NextReviewDue
+    FirstObserved
+  }
+}
+
+// The switch that decides which fields the form shows. A single occurrence
+// is closed-book; the other two are open clocks whose evidence is the ageing
+// itself, and they are the reason the chase fields exist at all.
+Enum event_nature {
+  "Single occurrence"
+  "Unactioned request or ticket"
+  "Ongoing or recurring condition"
+}
+
+// The pattern dimension - the column that turns a list of bad days into an
+// argument. "Closed without resolving" and "Repeatedly reassigned" are here
+// because they are the failures an unactioned-request register is built to
+// catch, and both are hard to dispute when you hold the provider's own
+// reference number.
+Enum failure_mode {
+  "Service not delivered"
+  "Delivered late"
+  "Delivered incorrectly or had to be redone"
+  "Closed without resolving"
+  "Repeatedly reassigned or handed off"
+  "Recurrence of a previously reported problem"
+  "No response or acknowledgement"
+  "Communication or information quality"
+  "Change made without notice or agreement"
+  "Escalation not honoured"
+  "Access or authorisation not provided"
+  "Incorrect charge or unexplained cost"
+  "Safety, security or compliance concern"
+  "Other"
+}
+
+// Provenance. A second-hand account is worth recording; it simply carries
+// less weight, and this makes that visible instead of leaving it assumed.
+Enum knowledge_basis {
+  "I observed or experienced this directly"
+  "It was reported to me by a colleague"
+  "Taken from a system record, ticket or report"
+  "Taken from written correspondence"
+}
+
+Enum evidence_held {
+  "Attached to this record"
+  "Provider ticket or system record"
+  "Email or written correspondence"
+  "Screenshot or document held elsewhere"
+  "Contemporaneous note only"
+  "None - recollection only"
+}
+
+Enum event_severity {
+  "Minor"
+  "Moderate"
+  "Major"
+  "Critical"
+}
+
+// Raising it at the time is itself evidence, and it forecloses the "you
+// never told us" answer at a review.
+Enum raised_with {
+  "Not yet raised"
+  "Raised at the time"
+  "Raised afterwards"
+  "Raised through formal escalation"
+  "Deliberately not raised"
+}
+
+Enum event_outcome {
+  "Resolved satisfactorily"
+  "Resolved after escalation"
+  "Worked around locally"
+  "Partially resolved"
+  "Unresolved"
+  "Recurred after resolution"
+}
+
+// Where the row sits in OUR evidence process - not where the provider's
+// ticket sits. "Not substantiated" is load-bearing: a register that can
+// never say a row does not hold up is not a credible register, and it is the
+// first thing a competent provider will test.
+Enum event_status {
+  "Logged"
+  "Under review"
+  "Accepted"
+  "Escalated"
+  "Closed"
+  "Not substantiated"
+}
+
+// One row per occurrence. Capture is the design constraint: a single
+// occurrence must be loggable in about a minute, which is why the chase
+// fields below are hidden unless EventNature says they are needed.
+Table ServiceEvent {
+  Id                   int                [pk, increment]
+  Title                nvarchar           [not null, note: 'One line: what happened, in plain language']
+  Provider             nvarchar           [not null, note: 'The provider or service arrangement this concerns. Write the name the same way on every record']
+  EventNature          event_nature       [not null, default: 'Single occurrence', note: 'A one-off occurrence, a request that has not been actioned, or a condition that keeps happening. This choice decides which fields appear further down']
+  OccurredAt           datetime           [not null, note: 'When it happened. For a request that has not been actioned, the date you raised it - that is when the clock starts']
+  ServiceAffected      service_domain     [not null, note: 'Which part of the service this concerns']
+  FailureMode          failure_mode       [not null, note: 'What went wrong. This is the column that turns a list of bad days into a pattern, so choose it carefully']
+  WhatHappened         longtext           [not null, note: 'Facts only: what happened, in what order, with times. Keep opinion out of this box - there is a separate one further down for what you make of it']
+
+  BasisOfKnowledge     knowledge_basis    [not null, note: 'How you know this happened. A second-hand account is still worth recording; it simply carries less weight']
+  ProviderReference    nvarchar           [note: 'The ticket, case or reference number the provider gave it. The most useful thing on this form: it lets them verify the event from their own records']
+  EvidenceHeld         evidence_held      [not null, note: 'What backs this up. Attach the file to this record where you can']
+  EvidenceLink         hyperlink          [note: 'Where the supporting document, email or screenshot lives, if it is not attached here']
+
+  Severity             event_severity     [not null, note: 'How badly this affected the work. Judge the effect, not how annoying it was']
+  PeopleAffected       int                [note: 'Roughly how many people were affected. An estimate is fine; write 1 if it was only you']
+  HoursLost            number             [note: 'Estimated staff hours lost across everyone affected. Round to the nearest half hour - an honest estimate is worth more than a precise-looking guess']
+  ImpactDescription    nvarchar           [note: 'One line on the consequence: what could not happen, and who was affected']
+  ServiceCommitment    nvarchar           [note: 'The commitment, target or reasonable expectation this bears on, in your own words. Leave it blank if nothing was written down - an unmet reasonable expectation is still worth recording']
+
+  RaisedWithProvider   raised_with        [not null, default: 'Not yet raised', note: 'Whether the provider was told, and how. Raising it at the time is itself evidence']
+  ResponseDueDate      date               [note: 'When a response or fix was promised, or when the published target says it was due']
+  LastFollowedUp       date               [note: 'The date of the most recent follow-up. The follow-up list is the record; this is the index the chase list shows beside the row, carried across by a curator because SharePoint cannot roll a child value up to a parent']
+  ResolvedDate         date               [note: 'The date it was actually resolved. Leave blank while it is still outstanding']
+  OutcomeForUs         event_outcome      [note: 'How it ended for us, which is not always how it was closed for them']
+
+  Status               event_status       [not null, default: 'Logged', note: 'Where this row sits in our evidence process - not where the ticket sits with the provider']
+  ReviewedBy           person             [note: 'Who checked this row']
+  ReviewNote           longtext           [note: 'What the reviewer makes of it. Keep it separate from the account above: that is what happened, this is our assessment of it']
+  RelatedIssue         int                [ref: > ServiceIssue.Id, note: 'The theme this event supports, once one exists']
+
+  LoggedDate           date               [not null, default: '[today]', note: 'Filled automatically when the record is created. Leave as-is']
+  DaysToLog            calculated_number  [note: 'Calculated automatically: days between the event and it being written down']
+  RecordTimeliness     calculated_text    [note: 'Calculated automatically: Same day, Within a week, Delayed or Retrospective']
+  DaysOutstanding      calculated_number  [note: 'Calculated automatically once resolved. Blank while it is still outstanding - the live figure is in the Outstanding and ageing view']
+
+  indexes {
+    Status
+    Provider
+    EventNature
+    ServiceAffected
+    FailureMode
+    Severity
+    OccurredAt
+    ResponseDueDate
+    ResolvedDate
+    RelatedIssue
+  }
+}
+
+Enum contact_channel {
+  "Email"
+  "Service portal or ticket update"
+  "Phone call"
+  "Meeting"
+  "Instant message or chat"
+  "In person"
+  "Formal letter"
+}
+
+Enum response_received {
+  "No response"
+  "Acknowledged only"
+  "Substantive response"
+  "Action taken"
+  "Referred elsewhere"
+  "Ticket closed without resolution"
+}
+
+// One row per chase. The COUNT of these rows is the evidence - which is why
+// it is read off the grouped "By event" view as SharePoint's own group count
+// rather than kept as a number on ServiceEvent, where nothing could maintain
+// it and it would drift away from the rows it claimed to summarise.
+Table FollowUp {
+  Id                int                [pk, increment]
+  Title             nvarchar           [not null, note: 'One line: what you asked for']
+  RelatedEvent      int                [not null, ref: > ServiceEvent.Id, note: 'The event or request you are following up']
+  FollowUpDate      date               [not null, default: '[today]', note: 'The date you followed up']
+  Channel           contact_channel    [not null, note: 'How you made contact. A written channel is easier to evidence later than a call']
+  ContactedRole     nvarchar           [note: 'The role, team or forum you contacted. Name the role rather than the individual']
+  EscalationLevel   escalation_level   [not null, default: 'Operational contact', note: 'How far up you went this time']
+  WhatWeAsked       longtext           [not null, note: 'What you asked for, in the words you used']
+
+  ResponseReceived  response_received  [not null, default: 'No response', note: 'What came back, if anything']
+  ResponseDate      date               [note: 'The date they responded']
+  ResponseSummary   longtext           [note: 'What they said, as close to their words as you can manage']
+  CommitmentGiven   nvarchar           [note: 'Any date, action or commitment they gave. This is what you hold them to next time']
+
+  EvidenceLink      hyperlink          [note: 'Where the email, ticket update or note of the call lives']
+
+  DaysToRespond     calculated_number  [note: 'Calculated automatically: days from the follow-up to their response']
+
+  indexes {
+    RelatedEvent
+    FollowUpDate
+    ResponseReceived
+    EscalationLevel
+    Channel
+  }
+}

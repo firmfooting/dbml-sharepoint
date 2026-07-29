@@ -421,6 +421,42 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Out and back": "Act",
         "Ownership": "Govern",
     },
+    # === Service evidence register ==========================================
+    # Two consecutive Identify sections, which §1.2 permits and this register
+    # depends on: "What happened" is the fact and "How you know" is its
+    # provenance. Merging them is exactly the collapse the whole design exists
+    # to prevent - a row where the account and how you came by it are one
+    # paragraph is an anecdote.
+    ("service-evidence-register", "ServiceEvent"): {
+        "What happened": "Identify",
+        "How you know": "Identify",
+        "Impact": "Assess",
+        "Chasing and resolution": "Act",
+        "Review and escalation": "Govern",
+        "System": "System",
+    },
+    # A chase is a small, complete arc: who you asked and what you asked
+    # (Identify), what came back (Assess), and the artefact that proves it
+    # (Act). No Govern beat - a follow-up is not governed, it is evidence, and
+    # the governing happens on the event and on the theme.
+    ("service-evidence-register", "FollowUp"): {
+        "The chase": "Identify",
+        "What came back": "Assess",
+        "Evidence": "Act",
+        "System": "System",
+    },
+    # An issue is a theme rather than an occurrence, so the arc runs whole and
+    # spends two consecutive sections on Act. Splitting the raise from the
+    # response is what lets the response half stay off the form until there is
+    # a response to record.
+    ("service-evidence-register", "ServiceIssue"): {
+        "The pattern": "Identify",
+        "Weight and evidence": "Assess",
+        "Raising it": "Act",
+        "Response and remedy": "Act",
+        "Ownership and closure": "Govern",
+        "System": "System",
+    },
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a

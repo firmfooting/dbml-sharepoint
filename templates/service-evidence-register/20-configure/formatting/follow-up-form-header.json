@@ -1,0 +1,69 @@
+{
+  "elmType": "div",
+  "attributes": { "class": "ms-borderColor-neutralTertiary" },
+  "style": {
+    "width": "99%",
+    "border-top-width": "0px",
+    "border-bottom-width": "1px",
+    "border-left-width": "0px",
+    "border-right-width": "0px",
+    "border-style": "solid",
+    "margin-bottom": "16px",
+    "padding-bottom": "8px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": { "display": "flex", "box-sizing": "border-box", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": {
+            "iconName": "Message",
+            "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+            "title": "Follow-up"
+          },
+          "style": { "flex": "none", "padding": "0px", "height": "auto" }
+        },
+        {
+          "elmType": "div",
+          "style": { "box-sizing": "border-box", "width": "100%", "text-align": "left", "padding": "4px 8px", "overflow": "hidden" },
+          "children": [
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
+              "txtContent": "=if([$Title] == '', 'New follow-up', 'Follow-up: ' + [$Title])"
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "One row per chase. Four dated rows against one request say more at a service review than any adjective you could reach for."
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "=if([$EscalationLevel] == '', '', 'Level: ' + [$EscalationLevel] + if([$ContactedRole] == '', '', '  |  ' + [$ContactedRole]))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "attributes": { "class": "ms-bgColor-themeLighter ms-fontColor-neutralPrimary" },
+      "style": { "padding": "8px 10px", "margin": "6px 0px", "display": "flex", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "span",
+          "attributes": { "iconName": "Warning", "class": "ms-fontColor-themePrimary ms-fontSize-16" },
+          "style": { "margin-right": "8px" }
+        },
+        {
+          "elmType": "span",
+          "attributes": { "class": "ms-fontSize-12 ms-fontWeight-semibold" },
+          "txtContent": "This row is the record. Nothing links the two lists automatically, so a curator carries the date across to Last Followed Up on the event."
+        }
+      ]
+    }
+  ]
+}
