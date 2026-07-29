@@ -11,20 +11,21 @@ The '[DEMO] ' Title marker (validated mandatory) is the in-record notice
 and the teardown contract.
 """
 
-import re
 from typing import Any
 
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
+from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
 
-# Offset optional, matching analysis.validator._TODAY_SENTINEL. The two
-# must agree: the validator gates what may be declared, this decides what
-# is generated, and a value the validator accepts but this rejects would
-# pass the build with zero findings and emit the literal string "today".
-_TODAY_OFFSET = re.compile(r"^today([+-]\d+)?$")
+# The sentinel has one home (analysis/typemap.py) because this module and
+# the validator must accept exactly the same language: the validator gates
+# what may be declared, this decides what is generated, and a value one
+# accepts and the other does not passes the build with zero findings and
+# emits the literal string "today" into a script.
+_TODAY_OFFSET = TODAY_SENTINEL
 
 # The Title marker is the in-record demo notice: visible in every view and
 # form header, and the marker rollback.js trusts. (Per-row list-item
@@ -75,7 +76,15 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any]:
     if col_type in _DATE_TYPES and isinstance(value, str):
         m = _TODAY_OFFSET.match(value)
         if m:
-            return {"name": name, "kind": "date_offset", "value": int(m.group(1) or 0)}
+            # The shared pattern captures sign and digits separately, so an
+            # offset is rebuilt from both rather than read from one group.
+            sign, digits = m.group(1), m.group(2)
+            offset = int(digits) if digits else 0
+            return {
+                "name": name,
+                "kind": "date_offset",
+                "value": -offset if sign == "-" else offset,
+            }
     return {"name": name, "kind": "literal", "value": value}
 
 

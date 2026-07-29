@@ -7,6 +7,7 @@ Field type kinds map to SP REST FieldTypeKind values:
   Number=9, URL=11, User=20.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -177,6 +178,18 @@ def _scalar(col: Column, description: str) -> SPField:
                 "Add it to typemap.py or declare it as an enum.",
             )
 
+
+# THE `today` SENTINEL, in one place. `today`, `today+30`, `today-7`.
+#
+# Three modules read this same authored value and each held its own copy:
+# the validator gates what may be declared, the condition renderers decide
+# what it becomes in CAML, and the demo planner decides what it becomes in
+# a seeded row. A copy that drifts wider or narrower than another passes
+# the build with zero findings and emits the literal string "today" into a
+# script — the same shape of failure as two readers disagreeing about a
+# hyperlink value. Comments said they must agree; nothing checked it, so
+# now there is one pattern and a test.
+TODAY_SENTINEL = re.compile(r"^today(?:([+-])(\d+))?$")
 
 # Declared view aggregations: the authored name, and SharePoint's own token
 # for it. The renderer owns the translation, exactly as it does for a sort

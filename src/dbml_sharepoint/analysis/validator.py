@@ -122,7 +122,7 @@ VIEW_OPERATORS = frozenset({
     "eq", "neq", "lt", "leq", "gt", "geq", "is_null", "is_not_null",
 })
 _VIEW_VALUELESS_OPERATORS = frozenset({"is_null", "is_not_null"})
-_TODAY_SENTINEL = re.compile(r"^today([+-]\d+)?$")
+_TODAY_SENTINEL = typemap.TODAY_SENTINEL      # one home: analysis/typemap.py
 _DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
 
