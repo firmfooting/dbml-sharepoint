@@ -44,6 +44,7 @@ hand-off into that same improvement/investment chain.
 | [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
 | [policy-library](policy-library/) | Policies & controlled documents | Document library with draft/published minor versions, review register |
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
+| [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log → dated chase trail → raised theme; how promptly the record was made is itself a column |
 | [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation → owner → evidence → review |
 | [grants-register](grants-register/) | Funding submissions & acquittals | The post-award obligations everyone else drops, as a due-date view |
 | [delegations-register](delegations-register/) | Who may approve what | The searchable mirror of your instrument of delegation — the lookup every other register's "per your delegations" points at |
@@ -77,8 +78,8 @@ hand-off into that same improvement/investment chain.
 ## What every template ships
 
 Every template in the library is finished to the same standard, so the
-twenty-nine read as members of one family rather than as twenty-nine
-tastes. Whichever you deploy, you get these seven things.
+thirty read as members of one family rather than as thirty tastes.
+Whichever you deploy, you get these seven things.
 
 **Views, created by the deploy.** Every list declares a default working
 view plus up to four lenses drawn from the same four shapes: a deadline
@@ -100,7 +101,7 @@ Response and controls / Governance / System*.
 everywhere a person sees it, with per-column overrides where splitting
 PascalCase reads badly.
 
-**Colour that means the same thing in all twenty-nine.** Every lifecycle
+**Colour that means the same thing in all thirty.** Every lifecycle
 and severity column, every deadline date and every score or count is
 formatted, and the colour comes from the *role* a value plays in its
 lifecycle rather than from what it is called — so Draft, Received and
@@ -252,11 +253,11 @@ header's live title line would read *New document* forever; and demo rows
 for a library ask SharePoint to create an item with no file behind it.
 
 So that half declares **no views, no form header and no demo rows** — the
-only entity in the twenty-nine that declares none of them — and its
+only entity in the thirty that declares none of them — and its
 **Drafts in progress** view is a step you perform in the UI, carried in
 `policy-library`'s own DEPLOY.md. Its `PolicyRegister` half is declared
 like every other list. Everything else below holds everywhere, and a test
-over all twenty-nine says so.
+over all thirty says so.
 
 The declaration stays authoritative afterwards. A redeploy reconciles each
 declared view back to what the mapping says, so a view somebody widened,
