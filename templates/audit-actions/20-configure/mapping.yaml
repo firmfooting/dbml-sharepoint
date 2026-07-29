@@ -223,15 +223,12 @@ column_validation:
 # second data-quality rule is "no Closed without EvidenceUrl AND
 # ClosedDate"; only the first half was enforced.
 #
-# NOTE, and it is the fleet's one open question of its kind: the evidence
-# rule puts a HYPERLINK column in a validation formula. This tool accepts
-# that operand, and this template has shipped the rule since before the
-# family standard existed — but it has not been read back from a live
-# tenant, and grants-register declined to copy the pattern for exactly that
-# reason. The rule stays here because removing a shipped rule on a hunch is
-# worse than keeping one, and because DEPLOY.md's checklist makes an
-# adopter test it on the first row they close. Settle it once, for the
-# fleet, rather than four times.
+# This used to record an open question — whether a HYPERLINK column works
+# as a validation operand — and said the rule stayed pending evidence.
+# SETTLED on 2026-07-29 and no longer open: SharePoint refuses the operand
+# outright, so the rule is gone rather than merely doubted. See the note
+# below, and analysis/conditions.py's _FORBIDDEN_OPERAND_TYPES, which now
+# turns it into a build error for the whole fleet.
 #
 # NOT enforceable: the recorded authority a "Risk accepted" ending needs.
 # It lives in Notes, which is rich text, and validation formulas cannot
