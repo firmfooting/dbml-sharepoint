@@ -8,6 +8,7 @@ prefix: "SE_"
 
 entities:
   ServiceEvent: { kind: List, base_template: 100, site_role: default }
+  FollowUp: { kind: List, base_template: 100, site_role: default }
   ServiceIssue: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
@@ -37,6 +38,8 @@ calculated_formulas:
     # the live ageing belongs to the Outstanding and ageing view and to the
     # @now comparison in the Response Due Date formatter.
     DaysOutstanding: '=IF(OR(ISBLANK([OccurredAt]),ISBLANK([ResolvedDate])),"",INT([ResolvedDate])-INT([OccurredAt]))'
+  FollowUp:
+    DaysToRespond: '=IF(OR(ISBLANK([FollowUpDate]),ISBLANK([ResponseDate])),"",INT([ResponseDate])-INT([FollowUpDate]))'
   ServiceIssue:
     DaysToResponse: '=IF(OR(ISBLANK([RaisedDate]),ISBLANK([ResponseDate])),"",INT([ResponseDate])-INT([RaisedDate]))'
 
@@ -123,6 +126,14 @@ display_names:
       RelatedIssue: "Part of theme"
       DaysToLog: "Days to log"
       DaysOutstanding: "Days outstanding (once resolved)"
+    FollowUp:
+      Title: "What you asked for"
+      RelatedEvent: "Event or request"
+      ContactedRole: "Contacted (role or team)"
+      WhatWeAsked: "What we asked"
+      ResponseReceived: "What came back"
+      CommitmentGiven: "Commitment given"
+      EvidenceLink: "Evidence link"
     ServiceIssue:
       Title: "The theme"
       IssueSummary: "The pattern"
@@ -208,6 +219,38 @@ column_formatting:
       guard:
         field: OutcomeForUs
         not: ["Resolved satisfactorily", "Resolved after escalation", "Worked around locally"]
+  FollowUp:
+    ResponseReceived:
+      style: severity
+      map:
+        "No response": severe
+        "Acknowledged only": warning
+        "Substantive response": good
+        "Action taken": good
+        "Referred elsewhere": warning
+        "Ticket closed without resolution": severe
+    EscalationLevel:
+      style: pill
+      map:
+        "Operational contact": neutral
+        "Service desk or first line": neutral
+        "Service manager": low
+        "Relationship or contract manager": warning
+        Executive: severe
+        "Formal contract mechanism": severe
+    # Not a severity judgement about the person who made the call - it is
+    # about how easy the chase will be to evidence in six months. A written
+    # channel leaves a record; a corridor conversation does not.
+    Channel:
+      style: pill
+      map:
+        Email: good
+        "Service portal or ticket update": good
+        "Phone call": warning
+        Meeting: low
+        "Instant message or chat": warning
+        "In person": warning
+        "Formal letter": good
   ServiceIssue:
     Status:
       style: severity
@@ -343,6 +386,85 @@ views:
         ReviewedBy: 170
         ReviewNote: 320
         Modified: 170
+  FollowUp:
+    - title: "Awaiting a response"
+      default: true
+      fields: [Title, RelatedEvent, FollowUpDate, Channel, ContactedRole,
+               EscalationLevel, WhatWeAsked]
+      where:
+        - { field: ResponseReceived, op: eq, value: "No response" }
+      sort:
+        - { field: FollowUpDate, direction: asc }
+      widths:
+        Title: 300
+        RelatedEvent: 300
+        FollowUpDate: 150
+        Channel: 220
+        ContactedRole: 230
+        EscalationLevel: 230
+        WhatWeAsked: 320
+    # The chase COUNT lives here, as SharePoint's own group count. Nothing
+    # maintains it, so nothing can get it wrong - which is why there is no
+    # TimesFollowedUp column on ServiceEvent.
+    - title: "By event"
+      fields: [Title, FollowUpDate, Channel, EscalationLevel,
+               ResponseReceived, ResponseDate, DaysToRespond, CommitmentGiven]
+      group_by: { field: RelatedEvent, collapsed: true }
+      sort:
+        - { field: FollowUpDate, direction: asc }
+      widths:
+        Title: 280
+        FollowUpDate: 150
+        Channel: 220
+        EscalationLevel: 230
+        ResponseReceived: 240
+        ResponseDate: 150
+        DaysToRespond: 150
+        CommitmentGiven: 280
+    - title: "Escalation trail"
+      fields: [Title, RelatedEvent, FollowUpDate, EscalationLevel,
+               ContactedRole, ResponseReceived, ResponseSummary]
+      where:
+        - { field: EscalationLevel, op: in, value: ["Relationship or contract manager", Executive, "Formal contract mechanism"] }
+      sort:
+        - { field: FollowUpDate, direction: desc }
+      widths:
+        Title: 280
+        RelatedEvent: 300
+        FollowUpDate: 150
+        EscalationLevel: 230
+        ContactedRole: 230
+        ResponseReceived: 240
+        ResponseSummary: 320
+    - title: "Closed without resolving"
+      fields: [Title, RelatedEvent, FollowUpDate, ResponseDate,
+               ResponseSummary, EvidenceLink]
+      where:
+        - { field: ResponseReceived, op: eq, value: "Ticket closed without resolution" }
+      sort:
+        - { field: ResponseDate, direction: desc }
+      widths:
+        Title: 280
+        RelatedEvent: 300
+        FollowUpDate: 150
+        ResponseDate: 150
+        ResponseSummary: 320
+        EvidenceLink: 160
+    - title: "Recent follow-ups"
+      fields: [Title, RelatedEvent, FollowUpDate, Channel, EscalationLevel,
+               ResponseReceived, DaysToRespond]
+      where:
+        - { field: FollowUpDate, op: geq, value: today-90 }
+      sort:
+        - { field: FollowUpDate, direction: desc }
+      widths:
+        Title: 280
+        RelatedEvent: 300
+        FollowUpDate: 150
+        Channel: 220
+        EscalationLevel: 230
+        ResponseReceived: 240
+        DaysToRespond: 150
   ServiceIssue:
     - title: "Open issues"
       default: true
@@ -451,6 +573,18 @@ form_visibility:
         when:
           - { field: Status, op: in, value: [Accepted, Escalated] }
       LoggedDate: { new: false }
+  FollowUp:
+    reconcile: exact
+    columns:
+      ResponseDate:
+        when:
+          - { field: ResponseReceived, op: neq, value: "No response" }
+      ResponseSummary:
+        when:
+          - { field: ResponseReceived, op: neq, value: "No response" }
+      CommitmentGiven:
+        when:
+          - { field: ResponseReceived, op: in, value: ["Substantive response", "Action taken", "Referred elsewhere"] }
   ServiceIssue:
     reconcile: exact
     columns:
@@ -497,6 +631,9 @@ form_formatting:
   ServiceEvent:
     header: formatting/service-event-form-header.json
     body: formatting/service-event-form-body.json
+  FollowUp:
+    header: formatting/follow-up-form-header.json
+    body: formatting/follow-up-form-body.json
   ServiceIssue:
     header: formatting/service-issue-form-header.json
     body: formatting/service-issue-form-body.json
@@ -520,6 +657,19 @@ column_validation:
             - { field: ResolvedDate, op: is_null }
             - { field: ResolvedDate, op: leq, value: today }
         message: "Use the date it was resolved; it cannot be in the future. Leave it blank while it is still outstanding."
+  FollowUp:
+    reconcile: exact
+    columns:
+      FollowUpDate:
+        when:
+          - { field: FollowUpDate, op: leq, value: today }
+        message: "Use the date you actually followed up; it cannot be in the future."
+      ResponseDate:
+        when:
+          any_of:
+            - { field: ResponseDate, op: is_null }
+            - { field: ResponseDate, op: leq, value: today }
+        message: "Use the date they responded; it cannot be in the future. Leave it blank while there has been no response."
   ServiceIssue:
     reconcile: exact
     columns:
@@ -581,6 +731,15 @@ list_validation:
           - { field: ResolvedDate, op: is_null }
           - { field: OutcomeForUs, op: is_not_null }
     message: "Check this record: a request that has not been actioned needs the provider's reference number, because a complaint that cannot say which request is not evidence. A second-hand account with nothing behind it can be logged, but not accepted as evidence. And a resolved date needs the outcome that went with it."
+  # ResponseSummary is multi-line and so cannot be required by a formula; the
+  # date stands in for it, since you cannot honestly record a response date
+  # without having had a response.
+  FollowUp:
+    when:
+      - any_of:
+          - { field: ResponseReceived, op: eq, value: "No response" }
+          - { field: ResponseDate, op: is_not_null }
+    message: "If something came back, record the date it came. A follow-up with an unrecorded response is the gap the next person to pick this up will fall into."
   ServiceIssue:
     when:
       - any_of:
@@ -743,6 +902,66 @@ demo_items:
         Status: Closed
         ReviewedBy: "@me"
         ReviewNote: "Demo row. Minor, acknowledged and resolved. Logged for completeness, so the register carries the ordinary weeks as well as the bad ones."
+  FollowUp:
+    - key: se-follow-first
+      values:
+        Title: "[DEMO] Asked for an update on the outstanding access request"
+        RelatedEvent: { demo_ref: se-event-ticket-open }
+        FollowUpDate: "today-14"
+        Channel: "Service portal or ticket update"
+        ContactedRole: "[DEMO] Service desk"
+        EscalationLevel: "Service desk or first line"
+        WhatWeAsked: "Demo row. Asked for a status update and an expected completion date, quoting the original reference."
+        ResponseReceived: "No response"
+    - key: se-follow-acknowledged
+      values:
+        Title: "[DEMO] Second request for a completion date"
+        RelatedEvent: { demo_ref: se-event-ticket-open }
+        FollowUpDate: "today-10"
+        Channel: Email
+        ContactedRole: "[DEMO] Service desk team mailbox"
+        EscalationLevel: "Service desk or first line"
+        WhatWeAsked: "Demo row. Asked again for a completion date and noted that the person had now started."
+        ResponseReceived: "Acknowledged only"
+        ResponseDate: "today-9"
+        ResponseSummary: "Demo row. Automated acknowledgement only; no person responded and no date was given."
+    - key: se-follow-closed
+      values:
+        Title: "[DEMO] Called about the request and found it had been closed"
+        RelatedEvent: { demo_ref: se-event-ticket-open }
+        FollowUpDate: "today-6"
+        Channel: "Phone call"
+        ContactedRole: "[DEMO] Service desk"
+        EscalationLevel: "Service manager"
+        WhatWeAsked: "Demo row. Asked why no date had been provided and whether the request was still open."
+        ResponseReceived: "Ticket closed without resolution"
+        ResponseDate: "today-6"
+        ResponseSummary: "Demo row. Advised on the call that the request had been closed as no response from requester. No contact had been received at this end."
+        EvidenceLink: "https://example.invalid/evidence/demo-call-note"
+    - key: se-follow-escalated
+      values:
+        Title: "[DEMO] Escalated the unactioned request to the relationship manager"
+        RelatedEvent: { demo_ref: se-event-ticket-open }
+        FollowUpDate: "today-3"
+        Channel: Email
+        ContactedRole: "[DEMO] Relationship manager"
+        EscalationLevel: "Relationship or contract manager"
+        WhatWeAsked: "Demo row. Set out the three earlier follow-ups with their dates and asked for the request to be completed and for the closure to be explained."
+        ResponseReceived: "No response"
+    - key: se-follow-executive
+      values:
+        Title: "[DEMO] Raised the unnotified outage at the governance forum"
+        RelatedEvent: { demo_ref: se-event-escalated }
+        FollowUpDate: "today-45"
+        Channel: Meeting
+        ContactedRole: "[DEMO] Service governance forum"
+        EscalationLevel: Executive
+        WhatWeAsked: "Demo row. Asked for confirmation of what changed, why no notice was issued, and what would prevent a repeat."
+        ResponseReceived: "Substantive response"
+        ResponseDate: "today-43"
+        ResponseSummary: "Demo row. The change was confirmed, the missing notice was accepted, and a revised change-notification step was offered."
+        CommitmentGiven: "[DEMO] Revised change notification from the start of next month"
+        EvidenceLink: "https://example.invalid/evidence/demo-forum-minutes"
   ServiceIssue:
     - key: se-issue-assembling
       values:

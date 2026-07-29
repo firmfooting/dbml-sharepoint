@@ -248,3 +248,54 @@ Table ServiceEvent {
     RelatedIssue
   }
 }
+
+Enum contact_channel {
+  "Email"
+  "Service portal or ticket update"
+  "Phone call"
+  "Meeting"
+  "Instant message or chat"
+  "In person"
+  "Formal letter"
+}
+
+Enum response_received {
+  "No response"
+  "Acknowledged only"
+  "Substantive response"
+  "Action taken"
+  "Referred elsewhere"
+  "Ticket closed without resolution"
+}
+
+// One row per chase. The COUNT of these rows is the evidence - which is why
+// it is read off the grouped "By event" view as SharePoint's own group count
+// rather than kept as a number on ServiceEvent, where nothing could maintain
+// it and it would drift away from the rows it claimed to summarise.
+Table FollowUp {
+  Id                int                [pk, increment]
+  Title             nvarchar           [not null, note: 'One line: what you asked for']
+  RelatedEvent      int                [not null, ref: > ServiceEvent.Id, note: 'The event or request you are following up']
+  FollowUpDate      date               [not null, default: '[today]', note: 'The date you followed up']
+  Channel           contact_channel    [not null, note: 'How you made contact. A written channel is easier to evidence later than a call']
+  ContactedRole     nvarchar           [note: 'The role, team or forum you contacted. Name the role rather than the individual']
+  EscalationLevel   escalation_level   [not null, default: 'Operational contact', note: 'How far up you went this time']
+  WhatWeAsked       longtext           [not null, note: 'What you asked for, in the words you used']
+
+  ResponseReceived  response_received  [not null, default: 'No response', note: 'What came back, if anything']
+  ResponseDate      date               [note: 'The date they responded']
+  ResponseSummary   longtext           [note: 'What they said, as close to their words as you can manage']
+  CommitmentGiven   nvarchar           [note: 'Any date, action or commitment they gave. This is what you hold them to next time']
+
+  EvidenceLink      hyperlink          [note: 'Where the email, ticket update or note of the call lives']
+
+  DaysToRespond     calculated_number  [note: 'Calculated automatically: days from the follow-up to their response']
+
+  indexes {
+    RelatedEvent
+    FollowUpDate
+    ResponseReceived
+    EscalationLevel
+    Channel
+  }
+}
