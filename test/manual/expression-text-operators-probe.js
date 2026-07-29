@@ -40,16 +40,27 @@
  *   X4   startsWith(...)              does this function exist at all?
  *   X5   substring(...) == '...'      documented-functions-only fallback
  *        for `begins_with`, in case X3 or X4 misbehave
+ *   X6   indexOf(...) != 0            candidate for `not_begins_with`
  *   Each asks: accepted? and does it read back BYTE-IDENTICAL, or did
  *   SharePoint normalise it (which reconciliation would then have to
  *   canonicalise, as the calculated-formula comparison already does)?
  *
+ *   X6 AND THE EMPTY ROW HAVE NOT BEEN RUN. The 2026-07-29 pass carried
+ *   X1-X5 over three typed values. `not_begins_with` shipped on the strength
+ *   of arithmetic — `!= 0` is the exact negation of the `== 0` watched at X3,
+ *   over the same indexOf call — which is sound but is not an observation,
+ *   and the empty-box behaviour that `none_of[not_contains]` depends on was
+ *   likewise reasoned rather than seen. Both are now asked directly. X1-X5
+ *   are unchanged byte-for-byte, so the recorded results still describe
+ *   exactly the strings that produced them.
+ *
  * WHAT YOU ANSWER — the eyes-on half
- *   The probe prints a three-row table. You open the New form, type each
- *   value into "ProbeText", and write down which of the five columns
- *   appear. A candidate that works shows for SOME values and not others.
- *   A candidate that is broken shows for NONE (or for ALL) — and those two
- *   are indistinguishable from a formula that stored perfectly.
+ *   The probe prints a four-row table. You open the New form, put each
+ *   value into "ProbeText" — the last row is the box left EMPTY — and write
+ *   down which of the six columns appear. A candidate that works shows for
+ *   SOME values and not others. A candidate that is broken shows for NONE
+ *   (or for ALL) — and those two are indistinguishable from a formula that
+ *   stored perfectly.
  *
  * HOW TO RUN
  *   1. Open a site you own, at /_layouts/15/settings.aspx.
@@ -218,6 +229,10 @@
   // Each candidate gets its OWN column, so all five are visible on one form
   // at once and a single pass of the eyes-on table answers everything. One
   // shared column would need five separate runs.
+  // X1-X5 are BYTE-IDENTICAL to the 2026-07-29 run and must stay that way:
+  // three places cite this script as the source of that observation, so
+  // editing them would leave the citations pointing at something that never
+  // ran. X6 is additive and has NOT been run.
   const CANDIDATES = [
     ['X1', 'ShowContains', 'contains',
      `=indexOf([$${SUBJECT}], '${NEEDLE}') >= 0`],
@@ -229,21 +244,35 @@
      `=startsWith([$${SUBJECT}], '${NEEDLE}')`],
     ['X5', 'ShowSubstring', 'begins_with via substring()',
      `=substring([$${SUBJECT}], 0, ${NEEDLE.length}) == '${NEEDLE}'`],
+    ['X6', 'ShowNotBeginsWith', 'not_begins_with',
+     `=indexOf([$${SUBJECT}], '${NEEDLE}') != 0`],
   ];
 
   // Chosen so every candidate is discriminated by at least one row:
-  //   "needle in a haystack" contains AND begins with
+  //   "needle in a haystack"   contains AND begins with
   //   "a needle in a haystack" contains but does NOT begin with
-  //   "no such thing here"    neither
+  //   "no such thing here"     neither
+  //   ""                       the empty box
+  //
+  // The empty row is not decoration. Both NEGATIVE operators are true for a
+  // blank — indexOf('', 'needle') is -1, which is `< 0` and also `!= 0` —
+  // and `analysis/conditions.py` relies on exactly that to decide that
+  // none_of[not_contains] must NOT re-admit the empty value. That was
+  // reasoned from the arithmetic, never printed as a row. It is a row now.
+  //
+  // It is listed last rather than first because the New form opens with the
+  // box already empty, so an observer reads it on the way in without
+  // typing; putting it at the end keeps the typed rows in one run.
   const CASES = [
     ['needle in a haystack', 'contains AND begins with'],
     ['a needle in a haystack', 'contains, does NOT begin with'],
     ['no such thing here', 'neither'],
+    ['', 'THE EMPTY BOX - clear the field rather than typing'],
   ];
 
   if (!CONFIRMED) {
     log('INFO', `Would create list '${LIST}' on ${WEB} with a text column`);
-    log('INFO', `'${SUBJECT}' and five more, each carrying one candidate`);
+    log('INFO', `'${SUBJECT}' and ${CANDIDATES.length} more, each carrying one candidate`);
     log('INFO', 'ClientValidationFormula for the disabled text operators,');
     log('INFO', 'then read each back to see whether it survived byte-identical.');
     log('INFO', 'It then prints an EYES-ON checklist you must complete by hand:');
@@ -367,26 +396,33 @@
   console.log('The rows above say only whether SharePoint KEPT each formula.');
   console.log('They cannot say whether it EVALUATES. Do this now:\n');
   console.log(`  1. Open ${WEB}/Lists/${encodeURIComponent(LIST)}/NewForm.aspx`);
-  console.log('     (or the list -> New). All five Show* columns should be');
+  console.log(`     (or the list -> New). All ${CANDIDATES.length} Show* columns should be`);
   console.log('     on the form; if a column is missing entirely, say so —');
   console.log('     that is a different finding from it being hidden.');
-  console.log(`  2. Type each value below into "${SUBJECT}" and write down`);
+  console.log(`  2. Put each value below into "${SUBJECT}" and write down`);
   console.log('     which Show* columns are VISIBLE. Do not save.\n');
-  for (const [value, meaning] of CASES) {
-    console.log(`     "${value}"`);
+  CASES.forEach(([value, meaning], i) => {
+    console.log(`     row ${i + 1}. ${value === '' ? '(leave it EMPTY)' : `"${value}"`}`);
     console.log(`         (${meaning})`);
     console.log('         visible: ______________________________________');
-  }
-  console.log('\n  3. Report the three lines above verbatim.\n');
+  });
+  console.log(`\n  3. Report the ${CASES.length} lines above verbatim.\n`);
   console.log('HOW TO READ IT');
   console.log('  A WORKING candidate is visible for some values and not others:');
-  console.log(`    contains      -> rows 1 and 2, not row 3`);
-  console.log(`    not_contains  -> row 3 only`);
-  console.log(`    begins_with   -> row 1 only`);
-  console.log('  A BROKEN candidate is visible for ALL three or for NONE.');
+  console.log('    contains         -> rows 1 and 2');
+  console.log('    not_contains     -> rows 3 and 4');
+  console.log('    begins_with      -> row 1 only');
+  console.log('    not_begins_with  -> rows 2, 3 and 4');
+  console.log('  A BROKEN candidate is visible for ALL rows or for NONE.');
   console.log('  "None" is the dangerous one: it looks exactly like a formula');
   console.log('  that stored perfectly, which is how length() fooled this');
-  console.log('  project once already.');
+  console.log('  project once already.\n');
+  console.log('  ROW 4 IS THE ONE TO CHECK CAREFULLY. Both negative operators');
+  console.log('  must be VISIBLE for the empty box, because indexOf on an empty');
+  console.log('  string is -1. conditions.py depends on that: it is why');
+  console.log('  none_of[not_contains] does not re-admit the empty value. If');
+  console.log('  row 4 hides X2 or X6, that assumption is wrong and the');
+  console.log('  none_of normaliser has to change.');
   console.log('======================================================');
   log('INFO', `Done. Delete '${LIST}' when you have finished the checklist.`);
 })();
