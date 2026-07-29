@@ -377,41 +377,29 @@ def test_now_renders_now_in_a_validation_formula() -> None:
     assert to_validation(condition, TYPES) == "[OccurredAt]<=NOW()"
 
 
-def test_now_is_gated_on_caml_until_a_saved_view_is_probed() -> None:
-    """The CAML rendering exists, is correct as far as anything has been
-    observed, and is deliberately unreachable.
+def test_now_renders_the_instant_in_caml_without_using_now() -> None:
+    """CAML gets `<Today/>` with IncludeTimeValue="TRUE" — NOT the `<Now/>`
+    element Learn documents beside it.
 
-    `<Today/>` with IncludeTimeValue="TRUE" was verified through `getitems`
-    with an ad-hoc CamlQuery. The deploy writes a view's stored ViewQuery,
-    which is a different surface: the same probe watched SharePoint rewrite
-    that XML on save, and the only element ever observed inside a real saved
-    view was `<Now/>` — the one that does not work.
+    The decisive evidence was an A/B rather than an absence. Two views over
+    the SAME list, at the same moment, each with columns, differing only in
+    that element: the `<Today/>`+IncludeTimeValue view listed two rows in
+    the browser, the `<Now/>` view listed none. A negative control had
+    already shown SharePoint silently accepts an INVENTED element there and
+    returns nothing, which is the signature `<Now/>` matches.
 
-    Distance between "observed here" and "shipped there" is exactly what
-    this module refuses to paper over.
+    And it was verified where it SHIPS. The first observations came from an
+    ad-hoc CamlQuery; the deploy writes a view's stored ViewQuery, which
+    SharePoint rewrites on save. So the probe read the stored query back —
+    the attribute survived — and re-ran that XML for the same two rows.
     """
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
     )
-    with pytest.raises(ValueError, match="not through a saved ViewQuery"):
-        to_caml(condition, TYPES)
-
-
-def test_the_gated_caml_rendering_is_still_the_verified_one() -> None:
-    """Guards the rendering itself while it is unreachable. A gate that
-    outlives its probe would otherwise let the code beneath it rot, and the
-    day someone lifts it they would ship whatever had drifted in.
-
-    `<Now/>` is NOT it: Learn documents that element as a child of `<Value>`
-    and the probe found it returns nothing — the same signature an INVENTED
-    element produced, because SharePoint does not validate this position.
-    """
-    from dbml_sharepoint.analysis.conditions import _caml_value
-
-    rendered = _caml_value("datetime", "now", "ctx")
-    assert 'IncludeTimeValue="TRUE"' in rendered
-    assert "<Today/>" in rendered
-    assert "<Now/>" not in rendered, "the element Learn documents does not work"
+    caml = to_caml(condition, TYPES)
+    assert 'IncludeTimeValue="TRUE"' in caml
+    assert "<Today/>" in caml
+    assert "<Now/>" not in caml, "the element Learn documents returns nothing"
 
 
 def test_now_is_refused_on_the_expression_target() -> None:
@@ -438,18 +426,19 @@ def test_now_on_a_date_column_is_refused_and_names_today() -> None:
             render(condition, TYPES)
 
 
-def test_the_caml_gate_names_a_probe_that_asks_the_question() -> None:
-    """The signpost rule, applied to the gate this file just added.
+def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
+    """`now` is the one sentinel here whose every rendering contradicts a
+    published Microsoft source, so the evidence has to stay findable.
 
-    A build error saying "confirm it with X" is worse than none when X does
-    not ask — it reads as though somebody already checked. That happened
-    here once already, with the expression text operators pointing at
-    form-visibility-evidence-probe.js, and this keeps the new gate honest.
+    Not a style check: if the probe were later trimmed of the rows that
+    established this, the comments in conditions.py would be citing a run
+    nobody could reproduce. The same failure as a build error naming a probe
+    that does not ask — which this file has already had to fix once.
     """
     probe = Path(__file__).parent / "manual" / "datetime-sentinel-probe.js"
     text = probe.read_text(encoding="utf-8")
-    for marker in ("C6", "C7", "ViewQuery"):
-        assert marker in text, f"the named probe does not mention {marker}"
+    for marker in ("NOW()", "IncludeTimeValue", "C6", "C7", "ViewQuery"):
+        assert marker in text, f"the probe of record no longer mentions {marker}"
 
 
 def test_now_takes_no_offset_form() -> None:
