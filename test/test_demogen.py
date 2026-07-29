@@ -217,3 +217,37 @@ def test_a_today_offset_keeps_its_sign_through_the_planner() -> None:
     assert _field_plan("date", "D", "today")["value"] == 0
     assert _field_plan("date", "D", "today+30")["value"] == 30
     assert _field_plan("date", "D", "today-7")["value"] == -7
+
+
+def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
+    """The planner and the validator are two readers of one authored value.
+    Where the planner raises, the validator must already have reported —
+    otherwise an invalid mapping reaches generation and surfaces as a build
+    traceback rather than a finding an author can act on.
+
+    This asserts the property directly rather than trusting the two to be
+    kept in step by hand, which is how they drifted twice: once on the
+    {url, description} record the planner accepted and the validator
+    refused, and once on the scalar hyperlink the planner refused and the
+    validator waved through.
+    """
+    from typing import Any
+
+    import pytest as _pytest
+
+    from dbml_sharepoint.generators.demogen import _field_plan
+
+    refused_by_planner: list[Any] = [
+        None, 123, "", "   ", {"url": None}, {"url": ""},
+    ]
+    for refused in refused_by_planner:
+        with _pytest.raises(ValueError):
+            _field_plan("hyperlink", "Link", refused)
+
+    accepted: list[Any] = [
+        "https://example.invalid/a.pdf",
+        {"url": "https://example.invalid/a.pdf"},
+        {"url": "https://example.invalid/a.pdf", "description": "A file"},
+    ]
+    for good in accepted:
+        assert _field_plan("hyperlink", "Link", good)["kind"] == "url"

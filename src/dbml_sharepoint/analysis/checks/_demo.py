@@ -87,11 +87,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"rows cannot write it (set its inputs instead).",
                     ))
                     continue
-                if isinstance(value, dict):
-                    # A hyperlink takes a record too — {url, description} —
-                    # so the object form is not exclusively a lookup
-                    # reference, and the demo_ref rule must not claim it.
-                    if col_type == "hyperlink":
+                # Hyperlinks are checked FIRST, and in BOTH authored shapes:
+                # a URL column takes a bare address or a {url, description}
+                # record. Gating this on `isinstance(value, dict)` left the
+                # scalar form unchecked — and the generator DOES refuse a
+                # non-string there, so an invalid mapping surfaced as a build
+                # traceback rather than a finding. A validator must refuse
+                # everything its generator refuses, and refuse it first.
+                if col_type == "hyperlink":
+                    if isinstance(value, dict):
                         unknown = set(value) - {"url", "description"}
                         if unknown or "url" not in value:
                             findings.append(Finding(
@@ -101,19 +105,22 @@ def check(vc: ValidationContext) -> list[Finding]:
                                 f"with 'description' optional. Got keys "
                                 f"{sorted(value)}.",
                             ))
-                        elif not (
-                            isinstance(value["url"], str) and value["url"].strip()
-                        ):
-                            # Checked as a STRING, not stringified: str(None)
-                            # is "None", which is non-empty, so a coerced
-                            # emptiness test passes a null through to become
-                            # a link pointing at the word None.
-                            findings.append(Finding(
-                                "error",
-                                f"{ctx}: {col_name} hyperlink 'url' must be a "
-                                f"non-empty string; got {value['url']!r}.",
-                            ))
-                        continue
+                            continue
+                        address = value["url"]
+                    else:
+                        address = value
+                    # Checked as a STRING, not stringified: str(None) is
+                    # "None", which is non-empty, so a coerced emptiness test
+                    # passes a null through to become a link pointing at the
+                    # word None.
+                    if not (isinstance(address, str) and address.strip()):
+                        findings.append(Finding(
+                            "error",
+                            f"{ctx}: {col_name} is a hyperlink; its address must be "
+                            f"a non-empty string, got {address!r}.",
+                        ))
+                    continue
+                if isinstance(value, dict):
                     if set(value) != {"demo_ref"}:
                         findings.append(Finding(
                             "error",

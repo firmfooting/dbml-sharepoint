@@ -54,9 +54,12 @@ list-view threshold without redesigning those values as persisted fields.
 
 **Customisation points:** the `Category` enum; the matrix cells in
 `mapping.yaml` (read the change-control section of `50-govern/GOVERNANCE.md`
-first — changing a cell recalculates every existing row); the risk-process
-link in `20-configure/formatting/risk-form-header.json`, which ships with a
-placeholder URL — see `30-deploy/DEPLOY.md`.
+first — changing a cell recalculates every existing row); and the strapline
+in `20-configure/formatting/risk-form-header.json`, which tells a risk owner
+the one thing that makes the form work. The header carries no link: a
+placeholder URL is a dead link on every form until somebody remembers to
+replace it, so point at your risk-process document from the column
+descriptions instead.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
 that pastes six `[DEMO] `-titled rows — one per rating band, a Tolerate risk
