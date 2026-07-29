@@ -684,6 +684,31 @@ def test_text_operator_literals_keep_the_expression_escaping() -> None:
     assert to_expression(condition, TYPES) == "indexOf([$Note], 'O''Brien') >= 0"
 
 
+def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
+    """`none_of[contains]` normalises to `not_contains` before it reaches
+    the renderer, so the generic capability message named an operator the
+    author never wrote and read as a defect here.
+
+    It is a SharePoint limit and a permanent one: the `<Where>` element's
+    documented child set has no `<Not>` and no `<NotContains>`, and
+    `<NotIncludes>` negates `<Includes>` — a multi-value membership test,
+    not a substring match. The message says so, says where the condition
+    DOES render, and names the authored spelling it most likely came from.
+    """
+    for authored in (
+        [{"field": "Note", "op": "not_contains", "value": "x"}],
+        {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]},
+        {"none_of": [{"field": "Note", "op": "begins_with", "value": "x"}]},
+    ):
+        condition = parse_condition(authored, "ctx")
+        with pytest.raises(ValueError, match="cannot say"):
+            to_caml(condition, TYPES)
+        # ...and both formula targets render it, which is the point of
+        # naming them in the message.
+        assert to_validation(condition, TYPES)
+        assert to_expression(condition, TYPES)
+
+
 def test_a_text_operator_refuses_an_empty_needle() -> None:
     """`contains(x, '')` is true of every possible value and `not_contains`
     is false of every one, so an empty needle is an authoring mistake on all

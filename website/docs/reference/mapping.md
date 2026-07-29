@@ -116,6 +116,28 @@ views:
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
 
+:::note A view filter cannot negate a substring match
+
+`not_contains` and `not_begins_with` render on `column_validation`,
+`list_validation` and `form_visibility.when`, but **not** in `views[].where`
+— and neither does `none_of` wrapped around `contains` or `begins_with`,
+which normalises to the same thing.
+
+This is SharePoint's limit rather than the tool's, and a permanent one. The
+[`<Where>` element](https://learn.microsoft.com/sharepoint/dev/schema/where-element-query)
+documents its complete child set: `And`, `BeginsWith`, `Contains`,
+`DateRangesOverlap`, `Eq`, `Geq`, `Gt`, `In`, `Includes`, `IsNotNull`,
+`IsNull`, `Leq`, `Lt`, `Membership`, `Neq`, `NotIncludes`, `Or`. There is no
+`<Not>` and no `<NotContains>`; `<NotIncludes>` negates `<Includes>`, which
+is a multi-value membership test, not a substring match. No arrangement of
+the elements that exist expresses it.
+
+The build says so by name rather than reporting a missing operator. For a
+view, filter the other way round, or precompute the test into a column and
+filter on that.
+
+:::
+
 :::caution Conditional visibility is not checked when it is saved
 
 SharePoint accepts a `ClientValidationFormula` calling a function that does

@@ -174,7 +174,16 @@ _TEXT_OPS = frozenset({"contains", "not_contains", "begins_with", "not_begins_wi
 # Operators each target can render. A miss is a build error naming the
 # target — never a formula emitted in hope.
 CAPABILITIES: dict[str, frozenset[str]] = {
-    # CAML has Contains/BeginsWith but no negation of either.
+    # CAML has Contains/BeginsWith and no negation of either, and this is a
+    # PLATFORM limit rather than a gap here — so it is cited rather than
+    # probed. Microsoft's Where element documents its complete child set:
+    # And, BeginsWith, Contains, DateRangesOverlap, Eq, Geq, Gt, In,
+    # Includes, IsNotNull, IsNull, Leq, Lt, Membership, Neq, NotIncludes,
+    # Or. There is no <Not>, no <NotContains> and no <NotBeginsWith>, and
+    # <NotIncludes> negates <Includes> — a MULTI-VALUE membership test, not
+    # a substring match. So "does not contain" has no CAML spelling at all,
+    # by any arrangement of the elements that exist.
+    # https://learn.microsoft.com/sharepoint/dev/schema/where-element-query
     CAML: frozenset(_CAML_OP_TAGS) | {"in", "not_in"},
     EXPRESSION: frozenset(_EXPR_OPS) | {"is_null", "is_not_null", "in", "not_in"} | _TEXT_OPS,
     VALIDATION: frozenset(_VALIDATION_OPS) | {"is_null", "is_not_null", "in", "not_in"} | _TEXT_OPS,
@@ -381,6 +390,28 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
             f"operator {leaf.op!r} is not yet verified against a live tenant for this "
             f"target; confirm it with test/manual/expression-text-operators-probe.js "
             f"and enable it deliberately",
+            context,
+        )
+    if leaf.op in ("not_contains", "not_begins_with") and target == CAML:
+        # The generic message below names an operator the author very
+        # likely never wrote: `none_of[contains]` normalises to
+        # `not_contains` before it reaches here, so "operator
+        # 'not_contains' has no rendering" reads as a tool defect. It is a
+        # platform one, it is permanent, and the two targets where the same
+        # condition DOES render are worth naming rather than leaving the
+        # author to discover.
+        positive = NEGATION[leaf.op]
+        raise _reject(
+            target,
+            f"a view filter cannot say {leaf.op!r}. CAML has <Contains> and "
+            f"<BeginsWith> and no negation of either — its <Where> element has "
+            f"no <Not>, and <NotIncludes> negates <Includes>, which is a "
+            f"multi-value membership test rather than a substring match. This "
+            f"is a SharePoint limit, not one this tool can lift. (If you wrote "
+            f"none_of[{positive}], that is where this came from.) The same "
+            f"condition renders on column_validation/list_validation and on "
+            f"form_visibility; for a view, filter the other way round, or "
+            f"precompute the test into a column and filter on that",
             context,
         )
     if leaf.op not in CAPABILITIES[target]:
