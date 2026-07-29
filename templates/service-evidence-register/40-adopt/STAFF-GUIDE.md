@@ -59,15 +59,20 @@ what makes the rest of the register believable.
 
 ## When it is a request nobody has actioned
 
-Set **Event Nature** to **Unactioned request or ticket**. Four extra fields
-appear:
+Set **Event Nature** to **Unactioned request or ticket**. Two fields appear,
+and one you have already filled in changes meaning:
 
 - **Occurred At** now means *the date you raised it* — that is when the clock
   starts.
 - **Response Due Date** — when they promised, or when their published target
   says it should have been done. This is what turns red when it passes.
-- **Last Followed Up** — the date you last chased.
-- **Resolved Date** — leave it blank while it is still outstanding.
+- **Last Followed Up** — the date you last chased. Fill it in now if you
+  already have; you cannot come back and change it later.
+
+**Resolved Date** is on the form whatever the Event Nature — leave it blank
+while it is still outstanding. If you do fill it in, pick the **Outcome for
+us** beside it: the form will not save one without the other, in either
+direction.
 
 You must give a **Provider Reference** for this kind of event. A complaint
 about an unactioned request that cannot say *which* request is not evidence,
@@ -84,9 +89,11 @@ somebody says *"nobody raised this with us"*. Four dated rows against one
 request, each with what was asked and what was answered, ends that
 conversation. A single sentence saying "we chased them repeatedly" does not.
 
-**Then go back to the event and update Last Followed Up.** Nothing links the
-two automatically — the chase list sorts on that date to tell you what to
-chase today, so an out-of-date one hides work.
+**Your follow-up row is the record — you do not go back and edit the event.**
+You cannot: once you have saved an event it is fixed, and that is what makes
+it worth having. Nothing links the two lists automatically either, so
+**Last Followed Up** on the event is carried across by a curator as part of
+the weekly chase, and reconciled against **By event** each month.
 
 ## The views you will actually use
 
