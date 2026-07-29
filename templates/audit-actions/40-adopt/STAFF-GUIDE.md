@@ -54,9 +54,13 @@ redeploy puts the declared name back.
 3. **Closing**: work the *Awaiting evidence* view. Verify the evidence
    actually demonstrates the action (read it — a link to a folder is not
    evidence), attach **Evidence URL**, set **Closed date** and Status
-   **Closed**. The list refuses to save a Closed row without **both**, and
-   **Days late** computes itself from the closed date against the
-   committed one.
+   **Closed**. The list refuses to save a Closed row without a **Closed
+   date**, and **Days late** computes itself from it against the committed
+   one. **The Evidence URL is not enforced** — SharePoint cannot hold a
+   save rule against a link column — so a Closed row with no evidence
+   saves. That one is on you and on the coordinator checking behind you;
+   the *Closed, last 90 days* view shows the column so an empty one is
+   visible to the committee.
 4. **Risk accepted** is a legitimate ending — but only with the sign-off
    the governance rules require, recorded in Notes. Nothing checks that
    sign-off: Notes is rich text and no save rule can read it. Risk
