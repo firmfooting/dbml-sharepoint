@@ -700,11 +700,19 @@ form_formatting:
 # records the same limitation for EndDate/StartDate and vehicle-log for
 # OdoEnd/OdoStart.
 #
-# A reversed pair is visible rather than silent: it shows as a NEGATIVE Days
-# to respond or Days to response on the item. 50-govern/GOVERNANCE.md carries
-# it as a data-quality check for the monthly reconciliation. Do not reach for
-# a row colour to make it louder - this template has one row-level signal and
-# has already spent it on ServiceIssue Materiality.
+# Two of the three are visible rather than silent: a reversed response pair
+# shows as a NEGATIVE Days to respond or Days to response on the item.
+#
+# ResolvedDate before OccurredAt is NOT. Days Outstanding is in no declared
+# view - it is blank on an open row by construction, which is why - so a
+# reversed event pair leaves a negative number nobody is looking at. It is a
+# curator check in 50-govern rather than something the register surfaces,
+# and saying otherwise here would have been the comment claiming a safety
+# net that does not exist.
+#
+# Do not reach for a row colour to make any of them louder - this template
+# has one row-level signal and has already spent it on ServiceIssue
+# Materiality.
 column_validation:
   ServiceEvent:
     reconcile: exact
@@ -807,8 +815,13 @@ list_validation:
       - any_of:
           - { field: EventNature, op: neq, value: "Unactioned request or ticket" }
           - { field: ProviderReference, op: is_not_null }
+      # Both statuses, not just Accepted. "Evidence pack" - the view that
+      # goes in front of the provider - selects Accepted AND Escalated, so
+      # gating only the first left the exact unsupported account this rule
+      # exists to keep out reachable by setting Escalated directly, or by
+      # weakening the evidence after escalating.
       - any_of:
-          - { field: Status, op: neq, value: Accepted }
+          - { field: Status, op: not_in, value: [Accepted, Escalated] }
           - { field: BasisOfKnowledge, op: neq, value: "It was reported to me by a colleague" }
           - { field: EvidenceHeld, op: neq, value: "None - recollection only" }
       - any_of:
