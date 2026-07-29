@@ -268,14 +268,25 @@ _NOW = NOW_SENTINEL              # same home, same reason
 #
 #   CAML -> <Today/> with IncludeTimeValue="TRUE", NOT <Now/>
 #       Learn documents <Now/> as a child of <Value> beside <Today/>. It
-#       does not work in a comparison: the probe's negative control showed
-#       that SharePoint silently accepts an INVENTED element in that
-#       position and returns zero rows, and <Now/> returned zero rows too —
-#       the exact signature of something unrecognised. <Today/> with
-#       IncludeTimeValue="TRUE" is the mechanism that does discriminate,
-#       and the probe proved it compares against the INSTANT rather than
-#       midnight: a row stamped three hours ago matched `Lt`, which a
-#       midnight comparison would have excluded.
+#       does not work in a comparison, and the decisive evidence is an A/B
+#       rather than an absence: two views were built over the SAME list, at
+#       the same moment, each with columns, differing only in that element.
+#       The <Today/>+IncludeTimeValue view listed two rows in the browser;
+#       the <Now/> view listed none. A negative control had already shown
+#       SharePoint silently accepts an INVENTED element in that position
+#       and returns nothing, which is the signature <Now/> matches.
+#
+#       IncludeTimeValue makes the comparison an INSTANT, not midnight: a
+#       row stamped three hours earlier matched `Lt`, which a midnight
+#       comparison would have excluded, and the row stamped three hours
+#       later did not.
+#
+#       Verified where it SHIPS, not merely where it was convenient to ask.
+#       C2-C5 used an ad-hoc CamlQuery; the deploy writes a view's stored
+#       ViewQuery, and SharePoint rewrites that XML on save. So C6 read the
+#       stored query back (the attribute survived) and C7 re-ran THAT XML
+#       and got the same two rows — confirmed a third time by eye, in the
+#       view itself.
 #
 #   EXPRESSION -> refused, exactly as `today` is.
 #       @now stores and reads back intact, so it is not obviously absent.
@@ -512,30 +523,6 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             target,
             f"the 'now' sentinel needs a datetime column; {leaf.field!r} is "
             f"{column_type!r}, which has no time of day — use 'today'",
-            where,
-        )
-
-    # CAML is GATED, and the gap is narrow and specific rather than general
-    # doubt. The probe established `<Today/>` + IncludeTimeValue="TRUE"
-    # against a live tenant — but through `getitems` with an ad-hoc
-    # CamlQuery, which is NOT the surface this renders into. The deploy
-    # writes a view's stored ViewQuery, SharePoint demonstrably rewrites
-    # that XML on save (the probe's C1 saw `<Now/>` come back as `<Now />`
-    # and single quotes become double), and the one thing observed in a real
-    # saved view was the element that does not work.
-    #
-    # So the rendering below is written, tested and unreachable until a
-    # probe reads rows back THROUGH a saved view. Shipping it on a
-    # CamlQuery result would be precisely the substitution this module
-    # exists to refuse.
-    if _is_now(leaf.value, column_type) and target == CAML:
-        raise _reject(
-            target,
-            "the 'now' sentinel is verified for validation formulas but NOT yet "
-            "for a view: its CAML rendering was observed through a CamlQuery, "
-            "not through a saved ViewQuery, which is what the deploy writes. "
-            "Confirm it with test/manual/datetime-sentinel-probe.js (C6/C7) and "
-            "enable it deliberately; use 'today' for a view filter meanwhile",
             where,
         )
 

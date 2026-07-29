@@ -139,26 +139,31 @@ of up to twenty-four hours' future-dating. `now` closes it exactly.
 | Target | `now` |
 |---|---|
 | `column_validation` / `list_validation` | ✅ renders `NOW()` |
-| `views[].where` | ❌ refused — see below |
+| `views[].where` | ✅ renders `<Today/>` with `IncludeTimeValue="TRUE"` |
 | `form_visibility.when` | ❌ refused, as `today` is |
 
-Two of those need saying plainly, because both contradict a published
-source. Microsoft's formula reference states that Lists and libraries do
-not support `NOW()`. That is true of **calculated** columns, where the
-value would go stale between saves, and false in a validation formula:
+Both of the supported renderings contradict a published Microsoft source,
+so they are worth stating plainly.
+
+Microsoft's formula reference says Lists and libraries do not support
+`NOW()`. True of **calculated** columns, where the value would go stale
+between saves; false in a validation formula.
 `test/manual/datetime-sentinel-probe.js` set one on a live tenant, watched
-SharePoint accept and store it, and watched it refuse a timestamp three
+SharePoint accept and store it, then watched it refuse a timestamp three
 hours in the future.
 
-The **view** target is refused for the opposite reason — not because the
-rendering is wrong, but because it has only been observed in the wrong
-place. `<Now/>` is documented on Learn as a child of `<Value>` and returns
-nothing at all; `<Today/>` with `IncludeTimeValue="TRUE"` does compare
-against the instant, but that was established through an ad-hoc
-`CamlQuery`, and the deploy writes a view's **stored ViewQuery**, which
-SharePoint rewrites on save. Until a probe reads rows back through a saved
-view, `now` stays refused there and `today` remains correct for the
-date-window filters every shipped view actually wants.
+For views, Learn documents a `<Now/>` element as a child of `<Value>`
+beside `<Today/>`. **It returns nothing.** Two views were built over the
+same list, at the same moment, with the same columns, differing only in
+that element: the `<Today/>`+`IncludeTimeValue` view listed two rows in the
+browser and the `<Now/>` view listed none. `IncludeTimeValue="TRUE"` is
+what makes the comparison an instant rather than midnight, and it was
+checked in the surface that actually ships — the stored `ViewQuery` read
+back after a view save, since SharePoint rewrites that XML on the way in.
+
+Most view filters still want `today`. A rolling window ("the last 30 days",
+"signed in today") means a **date**, and `today` is the right sentinel for
+it; reach for `now` only when a filter genuinely turns on the time of day.
 
 `now` takes **no offset form**. `today±N` has a verified rendering;
 `now±N` does not, and unverified is treated as unknown.
