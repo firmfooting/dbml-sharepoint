@@ -2877,3 +2877,44 @@ def test_a_scalar_hyperlink_demo_value_is_validated_too(tmp_path: Path) -> None:
     for bad in ("null", "123", '""'):
         errors = _hyperlink_demo(tmp_path, bad)
         assert any("non-empty string" in f.message for f in errors), (bad, errors)
+
+
+def test_names_that_differ_only_in_case_are_refused(tmp_path: Path) -> None:
+    """SharePoint resolves group, permission-level and view names
+    case-insensitively and will not hold two that differ only in case. A
+    build that permits both produces a deploy that creates the first and
+    collides on the second, mid-run, after the site has already changed.
+
+    Caught here so the collision is a build error rather than a half-applied
+    paste.
+    """
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project: { kind: List, base_template: 100, site_role: default }\n"
+        "permission_levels:\n"
+        '  - { name: "APP Reader", description: "d", base_permissions: [ViewListItems] }\n'
+        '  - { name: "app reader", description: "d", base_permissions: [ViewListItems] }\n'
+        "groups:\n"
+        '  - { name: "APP Owners", description: "d", owner_group: "Site Owners" }\n'
+        '  - { name: "app owners", description: "d", owner_group: "Site Owners" }\n'
+        "views:\n"
+        "  Project:\n"
+        "    - { title: Open, fields: [Title], default: true }\n"
+        "    - { title: open, fields: [Title] }\n",
+        encoding="utf-8",
+    )
+    schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    for what in ("permission_levels", "groups", "views"):
+        assert any(
+            f.message.startswith(what) and "case" in f.message for f in errors
+        ), (what, [f.message for f in errors])

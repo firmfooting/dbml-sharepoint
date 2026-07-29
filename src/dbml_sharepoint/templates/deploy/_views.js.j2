@@ -105,8 +105,15 @@
       // the view is found, a casing difference is drift the deployer owns
       // and renames, which is the opposite question.
       let existing = listedViews.find((v) => nameKey(v.Title) === nameKey(view.title)) || null;
+      // A previous title is only interesting on a DIFFERENT view. Excluding
+      // the one already matched as current is what makes a casing-only
+      // rename possible: `title: Open` with `renamed_from: [open]` matches
+      // the same live view twice under case-insensitive comparison, and the
+      // conflict check below would then refuse to choose between a view and
+      // itself — on every run, so the rename could never land.
       const previousMatches = listedViews.filter(
-        (v) => view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
+        (v) => (!existing || v.Id !== existing.Id)
+          && view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
       );
       if (previousMatches.length > 1) {
         throw new Error(`multiple previous-title views exist for '${view.title}': ${previousMatches.map((v) => v.Title).join(', ')}`);

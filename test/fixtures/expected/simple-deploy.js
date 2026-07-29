@@ -246,7 +246,7 @@
     // just spends it here too.
     const titles = await ensureKnownListTitles();
     if (titles && !hasName(titles, listName)) {
-      const empty = new Map();
+      const empty = { get: () => undefined, size: 0 };
       fieldShapesByList[listName] = empty;
       return empty;
     }
@@ -263,18 +263,33 @@
         // exists to remove. Safe because every field-touching phase opens
         // with invalidateFieldShapes(), so a list created later in the run
         // is re-read at the next phase boundary rather than staying absent.
-        const empty = new Map();
+        const empty = { get: () => undefined, size: 0 };
         fieldShapesByList[listName] = empty;
         return empty;
       }
       throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
-    const shapes = new Map();
+    // TWO indexes, not one keyspace. getbyinternalnameortitle resolves an
+    // internal name first, so folding both into a single map lets one
+    // field's display Title shadow another field's InternalName whenever
+    // they match case-insensitively — and the loser is then read as an
+    // impostor by the immutable-shape check, aborting preflight over a
+    // field SharePoint can resolve perfectly well. First writer wins
+    // WITHIN each index; internal names win BETWEEN them, matching the
+    // endpoint this cache stands in for.
+    const byInternal = new Map();
+    const byTitle = new Map();
     for (const f of (j && j.d && j.d.results) || []) {
-      if (f.InternalName && !shapes.has(nameKey(f.InternalName))) shapes.set(nameKey(f.InternalName), f);
-      if (f.Title && !shapes.has(nameKey(f.Title))) shapes.set(nameKey(f.Title), f);
+      if (f.InternalName && !byInternal.has(nameKey(f.InternalName))) {
+        byInternal.set(nameKey(f.InternalName), f);
+      }
+      if (f.Title && !byTitle.has(nameKey(f.Title))) byTitle.set(nameKey(f.Title), f);
     }
+    const shapes = {
+      get: (name) => byInternal.get(nameKey(name)) || byTitle.get(nameKey(name)) || undefined,
+      size: byInternal.size + byTitle.size,
+    };
     fieldShapesByList[listName] = shapes;
     return shapes;
   }
@@ -286,7 +301,7 @@
     const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
     let shape;
     if (!fresh) {
-      shape = (await listFieldShapes(listName)).get(nameKey(columnName)) || null;
+      shape = (await listFieldShapes(listName)).get(columnName) || null;
       if (!shape) return null;
       // Cached entries were validated at enumeration time by the same checks
       // below; re-validate anyway — one shared gate for both paths.
@@ -1668,6 +1683,12 @@
             AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
             OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
           }, digest0);
+          // Keep the snapshot current. Two declarations differing only in
+          // case are one group to SharePoint, so without this the second
+          // would read as absent and try to create a name that now exists.
+          // The build refuses that declaration outright; this keeps the
+          // deploy honest even against a mapping that predates the rule.
+          if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
           log('INFO', `Site group '${grp.name}' created.`);
         } else if (checkResp.ok) {
           // Group membership controls are part of the security boundary. A
@@ -2350,8 +2371,15 @@
       // the view is found, a casing difference is drift the deployer owns
       // and renames, which is the opposite question.
       let existing = listedViews.find((v) => nameKey(v.Title) === nameKey(view.title)) || null;
+      // A previous title is only interesting on a DIFFERENT view. Excluding
+      // the one already matched as current is what makes a casing-only
+      // rename possible: `title: Open` with `renamed_from: [open]` matches
+      // the same live view twice under case-insensitive comparison, and the
+      // conflict check below would then refuse to choose between a view and
+      // itself — on every run, so the rename could never land.
       const previousMatches = listedViews.filter(
-        (v) => view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
+        (v) => (!existing || v.Id !== existing.Id)
+          && view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
       );
       if (previousMatches.length > 1) {
         throw new Error(`multiple previous-title views exist for '${view.title}': ${previousMatches.map((v) => v.Title).join(', ')}`);

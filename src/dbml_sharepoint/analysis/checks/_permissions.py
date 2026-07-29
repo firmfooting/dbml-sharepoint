@@ -32,12 +32,23 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"{scope!r} (mapping declares: {', '.join(sorted(known_roles))}).",
             ))
 
-        # permission_levels[*].name must be unique.
-        seen_level_names: set[str] = set()
+        # permission_levels[*].name must be unique — CASE-INSENSITIVELY,
+        # because that is how SharePoint resolves and de-duplicates them.
+        # Two declarations differing only in case are one object on the
+        # site: the second create fails on a name collision, mid-deploy,
+        # after the first has already been made.
+        seen_level_names: dict[str, str] = {}
         for lvl in perms.levels:
-            if lvl.name in seen_level_names:
-                findings.append(Finding("error", f"permission_levels: duplicate name {lvl.name!r}"))
-            seen_level_names.add(lvl.name)
+            key = lvl.name.casefold()
+            if key in seen_level_names:
+                findings.append(Finding(
+                    "error",
+                    f"permission_levels: duplicate name {lvl.name!r}"
+                    + (f" (differs from {seen_level_names[key]!r} only in case; "
+                       f"SharePoint treats them as one)"
+                       if seen_level_names[key] != lvl.name else ""),
+                ))
+            seen_level_names.setdefault(key, lvl.name)
 
         # permission_levels[*].base_permissions must be known bits.
         for lvl in perms.levels:
@@ -48,13 +59,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"permission_levels[{lvl.name!r}]: unknown base permission {bit!r}",
                     ))
 
-        # groups[*].name must be unique.
-        seen_group_names: set[str] = set()
+        # groups[*].name must be unique — case-insensitively, for the same
+        # reason as the levels above.
+        seen_group_names: dict[str, str] = {}
         custom_group_names = {g.name for g in perms.groups}
         for grp in perms.groups:
-            if grp.name in seen_group_names:
-                findings.append(Finding("error", f"groups: duplicate name {grp.name!r}"))
-            seen_group_names.add(grp.name)
+            key = grp.name.casefold()
+            if key in seen_group_names:
+                findings.append(Finding(
+                    "error",
+                    f"groups: duplicate name {grp.name!r}"
+                    + (f" (differs from {seen_group_names[key]!r} only in case; "
+                       f"SharePoint treats them as one)"
+                       if seen_group_names[key] != grp.name else ""),
+                ))
+            seen_group_names.setdefault(key, grp.name)
 
         # groups[*].owner_group must be a built-in SP group or a declared custom group.
         for grp in perms.groups:
@@ -70,7 +89,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
 
         # Collect all valid level names (built-in + declared custom).
-        all_level_names = BUILT_IN_LEVELS | seen_level_names
+        all_level_names = BUILT_IN_LEVELS | set(seen_level_names.values())
         # Collect all valid group names (declared custom + built-in SP groups).
         all_group_names = custom_group_names | _BUILTIN_SP_GROUPS
 
