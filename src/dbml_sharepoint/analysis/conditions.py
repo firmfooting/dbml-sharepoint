@@ -20,9 +20,8 @@ grammar as authored and normalised by the rules above.
 """
 
 import math
-import re
 
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, TODAY_SENTINEL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 
 # Every operator's exact inverse. The involution is asserted by a test: an
@@ -239,7 +238,7 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
 
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
-_TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
+_TODAY = TODAY_SENTINEL          # one home: analysis/typemap.py
 # The current-user sentinel. A person column could not be filtered at all
 # before this: the operand rules demand an accessor because there is no
 # defensible default between a name, an email and an id, and CAML refuses

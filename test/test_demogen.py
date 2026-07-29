@@ -178,3 +178,42 @@ def test_a_hyperlink_demo_value_may_carry_its_own_description() -> None:
         "url": "https://example.invalid/m.docx",
         "description": "March minutes",
     }
+
+
+def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
+    """The validator gates what may be DECLARED, the condition renderers
+    decide what it becomes in CAML, and the demo planner decides what it
+    becomes in a seeded row. Three readers of one authored value.
+
+    A copy that drifted wider or narrower than another would pass the build
+    with zero findings and emit the literal string "today" into a script —
+    the same shape as any two readers disagreeing about one declaration.
+    Comments asserted the agreement; this asserts it.
+    """
+    from dbml_sharepoint.analysis import validator
+    from dbml_sharepoint.analysis.conditions import _TODAY
+    from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
+    from dbml_sharepoint.generators.demogen import _TODAY_OFFSET
+
+    assert _TODAY is TODAY_SENTINEL
+    assert _TODAY_OFFSET is TODAY_SENTINEL
+    assert validator._TODAY_SENTINEL is TODAY_SENTINEL
+
+
+def test_the_today_sentinel_accepts_exactly_the_documented_forms() -> None:
+    from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
+
+    for good in ("today", "today+1", "today+30", "today-7", "today-365"):
+        assert TODAY_SENTINEL.match(good), good
+    for bad in ("today+", "today-", "Today", "today +1", "today+1.5", "tomorrow", "today++1"):
+        assert not TODAY_SENTINEL.match(bad), bad
+
+
+def test_a_today_offset_keeps_its_sign_through_the_planner() -> None:
+    """The shared pattern captures sign and digits separately; reading one
+    group would make every negative offset a crash or a positive."""
+    from dbml_sharepoint.generators.demogen import _field_plan
+
+    assert _field_plan("date", "D", "today")["value"] == 0
+    assert _field_plan("date", "D", "today+30")["value"] == 30
+    assert _field_plan("date", "D", "today-7")["value"] == -7
