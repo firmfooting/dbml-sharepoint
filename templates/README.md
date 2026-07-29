@@ -238,14 +238,21 @@ template's DEPLOY, STAFF-GUIDE or GOVERNANCE file waits on a step you have
 to perform in the SharePoint UI first — where those documents name a view,
 that view exists as soon as the script finishes.
 
-**One exception, and it is a document library.** `policy-library`'s
-`PolicyDocuments` is a `kind: DocumentLibrary`, and the parts of the
-standard that describe a list do not describe one: a library view cannot
-name `FileLeafRef`, so a documents view built this way would have no file
-name in it. That half declares no views, and its **Drafts in progress**
-view is still a step you perform in the UI — `policy-library`'s own
-DEPLOY.md carries it. Its `PolicyRegister` half is declared like every
-other list.
+**One exception in the whole library, and it is a document library.**
+`policy-library`'s `PolicyDocuments` is a `kind: DocumentLibrary`, and
+three parts of the standard below describe a list in ways that do not
+describe one. A library view cannot name `FileLeafRef`, so a documents
+view built this way would have no file name in it; a library's `Title` is
+a separate field SharePoint does not populate from the file name, so the
+header's live title line would read *New document* forever; and demo rows
+for a library ask SharePoint to create an item with no file behind it.
+
+So that half declares **no views, no form header and no demo rows** — the
+only entity in the twenty-nine that declares none of them — and its
+**Drafts in progress** view is a step you perform in the UI, carried in
+`policy-library`'s own DEPLOY.md. Its `PolicyRegister` half is declared
+like every other list. Everything else below holds everywhere, and a test
+over all twenty-nine says so.
 
 The declaration stays authoritative afterwards. A redeploy reconciles each
 declared view back to what the mapping says, so a view somebody widened,
