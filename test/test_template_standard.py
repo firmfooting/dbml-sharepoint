@@ -551,15 +551,15 @@ ROSTER_EXCEPTIONS: frozenset[str] = frozenset()
 
 def test_the_roster_holds_only_its_documented_exception() -> None:
     """The spec said this set must reach empty when the last theme branch
-    landed. It reached one, for a reason the spec did not anticipate:
-    `policy-library`'s `PolicyDocuments` half is a document library, and
-    three parts of the standard do not describe one (see the comment on
-    NOT_YET_UPLIFTED).
+    landed. It reached one — `policy-library`, whose `PolicyDocuments` half
+    was a document library that three parts of the standard did not
+    describe — and then reached zero, when that template was removed and
+    `kind: DocumentLibrary` was refused outright.
 
-    So the aspiration becomes a check. Adding a template here now fails
-    unless it is also added to ROSTER_EXCEPTIONS, which is a deliberate,
-    reviewable act — and the empty set stays the goal rather than becoming
-    a place to put anything inconvenient.
+    So the aspiration is a check rather than a hope. Adding a template here
+    fails unless it is also added to ROSTER_EXCEPTIONS, which is a
+    deliberate, reviewable act — and the empty set stays the goal rather
+    than becoming a place to put anything inconvenient.
     """
     undocumented = NOT_YET_UPLIFTED - ROSTER_EXCEPTIONS
     assert not undocumented, (
