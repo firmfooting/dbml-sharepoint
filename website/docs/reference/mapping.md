@@ -115,6 +115,39 @@ views:
   nesting existed keeps working unchanged. The same grammar drives
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
+
+:::tip `me` — the current-user sentinel, and the only way to filter a person column
+
+```yaml
+where:
+  - { field: RequestedBy, op: eq, value: me }     # "My requests"
+```
+
+A person column takes no `property` here, and **refuses one**. That is not
+an inconsistency with the accessor rules elsewhere — it is what makes the
+filter possible at all.
+
+Ordinarily a person operand must declare `property: title | email | id`,
+because there is no defensible default between the three. But CAML cannot
+reach a person's sub-properties at all, so every accessor it might be given
+is refused too. Between those two rules, a person column could not appear in
+a view filter in any form.
+
+`me` resolves that: CAML's `<UserID/>` compares the person field's user id
+natively, so the sentinel **supplies** the accessor rather than declaring
+one. Hence no `property`, and only `eq` / `neq` — `<UserID/>` is an identity,
+so ordering or substring-matching against it is meaningless rather than
+merely unsupported.
+
+Scope, exactly as `today`'s: it means the current user only on a **person**
+column (on a text column it is someone literally called "me"), and only in
+`views[].where`. It is refused in `form_visibility.when`, because a
+show/hide formula is evaluated against the item's field values rather than
+against the signed-in user — the rule would save, read back equal, pass the
+phase and never fire. It is refused in validation formulas because person
+operands already are.
+
+:::
 - `formatting` points at a view-level (row) formatter JSON file. Its
   `[$Field]` references must be columns **this view displays** — SharePoint
   resolves them against the view's own fields, so a reference to a column
@@ -125,6 +158,62 @@ views:
   no `calculated: true`: the `string;#` prefix belongs to column formatting
   only, see the
   [style guide](./style-guide.md#styles).
+- `group_by` groups the view by one or two columns — SharePoint's own
+  ceiling is two. Write `group_by: { field: Area }` for one level, or
+  `group_by: { fields: [SourceType, SourceInstrument], collapsed: true }`
+  for two; declaring both spellings at once is an error rather than a
+  precedence rule, and a third level is refused rather than silently
+  dropped. Both render as FieldRefs inside a single `<GroupBy>`. A group
+  column need **not** also appear in `fields`: SharePoint renders the
+  grouped value in the group header, from the `GroupBy` FieldRef itself, so
+  omitting it is a normal way to avoid repeating one value in every row.
+- `totals` declares column aggregations — the figures SharePoint renders
+  under a view, and under each group when the view is grouped:
+
+  ```yaml
+  totals:
+    TripKm: sum          # sum | count | avg | min | max | stdev | var
+  ```
+
+  Authored short and lowercase; the build renders SharePoint's own tokens
+  (`avg` → `AVG`). Those tokens are an **enumeration, not English** —
+  `AVG`, `COUNT`, `MAX`, `MIN`, `SUM`, `STDEV`, `VAR`, per the
+  [FieldRef element (Query)](https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query#elements-and-attributes)
+  reference. Writing `Average` instead of `AVG` is accepted by SharePoint,
+  stored, and read back unchanged, and then breaks the view's rendering
+  entirely; that is why the mapping takes short names and the build owns
+  the translation. **`count` works on any displayed column**,
+  including person, lookup and hyperlink, because it counts rows rather
+  than values. The arithmetic four — `sum`, `avg`, `min`, `max` — need a
+  numeric column, and calculated numbers qualify. They are refused on a
+  **lookup** even though DBML types one as `int`: what SharePoint stores is
+  a row id, not a quantity, and summing it produces a number that means
+  nothing. A total on a column the view does not display is a build error
+  too — SharePoint accepts it and renders nothing, having no column to put
+  the figure under.
+
+  `stdev` and `var` are offered too. Probes exist for UNDOCUMENTED
+  behaviour, which is where the silent failures live; a member of a
+  published enumeration is documented, so withholding it would buy
+  nothing.
+
+  **Undeclared totals are never touched**, like `formatting`. The
+  consequence worth knowing: *deleting* a `totals:` block does not remove
+  a total from an already-deployed view — clear it in the UI. The
+  alternative would have the deployer stamping over hand-added totals on
+  every view in a site.
+
+  Totals are keyed on **internal** names, and unlike `widths` they stay
+  that way: `Aggregations` binds by internal name while `ColumnWidth` binds
+  by display title. Both are live-verified, neither follows from the other,
+  and using the wrong one gives you a property that saves, reads back
+  unchanged and produces nothing. Multiple totals on one view render in
+  declaration order.
+
+  The write mechanism — a REST `MERGE` of `Aggregations` and
+  `AggregationsStatus` on `SP.View` — and every claim above were
+  established against a live tenant before the feature shipped; see
+  `test/manual/view-aggregations-probe.js`, which records its verdict.
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see
@@ -157,7 +246,13 @@ display_names:
 
 Internal names stay authoritative (they are what the schema, lookups
 and reporting bind to); `auto` derives human display titles from
-PascalCase names, with per-column overrides.
+PascalCase names, with per-column overrides. Overrides earn their place
+where splitting PascalCase reads badly — `TripKm`, `WWCCExpiry`,
+`DocumentUrl` — rather than as a second naming scheme.
+
+Settle titles before the first deploy. Renaming a deployed column is not
+harmful, but a title changed in the SharePoint UI instead of here is drift:
+the next re-paste detects it, reverts it and reports having done so.
 
 ## `column_formatting`
 
@@ -199,6 +294,42 @@ form_formatting:
 Client-form customisation (header/body/footer JSON) reconciled onto the
 list's content type. The body JSON is where fields are arranged into
 form sections.
+
+A header's `iconName` must name a real Fluent icon: SharePoint renders an
+unknown one as nothing at all, with no error in the build, the deploy or
+the browser console. The shipped templates draw theirs from one verified
+vocabulary, and the reasoning — plus the five plausible-looking names that
+turned out not to exist — is in
+[the style guide](./style-guide.md#form-header-icons-come-from-one-curated-vocabulary).
+
+### The last section is a catch-all, and that shapes two build rules
+
+SharePoint documents the behaviour that matters most here: *"A column not
+referenced in any of the sections will be automatically referenced in the
+last section"*, and *"New columns added will be automatically referenced in
+the last section"*
+([Configure the list form](https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-configuration#configure-custom-body-with-one-or-more-sections)).
+
+So **you cannot hide a column by leaving it out of every section** — it
+moves, it does not disappear. Two consequences are enforced:
+
+- **A column in no section is a warning, not an error.** The form still
+  renders it. What is lost is the guarantee that the arrangement you
+  declared is the arrangement you deploy, and every column added later
+  lands in that same last section. Reference every column explicitly, and
+  if you want an overflow bucket, declare one deliberately as the last
+  section — Microsoft's own idiom is a section named "Others" with an empty
+  `fields` array.
+- **A section whose every column is hidden from every form is an error** —
+  it renders as a heading with nothing under it. This is *not* asserted of
+  the **last** section, because unreferenced columns land there, so only an
+  earlier section can be provably empty. `templates/risk-register`'s
+  **System** section is exactly that shape: it is last, it holds only
+  `MatrixVersion`, and its DEPLOY.md documents the bare heading on the New
+  form as cosmetic and expected.
+
+To hide a column from a form, declare it — `form_visibility` with
+`new: false` and `existing: false`. Omission is not exclusion.
 
 :::tip Header field references: what works, and the one thing that does not
 

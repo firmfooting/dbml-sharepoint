@@ -7,6 +7,7 @@ Field type kinds map to SP REST FieldTypeKind values:
   Number=9, URL=11, User=20.
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -176,6 +177,54 @@ def _scalar(col: Column, description: str) -> SPField:
                 f"{col.name}: unknown type {col.type!r}. "
                 "Add it to typemap.py or declare it as an enum.",
             )
+
+
+# THE `today` SENTINEL, in one place. `today`, `today+30`, `today-7`.
+#
+# Three modules read this same authored value and each held its own copy:
+# the validator gates what may be declared, the condition renderers decide
+# what it becomes in CAML, and the demo planner decides what it becomes in
+# a seeded row. A copy that drifts wider or narrower than another passes
+# the build with zero findings and emits the literal string "today" into a
+# script — the same shape of failure as two readers disagreeing about a
+# hyperlink value. Comments said they must agree; nothing checked it, so
+# now there is one pattern and a test.
+TODAY_SENTINEL = re.compile(r"^today(?:([+-])(\d+))?$")
+
+# Declared view aggregations: the authored name, and SharePoint's own token
+# for it. The renderer owns the translation, exactly as it does for a sort
+# direction (`desc` -> Ascending="FALSE").
+#
+# THESE TOKENS ARE AN ENUMERATION, NOT ENGLISH. They are transcribed from
+# the FieldRef element (Query) reference, which lists exactly AVG, COUNT,
+# MAX, MIN, SUM, STDEV and VAR and notes they are case-insensitive:
+# https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query
+#
+# `avg` is the trap: the English word is "Average" and the token is "AVG".
+# A non-member is ACCEPTED — SharePoint stores it and reads it back
+# unchanged — and then fails the whole view with "Unknown render failure".
+# Nothing in the build or the readback can see the difference; a person
+# opening the view is the only witness. `SUM` hides this, being both the
+# token and the word, so transcribe from the reference rather than typing
+# what the function is called.
+#
+# The full enumeration is offered, STDEV and VAR included. Probes are for
+# UNDOCUMENTED behaviour, which is where the silent failures live; a member
+# of a published enumeration is documented, and withholding it buys nothing
+# while costing an adopter something SharePoint plainly does.
+TOTAL_FUNCTIONS: dict[str, str] = {
+    "sum": "SUM",
+    "count": "COUNT",
+    "avg": "AVG",
+    "min": "MIN",
+    "max": "MAX",
+    "stdev": "STDEV",
+    "var": "VAR",
+}
+
+# `count` is excluded because it counts ROWS, not values, so it is legal on
+# any column a view displays. Everything else needs something to compute.
+NUMERIC_ONLY_TOTALS = frozenset(set(TOTAL_FUNCTIONS) - {"count"})
 
 
 def format_description(note: str) -> str:

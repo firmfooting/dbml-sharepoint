@@ -2560,3 +2560,320 @@ def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> 
         f"belongs only in analysis/typemap.py, with everything else "
         f"deriving from CALCULATED_TYPES"
     )
+
+
+# --- Three refusals for mistakes a deploy cannot see -------------------------
+#
+# A fourth was considered and NOT added: refusing a `widths` key that names a
+# field the view does not display already exists above.
+
+
+def test_group_by_need_not_be_one_of_the_views_own_fields(tmp_path: Path) -> None:
+    """SharePoint renders the grouped value in the group HEADER, from the
+    GroupBy FieldRef itself, so grouping by a column the view does not also
+    list is a normal way to avoid repeating one value in every row.
+
+    Only the weaker rule holds: the column must exist on the entity.
+    """
+    errors = _view_errors(
+        tmp_path,
+        "views:\n  Project:\n    - title: By status\n      fields: [Title]\n"
+        "      group_by: { field: Status }\n",
+    )
+    assert not [f for f in errors if "group_by" in f.message], errors
+
+
+def test_group_by_on_an_unknown_column_is_still_refused(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n  Project:\n    - title: By ghost\n      fields: [Title]\n"
+        "      group_by: { field: Ghost }\n",
+    )
+    assert any("Ghost" in f.message for f in errors), errors
+
+
+def test_group_by_in_the_views_fields_is_accepted(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: By status\n"
+        "      fields: [Title, Status]\n"
+        "      group_by: { field: Status }\n",
+    )
+    assert not [f for f in errors if "group_by" in f.message], errors
+
+
+def test_a_body_section_hidden_from_every_form_is_refused(tmp_path: Path) -> None:
+    """The section renders as a heading with nothing under it. Asserted of a
+    NON-LAST section: Learn documents that unreferenced columns are appended
+    to the last one, so only an earlier section can be provably empty."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_visibility:\n"
+        "  Project:\n"
+        "    columns:\n"
+        "      Score: { new: false, existing: false }\n"
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Hidden, fields: [Score] }\n"
+        "        - { displayname: Everything else, fields: [Title, Band] }\n",
+    )
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert any(
+        "Hidden" in f.message and "bare heading" in f.message for f in errors
+    ), errors
+
+
+def test_the_last_section_may_be_empty_because_it_is_the_catch_all(tmp_path: Path) -> None:
+    """Learn: "A column not referenced in any of the sections will be
+    automatically referenced in the last section." risk-register's System
+    section is exactly this shape and its DEPLOY.md documents the bare
+    heading on the New form as cosmetic and expected."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_visibility:\n"
+        "  Project:\n"
+        "    columns:\n"
+        "      Score: { new: false, existing: false }\n"
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Everything else, fields: [Title, Band] }\n"
+        "        - { displayname: System, fields: [Score] }\n",
+    )
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert not [f for f in errors if "bare heading" in f.message], errors
+
+
+def test_a_column_in_no_section_warns_rather_than_failing(tmp_path: Path) -> None:
+    """It is drift, not breakage: SharePoint appends the column to the last
+    section, so the form renders it. What is lost is the guarantee that the
+    declared arrangement is the deployed one — and every column added later
+    lands in that same section."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Main, fields: [Title] }\n",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert not [f for f in findings if f.severity == "error"], findings
+    warnings = [f for f in findings if f.severity == "warning"]
+    assert any("Score" in f.message and "Band" in f.message for f in warnings), warnings
+
+
+def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
+    """Retirement STRIPS a column from body sections on purpose, and warns
+    separately about the declarations it rewrote. Warning again here would
+    ask the author to re-add exactly what the fold just removed — which is
+    what the first version of the rule did to tiered-huddle."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "retired_columns:\n"
+        "  Project:\n"
+        "    Score: { retired: '2026-01-01', reason: 'superseded' }\n"
+        "form_formatting:\n"
+        "  Project:\n"
+        "    body:\n"
+        "      sections:\n"
+        "        - { displayname: Main, fields: [Title, Band] }\n",
+    )
+    findings = validate_against_mapping(schema, bundle)
+    assert not [
+        f for f in findings if f.severity == "warning" and "in no section" in f.message
+    ], findings
+
+
+def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
+    """A library's items ARE files. demo-data.js posts to /items, which asks
+    SharePoint to create a library row with nothing behind it.
+
+    This built GREEN until the policy-library uplift went looking: the
+    bundle would have shipped and failed at paste time, in front of whoever
+    was being shown the demo — which is the audience this tool's fail-closed
+    posture exists to protect.
+    """
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Docs {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }\n"
+        "demo_items:\n"
+        "  Docs:\n"
+        "    - key: d1\n"
+        "      values:\n"
+        '        Title: "[DEMO] A document"\n',
+        encoding="utf-8",
+    )
+    schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert any(
+        "DocumentLibrary" in f.message and "no file behind them" in f.message
+        for f in errors
+    ), errors
+
+
+# --- Declared view totals ---------------------------------------------------
+
+
+def test_a_total_on_a_column_the_view_does_not_show_is_refused(tmp_path: Path) -> None:
+    """The widths failure shape exactly: SharePoint accepts the property and
+    renders nothing, because the view has no column to put a figure under."""
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title]\n"
+        "      totals: { SortOrder: sum }\n",
+    )
+    assert any("SortOrder" in f.message and "totals" in f.message for f in errors), errors
+
+
+def test_summing_a_choice_column_is_refused_and_points_at_count(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status]\n"
+        "      totals: { Status: sum }\n",
+    )
+    assert any(
+        "Status" in f.message and "count" in f.message for f in errors
+    ), errors
+
+
+def test_counting_a_choice_column_is_allowed(tmp_path: Path) -> None:
+    """count counts ROWS, not values, so it is legal on any displayed
+    column — which is why it is excluded from the numeric-only set rather
+    than sharing the numeric rule."""
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status]\n"
+        "      totals: { Status: count }\n",
+    )
+    assert not [f for f in errors if "totals" in f.message], errors
+
+
+def test_summing_a_numeric_column_is_allowed(tmp_path: Path) -> None:
+    errors = _view_errors(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, SortOrder]\n"
+        "      totals: { SortOrder: sum }\n",
+    )
+    assert not [f for f in errors if "totals" in f.message], errors
+
+
+def test_a_total_on_a_calculated_number_is_allowed(tmp_path: Path) -> None:
+    """Three of the columns this feature exists for are calculated
+    day-counts. The `string;#` prefix that complicates calculated TEXT is a
+    column-formatting concern and never reaches a view's Aggregations."""
+    schema, bundle = _calculated_form_inputs(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: V\n"
+        "      fields: [Title, Score]\n"
+        "      totals: { Score: avg }\n",
+    )
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    assert not [f for f in errors if "totals" in f.message], errors
+
+
+def _hyperlink_demo(tmp_path: Path, value: str) -> list[Finding]:
+    """A whole build's worth of validation, not `_field_plan` alone: the
+    demo planner and the demo VALIDATOR are separate readers of the same
+    authored value, and a form one accepts and the other refuses never
+    reaches generation."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Doc {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Link hyperlink\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Doc: { kind: List, base_template: 100, site_role: default }\n"
+        "demo_items:\n"
+        "  Doc:\n"
+        "    - key: d1\n"
+        "      values:\n"
+        '        Title: "[DEMO] A row"\n'
+        f"        Link: {value}\n",
+        encoding="utf-8",
+    )
+    schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+    return [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+
+
+def test_a_hyperlink_demo_value_may_be_a_bare_url(tmp_path: Path) -> None:
+    assert not _hyperlink_demo(tmp_path, '"https://example.invalid/a.pdf"')
+
+
+def test_a_hyperlink_demo_value_may_carry_a_description(tmp_path: Path) -> None:
+    """The object form the demo planner accepts. The validator must accept
+    it too — it reads every dict, and a lookup reference is not the only
+    thing that is one."""
+    assert not _hyperlink_demo(
+        tmp_path, '{ url: "https://example.invalid/a.pdf", description: "The file" }',
+    )
+
+
+def test_a_hyperlink_demo_object_needs_a_url(tmp_path: Path) -> None:
+    errors = _hyperlink_demo(tmp_path, '{ description: "no address" }')
+    assert any("url" in f.message for f in errors), errors
+
+
+def test_a_hyperlink_demo_object_refuses_unknown_keys(tmp_path: Path) -> None:
+    errors = _hyperlink_demo(
+        tmp_path, '{ url: "https://example.invalid/a.pdf", label: "wrong key" }',
+    )
+    assert any("label" in f.message for f in errors), errors
+
+
+def test_a_null_hyperlink_url_is_refused(tmp_path: Path) -> None:
+    """`str(None)` is "None" — non-empty, and a perfectly valid-looking
+    string. A coerced emptiness test passes it through to become a link
+    pointing at the word None, so the check is on the STRING, not on its
+    stringification."""
+    errors = _hyperlink_demo(tmp_path, "{ url: null }")
+    assert any("non-empty string" in f.message for f in errors), errors
+
+
+def test_an_empty_hyperlink_url_is_refused(tmp_path: Path) -> None:
+    errors = _hyperlink_demo(tmp_path, '{ url: "   " }')
+    assert any("non-empty string" in f.message for f in errors), errors
+
+
+def test_a_scalar_hyperlink_demo_value_is_validated_too(tmp_path: Path) -> None:
+    """A URL column takes a bare address as well as a record. Checking only
+    the record shape left `Link: null` and `Link: 123` unvalidated — and the
+    generator refuses both, so the build surfaced a traceback instead of a
+    finding. A validator must refuse everything its generator refuses."""
+    for bad in ("null", "123", '""'):
+        errors = _hyperlink_demo(tmp_path, bad)
+        assert any("non-empty string" in f.message for f in errors), (bad, errors)

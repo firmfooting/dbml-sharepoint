@@ -23,9 +23,15 @@ Shared procedure: [`templates/README.md`](../../README.md) with
       *Implemented - awaiting evidence* — EvidenceUrl appears as you
       change the value, without saving. Set it to *Closed* — ClosedDate
       appears too.
-- [ ] **Closure evidence is enforced, not just asked for** (`list_validation:`):
-      with Status *Closed* and EvidenceUrl empty, saving is refused with
-      the declared message. Fill EvidenceUrl; it saves.
+- [ ] **Closure needs a Closed Date** (`list_validation:`): with Status
+      *Closed* and ClosedDate empty, saving is refused with the declared
+      message. Fill it; it saves.
+- [ ] **EvidenceUrl is NOT enforced at save**, and confirm that rather
+      than assume it: Status *Closed* with EvidenceUrl empty and a
+      ClosedDate filled **saves**. SharePoint does not permit the
+      alternative — a validation formula referencing a URL column is
+      refused when you try to set it — so the build refuses the operand and
+      evidence at closure stays a governance criterion.
 - [ ] Hidden ≠ inaccessible. Confirm a hidden column still holds its value:
       the reporting bundle's data dictionary lists all three, and a view
       can show them. `form_visibility` governs forms only.

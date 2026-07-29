@@ -29,6 +29,20 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "error", f"demo_items[{entity_name}]: unknown entity.",
             ))
             continue
+        # A document library's items ARE files. demo-data.js POSTs to
+        # /items, which asks SharePoint to create a library row with no
+        # file behind it — and this built GREEN until now, so it would have
+        # shipped and failed at paste time, in front of whoever was being
+        # shown the demo. Found by the policy-library uplift.
+        if bundle.mapping.entities[entity_name].kind == "DocumentLibrary":
+            findings.append(Finding(
+                "error",
+                f"demo_items[{entity_name}]: {entity_name} is a DocumentLibrary, and a "
+                f"library's items are files. Seeding posts to /items and would create "
+                f"rows with no file behind them. Seed the register list that accompanies "
+                f"the library, and upload sample documents by hand.",
+            ))
+            continue
         for row in demo_rows:
             if row.key in demo_keys:
                 findings.append(Finding(
@@ -72,6 +86,39 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{ctx}: {col_name} is a calculated column; demo "
                         f"rows cannot write it (set its inputs instead).",
                     ))
+                    continue
+                # Hyperlinks are checked FIRST, and in BOTH authored shapes:
+                # a URL column takes a bare address or a {url, description}
+                # record. Gating this on `isinstance(value, dict)` left the
+                # scalar form unchecked — and the generator DOES refuse a
+                # non-string there, so an invalid mapping surfaced as a build
+                # traceback rather than a finding. A validator must refuse
+                # everything its generator refuses, and refuse it first.
+                if col_type == "hyperlink":
+                    if isinstance(value, dict):
+                        unknown = set(value) - {"url", "description"}
+                        if unknown or "url" not in value:
+                            findings.append(Finding(
+                                "error",
+                                f"{ctx}: {col_name} is a hyperlink; an object value "
+                                f"must be {{url: <address>, description: <label>}} "
+                                f"with 'description' optional. Got keys "
+                                f"{sorted(value)}.",
+                            ))
+                            continue
+                        address = value["url"]
+                    else:
+                        address = value
+                    # Checked as a STRING, not stringified: str(None) is
+                    # "None", which is non-empty, so a coerced emptiness test
+                    # passes a null through to become a link pointing at the
+                    # word None.
+                    if not (isinstance(address, str) and address.strip()):
+                        findings.append(Finding(
+                            "error",
+                            f"{ctx}: {col_name} is a hyperlink; its address must be "
+                            f"a non-empty string, got {address!r}.",
+                        ))
                     continue
                 if isinstance(value, dict):
                     if set(value) != {"demo_ref"}:

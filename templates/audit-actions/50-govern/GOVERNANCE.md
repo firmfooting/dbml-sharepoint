@@ -45,7 +45,10 @@ as Closed.
 
 1. Recommendations enter within 10 business days of the final report.
 2. No Closed without EvidenceUrl + ClosedDate; no Risk accepted without
-   recorded authority.
+   recorded authority. **ClosedDate is enforced at save; EvidenceUrl is
+   not** — SharePoint refuses a validation formula that references a URL
+   column, so evidence at closure is a coordinator check, not a rule the
+   list can hold.
 3. Notes are append-only in practice: dated entries, newest first, nothing
    deleted.
 
