@@ -2721,7 +2721,7 @@ def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
     schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
     assert any(
-        "DocumentLibrary" in f.message and "no file behind them" in f.message
+        "DocumentLibrary" in f.message and "SPFileCollection.Add()" in f.message
         for f in errors
     ), errors
 
