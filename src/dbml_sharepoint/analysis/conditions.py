@@ -451,7 +451,7 @@ def _looks_like_a_date(value: object) -> bool:
 
 
 def _check_date_literal(
-    value: object, column_type: str, target: str, where: str,
+    value: object, column_type: str, target: str, where: str, op: str = "eq",
 ) -> None:
     """A date column's literal, once `today` and `now` have had their turn,
     must be a real date. Nothing downstream checks it, and no probe has
@@ -471,6 +471,28 @@ def _check_date_literal(
     if column_type not in _DATE_TYPES or value is None:
         return
     if _is_today(value, column_type) or _is_now(value, column_type):
+        # A sentinel is a POINT IN TIME. Comparison, ordering and set
+        # membership mean something against one; a substring test does not,
+        # and the exemption used to wave it past this guard. What the
+        # renderers then emit — verified by running them, not by reasoning:
+        #
+        #   contains + now  ->  ISNUMBER(FIND(NOW(),[OccurredAt]))
+        #   begins_with     ->  LEFT([OccurredAt],3)=NOW()
+        #
+        # That 3 is len('now'): the sentinel's SPELLING reaching the formula
+        # as a character count. It is measuring the word, not the date, and
+        # that is decidable here without knowing anything about how
+        # SharePoint would treat either formula — which nobody does, since
+        # no probe has ever sent one. Refusing needs no such answer.
+        if op in _TEXT_OPS:
+            raise _reject(
+                target,
+                f"{value!r} is a point in time and {op!r} is a substring test, so "
+                f"the two cannot be combined — the sentinel would reach the formula "
+                f"as its own spelling rather than as a date. Use a comparison "
+                f"(eq/neq/lt/leq/gt/geq) or a set test (in/not_in)",
+                where,
+            )
         return
     if _looks_like_a_date(value):
         return
@@ -638,7 +660,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             # conjunction rather than once per set member.
             ref = f'<FieldRef Name="{leaf.field}"/>'
             for item in leaf.value:
-                _check_date_literal(item, column_type, target, where)
+                _check_date_literal(item, column_type, target, where, leaf.op)
             parts = [
                 f"<Neq>{ref}{_caml_value(column_type, item, where)}</Neq>"
                 for item in leaf.value
@@ -676,7 +698,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             where,
         )
 
-    _check_date_literal(leaf.value, column_type, target, where)
+    _check_date_literal(leaf.value, column_type, target, where, leaf.op)
 
     if _is_now(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
