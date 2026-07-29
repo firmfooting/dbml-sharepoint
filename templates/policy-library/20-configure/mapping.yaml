@@ -85,25 +85,42 @@ prevent_list_deletion: true
 # a library view and library demo data should be. Three things blocked it,
 # each verified by building them rather than assumed:
 #
-# 1. A library VIEW cannot show the file. `views[].fields` accepts DBML
-#    columns plus ID/Created/Modified/Author/Editor; `FileLeafRef` is none
-#    of those, and naming it is a build error ("not a rendered column").
-#    A documents view with no file name is a view nobody can open a
-#    document from.
+# 1. A library VIEW cannot show the file — in THIS TOOL. `views[].fields`
+#    accepts DBML columns plus ID/Created/Modified/Author/Editor;
+#    `FileLeafRef` is none of those, and naming it is a build error ("not a
+#    rendered column"). A documents view with no file name is a view nobody
+#    can open a document from.
+#
+#    SharePoint itself has no such limit: adding FileLeafRef to a library
+#    view over REST works and reads back among its fields (probed
+#    2026-07-29, test/manual/document-library-probe.js, L6). So this
+#    blocker is a tool decision that could be lifted, not a platform wall.
 # 2. A library FORM BODY cannot reference the file either — same column,
 #    same refusal — so a declared body would be document metadata with the
 #    document itself missing from the layout.
 # 3. The standard's HEADER title line is `[$Title]`, and on a document
 #    library Title is a separate, normally empty field: SharePoint does not
-#    populate it from the file name. The header would read "New document"
-#    on every saved document, forever. tiered-huddle's boards hit the same
-#    trap and the answer there was to change the title line rather than
-#    ship a header that lies.
+#    populate it from the file name. Confirmed on a tenant — an uploaded
+#    file reads back `Title: null` with the name only in `FileLeafRef`
+#    (probed 2026-07-29, L5) — so the header would be blank on every
+#    document, forever. tiered-huddle's boards hit the same trap and the
+#    answer there was to change the title line rather than ship a header
+#    that lies. A `[$FileLeafRef]` header STORES on a library content type
+#    (L7); whether it RENDERS is not established, and the one look taken so
+#    far showed no header at all.
 #
-# A fourth is not a build error and is worse: demo_items on a library
-# generate a POST to `/items`, which on a document library asks SharePoint
-# to create an item with no file behind it. That has not been run against a
-# tenant and should not be shipped on the assumption that it works.
+# 4. DEMO ROWS ARE IMPOSSIBLE, and this is the one that keeps the template
+#    on the roster. demo_items generate a POST to `/items`, and SharePoint
+#    refuses that on a library: HTTP 500, "To add an item to a document
+#    library, use SPFileCollection.Add()" (probed 2026-07-29, L2). Not a
+#    ghost row to be tidied up — a refusal. Seeding a library means
+#    uploading real files, which is a different feature from writing list
+#    rows and is not one this tool has.
+#
+#    So the family standard cannot be met here as written. Either it grows
+#    an evidenced exemption for `kind: DocumentLibrary` demo rows, or this
+#    template stays on NOT_YET_UPLIFTED permanently. That is a decision
+#    about the standard, not about this template.
 #
 # See 30-deploy/DEPLOY.md, which still asks the adopter to build the one
 # library view by hand and says why.
