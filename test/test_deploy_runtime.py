@@ -807,3 +807,42 @@ def test_no_aggregations_comparison_is_made_raw() -> None:
     # AggregationsStatus is a plain enum ('On'/'Off') and IS compared raw —
     # asserted so the regex above cannot be "fixed" by wrapping it too.
     assert "AggregationsStatus !== 'On'" in script
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
+    """A clean run must leave a clean console.
+
+    The browser logs a failed request itself, before the script sees the
+    response, and nothing in JavaScript can suppress that — so a handled
+    404 still paints red and an operator reads it as a failure. The only
+    fix is not to make the request: enumerate once, answer absence
+    locally. Lists and views already did; site groups and the field probe
+    did not, and a live first deploy showed four red lines because of it.
+
+    The harness answers every enumeration as EMPTY, which is the state of
+    a brand-new site — so any by-name probe here is one an operator would
+    have seen painted red.
+    """
+    script = _HARNESS + "\n" + _deploy_js().replace(
+        "})();", "}))().then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
+        ).replace("(async () => {", "((async () => {", 1)
+    line = next(
+        (ln for ln in _run(script).splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert line is not None, "harness produced no call log"
+    calls = json.loads(line.removeprefix("__CALLS__"))
+    gets = [c["url"] for c in calls if c["method"] == "GET"]
+    # The ACL phase resolves a group's Id by name AFTER creating it, so on
+    # a real run that request succeeds and is not console noise; the mock
+    # creates nothing, which is why it is excluded by its $select rather
+    # than by being overlooked.
+    by_name = [
+        u for u in gets
+        if ("sitegroups/getbyname" in u and "$select=Id" not in u)
+        or ("getbytitle" in u and "/fields?" in u)
+    ]
+    assert not by_name, (
+        "a first deploy probed by name for something it had already "
+        f"enumerated as absent; each is a red console line: {by_name[:5]}"
+    )

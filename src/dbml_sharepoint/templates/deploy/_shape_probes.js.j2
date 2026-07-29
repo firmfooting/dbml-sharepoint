@@ -100,6 +100,17 @@
   };
   async function listFieldShapes(listName) {
     if (listName in fieldShapesByList) return fieldShapesByList[listName];
+    // A list we already know is absent has no fields, and asking anyway
+    // costs a 404 the browser paints red — on a first deploy, once per
+    // declared list in maintenance unseal, before a single list exists.
+    // The enumeration is already in hand for exactly this reason; this
+    // just spends it here too.
+    const titles = await ensureKnownListTitles();
+    if (titles && !titles.has(listName)) {
+      const empty = new Map();
+      fieldShapesByList[listName] = empty;
+      return empty;
+    }
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });

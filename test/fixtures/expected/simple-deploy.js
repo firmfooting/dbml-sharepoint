@@ -229,6 +229,17 @@
   };
   async function listFieldShapes(listName) {
     if (listName in fieldShapesByList) return fieldShapesByList[listName];
+    // A list we already know is absent has no fields, and asking anyway
+    // costs a 404 the browser paints red — on a first deploy, once per
+    // declared list in maintenance unseal, before a single list exists.
+    // The enumeration is already in hand for exactly this reason; this
+    // just spends it here too.
+    const titles = await ensureKnownListTitles();
+    if (titles && !titles.has(listName)) {
+      const empty = new Map();
+      fieldShapesByList[listName] = empty;
+      return empty;
+    }
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -1582,11 +1593,34 @@
       }
     }
 
+    // Which groups exist, from ONE enumeration. A by-name GET for a group
+    // that is not there answers 404, which the browser paints red and an
+    // operator reads as a failure — and on a first deploy EVERY declared
+    // group is that 404. Same treatment the list and view probes already
+    // get: enumerate once, answer absence locally, keep a clean run clean.
+    // Not fatal if refused; we fall back to probing, which is noisier and
+    // still correct.
+    let knownGroupNames = null;
+    {
+      const r = await fetchWithRetry(apiUrl('web/sitegroups?$select=Title&$top=5000'), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (r.ok) {
+        const j = await r.json();
+        knownGroupNames = new Set(
+          ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
+        );
+      }
+    }
+
     for (const grp of SCHEMA.groups) {
       try {
-        const checkResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
+        // null status means "known absent without asking".
+        const checkResp = knownGroupNames && !knownGroupNames.has(grp.name)
+          ? { status: 404, ok: false }
+          : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
         if (checkResp.status === 404) {
           log('INFO', `Creating site group '${grp.name}'...`);
           await postJson(apiUrl('web/sitegroups'), {
