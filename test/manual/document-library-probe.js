@@ -560,8 +560,9 @@
   console.log('     panel, and say what the HEADER shows at the top.');
   console.log("     'New document', the file name, or nothing at all?");
   console.log('     answer: ______________________________________');
-  console.log('\nThose two answers decide whether policy-library can leave the');
-  console.log('NOT_YET_UPLIFTED roster, and what a library header should say.');
+  console.log('\nThose two answers decided it: libraries are refused outright');
+  console.log('until issue #14, and this is what a library header would have');
+  console.log('to say if the kind ever comes back.');
   console.log('==========================================');
   log('INFO', `Done. Delete '${LIB}' when you have copied the results.`);
 })();
