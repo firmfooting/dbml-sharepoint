@@ -163,10 +163,10 @@ operands already are.
   `group_by: { fields: [SourceType, SourceInstrument], collapsed: true }`
   for two; declaring both spellings at once is an error rather than a
   precedence rule, and a third level is refused rather than silently
-  dropped. Both render as FieldRefs inside a single `<GroupBy>`. **Every
-  group column must also appear in the view's `fields`** — SharePoint
-  groups by a column the view does not display and then has nothing to
-  label the group headers with, so the view renders groups nobody can read.
+  dropped. Both render as FieldRefs inside a single `<GroupBy>`. A group
+  column need **not** also appear in `fields`: SharePoint renders the
+  grouped value in the group header, from the `GroupBy` FieldRef itself, so
+  omitting it is a normal way to avoid repeating one value in every row.
 - `totals` declares column aggregations — the figures SharePoint renders
   under a view, and under each group when the view is grouped:
 

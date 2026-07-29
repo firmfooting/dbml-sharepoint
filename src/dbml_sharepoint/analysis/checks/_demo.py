@@ -101,10 +101,17 @@ def check(vc: ValidationContext) -> list[Finding]:
                                 f"with 'description' optional. Got keys "
                                 f"{sorted(value)}.",
                             ))
-                        elif not str(value["url"]).strip():
+                        elif not (
+                            isinstance(value["url"], str) and value["url"].strip()
+                        ):
+                            # Checked as a STRING, not stringified: str(None)
+                            # is "None", which is non-empty, so a coerced
+                            # emptiness test passes a null through to become
+                            # a link pointing at the word None.
                             findings.append(Finding(
                                 "error",
-                                f"{ctx}: {col_name} hyperlink 'url' is empty.",
+                                f"{ctx}: {col_name} hyperlink 'url' must be a "
+                                f"non-empty string; got {value['url']!r}.",
                             ))
                         continue
                     if set(value) != {"demo_ref"}:

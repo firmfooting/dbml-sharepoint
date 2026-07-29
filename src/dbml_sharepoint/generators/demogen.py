@@ -55,9 +55,18 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any]:
         # a bare string takes the URL as its own description, which is what
         # SharePoint shows when an author leaves the description empty.
         if isinstance(value, dict):
-            url, description = str(value.get("url", "")), value.get("description")
+            raw_url, description = value.get("url"), value.get("description")
         else:
-            url, description = str(value), None
+            raw_url, description = value, None
+        # Never str() a value that might be None: it yields "None", which is
+        # a perfectly valid-looking string and becomes a link to nowhere.
+        # The validator refuses this shape, so reaching here with a non-string
+        # means the two readers have drifted — fail rather than emit.
+        if not isinstance(raw_url, str) or not raw_url.strip():
+            raise ValueError(
+                f"{name}: a hyperlink demo value needs a non-empty url, got {raw_url!r}",
+            )
+        url = raw_url
         return {
             "name": name,
             "kind": "url",
