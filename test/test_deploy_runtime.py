@@ -823,6 +823,12 @@ def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
     The harness answers every enumeration as EMPTY, which is the state of
     a brand-new site — so any by-name probe here is one an operator would
     have seen painted red.
+
+    Covers the two surfaces this harness reaches. The third — a list's
+    role assignments by principal id — is asserted structurally instead,
+    because the mock's principal resolution never returns an Id and so the
+    run never reaches the ACL phase's role-assignment calls. A clause for
+    it here would pass while testing nothing.
     """
     script = _HARNESS + "\n" + _deploy_js().replace(
         "})();", "}))().then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
