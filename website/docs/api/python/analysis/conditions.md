@@ -86,13 +86,13 @@ VALIDATION = 'validation'
 ### `CAPABILITIES`
 
 ```python
-CAPABILITIES = {'caml': frozenset({'begins_with', 'contains', 'eq', 'geq', 'gt', 'in', 'is_not_null', 'is_null', 'leq', 'lt', 'neq', 'not_in'}), 'expression': frozenset({'eq', 'geq', 'gt', 'in', 'is_not_null', 'is_n…
+CAPABILITIES = {'caml': frozenset({'begins_with', 'contains', 'eq', 'geq', 'gt', 'in', 'is_not_null', 'is_null', 'leq', 'lt', 'neq', 'not_in'}), 'expression': frozenset({'begins_with', 'contains', 'eq', 'geq', 'gt',…
 ```
 
 ### `DISABLED_PENDING_PROBE`
 
 ```python
-DISABLED_PENDING_PROBE = {'expression': frozenset({'begins_with', 'contains', 'not_begins_with', 'not_contains'})}
+DISABLED_PENDING_PROBE = {}
 ```
 
 ### `to_caml`
