@@ -87,9 +87,10 @@ site that already holds real visits.
       was ticked.
 - [ ] Save rules: a **Signed In At** dated next month is refused with its
       own message, and so is a future **Signed Out At**. Both allow any
-      time today — each formula compares against midnight *tomorrow*,
-      because SharePoint's `TODAY()` is midnight and a rule written against
-      today would refuse every sign-in made after 00:00.
+      time up to the moment you save — each formula compares against
+      `NOW()`, so the refusal bites within the hour rather than at
+      midnight. If it refuses a sign-in stamped a few minutes ago, the rule
+      has been edited back to a whole-day bound.
 - [ ] Two rules this register wants are **not** enforced at save, by
       construction rather than by omission — `50-govern/GOVERNANCE.md` says
       what carries them instead:

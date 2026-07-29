@@ -110,11 +110,74 @@ views:
 
 - `where` takes the shared [condition grammar](../api/conditions.md):
   typed operators (`eq`, `neq`, `leq`, `geq`, `in`, `contains`, ...), date
-  sentinels such as `today+30`, and nesting through `all_of` / `any_of` /
+  sentinels such as `today+30` and `now`, and nesting through `all_of` / `any_of` /
   `none_of`. A bare list means `all_of`, so every view written before
   nesting existed keeps working unchanged. The same grammar drives
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
+
+:::tip `now` — the current-instant sentinel, for datetime columns only
+
+```yaml
+column_validation:
+  Visit:
+    columns:
+      SignedInAt:                       # a DATETIME
+        when:
+          - { field: SignedInAt, op: leq, value: now }
+        message: "A sign-in cannot be in the future."
+```
+
+`TODAY()` in a validation formula is **midnight**, so `leq today` on a
+datetime column rejects everything stamped after 00:00 — which, on a
+sign-in log, is every row anybody ever types. The whole-day alternative,
+`today+1`, permits up to twenty-four hours of future-dating depending on
+the time of day. `now` is exact.
+
+**Where it works, and where it does not:**
+
+| Target | `now` |
+|---|---|
+| `column_validation` / `list_validation` | ✅ renders `NOW()` |
+| `views[].where` | ✅ renders `<Today/>` with `IncludeTimeValue="TRUE"` |
+| `form_visibility.when` | ❌ refused, as `today` is |
+
+Both of the supported renderings contradict a published Microsoft source,
+so they are worth stating plainly.
+
+Microsoft's formula reference says Lists and libraries do not support
+`NOW()`. True of **calculated** columns, where the value would go stale
+between saves; false in a validation formula.
+`test/manual/datetime-sentinel-probe.js` set one on a live tenant, watched
+SharePoint accept and store it, then watched it refuse a timestamp three
+hours in the future.
+
+For views, Learn documents a `<Now/>` element as a child of `<Value>`
+beside `<Today/>`. **It returns nothing.** Two views were built over the
+same list, at the same moment, with the same columns, differing only in
+that element: the `<Today/>`+`IncludeTimeValue` view listed two rows in the
+browser and the `<Now/>` view listed none. The two is diagnostic — plain
+`<Today/>` returns one row on the same data — so `IncludeTimeValue="TRUE"`
+is demonstrably what turns the comparison into an instant rather than
+midnight. It was checked in the surface that actually ships: the stored
+`ViewQuery` read back after a view save, since SharePoint rewrites that XML
+on the way in.
+
+SharePoint's own UI says the same thing from the other side. The `<Now/>`
+view's filter panel shows an **empty** value, because the interface cannot
+represent that element — and a date compared against nothing matches
+nothing. Type the UI's token spelling `[Now]` into that panel and it is
+refused: *"Filter value is not in a supported date format."* `[Today]` and
+`[Me]` are accepted; `[Now]` is not a token SharePoint has.
+
+Most view filters still want `today`. A rolling window ("the last 30 days",
+"signed in today") means a **date**, and `today` is the right sentinel for
+it; reach for `now` only when a filter genuinely turns on the time of day.
+
+`now` takes **no offset form**. `today±N` has a verified rendering;
+`now±N` does not, and unverified is treated as unknown.
+
+:::
 
 :::tip `me` — the current-user sentinel, and the only way to filter a person column
 

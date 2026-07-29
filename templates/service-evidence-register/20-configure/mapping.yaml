@@ -686,10 +686,15 @@ form_formatting:
     body: formatting/service-issue-form-body.json
 
 # TODAY() in a SharePoint validation formula is midnight. On a DATE column
-# `leq today` is therefore correct; on a DATETIME column it would reject
-# everything stamped after 00:00, which for an event log is every row anybody
-# ever types. OccurredAt is the one DATETIME here and takes the `today+1`
-# midnight allowance: any time today passes, tomorrow does not.
+# `leq today` is therefore correct, and every date column below uses it.
+#
+# OccurredAt is the one DATETIME here, and it takes `now`, which renders as
+# NOW() — verified on a live tenant on 2026-07-29
+# (test/manual/datetime-sentinel-probe.js).
+#
+# The whole-day alternative, `today+1`, would permit up to twenty-four
+# hours of future-dating. On a register whose entire claim is
+# contemporaneity, that is the wrong window to leave open.
 #
 # EVERY RULE BELOW IS AN UPPER BOUND, AND THAT IS A LIMIT RATHER THAN A
 # CHOICE. This register carries three ordered date pairs - ResponseDate after
@@ -719,7 +724,7 @@ column_validation:
     columns:
       OccurredAt:
         when:
-          - { field: OccurredAt, op: leq, value: today+1 }
+          - { field: OccurredAt, op: leq, value: now }
         message: "Use the date and time it actually happened; it cannot be in the future. For a request that has not been actioned, use the date you raised it."
       ResolvedDate:
         when:
