@@ -36,7 +36,7 @@ entities:
 | Key | Meaning |
 |---|---|
 | `kind` | `List` or `HubOnlyList`. `DocumentLibrary` is **refused** — see below |
-| `base_template` | SP base template id (100 generic list) |
+| `base_template` | SP base template id. **Must be `100`**, the generic list — anything else fails the build |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
 | `display_column` | Optional; which column represents the row in lookups |
@@ -63,6 +63,12 @@ direction, so the kind fails the build instead.
 **What to do instead:** model the metadata as a `List`, and keep the
 documents in a library you manage separately, linked from each row with a
 hyperlink column. That is the shape every shipped template uses.
+
+**Change `base_template` too.** Changing only `kind` and leaving
+`base_template: 101` behind used to build green and provision a real
+library anyway: the create call sends `BaseTemplate` and never sends
+`kind`, while every library guard in the build keys on `kind`. Any
+`base_template` other than `100` is now refused for that reason.
 
 :::
 
