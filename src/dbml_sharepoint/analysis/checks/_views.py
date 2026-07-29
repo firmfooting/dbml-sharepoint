@@ -136,9 +136,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"rendered column and no filter; remove the declaration "
                 f"instead of overriding that recovery view.",
             ))
-        for title in sorted({t for t in titles if titles.count(t) > 1}):
+        # Case-insensitively: SharePoint resolves views/getbytitle that way
+        # and will not hold two views on one list differing only in case, so
+        # the second create collides mid-deploy.
+        folded: dict[str, list[str]] = {}
+        for title in titles:
+            folded.setdefault(title.casefold(), []).append(title)
+        for variants in sorted(folded.values(), key=lambda v: v[0]):
+            if len(variants) < 2:
+                continue
+            distinct = sorted(set(variants))
             findings.append(Finding(
-                "error", f"views[{entity_name}]: duplicate view title {title!r}.",
+                "error",
+                f"views[{entity_name}]: duplicate view title {distinct[0]!r}."
+                + (f" {distinct[1]!r} differs only in case, and SharePoint "
+                   f"treats them as one view." if len(distinct) > 1 else ""),
             ))
         previous_claims: dict[str, list[str]] = {}
         for view in views:

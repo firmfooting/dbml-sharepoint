@@ -2823,3 +2823,38 @@ def test_role_assignments_are_enumerated_before_any_principal_probe() -> None:
         "both the add check and the stale-level pass must consult the "
         "enumeration first and fall back to probing only when it is null"
     )
+
+
+def test_a_casing_only_view_rename_does_not_deadlock() -> None:
+    """`title: Open` with `renamed_from: [open]` matches ONE live view under
+    case-insensitive comparison. Counting it as both the current view and a
+    competing previous-title view makes the conflict check refuse to choose
+    between a view and itself — on every run, so the rename never lands."""
+    js = _generate_simple_js()
+    block = js[js.index("const previousMatches = listedViews.filter("):]
+    block = block[: block.index("if (previousMatches.length > 1)")]
+    assert "!existing || v.Id !== existing.Id" in block, (
+        "previousMatches must exclude the view already matched as current"
+    )
+
+
+def test_field_shapes_keep_internal_names_and_titles_apart() -> None:
+    """getbyinternalnameortitle resolves an internal name first. Folding both
+    into one keyspace lets one field's display Title shadow another field's
+    InternalName when they match case-insensitively — and the shadowed field
+    is then read as an impostor, aborting preflight over a column SharePoint
+    resolves perfectly well."""
+    js = _generate_simple_js()
+    assert "const byInternal = new Map();" in js
+    assert "const byTitle = new Map();" in js
+    assert "byInternal.get(nameKey(name)) || byTitle.get(nameKey(name))" in js, (
+        "internal names must take precedence over display titles"
+    )
+
+
+def test_a_created_group_enters_the_enumeration_snapshot() -> None:
+    """The snapshot answers 'does this group exist?' locally, so a group
+    created during the run must join it — otherwise a later declaration
+    reading as absent would try to create a name that now exists."""
+    js = _generate_simple_js()
+    assert "knownGroupNames.add(nameKey(grp.name))" in js

@@ -117,7 +117,7 @@
     // just spends it here too.
     const titles = await ensureKnownListTitles();
     if (titles && !hasName(titles, listName)) {
-      const empty = new Map();
+      const empty = { get: () => undefined, size: 0 };
       fieldShapesByList[listName] = empty;
       return empty;
     }
@@ -134,18 +134,33 @@
         // exists to remove. Safe because every field-touching phase opens
         // with invalidateFieldShapes(), so a list created later in the run
         // is re-read at the next phase boundary rather than staying absent.
-        const empty = new Map();
+        const empty = { get: () => undefined, size: 0 };
         fieldShapesByList[listName] = empty;
         return empty;
       }
       throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
-    const shapes = new Map();
+    // TWO indexes, not one keyspace. getbyinternalnameortitle resolves an
+    // internal name first, so folding both into a single map lets one
+    // field's display Title shadow another field's InternalName whenever
+    // they match case-insensitively — and the loser is then read as an
+    // impostor by the immutable-shape check, aborting preflight over a
+    // field SharePoint can resolve perfectly well. First writer wins
+    // WITHIN each index; internal names win BETWEEN them, matching the
+    // endpoint this cache stands in for.
+    const byInternal = new Map();
+    const byTitle = new Map();
     for (const f of (j && j.d && j.d.results) || []) {
-      if (f.InternalName && !shapes.has(nameKey(f.InternalName))) shapes.set(nameKey(f.InternalName), f);
-      if (f.Title && !shapes.has(nameKey(f.Title))) shapes.set(nameKey(f.Title), f);
+      if (f.InternalName && !byInternal.has(nameKey(f.InternalName))) {
+        byInternal.set(nameKey(f.InternalName), f);
+      }
+      if (f.Title && !byTitle.has(nameKey(f.Title))) byTitle.set(nameKey(f.Title), f);
     }
+    const shapes = {
+      get: (name) => byInternal.get(nameKey(name)) || byTitle.get(nameKey(name)) || undefined,
+      size: byInternal.size + byTitle.size,
+    };
     fieldShapesByList[listName] = shapes;
     return shapes;
   }
@@ -157,7 +172,7 @@
     const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
     let shape;
     if (!fresh) {
-      shape = (await listFieldShapes(listName)).get(nameKey(columnName)) || null;
+      shape = (await listFieldShapes(listName)).get(columnName) || null;
       if (!shape) return null;
       // Cached entries were validated at enumeration time by the same checks
       // below; re-validate anyway — one shared gate for both paths.

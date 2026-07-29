@@ -117,6 +117,12 @@
             AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
             OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
           }, digest0);
+          // Keep the snapshot current. Two declarations differing only in
+          // case are one group to SharePoint, so without this the second
+          // would read as absent and try to create a name that now exists.
+          // The build refuses that declaration outright; this keeps the
+          // deploy honest even against a mapping that predates the rule.
+          if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
           log('INFO', `Site group '${grp.name}' created.`);
         } else if (checkResp.ok) {
           // Group membership controls are part of the security boundary. A
