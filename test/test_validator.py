@@ -1032,6 +1032,109 @@ def test_calculated_formula_self_reference_is_error() -> None:
     )
 
 
+def test_calculated_formula_lookup_operand_is_error() -> None:
+    parent = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    child = Table(name="Action", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Risk", type="int", ref=Reference("Risk", "Id")),
+        Column(name="RiskCopy", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas(
+        {"Action": {"RiskCopy": "=[Risk]"}},
+        "Risk",
+        "Action",
+    )
+    errors = [
+        finding
+        for finding in validate_against_mapping(_schema(parent, child), bundle)
+        if finding.severity == "error"
+    ]
+    message = next(
+        finding.message
+        for finding in errors
+        if "Action.RiskCopy" in finding.message and "[Risk]" in finding.message
+    )
+    assert "Lookup" in message
+    assert "HTTP 500" in message
+    assert "non-lookup source column" in message
+
+
+def test_calculated_formula_person_operand_is_error() -> None:
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Owner", type="person"),
+        Column(name="OwnerCopy", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas(
+        {"Risk": {"OwnerCopy": "=[Owner]"}},
+        "Risk",
+    )
+    errors = [
+        finding
+        for finding in validate_against_mapping(_schema(table), bundle)
+        if finding.severity == "error"
+    ]
+    message = next(
+        finding.message
+        for finding in errors
+        if "Risk.OwnerCopy" in finding.message and "[Owner]" in finding.message
+    )
+    assert "Person" in message
+    assert "HTTP 500" in message
+    assert "non-person source column" in message
+
+
+@pytest.mark.parametrize("operand_type", ["longtext", "richtext", "hyperlink"])
+def test_unverified_calculated_operand_types_stay_allowed(operand_type: str) -> None:
+    """Issue #25 requires ambiguous types to stay allowed until its live
+    probe settles them; do not grow the denylist from plausibility."""
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Source", type=operand_type),
+        Column(name="Copy", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Copy": "=[Source]"}}, "Risk")
+    errors = [
+        finding
+        for finding in validate_against_mapping(_schema(table), bundle)
+        if finding.severity == "error"
+    ]
+    assert not any("[Source]" in finding.message for finding in errors), errors
+
+
+def test_calculated_formula_cross_site_text_companion_is_allowed() -> None:
+    unit = Table(name="Unit", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+    ])
+    project = Table(name="Project", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Unit", type="int", ref=Reference("Unit", "Id")),
+        Column(name="UnitLabel", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas(
+        {"Project": {"UnitLabel": "=[UnitAbbreviation]"}},
+        "Unit",
+        "Project",
+    )
+    bundle.mapping.cross_site_reference_columns.append(
+        CrossSiteRef(entity="Project", column="Unit"),
+    )
+    errors = [
+        finding
+        for finding in validate_against_mapping(_schema(unit, project), bundle)
+        if finding.severity == "error"
+    ]
+    assert not any("UnitAbbreviation" in finding.message for finding in errors), errors
+
+
 def test_calculated_formula_circular_references_are_error() -> None:
     schema, bundle = _calc_inputs()
     bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = '=IF([RiskBand]="Red",10,1)'
@@ -1160,6 +1263,115 @@ def test_view_condition_value_pairing(tmp_path: Path) -> None:
     )
     assert any("is_null" in f.message and "value" in f.message for f in errors)
     assert any("eq" in f.message and "value" in f.message for f in errors)
+
+
+def test_unindexed_view_filter_warns_with_threshold_and_fields(tmp_path: Path) -> None:
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: Due work\n"
+        "      fields: [Title, Status, DueDate]\n"
+        "      where:\n"
+        "        any_of:\n"
+        "          - { field: Status, op: is_not_null }\n"
+        "          - { field: DueDate, op: geq, value: today }\n",
+    )
+    warnings = [
+        finding.message
+        for finding in validate_against_mapping(schema, bundle)
+        if finding.severity == "warning" and "effective index" in finding.message
+    ]
+    assert len(warnings) == 1
+    assert "Due work" in warnings[0]
+    assert "DueDate" in warnings[0] and "Status" in warnings[0]
+    assert "5,000" in warnings[0]
+    assert "necessary but may not be sufficient" in warnings[0]
+
+
+def test_explicit_or_unique_filter_index_clears_warning(tmp_path: Path) -> None:
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: Open work\n"
+        "      fields: [Title, Status]\n"
+        "      where: [{ field: Status, op: eq, value: Open }]\n"
+        "    - title: Ordered work\n"
+        "      fields: [Title, SortOrder]\n"
+        "      where: [{ field: SortOrder, op: gt, value: 0 }]\n",
+    )
+    table = schema.tables[0]
+    table.indexes.append(TableIndex(("Status",)))
+    next(column for column in table.columns if column.name == "SortOrder").unique = True
+    warnings = [
+        finding.message
+        for finding in validate_against_mapping(schema, bundle)
+        if finding.severity == "warning" and "view threshold" in finding.message
+    ]
+    assert not warnings
+
+
+def test_native_id_filter_and_view_without_filter_do_not_warn(tmp_path: Path) -> None:
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: By id\n"
+        "      fields: [Title, ID]\n"
+        "      where: [{ field: ID, op: gt, value: 100 }]\n"
+        "    - title: Everything\n"
+        "      fields: [Title]\n",
+    )
+    warnings = [
+        finding.message
+        for finding in validate_against_mapping(schema, bundle)
+        if finding.severity == "warning" and "view threshold" in finding.message
+    ]
+    assert not warnings
+
+
+def test_indexed_lookup_filter_still_warns(tmp_path: Path) -> None:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Parent {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n"
+        "Table Child {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Parent int [ref: > Parent.Id]\n"
+        "  indexes { Parent }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Parent: { kind: List, base_template: 100, site_role: default }\n"
+        "  Child: { kind: List, base_template: 100, site_role: default }\n"
+        "views:\n"
+        "  Child:\n"
+        "    - title: By parent\n"
+        "      fields: [Title, Parent]\n"
+        "      where: [{ field: Parent, op: eq, value: 1 }]\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"),
+        load_mapping(tmp_path / "m.yaml"),
+    )
+    warnings = [
+        finding.message
+        for finding in findings
+        if finding.severity == "warning" and "indexed filter" in finding.message
+    ]
+    assert len(warnings) == 1
+    assert "By parent" in warnings[0]
+    assert "Parent" in warnings[0]
+    assert "Lookup" in warnings[0]
+    assert "5,000" in warnings[0]
 
 
 def test_view_widths_keys_must_be_view_fields(tmp_path: Path) -> None:

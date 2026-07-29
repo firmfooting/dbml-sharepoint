@@ -140,23 +140,28 @@ Surfaced at build time by the validator, not discovered at deploy time:
 - A calculated formula referencing a name that is not a column of the
   entity is refused, naming the reference.
 
-:::warning Calculated formulas: check the operand types yourself
+:::warning Calculated-formula operand types
 
-SharePoint does not allow a calculated column to reference a **Lookup** or
-**Person** column, and the validator does **not** catch it. Verified:
-`OwnerCopy: '=[Owner]'` over a `person` column builds with exit 0 and zero
-findings. SharePoint rejects it at paste time with an HTTP 500, part-way
-through provisioning.
+The build refuses a calculated formula that references a **Lookup** or
+**Person** column. The error names the calculated column and operand before
+scripts are emitted; SharePoint otherwise rejects the field creation with
+HTTP 500 part-way through provisioning.
 
-The reference check is a name check, not a type check — it verifies the
-name is a column of the entity and nothing more. `[Today]` happens to be
-caught only because no column is called `Today`.
+Microsoft's formula reference lists Single line of text, Number, Currency,
+Date and Time, Choice, Yes/No and Calculated as supported operand types, and
+states explicitly that [Lookup fields are not supported in a
+formula](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists).
+The Person refusal is also live-verified in SharePoint Online.
+Calc-on-calc chains are provisioned in dependency order and cycles are
+refused.
 
-Until this is a build error, treat the operands of every
-`calculated_formulas` entry as your responsibility: single-select Choice,
-Text, Number, Boolean, Date and other **calculated** columns of the same
-list. Calculated operands are supported — the build provisions a
-calc-on-calc chain in dependency order and refuses a cycle — but Person
-and Lookup are not, and nothing checks them for you.
+Cross-site logical refs do not deploy as lookups. A generated
+`<column>Abbreviation` companion is Text and can be used in a formula; the
+logical ref name cannot because no such field is created.
+
+Plain multi-line text, rich text and hyperlink operands remain allowed while
+the comprehensive live probe added on 2026-07-30 is unrun. That is an
+explicit unknown, not a compatibility claim: ambiguous types stay out of the
+denylist until verified.
 
 :::

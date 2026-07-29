@@ -1,0 +1,260 @@
+/**
+ * dbml-sharepoint PROBE — CALCULATED COLUMN OPERAND MATRIX
+ *
+ * QUESTION: which SharePoint column types may a calculated field reference?
+ *
+ * WHY: Microsoft documents Lookup fields as unsupported and lists the
+ * supported scalar operand types, while this project has live evidence that
+ * a Person operand is refused with HTTP 500. Long text, rich text and
+ * hyperlink remain ambiguous. They must not enter the validator's denylist
+ * until a live run settles them.
+ *
+ * SOURCE
+ *   https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists
+ *
+ * WHAT IT ASKS
+ *   LOOK  Lookup        PERS  Person       LONG  plain multi-line text
+ *   RICH  rich text     LINK  Hyperlink    BOOL  Yes/No
+ *   CHOI  Choice        DATE  Date only    TIME  Date and time
+ *   NUMB  Number        TEXT  single text  CALC  another calculated field
+ *
+ * Each row records the createfieldasxml HTTP status and SharePoint error
+ * body. Creation is the relevant gate: the deployment currently dies there,
+ * part-way through provisioning.
+ *
+ * HOW TO RUN
+ *   1. Open a disposable SharePoint Online site you own.
+ *   2. F12 -> Console -> paste -> Enter. The committed defaults only print.
+ *   3. Set CONFIRMED and ALLOW_WRITES to true. Set CLEANUP to true for a
+ *      clean run and CLEANUP_AT_END to true to recycle both probe lists.
+ *   4. Paste again and copy the complete RESULTS block back verbatim.
+ *
+ * STATUS: NOT YET RUN as of 2026-07-30. Until a result is recorded, only
+ * Lookup (Microsoft documentation) and Person (the earlier live observation)
+ * belong in the build-time denylist.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  const LIST = 'dbmlsp Probe CalcOperands';
+  const TARGET = `${LIST} Target`;
+  // Ships off so a pasted, unedited probe never removes anything. Turn it on
+  // with the two write gates to recycle the two probe-owned lists after the
+  // result table has printed.
+  const CLEANUP_AT_END = false;
+
+  const QUESTIONS = [
+    ['LOOK', 'Lookup operand in a calculated formula'],
+    ['PERS', 'Person operand in a calculated formula'],
+    ['LONG', 'Plain multi-line-text operand in a calculated formula'],
+    ['RICH', 'Rich-text operand in a calculated formula'],
+    ['LINK', 'Hyperlink operand in a calculated formula'],
+    ['BOOL', 'Yes/No operand in a calculated formula'],
+    ['CHOI', 'Choice operand in a calculated formula'],
+    ['DATE', 'Date-only operand in a calculated formula'],
+    ['TIME', 'Date-and-time operand in a calculated formula'],
+    ['NUMB', 'Number operand in a calculated formula'],
+    ['TEXT', 'Single-line-text operand in a calculated formula'],
+    ['CALC', 'Calculated-column operand in another calculated formula'],
+  ];
+  // Literal registrations are deliberate: test_probes statically proves
+  // that every record('ID', ...) has a matching upfront expect('ID', ...),
+  // so an aborted run cannot make unanswered questions disappear.
+  expect('LOOK', 'Lookup operand in a calculated formula');
+  expect('PERS', 'Person operand in a calculated formula');
+  expect('LONG', 'Plain multi-line-text operand in a calculated formula');
+  expect('RICH', 'Rich-text operand in a calculated formula');
+  expect('LINK', 'Hyperlink operand in a calculated formula');
+  expect('BOOL', 'Yes/No operand in a calculated formula');
+  expect('CHOI', 'Choice operand in a calculated formula');
+  expect('DATE', 'Date-only operand in a calculated formula');
+  expect('TIME', 'Date-and-time operand in a calculated formula');
+  expect('NUMB', 'Number operand in a calculated formula');
+  expect('TEXT', 'Single-line-text operand in a calculated formula');
+  expect('CALC', 'Calculated-column operand in another calculated formula');
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create '${TARGET}' and '${LIST}', add one source column`);
+    log('INFO', 'of every supported tool type, then attempt one calculated');
+    log('INFO', 'field over each source and print every HTTP response.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false. Stopping without writes.');
+    return;
+  }
+
+  // Main first because it owns the lookup into TARGET.
+  await resetList(LIST);
+  await resetList(TARGET);
+
+  let digest = await getDigest();
+  const ensureList = async (title) => {
+    const existing = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
+    if (existing.ok) return existing.body;
+    digest = await getDigest();
+    const created = await spPost('web/lists', {
+      Title: title,
+      BaseTemplate: 100,
+      Description: 'dbml-sharepoint calculated-operand probe. Safe to recycle.',
+    }, digest);
+    if (!created.ok) {
+      record('BOOT', `Create probe list ${title}`, 'FAIL',
+             `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
+      return null;
+    }
+    // SharePoint's response shape varies with OData mode and can be empty
+    // after a successful create. Re-read the list so the Lookup schema below
+    // always receives a measured Id rather than trusting the POST payload.
+    const reread = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
+    if (!reread.ok || !reread.body || !reread.body.Id) {
+      record('BOOT', `Read back probe list ${title}`, 'FAIL',
+             `HTTP ${reread.status}: successful create returned no usable list Id`);
+      return null;
+    }
+    return reread.body;
+  };
+
+  const target = await ensureList(TARGET);
+  const main = await ensureList(LIST);
+  if (!target || !main) {
+    report();
+    return;
+  }
+
+  const fieldsPath = `web/lists/getbytitle('${LIST}')/fields`;
+  const xmlAttr = (value) => String(value)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const fieldExists = async (name) =>
+    (await spGet(`${fieldsPath}/getbyinternalnameortitle('${name}')?$select=Id`)).ok;
+  const addField = async (schemaXml) => {
+    digest = await getDigest();
+    return spPost(`${fieldsPath}/createfieldasxml`, {
+      parameters: { SchemaXml: schemaXml, Options: 8 },
+    }, digest);
+  };
+
+  const choiceXml =
+    '<Field Type="Choice" DisplayName="ProbeChoice" Name="ProbeChoice" Format="Dropdown">' +
+    '<CHOICES><CHOICE>Alpha</CHOICE><CHOICE>Beta</CHOICE></CHOICES></Field>';
+  const sources = [
+    ['ProbeLookup',
+     `<Field Type="Lookup" DisplayName="ProbeLookup" Name="ProbeLookup" ` +
+     `List="{${target.Id}}" ShowField="Title"/>`],
+    ['ProbePerson',
+     '<Field Type="User" DisplayName="ProbePerson" Name="ProbePerson" ' +
+     'UserSelectionMode="PeopleOnly"/>'],
+    ['ProbeLong',
+     '<Field Type="Note" DisplayName="ProbeLong" Name="ProbeLong" ' +
+     'RichText="FALSE" NumLines="6"/>'],
+    ['ProbeRich',
+     '<Field Type="Note" DisplayName="ProbeRich" Name="ProbeRich" ' +
+     'RichText="TRUE" RichTextMode="FullHtml" NumLines="6"/>'],
+    ['ProbeLink',
+     '<Field Type="URL" DisplayName="ProbeLink" Name="ProbeLink" Format="Hyperlink"/>'],
+    ['ProbeBool',
+     '<Field Type="Boolean" DisplayName="ProbeBool" Name="ProbeBool"/>'],
+    ['ProbeChoice', choiceXml],
+    ['ProbeDate',
+     '<Field Type="DateTime" DisplayName="ProbeDate" Name="ProbeDate" Format="DateOnly"/>'],
+    ['ProbeTime',
+     '<Field Type="DateTime" DisplayName="ProbeTime" Name="ProbeTime" Format="DateTime"/>'],
+    ['ProbeNumber',
+     '<Field Type="Number" DisplayName="ProbeNumber" Name="ProbeNumber"/>'],
+    ['ProbeText',
+     '<Field Type="Text" DisplayName="ProbeText" Name="ProbeText" MaxLength="255"/>'],
+  ];
+  const sourceReady = new Set();
+  for (const [name, schemaXml] of sources) {
+    if (await fieldExists(name)) {
+      sourceReady.add(name);
+      continue;
+    }
+    const made = await addField(schemaXml);
+    if (made.ok) {
+      sourceReady.add(name);
+    } else {
+      log('FAIL', `Could not create source ${name}: HTTP ${made.status} ${made.text.slice(0, 300)}`);
+    }
+  }
+
+  const calcXml = (name, formula, refs, resultType = 'Text') =>
+    `<Field Type="Calculated" DisplayName="${name}" Name="${name}" ` +
+    `ResultType="${resultType}">` +
+    `<Formula>${xmlAttr(formula)}</Formula>` +
+    `<FieldRefs>${refs.map((ref) => `<FieldRef Name="${ref}"/>`).join('')}</FieldRefs>` +
+    '</Field>';
+
+  const attempts = [
+    ['LOOK', 'ProbeLookup', 'CalcLookup', '=[ProbeLookup]', 'Text'],
+    ['PERS', 'ProbePerson', 'CalcPerson', '=[ProbePerson]', 'Text'],
+    ['LONG', 'ProbeLong', 'CalcLong', '=[ProbeLong]', 'Text'],
+    ['RICH', 'ProbeRich', 'CalcRich', '=[ProbeRich]', 'Text'],
+    ['LINK', 'ProbeLink', 'CalcLink', '=[ProbeLink]', 'Text'],
+    ['BOOL', 'ProbeBool', 'CalcBool', '=IF([ProbeBool],"yes","no")', 'Text'],
+    ['CHOI', 'ProbeChoice', 'CalcChoice', '=[ProbeChoice]', 'Text'],
+    ['DATE', 'ProbeDate', 'CalcDate', '=[ProbeDate]', 'DateTime'],
+    ['TIME', 'ProbeTime', 'CalcTime', '=[ProbeTime]', 'DateTime'],
+    ['NUMB', 'ProbeNumber', 'CalcNumber', '=[ProbeNumber]', 'Number'],
+    ['TEXT', 'ProbeText', 'CalcText', '=[ProbeText]', 'Text'],
+  ];
+
+  const questionFor = (id) => QUESTIONS.find(([candidate]) => candidate === id)[1];
+  const attempt = async (id, source, output, formula, resultType) => {
+    const question = questionFor(id);
+    if (!sourceReady.has(source)) {
+      record(id, question, 'NOT ESTABLISHED', `${source} could not be created`);
+      return false;
+    }
+    if (await fieldExists(output)) {
+      record(id, question, 'NOT ESTABLISHED',
+             `${output} already exists; use CLEANUP=true for a real creation attempt`);
+      return true;
+    }
+    const made = await addField(calcXml(output, formula, [source], resultType));
+    record(
+      id,
+      question,
+      made.ok ? 'ACCEPTED' : (isRefusal(made.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
+      `HTTP ${made.status}${made.text ? `: ${made.text.slice(0, 500)}` : ''}`,
+    );
+    return made.ok;
+  };
+
+  for (const row of attempts) await attempt(...row);
+
+  // CALC needs an accepted calculated source. Number is documented as a
+  // supported operand and produces a simple, type-stable base field.
+  const baseReady = await fieldExists('CalcNumber');
+  if (!baseReady) {
+    record('CALC', questionFor('CALC'), 'NOT ESTABLISHED',
+           'CalcNumber was not created, so no calculated source exists');
+  } else {
+    sourceReady.add('CalcNumber');
+    await attempt('CALC', 'CalcNumber', 'CalcCalculated', '=[CalcNumber]', 'Number');
+  }
+
+  report();
+
+  if (CLEANUP_AT_END) {
+    // Main first: SharePoint may refuse to recycle a list still targeted by
+    // a Lookup column on another list.
+    for (const title of [LIST, TARGET]) {
+      digest = await getDigest();
+      const recycled = await spPost(
+        `web/lists/getbytitle('${title}')/recycle`, {}, digest,
+      );
+      log(
+        recycled.ok ? 'OK' : 'FAIL',
+        recycled.ok
+          ? `Recycled '${title}'. It is recoverable from the site recycle bin.`
+          : `Could not recycle '${title}': HTTP ${recycled.status} ${recycled.text.slice(0, 300)}`,
+      );
+    }
+  } else {
+    log('INFO', `Probe lists remain: '${LIST}' and '${TARGET}'.`);
+    log('INFO', 'After copying results, set CLEANUP_AT_END=true and rerun, or recycle them manually.');
+  }
+})();

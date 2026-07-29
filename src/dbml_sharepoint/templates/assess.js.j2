@@ -6,7 +6,7 @@
  * Probes the site's capabilities against this pack's requirements and
  * prints a COMPATIBLE / DEGRADED / BLOCKED verdict. Makes NO changes:
  * every call is a GET except the contextinfo digest fetch, one read-only
- * CSOM ProcessQuery, and a read-only GetSiteScriptFromWeb extraction.
+ * CSOM ProcessQuery.
  */
 (async () => {
   const SITE_URL = {{ site_url | tojson }};
