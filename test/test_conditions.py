@@ -507,7 +507,12 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
             condition = parse_condition(
                 [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
             )
-            with pytest.raises(ValueError, match="point in time"):
+            # Two guards now refuse this, and the type one fires first: a
+            # substring test on a datetime column is wrong whatever the
+            # value is, so it never reaches the sentinel check. Both
+            # messages are correct; the alternation keeps this test honest
+            # about which one the author actually sees.
+            with pytest.raises(ValueError, match=r"point in time|substring test"):
                 to_validation(condition, TYPES)
         # CAML renders only the positive two directly, and it did render
         # them, as
@@ -518,7 +523,7 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
             condition = parse_condition(
                 [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
             )
-            with pytest.raises(ValueError, match="point in time"):
+            with pytest.raises(ValueError, match=r"point in time|substring test"):
                 to_caml(condition, TYPES)
 
 
@@ -707,6 +712,39 @@ def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
         # naming them in the message.
         assert to_validation(condition, TYPES)
         assert to_expression(condition, TYPES)
+
+
+def test_a_text_operator_refuses_a_column_that_is_not_text() -> None:
+    """The renderers type the needle by the COLUMN, so a substring test on a
+    non-text column emitted a search for an unquoted operand:
+
+        Flag  (boolean) contains 'yes' -> indexOf([$Flag], true) >= 0
+        Count (int)     contains 5     -> indexOf([$Count], 5) >= 0
+
+    Neither is a shape any probe sent: the text-operator probe built its
+    subject as `<Field Type="Text"/>` and every candidate used a quoted
+    string needle. A denylist rather than a whitelist, because a Choice
+    column's declared type is its ENUM NAME, and `contains` on a choice is
+    the one non-text case that does mean something.
+    """
+    types = {"Flag": "boolean", "Count": "int", "When": "date", "Who": "person"}
+    for field in types:
+        condition = parse_condition(
+            [{"field": field, "op": "contains", "value": "x"}], "ctx",
+        )
+        with pytest.raises(ValueError, match="substring test"):
+            to_expression(condition, types)
+
+
+def test_a_text_operator_still_works_on_text_and_choice() -> None:
+    """The mirror. A Choice column carries its enum name as its type, so a
+    whitelist would have refused the case that matters most."""
+    types = {"Note": "nvarchar", "Status": "event_status", "Body": "longtext"}
+    for field in types:
+        condition = parse_condition(
+            [{"field": field, "op": "contains", "value": "x"}], "ctx",
+        )
+        assert f"indexOf([${field}], 'x')" in to_expression(condition, types)
 
 
 def test_a_text_operator_refuses_an_empty_needle() -> None:
