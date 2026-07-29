@@ -52,6 +52,15 @@ everywhere else in this package.
 
 ## Not yet verified
 
+Nothing is waiting on a probe that has been written and not run. That
+is what this section reports, and an empty one is the good state — so
+it says so rather than leaving a blank.
+
+It is not a claim that every operator was watched in a form. The four
+text operators were; the comparison and null tests rest on formulas
+harvested from a live tenant rather than on written syntax. Where a
+rendering is derived rather than observed, the source says so.
+
 ## Operand accessors
 
 | Column kind | Required `property` |
