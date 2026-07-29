@@ -45,7 +45,7 @@ calculated_formulas:
 
 groups:
   - name: "SE Evidence Contributors"
-    description: "Staff who log service events and their follow-ups. Can add and read; cannot edit after saving. Configure read-own item-level access before adding members."
+    description: "Staff who log service events and their follow-ups. Can add and read; cannot edit after saving, because SE Log Only withholds Edit rather than because of any item-level setting."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
     allow_request_to_join_leave: false
@@ -69,7 +69,7 @@ groups:
 
 permission_levels:
   - name: "SE Log Only"
-    description: "Add and read according to list item-level settings; no edit, delete or schema rights."
+    description: "Add and read every item; no edit, delete or schema rights. Withholding Edit here is what makes a saved record unalterable, so no item-level setting is required."
     base_permissions:
       - AddListItems
       - ViewListItems
@@ -209,11 +209,24 @@ column_formatting:
         "Within a week": low
         Delayed: warning
         Retrospective: severe
+    # PeopleAffected and HoursLost carry no data-bar, against the style
+    # guide's general rule, and the reason is the same for both: a bar needs
+    # an explicit max and neither has one that survives contact with a second
+    # adopter. An org of twelve and an org of twelve thousand share no scale,
+    # and 50-govern calls both figures honest approximations - a bar draws a
+    # precision the estimate does not have. They appear in By failure mode
+    # and Evidence pack, where the group TOTAL is the comparison that means
+    # something, and that is declared on the view rather than on the column.
+    #
+    # DaysToLog and DaysOutstanding are in no declared view at all, so there
+    # is nothing to format. DaysToLog would also double-encode with
+    # RecordTimeliness directly above, which already bands it at 0, 7 and 30.
     # The guard cannot express "this date is not blank", so it excludes the
     # resolved outcomes instead. A blank OutcomeForUs is not one of them, so
     # an open item still shows red - which is what we want. A save rule keeps
-    # ResolvedDate and OutcomeForUs consistent so the guard cannot be fooled
-    # by a resolved row with no outcome recorded.
+    # ResolvedDate and the three excluded outcomes consistent in BOTH
+    # directions, so the guard cannot be fooled by a resolved row with no
+    # outcome recorded, nor by one of these three outcomes with no date.
     ResponseDueDate:
       style: overdue-date
       guard:
@@ -251,6 +264,15 @@ column_formatting:
         "Instant message or chat": warning
         "In person": warning
         "Formal letter": good
+    # DaysToRespond carries no data-bar. The siblings that bar a day-duration
+    # key their max to a target stated somewhere in their own template -
+    # complaints-feedback to its acknowledgement and close targets, audit-
+    # actions to the two months past which the committee stops asking. This
+    # register ships no response SLA in days: ResponseDueDate is set per row
+    # against the free-text ServiceCommitment, deliberately, because the
+    # commitment is the provider's and differs per arrangement. There is no
+    # number here to key a max to, and one picked to look reasonable would be
+    # a scale nobody agreed.
   ServiceIssue:
     Status:
       style: severity
@@ -285,6 +307,18 @@ column_formatting:
     NextReviewDue:
       style: overdue-date
       guard: { field: Status, not: [Resolved, Closed] }
+    # EventCount is a count in a default view, so the style guide's rule
+    # reaches it squarely - and it is the one refusal here that is a genuine
+    # gap rather than a considered no. A bar needs an explicit max, and this
+    # template ships no pack size: the escalation threshold in 50-govern is
+    # counted in CHASES against one event, not in events against one theme,
+    # and it says in terms that promotion is a curator judgement rather than
+    # a number. Picking a max to satisfy the rule would invent the agreement
+    # the register spends a section refusing to invent. If you set a pack
+    # size for your own service reviews, write it into 50-govern and add
+    # `EventCount: { style: data-bar, max: <that number> }` here.
+    #
+    # DaysToResponse is in no declared view, so there is nothing to format.
 
 # Four views: the working list, the two things that need chasing, and the
 # history. There is no portfolio dashboard - the All Items view is the
@@ -538,27 +572,26 @@ views:
         ClosedDate: 150
         Outcome: 320
 
-# The New form asks for the pattern and its weight. Everything about raising
-# it appears as the theme reaches that stage.
 form_visibility:
   ServiceEvent:
     reconcile: exact
     columns:
-      # The chase machinery is invisible for a single occurrence, which is
-      # what keeps the one-minute capture path intact.
+      # The two chase fields are invisible for a single occurrence, which is
+      # what keeps the one-minute capture path intact. They carry no
+      # `new: false`: the person logging an unactioned request is the person
+      # who knows when a response was promised, and `SE Log Only` withholds
+      # Edit, so a field they cannot fill at creation they can never fill.
+      #
+      # Resolved Date and Outcome for us are deliberately NOT gated on
+      # EventNature. A single occurrence can still be resolved - two of the
+      # demo rows are - and 30-deploy/DEPLOY.md walks the deployer through
+      # filling one in.
       ResponseDueDate:
-        new: false
         when:
           - { field: EventNature, op: neq, value: "Single occurrence" }
       LastFollowedUp:
-        new: false
         when:
           - { field: EventNature, op: neq, value: "Single occurrence" }
-      ResolvedDate:
-        new: false
-        when:
-          - { field: EventNature, op: neq, value: "Single occurrence" }
-      OutcomeForUs: { new: false }
       EvidenceLink:
         when:
           - { field: EvidenceHeld, op: in, value: ["Provider ticket or system record", "Email or written correspondence", "Screenshot or document held elsewhere"] }
@@ -576,6 +609,11 @@ form_visibility:
   FollowUp:
     reconcile: exact
     columns:
+      # Hiding a field does not clear it: switching Response Received back to
+      # "No response" leaves any date already typed in Response Date. The
+      # chase queue stays honest because "Awaiting a response" filters on
+      # Response Received and shows neither Response Date nor Days to
+      # Respond.
       ResponseDate:
         when:
           - { field: ResponseReceived, op: neq, value: "No response" }
@@ -585,6 +623,8 @@ form_visibility:
       CommitmentGiven:
         when:
           - { field: ResponseReceived, op: in, value: ["Substantive response", "Action taken", "Referred elsewhere"] }
+  # The New theme form asks for the pattern and its weight. Everything about
+  # raising it appears as the theme reaches that stage.
   ServiceIssue:
     reconcile: exact
     columns:
@@ -730,7 +770,19 @@ list_validation:
       - any_of:
           - { field: ResolvedDate, op: is_null }
           - { field: OutcomeForUs, op: is_not_null }
-    message: "Check this record: a request that has not been actioned needs the provider's reference number, because a complaint that cannot say which request is not evidence. A second-hand account with nothing behind it can be logged, but not accepted as evidence. And a resolved date needs the outcome that went with it."
+      # The other half of that pair. A resolved OUTCOME with no resolved DATE
+      # leaves the row in "Outstanding and ageing" (which filters on the null
+      # date) while the Response Due Date guard above suppresses its red on
+      # the strength of that outcome - one chase entry saying both things at
+      # once. Only the three outcomes the guard excludes are named: Partially
+      # resolved, Unresolved and Recurred after resolution suppress nothing,
+      # and a still-outstanding item honestly carries one of those. The
+      # leading branch compares a nullable choice against a literal, the same
+      # shape risk-register uses for the nullable RiskResponse.
+      - any_of:
+          - { field: OutcomeForUs, op: not_in, value: ["Resolved satisfactorily", "Resolved after escalation", "Worked around locally"] }
+          - { field: ResolvedDate, op: is_not_null }
+    message: "Check this record: a request that has not been actioned needs the provider's reference number, because a complaint that cannot say which request is not evidence. A second-hand account with nothing behind it can be logged, but not accepted as evidence. And a resolved date needs the outcome that went with it, just as an outcome of Resolved satisfactorily, Resolved after escalation or Worked around locally needs the date it was resolved on."
   # ResponseSummary is multi-line and so cannot be required by a formula; the
   # date stands in for it, since you cannot honestly record a response date
   # without having had a response.

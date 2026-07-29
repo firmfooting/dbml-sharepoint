@@ -2,7 +2,7 @@
 
 Shared procedure: [`templates/README.md`](../../README.md), with
 `<name> = service-evidence-register`. Assess the target, review the generated
-manifest, deploy, apply the manual item-level setting, then verify with
+manifest, deploy, confirm the manual Advanced settings, then verify with
 separate accounts. Do not populate access groups until every go-live gate
 below passes.
 
@@ -49,19 +49,26 @@ Owner console. A successful deployment ends with `[SP-DEPLOY] [DONE]` and
 Three lists are created: `SE_ServiceEvent`, `SE_FollowUp` and
 `SE_ServiceIssue`.
 
-## Mandatory manual item-level gate
+## Mandatory manual gate
 
 The deployer reconciles permission levels and ACLs, but it cannot configure or
-verify SharePoint's item-level Advanced settings. `SE Log Only` relies on
-them. On **`SE_ServiceEvent`** and **`SE_FollowUp`** (not on
-`SE_ServiceIssue`, which contributors cannot reach at all):
+verify SharePoint's Advanced settings. On **`SE_ServiceEvent`** and
+**`SE_FollowUp`** (not on `SE_ServiceIssue`, which contributors cannot reach
+at all):
 
 1. Open **List settings → Advanced settings**.
-2. Set **Read access** to **Read items that were created by the user**.
-3. Set **Create and Edit access** to **Create items and edit items that were
-   created by the user**. The assigned `SE Log Only` level still withholds
-   Edit, so a contributor can create and read their own record but cannot
-   alter it afterwards — which is what makes the record worth having.
+2. Leave **Read access** on **Read all items**. This register does *not* use
+   read-own item-level filtering, and turning it on would break it: it filters
+   Curators too, and the **Needs review** queue is by construction made of
+   rows Curators did not create. A contributor seeing a colleague's event is
+   not a leak here — the sensitive list is `SE_ServiceIssue`, and they cannot
+   open it.
+3. Leave **Create and Edit access** on **Create and edit all items**. A
+   contributor still cannot alter a saved record — which is what makes the
+   record worth having — because the assigned `SE Log Only` level withholds
+   Edit outright. The permission level carries that property, so the
+   item-level setting is not needed to buy it and would only strip Curators of
+   the updates they are asked to make.
 4. Leave **Attachments to list items** **Enabled**. Unlike a register holding
    personal information, this one *wants* the artefact stored beside the row:
    *Attached to this record* is the strongest value of Evidence Held.
@@ -69,8 +76,9 @@ them. On **`SE_ServiceEvent`** and **`SE_FollowUp`** (not on
 6. Add two temporary test users to **SE Evidence Contributors**. Keep them out
    of Curators and Administrators.
 7. User A creates event A; User B creates event B.
-8. Verify each user can open only their own event and cannot edit or delete
-   it. Verify a Curator can see and update both.
+8. Verify neither user can edit or delete either event — their own included.
+   That refusal is the whole point of the group. Verify a Curator can open and
+   update both.
 9. Verify **neither test user can open `SE_ServiceIssue` at all** — not the
    list, not a view, not an item.
 10. Remove the test rows and users. Only now add real contributors.
@@ -104,8 +112,11 @@ Delete the rows before go-live.
       (Contribute) and Administrators (Full Control).
 - [ ] Contributors hold `SE Log Only`; Curators hold Contribute;
       Administrators hold Full Control.
-- [ ] The mandatory two-account item-level test passes on both contributor
-      lists.
+- [ ] Both contributor lists are on **Read all items** and **Create and edit
+      all items**. Read-own filtering would apply to Curators as well and
+      empty the **Needs review** queue; `SE Log Only` already withholds Edit,
+      so nothing is gained by turning it on.
+- [ ] The mandatory two-account test passes on both contributor lists.
 - [ ] Sealed columns and list-deletion protection are enabled on all three.
 
 ### Capture experience
@@ -115,14 +126,23 @@ Delete the rows before go-live.
 - [ ] The New event form shows **What happened**, **How you know** and
       **Impact**, plus *Raised with provider*. Status, the reviewer's fields
       and the theme lookup are absent.
-- [ ] With **Event Nature** on *Single occurrence*, the four chase fields
-      (Response Due Date, Last Followed Up, Resolved Date, Outcome for us) do
-      not appear. Change it to *Unactioned request or ticket* and they do.
+- [ ] With **Event Nature** on *Single occurrence*, **Response Due Date** and
+      **Last Followed Up** do not appear. Change it to *Unactioned request or
+      ticket* and both appear — on the New form, not only on a saved record,
+      because the person logging the request is the one who knows when a
+      response was promised and cannot edit afterwards.
+- [ ] **Resolved Date** and **Outcome for us** appear whatever the Event
+      Nature. A single occurrence can still be resolved.
 - [ ] Saving an *Unactioned request or ticket* with no **Provider Reference**
       is refused, with the message about a complaint that cannot say which
       request.
 - [ ] Setting Status to **Accepted** on a row that is both *reported to me by
       a colleague* and *None - recollection only* is refused.
+- [ ] The **Resolved Date** / **Outcome for us** pair is refused in both
+      directions: a date with no outcome, and an outcome of *Resolved
+      satisfactorily*, *Resolved after escalation* or *Worked around locally*
+      with no date. *Partially resolved*, *Unresolved* and *Recurred after
+      resolution* need no date — they are the honest state of an open row.
 - [ ] **An event that happened earlier today saves.** This is the check that
       matters: `Occurred At` is a datetime and SharePoint's `TODAY()` is
       midnight, so the rule uses the `today+1` allowance. If a same-day event
@@ -170,9 +190,10 @@ Delete the rows before go-live.
 - [ ] Somebody owns the **Needs review** queue, and it is worked at a stated
       cadence rather than when a review is imminent.
 - [ ] The escalation threshold is written down and known to the curators.
-- [ ] Staff know that `Last Followed Up` on the event must be updated when a
-      follow-up row is added — it is the template's one hand-maintained link,
-      and the **By event** view is how you check it.
+- [ ] **Curators** know that `Last Followed Up` on the event is carried across
+      as part of the weekly chase — it is the template's one hand-maintained
+      link, contributors cannot write it, and the **By event** view is how you
+      check it.
 
 ## What the save rules cannot enforce, and why
 
