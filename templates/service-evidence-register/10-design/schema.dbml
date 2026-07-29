@@ -221,7 +221,7 @@ Table ServiceEvent {
 
   RaisedWithProvider   raised_with        [not null, default: 'Not yet raised', note: 'Whether the provider was told, and how. Raising it at the time is itself evidence']
   ResponseDueDate      date               [note: 'When a response or fix was promised, or when the published target says it was due']
-  LastFollowedUp       date               [note: 'The date of the most recent follow-up. Update it when you add a follow-up record - the follow-up list is the record, this is the index the chase list sorts on']
+  LastFollowedUp       date               [note: 'The date of the most recent follow-up. The follow-up list is the record; this is the index the chase list shows beside the row, carried across by a curator because SharePoint cannot roll a child value up to a parent']
   ResolvedDate         date               [note: 'The date it was actually resolved. Leave blank while it is still outstanding']
   OutcomeForUs         event_outcome      [note: 'How it ended for us, which is not always how it was closed for them']
 

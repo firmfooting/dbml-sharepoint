@@ -61,7 +61,7 @@
         {
           "elmType": "span",
           "attributes": { "class": "ms-fontSize-12 ms-fontWeight-semibold" },
-          "txtContent": "Update Last Followed Up on the event as well. Nothing links the two automatically, and the chase list sorts on that date."
+          "txtContent": "This row is the record. Nothing links the two lists automatically, so a curator carries the date across to Last Followed Up on the event."
         }
       ]
     }

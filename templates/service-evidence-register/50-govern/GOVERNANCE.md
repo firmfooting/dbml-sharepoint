@@ -105,9 +105,14 @@ something about your own practice, not the provider's.
 SharePoint cannot roll a child value up to a parent, and nothing in the
 deployer invents one, so this is a value a person keeps up to date.
 
-It is kept because the chase worklist has to sort on *when did we last chase
-this* — that is the question that decides what to do today, and a derived-only
-answer that lived on another list would not be sortable here.
+It is kept because the chase worklist has to show *when did we last chase
+this* beside the row it belongs to — that is the question that decides what to
+do today, and a derived-only answer that lived on another list would not be
+visible here.
+
+Contributors cannot write it: they hold `SE Log Only`, which withholds Edit, so
+a saved event is fixed. Carrying the date across is a curator's job, done as
+part of the weekly chase below.
 
 **The drift is bounded and visible.** The `FollowUp` **By event** view shows
 the true most recent follow-up beside the group count. Reconciling the two is
@@ -138,7 +143,7 @@ register at all.
 | When | What |
 |---|---|
 | Weekly | Curator works **Needs review**: accept, reject as *Not substantiated*, or send back for detail. A queue worked weekly stays honest; one worked before a review does not. |
-| Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row. |
+| Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row, and `Last Followed Up` on the event is carried across in the same pass — contributors cannot write it. |
 | Monthly | Reconcile `Last Followed Up` against the **By event** view. Update `Event Count` on any theme being assembled. |
 | Monthly | Review whether the categories being logged still match what was agreed, and whether any team has stopped logging. |
 | Per service review | Assemble the pack from **Evidence pack** and **By failure mode**. Bring the denominator. |
