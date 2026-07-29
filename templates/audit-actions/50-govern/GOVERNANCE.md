@@ -58,9 +58,12 @@ as Closed.
 
 ## What the lists enforce, and what this document does
 
-Rule 2 is half enforced. The `ClosedDate` requirement is a save rule; the
-`EvidenceUrl` requirement cannot be, and the reason is worth reading
-before anyone tries to "fix" it.
+Rule 2 is half enforced. The `ClosedDate` requirement is a save rule, on
+**both** endings — *Risk accepted* is an ending too, and the closure
+report filters on that date, so an accepted recommendation without one
+would leave every queue and never reach the committee. The `EvidenceUrl`
+requirement cannot be a save rule, and the reason is worth reading before
+anyone tries to "fix" it.
 
 **SharePoint will not accept a save rule against a link column.** Setting
 a validation formula that references one is refused outright, with a
@@ -86,7 +89,7 @@ Rules 1 and 3 cannot be enforced at save either.
 
 | Rule | List | Where it lives |
 |---|---|---|
-| Rule 2: a *Closed* recommendation needs a `ClosedDate` | Recommendation | list validation |
+| Rule 2: a *Closed* **or *Risk accepted*** recommendation needs a `ClosedDate` | Recommendation | list validation |
 | `ClosedDate` cannot be in the future | Recommendation | column validation |
 | `ReportDate` cannot be in the future | Audit | column validation |
 

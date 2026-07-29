@@ -42,7 +42,7 @@ That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
 first, then `demo-data.js`, from the same bundle. It creates four starters
 covering every status and six tasks — including one that nobody has picked
 up and which is already past due with the start date still ahead, which is
-the row *Overdue before start* exists to find.
+the kind of row the *Overdue* view exists to surface.
 
 The starters describe a **role**, not a person: this tracker holds
 personal data, and seeding it with invented names would teach the wrong
@@ -62,7 +62,7 @@ demo-marked as demo-only content.
 - [ ] All four **OnboardingTask** views appear: **Open by function** (the
       default, grouped by Task Function and collapsed), **My tasks**,
       **By starter** (grouped by the Starter lookup, collapsed),
-      **Overdue before start**. If you seeded, none of the seven is empty.
+      **Overdue**. If you seeded, none of the seven is empty.
       The generated **All Items** recovery view is hidden from the modern
       view bar on both lists, because each has an authored default.
 - [ ] **My tasks** shows *your* open tasks and changes per signed-in user.

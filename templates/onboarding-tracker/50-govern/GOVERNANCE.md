@@ -26,7 +26,7 @@
 
 ## Monitoring
 
-- **Weekly** (coordinator): *Overdue before start* to zero; chase by
+- **Weekly** (coordinator): *Overdue* to zero; chase by
   function, escalate to the process owner anything overdue twice. Then
   *Starting soon* for the fortnight ahead.
 - **Monthly** (process owner): completion stats per function, read off
