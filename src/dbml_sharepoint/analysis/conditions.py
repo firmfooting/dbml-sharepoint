@@ -21,7 +21,7 @@ grammar as authored and normalised by the rules above.
 
 import math
 
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, TODAY_SENTINEL
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, TODAY_SENTINEL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 
 # Every operator's exact inverse. The involution is asserted by a test: an
@@ -248,7 +248,41 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
 
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
+# `now` is for the columns that carry a time of day. A DATE column has no
+# time to compare, so `now` on one is `today` written confusingly, and the
+# semantic check below says so rather than rendering it.
+_DATETIME_TYPES = frozenset({"datetime"})
 _TODAY = TODAY_SENTINEL          # one home: analysis/typemap.py
+_NOW = NOW_SENTINEL              # same home, same reason
+
+# The current-instant sentinel. Every rendering below was established by
+# test/manual/datetime-sentinel-probe.js on 2026-07-29, against a live
+# tenant, and two of the three answers contradict a Microsoft document:
+#
+#   VALIDATION -> NOW()
+#       Microsoft's "Introduction to SharePoint formulas and functions"
+#       states "Lists and libraries do not support the RAND and NOW
+#       functions". That is TRUE of calculated columns and FALSE here: the
+#       probe set `=[ProbeWhen]<=NOW()`, SharePoint returned 204, read it
+#       back, and REFUSED an item stamped three hours in the future.
+#
+#   CAML -> <Today/> with IncludeTimeValue="TRUE", NOT <Now/>
+#       Learn documents <Now/> as a child of <Value> beside <Today/>. It
+#       does not work in a comparison: the probe's negative control showed
+#       that SharePoint silently accepts an INVENTED element in that
+#       position and returns zero rows, and <Now/> returned zero rows too —
+#       the exact signature of something unrecognised. <Today/> with
+#       IncludeTimeValue="TRUE" is the mechanism that does discriminate,
+#       and the probe proved it compares against the INSTANT rather than
+#       midnight: a row stamped three hours ago matched `Lt`, which a
+#       midnight comparison would have excluded.
+#
+#   EXPRESSION -> refused, exactly as `today` is.
+#       @now stores and reads back intact, so it is not obviously absent.
+#       Whether a show/hide rule built on it FIRES is a rendering
+#       behaviour no headless probe can see, and this surface has already
+#       produced one formula (length()) that stored perfectly and evaluated
+#       false for every value.
 # The current-user sentinel. A person column could not be filtered at all
 # before this: the operand rules demand an accessor because there is no
 # defensible default between a name, an email and an id, and CAML refuses
@@ -315,6 +349,21 @@ def _is_today(value: object, column_type: str) -> bool:
     column it is the literal word, and reading it as TODAY() would give one
     authored condition three different meanings across the three targets."""
     return column_type in _DATE_TYPES and isinstance(value, str) and bool(_TODAY.match(value))
+
+
+def _is_now(value: object, column_type: str) -> bool:
+    """A `now` sentinel only means the current instant on a DATETIME column.
+
+    Narrower than `_is_today`, which accepts every date-ish type: a DATE
+    column has no time of day, so comparing one to the instant is `today`
+    spelled confusingly. `_reject_meaningless_now` turns that into a build
+    error naming the alternative rather than letting it render.
+    """
+    return (
+        column_type in _DATETIME_TYPES
+        and isinstance(value, str)
+        and bool(_NOW.match(value))
+    )
 
 
 def _is_me(value: object, column_type: str) -> bool:
@@ -450,6 +499,57 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             where,
         )
 
+    # `now` on a DATE column would silently render as the literal string
+    # "now" inside a DateTime value, which SharePoint accepts and answers
+    # with the wrong rows. Caught here, named, and pointed at `today`.
+    if (
+        isinstance(leaf.value, str)
+        and _NOW.match(leaf.value)
+        and column_type in _DATE_TYPES
+        and column_type not in _DATETIME_TYPES
+    ):
+        raise _reject(
+            target,
+            f"the 'now' sentinel needs a datetime column; {leaf.field!r} is "
+            f"{column_type!r}, which has no time of day — use 'today'",
+            where,
+        )
+
+    # CAML is GATED, and the gap is narrow and specific rather than general
+    # doubt. The probe established `<Today/>` + IncludeTimeValue="TRUE"
+    # against a live tenant — but through `getitems` with an ad-hoc
+    # CamlQuery, which is NOT the surface this renders into. The deploy
+    # writes a view's stored ViewQuery, SharePoint demonstrably rewrites
+    # that XML on save (the probe's C1 saw `<Now/>` come back as `<Now />`
+    # and single quotes become double), and the one thing observed in a real
+    # saved view was the element that does not work.
+    #
+    # So the rendering below is written, tested and unreachable until a
+    # probe reads rows back THROUGH a saved view. Shipping it on a
+    # CamlQuery result would be precisely the substitution this module
+    # exists to refuse.
+    if _is_now(leaf.value, column_type) and target == CAML:
+        raise _reject(
+            target,
+            "the 'now' sentinel is verified for validation formulas but NOT yet "
+            "for a view: its CAML rendering was observed through a CamlQuery, "
+            "not through a saved ViewQuery, which is what the deploy writes. "
+            "Confirm it with test/manual/datetime-sentinel-probe.js (C6/C7) and "
+            "enable it deliberately; use 'today' for a view filter meanwhile",
+            where,
+        )
+
+    if _is_now(leaf.value, column_type) and target == EXPRESSION:
+        raise _reject(
+            target,
+            "the 'now' sentinel has no VERIFIED client-side equivalent. @now "
+            "stores and reads back intact, but whether a show/hide rule built "
+            "on it fires is a rendering behaviour no probe has observed, and "
+            "this target has already produced one formula that stored "
+            "perfectly and evaluated false for every value",
+            where,
+        )
+
     if _is_me(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
             target,
@@ -510,6 +610,13 @@ def _caml_value(column_type: str, value: object, where: str) -> str:
     if column_type in _NUMBER_TYPES:
         return f'<Value Type="Number">{_number(value, where, CAML)}</Value>'
     if column_type in _DATE_TYPES:
+        if _is_now(value, column_type):
+            # NOT <Now/>. Learn documents that element, and the probe found
+            # it returns nothing — the same signature an invented element
+            # produces, because SharePoint does not validate this position.
+            # IncludeTimeValue on <Today/> is the mechanism that works, and
+            # it compares against the instant rather than midnight.
+            return '<Value Type="DateTime" IncludeTimeValue="TRUE"><Today/></Value>'
         match = _TODAY.match(value) if isinstance(value, str) else None
         if match:
             sign, days = match.group(1), match.group(2)
@@ -531,6 +638,12 @@ def _expr_literal(column_type: str, value: object, where: str) -> str:
 
 
 def _validation_literal(column_type: str, value: object, where: str) -> str:
+    if _is_now(value, column_type):
+        # Microsoft's formula reference says Lists do not support NOW().
+        # That holds for calculated columns and not for validation: probed
+        # 2026-07-29, accepted with HTTP 204 and enforced against a
+        # timestamp three hours in the future.
+        return "NOW()"
     if _is_today(value, column_type):
         match = _TODAY.match(str(value))
         sign, days = (match.group(1), match.group(2)) if match else (None, None)

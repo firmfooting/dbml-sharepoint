@@ -86,6 +86,12 @@ below, rather than in a second hand-maintained set beside it.
 TODAY_SENTINEL = re.compile('^today(?:([+-])(\\d+))?$')
 ```
 
+### `NOW_SENTINEL`
+
+```python
+NOW_SENTINEL = re.compile('^now$')
+```
+
 ### `TOTAL_FUNCTIONS`
 
 ```python

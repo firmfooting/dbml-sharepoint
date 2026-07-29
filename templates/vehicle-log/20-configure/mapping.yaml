@@ -273,17 +273,25 @@ form_formatting:
     header: formatting/trip-form-header.json
     body: formatting/trip-form-body.json
 
-# Per-column save rules, each with its own message.
+# Per-column save rules, each with its own message. Every column here is a
+# DATETIME, and `now` renders as NOW() in a validation formula — verified
+# against a live tenant on 2026-07-29
+# (test/manual/datetime-sentinel-probe.js), against Microsoft's own formula
+# reference, which says Lists do not support NOW(). That is true of
+# calculated columns and false here.
 #
-# TODAY() in a SharePoint validation formula is midnight, so `leq today`
-# on a DATETIME column would reject every departure stamped after 00:00 —
-# that is, all of them. `today+1` is the midnight allowance.
+# This used to read `today+1`, the midnight allowance, because TODAY() is
+# midnight and `leq today` on a datetime rejects everything stamped after
+# 00:00. The same probe confirmed that (V3) and measured what the allowance
+# actually permitted (V6): up to tomorrow midnight, so between zero and
+# twenty-four hours of future-dating depending on the time of day. `now`
+# closes that window exactly.
 column_validation:
   Trip:
     columns:
       DepartedAt:
         when:
-          - { field: DepartedAt, op: leq, value: today+1 }
+          - { field: DepartedAt, op: leq, value: now }
         message: "A trip cannot depart in the future. Use the time you actually left."
       OdoStart:
         when:
