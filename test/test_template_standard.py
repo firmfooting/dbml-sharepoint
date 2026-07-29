@@ -1072,3 +1072,60 @@ def _as_number(value: Any) -> float | None:
         except ValueError:
             return None
     return None
+
+
+# The entity that is deliberately outside the standard, and the only one.
+# templates/README.md names it as the single exception to the "every
+# template ships" claims; this is what keeps that sentence honest.
+STANDARD_EXEMPT_ENTITIES: frozenset[tuple[str, str]] = frozenset({
+    ("policy-library", "PolicyDocuments"),
+})
+
+
+@cache
+def _entities_missing_standard_parts() -> tuple[tuple[str, str, str], ...]:
+    missing: list[tuple[str, str, str]] = []
+    for template in _all_templates():
+        loaded = _load(template)
+        for entity in loaded.mapping.entities:
+            form = loaded.mapping.form_formatting.get(entity)
+            for part, present in (
+                ("views", bool(loaded.mapping.views.get(entity))),
+                ("form header", form is not None and form.header is not None),
+                ("demo rows", bool(loaded.mapping.demo_items.get(entity))),
+            ):
+                if not present:
+                    missing.append((template, entity, part))
+    return tuple(missing)
+
+
+def test_only_the_documented_entity_is_outside_the_standard() -> None:
+    """`templates/README.md` tells an adopter that whichever template they
+    deploy, they get views, a form header and demo data — with exactly one
+    exception, named there.
+
+    A second exception would make that page quietly false for a template
+    nobody had flagged, which is the failure the page itself exists to
+    prevent. Adding one means naming it here and in the README together.
+    """
+    unexpected = {
+        (t, e) for t, e, _ in _entities_missing_standard_parts()
+    } - STANDARD_EXEMPT_ENTITIES
+    assert not unexpected, (
+        f"{sorted(unexpected)} declare none of views/header/demo rows but are not "
+        f"named as exceptions. Either finish them, or add them to "
+        f"STANDARD_EXEMPT_ENTITIES *and* to the exception paragraph in "
+        f"templates/README.md — the page promises there is only one."
+    )
+
+
+def test_the_documented_exception_is_still_an_exception() -> None:
+    """The mirror. An exemption left behind after the entity is brought in
+    would let it silently skip every assertion in this file."""
+    still_missing = {(t, e) for t, e, _ in _entities_missing_standard_parts()}
+    stale = STANDARD_EXEMPT_ENTITIES - still_missing
+    assert not stale, (
+        f"{sorted(stale)} are named as outside the standard but now declare "
+        f"everything. Remove them from STANDARD_EXEMPT_ENTITIES and from the "
+        f"exception paragraph in templates/README.md."
+    )
