@@ -155,24 +155,26 @@ _TEXT_OPS = frozenset({"contains", "not_contains", "begins_with", "not_begins_wi
 CAPABILITIES: dict[str, frozenset[str]] = {
     # CAML has Contains/BeginsWith but no negation of either.
     CAML: frozenset(_CAML_OP_TAGS) | {"in", "not_in"},
-    EXPRESSION: frozenset(_EXPR_OPS) | {"is_null", "is_not_null", "in", "not_in"},
+    EXPRESSION: frozenset(_EXPR_OPS) | {"is_null", "is_not_null", "in", "not_in"} | _TEXT_OPS,
     VALIDATION: frozenset(_VALIDATION_OPS) | {"is_null", "is_not_null", "in", "not_in"} | _TEXT_OPS,
 }
 
-# Plausible from the documented syntax, never observed in a formula
-# harvested from a live tenant. Being wrong about unexercised expression
-# syntax has already happened twice in this work, so unverified is treated
-# as unknown and the probe that settles it is named in the error.
+# Operators plausible from the documented syntax but never observed in a
+# formula on a live tenant. Unverified is treated as unknown, and the probe
+# that settles one is named in the error — a signpost pointing at a probe
+# that does not ask reads as though somebody already checked.
 #
-# The named probe must be one that actually asks: a signpost pointing
-# elsewhere reads as though somebody already checked.
-# test/manual/expression-text-operators-probe.js ends in an eyes-on
-# checklist deliberately — length() is documented, stores byte-identical
-# and still evaluates false for every value, so storage alone cannot settle
-# a rendering on this target.
-DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {
-    EXPRESSION: _TEXT_OPS,
-}
+# EMPTY, and the emptiness is the claim: every operator this tool renders
+# onto the expression target has been watched working in a form.
+#
+# It stays here because storage cannot establish anything on this target.
+# SharePoint does not validate ClientValidationFormula on write — a call to
+# a function that does not exist is accepted and read back byte-identical
+# (test/manual/expression-text-operators-probe.js, X0) — so the only proof
+# a rendering works is a person watching a column appear and disappear.
+# Anything added to CAPABILITIES[EXPRESSION] without that belongs here
+# first.
+DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {}
 
 # Transforms a target cannot express at all, as opposed to merely unproven.
 #
@@ -742,6 +744,22 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             return f"{ref} == ''"
         if leaf.op == "is_not_null":
             return f"{ref} != ''"
+        if leaf.op in _TEXT_OPS:
+            # All four text operators go through indexOf, which returns the
+            # position or -1. One function carries the whole set, so there
+            # is one behaviour to have verified rather than three.
+            #
+            # startsWith() and substring(...) == also render begins_with
+            # correctly on a live tenant, and are not used: an extra
+            # function is an extra thing that has to keep being true.
+            literal = _expr_literal(column_type, leaf.value, where)
+            found = f"indexOf({ref}, {literal})"
+            return {
+                "contains": f"{found} >= 0",
+                "not_contains": f"{found} < 0",
+                "begins_with": f"{found} == 0",
+                "not_begins_with": f"{found} != 0",
+            }[leaf.op]
         return f"{ref} {_EXPR_OPS[leaf.op]} {_expr_literal(column_type, leaf.value, where)}"
 
     return _validation_leaf(leaf, column_type, where)
