@@ -684,6 +684,49 @@ def test_text_operator_literals_keep_the_expression_escaping() -> None:
     assert to_expression(condition, TYPES) == "indexOf([$Note], 'O''Brien') >= 0"
 
 
+def test_a_text_operator_refuses_an_empty_needle() -> None:
+    """`contains(x, '')` is true of every possible value and `not_contains`
+    is false of every one, so an empty needle is an authoring mistake on all
+    four operators however it renders.
+
+    It also broke `none_of`. `indexOf('', '')` is 0, so `contains` is TRUE
+    for a blank field and its negation must be FALSE — but the null arm
+    `_push` adds for the positive operators ORs the blank back in:
+
+        none_of[contains(Note, '')]
+          -> ([$Note] == '' || indexOf([$Note], '') < 0)   # true when blank
+
+    Refused rather than special-cased in the normaliser: the rule is
+    meaningless before it is wrong, and refusing it needs no claim about how
+    SharePoint compares an empty needle."""
+    for op in ("contains", "not_contains", "begins_with", "not_begins_with"):
+        condition = parse_condition(
+            [{"field": "Note", "op": op, "value": ""}], "ctx",
+        )
+        # CAML renders only the positive two directly; the negatives reach
+        # it through normalisation, and asked for bare they are refused
+        # earlier for having no rendering at all.
+        targets = (
+            (to_caml, to_validation, to_expression)
+            if op in ("contains", "begins_with")
+            else (to_validation, to_expression)
+        )
+        for render in targets:
+            with pytest.raises(ValueError, match="empty"):
+                render(condition, TYPES)
+
+        # `none_of` is the shape that was actually wrong, and the two formula
+        # targets are where it was reachable. CAML sees the FLIPPED operator,
+        # and half of those have no CAML tag at all, so it refuses a step
+        # earlier for a different and older reason.
+        negated = parse_condition(
+            {"none_of": [{"field": "Note", "op": op, "value": ""}]}, "ctx",
+        )
+        for render in (to_validation, to_expression):
+            with pytest.raises(ValueError, match="empty"):
+                render(negated, TYPES)
+
+
 def test_nothing_is_pending_a_probe_without_one_named() -> None:
     """DISABLED_PENDING_PROBE is empty: every operator rendered onto the
     expression target has been watched working in a form.

@@ -397,6 +397,26 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         raise _reject(target, f"operator {leaf.op!r} takes no 'value'", context)
     if leaf.op in ("in", "not_in") and not isinstance(leaf.value, list):
         raise _reject(target, f"operator {leaf.op!r} needs a list 'value'", context)
+    if leaf.op in _TEXT_OPS and leaf.value == "":
+        # Meaningless before it is wrong: `contains(x, '')` is true of every
+        # possible value and `not_contains(x, '')` false of every one, so no
+        # authored rule wants this.
+        #
+        # It also broke `none_of`. indexOf('', '') is 0, so `contains` is
+        # TRUE for a blank field and its negation must be FALSE — but the
+        # null arm `_push` adds for the positive text operators ORs the
+        # blank back in, and the rule and its negation both came out true.
+        # Refusing costs nothing and needs no claim about how SharePoint
+        # compares an empty needle; special-casing the normaliser would
+        # need one.
+        raise _reject(
+            target,
+            f"operator {leaf.op!r} needs a non-empty 'value' — an empty needle "
+            f"matches every value on the positive operators and none on the "
+            f"negative ones, so the condition cannot discriminate. Use "
+            f"'is_null'/'is_not_null' to test for a blank column",
+            context,
+        )
     if leaf.op in ("in", "not_in") and not leaf.value:
         raise _reject(
             target,
