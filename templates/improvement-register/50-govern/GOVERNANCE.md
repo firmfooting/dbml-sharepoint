@@ -34,8 +34,9 @@ of four outcomes — silence is not one of them:
 ## Adoption criteria ("Adopted" is a system state, not a mood)
 
 An improvement is Adopted when: the measure moved as predicted (or better),
-the new way replaced the old way (old form retired, procedure updated —
-policy-library pairing), the people affected were shown it, and
+the new way replaced the old way (old form retired, procedure updated in
+whatever holds your controlled documents), the people affected were shown
+it, and
 `MeasureAfter` is recorded. Anything less stays Testing.
 
 ## Reporting

@@ -244,8 +244,8 @@ column_validation:
 # Such a rule does not fail quietly: it fails the PASTE, at the validation
 # phase, in front of the operator. The build refuses the operand
 # (analysis/conditions.py, _FORBIDDEN_OPERAND_TYPES), which turns a failed
-# deploy into a failed build and answers the question identically for all
-# twenty-nine templates.
+# deploy into a failed build and answers the question identically for every
+# template.
 #
 # The requirement itself has not been dropped: it is a closure criterion in
 # 50-govern/GOVERNANCE.md and a verification step in 30-deploy/DEPLOY.md,
