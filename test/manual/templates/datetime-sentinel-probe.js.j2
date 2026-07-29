@@ -80,6 +80,26 @@
  *        (conditional show/hide)? conditions.py refuses the `today`
  *        sentinel there for want of "a verified client-side equivalent".
  *
+ *   -- RIDING ALONG: how a validation literal escapes a double quote -------
+ *   Not a time question, and here anyway. `_validation_literal` in
+ *   conditions.py wraps every text literal in double quotes and escapes an
+ *   embedded one by DOUBLING it, with the comment: "the Excel convention
+ *   but was NOT among the harvested formulas — see the spec's open items".
+ *   It is a shipped code path that has never been observed, it needs the
+ *   same list and the same MERGE machinery this probe already has, and a
+ *   separate paste for three questions would simply never be run.
+ *
+ *   Q1   is a ValidationFormula whose literal doubles an embedded " ("")
+ *        accepted and stored?
+ *   Q2   ...and does it match the RIGHT value — i.e. does it reject an item
+ *        holding exactly He said "hi"? Accepted is not parsed: a formula
+ *        that reads the literal as something else would still save.
+ *   Q3   ...and does it leave a DIFFERENT value alone? Q2 alone cannot
+ *        distinguish "escaped correctly" from "rejects everything".
+ *   Q4   what happens to the backslash convention instead? If both are
+ *        accepted, the tool's choice is safe; if backslash is accepted and
+ *        mis-parses, that is a trap worth naming in the code.
+ *
  * READ VN AND CN FIRST. They are the only rows establishing that this probe
  * can tell acceptance from refusal on each surface. If either NEGATIVE
  * CONTROL is itself accepted, treat every result on that surface as
@@ -147,6 +167,10 @@
   expect('C4', "<Today/> WITH IncludeTimeValue='TRUE': midnight, or current instant");
   expect('C5', 'BASELINE: <Today/> without IncludeTimeValue is date-granular');
   expect('E1', '@now is accepted and stored in a ClientValidationFormula');
+  expect('Q1', 'A validation literal doubling an embedded " is accepted');
+  expect('Q2', '...and rejects an item holding exactly that value');
+  expect('Q3', '...and leaves a different value alone');
+  expect('Q4', 'The backslash convention instead: accepted, and does it parse');
 
   await resetList(LIST);
   let digest = await getDigest();
@@ -530,6 +554,108 @@
            `reads back ${JSON.stringify(stored)}. STORAGE ONLY — whether the rule `
            + 'actually fires needs an eyes-on check in the form designer, exactly as '
            + 'form-visibility-interactive.js does.');
+  }
+
+  // ---- Q1-Q4: escaping a double quote in a validation literal ---------
+  // The subject is a CHOICE column, because that is where an awkward value
+  // realistically comes from: a template author writes an enum member with
+  // an apostrophe or a quote in it and the tool renders it into a rule.
+  const QUOTED = 'He said "hi"';
+  const PLAIN = 'plain';
+  const QFIELD = 'ProbeQuote';
+  const xmlAttr = (s) => String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  if (!(await fieldExists(QFIELD))) {
+    await addField(
+      `<Field Type="Choice" DisplayName="${QFIELD}" Name="${QFIELD}" Format="Dropdown">`
+      + `<CHOICES><CHOICE>${xmlAttr(PLAIN)}</CHOICE>`
+      + `<CHOICE>${xmlAttr(QUOTED)}</CHOICE></CHOICES></Field>`);
+  }
+  const quoteReady = await fieldExists(QFIELD);
+
+  const setQuoteRule = async (formula) => {
+    digest = await getDigest();
+    return spPost(`${fieldsPath}/getbyinternalnameortitle('${QFIELD}')`, {
+      ValidationFormula: formula,
+      ValidationMessage: 'probe quote rule',
+    }, digest, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+  };
+  const addQuoteItem = async (title, choice) => {
+    digest = await getDigest();
+    const res = await spPost(itemsPath, { Title: title, [QFIELD]: choice }, digest);
+    return { saved: res.ok, detail: res.ok ? `saved as ${res.body && res.body.Id}`
+                                           : `HTTP ${res.status}: ${res.text.slice(0, 220)}` };
+  };
+
+  if (!quoteReady) {
+    for (const id of ['Q1', 'Q2', 'Q3', 'Q4']) {
+      record(id, RESULTS.find((r) => r.id === id).question, 'NOT ESTABLISHED',
+             `could not create the '${QFIELD}' Choice column`);
+    }
+  } else {
+    // This is exactly what _validation_literal emits today.
+    const doubled = `=[${QFIELD}]<>"He said ""hi"""`;
+    const setDoubled = await setQuoteRule(doubled);
+    if (!setDoubled.ok) {
+      record('Q1', 'A validation literal doubling an embedded " is accepted', 'REFUSED',
+             `sent ${JSON.stringify(doubled)}; HTTP ${setDoubled.status}: `
+             + setDoubled.text.slice(0, 260));
+      for (const id of ['Q2', 'Q3']) {
+        record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE',
+               'the doubled-quote formula was refused at Q1');
+      }
+    } else {
+      const back = await spGet(
+        `${fieldsPath}/getbyinternalnameortitle('${QFIELD}')?$select=ValidationFormula`);
+      const stored = back.ok && back.body ? back.body.ValidationFormula : null;
+      record('Q1', 'A validation literal doubling an embedded " is accepted',
+             stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
+             `sent ${JSON.stringify(doubled)}; stored ${JSON.stringify(stored)}`);
+
+      // Accepted is not parsed. If the literal were read as He said "" hi ""
+      // or truncated at the first quote, the rule would still save happily
+      // and simply never match the value it was written for.
+      const rejected = await addQuoteItem('Q2 quoted value', QUOTED);
+      record('Q2', '...and rejects an item holding exactly that value',
+             rejected.saved ? 'FAIL — literal did NOT match' : 'PASS — literal matched',
+             rejected.saved
+               ? `an item set to ${JSON.stringify(QUOTED)} SAVED under a rule that `
+                 + 'forbids exactly that value, so the doubled escape does not parse '
+                 + `to the intended literal. ${rejected.detail}`
+               : `refused as intended. ${rejected.detail}`);
+
+      // Without this, "rejects everything" would read as a pass above.
+      const allowed = await addQuoteItem('Q3 plain value', PLAIN);
+      record('Q3', '...and leaves a different value alone',
+             allowed.saved ? 'PASS' : 'FAIL — rule rejects everything',
+             allowed.saved
+               ? `a different value saved, so Q2 was a real match rather than a `
+                 + `blanket refusal. ${allowed.detail}`
+               : `the rule refused an unrelated value too, so Q2 proves nothing. `
+                 + allowed.detail);
+    }
+
+    // The alternative convention. Accepted-and-wrong is the interesting
+    // outcome: it would mean an author could write a formula by hand that
+    // saves, reads back and quietly never fires.
+    const backslash = `=[${QFIELD}]<>"He said \\"hi\\""`;
+    const setBackslash = await setQuoteRule(backslash);
+    if (!setBackslash.ok) {
+      record('Q4', 'The backslash convention instead: accepted, and does it parse',
+             'REFUSED — doubling is the only convention',
+             `sent ${JSON.stringify(backslash)}; HTTP ${setBackslash.status}: `
+             + setBackslash.text.slice(0, 260));
+    } else {
+      const hit = await addQuoteItem('Q4 quoted value under backslash rule', QUOTED);
+      record('Q4', 'The backslash convention instead: accepted, and does it parse',
+             hit.saved ? 'ACCEPTED BUT DOES NOT MATCH' : 'ACCEPTED AND MATCHES',
+             hit.saved
+               ? 'the backslash form saved but did NOT reject the value it names — a '
+                 + `hand-written rule using it would never fire. ${hit.detail}`
+               : `the backslash form also parses correctly. ${hit.detail}`);
+    }
+    await setQuoteRule('');
   }
 
   report();
