@@ -124,13 +124,15 @@ build, the deploy or the browser console reports it — the column simply
 never appears.
 
 Every operator this tool renders onto that target has therefore been
-watched working in a real form, not merely written and read back. Two are
-still refused there for the same reason: the `today` and `now` sentinels
-(a show/hide formula is evaluated against the item's values, and `@now`
-firing has not been observed), and `measure: length`, whose documented
-function counts array items rather than measuring a string — so
-`length([$Note]) > 3` is false for every value and hides the column
-unconditionally, with a formula that saves perfectly.
+watched working in a real form, not merely written and read back. Four
+things are still refused there. Three are sentinels: `today`, whose
+client-side equivalent `@now` carries datetime rather than date semantics;
+`now`, which stores and reads back intact, but whether a show/hide rule
+built on it fires has not been observed; and `me`, which has no verified
+client-side equivalent either — see the note below. The fourth is
+`measure: length`, whose documented function counts array items rather
+than measuring a string, so `length([$Note]) > 3` is false for every value
+and hides the column unconditionally, with a formula that saves perfectly.
 
 :::
 
