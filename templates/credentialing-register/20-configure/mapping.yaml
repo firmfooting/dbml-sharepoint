@@ -254,10 +254,11 @@ views:
         EvidenceUrl: 180
     # The compensating control for the one data-quality rule this register
     # cannot enforce at save. "No Current credential without linked,
-    # sighted evidence" is governance, because a URL column as a
-    # validation operand is unverified here and "linked" is not "sighted"
-    # in any case — but "linked" is at least checkable, and this is where
-    # it gets checked.
+    # sighted evidence" is governance, because SharePoint REFUSES a URL
+    # column as a validation operand — settled by probe on 2026-07-29 and a
+    # build error since, not the open question this comment used to call it
+    # — and "linked" is not "sighted" in any case. But "linked" is at least
+    # checkable, and this is where it gets checked.
     - title: "Missing evidence"
       fields: ["@credential", IssuedDate, EvidenceUrl]
       where:

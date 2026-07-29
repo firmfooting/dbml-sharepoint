@@ -160,7 +160,17 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 # Plausible from the documented syntax, never observed in a formula
 # harvested from a live tenant. Being wrong about unexercised expression
 # syntax has already happened twice in this work, so unverified is treated
-# as unknown and the evidence probe is named in the error.
+# as unknown and the probe that settles it is named in the error.
+#
+# The error used to name form-visibility-evidence-probe.js, which does not
+# test these operators at all — its questions are collision, canonical
+# syntax, round-trip fidelity and length limit. A signpost pointing at a
+# probe that cannot answer the question is worse than none, because it
+# reads as though somebody already checked.
+# test/manual/expression-text-operators-probe.js is the one that asks, and
+# it ends in an eyes-on checklist deliberately: length() is documented,
+# stores byte-identical and still evaluates false for every value, so
+# storage alone cannot settle a rendering here.
 DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {
     EXPRESSION: _TEXT_OPS,
 }
@@ -266,7 +276,7 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         raise _reject(
             target,
             f"operator {leaf.op!r} is not yet verified against a live tenant for this "
-            f"target; confirm it with test/manual/form-visibility-evidence-probe.js "
+            f"target; confirm it with test/manual/expression-text-operators-probe.js "
             f"and enable it deliberately",
             context,
         )
