@@ -76,12 +76,15 @@ at all):
 6. Add two temporary test users to **SE Evidence Contributors**. Keep them out
    of Curators and Administrators.
 7. User A creates event A; User B creates event B.
-8. Verify neither user can edit or delete either event — their own included.
-   That refusal is the whole point of the group. Verify a Curator can open and
-   update both.
-9. Verify **neither test user can open `SE_ServiceIssue` at all** — not the
-   list, not a view, not an item.
-10. Remove the test rows and users. Only now add real contributors.
+8. User A adds a follow-up against event A; User B adds one against event B.
+   `SE_FollowUp` carries the same grant and the same claim in the checklist,
+   so testing only the event list would leave half the gate unverified.
+9. Verify neither user can edit or delete **any of the four rows** — their own
+   included. That refusal is the whole point of the group. Verify a Curator
+   can open and update all four.
+10. Verify **neither test user can open `SE_ServiceIssue` at all** — not the
+    list, not a view, not an item.
+11. Remove the test rows and users. Only now add real contributors.
 
 If any step fails, remove contributors from the group and do not go live.
 Repeat this two-account test after permission changes or major tenant
