@@ -106,12 +106,10 @@
  *        `now` is gated for view filters in conditions.py and enabled for
  *        validation formulas, where the evidence reaches behaviour.
  *
- *        NOTE ON VIEWFIELDS. Every view this probe creates declares them.
- *        The first run did not, and the operator reported the view showing
- *        "no rows/columns" — which proved nothing, because a view with no
- *        fields displays nothing whether or not its filter matched. An
- *        empty result is only evidence when a non-empty one would have
- *        been visible.
+ *        NOTE ON VIEWFIELDS. Every view this probe creates declares them,
+ *        because a view with no fields displays nothing whether or not its
+ *        filter matched. An empty result is only evidence when a non-empty
+ *        one would have been visible.
  *
  *   -- The client-side expression target ------------------------------------
  *   E1   is @now accepted and stored in a ClientValidationFormula
@@ -820,20 +818,17 @@
   // sentinel could be shipped at all.
   // Creating a view is TWO calls, and the second is not optional.
   //
-  // Run 1 of this probe created views with no ViewFields, and the operator
-  // reported the view showing "no rows/columns" — which proved nothing,
-  // because a view with no fields displays nothing whether or not its
-  // filter matched. An empty result is only evidence when a non-empty one
-  // would have been visible.
+  // A view with no ViewFields displays nothing whether or not its filter
+  // matched, so its emptiness is not evidence — an empty result only counts
+  // when a non-empty one would have been visible.
   //
-  // Run 2 tried to fix that by passing `ViewFields: { results: [...] }` and
-  // every view creation failed with "The property 'results' does not exist
-  // on type 'SP.ViewFieldCollection'". That wrapper is the odata=VERBOSE
-  // convention; this harness sends nometadata, which REJECTS it rather than
-  // ignoring it — the same trap already recorded beside addField in
-  // calculated-choice-operand.js.j2.
-  //
-  // addviewfield is the path that works under either format.
+  // The fields cannot be passed to the create call as
+  // `ViewFields: { results: [...] }`: that wrapper is the odata=VERBOSE
+  // convention, and this harness sends nometadata, which REJECTS it rather
+  // than ignoring it ("The property 'results' does not exist on type
+  // 'SP.ViewFieldCollection'") — the same trap recorded beside addField in
+  // calculated-choice-operand.js.j2. addviewfield works under either
+  // format.
   const createView = async (title, query) => {
     digest = await getDigest();
     const made = await spPost(`web/lists/getbytitle('${LIST}')/views`, {

@@ -130,9 +130,9 @@ column_validation:
 
 `TODAY()` in a validation formula is **midnight**, so `leq today` on a
 datetime column rejects everything stamped after 00:00 — which, on a
-sign-in log, is every row anybody ever types. The library used to work
-around that with `today+1`, a midnight allowance that bought back a window
-of up to twenty-four hours' future-dating. `now` closes it exactly.
+sign-in log, is every row anybody ever types. The whole-day alternative,
+`today+1`, permits up to twenty-four hours of future-dating depending on
+the time of day. `now` is exact.
 
 **Where it works, and where it does not:**
 

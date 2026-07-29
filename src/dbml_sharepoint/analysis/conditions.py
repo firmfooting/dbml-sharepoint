@@ -19,7 +19,9 @@ Implications need no operator of their own. A validation rule is usually
 grammar as authored and normalised by the rules above.
 """
 
+import datetime as dt
 import math
+import re
 
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, TODAY_SENTINEL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -162,15 +164,12 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 # syntax has already happened twice in this work, so unverified is treated
 # as unknown and the probe that settles it is named in the error.
 #
-# The error used to name form-visibility-evidence-probe.js, which does not
-# test these operators at all — its questions are collision, canonical
-# syntax, round-trip fidelity and length limit. A signpost pointing at a
-# probe that cannot answer the question is worse than none, because it
-# reads as though somebody already checked.
-# test/manual/expression-text-operators-probe.js is the one that asks, and
-# it ends in an eyes-on checklist deliberately: length() is documented,
-# stores byte-identical and still evaluates false for every value, so
-# storage alone cannot settle a rendering here.
+# The named probe must be one that actually asks: a signpost pointing
+# elsewhere reads as though somebody already checked.
+# test/manual/expression-text-operators-probe.js ends in an eyes-on
+# checklist deliberately — length() is documented, stores byte-identical
+# and still evaluates false for every value, so storage alone cannot settle
+# a rendering on this target.
 DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {
     EXPRESSION: _TEXT_OPS,
 }
@@ -254,6 +253,10 @@ _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
 _DATETIME_TYPES = frozenset({"datetime"})
 _TODAY = TODAY_SENTINEL          # one home: analysis/typemap.py
 _NOW = NOW_SENTINEL              # same home, same reason
+# Only to make the error helpful: `now+1` is refused like any other bad date
+# literal, but silently, it would read as a typo rather than as the one
+# offset form this grammar deliberately does not have.
+_NOW_OFFSET = re.compile(r"^now[+-]\d+$")
 
 # The current-instant sentinel. Every rendering below was established by
 # test/manual/datetime-sentinel-probe.js on 2026-07-29, against a live
@@ -390,6 +393,25 @@ def _is_now(value: object, column_type: str) -> bool:
         and isinstance(value, str)
         and bool(_NOW.match(value))
     )
+
+
+def _looks_like_a_date(value: str) -> bool:
+    """An ISO date or datetime, which is the only literal form a date column
+    may carry once the sentinels have had their turn.
+
+    Deliberately strict. SharePoint accepts `<Value Type="DateTime">banana
+    </Value>` without complaint and answers with no rows, so a typo here is
+    invisible from the build, invisible from the deploy, and visible only as
+    a view that is mysteriously empty.
+    """
+    text = value.strip().replace("Z", "+00:00")
+    for parse in (dt.datetime.fromisoformat, dt.date.fromisoformat):
+        try:
+            parse(text)
+        except ValueError:
+            continue
+        return True
+    return False
 
 
 def _is_me(value: object, column_type: str) -> bool:
@@ -538,6 +560,37 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             target,
             f"the 'now' sentinel needs a datetime column; {leaf.field!r} is "
             f"{column_type!r}, which has no time of day — use 'today'",
+            where,
+        )
+
+    # A date column's literal, once `today` and `now` have had their turn,
+    # must be a real date. Nothing downstream checks it: SharePoint takes
+    # `<Value Type="DateTime">banana</Value>` and answers with no rows, so
+    # the build is the only place it can be caught.
+    #
+    # `now+1` is the case that matters most. `today±N` works, which makes the
+    # offset form the obvious thing to reach for, and without this it is an
+    # unparseable literal in a filter that silently matches nothing.
+    if (
+        column_type in _DATE_TYPES
+        and isinstance(leaf.value, str)
+        and not _is_today(leaf.value, column_type)
+        and not _is_now(leaf.value, column_type)
+        and not _looks_like_a_date(leaf.value)
+    ):
+        hint = ""
+        if _NOW_OFFSET.match(leaf.value.strip()):
+            hint = (
+                " — 'now' takes no offset form (today±N does, now±N has no "
+                "verified rendering); use a bare 'now', or 'today±N' for a "
+                "whole-day boundary"
+            )
+        raise _reject(
+            target,
+            f"{leaf.value!r} is not a date, the sentinel 'today'/'today±N', or "
+            f"'now'. SharePoint accepts an unparseable date literal and returns "
+            f"nothing, so this is refused here rather than discovered as an "
+            f"empty view{hint}",
             where,
         )
 

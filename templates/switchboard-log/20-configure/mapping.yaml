@@ -461,14 +461,15 @@ form_formatting:
 # reference, which says Lists do not support NOW(). True of calculated
 # columns, false here.
 #
-# This used to read `today+1`. TODAY() in a validation formula is midnight,
-# so `leq today` on a datetime rejects everything stamped after 00:00 —
-# which at a switchboard is everything — and the allowance bought back a
-# window of up to twenty-four hours. `now` closes it to the instant, which
-# matters more here than anywhere else in the library: the switchboard
-# record is only trusted because it is contemporaneous, and a mistyped year
-# on a code announcement is not a cosmetic error. It moves an emergency
-# activation out of the committee's monthly window entirely.
+# `now` rather than `today`, because TODAY() in a validation formula is
+# midnight: `leq today` on a datetime rejects everything stamped after
+# 00:00, which at a switchboard is everything. The whole-day alternative,
+# `today+1`, permits up to twenty-four hours of future-dating.
+#
+# Exactness matters more here than anywhere else in the library. The
+# switchboard record is only trusted because it is contemporaneous, and a
+# mistyped year on a code announcement is not a cosmetic error: it moves an
+# emergency activation out of the committee's monthly window entirely.
 column_validation:
   CodeEvent:
     columns:

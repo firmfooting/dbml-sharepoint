@@ -214,12 +214,10 @@ form_formatting:
 # reference, which says Lists do not support NOW(). That is true of
 # calculated columns and false here.
 #
-# This used to read `today+1`, the midnight allowance, because TODAY() is
-# midnight and `leq today` on a datetime rejects everything stamped after
-# 00:00. The same probe confirmed that (V3) and measured what the allowance
-# actually permitted (V6): up to tomorrow midnight, so between zero and
-# twenty-four hours of future-dating depending on the time of day. `now`
-# closes that window exactly.
+# `now` rather than `today`, because TODAY() in a validation formula is
+# midnight: `leq today` on a datetime rejects everything stamped after
+# 00:00. The whole-day alternative, `today+1`, permits up to twenty-four
+# hours of future-dating depending on the time of day. `now` is exact.
 column_validation:
   Visit:
     columns:
