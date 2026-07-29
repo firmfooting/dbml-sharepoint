@@ -238,6 +238,15 @@ template's DEPLOY, STAFF-GUIDE or GOVERNANCE file waits on a step you have
 to perform in the SharePoint UI first — where those documents name a view,
 that view exists as soon as the script finishes.
 
+**One exception, and it is a document library.** `policy-library`'s
+`PolicyDocuments` is a `kind: DocumentLibrary`, and the parts of the
+standard that describe a list do not describe one: a library view cannot
+name `FileLeafRef`, so a documents view built this way would have no file
+name in it. That half declares no views, and its **Drafts in progress**
+view is still a step you perform in the UI — `policy-library`'s own
+DEPLOY.md carries it. Its `PolicyRegister` half is declared like every
+other list.
+
 The declaration stays authoritative afterwards. A redeploy reconciles each
 declared view back to what the mapping says, so a view somebody widened,
 re-sorted or re-filtered by hand returns to the declared shape and the run

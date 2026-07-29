@@ -170,12 +170,14 @@ not remove it.
   `Notes`, which is rich text, and a SharePoint validation formula cannot
   reference a multi-line column at all. The *Retired* view shows `Notes`
   beside each row for exactly that reason.
-- **A published policy having a `DocumentUrl`.** It is a hyperlink column.
-  This tool accepts a hyperlink operand in a validation formula and
-  `audit-actions` has shipped one since before the fleet standard existed,
-  but it has never been read back from a live tenant, so it is not copied
-  here. The *By area* and *Review due* views both show the column, so an
-  empty one is visible in the monthly review.
+- **A published policy having a `DocumentUrl`.** It is a hyperlink column,
+  and **SharePoint will not accept a validation formula that references
+  one** — it answers HTTP 500, *"One or more column references are not
+  allowed, because the columns are defined as a data type that is not
+  supported in formulas."* Established against a live tenant; the build
+  refuses the operand, so a mapping that tries this fails to build rather
+  than failing your paste. The *By area* and *Review due* views both show
+  the column, so an empty one is visible in the monthly review.
 - **Register ↔ library agreement.** `Status` on the row and `Document
   Status` on the file are on two different lists with no link between them;
   no formula spans that. The five-minute orphan check in
