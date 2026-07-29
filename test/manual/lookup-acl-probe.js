@@ -135,6 +135,23 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON — never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED — the server saying no to what was sent — or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // 400 only. 401/403 are about who is asking, 408/429 and every 5xx are
+  // about the moment rather than the content, and treating any of them as a
+  // refusal is the same substitution this project keeps having to undo.
+  const isRefusal = (status) => status === 400;
+
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
@@ -389,17 +406,26 @@
         `web/lists/getbytitle('${SOURCE}')/items?$select=${LOOKUP}/Title,${LOOKUP}/ProbeSide`
         + `&$expand=${LOOKUP}&$top=10`);
       const sideRaw = side.ok ? JSON.stringify(side.body) : '';
+      // A refusal is the server rejecting the query or the access. A 429 or
+      // a 500 is neither, and calling one REFUSED would turn a throttle into
+      // an ACL result — the trap K1 and K2 above already avoid.
+      const sideRefused = isRefusal(side.status)
+        || side.status === 401 || side.status === 403;
       record('K3', 'Does $expand on the lookup reach the target row\'s other columns?',
-             !side.ok ? 'REFUSED'
-                      : sideRaw.includes(SIDE) ? 'OTHER COLUMNS ALSO VISIBLE'
-                                               : 'DISPLAY FIELD ONLY',
-             !side.ok
-               ? '$expand naming a second target column was refused with HTTP '
-                 + `${side.status}: ${JSON.stringify(sideRaw.slice(0, 200))}`
-               : sideRaw.includes(SIDE)
+             side.ok
+               ? sideRaw.includes(SIDE) ? 'OTHER COLUMNS ALSO VISIBLE'
+                                        : 'DISPLAY FIELD ONLY'
+               : sideRefused ? 'REFUSED' : 'NOT ESTABLISHED',
+             side.ok
+               ? sideRaw.includes(SIDE)
                  ? 'a column that is NOT the lookup display field came back too '
                    + `(${JSON.stringify(SIDE)}), so the exposure is wider than the title`
-                 : `the display field came back but ${JSON.stringify(SIDE)} did not`);
+                 : `the display field came back but ${JSON.stringify(SIDE)} did not`
+               : sideRefused
+                 ? '$expand naming a second target column was refused with HTTP '
+                   + `${side.status}: ${JSON.stringify(String(side.body).slice(0, 200))}`
+                 : `the $expand request failed with HTTP ${side.status}, which is `
+                   + 'neither a refusal nor an answer');
     }
 
     report();
@@ -492,8 +518,11 @@
   const openRow = await spPost(`web/lists/getbytitle('${TARGET}')/items`,
                                { Title: SECRET, ProbeSide: SIDE, ProbeStatus: 'Open' }, digest);
   digest = await getDigest();
+  // Created OPEN, so its calculated label is populated. K6 closes it AFTER
+  // the link exists — the transition is the question, and a row born closed
+  // would only have shown what linking to an already-empty label does.
   const closedRow = await spPost(`web/lists/getbytitle('${TARGET}')/items`,
-                                 { Title: CLOSED_TITLE, ProbeStatus: 'Closed' }, digest);
+                                 { Title: CLOSED_TITLE, ProbeStatus: 'Open' }, digest);
   if (!openRow.ok || !closedRow.ok) {
     return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
                 `could not create the target rows: HTTP ${openRow.status}/${closedRow.status}`);
@@ -550,10 +579,14 @@
   }
   log('OK', 'Created and linked one source row.');
 
-  // K6 — the trap. Link a row through the CALCULATED lookup to the target
-  // row whose label is empty, then read it back. If it comes back blank,
-  // then closing a theme would blank the link on every event behind it,
-  // and the trick costs more than the long picker it fixes.
+  // K6 — the trap, and the ORDER is the whole point. Link a row through the
+  // CALCULATED lookup while the target's label is still populated, THEN
+  // close the target so the label empties, THEN read the link back. If it
+  // comes back blank, closing a theme would blank the link on every event
+  // behind it, and the trick costs history to buy a shorter picker.
+  //
+  // Linking to a row that was already empty would answer a different and
+  // much less interesting question.
   if (!calcLookup.ok) {
     record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
            'NOT ESTABLISHED', 'the calculated lookup column was refused at K5');
@@ -568,9 +601,25 @@
     if (!linkedToClosed.ok) {
       record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
              'NOT ESTABLISHED',
-             `could not link a row through '${PICK}' to the closed target row: HTTP `
+             `could not link a row through '${PICK}' to the target row: HTTP `
              + `${linkedToClosed.status}: ${linkedToClosed.text.slice(0, 240)}`);
     } else {
+      // Now close it. The label goes empty UNDER an existing link, which is
+      // the state a theme reaches when a curator concludes it.
+      digest = await getDigest();
+      const closed = await spPost(
+        `web/lists/getbytitle('${TARGET}')/items(${closedId})`,
+        { ProbeStatus: 'Closed' }, digest,
+        { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+      if (!closed.ok) {
+        record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+               'NOT ESTABLISHED',
+               `the link was made, but closing the target failed (HTTP ${closed.status}), `
+               + `so the label never emptied and there is no transition to observe: `
+               + closed.text.slice(0, 200));
+        return report();
+      }
+      log('OK', `Closed the target row, so '${LABEL}' is now empty under a live link.`);
       const readBack = await spGet(
         `web/lists/getbytitle('${SOURCE}')/items(${linkedToClosed.body.Id})`
         + `?$select=Title,${PICK}Id,${PICK}/${LABEL}&$expand=${PICK}`);

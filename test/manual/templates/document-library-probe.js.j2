@@ -138,12 +138,16 @@
   const junk = await spPost(`${listPath}/items`,
                             { NoSuchColumnAtAll: 'x' }, digest);
   record('LN', 'NEGATIVE CONTROL: an item POST naming a missing column is refused',
-         junk.ok ? 'FAIL' : 'PASS',
+         junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? 'an item POST naming a column that does not exist was ACCEPTED — this '
              + 'probe cannot tell a refused item write from a successful one, so L2 '
              + 'is unproven whichever way it goes'
-           : `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`);
+           : isRefusal(junk.status)
+             ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
+             : `the request failed with HTTP ${junk.status}, which is not the server `
+               + 'refusing the write. L2 is unproven rather than answered: '
+               + junk.text.slice(0, 200));
 
   // ---- L2 / L3 / L4: the fileless item --------------------------------
   // This is the exact shape demogen would emit for a library: a plain
@@ -263,7 +267,7 @@
     // A failed READ-BACK is not a refusal. Conflating them would let a
     // throttled GET print "REFUSED" — a claim about the platform — on no
     // observation at all, and report() would count the question answered.
-    if (back.body === null) {
+    if (readFailed(back)) {
       record('L6', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
              `addviewfield('FileLeafRef') returned HTTP ${added.status}, but the `
              + `view-fields read-back failed (HTTP ${back.status}), so this run has `
@@ -326,7 +330,7 @@
       const back = await spGet(
         `${listPath}/contenttypes('${ctId}')?$select=ClientFormCustomFormatter`);
       // Same rule as L6: a read-back that failed is not a discard.
-      if (back.body === null) {
+      if (readFailed(back)) {
         record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
                'NOT ESTABLISHED',
                `the MERGE returned HTTP ${set.status}, but the read-back failed (HTTP `

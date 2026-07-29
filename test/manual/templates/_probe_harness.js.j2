@@ -45,6 +45,23 @@
     return { ok: res.ok, status: res.status, body: await res.json().catch(() => null) };
   };
 
+  // NOTE the contract, because getting it wrong has produced false verdicts
+  // here twice: `body` is the PARSED payload whether or not the request
+  // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
+  // so `body !== null` says the response was JSON — never that the call
+  // worked. Anything asking "did I actually read this?" must test `ok`.
+  const readFailed = (r) => !r.ok || r.body === null;
+
+  // Was this request REFUSED — the server saying no to what was sent — or
+  // did it merely fail? A negative control that cannot tell the difference
+  // certifies the surface as observable on the strength of a throttle, and
+  // every row it guards is then read as evidence.
+  //
+  // 400 only. 401/403 are about who is asking, 408/429 and every 5xx are
+  // about the moment rather than the content, and treating any of them as a
+  // refusal is the same substitution this project keeps having to undo.
+  const isRefusal = (status) => status === 400;
+
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
   const spPost = async (path, payload, digest, extraHeaders = {}) => {
