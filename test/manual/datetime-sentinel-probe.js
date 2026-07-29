@@ -44,10 +44,25 @@
  *   V2   ...and if it is ACCEPTED, does it actually reject a future
  *        timestamp, or is it accepted-but-inert? Accepted-and-inert is the
  *        worst outcome available and the one worth knowing about.
+ *   V2C  CONTROL for V2: under the SAME uncleared rule, does a value the
+ *        rule should ALLOW save? A rule that refuses everything refuses the
+ *        future stamp too, which reads exactly like enforcement.
  *   V3   THE LOAD-BEARING ROW. Under `=[ProbeWhen] <= TODAY()`, is an item
  *        stamped EARLIER TODAY rejected? Five shipped templates assume yes.
  *        If it saves, every `today+1` allowance in the library is an
  *        unnecessary 24-hour hole.
+ *   V3C  CONTROL for V3, and the one that matters most, because V3 is the
+ *        row the library leans on.
+ *
+ *   V2C, V3C AND Q4's CONTROL WERE ADDED AFTER THE RUN OF RECORD AND HAVE
+ *   NOT BEEN RUN. They are additive: V1-V6 and Q1-Q4 keep their formulas,
+ *   their saves and their verdict expressions byte-for-byte, so the
+ *   recorded answers still describe exactly what produced them. What the
+ *   controls change is what a FUTURE run can claim — the recorded V2 and V3
+ *   were taken without one, and read strictly they establish that the rule
+ *   refused a particular value, not that it discriminates. Both controls
+ *   delete their own row afterwards, because the CAML questions below count
+ *   rows and one of those counts is quoted as evidence.
  *   V4   Under `<= TODAY()+1`, does an item stamped LATER TODAY save? This
  *        is the shipped idiom's positive case.
  *   V5   Under `<= TODAY()+1`, is an item stamped TWO DAYS out rejected?
@@ -309,7 +324,9 @@
   expect('VN', 'NEGATIVE CONTROL: a ValidationFormula naming a missing column is refused');
   expect('V1', 'NOW() in a ValidationFormula');
   expect('V2', 'If NOW() was accepted, does it reject a future timestamp');
+  expect('V2C', 'CONTROL: under the same NOW() rule, does an allowed value save');
   expect('V3', 'Under <= TODAY(), an item stamped EARLIER TODAY is rejected');
+  expect('V3C', 'CONTROL: under the same TODAY() rule, does a value from yesterday save');
   expect('V4', 'Under <= TODAY()+1, an item stamped LATER TODAY saves');
   expect('V5', 'Under <= TODAY()+1, an item stamped TWO DAYS out is rejected');
   expect('V6', 'Under <= TODAY()+1, the exact ceiling (tomorrow 23:00)');
@@ -475,6 +492,32 @@
     };
   };
 
+  // A POSITIVE CONTROL saves a value the rule should ALLOW, under the same
+  // uncleared rule as the refusal it accompanies. Without one, "the future
+  // stamp was refused" and "this rule refuses everything" are the same
+  // observation — the saves half of the principle this file already applies
+  // to views ("an empty result is only evidence when a non-empty one would
+  // have been visible").
+  //
+  // The control row must then GO. The CAML questions below count rows, and
+  // C4/C7's two-row answer is quoted in conditions.py as diagnostic, so a
+  // surviving control would silently change what those rows mean. A failed
+  // delete is therefore loud rather than ignored.
+  let controlRowLeaked = false;
+  const dropControl = async (id, label) => {
+    if (id === null) return;
+    digest = await getDigest();
+    const gone = await spPost(`web/lists/getbytitle('${LIST}')/items(${id})`, {}, digest,
+                              { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+    if (!gone.ok) {
+      controlRowLeaked = true;
+      log('FAIL', `Could not delete the ${label} control row (item ${id}): HTTP `
+                  + `${gone.status}. It will be counted by the CAML rows below, whose `
+                  + 'row counts are evidence — treat C2-C7 as NOT ESTABLISHED and '
+                  + 'delete the list before re-running.');
+    }
+  };
+
   // ---- VN: NEGATIVE CONTROL for the validation surface ----------------
   const bogus = await setValidation('=[NoSuchColumnHere]>0');
   record('VN', 'NEGATIVE CONTROL: a ValidationFormula naming a missing column is refused',
@@ -492,6 +535,8 @@
            `HTTP ${nowFormula.status}: ${nowFormula.text.slice(0, 300)}`);
     record('V2', 'If NOW() was accepted, does it reject a future timestamp',
            'NOT APPLICABLE', 'NOW() was refused at V1, so there is nothing to evaluate');
+    record('V2C', 'CONTROL: under the same NOW() rule, does an allowed value save',
+           'NOT APPLICABLE', 'NOW() was refused at V1, so there is no rule to control');
   } else {
     // Accepted is the surprising branch. Read it back before believing it:
     // accepted-then-discarded is a distinct and worse outcome than either.
@@ -509,6 +554,22 @@
            future.saved
              ? `a timestamp three hours in the future SAVED despite the rule — ${future.detail}`
              : `refused as intended — ${future.detail}`);
+
+    // V2C — the positive control for V2, under the SAME uncleared rule.
+    // YESTERDAY rather than a same-day stamp: -27h is outside the whole
+    // UTC-12..+14 offset range, so it is in the past whatever zone the site
+    // keeps, and the control needs no assumption about how NOW() handles
+    // zones — which is the very thing under test.
+    const past = await trySave('V2C yesterday under NOW()', YESTERDAY);
+    record('V2C', 'CONTROL: under the same NOW() rule, does an allowed value save',
+           past.saved ? 'PASS' : 'FAIL',
+           past.saved
+             ? `a timestamp 27 hours in the past saved, so the rule discriminates `
+               + `rather than refusing everything — ${past.detail}`
+             : 'the rule refused a value 27 hours in the PAST as well, so it refuses '
+               + 'everything and V2 above proves nothing about enforcement. '
+               + past.detail);
+    await dropControl(past.id, 'V2C');
   }
   await clearValidation();
 
@@ -532,6 +593,23 @@
                  + earlier.detail
                : 'TODAY() is midnight and rejects same-day timestamps, which is why '
                  + 'the today+1 allowance exists. ' + earlier.detail);
+
+      // V3C — the positive control for the load-bearing row, under the SAME
+      // uncleared rule. -27h crosses at least one local midnight in every
+      // zone even across a DST step, so it needs no extension of the
+      // same-day gate. Read the pair together: V3 alone cannot tell a
+      // midnight boundary from a rule that refuses every value.
+      const yesterday = await trySave('V3C yesterday under TODAY()', YESTERDAY);
+      record('V3C', 'CONTROL: under the same TODAY() rule, does a value from yesterday save',
+             yesterday.saved ? 'PASS' : 'FAIL',
+             yesterday.saved
+               ? 'a timestamp 27 hours in the past saved under the same rule, so the '
+                 + 'refusal above discriminates rather than being a rule that refuses '
+                 + `everything. It bounds the boundary to somewhere in the last 27 `
+                 + `hours; it does NOT by itself pin it at midnight. ${yesterday.detail}`
+               : 'the rule refused a value 27 hours in the PAST as well, so it refuses '
+                 + 'everything and V3 above establishes nothing. ' + yesterday.detail);
+      await dropControl(yesterday.id, 'V3C');
     }
     await clearValidation();
   }
@@ -825,12 +903,21 @@
              + setBackslash.text.slice(0, 260));
     } else {
       const hit = await addQuoteItem('Q4 quoted value under backslash rule', QUOTED);
+      // The unrelated-value control Q3 already gives the doubling form. A
+      // rule that refuses everything refuses QUOTED too, and without this
+      // that reads identically to "the escape parsed correctly".
+      const control = await addQuoteItem('Q4 plain value under backslash rule', PLAIN);
       record('Q4', 'The backslash convention instead: accepted, and does it parse',
-             hit.saved ? 'ACCEPTED BUT DOES NOT MATCH' : 'ACCEPTED AND MATCHES',
+             hit.saved ? 'ACCEPTED BUT DOES NOT MATCH'
+                       : control.saved ? 'ACCEPTED AND MATCHES' : 'NOT ESTABLISHED',
              hit.saved
                ? 'the backslash form saved but did NOT reject the value it names — a '
                  + `hand-written rule using it would never fire. ${hit.detail}`
-               : `the backslash form also parses correctly. ${hit.detail}`);
+               : control.saved
+                 ? 'the backslash form refused the value it names and left a different '
+                   + `one alone. ${hit.detail}`
+                 : 'the rule refused an unrelated value too, so it refuses everything '
+                   + `and this row proves nothing about the escape. ${hit.detail}`);
     }
     await setQuoteRule('');
   }
@@ -839,10 +926,20 @@
   console.log('\nHOW TO READ THIS RUN');
   console.log('  VN and CN must both be PASS. If either is FAIL, the surface it');
   console.log('  guards proved nothing and its rows are unproven, not wrong.');
+  console.log('  V2C and V3C are POSITIVE CONTROLS, and V2/V3 are only evidence');
+  console.log('  when their control PASSED: a rule that refuses everything refuses');
+  console.log('  the future stamp too, and that reads the same as enforcement.');
   console.log('  V3 decides whether the today+1 allowance in five templates is');
   console.log('  necessary. V6 decides whether it is a 24-hour or 48-hour window,');
   console.log('  and only answers when TZ0 says this browser shares the site day.');
   console.log('  C2/C3 decide whether a `now` sentinel could do anything a view');
   console.log('  cannot already do; C5 confirms what seven shipped views get today.');
+  if (controlRowLeaked) {
+    console.log('');
+    console.log('  A CONTROL ROW COULD NOT BE DELETED — see the FAIL above. The CAML');
+    console.log('  rows count items, so C2-C7 counted one row that should not have');
+    console.log('  been there. Treat them as NOT ESTABLISHED, delete the list, and');
+    console.log('  re-run before reporting anything from this run.');
+  }
   log('INFO', `Done. Delete '${LIST}' when you have copied the results.`);
 })();

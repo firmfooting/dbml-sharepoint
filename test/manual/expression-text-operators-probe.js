@@ -366,10 +366,20 @@
                   { ClientValidationFormula: formula }, digest,
                   { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
   };
+  // Returns the request outcome ALONGSIDE the value. Collapsing a failed
+  // GET to null would make a throttled read indistinguishable from a
+  // successful read of an empty property, and the classifier below would
+  // then print 'ACCEPTED THEN DISCARDED' — a claim about SharePoint — on
+  // no observation.
   const readExpression = async (field) => {
     const r = await spGet(
       `${fieldsPath}/getbyinternalnameortitle('${field}')?$select=ClientValidationFormula`);
-    return r.ok && r.body ? r.body.ClientValidationFormula : null;
+    return {
+      ok: r.ok,
+      parsed: r.body !== null,
+      status: r.status,
+      value: r.ok && r.body ? r.body.ClientValidationFormula : null,
+    };
   };
 
   // ---- X0: NEGATIVE CONTROL -------------------------------------------
@@ -378,7 +388,7 @@
   // below is a statement about storage rather than about validity.
   const junkFormula = "=dbmlspNoSuchFunction([$" + SUBJECT + "], 'x')";
   const junk = await setExpression('ShowNegative', junkFormula);
-  const junkStored = junk.ok ? await readExpression('ShowNegative') : null;
+  const junkStored = junk.ok ? (await readExpression('ShowNegative')).value : null;
   record('X0', 'NEGATIVE CONTROL: a formula calling a non-existent function is refused',
          junk.ok ? 'FAIL' : 'PASS',
          junk.ok
@@ -397,16 +407,37 @@
                         + set.text.slice(0, 260));
       continue;
     }
-    const stored = await readExpression(field);
+    const read = await readExpression(field);
+    const stored = read.value;
     // Byte-identical matters beyond tidiness: the deploy verifies by
     // read-back, so a formula SharePoint normalises would be reported as
     // drift on every single redeploy unless reconciliation canonicalises
     // it first.
-    const outcome = stored === null
-      ? 'ACCEPTED THEN DISCARDED'
+    //
+    // Three ways to fail to see a formula, and only one of them is a
+    // statement about SharePoint. A failed request and an unparseable body
+    // are both NOT ESTABLISHED; a 200 that carried no such property is
+    // 'ACCEPTED THEN DISCARDED', which is an observation. `null` and
+    // `undefined` are kept apart for the same reason: whether this API
+    // spells an absent formula as an explicit null or by omitting the
+    // property is not something this repo has established, so the
+    // omitted case does not borrow the null case's verdict.
+    const outcome = !read.ok || !read.parsed
+      ? 'NOT ESTABLISHED'
+      : stored === null ? 'ACCEPTED THEN DISCARDED'
+      : stored === undefined ? 'NOT ESTABLISHED'
       : stored === formula ? 'ACCEPTED, BYTE-IDENTICAL' : 'ACCEPTED, NORMALISED';
     record(id, `Candidate for ${label}: accepted, and stored byte-identical?`, outcome,
-           `sent ${JSON.stringify(formula)}; stored ${JSON.stringify(stored)}`);
+           !read.ok
+             ? `sent ${JSON.stringify(formula)}; the MERGE returned HTTP ${set.status} `
+               + `but the read-back failed with HTTP ${read.status}`
+             : !read.parsed
+               ? `sent ${JSON.stringify(formula)}; the read-back returned HTTP `
+                 + `${read.status} with a body that did not parse as JSON`
+               : stored === undefined
+                 ? `sent ${JSON.stringify(formula)}; the read-back carried no `
+                   + 'ClientValidationFormula property at all'
+                 : `sent ${JSON.stringify(formula)}; stored ${JSON.stringify(stored)}`);
   }
 
   report();

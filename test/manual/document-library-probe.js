@@ -406,16 +406,30 @@
       {}, digest);
     const back = await spGet(
       `${listPath}/views/getbytitle('${VIEW}')/viewfields`);
-    const fields = back.ok && back.body ? (back.body.Items || back.body.value || []) : [];
-    const present = JSON.stringify(fields).includes('FileLeafRef');
-    record('L6', 'Can a library view carry FileLeafRef through REST',
-           added.ok && present ? 'PLATFORM ALLOWS IT' : 'REFUSED',
-           added.ok && present
-             ? `FileLeafRef is in the view's fields: ${JSON.stringify(fields)}. The `
-               + "tool's build error is a TOOL limit, and lifting it is a design "
-               + 'decision rather than a platform impossibility.'
-             : `HTTP ${added.status}: ${added.text.slice(0, 220)}; read back `
-               + JSON.stringify(fields));
+    // A failed READ-BACK is not a refusal. Conflating them would let a
+    // throttled GET print "REFUSED" — a claim about the platform — on no
+    // observation at all, and report() would count the question answered.
+    if (back.body === null) {
+      record('L6', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
+             `addviewfield('FileLeafRef') returned HTTP ${added.status}, but the `
+             + `view-fields read-back failed (HTTP ${back.status}), so this run has `
+             + 'no evidence either way.');
+    } else {
+      const fields = back.body.Items || back.body.value || [];
+      const present = JSON.stringify(fields).includes('FileLeafRef');
+      record('L6', 'Can a library view carry FileLeafRef through REST',
+             !added.ok ? 'REFUSED'
+                       : present ? 'PLATFORM ALLOWS IT' : 'ACCEPTED THEN DISCARDED',
+             !added.ok
+               ? `addviewfield was refused with HTTP ${added.status}: `
+                 + added.text.slice(0, 220)
+               : present
+                 ? `FileLeafRef is in the view's fields: ${JSON.stringify(fields)}. The `
+                   + "tool's build error is a TOOL limit, and lifting it is a design "
+                   + 'decision rather than a platform impossibility.'
+                 : 'addviewfield returned HTTP ' + added.status + ' but the view reads '
+                   + `back without FileLeafRef: ${JSON.stringify(fields)}`);
+    }
   }
 
   // ---- L7: a header that names the file -------------------------------
@@ -457,13 +471,21 @@
     } else {
       const back = await spGet(
         `${listPath}/contenttypes('${ctId}')?$select=ClientFormCustomFormatter`);
-      const stored = back.ok && back.body ? back.body.ClientFormCustomFormatter : null;
-      record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
-             stored && String(stored).includes('FileLeafRef')
-               ? 'STORED' : 'ACCEPTED THEN DISCARDED',
-             `on content type '${ct.Name}' (${ctId}), reads back `
-             + `${JSON.stringify(String(stored).slice(0, 220))}. STORAGE ONLY — `
-             + 'see the checklist below.');
+      // Same rule as L6: a read-back that failed is not a discard.
+      if (back.body === null) {
+        record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
+               'NOT ESTABLISHED',
+               `the MERGE returned HTTP ${set.status}, but the read-back failed (HTTP `
+               + `${back.status}), so whether it was stored is unobserved.`);
+      } else {
+        const stored = back.body.ClientFormCustomFormatter;
+        record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
+               stored && String(stored).includes('FileLeafRef')
+                 ? 'STORED' : 'ACCEPTED THEN DISCARDED',
+               `on content type '${ct.Name}' (${ctId}), reads back `
+               + `${JSON.stringify(String(stored).slice(0, 220))}. STORAGE ONLY — `
+               + 'see the checklist below.');
+      }
     }
   }
 
