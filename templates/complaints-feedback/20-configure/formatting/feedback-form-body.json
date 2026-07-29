@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "displayname": "What was raised",
+      "fields": ["Title", "FeedbackType", "Channel", "ReceivedDate", "Detail"]
+    },
+    {
+      "displayname": "Triage",
+      "fields": ["Severity", "Status"]
+    },
+    {
+      "displayname": "Response",
+      "fields": ["AcknowledgedDate", "Outcome", "ClosedDate", "Learning"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["RecordedBy", "Handler"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["DaysToAcknowledge", "DaysToClose"]
+    }
+  ]
+}

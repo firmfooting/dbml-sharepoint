@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "displayname": "The call",
+      "fields": ["Title", "TakenAt", "CallerName", "CallerContact", "ForWhom", "MessageDetail"]
+    },
+    {
+      "displayname": "Urgency",
+      "fields": ["Urgency", "Status"]
+    },
+    {
+      "displayname": "Relay",
+      "fields": ["RelayedTo", "RelayedAt"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["TakenBy"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["MinutesToRelay"]
+    }
+  ]
+}

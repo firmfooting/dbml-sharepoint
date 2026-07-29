@@ -1,0 +1,24 @@
+{
+  "sections": [
+    {
+      "displayname": "The code",
+      "fields": ["Title", "CodeType", "CodeLocation", "IsDrill"]
+    },
+    {
+      "displayname": "Times",
+      "fields": ["AnnouncedAt", "AllClearAt"]
+    },
+    {
+      "displayname": "What switchboard did",
+      "fields": ["InitiatedBy", "EventNotes"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["AnnouncedBy"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["DurationMinutes"]
+    }
+  ]
+}

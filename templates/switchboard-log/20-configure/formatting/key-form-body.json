@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "The key",
+      "fields": ["Title", "KeyRef", "Covers"]
+    },
+    {
+      "displayname": "Who may take it",
+      "fields": ["Restrictions", "Active"]
+    }
+  ]
+}

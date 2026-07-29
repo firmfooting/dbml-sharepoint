@@ -1,0 +1,46 @@
+{
+  "elmType": "div",
+  "attributes": { "class": "ms-borderColor-neutralTertiary" },
+  "style": {
+    "width": "99%",
+    "border-top-width": "0px",
+    "border-bottom-width": "1px",
+    "border-left-width": "0px",
+    "border-right-width": "0px",
+    "border-style": "solid",
+    "margin-bottom": "16px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": { "display": "flex", "box-sizing": "border-box", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": {
+            "iconName": "People",
+            "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+            "title": "Volunteer"
+          },
+          "style": { "flex": "none", "padding": "0px", "height": "auto" }
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "style": { "box-sizing": "border-box", "width": "100%", "text-align": "left", "padding": "4px 8px", "overflow": "hidden" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
+          "txtContent": "=if([$Title] == '', 'New volunteer', 'Volunteer: ' + [$Title])"
+        },
+        {
+          "elmType": "div",
+          "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+          "txtContent": "Record each check's expiry date the day you sight it — the monthly sweep works those dates, and a blank one is invisible to it."
+        }
+      ]
+    }
+  ]
+}

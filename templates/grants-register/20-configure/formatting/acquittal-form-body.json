@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The obligation",
+      "fields": ["Title", "Submission", "DueDate", "ResponsibleTo"]
+    },
+    {
+      "displayname": "Preparing and filing",
+      "fields": ["AcqStatus", "SubmittedDate", "EvidenceUrl"]
+    },
+    {
+      "displayname": "Escalation notes",
+      "fields": ["Notes"]
+    }
+  ]
+}

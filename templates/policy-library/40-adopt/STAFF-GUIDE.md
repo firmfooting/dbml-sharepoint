@@ -2,10 +2,15 @@
 
 ## Finding the current policy (everyone)
 
-Open **PL_PolicyRegister**, find the policy, follow its **Document URL**.
-That link always points at the current published version. If you've been
-emailed a policy document, treat it as a photocopy — the register is the
-truth.
+Open **PL_PolicyRegister** — it opens on **By area**, grouped and collapsed
+by policy domain, so expand yours and the policies in force are the rows
+underneath. Follow the policy's **Document URL**. That link always points
+at the current published version. If you've been emailed a policy document,
+treat it as a photocopy — the register is the truth.
+
+Superseded and withdrawn policies are filtered out of that view on purpose.
+If you need one — to read an approval made under the old policy, say — the
+**Retired** view has them, most recently approved first.
 
 You should only ever see **published** versions in the library — so if you
 can see it, it's in force. That relies on one library setting an
@@ -19,7 +24,9 @@ Tell the policy owner.
 ### Drafting a new policy
 
 1. Add the policy to the **register** first — Status **Draft**, an Owner,
-   and a placeholder ReviewDate. Unregistered documents don't exist.
+   and a placeholder ReviewDate. Unregistered documents don't exist. The
+   form knows this: at Draft, **Approved date** and **Document URL** are
+   not on it at all, because there is nothing yet to approve or link.
 2. Upload the draft to **PL_PolicyDocuments**. It becomes version **0.1**.
    Iterate; each save is 0.2, 0.3 … Ordinary staff do not see it *provided
    Draft Item Security is set to "Only users who can edit"* — confirm that
@@ -29,11 +36,22 @@ Tell the policy owner.
 
 ### Publishing
 
-1. When approved (record the approval body in the register's Notes):
-   library → the file → **Publish** → it becomes **1.0** and appears for
+1. When approved (record the approval body in the register's Notes), set
+   the register row to **Approved** and fill **Approved date** — the form
+   reveals it, and the list refuses to save without it, because the review
+   interval is measured from it. An Approved row renders **amber**, not
+   green: the decision is made and staff still cannot read the policy.
+2. Library → the file → **Publish** → it becomes **1.0** and appears for
    all staff.
-2. Update the register row: Status **Published**, **ApprovedDate**,
-   **ReviewDate** (next review), and the **Document URL**.
+3. Update the register row: Status **Published**, **ReviewDate** (next
+   review), and the **Document URL**, which the form reveals at that
+   status. Nothing checks the link — it is a hyperlink column and no save
+   rule can read one — so a published row with an empty Document URL saves
+   quite happily and helps nobody.
+
+**Work the *In development* view.** It holds every Draft, In review and
+Approved policy, and the amber Approved ones at the top are the ones with
+an action outstanding: approved, unpublished, invisible to staff.
 
 ### Revising
 

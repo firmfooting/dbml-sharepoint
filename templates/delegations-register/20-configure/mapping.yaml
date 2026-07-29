@@ -65,10 +65,249 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (views and
+# indexes key on them); the deployer renames the display Title after
+# create. Auto PascalCase splitting handles every column here correctly, so
+# there are no overrides.
+display_names:
+  mode: auto
+
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md) — status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 column_formatting:
   Delegation:
-    Status: { style: severity, map: { Current: good, Superseded: muted } }
+    # Current moves from `good` to `low`. The style standard's role table
+    # names "Current" in the in-motion band explicitly, and the point of
+    # that table is that colour means the same thing in twenty-nine
+    # templates rather than reflecting twenty-nine judgements. `good` is
+    # the complete-and-healthy band — a delegation in force is neither
+    # complete nor an achievement, it is simply the live state.
+    Status: { style: severity, map: { Current: low, Superseded: muted } }
+    # The register's deadline. Guarded on Superseded, the terminal status:
+    # a superseded row's review date is a fact about a delegation that no
+    # longer exists, and a date that keeps shouting after the row is
+    # finished trains people to ignore the colour.
+    ReviewDate: { style: overdue-date, guard: { field: Status, not: [Superseded] } }
+    # ApprovedDate is deliberately unformatted. It stamps when the
+    # delegating authority approved the instrument this row came from —
+    # a historical fact with no late state.
+
+# Every lens shows the same four identifying columns before its own
+# payload, so the spine is declared once (§1.9).
+field_sets:
+  Delegation:
+    identity: [Title, DelegationArea, RoleHolder, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). These are the four rows the old "Recommended
+# views" table asked the adopter to build by hand, now with filters, sorts,
+# grouping and pixel widths. Widths are keyed on INTERNAL names — the build
+# rewrites them to display titles, because ColumnWidth binds by display
+# name and an internal name silently resets.
+views:
+  Delegation:
+    # The working lookup, and therefore the default. It filters to Current
+    # deliberately: a delegations register answering "what may I approve"
+    # with superseded authority mixed in is worse than not answering.
+    - title: "By area"
+      default: true
+      fields: ["@identity", DelegationLimit, Conditions, SourceInstrument]
+      where:
+        - { field: Status, op: eq, value: "Current" }
+      group_by: { field: DelegationArea, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        DelegationArea: 220
+        RoleHolder: 200
+        Status: 110
+        DelegationLimit: 200
+        Conditions: 220
+        SourceInstrument: 220
+    # "What can this role approve?" — the ten-second check the staff guide
+    # sends people to before they sign something.
+    - title: "By role"
+      fields: ["@identity", DelegationLimit, Conditions, SourceInstrument]
+      where:
+        - { field: Status, op: eq, value: "Current" }
+      group_by: { field: RoleHolder, collapsed: true }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        DelegationArea: 220
+        RoleHolder: 200
+        Status: 110
+        DelegationLimit: 200
+        Conditions: 220
+        SourceInstrument: 220
+    # The published table filtered on ReviewDate alone. Status is added
+    # here: a superseded row's review date is a fact about a delegation
+    # that no longer exists, and leaving those in the queue asks the
+    # quarterly spot-check to re-review authority nobody holds. today+90 is
+    # a ROLLING ninety days — CAML has no calendar-period predicate, and
+    # 50-govern's cadence is quarterly, so rolling is also the honest read.
+    - title: "Reviews due"
+      fields: ["@identity", ReviewDate, ApprovedDate, SourceInstrument]
+      where:
+        - { field: Status, op: eq, value: "Current" }
+        - { field: ReviewDate, op: leq, value: today+90 }
+      sort:
+        - { field: ReviewDate, direction: asc }
+      widths:
+        Title: 300
+        DelegationArea: 220
+        RoleHolder: 200
+        Status: 110
+        ReviewDate: 160
+        ApprovedDate: 160
+        SourceInstrument: 220
+    # The audit trail of authority over time. Notes is in this view rather
+    # than the others because on a superseded row it carries the
+    # supersession trail — which is the one thing an auditor
+    # reconstructing an old approval is reading this view for, and is what
+    # the save rule below makes sure is there.
+    - title: "History"
+      fields: ["@identity", DelegationLimit, SourceInstrument, ApprovedDate, Notes]
+      where:
+        - { field: Status, op: eq, value: "Superseded" }
+      sort:
+        - { field: ApprovedDate, direction: desc }
+      widths:
+        Title: 280
+        DelegationArea: 220
+        RoleHolder: 200
+        Status: 110
+        DelegationLimit: 200
+        SourceInstrument: 220
+        ApprovedDate: 160
+        Notes: 200
+
+# Form layouts: a strapline header and a sectioned body. Per-field
+# description hints render on the NEW form only — the edit form suppresses
+# column descriptions (platform limitation). Section field lists are
+# authored with INTERNAL names; the build rewrites them to display titles.
+#
+# This header DOES carry a guide link, and it is one of the few in the
+# fleet that does. The standard allows one only where a template genuinely
+# points at a single external document, and this register is defined as
+# the searchable mirror of exactly one: the approved instrument of
+# delegation. When the register and the instrument disagree the instrument
+# wins, so a person checking their authority must be one click from it.
+#
+# It ships as a REPLACE-WITH placeholder and 30-deploy/DEPLOY.md makes
+# substituting it a blocking step. Use an absolute https:// address:
+# SharePoint's formatter emits only http, https, mailto and tel links, so a
+# site-relative path is not a valid substitution.
+#
+# Deliberately NOT declared: form_visibility. Nothing on this list is
+# conditional — every column applies to every row, including a superseded
+# one, whose limit and conditions are precisely what an auditor is reading.
+# Hiding Notes until supersession was considered and rejected: it also
+# carries interpretation rulings, which belong on live rows.
+form_formatting:
+  Delegation:
+    header: formatting/delegation-form-header.json
+    body: formatting/delegation-form-body.json
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule has to share one message.
+column_validation:
+  Delegation:
+    columns:
+      # An instrument cannot have been approved by the delegating
+      # authority on a date that has not happened. A future ApprovedDate
+      # is a typed year, and it silently reorders the History view — which
+      # sorts on this column and is the thing an auditor reconstructs an
+      # old approval from.
+      ApprovedDate:
+        when:
+          - { field: ApprovedDate, op: leq, value: today }
+        message: "An instrument cannot have been approved in the future. Use the date the delegating authority actually approved it."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# ONE rule, written as an implication: `if A then B` is `any_of[not A, B]`.
+list_validation:
+  Delegation:
+    when:
+      # 50-govern's instrument-change workflow: an authority that is
+      # removed becomes Superseded "with the supersession noted". Without
+      # the note, the History view shows an authority that stopped existing
+      # and nothing about what replaced it — which is the one question the
+      # view exists to answer.
+      - any_of:
+          - { field: Status, op: neq, value: "Superseded" }
+          - { field: Notes, op: is_not_null }
+    message: "A superseded delegation needs its supersession recorded in Notes — which instrument version replaced it, and where the authority went. The History view is only an audit trail if that line is there."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# review surfaces land on whatever day the demo runs.
+#
+# Coverage: four current authorities across four areas and four roles — so
+# both grouped views have more than one group — two of them inside the
+# ninety-day review window, and one superseded row carrying its
+# supersession trail.
+demo_items:
+  Delegation:
+    - key: dg-opex
+      values:
+        Title: "[DEMO] Approve operating expenditure"
+        DelegationArea: "Financial - expenditure"
+        RoleHolder: "[DEMO] Director of Nursing"
+        DelegationLimit: "up to $50,000 per transaction"
+        Conditions: "two signatories above $20,000; excludes own directorate"
+        SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s3.1(b)"
+        ApprovedDate: "today-200"
+        ReviewDate: "today+165"
+        Status: "Current"
+    - key: dg-procure
+      values:
+        Title: "[DEMO] Sign procurement contracts within approved budget"
+        DelegationArea: "Financial - contracts and procurement"
+        RoleHolder: "[DEMO] Chief Operating Officer"
+        DelegationLimit: "within approved budget, to $250,000 per contract"
+        Conditions: "competitive process completed; probity sign-off above $150,000"
+        SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s4.2(a)"
+        ApprovedDate: "today-200"
+        ReviewDate: "today+40"
+        Status: "Current"
+    - key: dg-hire
+      values:
+        Title: "[DEMO] Sign employment contracts for permanent staff"
+        DelegationArea: "Human resources"
+        RoleHolder: "[DEMO] Executive Director People"
+        DelegationLimit: "no limit within approved establishment"
+        Conditions: "position exists in the approved establishment and is funded"
+        SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s6.1"
+        ApprovedDate: "today-200"
+        ReviewDate: "today+60"
+        Status: "Current"
+    - key: dg-records
+      values:
+        Title: "[DEMO] Approve release of personal information under a lawful request"
+        DelegationArea: "Information and records"
+        RoleHolder: "[DEMO] Privacy Officer"
+        DelegationLimit: "no limit"
+        Conditions: "legal advice obtained where the basis is contested"
+        SourceInstrument: "[DEMO] Instrument of Delegation v4.2, s8.3"
+        ApprovedDate: "today-200"
+        ReviewDate: "today+300"
+        Status: "Current"
+    - key: dg-superseded
+      values:
+        Title: "[DEMO] Approve operating expenditure up to $25,000"
+        DelegationArea: "Financial - expenditure"
+        RoleHolder: "[DEMO] Nurse Unit Manager"
+        DelegationLimit: "up to $25,000 per transaction"
+        Conditions: "own cost centre only"
+        SourceInstrument: "[DEMO] Instrument of Delegation v3.6, s3.1(c)"
+        ApprovedDate: "today-900"
+        ReviewDate: "today-500"
+        Status: "Superseded"
+        Notes: "Demo row. Superseded by v4.2 s3.1(b), which raised the limit and moved the authority to the Director of Nursing. Approvals dated before that version still read against this row."

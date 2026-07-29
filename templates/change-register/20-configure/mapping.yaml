@@ -81,10 +81,358 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes and formulas all key on them); the deployer renames the display
+# Title after create. Auto PascalCase splitting handles every column here
+# except one: "DaysToDecision" splits to "Days To Decision", and a
+# capitalised "To" mid-title reads as a typo on every view header.
+display_names:
+  mode: auto
+  overrides:
+    ChangeRequest:
+      DaysToDecision: "Days to Decision"
+
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# website/docs/reference/style-guide.md). Tokens map by the ROLE a member
+# plays in its lifecycle, never by its wording — which is why Rejected is
+# `muted` here rather than the `blocked` it shipped with. A rejected change
+# is a decision that was taken, not a change that failed; `blocked` is for
+# Failed, Withdrawn and Escalated, and spending the alarm colour on an
+# ordinary "no" is how a register teaches people to ignore red.
+#
+# DaysToDecision is the theme's shared binding: every calculated score in
+# these five templates is a data-bar with an explicit `max`, taking its
+# fill from the band column beside it so the bar and that column can never
+# disagree. Here the band is Urgency, because Urgency is what decides
+# whether a given number of days was acceptable — the same 12 days is fine
+# for a Routine change and a governance failure for an Emergency one. The
+# max is 21 calendar days: the slowest SLA in 50-govern/GOVERNANCE.md is
+# 15 business days, so a full bar is a change that took longer than the
+# most generous authority level allows.
 column_formatting:
   ChangeRequest:
-    Status: { style: severity, map: { Submitted: low, "Under review": neutral, Approved: good, Rejected: blocked, Implemented: good, Closed: good } }
+    Status:
+      style: severity
+      map:
+        Submitted: neutral
+        "Under review": low
+        Approved: good
+        Rejected: muted
+        Implemented: good
+        Closed: good
+    Impact: { style: severity, map: { Low: good, Medium: warning, High: severe } }
+    Urgency: { style: severity, map: { Routine: neutral, Priority: warning, Emergency: severe } }
+    DaysToDecision:
+      style: data-bar
+      max: 21
+      calculated: true
+      color_by:
+        field: Urgency
+        map: { Routine: neutral, Priority: warning, Emergency: severe }
+
+# The intake spine every lens repeats — who asked, for what, when. Five
+# views share it, above §1.9's three-repetition threshold.
+field_sets:
+  ChangeRequest:
+    intake: [Title, ChangeType, RequestedBy, RequestedDate]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). "In flight" is the default: everything still
+# moving, oldest first, which is the list a change manager works from.
+# The four lenses are the register's own workflow — the triage queue, the
+# decision queue grouped by who holds the authority, the approved-but-not-
+# yet-done backlog, and the decision log that is the audit evidence.
+#
+# Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
+# rewrites them to display titles — ColumnWidth binds by display name, and
+# internal names silently reset).
+#
+# Every view showing DaysToDecision also shows Urgency: the bar's fill is
+# translated from that column, and a column formatter can only read columns
+# the view carries.
+views:
+  ChangeRequest:
+    - title: "In flight"
+      default: true
+      fields: ["@intake", Impact, Urgency, Approver, Status]
+      where:
+        - { field: Status, op: not_in, value: ["Rejected", "Implemented", "Closed"] }
+      sort:
+        - { field: RequestedDate, direction: asc }
+      widths:
+        Title: 280
+        ChangeType: 160
+        RequestedBy: 160
+        RequestedDate: 160
+        Impact: 110
+        Urgency: 120
+        Approver: 160
+        Status: 130
+    - title: "Triage queue"
+      fields: ["@intake", Impact, Urgency, Status]
+      where:
+        - { field: Status, op: eq, value: "Submitted" }
+      sort:
+        - { field: RequestedDate, direction: asc }
+      widths:
+        Title: 300
+        ChangeType: 160
+        RequestedBy: 160
+        RequestedDate: 160
+        Impact: 110
+        Urgency: 120
+        Status: 130
+    # Grouped on the person who holds the decision, collapsed, because the
+    # question this view answers is "who am I chasing" before it is "what
+    # am I chasing".
+    - title: "Awaiting decision"
+      fields: ["@intake", Impact, Urgency, Approver, Status]
+      where:
+        - { field: Status, op: eq, value: "Under review" }
+      group_by: { field: Approver, collapsed: true }
+      sort:
+        - { field: RequestedDate, direction: asc }
+      widths:
+        Title: 280
+        ChangeType: 160
+        RequestedBy: 160
+        RequestedDate: 160
+        Impact: 110
+        Urgency: 120
+        Approver: 160
+        Status: 130
+    # Oldest decision first, deliberately: governance rule 2 says an
+    # approved change that stalls past 60 days comes back to the monthly
+    # review, and this sort puts those at the top without a second view.
+    - title: "Approved, not yet implemented"
+      fields: ["@intake", Impact, Urgency, Approver, Status, DecisionDate, DaysToDecision]
+      where:
+        - { field: Status, op: eq, value: "Approved" }
+      sort:
+        - { field: DecisionDate, direction: asc }
+      widths:
+        Title: 260
+        ChangeType: 160
+        RequestedBy: 160
+        RequestedDate: 160
+        Impact: 110
+        Urgency: 120
+        Approver: 160
+        Status: 130
+        DecisionDate: 160
+        DaysToDecision: 150
+    # The audit answer: who approved this change, when, and how long it
+    # took. DaysToDecision is here for the monthly SLA review — sortable,
+    # and coloured by the urgency it was supposed to meet.
+    - title: "Decision log"
+      fields: ["@intake", Impact, Urgency, Status, Approver, DecisionDate,
+               DaysToDecision, ImplementedDate]
+      where:
+        - { field: Status, op: in,
+            value: ["Approved", "Rejected", "Implemented", "Closed"] }
+      sort:
+        - { field: DecisionDate, direction: desc }
+      widths:
+        Title: 240
+        ChangeType: 160
+        RequestedBy: 160
+        RequestedDate: 160
+        Impact: 110
+        Urgency: 120
+        Status: 130
+        Approver: 160
+        DecisionDate: 160
+        DaysToDecision: 150
+        ImplementedDate: 180
+
+# Form layouts: a strapline header and a sectioned body. SharePoint renders
+# per-field description hints inside sectioned forms on the NEW form only —
+# the edit form suppresses column descriptions (platform limitation).
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+#
+# System is last and holds only DaysToDecision, so on the New form it is a
+# heading with nothing under it — calculated columns never render on entry
+# forms. Cosmetic and expected, the same shape risk-register's System
+# section has; the validator exempts the last section for exactly this
+# reason.
+form_formatting:
+  ChangeRequest:
+    header: formatting/changerequest-form-header.json
+    body: formatting/changerequest-form-body.json
+
+# The intake is submit-only for ordinary Members, and this section is what
+# makes the New form match that: a requester describes the change and says
+# how urgent it is, and everything triage and decision own is off the form
+# they see. Nothing here reduces a permission — the ACLs above do that —
+# it stops a submitter being shown fields whose answer is not theirs.
+#
+# Deliberately NOT declared: any rule conditioned on DaysToDecision.
+# Conditional show/hide cannot read a calculated column — the formula stays
+# syntactically valid, so it saves, the readback compares equal and the
+# phase passes, but the form never reacts. The build refuses it.
+form_visibility:
+  ChangeRequest:
+    columns:
+      # Assessed at triage against the governance definitions, not asserted
+      # by the person asking. It defaults to Low, so hiding it from the New
+      # form cannot fail a save.
+      Impact: { new: false }
+      # Defaults to Submitted. A submitter who can pick their own status
+      # can approve their own change, and the decision trail is the whole
+      # product.
+      Status: { new: false }
+      Approver: { new: false }
+      # A decision date and its reasoning exist once a decision does, and
+      # they stay on the form for every state DOWNSTREAM of one. Listing
+      # only Approved and Rejected would hide the recorded decision the
+      # moment a change was implemented — and worse, a manager moving
+      # straight to Implemented or Closed would be refused by the save rule
+      # below for a missing DecisionDate with no field on screen to supply
+      # it. The visible set must cover every state the rule fires in.
+      DecisionDate:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["Approved", "Rejected", "Implemented", "Closed"] }
+      DecisionNotes:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["Approved", "Rejected", "Implemented", "Closed"] }
+      ImplementedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Implemented", "Closed"] }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has a
+# single ValidationFormula and every cross-column rule shares one message.
+# Both dates below are inputs to DaysToDecision, which is why a typo in
+# either is worth refusing: the SLA number the monthly review reads is
+# computed from them and nothing else.
+column_validation:
+  ChangeRequest:
+    columns:
+      RequestedDate:
+        when:
+          - { field: RequestedDate, op: leq, value: today }
+        message: "A change cannot have been requested in the future. Use the date the request was actually raised, or today's date."
+      DecisionDate:
+        when:
+          any_of:
+            - { field: DecisionDate, op: is_null }
+            - { field: DecisionDate, op: leq, value: today }
+        message: "A decision cannot have been made in the future. Use the date the approver actually decided."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# This is half of data-quality rule 1 in 50-govern/GOVERNANCE.md; the other
+# half cannot live here and the governance document now says so.
+list_validation:
+  ChangeRequest:
+    # TWO rules, chained. A list has ONE ValidationFormula, so every
+    # cross-column rule shares this slot — the top-level list is an AND, so
+    # they compose, and each is written as an implication: `if A then B` is
+    # `any_of[not A, B]`.
+    when:
+      # A decided change has a decision date, whichever way it went. Without
+      # it DaysToDecision is blank and the change is invisible to the SLA
+      # review that exists to hold approvers to the authority table.
+      - any_of:
+          - { field: Status, op: not_in,
+              value: ["Approved", "Rejected", "Implemented", "Closed"] }
+          - { field: DecisionDate, op: is_not_null }
+      # Implemented means it landed on a day. Closed is deliberately NOT in
+      # this rule: a rejected change is closed without ever being
+      # implemented, so requiring the date there would refuse the most
+      # ordinary path through the register.
+      - any_of:
+          - { field: Status, op: neq, value: "Implemented" }
+          - { field: ImplementedDate, op: is_not_null }
+    message: "This change cannot be saved yet. A decided change (Approved, Rejected, Implemented or Closed) needs a Decision Date, and an Implemented change needs an Implemented Date."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# queue and SLA surfaces land on whatever day the demo runs; "@me" is the
+# pasting operator. Coverage: every declared view returns rows, every
+# impact and urgency band renders, and the decision log holds one change
+# per outcome — including an Emergency decided in a day (a short red bar)
+# and a Routine one that took three weeks (a full grey one), which is the
+# comparison the bar exists to make.
+demo_items:
+  ChangeRequest:
+    - key: change-portal
+      values:
+        Title: "[DEMO] Replace the paper visitor book with a sign-in form"
+        ChangeType: "Process / procedure"
+        RequestedBy: "@me"
+        RequestedDate: "today-4"
+        Description: "Demo row. Reception keys the paper book into a spreadsheet every Friday. Affects reception and facilities; if we do nothing the evacuation list stays a day out of date."
+        Impact: "Low"
+        Urgency: "Routine"
+        Status: "Submitted"
+    - key: change-mailbox
+      values:
+        Title: "[DEMO] Move the shared enquiries mailbox to a monitored queue"
+        ChangeType: "IT system"
+        RequestedBy: "@me"
+        RequestedDate: "today-2"
+        Description: "Demo row. Nobody owns the shared mailbox, so enquiries are answered twice or not at all. Affects the front office and anyone who emails us."
+        Impact: "Low"
+        Urgency: "Priority"
+        Status: "Submitted"
+    - key: change-invoices
+      values:
+        Title: "[DEMO] Move invoice approvals from paper to Teams"
+        ChangeType: "Process / procedure"
+        RequestedBy: "@me"
+        RequestedDate: "today-9"
+        Description: "Demo row. Invoices are signed on paper and scanned. Affects finance and every budget holder; doing nothing keeps a three-day approval lag and no audit trail."
+        Impact: "Medium"
+        Urgency: "Priority"
+        Status: "Under review"
+        Approver: "@me"
+    # Approved 63 days ago and still not implemented — governance rule 2's
+    # stalled approval, sorted to the top of "Approved, not yet implemented"
+    # by that view's oldest-decision-first ordering.
+    - key: change-signage
+      values:
+        Title: "[DEMO] Renumber the meeting rooms to match the floor plan"
+        ChangeType: "Facility / physical"
+        RequestedBy: "@me"
+        RequestedDate: "today-70"
+        Description: "Demo row. Room numbers do not match the plans, so contractors and couriers get lost. Affects facilities and reception."
+        Impact: "Low"
+        Urgency: "Routine"
+        Status: "Approved"
+        Approver: "@me"
+        DecisionDate: "today-63"
+        DecisionNotes: "Demo row. Approved. Do it at the next signage refresh rather than as its own job."
+    - key: change-firewall
+      values:
+        Title: "[DEMO] Emergency firewall rule for the payments outage"
+        ChangeType: "IT system"
+        RequestedBy: "@me"
+        RequestedDate: "today-20"
+        Description: "Demo row. Payments were failing at the gateway. Rule applied first and recorded within the business day, per the emergency-change clause."
+        Impact: "High"
+        Urgency: "Emergency"
+        Status: "Implemented"
+        Approver: "@me"
+        DecisionDate: "today-19"
+        DecisionNotes: "Demo row. Approved retrospectively by the IT executive owner. Reviewed at the monthly meeting; the underlying certificate expiry is now a registered risk."
+        ImplementedDate: "today-19"
+    - key: change-parking
+      values:
+        Title: "[DEMO] Allocate reserved parking bays by seniority"
+        ChangeType: "Organisational"
+        RequestedBy: "@me"
+        RequestedDate: "today-45"
+        Description: "Demo row. Proposal to reserve bays for senior staff. Affects everyone who drives to site."
+        Impact: "Medium"
+        Urgency: "Routine"
+        Status: "Rejected"
+        Approver: "@me"
+        DecisionDate: "today-24"
+        DecisionNotes: "Demo row. Rejected. Accessibility and shift-worker access outweigh the benefit; revisit only as part of a whole-of-site parking review."

@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "Describe the change",
+      "fields": ["Title", "ChangeType", "RequestedBy", "RequestedDate", "Description"]
+    },
+    {
+      "displayname": "Triage",
+      "fields": ["Impact", "Urgency"]
+    },
+    {
+      "displayname": "Decision and implementation",
+      "fields": ["Status", "Approver", "DecisionDate", "DecisionNotes", "ImplementedDate"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["DaysToDecision"]
+    }
+  ]
+}

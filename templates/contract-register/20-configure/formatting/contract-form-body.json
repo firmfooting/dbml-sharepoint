@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The contract",
+      "fields": ["Title", "Counterparty", "ContractRef", "ContractType", "Summary"]
+    },
+    {
+      "displayname": "Term and value",
+      "fields": ["StartDate", "EndDate", "RenewalType", "NoticePeriodDays", "AnnualValue"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["Owner", "Status", "DocumentUrl"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["TermMonths"]
+    }
+  ]
+}

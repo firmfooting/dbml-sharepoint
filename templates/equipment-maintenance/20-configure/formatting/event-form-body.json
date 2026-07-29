@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The work",
+      "fields": ["Title", "Equipment", "EventType", "EventDate"]
+    },
+    {
+      "displayname": "Outcome",
+      "fields": ["Result", "Notes"]
+    },
+    {
+      "displayname": "Evidence",
+      "fields": ["PerformedBy", "EvidenceUrl"]
+    }
+  ]
+}

@@ -60,10 +60,365 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Internal names stay authoritative (the formula, the lookup, the indexes
+# and the reporting bundle all bind to them); only display titles change.
+# Four overrides, all because PascalCase splitting produces something a
+# driver at a car door would not recognise: "Trip Km" for a kilometre
+# count, and "Odo Start"/"Odo End" for the two numbers this whole register
+# turns on.
+display_names:
+  mode: auto
+  overrides:
+    Vehicle:
+      MakeModel: "Make and Model"
+    Trip:
+      TripKm: "Trip km"
+      OdoStart: "Odometer Start"
+      OdoEnd: "Odometer End"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md).
+#
+# TripType is a pill rather than a severity box because it is a
+# classification, not a state — but Private and Commute are NOT neutral
+# here. They are the rows finance has to look at, they are what makes the
+# business/private split defensible, and they earn the `warning`
+# treatment for exactly that reason: the tax value of the whole log rests
+# on them being honest and few.
+#
+# ReturnedAt is a bespoke file for the same reason visitor-log's
+# SignedOutAt is: a blank cell here is not missing data, it is the fact
+# that the car is out right now. Blank renders as an "Out now" chip;
+# a value renders as the local time it came back.
 column_formatting:
   Vehicle:
-    Status: { style: severity, map: { "In service": low, "In workshop": warning, Disposed: muted } }
+    Status:
+      style: severity
+      map: { "In service": low, "In workshop": warning, "Disposed": muted }
+  Trip:
+    TripType:
+      style: pill
+      map:
+        "Business": neutral
+        "Private - approved": warning
+        "Commute - approved": warning
+    TripKm: { style: data-bar, max: 200, calculated: true }
+    ReturnedAt: formatting/returned-at.json
+
+# The identifying spine every Trip view opens with.
+field_sets:
+  Trip:
+    identity: [Title, Vehicle, Driver, TripType, Purpose, DepartedAt]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view, keyed on
+# INTERNAL names — the build rewrites them to display titles, and
+# ColumnWidth binds by display name.
+views:
+  Vehicle:
+    - title: "The fleet"
+      default: true
+      fields: [Title, Rego, MakeModel, HomeLocation, Status, Notes]
+      where:
+        - { field: Status, op: neq, value: "Disposed" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 240
+        Rego: 130
+        MakeModel: 220
+        HomeLocation: 200
+        Status: 130
+        Notes: 200
+    - title: "In workshop"
+      fields: [Title, Rego, MakeModel, HomeLocation, Status, Notes]
+      where:
+        - { field: Status, op: eq, value: "In workshop" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 240
+        Rego: 130
+        MakeModel: 220
+        HomeLocation: 200
+        Status: 130
+        Notes: 200
+  Trip:
+    # The glance that answers "who has the car?", and the view a driver
+    # opens to close their own trip off on return.
+    - title: "Out now"
+      default: true
+      fields: ["@identity", OdoStart, ReturnedAt]
+      where:
+        - { field: ReturnedAt, op: is_null }
+      sort:
+        - { field: DepartedAt, direction: asc }
+      widths:
+        Title: 220
+        Vehicle: 180
+        Driver: 160
+        TripType: 180
+        Purpose: 220
+        DepartedAt: 180
+        OdoStart: 150
+        ReturnedAt: 180
+    # The published table promised "Per vehicle" — one view filtered to one
+    # vehicle. A static view cannot do that: SharePoint has no per-parent
+    # filter, so following the table meant either hard-coding one vehicle
+    # into a filter that rots the moment the fleet changes, or building one
+    # view per car. Per §2.4 of the family standard this ships as ONE view
+    # grouped on the Vehicle lookup, collapsed — which is the real
+    # SharePoint idiom, stays correct as vehicles are added, and gives the
+    # continuous log book the old row was actually asking for.
+    #
+    # THE ROW WASH LIVES HERE, and this is the one list-level signal this
+    # template gets (§1.6). A negative Trip km means a mis-read odometer,
+    # which is the single worst state in a log book whose whole value is
+    # odometer continuity — and this is the view where continuity is read,
+    # one vehicle's trips in a row. The formatter reads [$TripKm], so
+    # TripKm must stay in this view's `fields`: a view formatter can only
+    # see the columns its own view displays. It compares with Number()
+    # rather than a bare `<`, because a blank Trip km would otherwise
+    # compare as a string.
+    - title: "By vehicle"
+      fields: ["@identity", OdoStart, OdoEnd, TripKm, ReturnedAt, Notes]
+      group_by: { field: Vehicle, collapsed: true }
+      sort:
+        - { field: DepartedAt, direction: desc }
+      formatting: formatting/row-negative-km.json
+      widths:
+        Title: 200
+        Vehicle: 180
+        Driver: 160
+        TripType: 180
+        Purpose: 220
+        DepartedAt: 180
+        OdoStart: 150
+        OdoEnd: 150
+        TripKm: 150
+        ReturnedAt: 180
+        Notes: 200
+    # The `me` sentinel: CAML's <UserID/> compares the person column's
+    # user id, so this is one view for every driver rather than one per
+    # person.
+    - title: "My trips"
+      fields: ["@identity", OdoStart, OdoEnd, TripKm, ReturnedAt]
+      where:
+        - { field: Driver, op: eq, value: me }
+      sort:
+        - { field: DepartedAt, direction: desc }
+      widths:
+        Title: 220
+        Vehicle: 180
+        Driver: 160
+        TripType: 180
+        Purpose: 220
+        DepartedAt: 180
+        OdoStart: 150
+        OdoEnd: 150
+        TripKm: 150
+        ReturnedAt: 180
+    # The published table promised "Monthly km by vehicle — DepartedAt in
+    # month, group by Vehicle, SUM TripKm". ONE substitution remains, and it
+    # is stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
+    # predicate, so this is a rolling thirty days and the title says so.
+    #
+    # Grouped by vehicle and collapsed, SharePoint renders a per-group
+    # subtotal as well as an overall one — the fleet-review figure the
+    # published table asked for.
+    - title: "Last 30 days by vehicle"
+      fields: ["@identity", OdoStart, OdoEnd, TripKm]
+      where:
+        - { field: DepartedAt, op: geq, value: today-30 }
+      group_by: { field: Vehicle, collapsed: true }
+      totals:
+        TripKm: sum
+      sort:
+        - { field: DepartedAt, direction: desc }
+      widths:
+        Title: 220
+        Vehicle: 180
+        Driver: 160
+        TripType: 180
+        Purpose: 220
+        DepartedAt: 180
+        OdoStart: 150
+        OdoEnd: 150
+        TripKm: 150
+
+# A trip is recorded in two halves, thirty seconds each end, which is the
+# habit 40-adopt is built around. So the New form asks only for the half
+# the driver can answer at the key cupboard: the return fields appear on
+# the Edit form, which is what "Out now" is for.
+#
+# reconcile: exact makes this file authoritative for the whole list —
+# every other column's conditional formula is cleared on each deploy.
+form_visibility:
+  Trip:
+    reconcile: exact
+    columns:
+      ReturnedAt: { new: false }
+      OdoEnd: { new: false }
+
+# Form layouts: a strapline header and sections on both lists. The Trip
+# title line falls back to "Trip" rather than "New trip", because Title is
+# optional here — a trip is identified by its vehicle and time, so an empty
+# Title does not mean the row is new. Section field lists are authored with
+# INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  Vehicle:
+    header: formatting/vehicle-form-header.json
+    body: formatting/vehicle-form-body.json
+  Trip:
+    header: formatting/trip-form-header.json
+    body: formatting/trip-form-body.json
+
+# Per-column save rules, each with its own message.
+#
+# TODAY() in a SharePoint validation formula is midnight, so `leq today`
+# on a DATETIME column would reject every departure stamped after 00:00 —
+# that is, all of them. `today+1` is the midnight allowance.
+column_validation:
+  Trip:
+    columns:
+      DepartedAt:
+        when:
+          - { field: DepartedAt, op: leq, value: today+1 }
+        message: "A trip cannot depart in the future. Use the time you actually left."
+      OdoStart:
+        when:
+          - { field: OdoStart, op: geq, value: 0 }
+        message: "An odometer reading cannot be negative. Read it off the dash."
+      OdoEnd:
+        when:
+          - { field: OdoEnd, op: geq, value: 0 }
+        message: "An odometer reading cannot be negative. Read it off the dash."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column. A trip marked as returned with no closing odometer leaves Trip km
+# blank, which breaks the continuity check the whole register rests on —
+# the next trip's start reading has nothing to reconcile against.
+#
+# Deliberately NOT enforced here: that OdoEnd is greater than OdoStart.
+# That is a column-to-column comparison and the condition grammar does not
+# express one — every operand is a literal. A negative Trip km is instead
+# made LOUD, by the row wash on the "By vehicle" view, which is where a
+# fleet owner reads odometer continuity anyway.
+list_validation:
+  Trip:
+    when:
+      any_of:
+        - { field: ReturnedAt, op: is_null }
+        - { field: OdoEnd, op: is_not_null }
+    message: "A trip that has been returned needs its closing odometer reading. Read it off the dash before you walk away from the car."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Vehicles are created
+# first and the trips reference them by demo key. Odometer readings run
+# CONTINUOUSLY per vehicle, oldest trip to newest, because odometer
+# continuity is the thing a fleet owner reads this register for and demo
+# data that does not have it teaches the wrong habit — with one deliberate
+# exception, the van trip whose readings are transposed, which is what
+# drives the negative-kilometre row wash.
+demo_items:
+  Vehicle:
+    - key: ve-hilux
+      values:
+        Title: "[DEMO] White HiLux"
+        Rego: "[DEMO] ABC123"
+        MakeModel: "Toyota HiLux dual cab, 2022"
+        HomeLocation: "Fleet compound - keys at reception"
+        Status: "In service"
+        Notes: "Demo row. Fuel card in the console. Tow bar rated 2.5t."
+    - key: ve-pool2
+      values:
+        Title: "[DEMO] Pool car 2"
+        Rego: "[DEMO] XYZ789"
+        MakeModel: "Toyota Corolla hybrid, 2023"
+        HomeLocation: "Fleet compound - bay 2"
+        Status: "In service"
+        Notes: "Demo row. E-tag fitted. Hybrid - it is silent when started, it is on."
+    - key: ve-van
+      values:
+        Title: "[DEMO] Delivery van"
+        Rego: "[DEMO] DEF456"
+        MakeModel: "Hyundai iLoad, 2019"
+        HomeLocation: "Loading dock"
+        Status: "In workshop"
+        Notes: "Demo row. In for a clutch; workshop expects it back next week."
+    - key: ve-wagon
+      values:
+        Title: "[DEMO] Old wagon"
+        Rego: "[DEMO] GHI012"
+        MakeModel: "Ford Mondeo wagon, 2012"
+        HomeLocation: "Sold"
+        Status: "Disposed"
+        Notes: "Demo row. Sold at auction; kept in the register so its trip history stays readable."
+  Trip:
+    - key: ve-trip-misread
+      values:
+        Title: "[DEMO] Depot run - odometer transposed"
+        Vehicle: { demo_ref: ve-van }
+        Driver: "@me"
+        TripType: "Business"
+        Purpose: "Consumables collection from the regional depot"
+        DepartedAt: "today-40"
+        ReturnedAt: "today-40"
+        OdoStart: 88300
+        OdoEnd: 88240
+        Notes: "Demo row. Trip km comes out negative - the two readings are the wrong way round. This is the row the wash on By vehicle exists to catch."
+    - key: ve-trip-commute
+      values:
+        Title: "[DEMO] Approved commute - on-call weekend"
+        Vehicle: { demo_ref: ve-hilux }
+        Driver: "@me"
+        TripType: "Commute - approved"
+        Purpose: "On-call weekend; vehicle garaged at home per the approved arrangement"
+        DepartedAt: "today-20"
+        ReturnedAt: "today-20"
+        OdoStart: 44980
+        OdoEnd: 45100
+    - key: ve-trip-private
+      values:
+        Title: "[DEMO] Approved private use - Saturday"
+        Vehicle: { demo_ref: ve-pool2 }
+        Driver: "@me"
+        TripType: "Private - approved"
+        Purpose: "Approved private use, logged separately from the business trip on the same day"
+        DepartedAt: "today-12"
+        ReturnedAt: "today-12"
+        OdoStart: 22000
+        OdoEnd: 22026
+    - key: ve-trip-pool
+      values:
+        Title: "[DEMO] Warragul clinic - equipment delivery"
+        Vehicle: { demo_ref: ve-pool2 }
+        Driver: "@me"
+        TripType: "Business"
+        Purpose: "Warragul clinic - deliver replacement observation equipment and collect the faulty unit"
+        DepartedAt: "today-5"
+        ReturnedAt: "today-5"
+        OdoStart: 22026
+        OdoEnd: 22090
+        Notes: "Demo row. Refuelled on the return leg; receipt to finance."
+    - key: ve-trip-recent
+      values:
+        Title: "[DEMO] Regional office - quarterly site inspection"
+        Vehicle: { demo_ref: ve-hilux }
+        Driver: "@me"
+        TripType: "Business"
+        Purpose: "Regional office - quarterly site inspection and contractor walk-through"
+        DepartedAt: "today-2"
+        ReturnedAt: "today-2"
+        OdoStart: 45100
+        OdoEnd: 45210
+    - key: ve-trip-out
+      values:
+        Title: "[DEMO] Supplier pickup - still out"
+        Vehicle: { demo_ref: ve-hilux }
+        Driver: "@me"
+        TripType: "Business"
+        Purpose: "Collect the loan infusion pumps from the supplier and return them to the ward"
+        DepartedAt: "today"
+        OdoStart: 45210

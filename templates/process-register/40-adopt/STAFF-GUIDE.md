@@ -22,7 +22,10 @@ Get the team that actually runs the work in a room with the register open:
    - **PainNotes** — one concrete sentence: "re-keyed three times",
      "only Dana knows how", "audit finding 2025".
 3. Don't solve anything in the workshop. The register's job today is to
-   *see*; solving comes ranked, later.
+   *see*; solving comes ranked, later. The form helps: **Target state** and
+   **System URL** are not on a new row at all. They appear once somebody
+   moves the status off **Not assessed**, which is a decision made after
+   the workshop, not in it.
 
 ## After the workshop (owners)
 
@@ -32,10 +35,29 @@ Get the team that actually runs the work in a room with the register open:
 
 ## As digitisation proceeds
 
-The team doing the digitising updates **DigitisationStatus** and, when a
-process lands in its new home, links it (**SystemUrl**) and sets the state
-to its new truth. **Digitised** means running-in-the-new-way — not
-built-and-ignored (the governance doc defines done).
+The team doing the digitising updates **Digitisation status** and, when a
+process lands in its new home, links it (**System URL**) and sets the
+current state to its new truth. **Digitised** means running-in-the-new-way
+— not built-and-ignored (the governance doc defines done).
+
+Two things the form does as you move the status:
+
+- **Target state** appears as soon as the status leaves *Not assessed*, and
+  the list refuses to save **Planned**, **In progress** or **Digitised**
+  without one. A plan with nowhere named is not a plan.
+- **System URL** appears at *In progress*, so the link can go in while the
+  work is happening rather than being backfilled afterwards.
+
+## The four views, and what each is for
+
+Deployed with the list — there is nothing to build by hand.
+
+| View | Use it when |
+|---|---|
+| **The worklist** *(default)* | The fortnightly programme meeting: everything unsettled, highest score first |
+| **Programme dashboard** | The quarterly counts, grouped by status — and a quick look for Digitised rows missing their link |
+| **By function** | Workshop prep and the annual refresh, one function at a time |
+| **Key-person risk** | The slide leadership remembers: critical processes still on paper or in a spreadsheet |
 
 ## Keeping it alive
 

@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "Who is visiting",
+      "fields": ["Title", "Organisation", "VisitorType", "Purpose"]
+    },
+    {
+      "displayname": "On site",
+      "fields": ["Host", "VisitLocation", "SignedInAt", "BadgeRef", "SignedOutAt"]
+    },
+    {
+      "displayname": "Induction",
+      "fields": ["InductionSighted"]
+    }
+  ]
+}

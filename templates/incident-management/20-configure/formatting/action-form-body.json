@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The action",
+      "fields": ["Title", "Incident", "Notes"]
+    },
+    {
+      "displayname": "Progress",
+      "fields": ["Status", "DueDate", "DoneDate"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["AssignedTo"]
+    }
+  ]
+}
