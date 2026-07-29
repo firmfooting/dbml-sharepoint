@@ -101,9 +101,8 @@ def site_tables_in_order(
 ) -> list[str]:
     """Dependency-ordered table names deployed for this site role.
 
-    The shared role filter jsgen, rollbackgen, demogen and assessgen each
-    previously re-implemented inline. Callers pass
-    ``bundle.mapping.entities``; ordering stays parser-pure."""
+    The one role filter for jsgen, rollbackgen, demogen and assessgen.
+    Callers pass ``bundle.mapping.entities``; ordering stays parser-pure."""
     return [
         name
         for name in compute_phases(schema).list_creation_order

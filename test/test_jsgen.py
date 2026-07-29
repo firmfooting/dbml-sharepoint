@@ -1447,7 +1447,7 @@ def test_view_caml_condition_sort_and_group() -> None:
         dict(
             where=parse_condition([{"field": "Status", "op": "neq", "value": "Closed"}], "w"),
             sort=[ViewSort(field="RiskScore", direction="desc")],
-            group_by=ViewGroupBy(field="Impact", collapsed=True),
+            group_by=ViewGroupBy(fields=["Impact"], collapsed=True),
         ),
         {"Status": "status_enum", "RiskScore": "calculated_number", "Impact": "impact_enum"},
     )
@@ -1457,6 +1457,22 @@ def test_view_caml_condition_sort_and_group() -> None:
         '<Neq><FieldRef Name="Status"/>'
         '<Value Type="Text">Closed</Value></Neq></Or></Where>'
         '<OrderBy><FieldRef Name="RiskScore" Ascending="FALSE"/></OrderBy>'
+    )
+
+
+def test_view_caml_renders_two_group_levels_in_one_groupby() -> None:
+    """SharePoint takes both FieldRefs inside ONE GroupBy — two GroupBy
+    elements would be malformed CAML, not a deeper grouping."""
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+
+    caml = _caml(
+        dict(group_by=ViewGroupBy(fields=["SourceType", "SourceInstrument"], collapsed=False)),
+        {"SourceType": "source_enum", "SourceInstrument": "nvarchar"},
+    )
+    assert caml == (
+        '<GroupBy Collapse="FALSE">'
+        '<FieldRef Name="SourceType"/><FieldRef Name="SourceInstrument"/>'
+        "</GroupBy>"
     )
 
 
@@ -1581,6 +1597,9 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
             '<Value Type="Text">Closed</Value></Neq></Or></Where>'
             '<OrderBy><FieldRef Name="DueDate"/></OrderBy>'
         ),
+        # No totals declared: the empty string is what the deploy reads as
+        # "never touch the live Aggregations property".
+        "aggregations": "",
         "row_limit": 100,
         "set_default": True,
         "renamed_from": ["Active risks"],
@@ -1642,6 +1661,7 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
             "Created", "Modified", "Author", "Editor",
         ],
         "caml_query": "",
+        "aggregations": "",
         "row_limit": None,
         "set_default": True,
         "renamed_from": [],
@@ -2628,3 +2648,90 @@ def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
         "Title", "BoardDate", "OperationsStatus", "WorkforceStatus",
     ]
     assert not any(name.startswith("@") for name in view_fields)
+
+
+# --- Declared view totals ---------------------------------------------------
+
+
+def _aggregations(totals: dict[str, str]) -> str:
+    from dbml_sharepoint.generators.jsgen import _view_aggregations
+    from dbml_sharepoint.model.mapping_loader import ViewDef
+
+    return _view_aggregations(ViewDef(title="V", fields=["Title"], totals=totals))
+
+
+def test_view_aggregations_concatenate_in_declaration_order() -> None:
+    """Order matters twice over: it is the order SharePoint renders the
+    figures in, and the deployer compares the whole string exactly, so a
+    reordering would drift on every redeploy."""
+    assert _aggregations({"TripKm": "sum", "Days": "avg"}) == (
+        '<FieldRef Name="TripKm" Type="SUM"/><FieldRef Name="Days" Type="AVG"/>'
+    )
+
+
+def test_every_function_renders_the_token_sharepoint_documents() -> None:
+    """The tokens transcribed from Microsoft's FieldRef element (Query)
+    reference, which enumerates exactly AVG, COUNT, MAX, MIN, SUM, STDEV
+    and VAR:
+    https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query
+
+    Written out LITERALLY and taken from that reference rather than from
+    English. Deriving them from TOTAL_FUNCTIONS would be tautological, and
+    typing the function's name instead of its token yields values like
+    "Average" that SharePoint stores, round-trips, and then fails the whole
+    view over. A literal test is only as good as the source the literal
+    came from.
+    """
+    assert _aggregations({"A": "sum"}) == '<FieldRef Name="A" Type="SUM"/>'
+    assert _aggregations({"A": "count"}) == '<FieldRef Name="A" Type="COUNT"/>'
+    assert _aggregations({"A": "avg"}) == '<FieldRef Name="A" Type="AVG"/>'
+    assert _aggregations({"A": "min"}) == '<FieldRef Name="A" Type="MIN"/>'
+    assert _aggregations({"A": "max"}) == '<FieldRef Name="A" Type="MAX"/>'
+    assert _aggregations({"A": "stdev"}) == '<FieldRef Name="A" Type="STDEV"/>'
+    assert _aggregations({"A": "var"}) == '<FieldRef Name="A" Type="VAR"/>'
+
+
+def test_no_aggregation_token_is_an_english_word_sharepoint_does_not_know() -> None:
+    """`Average`, `Minimum`, `Maximum`, `Total` and `Mean` are what an
+    author reaches for when transcribing from memory instead of from the
+    enumeration. None is a member of it, and a non-member breaks the view
+    rather than being rejected."""
+    from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
+
+    invented = {"Average", "Minimum", "Maximum", "Total", "Mean"}
+    present = invented & set(TOTAL_FUNCTIONS.values())
+    assert not present, (
+        f"{sorted(present)} are not SharePoint aggregation tokens. The enumeration is "
+        f"AVG, COUNT, MAX, MIN, SUM, STDEV, VAR — a non-member is stored, round-tripped, "
+        f"and then breaks the view's rendering entirely."
+    )
+
+
+def test_every_declared_function_is_pinned_above() -> None:
+    """Guards the guard: a sixth function added to TOTAL_FUNCTIONS without a
+    literal assertion beside it would slip through unrendered-and-untested,
+    which is exactly how the tautological version hid three of five."""
+    from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
+
+    assert set(TOTAL_FUNCTIONS) == {
+        "sum", "count", "avg", "min", "max", "stdev", "var",
+    }
+
+
+def test_a_view_without_totals_renders_no_aggregations() -> None:
+    """Empty is what the deploy reads as "never touch the live property"."""
+    assert _aggregations({}) == ""
+
+
+def test_a_grouped_column_need_not_be_displayed() -> None:
+    """SharePoint renders the grouped value in the group HEADER, from the
+    GroupBy FieldRef, independently of ViewFields — which is why grouping
+    by a column you do not also list is a normal way to avoid repeating the
+    same value in every row. Nothing may refuse it."""
+    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+
+    caml = _caml(
+        dict(group_by=ViewGroupBy(fields=["Area"], collapsed=True)),
+        {"Area": "area_enum"},
+    )
+    assert caml == '<GroupBy Collapse="TRUE"><FieldRef Name="Area"/></GroupBy>'

@@ -68,6 +68,14 @@
         } else if (f.kind === 'me') {
           // Person columns write <Name>Id; the demo owner is the operator.
           body[`${f.name}Id`] = _spPageContextInfo.userId;
+        } else if (f.kind === 'url') {
+          // A URL column takes a record, not a string: SP rejects a bare
+          // literal at create time.
+          body[f.name] = {
+            __metadata: { type: 'SP.FieldUrlValue' },
+            Url: f.value.url,
+            Description: f.value.description,
+          };
         } else if (f.kind === 'ref') {
           const refId = createdIds[f.value];
           if (refId == null) throw new Error(`demo_ref '${f.value}' has no created item`);

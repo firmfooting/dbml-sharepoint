@@ -18,9 +18,9 @@
         {
           "elmType": "div",
           "attributes": {
-            "iconName": "Shield",
+            "iconName": "WorkItem",
             "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
-            "title": "Risk"
+            "title": "Escalation"
           },
           "style": { "flex": "none", "padding": "0px", "height": "auto" }
         }
@@ -33,12 +33,12 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
-          "txtContent": "=if([$Title] == '', 'New risk', 'Risk: ' + [$Title])"
+          "txtContent": "=if([$Title] == '', 'New escalation', 'Escalation: ' + [$Title])"
         },
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Pick Likelihood and Consequence — the rating and score calculate themselves."
+          "txtContent": "State the problem to solve, and name one owner — never a team."
         }
       ]
     }

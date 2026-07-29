@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.conditions import (
     effective_column_types,
     validate_condition,
 )
+from dbml_sharepoint.analysis.typemap import NUMERIC_ONLY_TOTALS
 from dbml_sharepoint.analysis.validator import (
     SYSTEM_COLUMNS,
     Finding,
@@ -15,6 +16,21 @@ from dbml_sharepoint.analysis.validator import (
     formatter_field_refs,
 )
 from dbml_sharepoint.model.mapping_loader import view_url_slug
+
+# What SharePoint can add up. A calculated_number is included deliberately:
+# three of the five columns declared totals exist for in this library are
+# calculated day-counts, and the `string;#` prefix that complicates
+# calculated text is a COLUMN-formatting concern that never reaches a
+# view's Aggregations property.
+_NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
+
+# Columns SharePoint will not add up, subtract or order, whatever their
+# declared DBML type says. Separated from the numeric rule so the message
+# can say "not at all" rather than pointing at `count`.
+#
+# `count` is NOT blocked on these: it counts rows, and SharePoint offers
+# Count on a person or hyperlink column.
+_NON_ARITHMETIC = frozenset({"person", "richtext", "longtext", "hyperlink"})
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -109,6 +125,9 @@ def check(vc: ValidationContext) -> list[Finding]:
         types_by_col = effective_column_types(
             {c.name: c.type for c in view_table.columns}, xcols,
         )
+        # Entity-level: the totals check needs it too, and a lookup's DBML
+        # type is `int`, so nothing downstream can infer it from the type.
+        entity_lookups = {c.name for c in view_table.columns if c.ref is not None}
         titles = [v.title for v in views]
         if "All Items" in titles:
             findings.append(Finding(
@@ -200,7 +219,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             referenced = (
                 [("fields", name) for name in view.fields if not name.startswith("@")]
                 + [("sort", sort.field) for sort in view.sort]
-                + ([("group_by", view.group_by.field)] if view.group_by else [])
+                + [
+                    ("group_by", name)
+                    for name in (view.group_by.fields if view.group_by else [])
+                ]
             )
             for part, name in referenced:
                 if name not in view_rendered:
@@ -213,7 +235,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # The shared grammar owns operator, operand and capability
                 # rules for every conditional surface; duplicating them here
                 # is how the two would drift.
-                lookup_cols = {c.name for c in view_table.columns if c.ref is not None}
+                lookup_cols = entity_lookups
                 findings.extend(
                     Finding("error", message)
                     for message in validate_condition(
@@ -269,6 +291,49 @@ def check(vc: ValidationContext) -> list[Finding]:
                         "error",
                         f"{ctx}: widths[{width_col}] must be between 16 and "
                         f"2000 pixels (got {width_px}).",
+                    ))
+            # Totals bind to a displayed column, like widths — SharePoint
+            # accepts an Aggregations entry naming a field the view has no
+            # column for, and then renders no figure.
+            for total_col, func in view.totals.items():
+                if total_col not in view.fields:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: totals references {total_col!r}, which is not one "
+                        f"of this view's fields — SharePoint has no column to put "
+                        f"the figure under, so no total appears.",
+                    ))
+                    continue
+                # SYSTEM_COLUMN_TYPES for the same reason the `where` check
+                # merges it: ID, Created, Modified, Author and Editor are
+                # renderable in a view without being DBML columns, and
+                # without their types they report as the empty string —
+                # which made Author escape the arithmetic rule and produced
+                # a message reading "is ." on every system column.
+                col_type = {**SYSTEM_COLUMN_TYPES, **types_by_col}.get(total_col, "")
+                if func != "count" and total_col in entity_lookups:
+                    # A lookup is int-typed in DBML, so without this it
+                    # walks straight through the numeric rule. SharePoint
+                    # offers only Count on one; a Sum FieldRef round-trips
+                    # and renders nothing.
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: totals[{total_col}] = {func!r} on a lookup column. "
+                        f"SharePoint can only count a lookup — its stored value is a "
+                        f"row id, not a quantity. Use 'count'.",
+                    ))
+                elif func != "count" and col_type in _NON_ARITHMETIC:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: totals[{total_col}] = {func!r} cannot be computed on "
+                        f"a {col_type} column. Use 'count', which counts rows.",
+                    ))
+                elif func in NUMERIC_ONLY_TOTALS and col_type not in _NUMERIC_FOR_TOTALS:
+                    findings.append(Finding(
+                        "error",
+                        f"{ctx}: totals[{total_col}] = {func!r} needs a numeric "
+                        f"column; {total_col!r} is {col_type or 'of unknown type'}. "
+                        f"Use 'count', which counts rows rather than adding values.",
                     ))
 
     return findings

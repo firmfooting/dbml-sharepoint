@@ -163,7 +163,11 @@ def generate_manifest(
                     f"{entry.field} {entry.direction}" for entry in declared.sort
                 ))
             if declared.group_by is not None:
-                parts.append(f"group by {declared.group_by.field}")
+                parts.append("group by " + " then ".join(declared.group_by.fields))
+            if declared.totals:
+                parts.append("totals: " + ", ".join(
+                    f"{col} {func}" for col, func in declared.totals.items()
+                ))
             return "; ".join(parts)
         return ""
 
