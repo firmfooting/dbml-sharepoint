@@ -79,6 +79,27 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # A null test is its own inverse, and a measure is never null —
             # LEN(blank) is 0, so the flipped comparison already matches.
             return flipped
+        if node.op in ("not_contains", "not_begins_with"):
+            # A negative text predicate is ALREADY true for a blank: indexOf
+            # on an empty string is -1, which satisfies both `< 0` and
+            # `!= 0`. Its negation must therefore be false there, and the
+            # null arm below would OR the blank back in — making an authored
+            # rule and its own negation both true for a blank value.
+            #
+            # That -1 was arithmetic until 2026-07-29, when it was watched:
+            # row 4 of the probe's eyes-on table leaves the box EMPTY, and
+            # both negative candidates were VISIBLE for it
+            # (test/manual/expression-text-operators-probe.js, X2 and X6).
+            # The open form showed the same two columns before anything was
+            # typed, so the answer was seen twice in one run.
+            #
+            # Same reasoning as neq/not_in, and it must stay a separate test:
+            # `_TEXT_OPS` holds all four, and the `flipped.op` half of the
+            # condition below would catch the POSITIVE two by their flips.
+            # For those the null arm is right — `contains` is false for a
+            # blank, so none_of must be true — and dropping it would change
+            # output for a shape that already exists on main.
+            return flipped
         if node.op in ("neq", "not_in") or flipped.op in ("neq", "not_in"):
             # These two inverse operators define the empty value as outside
             # the compared literal/set. Their renderers already carry that
@@ -153,26 +174,52 @@ _TEXT_OPS = frozenset({"contains", "not_contains", "begins_with", "not_begins_wi
 # Operators each target can render. A miss is a build error naming the
 # target — never a formula emitted in hope.
 CAPABILITIES: dict[str, frozenset[str]] = {
-    # CAML has Contains/BeginsWith but no negation of either.
+    # CAML has Contains/BeginsWith and no negation of either, and this is a
+    # PLATFORM limit rather than a gap here — so it is cited rather than
+    # probed. Microsoft's Where element documents its complete child set:
+    # And, BeginsWith, Contains, DateRangesOverlap, Eq, Geq, Gt, In,
+    # Includes, IsNotNull, IsNull, Leq, Lt, Membership, Neq, NotIncludes,
+    # Or. There is no <Not>, no <NotContains> and no <NotBeginsWith>, and
+    # <NotIncludes> negates <Includes> — a MULTI-VALUE membership test, not
+    # a substring match. So "does not contain" has no CAML spelling at all,
+    # by any arrangement of the elements that exist.
+    # https://learn.microsoft.com/sharepoint/dev/schema/where-element-query
     CAML: frozenset(_CAML_OP_TAGS) | {"in", "not_in"},
-    EXPRESSION: frozenset(_EXPR_OPS) | {"is_null", "is_not_null", "in", "not_in"},
+    EXPRESSION: frozenset(_EXPR_OPS) | {"is_null", "is_not_null", "in", "not_in"} | _TEXT_OPS,
     VALIDATION: frozenset(_VALIDATION_OPS) | {"is_null", "is_not_null", "in", "not_in"} | _TEXT_OPS,
 }
 
-# Plausible from the documented syntax, never observed in a formula
-# harvested from a live tenant. Being wrong about unexercised expression
-# syntax has already happened twice in this work, so unverified is treated
-# as unknown and the probe that settles it is named in the error.
+# Operators plausible from the documented syntax but never observed in a
+# formula on a live tenant. Unverified is treated as unknown, and the probe
+# that settles one is named in the error — a signpost pointing at a probe
+# that does not ask reads as though somebody already checked.
 #
-# The named probe must be one that actually asks: a signpost pointing
-# elsewhere reads as though somebody already checked.
-# test/manual/expression-text-operators-probe.js ends in an eyes-on
-# checklist deliberately — length() is documented, stores byte-identical
-# and still evaluates false for every value, so storage alone cannot settle
-# a rendering on this target.
-DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {
-    EXPRESSION: _TEXT_OPS,
-}
+# EMPTY, and what the emptiness means is narrower than it looks: nothing is
+# waiting on a probe that has been WRITTEN AND NOT RUN. It is not a claim
+# that all fourteen operators here were watched.
+#
+# What was watched, on 2026-07-29 and by eye
+# (test/manual/expression-text-operators-probe.js): the four TEXT operators.
+# X6 was the last one carried on reasoning rather than sight, and the second
+# pass added it and found it DISCRIMINATING rather than merely stored —
+# hidden for a value beginning with the needle, visible for the three that
+# do not, with all twenty-four cells of the table matching prediction.
+#
+# The other ten — eq, neq, lt, leq, gt, geq, is_null, is_not_null, in,
+# not_in — predate this list and rest on the form_visibility spec's
+# harvested formulas rather than on a probe of their own. That is a weaker
+# footing than the text four, and it is recorded here rather than smoothed
+# over, because a list whose whole worth is honesty cannot round its own
+# coverage up.
+#
+# It stays here because storage cannot establish anything on this target.
+# SharePoint does not validate ClientValidationFormula on write — a call to
+# a function that does not exist is accepted and read back byte-identical
+# (test/manual/expression-text-operators-probe.js, X0) — so the only proof
+# a rendering works is a person watching a column appear and disappear.
+# Anything added to CAPABILITIES[EXPRESSION] without that belongs here
+# first.
+DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {}
 
 # Transforms a target cannot express at all, as opposed to merely unproven.
 #
@@ -332,6 +379,23 @@ _ISO_DATE_LITERAL = re.compile(
 # declaring one, which is why it takes no `property` and refuses one.
 _ME = "me"
 _PERSON_TYPES = frozenset({"person"})
+
+# Column types a substring test cannot mean anything on. A DENYLIST, not a
+# whitelist, because a Choice column's declared type IS its enum name — a
+# whitelist would have to know every enum in every schema, and would refuse
+# `contains` on a choice, which is the one non-text case that does make
+# sense.
+#
+# What it stops: the renderers type the needle by the COLUMN, so
+# `contains` on a boolean emitted `indexOf([$Flag], true)` — a substring
+# search for an unquoted boolean — and on a number `indexOf([$Count], 5)`.
+# Neither is a shape any probe has sent: the text-operator probe built its
+# subject as `<Field Type="Text"/>` and every one of its six candidates
+# used a quoted string needle.
+_NON_TEXT_FOR_SUBSTRING = frozenset({
+    "boolean", "int", "number", "date", "datetime", "person",
+    "calculated_number", "calculated_date",
+})
 # <UserID/> is an identity. Ordering it, or asking whether it contains a
 # substring, is meaningless rather than merely unrendered.
 _ME_OPS = frozenset({"eq", "neq"})
@@ -354,6 +418,28 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
             f"and enable it deliberately",
             context,
         )
+    if leaf.op in ("not_contains", "not_begins_with") and target == CAML:
+        # The generic message below names an operator the author very
+        # likely never wrote: `none_of[contains]` normalises to
+        # `not_contains` before it reaches here, so "operator
+        # 'not_contains' has no rendering" reads as a tool defect. It is a
+        # platform one, it is permanent, and the two targets where the same
+        # condition DOES render are worth naming rather than leaving the
+        # author to discover.
+        positive = NEGATION[leaf.op]
+        raise _reject(
+            target,
+            f"a view filter cannot say {leaf.op!r}. CAML has <Contains> and "
+            f"<BeginsWith> and no negation of either — its <Where> element has "
+            f"no <Not>, and <NotIncludes> negates <Includes>, which is a "
+            f"multi-value membership test rather than a substring match. This "
+            f"is a SharePoint limit, not one this tool can lift. (If you wrote "
+            f"none_of[{positive}], that is where this came from.) The same "
+            f"condition renders on column_validation/list_validation and on "
+            f"form_visibility; for a view, filter the other way round, or "
+            f"precompute the test into a column and filter on that",
+            context,
+        )
     if leaf.op not in CAPABILITIES[target]:
         raise _reject(target, f"operator {leaf.op!r} has no rendering", context)
     if leaf.measure and target in _UNSUPPORTED_MEASURE:
@@ -368,6 +454,26 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         raise _reject(target, f"operator {leaf.op!r} takes no 'value'", context)
     if leaf.op in ("in", "not_in") and not isinstance(leaf.value, list):
         raise _reject(target, f"operator {leaf.op!r} needs a list 'value'", context)
+    if leaf.op in _TEXT_OPS and leaf.value == "":
+        # Meaningless before it is wrong: `contains(x, '')` is true of every
+        # possible value and `not_contains(x, '')` false of every one, so no
+        # authored rule wants this.
+        #
+        # It also broke `none_of`. indexOf('', '') is 0, so `contains` is
+        # TRUE for a blank field and its negation must be FALSE — but the
+        # null arm `_push` adds for the positive text operators ORs the
+        # blank back in, and the rule and its negation both came out true.
+        # Refusing costs nothing and needs no claim about how SharePoint
+        # compares an empty needle; special-casing the normaliser would
+        # need one.
+        raise _reject(
+            target,
+            f"operator {leaf.op!r} needs a non-empty 'value' — an empty needle "
+            f"matches every value on the positive operators and none on the "
+            f"negative ones, so the condition cannot discriminate. Use "
+            f"'is_null'/'is_not_null' to test for a blank column",
+            context,
+        )
     if leaf.op in ("in", "not_in") and not leaf.value:
         raise _reject(
             target,
@@ -641,6 +747,15 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     # is_not_null on the same column hits — the tool contradicting itself,
     # and routing the author to whichever spelling the guard misses.
     declared_type = _column_type(leaf.field, types, target, where)
+    if leaf.op in _TEXT_OPS and declared_type in _NON_TEXT_FOR_SUBSTRING:
+        raise _reject(
+            target,
+            f"operator {leaf.op!r} is a substring test and {leaf.field!r} is "
+            f"{declared_type!r}, so the needle would be typed as {declared_type!r} "
+            f"and searched for inside a value that is not text. Compare it instead "
+            f"(eq/neq/lt/leq/gt/geq), or test a text column",
+            where,
+        )
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
     if declared_type in forbidden:
         raise _reject(target, f"{leaf.field!r} is {forbidden[declared_type]}", where)
@@ -742,6 +857,22 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             return f"{ref} == ''"
         if leaf.op == "is_not_null":
             return f"{ref} != ''"
+        if leaf.op in _TEXT_OPS:
+            # All four text operators go through indexOf, which returns the
+            # position or -1. One function carries the whole set, so there
+            # is one behaviour to have verified rather than three.
+            #
+            # startsWith() and substring(...) == also render begins_with
+            # correctly on a live tenant, and are not used: an extra
+            # function is an extra thing that has to keep being true.
+            literal = _expr_literal(column_type, leaf.value, where)
+            found = f"indexOf({ref}, {literal})"
+            return {
+                "contains": f"{found} >= 0",
+                "not_contains": f"{found} < 0",
+                "begins_with": f"{found} == 0",
+                "not_begins_with": f"{found} != 0",
+            }[leaf.op]
         return f"{ref} {_EXPR_OPS[leaf.op]} {_expr_literal(column_type, leaf.value, where)}"
 
     return _validation_leaf(leaf, column_type, where)

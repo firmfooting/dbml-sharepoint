@@ -507,7 +507,12 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
             condition = parse_condition(
                 [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
             )
-            with pytest.raises(ValueError, match="point in time"):
+            # Two guards now refuse this, and the type one fires first: a
+            # substring test on a datetime column is wrong whatever the
+            # value is, so it never reaches the sentinel check. Both
+            # messages are correct; the alternation keeps this test honest
+            # about which one the author actually sees.
+            with pytest.raises(ValueError, match=r"point in time|substring test"):
                 to_validation(condition, TYPES)
         # CAML renders only the positive two directly, and it did render
         # them, as
@@ -518,7 +523,7 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
             condition = parse_condition(
                 [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
             )
-            with pytest.raises(ValueError, match="point in time"):
+            with pytest.raises(ValueError, match=r"point in time|substring test"):
                 to_caml(condition, TYPES)
 
 
@@ -641,16 +646,175 @@ def test_not_in_on_a_date_column_checks_every_member() -> None:
         to_caml(condition, TYPES)
 
 
-def test_operators_pending_probe_are_disabled_for_the_expression_target() -> None:
-    """Plausible from documentation, never run against a tenant. This
-    project has twice been wrong about unexercised expression syntax, so
-    unverified is treated as unknown."""
+def test_text_operators_render_through_indexof_on_the_expression_target() -> None:
+    """All four go through indexOf, which returns the position or -1.
+
+    One function carries the set, so there is one behaviour to have
+    verified rather than three. `startsWith()` and `substring(...) ==` also
+    render begins_with correctly on a live tenant and are deliberately
+    unused: an extra function is an extra thing that has to keep being true.
+
+    All four renderings were watched in a form on 2026-07-29
+    (test/manual/expression-text-operators-probe.js), across four values
+    including the empty one, with no deviation from the expected truth
+    table. Storage proves nothing on this target — SharePoint accepts a
+    call to a function that does not exist, and did so again on that run —
+    so nothing but that eyes-on pass could have established it.
+
+    `!= 0` took two passes. It was not among the candidates the first
+    carried (`>= 0`, `< 0`, `== 0`, `startsWith()`, `substring(...) ==`) and
+    shipped as the exact negation of the watched `== 0`, which is sound but
+    is not sight. The second pass added it as X6 and watched it
+    discriminate: hidden for a value beginning with the needle, visible for
+    the three that do not.
+    """
+    expected = {
+        "contains": ">= 0",
+        "not_contains": "< 0",
+        "begins_with": "== 0",
+        "not_begins_with": "!= 0",
+    }
+    for op, tail in expected.items():
+        condition = parse_condition([{"field": "Note", "op": op, "value": "needle"}], "ctx")
+        assert to_expression(condition, TYPES) == f"indexOf([$Note], 'needle') {tail}"
+
+
+def test_text_operator_literals_keep_the_expression_escaping() -> None:
+    """The operand is a literal like any other: single-quoted, apostrophe
+    doubled. Rendering it any other way inside indexOf would break the
+    formula on exactly the values most likely to need matching."""
+    condition = parse_condition(
+        [{"field": "Note", "op": "contains", "value": "O'Brien"}], "ctx",
+    )
+    assert to_expression(condition, TYPES) == "indexOf([$Note], 'O''Brien') >= 0"
+
+
+def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
+    """`none_of[contains]` normalises to `not_contains` before it reaches
+    the renderer, so the generic capability message named an operator the
+    author never wrote and read as a defect here.
+
+    It is a SharePoint limit and a permanent one: the `<Where>` element's
+    documented child set has no `<Not>` and no `<NotContains>`, and
+    `<NotIncludes>` negates `<Includes>` — a multi-value membership test,
+    not a substring match. The message says so, says where the condition
+    DOES render, and names the authored spelling it most likely came from.
+    """
+    for authored in (
+        [{"field": "Note", "op": "not_contains", "value": "x"}],
+        {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]},
+        {"none_of": [{"field": "Note", "op": "begins_with", "value": "x"}]},
+    ):
+        condition = parse_condition(authored, "ctx")
+        with pytest.raises(ValueError, match="cannot say"):
+            to_caml(condition, TYPES)
+        # ...and both formula targets render it, which is the point of
+        # naming them in the message.
+        assert to_validation(condition, TYPES)
+        assert to_expression(condition, TYPES)
+
+
+def test_a_text_operator_refuses_a_column_that_is_not_text() -> None:
+    """The renderers type the needle by the COLUMN, so a substring test on a
+    non-text column emitted a search for an unquoted operand:
+
+        Flag  (boolean) contains 'yes' -> indexOf([$Flag], true) >= 0
+        Count (int)     contains 5     -> indexOf([$Count], 5) >= 0
+
+    Neither is a shape any probe sent: the text-operator probe built its
+    subject as `<Field Type="Text"/>` and every candidate used a quoted
+    string needle. A denylist rather than a whitelist, because a Choice
+    column's declared type is its ENUM NAME, and `contains` on a choice is
+    the one non-text case that does mean something.
+    """
+    types = {"Flag": "boolean", "Count": "int", "When": "date", "Who": "person"}
+    for field in types:
+        condition = parse_condition(
+            [{"field": field, "op": "contains", "value": "x"}], "ctx",
+        )
+        with pytest.raises(ValueError, match="substring test"):
+            to_expression(condition, types)
+
+
+def test_a_text_operator_still_works_on_text_and_choice() -> None:
+    """The mirror. A Choice column carries its enum name as its type, so a
+    whitelist would have refused the case that matters most."""
+    types = {"Note": "nvarchar", "Status": "event_status", "Body": "longtext"}
+    for field in types:
+        condition = parse_condition(
+            [{"field": field, "op": "contains", "value": "x"}], "ctx",
+        )
+        assert f"indexOf([${field}], 'x')" in to_expression(condition, types)
+
+
+def test_a_text_operator_refuses_an_empty_needle() -> None:
+    """`contains(x, '')` is true of every possible value and `not_contains`
+    is false of every one, so an empty needle is an authoring mistake on all
+    four operators however it renders.
+
+    It also broke `none_of`. `indexOf('', '')` is 0, so `contains` is TRUE
+    for a blank field and its negation must be FALSE — but the null arm
+    `_push` adds for the positive operators ORs the blank back in:
+
+        none_of[contains(Note, '')]
+          -> ([$Note] == '' || indexOf([$Note], '') < 0)   # true when blank
+
+    Refused rather than special-cased in the normaliser: the rule is
+    meaningless before it is wrong, and refusing it needs no claim about how
+    SharePoint compares an empty needle."""
+    for op in ("contains", "not_contains", "begins_with", "not_begins_with"):
+        condition = parse_condition(
+            [{"field": "Note", "op": op, "value": ""}], "ctx",
+        )
+        # CAML renders only the positive two directly; the negatives reach
+        # it through normalisation, and asked for bare they are refused
+        # earlier for having no rendering at all.
+        targets = (
+            (to_caml, to_validation, to_expression)
+            if op in ("contains", "begins_with")
+            else (to_validation, to_expression)
+        )
+        for render in targets:
+            with pytest.raises(ValueError, match="empty"):
+                render(condition, TYPES)
+
+        # `none_of` is the shape that was actually wrong, and the two formula
+        # targets are where it was reachable. CAML sees the FLIPPED operator,
+        # and half of those have no CAML tag at all, so it refuses a step
+        # earlier for a different and older reason.
+        negated = parse_condition(
+            {"none_of": [{"field": "Note", "op": op, "value": ""}]}, "ctx",
+        )
+        for render in (to_validation, to_expression):
+            with pytest.raises(ValueError, match="empty"):
+                render(negated, TYPES)
+
+
+def test_nothing_is_pending_a_probe_without_one_named() -> None:
+    """DISABLED_PENDING_PROBE is empty: every operator rendered onto the
+    expression target has been watched working in a form.
+
+    If an entry is added, its error must name a probe that exists — a
+    signpost pointing at a probe that does not ask the question reads as
+    though somebody already checked.
+    """
+    from dbml_sharepoint.analysis.conditions import DISABLED_PENDING_PROBE
+
+    for target, operators in DISABLED_PENDING_PROBE.items():
+        assert operators, f"{target} has an empty pending set; remove the key"
+
+
+def test_one_authored_operator_renders_on_every_target_it_claims() -> None:
+    """`contains` reaches all three targets, each in that target's own
+    dialect: a CAML element, an Excel-style function, and an indexOf
+    comparison. The point of the grammar is that the author writes the
+    operator once."""
     condition = parse_condition(
         [{"field": "Status", "op": "contains", "value": "x"}], "ctx",
     )
     assert "<Contains>" in to_caml(condition, TYPES)
-    with pytest.raises(ValueError, match="not yet verified"):
-        to_expression(condition, TYPES)
+    assert to_validation(condition, TYPES) == 'ISNUMBER(FIND("x",[Status]))'
+    assert to_expression(condition, TYPES) == "indexOf([$Status], 'x') >= 0"
 
 
 # === Hardening from the adversarial review ==================================
@@ -1016,6 +1180,47 @@ def test_negating_negative_operators_does_not_admit_nulls() -> None:
     assert "IsNull" not in to_caml(not_in, {"Status": "nvarchar"})
     assert to_validation(neq, {"Status": "nvarchar"}) == '[Status]="Closed"'
     assert to_validation(not_in, {"Status": "nvarchar"}) == 'OR([Status]="A",[Status]="B")'
+
+
+def test_negating_a_negative_text_operator_does_not_admit_nulls_either() -> None:
+    """`not_contains` and `not_begins_with` are TRUE for a blank — indexOf on
+    an empty string is -1, which is both `< 0` and `!= 0` — so their negation
+    must be FALSE there. The null arm `_push` adds for relational operators
+    ORs the blank back in, which made an authored rule and its own negation
+    both true for a blank value. They belong with neq/not_in, whose renderers
+    already carry the empty-value semantic.
+
+    The blank behaviour is watched, not assumed: row 4 of the probe's
+    eyes-on table leaves the box empty, and both negative candidates were
+    visible for it on 2026-07-29.
+
+    Now that these operators reach the expression target this is reachable
+    from `form_visibility.when`, where the wrong answer shows a field that
+    should be hidden."""
+    types = {"Note": "nvarchar"}
+    for op, expected_expr in (
+        ("not_contains", "indexOf([$Note], 'x') >= 0"),
+        ("not_begins_with", "indexOf([$Note], 'x') == 0"),
+    ):
+        condition = parse_condition(
+            {"none_of": [{"field": "Note", "op": op, "value": "x"}]}, "w",
+        )
+        assert to_expression(condition, types) == expected_expr
+        assert "ISBLANK" not in to_validation(condition, types)
+        assert "IsNull" not in to_caml(condition, types)
+
+
+def test_negating_a_positive_text_operator_still_admits_nulls() -> None:
+    """The mirror, and the reason the exemption names two operators rather
+    than reusing the four-member text set. `contains` is FALSE for a blank,
+    so `none_of` must be TRUE there — which the null arm already delivers.
+    Removing it would change output for a shape that exists on main."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "begins_with", "value": "x"}]}, "w",
+    )
+    assert to_validation(condition, {"Note": "nvarchar"}) == (
+        'OR(ISBLANK([Note]),NOT(LEFT([Note],1)="x"))'
+    )
 
 
 # --- The `me` sentinel ------------------------------------------------------

@@ -45,17 +45,21 @@ everywhere else in this package.
 | `is_not_null` | `<IsNotNull><FieldRef Name="Note"/></IsNotNull>` | `[$Note] != ''` | `NOT(ISBLANK([Note]))` |
 | `in` | `<Or><Eq><FieldRef Name="Status"/><Value Type="Text">A</Value></Eq><Eq><FieldRef Name="Status"/><Value Type="Text">B</Value></Eq></Or>` | `([$Status] == 'A' || [$Status] == 'B')` | `OR([Status]="A",[Status]="B")` |
 | `not_in` | `<Or><IsNull><FieldRef Name="Status"/></IsNull><And><Neq><FieldRef Name="Status"/><Value Type="Text">A</Value></Neq><Neq><FieldRef Name="Status"/><Value Type="Text">B</Value></Neq></And></Or>` | `([$Status] != 'A' && [$Status] != 'B')` | `AND([Status]<>"A",[Status]<>"B")` |
-| `contains` | `<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>` | _not supported — operator 'contains' is not yet verified against a live tenant for this target; confirm it with test/manual/expression-text-operators-probe.js and enable it deliberately_ | `ISNUMBER(FIND("x",[Note]))` |
-| `begins_with` | `<BeginsWith><FieldRef Name="Note"/><Value Type="Text">ab</Value></BeginsWith>` | _not supported — operator 'begins_with' is not yet verified against a live tenant for this target; confirm it with test/manual/expression-text-operators-probe.js and enable it deliberately_ | `LEFT([Note],2)="ab"` |
+| `contains` | `<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>` | `indexOf([$Note], 'x') >= 0` | `ISNUMBER(FIND("x",[Note]))` |
+| `begins_with` | `<BeginsWith><FieldRef Name="Note"/><Value Type="Text">ab</Value></BeginsWith>` | `indexOf([$Note], 'ab') == 0` | `LEFT([Note],2)="ab"` |
 | `measure: length` | _not supported — 'measure' cannot be rendered: CAML has no LEN_ | _not supported — 'measure' cannot be rendered: list formatting's length() counts array items and returns 1/0 for other types — it does not measure a string, so the formula would be false for every value_ | `LEN([Note])>10` |
 | `property (person)` | _not supported — CAML cannot reach person or lookup sub-properties_ | `[$Owner.title] != ''` | _not supported — person and lookup operands are unsupported in validation formulas_ |
 
 ## Not yet verified
 
-On the **expression** target these are refused until confirmed
-against a live tenant: `begins_with`, `contains`, `not_begins_with`, `not_contains`. Plausible from documented syntax
-is not the same as observed, and this project has twice been wrong
-about expression syntax it had not run.
+Nothing is waiting on a probe that has been written and not run. That
+is what this section reports, and an empty one is the good state — so
+it says so rather than leaving a blank.
+
+It is not a claim that every operator was watched in a form. The four
+text operators were; the comparison and null tests rest on formulas
+harvested from a live tenant rather than on written syntax. Where a
+rendering is derived rather than observed, the source says so.
 
 ## Operand accessors
 
