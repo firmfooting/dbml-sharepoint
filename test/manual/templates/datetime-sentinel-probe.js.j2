@@ -396,10 +396,21 @@
     // accepted-then-discarded is a distinct and worse outcome than either.
     const back = await spGet(
       `${fieldsPath}/getbyinternalnameortitle('${FIELD}')?$select=ValidationFormula`);
-    const stored = back.ok && back.body ? back.body.ValidationFormula : null;
-    record('V1', 'NOW() in a ValidationFormula',
-           stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
-           `HTTP ${nowFormula.status}; reads back ${JSON.stringify(stored)}`);
+    // A failed read-back is not a discard. Same rule the library probe's L6
+    // and L7 follow: "SharePoint threw the formula away" is a claim, and a
+    // throttled GET is not evidence for it.
+    if (!back.ok || back.body === null) {
+      record('V1', 'NOW() in a ValidationFormula', 'NOT ESTABLISHED',
+             `the MERGE returned HTTP ${nowFormula.status}, but the read-back failed `
+             + `(HTTP ${back.status}), so whether the formula was kept is unobserved — `
+             + 'and V2 below is then evaluating under a rule this run cannot confirm '
+             + 'is in force.');
+    } else {
+      const stored = back.body.ValidationFormula;
+      record('V1', 'NOW() in a ValidationFormula',
+             stored ? 'ACCEPTED' : 'ACCEPTED THEN DISCARDED',
+             `HTTP ${nowFormula.status}; reads back ${JSON.stringify(stored)}`);
+    }
     // Inert is the outcome that would fool a deploy: it saves, it reads back
     // equal, every phase passes, and the rule never fires.
     const future = await trySave('V2 future by three hours', LATER_TODAY);
