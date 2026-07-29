@@ -1,6 +1,7 @@
 # test/test_conditions.py
 """The shared condition grammar: parse, normalise, render."""
 
+import datetime as dt
 from pathlib import Path
 
 import pytest
@@ -481,6 +482,80 @@ def test_real_date_literals_still_pass() -> None:
             [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
         )
         assert value in to_caml(condition, TYPES)
+
+
+def test_a_date_operand_that_is_not_a_string_is_refused() -> None:
+    """The guard used to run only on `str`, and YAML does not hand this
+    module strings. `value: 20260729` arrives as an int and `value: true` as
+    a bool; both stringify straight into `<Value Type="DateTime">` and
+    produce exactly the silently-empty view 'banana' is refused for."""
+    for bad in (20260729, True, 2026.5):
+        condition = parse_condition(
+            [{"field": "Due", "op": "leq", "value": bad}], "ctx",
+        )
+        for render in (to_caml, to_validation, to_expression):
+            with pytest.raises(ValueError, match="is not a date"):
+                render(condition, TYPES)
+
+
+def test_an_unquoted_yaml_date_is_a_date_object_and_still_passes() -> None:
+    """`value: 2026-07-29` unquoted resolves to a `datetime.date` before this
+    module sees it. `str()` on one is byte-identical to the quoted literal,
+    so it renders unchanged rather than being refused."""
+    condition = parse_condition(
+        [{"field": "Due", "op": "leq", "value": dt.date(2026, 7, 29)}], "ctx",
+    )
+    assert "2026-07-29" in to_caml(condition, TYPES)
+
+
+def test_an_unquoted_yaml_datetime_is_refused_and_says_to_quote_it() -> None:
+    """`value: 2026-07-29T14:30:00` unquoted resolves to a `datetime`, and
+    `str()` on one spells the separator as a SPACE — a form no probe has
+    run. Quoting it gives the `T` spelling that is verified, so the refusal
+    names that rather than claiming the value is not a date."""
+    # Naive on purpose, hence the noqa: an unquoted YAML datetime with no
+    # offset is exactly what PyYAML hands this module, and attaching a tzinfo
+    # would test a value the loader never produces.
+    naive = dt.datetime(2026, 7, 29, 14, 30)  # noqa: DTZ001
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": naive}], "ctx",
+    )
+    for render in (to_caml, to_validation, to_expression):
+        with pytest.raises(ValueError, match="quote it"):
+            render(condition, TYPES)
+
+
+def test_a_null_test_on_a_date_column_needs_no_date() -> None:
+    """`is_null` carries value None by construction, and widening the guard
+    past `str` must not read that as a bad date."""
+    condition = parse_condition([{"field": "Due", "op": "is_null"}], "ctx")
+    assert to_caml(condition, TYPES) == '<IsNull><FieldRef Name="Due"/></IsNull>'
+
+
+def test_a_date_shape_with_no_verified_rendering_is_refused() -> None:
+    """`fromisoformat` takes ANY single character as the date/time separator,
+    plus basic format and ISO week dates, and the literal is emitted
+    unchanged — so a one-character typo would otherwise reach the wire
+    wearing the guard's approval. Unverified is treated as unknown, the same
+    rule `now±N` follows."""
+    for bad in ("2026-07-29x14:30:00", "20260729", "2026-W01-1", "2026-07-29 14:30:00"):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": "leq", "value": bad}], "ctx",
+        )
+        for render in (to_caml, to_validation, to_expression):
+            with pytest.raises(ValueError, match="is not a date"):
+                render(condition, TYPES)
+
+
+def test_not_in_on_a_date_column_checks_every_member() -> None:
+    """CAML renders `not_in` by looping the members itself, which walked
+    straight past the guard: one bad literal among good ones produced a
+    filter that silently matched nothing."""
+    condition = parse_condition(
+        [{"field": "Due", "op": "not_in", "value": ["2026-07-29", "banana"]}], "ctx",
+    )
+    with pytest.raises(ValueError, match="is not a date"):
+        to_caml(condition, TYPES)
 
 
 def test_operators_pending_probe_are_disabled_for_the_expression_target() -> None:
