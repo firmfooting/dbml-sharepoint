@@ -72,11 +72,12 @@ quietly going stale.
 
 - **Rule 3, "Digitised rows carry a SystemUrl", is NOT a save rule**, and
   the reason is worth recording rather than leaving as an omission.
-  `SystemUrl` is a Hyperlink column, and this repository has not run a
-  hyperlink operand through a SharePoint validation formula against a live
-  tenant. The documented syntax makes it look fine; so did several other
-  things that were not. Unverified is treated as unknown here, so the rule
-  ships as a **visual** control instead: `System URL` is a column on the
+  `SystemUrl` is a Hyperlink column, and **SharePoint will not accept a
+  validation formula that references one** — it answers HTTP 500, *"One or
+  more column references are not allowed, because the columns are defined
+  as a data type that is not supported in formulas."* That is established
+  against a live tenant, and the build refuses the operand, so the rule
+  cannot be written at all. It ships as a **visual** control instead: `System URL` is a column on the
   **Programme dashboard**, which groups by status and collapses, so a
   Digitised row with no link is an empty cell in a column of links. That is
   a compensating control, not an equivalent one, and the fortnightly
