@@ -2,31 +2,76 @@
   "sections": [
     {
       "displayname": "Stop and route safely",
-      "fields": ["SafetyScreen"]
+      "fields": [
+        "SafetyScreen"
+      ]
     },
     {
       "displayname": "Capture once",
-      "fields": ["Title", "ProblemStatement", "ServiceArea", "EvidenceLink", "SourceProject", "ProjectReference", "ScopeBoundary"]
+      "fields": [
+        "Title",
+        "ProblemStatement",
+        "ServiceArea",
+        "EvidenceLink",
+        "SourceProject",
+        "ProjectReference",
+        "ScopeBoundary"
+      ]
     },
     {
       "displayname": "Triage and route",
-      "fields": ["IdentifiedDate", "ProjectContact", "ProjectRelationship", "Theme", "AffectedGroups", "EvidenceSummary", "TriageOutcome"]
-    },
-    {
-      "displayname": "Own the next step",
-      "fields": ["OpportunityOwner", "Status", "NextAction", "NextActionDue"]
+      "fields": [
+        "IdentifiedDate",
+        "ProjectContact",
+        "ProjectRelationship",
+        "Theme",
+        "AffectedGroups",
+        "EvidenceSummary",
+        "TriageOutcome"
+      ]
     },
     {
       "displayname": "Assess only if needed",
-      "fields": ["BenefitType", "BenefitPotential", "TimeCriticality", "EffortBand", "StrategicAlignment", "PatientConsumerImpact", "BenefitMeasure", "PriorityOverride"]
+      "fields": [
+        "BenefitType",
+        "BenefitPotential",
+        "TimeCriticality",
+        "EffortBand",
+        "StrategicAlignment",
+        "PatientConsumerImpact",
+        "BenefitMeasure",
+        "PriorityOverride"
+      ]
+    },
+    {
+      "displayname": "Own the next step",
+      "fields": [
+        "OpportunityOwner",
+        "Status",
+        "NextAction",
+        "NextActionDue"
+      ]
     },
     {
       "displayname": "Decide and hand off",
-      "fields": ["DecisionMaker", "DecisionDueDate", "DecisionDate", "DecisionRationale", "DeliveryRoute", "ReviewDueDate", "DestinationReference", "DestinationLink"]
+      "fields": [
+        "DecisionMaker",
+        "DecisionDueDate",
+        "DecisionDate",
+        "DecisionRationale",
+        "DeliveryRoute",
+        "ReviewDueDate",
+        "DestinationReference",
+        "DestinationLink"
+      ]
     },
     {
       "displayname": "System",
-      "fields": ["PriorityBand", "PriorityScore", "DaysToDecision"]
+      "fields": [
+        "PriorityBand",
+        "PriorityScore",
+        "DaysToDecision"
+      ]
     }
   ]
 }
