@@ -31,16 +31,40 @@ stamped into the manifest.
 ```yaml
 entities:
   Risk:   { kind: List, base_template: 100, site_role: default }
-  Policy: { kind: DocumentLibrary, base_template: 101, site_role: default }
 ```
 
 | Key | Meaning |
 |---|---|
-| `kind` | `List`, `DocumentLibrary`, or `HubOnlyList` |
-| `base_template` | SP base template id (100 generic list, 101 document library) |
+| `kind` | `List` or `HubOnlyList`. `DocumentLibrary` is **refused** — see below |
+| `base_template` | SP base template id (100 generic list) |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
 | `display_column` | Optional; which column represents the row in lookups |
+
+:::danger `kind: DocumentLibrary` is refused at build time
+
+A library's items **are files**, and this tool writes list rows. The gap is
+not cosmetic, and each part of it was observed on a live tenant
+(`test/manual/document-library-probe.js`):
+
+- a POST to a library's `/items` is refused outright — *"To add an item to
+  a document library, use SPFileCollection.Add()"* — so seeded demo data
+  cannot exist;
+- an uploaded file reads back with `Title: null`, the name living in
+  `FileLeafRef`, so a form header built on `[$Title]` renders blank on
+  every document;
+- nothing in the deploy uploads a file, which is the feature seeding a
+  library would actually need.
+
+Half-support — a library that provisions but carries no usable header, no
+view naming its files and no demo rows — reads as a bug in every
+direction, so the kind fails the build instead.
+
+**What to do instead:** model the metadata as a `List`, and keep the
+documents in a library you manage separately, linked from each row with a
+hyperlink column. That is the shape every shipped template uses.
+
+:::
 
 Site roles are the multi-site story: one schema, several mappings of
 entities to site types, one build per site.

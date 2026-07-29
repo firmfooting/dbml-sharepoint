@@ -26,6 +26,38 @@ def check(vc: ValidationContext) -> list[Finding]:
     tables_by_name = vc.tables_by_name
     cross_site_by_entity = vc.cross_site_by_entity
     findings: list[Finding] = []
+
+    # `kind: DocumentLibrary` is REFUSED, and refused here so that it fails
+    # at build rather than part-way through a paste.
+    #
+    # A library's items are files, and this tool writes list rows. The gap
+    # is not cosmetic: SharePoint answers a POST to a library's /items with
+    # HTTP 500, "To add an item to a document library, use
+    # SPFileCollection.Add()", so seeded demo data cannot exist; a library's
+    # Title is null after an upload, with the name in FileLeafRef, so the
+    # standard form header renders blank on every document; and the deploy
+    # has no upload step to offer instead. Each of those was observed on a
+    # tenant on 2026-07-29 (test/manual/document-library-probe.js).
+    #
+    # Half-support — a library that provisions but can carry no view naming
+    # its files, no usable header and no demo rows — reads as a bug in every
+    # direction. Refusing is the honest state until the work in issue #14 is
+    # done: a file-upload step in the deploy, a file-identity column
+    # vocabulary, and a header anatomy that does not rest on [$Title].
+    for entity_name, entity in bundle.mapping.entities.items():
+        if entity.kind == "DocumentLibrary":
+            findings.append(Finding(
+                "error",
+                f"entities[{entity_name}]: kind 'DocumentLibrary' is not supported. "
+                f"A library's items are files and this tool writes list rows, so a "
+                f"library cannot carry seeded demo data (SharePoint refuses a POST to "
+                f"/items outright), its Title is empty after an upload so the standard "
+                f"form header renders blank, and nothing here uploads a file. Model the "
+                f"metadata as a 'List' and keep the documents in a library you manage "
+                f"separately, linking to it with a hyperlink column. See issue #14 for "
+                f"the measurements behind this and what support would require.",
+            ))
+
     # Every entity in the mapping must exist in the schema.
     for entity_name in bundle.mapping.entities:
         if entity_name not in table_names:

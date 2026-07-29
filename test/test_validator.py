@@ -2726,6 +2726,43 @@ def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
     ), errors
 
 
+def test_a_document_library_entity_is_refused_outright(tmp_path: Path) -> None:
+    """`kind: DocumentLibrary` fails the build, with or without demo rows.
+
+    A library's items are files and this tool writes list rows. Probed on a
+    tenant (test/manual/document-library-probe.js, 2026-07-29): SharePoint
+    answers a POST to a library's /items with "To add an item to a document
+    library, use SPFileCollection.Add()", and an uploaded file reads back
+    with `Title: null`, so the standard form header renders blank.
+
+    Half-support — a library that provisions but carries no usable header,
+    no view naming its files and no demo rows — reads as a bug in every
+    direction, so the kind is refused until that work is done. The message
+    must offer the way round, because an adopter hitting this needs to know
+    a List plus a hyperlink column is the supported shape.
+    """
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Docs {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }\n",
+        encoding="utf-8",
+    )
+    schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    offending = [f for f in errors if "not supported" in f.message]
+    assert offending, errors
+    assert "entities[Docs]" in offending[0].message
+    assert "List" in offending[0].message, "the message must name the supported shape"
+
+
 # --- Declared view totals ---------------------------------------------------
 
 
