@@ -156,10 +156,29 @@
   const ghost = await spPost(`${listPath}/items`,
                              { Title: '[DEMO] probe fileless item' }, digest);
   if (!ghost.ok) {
-    record('L2', 'POST /items on a document library', 'REFUSED',
-           `HTTP ${ghost.status}: ${ghost.text.slice(0, 300)}. This is the GOOD `
-           + 'outcome: demo data cannot be generated for a library, and the build '
-           + 'error that assumes so now rests on evidence.');
+    // THE row the shipped refusal rests on, so it says which kind of "no"
+    // it got. The recorded 2026-07-29 answer was a 500 carrying
+    // "To add an item to a document library, use SPFileCollection.Add()" —
+    // content-specific, and a 500 on its own is not: a throttle or an
+    // outage lands in the same branch. What makes it evidence is the
+    // MESSAGE, so the message is what the verdict turns on.
+    const saysWhy = /SPFileCollection|document library/i.test(ghost.text || '');
+    record('L2', 'POST /items on a document library',
+           saysWhy ? 'REFUSED — AND SAYS WHY'
+                   : isRefusal(ghost.status) ? 'REFUSED' : 'NOT ESTABLISHED',
+           saysWhy
+             ? `HTTP ${ghost.status}: ${ghost.text.slice(0, 300)}. This is the GOOD `
+               + 'outcome, and the body names the reason rather than leaving the '
+               + 'status to imply it: demo data cannot be generated for a library, '
+               + 'and the build error that assumes so rests on this.'
+             : isRefusal(ghost.status)
+               ? `HTTP ${ghost.status}: ${ghost.text.slice(0, 300)}. Refused, but the `
+                 + 'body does not say a library is why. Read it before treating this '
+                 + 'as the library answer.'
+               : `HTTP ${ghost.status}: ${ghost.text.slice(0, 300)}. That is not the `
+                 + 'server refusing the content — a throttle or an outage lands here '
+                 + 'too — so this run has not established what a library does with '
+                 + 'a fileless POST. Re-run.');
     for (const id of ['L3', 'L4']) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE',
              'no item was created at L2');

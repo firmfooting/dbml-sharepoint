@@ -248,7 +248,7 @@
          junk.ok
            ? `a call to dbmlspNoSuchFunction was ACCEPTED and stored as `
              + `${JSON.stringify(junkStored)} — SharePoint is not validating these `
-             + 'formulas on write, so treat every X1-X5 "ACCEPTED" as storage only '
+             + 'formulas on write, so treat every candidate "ACCEPTED" as storage only '
              + 'and rely entirely on the eyes-on table'
            : isRefusal(junk.status)
              ? `refused with HTTP ${junk.status}: ${junk.text.slice(0, 260)}`
@@ -256,7 +256,7 @@
                + 'refusing the formula, so this control established nothing: '
                + junk.text.slice(0, 200));
 
-  // ---- X1-X5: the candidates ------------------------------------------
+  // ---- X1-X6: the candidates ------------------------------------------
   for (const [id, field, label, formula] of CANDIDATES) {
     const set = await setExpression(field, formula);
     if (!set.ok) {
