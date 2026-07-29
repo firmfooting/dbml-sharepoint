@@ -1,0 +1,28 @@
+{
+  "sections": [
+    {
+      "displayname": "The pattern",
+      "fields": ["Title", "Provider", "ServiceAffected", "IssueSummary", "FirstObserved"]
+    },
+    {
+      "displayname": "Weight and evidence",
+      "fields": ["Materiality", "EventCount", "CommitmentEngaged", "BusinessConsequence"]
+    },
+    {
+      "displayname": "Raising it",
+      "fields": ["Status", "RaisedDate", "RaisedWith", "EscalationLevel"]
+    },
+    {
+      "displayname": "Response and remedy",
+      "fields": ["ResponseDate", "ResponseSummary", "RemedyAgreed", "RemedyDueDate"]
+    },
+    {
+      "displayname": "Ownership and closure",
+      "fields": ["IssueOwner", "NextReviewDue", "Outcome", "ClosedDate"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["DaysToResponse"]
+    }
+  ]
+}
