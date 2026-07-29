@@ -54,6 +54,17 @@
  *        STORAGE ONLY — whether it renders needs eyes, and the checklist
  *        at the end asks for them.
  *
+ * L7 HAS NOT BEEN RE-RUN SINCE 2026-07-29. The run on that date took the
+ * first content type the collection happened to return, and a library
+ * carries a Folder content type as well as a Document one; which of the two
+ * accepted the formatter was never established. The selection is now by id,
+ * the way the deploy does it, but nobody has pasted the corrected script
+ * into a tenant. Treat L7's recorded STORED as a result about an unnamed
+ * content type until it is run again. Nothing shipped rests on it: the
+ * refusal of `kind: DocumentLibrary` names L2 (a POST to /items is refused)
+ * and L5 (Title is null after an upload), plus the fact that this tool has
+ * no upload step — none of which touch the content type L7 wrote to.
+ *
  * READ LN FIRST. If a nonsense item write is ACCEPTED, this probe cannot
  * distinguish refusal from success and L2 is unproven rather than answered.
  *
@@ -272,13 +283,23 @@
       txtContent: "=if([$FileLeafRef] == '', 'New document', 'Document: ' + [$FileLeafRef])",
     }],
   };
-  const cts = await spGet(`${listPath}/contenttypes?$select=Id,Name&$top=5`);
-  const ctId = cts.ok && cts.body && cts.body.value && cts.body.value[0]
-    ? cts.body.value[0].Id.StringValue || cts.body.value[0].Id
-    : null;
+  // The collection is unordered and a library carries a Folder content type
+  // as well as a Document one, so value[0] can be the folder — which would
+  // store the formatter somewhere no document ever reads it and report STORED
+  // regardless. Same rule the deploy uses (src/dbml_sharepoint/templates/
+  // deploy/_forms.js.j2): the first id under 0x01 that is not under 0x0120.
+  // The accessor stays `Id.StringValue`, not `StringId`: this harness runs
+  // odata=nometadata, and StringValue is the spelling the 2026-07-29 run
+  // proved works under it.
+  const cts = await spGet(`${listPath}/contenttypes?$select=Id,Name&$top=20`);
+  const ctIdOf = (ct) => String((ct && ct.Id && ct.Id.StringValue) || (ct && ct.Id) || '');
+  const ct = ((cts.ok && cts.body && cts.body.value) || [])
+    .find((c) => ctIdOf(c).startsWith('0x01') && !ctIdOf(c).startsWith('0x0120'));
+  const ctId = ct ? ctIdOf(ct) : null;
   if (!ctId) {
     record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
-           'NOT ESTABLISHED', `could not read the library's content types (HTTP ${cts.status})`);
+           'NOT ESTABLISHED',
+           `could not find a non-folder content type on the library (HTTP ${cts.status})`);
   } else {
     digest = await getDigest();
     const set = await spPost(`${listPath}/contenttypes('${ctId}')`, {
@@ -294,7 +315,8 @@
       record('L7', 'A library content type accepts a header referencing [$FileLeafRef]',
              stored && String(stored).includes('FileLeafRef')
                ? 'STORED' : 'ACCEPTED THEN DISCARDED',
-             `reads back ${JSON.stringify(String(stored).slice(0, 220))}. STORAGE ONLY — `
+             `on content type '${ct.Name}' (${ctId}), reads back `
+             + `${JSON.stringify(String(stored).slice(0, 220))}. STORAGE ONLY — `
              + 'see the checklist below.');
     }
   }
