@@ -184,12 +184,14 @@ may still belong to a theme worth raising.
   cannot open the themes list itself, and *Escalation Level* and *Raised
   Date* are not shown to them — but assume the title line is. Keep the frank
   assessment in **The pattern**, which stays on the themes list.
-- **A response date earlier than the date it answers.** Neither *Response
-  Date* against its *Follow-up Date*, nor a theme's *Response Date* against
-  its *Raised Date*, can be refused when the row is saved — the form can
-  compare a date against today, but not against another date on the same row.
-  A reversed pair shows up as a negative *Days to respond* or *Days to
-  response*. Look for it in the monthly reconciliation.
+- **A date earlier than the one it answers.** Three pairs cannot be refused
+  when the row is saved — the form can compare a date against today, but not
+  against another date on the same row: *Response Date* against its
+  *Follow-up Date*, a theme's *Response Date* against its *Raised Date*, and
+  *Resolved Date* against *Occurred At*. Look for them in the monthly
+  reconciliation. The first two show up as a negative *Days to respond* or
+  *Days to response*; the third does **not** show anywhere, because *Days
+  Outstanding* is on no view, so it is the one you have to go and look for.
 
 ## Retention and lifecycle
 
