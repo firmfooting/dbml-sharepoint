@@ -134,10 +134,31 @@
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
   //
-  // 400 only. 401/403 are about who is asking, 408/429 and every 5xx are
-  // about the moment rather than the content, and treating any of them as a
-  // refusal is the same substitution this project keeps having to undo.
-  const isRefusal = (status) => status === 400;
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500 —
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.

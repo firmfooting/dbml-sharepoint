@@ -147,10 +147,31 @@
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
   //
-  // 400 only. 401/403 are about who is asking, 408/429 and every 5xx are
-  // about the moment rather than the content, and treating any of them as a
-  // refusal is the same substitution this project keeps having to undo.
-  const isRefusal = (status) => status === 400;
+  // Defined by what it EXCLUDES, because the tempting definition is wrong
+  // here. "400 means bad request" is the HTTP convention and it is not what
+  // this tenant does: every SharePoint refusal this project has recorded
+  // came back 500 —
+  //
+  //   "To add an item to a document library, use SPFileCollection.Add()"
+  //   "One or more column references are not allowed, because the columns
+  //    are defined as a data type that is not supported in formulas"
+  //   "The formula refers to a column that does not exist"
+  //   "This field type does not support..."
+  //
+  // (analysis/checks/_structure.py, analysis/conditions.py, generators/
+  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // therefore have reported NOT ESTABLISHED for every negative control on a
+  // tenant behaving exactly as recorded, which is the opposite failure and a
+  // worse one: it would quietly retire the controls the stack's own evidence
+  // rests on.
+  //
+  // So: 401/403 are about WHO is asking and 408/429 about the moment; those
+  // are never refusals. Everything else non-2xx is treated as the server
+  // rejecting the content, and the response TEXT is always printed beside
+  // the verdict so a reader can see which it was.
+  const isRefusal = (status) =>
+    status >= 400 && status !== 401 && status !== 403
+    && status !== 408 && status !== 429;
 
   // extraHeaders carries X-HTTP-Method for MERGE/DELETE: SharePoint tunnels
   // both through POST rather than accepting them as real verbs.
@@ -414,13 +435,18 @@
       record('K3', 'Does $expand on the lookup reach the target row\'s other columns?',
              side.ok
                ? sideRaw.includes(SIDE) ? 'OTHER COLUMNS ALSO VISIBLE'
-                                        : 'DISPLAY FIELD ONLY'
+                 : sideRaw.includes(SECRET) ? 'DISPLAY FIELD ONLY'
+                 : 'NOT ESTABLISHED'
                : sideRefused ? 'REFUSED' : 'NOT ESTABLISHED',
              side.ok
                ? sideRaw.includes(SIDE)
                  ? 'a column that is NOT the lookup display field came back too '
                    + `(${JSON.stringify(SIDE)}), so the exposure is wider than the title`
-                 : `the display field came back but ${JSON.stringify(SIDE)} did not`
+                 : sideRaw.includes(SECRET)
+                   ? `the display field came back and ${JSON.stringify(SIDE)} did not`
+                   : 'NEITHER field came back, so this says nothing about the second '
+                     + 'one: the response may simply not carry the linked row. Body: '
+                     + JSON.stringify(sideRaw.slice(0, 300))
                : sideRefused
                  ? '$expand naming a second target column was refused with HTTP '
                    + `${side.status}: ${JSON.stringify(String(side.body).slice(0, 200))}`
@@ -557,15 +583,27 @@
   // through (it checks the NAME exists, never the type), so whether the
   // platform accepts it is the whole question.
   const calcLookup = await addLookup(PICK, LABEL);
+  // The calculated label column has to exist before any of this means
+  // anything: if addField refused IT, addfield refusing the lookup says
+  // nothing about calculated display fields.
   record('K5', 'Does SharePoint accept a CALCULATED column as a lookup display field?',
-         calcLookup.ok ? 'ACCEPTED' : 'REFUSED',
-         calcLookup.ok
-           ? `addfield with LookupFieldName='${LABEL}' (a Calculated column) returned `
-             + `HTTP ${calcLookup.status}. Accepted is not the same as usable — K6 and `
-             + 'K7 are what decide that.'
-           : `HTTP ${calcLookup.status}: ${calcLookup.text.slice(0, 300)}. The empty-label `
-             + 'trick cannot be built this way on this tenant, so a shorter picker needs '
-             + 'a different mechanism.');
+         !labelMade.ok ? 'NOT ESTABLISHED'
+           : calcLookup.ok ? 'ACCEPTED'
+           : isRefusal(calcLookup.status) ? 'REFUSED' : 'NOT ESTABLISHED',
+         !labelMade.ok
+           ? `the calculated column '${LABEL}' could not be created (HTTP `
+             + `${labelMade.status}), so there was never a calculated display field to `
+             + 'point a lookup at: ' + labelMade.text.slice(0, 200)
+           : calcLookup.ok
+             ? `addfield with LookupFieldName='${LABEL}' (a Calculated column) returned `
+               + `HTTP ${calcLookup.status}. Accepted is not the same as usable — K6 and `
+               + 'K7 are what decide that.'
+             : isRefusal(calcLookup.status)
+               ? `HTTP ${calcLookup.status}: ${calcLookup.text.slice(0, 300)}. The `
+                 + 'empty-label trick cannot be built this way on this tenant, so a '
+                 + 'shorter picker needs a different mechanism.'
+               : `the request failed with HTTP ${calcLookup.status}, which is not the `
+                 + 'server refusing the column: ' + calcLookup.text.slice(0, 200));
 
   digest = await getDigest();
   const sourceRow = await spPost(`web/lists/getbytitle('${SOURCE}')/items`, {
@@ -604,6 +642,28 @@
              `could not link a row through '${PICK}' to the target row: HTTP `
              + `${linkedToClosed.status}: ${linkedToClosed.text.slice(0, 240)}`);
     } else {
+      // BEFORE closing: prove the label is actually rendering. K6's whole
+      // conclusion is drawn from the title's ABSENCE afterwards, so without
+      // this a calculated column that never computed at all would read as
+      // "the transition blanked it" — the absence has to be shown to be a
+      // CHANGE rather than the way it always was.
+      const before = await spGet(
+        `web/lists/getbytitle('${SOURCE}')/items(${linkedToClosed.body.Id})`
+        + `?$select=${PICK}/${LABEL}&$expand=${PICK}`);
+      const labelWasRendering =
+        !readFailed(before) && JSON.stringify(before.body).includes(CLOSED_TITLE);
+      if (!labelWasRendering) {
+        record('K6', 'With the label empty, what does an ALREADY LINKED item read back as?',
+               'NOT ESTABLISHED',
+               `the link was made, but the label was NOT rendering before the target `
+               + `was closed (HTTP ${before.status}; body `
+               + `${JSON.stringify(String(JSON.stringify(before.body)).slice(0, 200))}). `
+               + 'There is no transition to observe: an empty read afterwards would be '
+               + 'the state it started in.');
+        return report();
+      }
+      log('OK', `'${LABEL}' renders through the lookup before closing.`);
+
       // Now close it. The label goes empty UNDER an existing link, which is
       // the state a theme reaches when a curator concludes it.
       digest = await getDigest();
