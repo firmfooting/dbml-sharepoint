@@ -13,7 +13,7 @@ tested one at a time.
 
 from dataclasses import dataclass, field
 
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
 
@@ -38,12 +38,49 @@ class ValidationContext:
     # each check, so no two of them can disagree about what "calculated"
     # means — which is the whole point of this object.
     calculated_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    # Effective SharePoint indexes declared by the schema: bare DBML
+    # indexes plus the implicit index SharePoint creates for a supported
+    # [unique] column. Kept here because both the per-list index ceiling and
+    # filtered-view safety checks must use exactly the same accounting.
+    explicit_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    unique_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    effective_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
 
     @classmethod
     def build(cls, schema: Schema, bundle: MappingBundle) -> "ValidationContext":
         cross_site_by_entity: dict[str, set[str]] = {}
         for xref in bundle.mapping.cross_site_reference_columns:
             cross_site_by_entity.setdefault(xref.entity, set()).add(xref.column)
+        enum_names = {e.name for e in schema.enums}
+        explicit_indexes_by_entity = {
+            table.name: {
+                index.columns[0]
+                for index in table.indexes
+                if len(index.columns) == 1
+            }
+            for table in schema.tables
+        }
+        unique_indexes_by_entity = {
+            table.name: {
+                column.name
+                for column in table.columns
+                if (
+                    column.unique
+                    # SharePoint creates the built-in ID index itself; the
+                    # declared identity column is not rendered by this tool.
+                    and not (
+                        column.name == "Id"
+                        and column.is_pk
+                        and column.is_auto_increment
+                    )
+                    # Cross-site logical columns expand to two companion
+                    # fields, so the declared column itself never exists.
+                    and column.name not in cross_site_by_entity.get(table.name, set())
+                    and supports_unique(column, enum_names)
+                )
+            }
+            for table in schema.tables
+        }
         return cls(
             schema=schema,
             bundle=bundle,
@@ -58,8 +95,21 @@ class ValidationContext:
                 }
                 for table in schema.tables
             },
+            explicit_indexes_by_entity=explicit_indexes_by_entity,
+            unique_indexes_by_entity=unique_indexes_by_entity,
+            effective_indexes_by_entity={
+                table.name: (
+                    explicit_indexes_by_entity[table.name]
+                    | unique_indexes_by_entity[table.name]
+                )
+                for table in schema.tables
+            },
         )
 
     def cross_site_columns(self, entity_name: str) -> set[str]:
         """Cross-site reference columns declared on one entity."""
         return self.cross_site_by_entity.get(entity_name, set())
+
+    def effective_indexes(self, entity_name: str) -> set[str]:
+        """Declared and implicit SharePoint indexes for one entity."""
+        return self.effective_indexes_by_entity.get(entity_name, set())

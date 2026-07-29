@@ -65,6 +65,20 @@ comparisons, so counting the authored leaf as one would let a tree
 inside the cap render far past the formula length the cap exists to
 protect.
 
+### `condition_fields`
+
+```python
+def condition_fields(node: Condition) -> frozenset[str]
+```
+
+Every field referenced by a condition tree.
+
+Values are deliberately ignored: valueless operators such as
+``is_null`` still carry a field, while sentinels such as ``today`` are
+operands rather than column references. The helper is shared by
+checks that need the dependency set without rendering or re-walking
+the grammar in their own way.
+
 ### `CAML`
 
 ```python

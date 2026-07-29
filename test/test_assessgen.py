@@ -110,8 +110,7 @@ def test_assess_is_read_only() -> None:
     posts = re.findall(r"method:\s*'POST'", js)
     for m in re.finditer(r"method:\s*'POST'", js):
         window = js[max(0, m.start() - 400): m.start() + 400]
-        assert any(tok in window for tok in
-                   ("contextinfo", "ProcessQuery", "GetSiteScriptFromWeb")), window
+        assert any(tok in window for tok in ("contextinfo", "ProcessQuery")), window
     assert posts, "expected at least the contextinfo POST"
 
 

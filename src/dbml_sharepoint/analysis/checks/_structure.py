@@ -3,7 +3,6 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.ordering import compute_phases
-from dbml_sharepoint.analysis.typemap import supports_unique
 from dbml_sharepoint.analysis.validator import (
     CALCULATED_TYPES,
     MAX_CALCULATED_FORMULA,
@@ -16,6 +15,23 @@ _UNSUPPORTED_INDEX_TYPES = {
     "longtext": "Multiple lines of text (Note)",
     "richtext": "Multiple lines of text (Note)",
     "hyperlink": "Hyperlink",
+}
+
+# Calculated fields accept only a documented subset of column types as
+# operands. Microsoft lists Single line of text, Number, Currency, Date and
+# Time, Choice, Yes/No, and Calculated; its formula examples state explicitly
+# that Lookup fields are not supported:
+# https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists
+#
+# Person is also absent from the supported-type list and was refused live
+# with HTTP 500 ("data type ... not supported in formulas"), recorded in the
+# DBML reference on 2026-07-27. The broader manual matrix added on 2026-07-30
+# at test/manual/calculated-operand-probe.js has not yet been run, so
+# longtext, richtext and hyperlink stay allowed rather than guessed into this
+# denylist.
+_FORBIDDEN_CALCULATED_OPERANDS = {
+    "lookup": "a Lookup column",
+    "person": "a Person column",
 }
 
 # The generic list. It is the only BaseTemplate this tool builds for, and
@@ -202,21 +218,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
         # Unique fields carry an implicit SharePoint index and count toward
         # the same per-list ceiling as explicit declarations.
-        unique_indexes = {
-            col.name for col in indexed_table.columns
-            if (
-                col.unique
-                and col.name in rendered
-                and supports_unique(col, set(vc.enum_by_name))
-            )
-        }
+        unique_indexes = vc.unique_indexes_by_entity.get(entity_name, set())
         for duplicate in sorted(set(indexed) & unique_indexes):
             findings.append(Finding(
                 "error",
                 f"{entity_name}.indexes: {duplicate!r} is already indexed by "
                 "its column [unique] setting; remove the redundant indexes entry.",
             ))
-        effective_indexes = set(indexed) | unique_indexes
+        effective_indexes = vc.effective_indexes(entity_name)
         if len(effective_indexes) > 20:
             findings.append(Finding(
                 "error",
@@ -367,6 +376,33 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"[{ref}], which is not a rendered column of "
                     f"{table.name} — SharePoint would reject the field "
                     f"creation at deploy time.",
+                ))
+            columns_by_name = {candidate.name: candidate for candidate in table.columns}
+            xcols = cross_site_by_entity.get(table.name, set())
+            for ref in sorted(refs & declared):
+                operand = columns_by_name.get(ref)
+                # Generated cross-site companions have no declared Column
+                # object and are plain Text/Hyperlink fields. In particular,
+                # <ref>Abbreviation is the supported formula rewrite; do not
+                # mistake the logical ref it replaces for this companion.
+                if operand is None or operand.name in xcols:
+                    continue
+                forbidden_kind = (
+                    "lookup"
+                    if operand.ref is not None
+                    else operand.type
+                )
+                description = _FORBIDDEN_CALCULATED_OPERANDS.get(forbidden_kind)
+                if description is None:
+                    continue
+                findings.append(Finding(
+                    "error",
+                    f"{table.name}.{col.name}: calculated formula references "
+                    f"[{ref}], {description}. SharePoint rejects this operand "
+                    f"during calculated-field creation with HTTP 500, after "
+                    f"earlier deploy phases may already have written to the "
+                    f"site. Compute from a non-{forbidden_kind} source column "
+                    f"or drop the formula.",
                 ))
             # A DEFERRED lookup exists by the end of the deploy but not when
             # this field is created. jsgen orders calculated fields only

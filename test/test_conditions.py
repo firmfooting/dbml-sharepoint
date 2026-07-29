@@ -14,6 +14,7 @@ from dbml_sharepoint.analysis.conditions import (
     NEGATION,
     SYSTEM_COLUMN_TYPES,
     VALIDATION,
+    condition_fields,
     describe,
     measure_tree,
     normalise,
@@ -47,6 +48,25 @@ def test_groups_nest() -> None:
     inner = condition.children[1]
     assert isinstance(inner, Group)
     assert inner.kind == "all_of"
+
+
+def test_condition_fields_collects_nested_and_valueless_leaves() -> None:
+    condition = parse_condition(
+        {
+            "any_of": [
+                {"field": "Status", "op": "eq", "value": "Open"},
+                {
+                    "all_of": [
+                        {"field": "DueDate", "op": "geq", "value": "today"},
+                        {"field": "Owner", "op": "is_not_null"},
+                        {"field": "Status", "op": "neq", "value": "Closed"},
+                    ],
+                },
+            ],
+        },
+        "ctx",
+    )
+    assert condition_fields(condition) == frozenset({"Status", "DueDate", "Owner"})
 
 
 def test_operand_transforms_parse() -> None:

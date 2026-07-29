@@ -40,7 +40,8 @@ schema.dbml + mapping.yaml + release.yaml
 - **Deploy with nothing but a browser.** The generated script runs in the
   site's own console under your own login, calling SharePoint REST/CSOM
   endpoints. No PnP, no CSOM installs, no app registrations, no Graph
-  consent, no stored credentials.
+  consent, no stored credentials. See the
+  [security model](concepts/security-model.md).
 - **Fail closed, rerun safely.** Every write is preceded by read-only
   preflights: the wrong site aborts, existing lists and fields are adopted
   only when their immutable shape provably matches, mutable drift is

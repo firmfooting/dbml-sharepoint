@@ -5,6 +5,7 @@ from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,
+    condition_fields,
     effective_column_types,
     validate_condition,
 )
@@ -31,6 +32,20 @@ _NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
 # `count` is NOT blocked on these: it counts rows, and SharePoint offers
 # Count on a person or hyperlink column.
 _NON_ARITHMETIC = frozenset({"person", "richtext", "longtext", "hyperlink"})
+
+# SharePoint Online's default list-view threshold is 5,000 items. Microsoft
+# recommends an indexed first filter column and states that an indexed Lookup
+# column does not prevent a threshold breach. An index is necessary but not
+# sufficient: selectivity and the condition shape still determine whether
+# SharePoint can use it.
+# https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/items-exceeds-list-view-threshold
+# https://learn.microsoft.com/sharepoint/dev/schema/field-element-field
+_LIST_VIEW_THRESHOLD = 5_000
+
+# SharePoint's built-in identity column is indexed by the platform and never
+# appears in the DBML index accounting (where it would incorrectly consume
+# one of the 20 author-managed slots).
+_NATIVE_FILTER_INDEXES = frozenset({"ID"})
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -259,6 +274,45 @@ def check(vc: ValidationContext) -> list[Finding]:
                         context=f"{ctx}.where",
                     )
                 )
+                filtered = condition_fields(view.where)
+                # Do not layer an index warning on top of an unknown-field
+                # error. Once every field resolves, assess the whole
+                # dependency set without pretending to understand AND/OR
+                # selectivity in this first pass.
+                if filtered and filtered <= view_rendered:
+                    effective_indexes = (
+                        vc.effective_indexes(entity_name) | _NATIVE_FILTER_INDEXES
+                    )
+                    indexed_filters = filtered & effective_indexes
+                    useful_indexes = indexed_filters - entity_lookups
+                    names = ", ".join(sorted(filtered))
+                    if not indexed_filters:
+                        findings.append(Finding(
+                            "warning",
+                            f"{ctx}.where: filtered columns ({names}) have no "
+                            f"effective index. SharePoint Online's default list "
+                            f"view threshold is {_LIST_VIEW_THRESHOLD:,} items; "
+                            f"add a bare DBML index to a selective filter column "
+                            f"or accept the risk for a list that will stay small. "
+                            f"An index is necessary but may not be sufficient "
+                            f"because SharePoint also considers filter order, "
+                            f"selectivity and condition shape.",
+                        ))
+                    elif not useful_indexes:
+                        lookup_names = ", ".join(sorted(indexed_filters))
+                        findings.append(Finding(
+                            "warning",
+                            f"{ctx}.where: the only indexed filter column(s), "
+                            f"{lookup_names}, are Lookup columns. Microsoft "
+                            f"documents that an indexed Lookup column does not "
+                            f"prevent exceeding SharePoint Online's "
+                            f"{_LIST_VIEW_THRESHOLD:,}-item list view threshold. "
+                            f"Index a selective Text, Number, Choice or Date "
+                            f"filter column instead. An index is necessary but "
+                            f"may not be sufficient because SharePoint also "
+                            f"considers filter order, selectivity and condition "
+                            f"shape.",
+                        ))
             if view.row_limit is not None and not 1 <= view.row_limit <= 5000:
                 findings.append(Finding(
                     "error", f"{ctx}: row_limit must be between 1 and 5000.",
