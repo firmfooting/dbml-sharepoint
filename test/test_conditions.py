@@ -641,16 +641,67 @@ def test_not_in_on_a_date_column_checks_every_member() -> None:
         to_caml(condition, TYPES)
 
 
-def test_operators_pending_probe_are_disabled_for_the_expression_target() -> None:
-    """Plausible from documentation, never run against a tenant. This
-    project has twice been wrong about unexercised expression syntax, so
-    unverified is treated as unknown."""
+def test_text_operators_render_through_indexof_on_the_expression_target() -> None:
+    """All four go through indexOf, which returns the position or -1.
+
+    One function carries the set, so there is one behaviour to have
+    verified rather than three. `startsWith()` and `substring(...) ==` also
+    render begins_with correctly on a live tenant and are deliberately
+    unused: an extra function is an extra thing that has to keep being true.
+
+    Each rendering was watched in a form on 2026-07-29
+    (test/manual/expression-text-operators-probe.js), across four values
+    including the empty one, with no deviation from the expected truth
+    table. Storage proves nothing on this target — SharePoint accepts a
+    call to a function that does not exist — so nothing but that eyes-on
+    pass could have established it.
+    """
+    expected = {
+        "contains": ">= 0",
+        "not_contains": "< 0",
+        "begins_with": "== 0",
+        "not_begins_with": "!= 0",
+    }
+    for op, tail in expected.items():
+        condition = parse_condition([{"field": "Note", "op": op, "value": "needle"}], "ctx")
+        assert to_expression(condition, TYPES) == f"indexOf([$Note], 'needle') {tail}"
+
+
+def test_text_operator_literals_keep_the_expression_escaping() -> None:
+    """The operand is a literal like any other: single-quoted, apostrophe
+    doubled. Rendering it any other way inside indexOf would break the
+    formula on exactly the values most likely to need matching."""
+    condition = parse_condition(
+        [{"field": "Note", "op": "contains", "value": "O'Brien"}], "ctx",
+    )
+    assert to_expression(condition, TYPES) == "indexOf([$Note], 'O''Brien') >= 0"
+
+
+def test_nothing_is_pending_a_probe_without_one_named() -> None:
+    """DISABLED_PENDING_PROBE is empty: every operator rendered onto the
+    expression target has been watched working in a form.
+
+    If an entry is added, its error must name a probe that exists — a
+    signpost pointing at a probe that does not ask the question reads as
+    though somebody already checked.
+    """
+    from dbml_sharepoint.analysis.conditions import DISABLED_PENDING_PROBE
+
+    for target, operators in DISABLED_PENDING_PROBE.items():
+        assert operators, f"{target} has an empty pending set; remove the key"
+
+
+def test_one_authored_operator_renders_on_every_target_it_claims() -> None:
+    """`contains` reaches all three targets, each in that target's own
+    dialect: a CAML element, an Excel-style function, and an indexOf
+    comparison. The point of the grammar is that the author writes the
+    operator once."""
     condition = parse_condition(
         [{"field": "Status", "op": "contains", "value": "x"}], "ctx",
     )
     assert "<Contains>" in to_caml(condition, TYPES)
-    with pytest.raises(ValueError, match="not yet verified"):
-        to_expression(condition, TYPES)
+    assert to_validation(condition, TYPES) == 'ISNUMBER(FIND("x",[Status]))'
+    assert to_expression(condition, TYPES) == "indexOf([$Status], 'x') >= 0"
 
 
 # === Hardening from the adversarial review ==================================

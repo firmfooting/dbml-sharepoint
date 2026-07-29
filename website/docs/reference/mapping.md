@@ -116,6 +116,24 @@ views:
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
 
+:::caution Conditional visibility is not checked when it is saved
+
+SharePoint accepts a `ClientValidationFormula` calling a function that does
+not exist, stores it, and reads it back byte-identical. Nothing in the
+build, the deploy or the browser console reports it — the column simply
+never appears.
+
+Every operator this tool renders onto that target has therefore been
+watched working in a real form, not merely written and read back. Two are
+still refused there for the same reason: the `today` and `now` sentinels
+(a show/hide formula is evaluated against the item's values, and `@now`
+firing has not been observed), and `measure: length`, whose documented
+function counts array items rather than measuring a string — so
+`length([$Note]) > 3` is false for every value and hides the column
+unconditionally, with a formula that saves perfectly.
+
+:::
+
 :::tip `now` — the current-instant sentinel, for datetime columns only
 
 ```yaml
