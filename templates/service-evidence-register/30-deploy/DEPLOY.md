@@ -195,8 +195,8 @@ Delete the rows before go-live.
 - [ ] The escalation threshold is written down and known to the curators.
 - [ ] **Curators** know that `Last Followed Up` on the event is carried across
       as part of the weekly chase — it is the template's one hand-maintained
-      link, contributors cannot write it, and the **By event** view is how you
-      check it.
+      link, a contributor can only have set it when the event was created, and
+      the **By event** view is how you check it.
 
 ## What the save rules cannot enforce, and why
 

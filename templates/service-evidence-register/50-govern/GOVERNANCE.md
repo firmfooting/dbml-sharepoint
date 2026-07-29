@@ -99,7 +99,7 @@ An event marked *Deliberately not raised* is legitimate — sometimes it is not
 worth the friction — but a register where most rows carry it is telling you
 something about your own practice, not the provider's.
 
-## 5. The one hand-maintained link
+## 5. The two hand-maintained values
 
 `ServiceEvent.LastFollowedUp` is **not** derived from the `FollowUp` rows.
 SharePoint cannot roll a child value up to a parent, and nothing in the
@@ -110,9 +110,12 @@ this* beside the row it belongs to — that is the question that decides what to
 do today, and a derived-only answer that lived on another list would not be
 visible here.
 
-Contributors cannot write it: they hold `SE Log Only`, which withholds Edit, so
-a saved event is fixed. Carrying the date across is a curator's job, done as
-part of the weekly chase below.
+A contributor can set it **once**, on the form that creates the event, and
+never again: `SE Log Only` withholds Edit, so a saved event is fixed. Every
+chase after that one is therefore a curator's to carry across, done as part of
+the weekly pass below. That is the whole reason the field is on the New form
+at all — a value they could not set at creation is a value they could never
+set.
 
 **The drift is bounded and visible.** The `FollowUp` **By event** view shows
 the true most recent follow-up beside the group count. Reconciling the two is
@@ -121,6 +124,13 @@ a standing item in the review cadence below.
 `TimesFollowedUp` was considered as a companion column and **cut** for the
 same reason without the compensating benefit: a count that can only drift,
 where the grouped view gives an accurate one for free.
+
+`ServiceIssue.EventCount` is the second, and it is the same trade for a
+different reason: a theme's weight has to be visible on the theme, and
+SharePoint will not count the events pointing at it. Curators update it as
+part of the monthly pass below. Where `Last Followed Up` has **By event** to
+reconcile against, this one has the **Evidence pack** view, which groups the
+supporting events under the theme they belong to.
 
 ---
 
@@ -143,8 +153,8 @@ register at all.
 | When | What |
 |---|---|
 | Weekly | Curator works **Needs review**: accept, reject as *Not substantiated*, or send back for detail. A queue worked weekly stays honest; one worked before a review does not. |
-| Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row, and `Last Followed Up` on the event is carried across in the same pass — contributors cannot write it. |
-| Weekly | Curator works **Awaiting a response** on `FollowUp` and records what came back — *What came back*, *Response Date*, the summary — on the row that did the asking. Contributors hold `SE Log Only` and cannot write them, so a row left here is either still unanswered or an answer nobody recorded, and only this pass tells the two apart. The same hand-off applies to `Resolved Date` and `Outcome for us` on an event that has since been resolved. |
+| Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row, and `Last Followed Up` on the event is carried across in the same pass — a contributor could only have set it when the event was created, so every chase after that one is this pass's to record. |
+| Weekly | Curator works **Awaiting a response** on `FollowUp` and records what came back — *What came back*, *Response Date*, the summary — on the row that did the asking. A contributor sets them only if the answer had already arrived when they saved the row; `SE Log Only` withholds Edit, so anything that came back afterwards is this pass's to record. A row left here is either still unanswered or an answer nobody recorded, and only this pass tells the two apart. The same hand-off applies to `Resolved Date` and `Outcome for us` on an event that has since been resolved. |
 | Monthly | Reconcile `Last Followed Up` against the **By event** view. Update `Event Count` on any theme being assembled. |
 | Monthly | Review whether the categories being logged still match what was agreed, and whether any team has stopped logging. |
 | Per service review | Assemble the pack from **Evidence pack** and **By failure mode**. Bring the denominator. |

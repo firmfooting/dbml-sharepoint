@@ -46,9 +46,9 @@ the capture form that a hurried person might be tempted to skip:
   *None, recollection only*, which the register is willing to say out loud.
 
 On top of those, **contemporaneity is a rendered column rather than a claim.**
-`Days To Log` and `Record Timeliness` put *Same day* or *Retrospective* on
-every row in the family's severity colours. Nobody has to take the register's
-word for how promptly it was kept.
+`Record Timeliness` puts *Same day* or *Retrospective* on every row in the
+family's severity colours, banded from `Days To Log` behind it. Nobody has to
+take the register's word for how promptly it was kept.
 
 What is deliberately absent: chain of custody, hashing, tamper-proofing,
 witness attestation and a costing model. Those are the forensic end, they
