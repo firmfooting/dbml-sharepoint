@@ -46,14 +46,33 @@
  *   SharePoint normalise it (which reconciliation would then have to
  *   canonicalise, as the calculated-formula comparison already does)?
  *
- *   X6 AND THE EMPTY ROW HAVE NOT BEEN RUN. The 2026-07-29 pass carried
- *   X1-X5 over three typed values. `not_begins_with` shipped on the strength
- *   of arithmetic — `!= 0` is the exact negation of the `== 0` watched at X3,
- *   over the same indexOf call — which is sound but is not an observation,
- *   and the empty-box behaviour that `none_of[not_contains]` depends on was
- *   likewise reasoned rather than seen. Both are now asked directly. X1-X5
- *   are unchanged byte-for-byte, so the recorded results still describe
- *   exactly the strings that produced them.
+ *   X6 AND THE EMPTY ROW WERE RUN ON 2026-07-29, in a second pass after the
+ *   first had settled X1-X5 over three typed values. Both were previously
+ *   carried on arithmetic rather than observation: `!= 0` is the exact
+ *   negation of the `== 0` watched at X3, and the empty-box behaviour that
+ *   `none_of[not_contains]` depends on had never been typed. Result — all
+ *   TWENTY-FOUR cells of the six-candidate by four-row table matched the
+ *   predicted truth table exactly:
+ *
+ *       row 1  "needle in a haystack"    -> X1 X3 X4 X5
+ *       row 2  "a needle in a haystack"  -> X1 X6
+ *       row 3  "no such thing here"      -> X2 X6
+ *       row 4  (empty)                   -> X2 X6
+ *
+ *   X6 is therefore discriminating, not merely stored: hidden for row 1 and
+ *   visible for the other three, which is the shape a working candidate has
+ *   and neither of the two broken shapes. And row 4 shows BOTH negative
+ *   operators visible for the empty box, which is the observation
+ *   `analysis/conditions.py` needs to keep none_of[not_contains] from
+ *   re-admitting the empty value. The open form, before anything was typed,
+ *   independently showed the same two columns — the same answer seen twice.
+ *
+ *   X1-X5 are unchanged byte-for-byte across both passes, so the first run's
+ *   recorded results still describe exactly the strings that produced them.
+ *   X0 failed again in the second pass — the nonsense function was stored
+ *   byte-identical a second time — so the eyes-on table remains the only
+ *   evidence here, and all six candidates storing cleanly means nothing on
+ *   its own.
  *
  * WHAT YOU ANSWER — the eyes-on half
  *   The probe prints a four-row table. You open the New form, put each
@@ -83,10 +102,11 @@
   // Each candidate gets its OWN column, so all five are visible on one form
   // at once and a single pass of the eyes-on table answers everything. One
   // shared column would need five separate runs.
-  // X1-X5 are BYTE-IDENTICAL to the 2026-07-29 run and must stay that way:
-  // three places cite this script as the source of that observation, so
+  // X1-X5 are BYTE-IDENTICAL to the first 2026-07-29 run and must stay that
+  // way: three places cite this script as the source of that observation, so
   // editing them would leave the citations pointing at something that never
-  // ran. X6 is additive and has NOT been run.
+  // ran. X6 was added afterwards and run in a second pass the same day; it
+  // came back discriminating (see the header).
   const CANDIDATES = [
     ['X1', 'ShowContains', 'contains',
      `=indexOf([$${SUBJECT}], '${NEEDLE}') >= 0`],
