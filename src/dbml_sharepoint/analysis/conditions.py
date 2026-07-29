@@ -258,6 +258,17 @@ _NOW = NOW_SENTINEL              # same home, same reason
 # offset form this grammar deliberately does not have.
 _NOW_OFFSET = re.compile(r"^now[+-]\d+$")
 
+# `datetime.fromisoformat` is far wider than the grammar this tool emits: it
+# takes ANY single character as the date/time separator (`2026-07-29x14:30`),
+# plus basic format (`20260729`) and ISO week dates (`2026-W01-1`). The
+# literal is emitted UNCHANGED, so without this a one-character typo reaches
+# the wire wearing the guard's approval and the view answers emptily. The
+# shape is pinned here; the parse that follows only settles whether the
+# numbers are real, which a regex cannot say.
+_ISO_DATE_LITERAL = re.compile(
+    r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?)?\Z",
+)
+
 # The current-instant sentinel. Every rendering below was established by
 # test/manual/datetime-sentinel-probe.js on 2026-07-29, against a live
 # tenant, and two of the three answers contradict a Microsoft document:
@@ -395,16 +406,32 @@ def _is_now(value: object, column_type: str) -> bool:
     )
 
 
-def _looks_like_a_date(value: str) -> bool:
-    """An ISO date or datetime, which is the only literal form a date column
-    may carry once the sentinels have had their turn.
+def _looks_like_a_date(value: object) -> bool:
+    """`YYYY-MM-DD`, optionally with a `T` time and an offset — the grammar
+    the renderers emit, and the only literal form a date column may carry
+    once the sentinels have had their turn.
 
     Deliberately strict. SharePoint accepts `<Value Type="DateTime">banana
     </Value>` without complaint and answers with no rows, so a typo here is
     invisible from the build, invisible from the deploy, and visible only as
     a view that is mysteriously empty.
+
+    A bare `datetime.date` passes: PyYAML resolves an unquoted `2026-07-29`
+    to one before this module sees it, and `str()` on a date is the ISO
+    literal exactly. A `datetime.datetime` does NOT — `str()` spells the
+    separator as a space, which no probe has run — and it is rejected by
+    `_check_date_literal` with its own message rather than here.
     """
-    text = value.strip().replace("Z", "+00:00")
+    if isinstance(value, dt.datetime):
+        return False
+    if isinstance(value, dt.date):
+        return True
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not _ISO_DATE_LITERAL.match(text):
+        return False
+    text = text.replace("Z", "+00:00")
     for parse in (dt.datetime.fromisoformat, dt.date.fromisoformat):
         try:
             parse(text)
@@ -412,6 +439,60 @@ def _looks_like_a_date(value: str) -> bool:
             continue
         return True
     return False
+
+
+def _check_date_literal(
+    value: object, column_type: str, target: str, where: str,
+) -> None:
+    """A date column's literal, once `today` and `now` have had their turn,
+    must be a real date. Nothing downstream checks it: SharePoint takes
+    `<Value Type="DateTime">banana</Value>` and answers with no rows, so the
+    build is the only place it can be caught.
+
+    `now+1` is the case that matters most. `today±N` works, which makes the
+    offset form the obvious thing to reach for, and without this it is an
+    unparseable literal in a filter that silently matches nothing.
+
+    Called per SET MEMBER as well as per leaf: CAML renders `not_in` by
+    looping the members itself rather than recursing through `_leaf`, so one
+    bad literal among good ones used to walk straight past this.
+    """
+    if column_type not in _DATE_TYPES or value is None:
+        return
+    if _is_today(value, column_type) or _is_now(value, column_type):
+        return
+    if _looks_like_a_date(value):
+        return
+
+    # PyYAML resolves an unquoted `2026-07-29T14:30:00` to a datetime, and
+    # `str()` on one spells the separator as a SPACE. Quoting it gives the
+    # `T` spelling the probe ran, so say that rather than claiming the value
+    # the author wrote is not a date.
+    if isinstance(value, dt.datetime):
+        raise _reject(
+            target,
+            f"{value!r} is an unquoted YAML datetime; quote it. Unquoted, it "
+            f"reaches the renderers as a datetime object whose text form "
+            f"separates date from time with a SPACE, and no probe has run "
+            f"that spelling — '{value.isoformat()}' has",
+            where,
+        )
+
+    hint = ""
+    if isinstance(value, str) and _NOW_OFFSET.match(value.strip()):
+        hint = (
+            " — 'now' takes no offset form (today±N does, now±N has no "
+            "verified rendering); use a bare 'now', or 'today±N' for a "
+            "whole-day boundary"
+        )
+    raise _reject(
+        target,
+        f"{value!r} is not a date, the sentinel 'today'/'today±N', or "
+        f"'now'. SharePoint accepts an unparseable date literal and returns "
+        f"nothing, so this is refused here rather than discovered as an "
+        f"empty view{hint}",
+        where,
+    )
 
 
 def _is_me(value: object, column_type: str) -> bool:
@@ -526,6 +607,8 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             # outside every non-empty set. Admit null once around the whole
             # conjunction rather than once per set member.
             ref = f'<FieldRef Name="{leaf.field}"/>'
+            for item in leaf.value:
+                _check_date_literal(item, column_type, target, where)
             parts = [
                 f"<Neq>{ref}{_caml_value(column_type, item, where)}</Neq>"
                 for item in leaf.value
@@ -563,36 +646,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             where,
         )
 
-    # A date column's literal, once `today` and `now` have had their turn,
-    # must be a real date. Nothing downstream checks it: SharePoint takes
-    # `<Value Type="DateTime">banana</Value>` and answers with no rows, so
-    # the build is the only place it can be caught.
-    #
-    # `now+1` is the case that matters most. `today±N` works, which makes the
-    # offset form the obvious thing to reach for, and without this it is an
-    # unparseable literal in a filter that silently matches nothing.
-    if (
-        column_type in _DATE_TYPES
-        and isinstance(leaf.value, str)
-        and not _is_today(leaf.value, column_type)
-        and not _is_now(leaf.value, column_type)
-        and not _looks_like_a_date(leaf.value)
-    ):
-        hint = ""
-        if _NOW_OFFSET.match(leaf.value.strip()):
-            hint = (
-                " — 'now' takes no offset form (today±N does, now±N has no "
-                "verified rendering); use a bare 'now', or 'today±N' for a "
-                "whole-day boundary"
-            )
-        raise _reject(
-            target,
-            f"{leaf.value!r} is not a date, the sentinel 'today'/'today±N', or "
-            f"'now'. SharePoint accepts an unparseable date literal and returns "
-            f"nothing, so this is refused here rather than discovered as an "
-            f"empty view{hint}",
-            where,
-        )
+    _check_date_literal(leaf.value, column_type, target, where)
 
     if _is_now(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
