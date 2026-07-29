@@ -1,0 +1,69 @@
+{
+  "elmType": "div",
+  "attributes": { "class": "ms-borderColor-neutralTertiary" },
+  "style": {
+    "width": "99%",
+    "border-top-width": "0px",
+    "border-bottom-width": "1px",
+    "border-left-width": "0px",
+    "border-right-width": "0px",
+    "border-style": "solid",
+    "margin-bottom": "16px",
+    "padding-bottom": "8px"
+  },
+  "children": [
+    {
+      "elmType": "div",
+      "style": { "display": "flex", "box-sizing": "border-box", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "div",
+          "attributes": {
+            "iconName": "ClipboardList",
+            "class": "ms-fontSize-42 ms-fontWeight-regular ms-fontColor-themePrimary",
+            "title": "Service event"
+          },
+          "style": { "flex": "none", "padding": "0px", "height": "auto" }
+        },
+        {
+          "elmType": "div",
+          "style": { "box-sizing": "border-box", "width": "100%", "text-align": "left", "padding": "4px 8px", "overflow": "hidden" },
+          "children": [
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontWeight-bold ms-fontSize-16" },
+              "txtContent": "=if([$Title] == '', 'New service event', 'Event: ' + [$Title])"
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "Write it down while you still remember it exactly. A record made the same day is worth more than a better-written one made next month."
+            },
+            {
+              "elmType": "div",
+              "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
+              "txtContent": "=if([$Provider] == '', '', [$Provider] + '  |  ' + if([$EventNature] == '', 'Single occurrence', [$EventNature]) + if([$ProviderReference] == '', '', '  |  Ref: ' + [$ProviderReference]))"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "elmType": "div",
+      "attributes": { "class": "ms-bgColor-themeLighter ms-fontColor-neutralPrimary" },
+      "style": { "padding": "8px 10px", "margin": "6px 0px", "display": "flex", "align-items": "center" },
+      "children": [
+        {
+          "elmType": "span",
+          "attributes": { "iconName": "Warning", "class": "ms-fontColor-themePrimary ms-fontSize-16" },
+          "style": { "margin-right": "8px" }
+        },
+        {
+          "elmType": "span",
+          "attributes": { "class": "ms-fontSize-12 ms-fontWeight-semibold" },
+          "txtContent": "Facts in the account, judgement in the reviewer's note, and their reference number wherever one exists. Describe what happened, not who you blame for it."
+        }
+      ]
+    }
+  ]
+}
