@@ -5,8 +5,13 @@
       "release-type": "python",
       "include-component-in-tag": false,
       "extra-files": [
-        { "type": "generic", "path": "src/dbml_sharepoint/__init__.py" }
-      ]
+        {
+          "type": "generic",
+          "path": "src/dbml_sharepoint/__init__.py"
+        }
+      ],
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false
     }
   }
 }
