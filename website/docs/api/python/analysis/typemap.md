@@ -80,6 +80,12 @@ columns" — true, but it buries the actual mistake. Resolving first also
 keeps the supported-type vocabulary in one place, the match statement
 below, rather than in a second hand-maintained set beside it.
 
+### `TODAY_SENTINEL`
+
+```python
+TODAY_SENTINEL = re.compile('^today(?:([+-])(\\d+))?$')
+```
+
 ### `TOTAL_FUNCTIONS`
 
 ```python
