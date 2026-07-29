@@ -131,6 +131,16 @@
     return cachedDigest;
   }
 
+  // SharePoint resolves a list title, a field name and a site group name
+  // CASE-INSENSITIVELY, and enforces their uniqueness the same way. Every
+  // local index of those names must therefore match the same way: a
+  // case-sensitive Set reports an existing 'or_opportunity' absent when the
+  // mapping declares 'OR_Opportunity', and the run then tries to CREATE it
+  // and fails on a name collision it could have adopted.
+  const nameKey = (value) => String(value == null ? '' : value).toLowerCase();
+  const nameSet = (values) => new Set((values || []).map(nameKey));
+  const hasName = (set, value) => Boolean(set) && set.has(nameKey(value));
+
   // Which list titles exist, from ONE enumeration. A by-title GET for a list
   // that is not there answers 404, which the browser paints red and an
   // operator reads as a failure — on a first deploy EVERY list probe is that
@@ -148,7 +158,7 @@
     // per-list probing, which is noisier but still correct.
     if (!r.ok) return null;
     const j = await r.json();
-    knownListTitles = new Set(
+    knownListTitles = nameSet(
       ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
     );
     return knownListTitles;
@@ -159,7 +169,7 @@
     // server: a cache must never be able to confirm our own write.
     if (!fresh) {
       const titles = await ensureKnownListTitles();
-      if (titles && !titles.has(name)) return null;
+      if (titles && !hasName(titles, name)) return null;
     }
     const select = [
       'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
@@ -235,7 +245,7 @@
     // The enumeration is already in hand for exactly this reason; this
     // just spends it here too.
     const titles = await ensureKnownListTitles();
-    if (titles && !titles.has(listName)) {
+    if (titles && !hasName(titles, listName)) {
       const empty = new Map();
       fieldShapesByList[listName] = empty;
       return empty;
@@ -262,8 +272,8 @@
     const j = await r.json();
     const shapes = new Map();
     for (const f of (j && j.d && j.d.results) || []) {
-      if (f.InternalName && !shapes.has(f.InternalName)) shapes.set(f.InternalName, f);
-      if (f.Title && !shapes.has(f.Title)) shapes.set(f.Title, f);
+      if (f.InternalName && !shapes.has(nameKey(f.InternalName))) shapes.set(nameKey(f.InternalName), f);
+      if (f.Title && !shapes.has(nameKey(f.Title))) shapes.set(nameKey(f.Title), f);
     }
     fieldShapesByList[listName] = shapes;
     return shapes;
@@ -276,7 +286,7 @@
     const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
     let shape;
     if (!fresh) {
-      shape = (await listFieldShapes(listName)).get(columnName) || null;
+      shape = (await listFieldShapes(listName)).get(nameKey(columnName)) || null;
       if (!shape) return null;
       // Cached entries were validated at enumeration time by the same checks
       // below; re-validate anyway — one shared gate for both paths.
@@ -1281,10 +1291,31 @@
       const clearingOnly = (field.validation_formula === '' || field.validation_formula === UNMANAGED)
         && (field.client_validation_formula === '' || field.client_validation_formula === UNMANAGED);
       if (clearingOnly && /does not support validation formulas/i.test(text)) {
+        // A MERGE is atomic, so the refusal applied NONE of this body —
+        // including any ClientValidationFormula clear it also carried,
+        // which a URL field does support. Returning here would report
+        // success while a stale show/hide rule stayed live and the
+        // read-back below never ran. So retry with only the properties
+        // this field type accepts, then fall through and verify.
+        const clientOnly = { '__metadata': body.__metadata };
+        if ('ClientValidationFormula' in body) {
+          clientOnly.ClientValidationFormula = body.ClientValidationFormula;
+          clientOnly.ClientValidationMessage = body.ClientValidationMessage;
+        }
+        if (Object.keys(clientOnly).length > 1) {
+          const retry = await fetchWithRetry(url, {
+            method: 'POST',
+            headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+            body: JSON.stringify(clientOnly),
+          });
+          if (!retry.ok) {
+            throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}; client-only retry also failed: HTTP ${retry.status} ${await retry.text()}`);
+          }
+        }
         log('INFO', `Field '${listName}.${field.title}': field type carries no validation formula, so there is none to clear; continuing.`);
-        return;
+      } else {
+        throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}`);
       }
-      throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}`);
     }
 
     // A SEALED column accepts the write, reports success and discards it,
@@ -1607,7 +1638,12 @@
       });
       if (r.ok) {
         const j = await r.json();
-        knownGroupNames = new Set(
+        // nameSet/hasName: SharePoint group names are unique and resolved
+        // case-insensitively, so an existing 'or list administrators'
+        // must not read as absent against a declared 'OR List
+        // Administrators' — that turns an adoptable group into a create
+        // that fails on a name collision.
+        knownGroupNames = nameSet(
           ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
         );
       }
@@ -1616,7 +1652,7 @@
     for (const grp of SCHEMA.groups) {
       try {
         // null status means "known absent without asking".
-        const checkResp = knownGroupNames && !knownGroupNames.has(grp.name)
+        const checkResp = knownGroupNames && !hasName(knownGroupNames, grp.name)
           ? { status: 404, ok: false }
           : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
             headers: { 'Accept': 'application/json;odata=verbose' },
@@ -2304,9 +2340,18 @@
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
       const listedViews = await listViewShapes(listPath);
-      let existing = listedViews.find((v) => v.Title === view.title) || null;
+      // FINDING a view matches case-insensitively, because SharePoint
+      // resolves views/getbytitle that way and will not let two views on
+      // one list differ only in case. Matching exactly here would read an
+      // existing 'open by score' as absent, then try to create the
+      // declared 'Open by score' beside it.
+      //
+      // The title DRIFT check further down stays exact on purpose: once
+      // the view is found, a casing difference is drift the deployer owns
+      // and renames, which is the opposite question.
+      let existing = listedViews.find((v) => nameKey(v.Title) === nameKey(view.title)) || null;
       const previousMatches = listedViews.filter(
-        (v) => view.renamed_from.includes(v.Title),
+        (v) => view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
       );
       if (previousMatches.length > 1) {
         throw new Error(`multiple previous-title views exist for '${view.title}': ${previousMatches.map((v) => v.Title).join(', ')}`);
@@ -2324,7 +2369,7 @@
       // URL is never touched — the create below would get a suffixed .aspx
       // and the URL drift gate fails the view closed.
       const halfMigrated = listedViews.find(
-        (v) => v.Title === view.url_slug && urlBasename(v) === desiredBasename,
+        (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
       ) || null;
       if (!existing) {
         if (halfMigrated) {

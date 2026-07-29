@@ -2,6 +2,16 @@
    per-list caching and invalidateFieldShapes(listName?) so concurrent
    lanes never thrash each other's caches. Absence answers (404 and the
    documented absent-field 400) return null rather than throwing. #}
+  // SharePoint resolves a list title, a field name and a site group name
+  // CASE-INSENSITIVELY, and enforces their uniqueness the same way. Every
+  // local index of those names must therefore match the same way: a
+  // case-sensitive Set reports an existing 'or_opportunity' absent when the
+  // mapping declares 'OR_Opportunity', and the run then tries to CREATE it
+  // and fails on a name collision it could have adopted.
+  const nameKey = (value) => String(value == null ? '' : value).toLowerCase();
+  const nameSet = (values) => new Set((values || []).map(nameKey));
+  const hasName = (set, value) => Boolean(set) && set.has(nameKey(value));
+
   // Which list titles exist, from ONE enumeration. A by-title GET for a list
   // that is not there answers 404, which the browser paints red and an
   // operator reads as a failure — on a first deploy EVERY list probe is that
@@ -19,7 +29,7 @@
     // per-list probing, which is noisier but still correct.
     if (!r.ok) return null;
     const j = await r.json();
-    knownListTitles = new Set(
+    knownListTitles = nameSet(
       ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
     );
     return knownListTitles;
@@ -30,7 +40,7 @@
     // server: a cache must never be able to confirm our own write.
     if (!fresh) {
       const titles = await ensureKnownListTitles();
-      if (titles && !titles.has(name)) return null;
+      if (titles && !hasName(titles, name)) return null;
     }
     const select = [
       'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
@@ -106,7 +116,7 @@
     // The enumeration is already in hand for exactly this reason; this
     // just spends it here too.
     const titles = await ensureKnownListTitles();
-    if (titles && !titles.has(listName)) {
+    if (titles && !hasName(titles, listName)) {
       const empty = new Map();
       fieldShapesByList[listName] = empty;
       return empty;
@@ -133,8 +143,8 @@
     const j = await r.json();
     const shapes = new Map();
     for (const f of (j && j.d && j.d.results) || []) {
-      if (f.InternalName && !shapes.has(f.InternalName)) shapes.set(f.InternalName, f);
-      if (f.Title && !shapes.has(f.Title)) shapes.set(f.Title, f);
+      if (f.InternalName && !shapes.has(nameKey(f.InternalName))) shapes.set(nameKey(f.InternalName), f);
+      if (f.Title && !shapes.has(nameKey(f.Title))) shapes.set(nameKey(f.Title), f);
     }
     fieldShapesByList[listName] = shapes;
     return shapes;
@@ -147,7 +157,7 @@
     const fieldPath = `web/lists/getbytitle('${odataName(listName)}')/fields/getbyinternalnameortitle('${odataName(columnName)}')`;
     let shape;
     if (!fresh) {
-      shape = (await listFieldShapes(listName)).get(columnName) || null;
+      shape = (await listFieldShapes(listName)).get(nameKey(columnName)) || null;
       if (!shape) return null;
       // Cached entries were validated at enumeration time by the same checks
       // below; re-validate anyway — one shared gate for both paths.

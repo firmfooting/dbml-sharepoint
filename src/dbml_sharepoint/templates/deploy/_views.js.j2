@@ -95,9 +95,18 @@
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
       const listedViews = await listViewShapes(listPath);
-      let existing = listedViews.find((v) => v.Title === view.title) || null;
+      // FINDING a view matches case-insensitively, because SharePoint
+      // resolves views/getbytitle that way and will not let two views on
+      // one list differ only in case. Matching exactly here would read an
+      // existing 'open by score' as absent, then try to create the
+      // declared 'Open by score' beside it.
+      //
+      // The title DRIFT check further down stays exact on purpose: once
+      // the view is found, a casing difference is drift the deployer owns
+      // and renames, which is the opposite question.
+      let existing = listedViews.find((v) => nameKey(v.Title) === nameKey(view.title)) || null;
       const previousMatches = listedViews.filter(
-        (v) => view.renamed_from.includes(v.Title),
+        (v) => view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
       );
       if (previousMatches.length > 1) {
         throw new Error(`multiple previous-title views exist for '${view.title}': ${previousMatches.map((v) => v.Title).join(', ')}`);
@@ -115,7 +124,7 @@
       // URL is never touched — the create below would get a suffixed .aspx
       // and the URL drift gate fails the view closed.
       const halfMigrated = listedViews.find(
-        (v) => v.Title === view.url_slug && urlBasename(v) === desiredBasename,
+        (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
       ) || null;
       if (!existing) {
         if (halfMigrated) {

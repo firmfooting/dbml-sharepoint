@@ -87,7 +87,12 @@
       });
       if (r.ok) {
         const j = await r.json();
-        knownGroupNames = new Set(
+        // nameSet/hasName: SharePoint group names are unique and resolved
+        // case-insensitively, so an existing 'or list administrators'
+        // must not read as absent against a declared 'OR List
+        // Administrators' — that turns an adoptable group into a create
+        // that fails on a name collision.
+        knownGroupNames = nameSet(
           ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
         );
       }
@@ -96,7 +101,7 @@
     for (const grp of SCHEMA.groups) {
       try {
         // null status means "known absent without asking".
-        const checkResp = knownGroupNames && !knownGroupNames.has(grp.name)
+        const checkResp = knownGroupNames && !hasName(knownGroupNames, grp.name)
           ? { status: 404, ok: false }
           : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
             headers: { 'Accept': 'application/json;odata=verbose' },
