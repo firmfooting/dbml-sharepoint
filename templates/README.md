@@ -42,7 +42,6 @@ hand-off into that same improvement/investment chain.
 | [risk-register](risk-register/) | Organisational risk | **Self-rating 5×5 matrix** — rating and score calculated, matrix-inconsistent entries impossible |
 | [audit-actions](audit-actions/) | Audit recommendations to closure | Closure-evidence standard, guarded DaysLate metric, committee-pack view |
 | [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
-| [policy-library](policy-library/) | Policies & controlled documents | Document library with draft/published minor versions, review register |
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
 | [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log → dated chase trail → raised theme; how promptly the record was made is itself a column |
 | [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation → owner → evidence → review |
@@ -77,8 +76,8 @@ hand-off into that same improvement/investment chain.
 
 ## What every template ships
 
-Every template in the library is finished to the same standard, so the
-thirty read as members of one family rather than as thirty tastes.
+Every template in the library is finished to the same standard, so they
+read as members of one family rather than as a pile of individual tastes.
 Whichever you deploy, you get these seven things.
 
 **Views, created by the deploy.** Every list declares a default working
@@ -101,7 +100,7 @@ Response and controls / Governance / System*.
 everywhere a person sees it, with per-column overrides where splitting
 PascalCase reads badly.
 
-**Colour that means the same thing in all thirty.** Every lifecycle
+**Colour that means the same thing everywhere.** Every lifecycle
 and severity column, every deadline date and every score or count is
 formatted, and the colour comes from the *role* a value plays in its
 lifecycle rather than from what it is called — so Draft, Received and
@@ -243,21 +242,18 @@ template's DEPLOY, STAFF-GUIDE or GOVERNANCE file waits on a step you have
 to perform in the SharePoint UI first — where those documents name a view,
 that view exists as soon as the script finishes.
 
-**One exception in the whole library, and it is a document library.**
-`policy-library`'s `PolicyDocuments` is a `kind: DocumentLibrary`, and
-three parts of the standard below describe a list in ways that do not
-describe one. A library view cannot name `FileLeafRef`, so a documents
-view built this way would have no file name in it; a library's `Title` is
-a separate field SharePoint does not populate from the file name, so the
-header's live title line would read *New document* forever; and demo rows
-for a library ask SharePoint to create an item with no file behind it.
+**No exceptions.** Every entity in every template declares its views, its
+form header and its demo rows, and a test over every template says so.
 
-So that half declares **no views, no form header and no demo rows** — the
-only entity in the thirty that declares none of them — and its
-**Drafts in progress** view is a step you perform in the UI, carried in
-`policy-library`'s own DEPLOY.md. Its `PolicyRegister` half is declared
-like every other list. Everything else below holds everywhere, and a test
-over all thirty says so.
+There is no document library in the library, and `kind: DocumentLibrary`
+is refused at build time. A library's items are files and this tool writes
+list rows: SharePoint answers a POST to a library's `/items` with *"To add
+an item to a document library, use SPFileCollection.Add()"*, so demo data
+cannot exist; an uploaded file's `Title` is empty, with the name in
+`FileLeafRef`, so the standard header renders blank on every document; and
+nothing here uploads a file. To manage controlled documents, model the
+metadata as a `List` and keep the documents in a library you manage
+separately, linked with a hyperlink column.
 
 The declaration stays authoritative afterwards. A redeploy reconciles each
 declared view back to what the mapping says, so a view somebody widened,

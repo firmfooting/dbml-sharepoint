@@ -30,17 +30,25 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         # A document library's items ARE files. demo-data.js POSTs to
-        # /items, which asks SharePoint to create a library row with no
-        # file behind it — and this built GREEN until now, so it would have
-        # shipped and failed at paste time, in front of whoever was being
-        # shown the demo. Found by the policy-library uplift.
+        # /items, and SharePoint refuses that on a library outright —
+        # HTTP 500, "To add an item to a document library, use
+        # SPFileCollection.Add()" (probed 2026-07-29,
+        # test/manual/document-library-probe.js, L2).
+        #
+        # So the paste fails, loudly, in front of whoever was being shown
+        # the demo. Refusing at build turns that into a failed build.
+        # Seeding a library would mean uploading real files, which is a
+        # different feature from writing list rows and is not one this tool
+        # has.
         if bundle.mapping.entities[entity_name].kind == "DocumentLibrary":
             findings.append(Finding(
                 "error",
                 f"demo_items[{entity_name}]: {entity_name} is a DocumentLibrary, and a "
-                f"library's items are files. Seeding posts to /items and would create "
-                f"rows with no file behind them. Seed the register list that accompanies "
-                f"the library, and upload sample documents by hand.",
+                f"library's items are files. Seeding posts to /items, which SharePoint "
+                f"refuses outright — HTTP 500, \"To add an item to a document library, "
+                f"use SPFileCollection.Add()\" — so the paste fails in front of whoever "
+                f"was being shown the demo. Seed the register list that accompanies the "
+                f"library, and upload sample documents by hand.",
             ))
             continue
         for row in demo_rows:

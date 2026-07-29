@@ -55,7 +55,6 @@ A SharePoint list never replaces a mandated system:
 | Out-of-scope problems discovered by projects | opportunities-register | One-minute capture; route to existing controls before assessing anything |
 | Clinical audit actions / accreditation findings | audit-actions | Recommendations to closure with evidence |
 | Committee meetings, decisions, actions | meeting-actions | Governance-lite for every committee |
-| Policies & procedures (PROMPT-class gap) | policy-library | Where no controlled-document system exists |
 | Corporate risk tiers | risk-register | See boundary 2 |
 | Everything else | the general library | Assets, contracts, onboarding, training, service requests… |
 

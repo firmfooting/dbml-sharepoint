@@ -42,27 +42,14 @@ from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
 
-# The templates that have not yet been through a theme branch. Removed by
-# the branch that uplifts them; must reach empty. Deliberately carries no
-# count: four theme branches shrank this set in parallel, and a number in
-# the comment would have been wrong on three of them and a merge conflict
-# on all four.
+# The templates exempt from the standard. EMPTY, which is the whole point:
+# every template in the library is held to every assertion in this file.
 #
-# `policy-library` is the one entry that is NOT simply awaiting its turn.
-# Its `PolicyRegister` half is uplifted in full; its `PolicyDocuments` half
-# is a `kind: DocumentLibrary`, and three parts of the standard do not
-# describe one — a view and a form body cannot name `FileLeafRef` (it is
-# not a rendered column, so the build refuses it), and the header's
-# `[$Title]` line reads empty on a library, where SharePoint does not
-# populate Title from the file name. Demo data for a library WAS worse than
-# unbuildable — it generated cleanly and posted an item with no file behind
-# it — which is now a build error in its own right. The template stays on
-# this roster until libraries are designed for once, for the whole fleet,
-# rather than four different ways; see the header comment in
-# `templates/policy-library/20-configure/mapping.yaml`.
-NOT_YET_UPLIFTED: frozenset[str] = frozenset({
-    "policy-library",
-})
+# It stays as a mechanism rather than being deleted. An entry here is a
+# reviewable, deliberate act with a reason recorded beside it, and the
+# alternative — weakening an assertion so an awkward template slips under
+# it — degrades the standard for all of them at once.
+NOT_YET_UPLIFTED: frozenset[str] = frozenset()
 
 # §1.2. Order never changes; a small list may collapse the middle beats but
 # may not reorder them, and System is always last.
@@ -114,16 +101,6 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Assess only if needed": "Assess",
         "Own the next step": "Act",
         "Decide and hand off": "Govern",
-        "System": "System",
-    },
-    # Declared ahead of the sweep reaching it: policy-library is still on
-    # NOT_YET_UPLIFTED because of its document-library half, so nothing here
-    # is asserted yet — but PolicyRegister IS uplifted and its arc should
-    # not have to be rediscovered when the library question is settled.
-    ("policy-library", "PolicyRegister"): {
-        "The policy": "Identify",
-        "The current version": "Act",
-        "Review and history": "Govern",
         "System": "System",
     },
     # The audit row is a header record — a report and who answers for it —
@@ -566,24 +543,23 @@ def test_at_least_the_exemplars_are_uplifted() -> None:
     assert set(_uplifted()) >= {"risk-register", "tiered-huddle"}
 
 
-# The roster's floor, pinned. Every template on it needs a reason recorded
-# beside it, and the four theme branches have now landed, so the only
-# admissible reason left is the document-library gap in the standard itself
-# — not "we ran out of time" and not "this one is awkward".
-ROSTER_EXCEPTIONS: frozenset[str] = frozenset({"policy-library"})
+# The roster's floor, pinned. Every template on NOT_YET_UPLIFTED needs a
+# reason recorded here beside it — not "we ran out of time" and not "this
+# one is awkward". Empty, and adding to it is a reviewable act.
+ROSTER_EXCEPTIONS: frozenset[str] = frozenset()
 
 
 def test_the_roster_holds_only_its_documented_exception() -> None:
     """The spec said this set must reach empty when the last theme branch
-    landed. It reached one, for a reason the spec did not anticipate:
-    `policy-library`'s `PolicyDocuments` half is a document library, and
-    three parts of the standard do not describe one (see the comment on
-    NOT_YET_UPLIFTED).
+    landed. It reached one — `policy-library`, whose `PolicyDocuments` half
+    was a document library that three parts of the standard did not
+    describe — and then reached zero, when that template was removed and
+    `kind: DocumentLibrary` was refused outright.
 
-    So the aspiration becomes a check. Adding a template here now fails
-    unless it is also added to ROSTER_EXCEPTIONS, which is a deliberate,
-    reviewable act — and the empty set stays the goal rather than becoming
-    a place to put anything inconvenient.
+    So the aspiration is a check rather than a hope. Adding a template here
+    fails unless it is also added to ROSTER_EXCEPTIONS, which is a
+    deliberate, reviewable act — and the empty set stays the goal rather
+    than becoming a place to put anything inconvenient.
     """
     undocumented = NOT_YET_UPLIFTED - ROSTER_EXCEPTIONS
     assert not undocumented, (
@@ -1145,12 +1121,11 @@ def _as_number(value: Any) -> float | None:
     return None
 
 
-# The entity that is deliberately outside the standard, and the only one.
-# templates/README.md names it as the single exception to the "every
-# template ships" claims; this is what keeps that sentence honest.
-STANDARD_EXEMPT_ENTITIES: frozenset[tuple[str, str]] = frozenset({
-    ("policy-library", "PolicyDocuments"),
-})
+# Entities deliberately outside the standard. EMPTY: templates/README.md
+# tells an adopter that whichever template they deploy they get views, a
+# form header and demo data, with no exceptions, and this is what keeps
+# that sentence honest.
+STANDARD_EXEMPT_ENTITIES: frozenset[tuple[str, str]] = frozenset()
 
 
 @cache
