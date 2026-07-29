@@ -411,16 +411,26 @@ def _looks_like_a_date(value: object) -> bool:
     the renderers emit, and the only literal form a date column may carry
     once the sentinels have had their turn.
 
-    Deliberately strict. SharePoint accepts `<Value Type="DateTime">banana
-    </Value>` without complaint and answers with no rows, so a typo here is
-    invisible from the build, invisible from the deploy, and visible only as
-    a view that is mysteriously empty.
+    Deliberately strict, and strict in the direction of emitting less. What
+    SharePoint does with an unparseable DateTime operand has not been probed
+    — it might refuse the view, or take it and filter on something nobody
+    intended — and a filter that quietly matches the wrong rows is invisible
+    from the build and from the deploy alike. Refusing here needs no answer
+    to that question.
 
     A bare `datetime.date` passes: PyYAML resolves an unquoted `2026-07-29`
     to one before this module sees it, and `str()` on a date is the ISO
     literal exactly. A `datetime.datetime` does NOT — `str()` spells the
     separator as a space, which no probe has run — and it is rejected by
     `_check_date_literal` with its own message rather than here.
+
+    Surrounding whitespace is NOT tolerated, and the absence of a `.strip()`
+    here is the point. Every renderer emits `str(value)` unchanged, so a
+    value this function trimmed in order to parse would validate as one
+    string and reach SharePoint as another — approving a spelling no probe
+    has run, which is the exact hole the guard exists to close. The
+    sentinels have always been strict this way; matching them leaves one
+    whitespace policy rather than two.
     """
     if isinstance(value, dt.datetime):
         return False
@@ -428,10 +438,9 @@ def _looks_like_a_date(value: object) -> bool:
         return True
     if not isinstance(value, str):
         return False
-    text = value.strip()
-    if not _ISO_DATE_LITERAL.match(text):
+    if not _ISO_DATE_LITERAL.match(value):
         return False
-    text = text.replace("Z", "+00:00")
+    text = value.replace("Z", "+00:00")
     for parse in (dt.datetime.fromisoformat, dt.date.fromisoformat):
         try:
             parse(text)
@@ -445,9 +454,11 @@ def _check_date_literal(
     value: object, column_type: str, target: str, where: str,
 ) -> None:
     """A date column's literal, once `today` and `now` have had their turn,
-    must be a real date. Nothing downstream checks it: SharePoint takes
-    `<Value Type="DateTime">banana</Value>` and answers with no rows, so the
-    build is the only place it can be caught.
+    must be a real date. Nothing downstream checks it, and no probe has
+    asked what SharePoint does with an unparseable one — so the failure is
+    UNBOUNDED rather than known: it may refuse the view, or accept it and
+    filter on something nobody intended. The build is the only place that
+    can be settled without a tenant, so it is settled here.
 
     `now+1` is the case that matters most. `today±N` works, which makes the
     offset form the obvious thing to reach for, and without this it is an
@@ -475,6 +486,25 @@ def _check_date_literal(
             f"reaches the renderers as a datetime object whose text form "
             f"separates date from time with a SPACE, and no probe has run "
             f"that spelling — '{value.isoformat()}' has",
+            where,
+        )
+
+    # A padded date gets its own message: "is not a date" would send the
+    # author hunting a typo in a value that is already correct apart from
+    # the spaces. Both branches deliberately strip before MATCHING - the
+    # leniency is diagnostic only, so the hint can recognise what the guard
+    # above has already refused.
+    if (
+        isinstance(value, str)
+        and value != value.strip()
+        and _looks_like_a_date(value.strip())
+    ):
+        raise _reject(
+            target,
+            f"{value!r} is a date wearing surrounding whitespace. Every "
+            f"renderer emits the literal UNCHANGED, so the spaces would go "
+            f"out to SharePoint inside the operand; drop them. A YAML block "
+            f"scalar leaves a trailing newline the same way",
             where,
         )
 

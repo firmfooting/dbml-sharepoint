@@ -461,10 +461,12 @@ def test_now_takes_no_offset_form_and_says_so() -> None:
 
 
 def test_an_unparseable_date_literal_is_refused_on_every_target() -> None:
-    """SharePoint accepts `<Value Type="DateTime">banana</Value>` and answers
-    with no rows: invisible to the build, invisible to the deploy, and
-    visible only as a view that is mysteriously empty. The build is the only
-    place it can be caught, so it is caught here."""
+    """What SharePoint does with an unparseable DateTime operand has not
+    been probed, and that is the reason to refuse rather than a reason to
+    allow: it might reject the view, or take it and filter on something
+    nobody intended, and the second is invisible to the build and to the
+    deploy alike. The build is the only place this can be settled without a
+    tenant, so it is settled here."""
     condition = parse_condition(
         [{"field": "Due", "op": "leq", "value": "banana"}], "ctx",
     )
@@ -487,8 +489,8 @@ def test_real_date_literals_still_pass() -> None:
 def test_a_date_operand_that_is_not_a_string_is_refused() -> None:
     """The guard used to run only on `str`, and YAML does not hand this
     module strings. `value: 20260729` arrives as an int and `value: true` as
-    a bool; both stringify straight into `<Value Type="DateTime">` and
-    produce exactly the silently-empty view 'banana' is refused for."""
+    a bool; both stringify straight into `<Value Type="DateTime">` and reach
+    the wire as the same unverified operand 'banana' is refused for."""
     for bad in (20260729, True, 2026.5):
         condition = parse_condition(
             [{"field": "Due", "op": "leq", "value": bad}], "ctx",
@@ -545,6 +547,37 @@ def test_a_date_shape_with_no_verified_rendering_is_refused() -> None:
         for render in (to_caml, to_validation, to_expression):
             with pytest.raises(ValueError, match="is not a date"):
                 render(condition, TYPES)
+
+
+def test_a_padded_date_literal_is_refused_rather_than_trimmed() -> None:
+    """The guard used to `.strip()` before matching while every renderer
+    emitted `str(value)` UNCHANGED, so validation and serialisation ran on
+    different strings: `' 2026-07-29 '` passed the exact-syntax check and
+    then went out to SharePoint still wearing its spaces.
+
+    Refused rather than trimmed, for the reason the branch above refuses an
+    unquoted YAML datetime: this guard names the fix instead of guessing at
+    it. A trailing newline is the same fault from a YAML block scalar.
+    """
+    for bad in (" 2026-07-29 ", "2026-07-29 ", " 2026-07-29", "2026-07-29\n"):
+        condition = parse_condition(
+            [{"field": "Due", "op": "leq", "value": bad}], "ctx",
+        )
+        for render in (to_caml, to_validation, to_expression):
+            with pytest.raises(ValueError, match="surrounding whitespace"):
+                render(condition, TYPES)
+
+
+def test_the_sentinels_were_always_strict_about_whitespace() -> None:
+    """The mirror, and the reason this is a fix rather than a tightening:
+    `' today '` and `' now '` have always been refused, so trimming the
+    date literal alone gave one guard two whitespace policies."""
+    for bad in (" today ", " now "):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": "leq", "value": bad}], "ctx",
+        )
+        with pytest.raises(ValueError, match="is not a date"):
+            to_caml(condition, TYPES)
 
 
 def test_not_in_on_a_date_column_checks_every_member() -> None:

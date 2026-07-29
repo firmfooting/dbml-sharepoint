@@ -146,11 +146,10 @@ Delete the rows before go-live.
       satisfactorily*, *Resolved after escalation* or *Worked around locally*
       with no date. *Partially resolved*, *Unresolved* and *Recurred after
       resolution* need no date — they are the honest state of an open row.
-- [ ] **An event that happened earlier today saves.** This is the check that
-      matters: `Occurred At` is a datetime and SharePoint's `TODAY()` is
-      midnight, so the rule uses the `today+1` allowance. If a same-day event
-      is rejected, the allowance has been edited out. A date next month is
-      still refused.
+- [ ] **An event that happened earlier today saves, and one stamped an hour
+      from now is refused.** `Occurred At` is a datetime and its rule is
+      `NOW()`, not a whole-day bound, so the refusal should bite within the
+      hour rather than at midnight. A date next month is refused too.
 - [ ] `Logged Date` defaults to today without user entry.
 
 ### The calculated columns, and the one that is blank on purpose
