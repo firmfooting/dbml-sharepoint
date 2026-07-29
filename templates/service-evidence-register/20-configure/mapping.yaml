@@ -683,6 +683,21 @@ form_formatting:
 # everything stamped after 00:00, which for an event log is every row anybody
 # ever types. OccurredAt is the one DATETIME here and takes the `today+1`
 # midnight allowance: any time today passes, tomorrow does not.
+#
+# EVERY RULE BELOW IS AN UPPER BOUND, AND THAT IS A LIMIT RATHER THAN A
+# CHOICE. This register carries three ordered date pairs - ResponseDate after
+# FollowUpDate, ServiceIssue.ResponseDate after RaisedDate, ResolvedDate
+# after OccurredAt - and none of the three can be enforced at save: the
+# condition grammar compares a column to a LITERAL, never to another column,
+# so "ResponseDate >= FollowUpDate" has no spelling. contract-register
+# records the same limitation for EndDate/StartDate and vehicle-log for
+# OdoEnd/OdoStart.
+#
+# A reversed pair is visible rather than silent: it shows as a NEGATIVE Days
+# to respond or Days to response on the item. 50-govern/GOVERNANCE.md carries
+# it as a data-quality check for the monthly reconciliation. Do not reach for
+# a row colour to make it louder - this template has one row-level signal and
+# has already spent it on ServiceIssue Materiality.
 column_validation:
   ServiceEvent:
     reconcile: exact
@@ -723,6 +738,12 @@ column_validation:
             - { field: RaisedDate, op: is_null }
             - { field: RaisedDate, op: leq, value: today }
         message: "Use the date you actually raised it; it cannot be in the future."
+      ResponseDate:
+        when:
+          any_of:
+            - { field: ResponseDate, op: is_null }
+            - { field: ResponseDate, op: leq, value: today }
+        message: "Use the date they responded; it cannot be in the future. Leave it blank until they have."
       ClosedDate:
         when:
           any_of:

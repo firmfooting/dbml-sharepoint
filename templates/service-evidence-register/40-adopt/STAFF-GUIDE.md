@@ -95,6 +95,15 @@ it worth having. Nothing links the two lists automatically either, so
 **Last Followed Up** on the event is carried across by a curator as part of
 the weekly chase, and reconciled against **By event** each month.
 
+**If the answer arrives afterwards, tell a curator — do not open a second
+row.** Receiving an answer is not a chase, and a second row would be counted
+as one: the group count on **By event** *is* the chase count, and Days To
+Respond would measure from the wrong date. A curator records **What came
+back**, **Response Date** and the summary on the row that did the asking, from
+the **Awaiting a response** view. The same applies to an event that is later
+resolved — **Resolved Date** and **Outcome for us** are a curator's to fill
+in once you have saved it.
+
 ## The views you will actually use
 
 **Outstanding and ageing** is what the list opens on. It shows everything
