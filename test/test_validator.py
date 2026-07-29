@@ -2867,3 +2867,13 @@ def test_a_null_hyperlink_url_is_refused(tmp_path: Path) -> None:
 def test_an_empty_hyperlink_url_is_refused(tmp_path: Path) -> None:
     errors = _hyperlink_demo(tmp_path, '{ url: "   " }')
     assert any("non-empty string" in f.message for f in errors), errors
+
+
+def test_a_scalar_hyperlink_demo_value_is_validated_too(tmp_path: Path) -> None:
+    """A URL column takes a bare address as well as a record. Checking only
+    the record shape left `Link: null` and `Link: 123` unvalidated — and the
+    generator refuses both, so the build surfaced a traceback instead of a
+    finding. A validator must refuse everything its generator refuses."""
+    for bad in ("null", "123", '""'):
+        errors = _hyperlink_demo(tmp_path, bad)
+        assert any("non-empty string" in f.message for f in errors), (bad, errors)
