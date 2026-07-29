@@ -2,6 +2,16 @@
    per-list caching and invalidateFieldShapes(listName?) so concurrent
    lanes never thrash each other's caches. Absence answers (404 and the
    documented absent-field 400) return null rather than throwing. #}
+  // SharePoint resolves a list title, a field name and a site group name
+  // CASE-INSENSITIVELY, and enforces their uniqueness the same way. Every
+  // local index of those names must therefore match the same way: a
+  // case-sensitive Set reports an existing 'or_opportunity' absent when the
+  // mapping declares 'OR_Opportunity', and the run then tries to CREATE it
+  // and fails on a name collision it could have adopted.
+  const nameKey = (value) => String(value == null ? '' : value).toLowerCase();
+  const nameSet = (values) => new Set((values || []).map(nameKey));
+  const hasName = (set, value) => Boolean(set) && set.has(nameKey(value));
+
   // Which list titles exist, from ONE enumeration. A by-title GET for a list
   // that is not there answers 404, which the browser paints red and an
   // operator reads as a failure — on a first deploy EVERY list probe is that
@@ -19,7 +29,7 @@
     // per-list probing, which is noisier but still correct.
     if (!r.ok) return null;
     const j = await r.json();
-    knownListTitles = new Set(
+    knownListTitles = nameSet(
       ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
     );
     return knownListTitles;
@@ -30,7 +40,7 @@
     // server: a cache must never be able to confirm our own write.
     if (!fresh) {
       const titles = await ensureKnownListTitles();
-      if (titles && !titles.has(name)) return null;
+      if (titles && !hasName(titles, name)) return null;
     }
     const select = [
       'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
@@ -100,6 +110,17 @@
   };
   async function listFieldShapes(listName) {
     if (listName in fieldShapesByList) return fieldShapesByList[listName];
+    // A list we already know is absent has no fields, and asking anyway
+    // costs a 404 the browser paints red — on a first deploy, once per
+    // declared list in maintenance unseal, before a single list exists.
+    // The enumeration is already in hand for exactly this reason; this
+    // just spends it here too.
+    const titles = await ensureKnownListTitles();
+    if (titles && !hasName(titles, listName)) {
+      const empty = { get: () => undefined, size: 0 };
+      fieldShapesByList[listName] = empty;
+      return empty;
+    }
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -113,18 +134,33 @@
         // exists to remove. Safe because every field-touching phase opens
         // with invalidateFieldShapes(), so a list created later in the run
         // is re-read at the next phase boundary rather than staying absent.
-        const empty = new Map();
+        const empty = { get: () => undefined, size: 0 };
         fieldShapesByList[listName] = empty;
         return empty;
       }
       throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
-    const shapes = new Map();
+    // TWO indexes, not one keyspace. getbyinternalnameortitle resolves an
+    // internal name first, so folding both into a single map lets one
+    // field's display Title shadow another field's InternalName whenever
+    // they match case-insensitively — and the loser is then read as an
+    // impostor by the immutable-shape check, aborting preflight over a
+    // field SharePoint can resolve perfectly well. First writer wins
+    // WITHIN each index; internal names win BETWEEN them, matching the
+    // endpoint this cache stands in for.
+    const byInternal = new Map();
+    const byTitle = new Map();
     for (const f of (j && j.d && j.d.results) || []) {
-      if (f.InternalName && !shapes.has(f.InternalName)) shapes.set(f.InternalName, f);
-      if (f.Title && !shapes.has(f.Title)) shapes.set(f.Title, f);
+      if (f.InternalName && !byInternal.has(nameKey(f.InternalName))) {
+        byInternal.set(nameKey(f.InternalName), f);
+      }
+      if (f.Title && !byTitle.has(nameKey(f.Title))) byTitle.set(nameKey(f.Title), f);
     }
+    const shapes = {
+      get: (name) => byInternal.get(nameKey(name)) || byTitle.get(nameKey(name)) || undefined,
+      size: byInternal.size + byTitle.size,
+    };
     fieldShapesByList[listName] = shapes;
     return shapes;
   }

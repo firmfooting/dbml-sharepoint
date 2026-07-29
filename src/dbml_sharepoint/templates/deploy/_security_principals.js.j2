@@ -73,11 +73,39 @@
       }
     }
 
+    // Which groups exist, from ONE enumeration. A by-name GET for a group
+    // that is not there answers 404, which the browser paints red and an
+    // operator reads as a failure — and on a first deploy EVERY declared
+    // group is that 404. Same treatment the list and view probes already
+    // get: enumerate once, answer absence locally, keep a clean run clean.
+    // Not fatal if refused; we fall back to probing, which is noisier and
+    // still correct.
+    let knownGroupNames = null;
+    {
+      const r = await fetchWithRetry(apiUrl('web/sitegroups?$select=Title&$top=5000'), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (r.ok) {
+        const j = await r.json();
+        // nameSet/hasName: SharePoint group names are unique and resolved
+        // case-insensitively, so an existing 'or list administrators'
+        // must not read as absent against a declared 'OR List
+        // Administrators' — that turns an adoptable group into a create
+        // that fails on a name collision.
+        knownGroupNames = nameSet(
+          ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
+        );
+      }
+    }
+
     for (const grp of SCHEMA.groups) {
       try {
-        const checkResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
+        // null status means "known absent without asking".
+        const checkResp = knownGroupNames && !hasName(knownGroupNames, grp.name)
+          ? { status: 404, ok: false }
+          : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
         if (checkResp.status === 404) {
           log('INFO', `Creating site group '${grp.name}'...`);
           await postJson(apiUrl('web/sitegroups'), {
@@ -89,6 +117,12 @@
             AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
             OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
           }, digest0);
+          // Keep the snapshot current. Two declarations differing only in
+          // case are one group to SharePoint, so without this the second
+          // would read as absent and try to create a name that now exists.
+          // The build refuses that declaration outright; this keeps the
+          // deploy honest even against a mapping that predates the rule.
+          if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
           log('INFO', `Site group '${grp.name}' created.`);
         } else if (checkResp.ok) {
           // Group membership controls are part of the security boundary. A

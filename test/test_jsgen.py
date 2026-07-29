@@ -1764,7 +1764,11 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
     assert "removeallviewfields" in js
     assert "addviewfield('${odataName(name)}')" in js
     assert "DefaultView: true" in js
-    assert "view.renamed_from.includes(v.Title)" in js
+    # Case-insensitively: SharePoint resolves a view by title that way and
+    # refuses two views on one list differing only in case, so a previous
+    # title recorded with different casing must still be adopted rather
+    # than left behind while a duplicate is created beside it.
+    assert "view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title))" in js
     assert "multiple previous-title views exist" in js
     assert "Hidden: view.hidden" in js
     assert "actual.Hidden !== view.hidden" in js
@@ -2735,3 +2739,122 @@ def test_a_grouped_column_need_not_be_displayed() -> None:
         {"Area": "area_enum"},
     )
     assert caml == '<GroupBy Collapse="TRUE"><FieldRef Name="Area"/></GroupBy>'
+
+
+def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None:
+    """SharePoint refuses ValidationFormula on a URL field even when the
+    value is the empty string: HTTP 500, "This field type does not support
+    validation formulas." Observed on a live tenant, aborting a paste at
+    the field-reconcile phase.
+
+    Under `column_validation: reconcile: exact` the deployer clears the
+    formula on every column NOT declared — so one undeclared hyperlink
+    column stops a deploy that has nothing else wrong with it. The
+    generator must mark those columns unmanaged rather than emit a clear.
+    """
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Thing {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Link hyperlink\n"
+        "  Note nvarchar\n"
+        "  Comment nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Thing: { kind: List, base_template: 100, site_role: default }\n"
+        "column_validation:\n"
+        "  Thing:\n"
+        "    reconcile: exact\n"
+        "    columns:\n"
+        "      Note:\n"
+        "        when:\n"
+        '          - { field: Note, op: is_not_null }\n'
+        '        message: "Needed."\n',
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.generators.jsgen import UNMANAGED, build_schema_json
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+
+    schema_json = build_schema_json(
+        schema=parse_dbml(tmp_path / "s.dbml"),
+        bundle=load_mapping(tmp_path / "m.yaml"),
+        site_role="default",
+    )
+    fields = {
+        f["title"]: f
+        for lst in schema_json["lists"]
+        for f in lst["fields_phase1"]
+    }
+    assert fields["Link"]["validation_formula"] == UNMANAGED, (
+        "a hyperlink column must be left unmanaged, not sent an empty "
+        "ValidationFormula that SharePoint refuses outright"
+    )
+    # The declared one still deploys, and an undeclared TEXT column is
+    # still cleared — the guard must not become "skip everything".
+    assert fields["Note"]["validation_formula"] != UNMANAGED
+    assert fields["Comment"]["validation_formula"] == ""
+
+
+def test_role_assignments_are_enumerated_before_any_principal_probe() -> None:
+    """A list's roleassignments/getbyprincipalid answers 404 for a principal
+    with no assignment yet — every declared principal, on a first deploy —
+    and the browser paints that red whatever the script does with it.
+
+    Asserted on the generated source rather than by running it: the mock in
+    test_deploy_runtime never resolves a principal Id, so its run never
+    reaches these calls, and a runtime assertion would pass while testing
+    nothing.
+    """
+    js = _generate_simple_js()
+    enumerate_at = js.index("roleassignments?$expand=Member,RoleDefinitionBindings")
+    probe_at = js.index("roleassignments/getbyprincipalid")
+    assert enumerate_at < probe_at, (
+        "the one-shot enumeration must come before any per-principal probe, "
+        "or the probe is what an operator sees painted red"
+    )
+    # Every probe site must be reachable only when the enumeration failed.
+    assert js.count("bindingsFor(resolved.principalId)") == 2, (
+        "both the add check and the stale-level pass must consult the "
+        "enumeration first and fall back to probing only when it is null"
+    )
+
+
+def test_a_casing_only_view_rename_does_not_deadlock() -> None:
+    """`title: Open` with `renamed_from: [open]` matches ONE live view under
+    case-insensitive comparison. Counting it as both the current view and a
+    competing previous-title view makes the conflict check refuse to choose
+    between a view and itself — on every run, so the rename never lands."""
+    js = _generate_simple_js()
+    block = js[js.index("const previousMatches = listedViews.filter("):]
+    block = block[: block.index("if (previousMatches.length > 1)")]
+    assert "!existing || v.Id !== existing.Id" in block, (
+        "previousMatches must exclude the view already matched as current"
+    )
+
+
+def test_field_shapes_keep_internal_names_and_titles_apart() -> None:
+    """getbyinternalnameortitle resolves an internal name first. Folding both
+    into one keyspace lets one field's display Title shadow another field's
+    InternalName when they match case-insensitively — and the shadowed field
+    is then read as an impostor, aborting preflight over a column SharePoint
+    resolves perfectly well."""
+    js = _generate_simple_js()
+    assert "const byInternal = new Map();" in js
+    assert "const byTitle = new Map();" in js
+    assert "byInternal.get(nameKey(name)) || byTitle.get(nameKey(name))" in js, (
+        "internal names must take precedence over display titles"
+    )
+
+
+def test_a_created_group_enters_the_enumeration_snapshot() -> None:
+    """The snapshot answers 'does this group exist?' locally, so a group
+    created during the run must join it — otherwise a later declaration
+    reading as absent would try to create a name that now exists."""
+    js = _generate_simple_js()
+    assert "knownGroupNames.add(nameKey(grp.name))" in js

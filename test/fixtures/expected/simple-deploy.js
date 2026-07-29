@@ -131,6 +131,16 @@
     return cachedDigest;
   }
 
+  // SharePoint resolves a list title, a field name and a site group name
+  // CASE-INSENSITIVELY, and enforces their uniqueness the same way. Every
+  // local index of those names must therefore match the same way: a
+  // case-sensitive Set reports an existing 'or_opportunity' absent when the
+  // mapping declares 'OR_Opportunity', and the run then tries to CREATE it
+  // and fails on a name collision it could have adopted.
+  const nameKey = (value) => String(value == null ? '' : value).toLowerCase();
+  const nameSet = (values) => new Set((values || []).map(nameKey));
+  const hasName = (set, value) => Boolean(set) && set.has(nameKey(value));
+
   // Which list titles exist, from ONE enumeration. A by-title GET for a list
   // that is not there answers 404, which the browser paints red and an
   // operator reads as a failure — on a first deploy EVERY list probe is that
@@ -148,7 +158,7 @@
     // per-list probing, which is noisier but still correct.
     if (!r.ok) return null;
     const j = await r.json();
-    knownListTitles = new Set(
+    knownListTitles = nameSet(
       ((j && j.d && j.d.results) || []).map((l) => l.Title).filter((t) => typeof t === 'string'),
     );
     return knownListTitles;
@@ -159,7 +169,7 @@
     // server: a cache must never be able to confirm our own write.
     if (!fresh) {
       const titles = await ensureKnownListTitles();
-      if (titles && !titles.has(name)) return null;
+      if (titles && !hasName(titles, name)) return null;
     }
     const select = [
       'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
@@ -229,6 +239,17 @@
   };
   async function listFieldShapes(listName) {
     if (listName in fieldShapesByList) return fieldShapesByList[listName];
+    // A list we already know is absent has no fields, and asking anyway
+    // costs a 404 the browser paints red — on a first deploy, once per
+    // declared list in maintenance unseal, before a single list exists.
+    // The enumeration is already in hand for exactly this reason; this
+    // just spends it here too.
+    const titles = await ensureKnownListTitles();
+    if (titles && !hasName(titles, listName)) {
+      const empty = { get: () => undefined, size: 0 };
+      fieldShapesByList[listName] = empty;
+      return empty;
+    }
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listName)}')/fields?$select=${_FIELD_SHAPE_SELECT}`), {
       headers: { 'Accept': 'application/json;odata=verbose' },
     });
@@ -242,18 +263,33 @@
         // exists to remove. Safe because every field-touching phase opens
         // with invalidateFieldShapes(), so a list created later in the run
         // is re-read at the next phase boundary rather than staying absent.
-        const empty = new Map();
+        const empty = { get: () => undefined, size: 0 };
         fieldShapesByList[listName] = empty;
         return empty;
       }
       throw new Error(`Field enumeration for '${listName}' failed: HTTP ${r.status} ${text}`);
     }
     const j = await r.json();
-    const shapes = new Map();
+    // TWO indexes, not one keyspace. getbyinternalnameortitle resolves an
+    // internal name first, so folding both into a single map lets one
+    // field's display Title shadow another field's InternalName whenever
+    // they match case-insensitively — and the loser is then read as an
+    // impostor by the immutable-shape check, aborting preflight over a
+    // field SharePoint can resolve perfectly well. First writer wins
+    // WITHIN each index; internal names win BETWEEN them, matching the
+    // endpoint this cache stands in for.
+    const byInternal = new Map();
+    const byTitle = new Map();
     for (const f of (j && j.d && j.d.results) || []) {
-      if (f.InternalName && !shapes.has(f.InternalName)) shapes.set(f.InternalName, f);
-      if (f.Title && !shapes.has(f.Title)) shapes.set(f.Title, f);
+      if (f.InternalName && !byInternal.has(nameKey(f.InternalName))) {
+        byInternal.set(nameKey(f.InternalName), f);
+      }
+      if (f.Title && !byTitle.has(nameKey(f.Title))) byTitle.set(nameKey(f.Title), f);
     }
+    const shapes = {
+      get: (name) => byInternal.get(nameKey(name)) || byTitle.get(nameKey(name)) || undefined,
+      size: byInternal.size + byTitle.size,
+    };
     fieldShapesByList[listName] = shapes;
     return shapes;
   }
@@ -1254,7 +1290,48 @@
       headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
       body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${await r.text()}`);
+    if (!r.ok) {
+      const text = await r.text();
+      // CLEARING a formula from a field type that cannot carry one is a
+      // no-op, not a failure: the desired end state — no formula — already
+      // holds, and SharePoint is refusing the property rather than the
+      // value. Aborting a whole paste over it means one URL column stops a
+      // deploy that has nothing wrong with it.
+      //
+      // Narrow on purpose. It applies only when every declared formula in
+      // this body is the empty string, so a SET is never swallowed; the
+      // generator's own unsupported-kind list normally prevents the request
+      // entirely, and this is what stops the next kind missing from that
+      // hand-kept list becoming an aborted paste rather than a log line.
+      const clearingOnly = (field.validation_formula === '' || field.validation_formula === UNMANAGED)
+        && (field.client_validation_formula === '' || field.client_validation_formula === UNMANAGED);
+      if (clearingOnly && /does not support validation formulas/i.test(text)) {
+        // A MERGE is atomic, so the refusal applied NONE of this body —
+        // including any ClientValidationFormula clear it also carried,
+        // which a URL field does support. Returning here would report
+        // success while a stale show/hide rule stayed live and the
+        // read-back below never ran. So retry with only the properties
+        // this field type accepts, then fall through and verify.
+        const clientOnly = { '__metadata': body.__metadata };
+        if ('ClientValidationFormula' in body) {
+          clientOnly.ClientValidationFormula = body.ClientValidationFormula;
+          clientOnly.ClientValidationMessage = body.ClientValidationMessage;
+        }
+        if (Object.keys(clientOnly).length > 1) {
+          const retry = await fetchWithRetry(url, {
+            method: 'POST',
+            headers: spHeaders(digest, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+            body: JSON.stringify(clientOnly),
+          });
+          if (!retry.ok) {
+            throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}; client-only retry also failed: HTTP ${retry.status} ${await retry.text()}`);
+          }
+        }
+        log('INFO', `Field '${listName}.${field.title}': field type carries no validation formula, so there is none to clear; continuing.`);
+      } else {
+        throw new Error(`declared formulas MERGE failed: HTTP ${r.status} ${text}`);
+      }
+    }
 
     // A SEALED column accepts the write, reports success and discards it,
     // so the read-back is the only evidence the change landed.
@@ -1562,11 +1639,39 @@
       }
     }
 
+    // Which groups exist, from ONE enumeration. A by-name GET for a group
+    // that is not there answers 404, which the browser paints red and an
+    // operator reads as a failure — and on a first deploy EVERY declared
+    // group is that 404. Same treatment the list and view probes already
+    // get: enumerate once, answer absence locally, keep a clean run clean.
+    // Not fatal if refused; we fall back to probing, which is noisier and
+    // still correct.
+    let knownGroupNames = null;
+    {
+      const r = await fetchWithRetry(apiUrl('web/sitegroups?$select=Title&$top=5000'), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (r.ok) {
+        const j = await r.json();
+        // nameSet/hasName: SharePoint group names are unique and resolved
+        // case-insensitively, so an existing 'or list administrators'
+        // must not read as absent against a declared 'OR List
+        // Administrators' — that turns an adoptable group into a create
+        // that fails on a name collision.
+        knownGroupNames = nameSet(
+          ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
+        );
+      }
+    }
+
     for (const grp of SCHEMA.groups) {
       try {
-        const checkResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
+        // null status means "known absent without asking".
+        const checkResp = knownGroupNames && !hasName(knownGroupNames, grp.name)
+          ? { status: 404, ok: false }
+          : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+            headers: { 'Accept': 'application/json;odata=verbose' },
+          });
         if (checkResp.status === 404) {
           log('INFO', `Creating site group '${grp.name}'...`);
           await postJson(apiUrl('web/sitegroups'), {
@@ -1578,6 +1683,12 @@
             AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
             OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
           }, digest0);
+          // Keep the snapshot current. Two declarations differing only in
+          // case are one group to SharePoint, so without this the second
+          // would read as absent and try to create a name that now exists.
+          // The build refuses that declaration outright; this keeps the
+          // deploy honest even against a mapping that predates the rule.
+          if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
           log('INFO', `Site group '${grp.name}' created.`);
         } else if (checkResp.ok) {
           // Group membership controls are part of the security boundary. A
@@ -2250,9 +2361,25 @@
         await postJson(apiUrl(`${listPath}/views`), createBody, viewDigest);
       };
       const listedViews = await listViewShapes(listPath);
-      let existing = listedViews.find((v) => v.Title === view.title) || null;
+      // FINDING a view matches case-insensitively, because SharePoint
+      // resolves views/getbytitle that way and will not let two views on
+      // one list differ only in case. Matching exactly here would read an
+      // existing 'open by score' as absent, then try to create the
+      // declared 'Open by score' beside it.
+      //
+      // The title DRIFT check further down stays exact on purpose: once
+      // the view is found, a casing difference is drift the deployer owns
+      // and renames, which is the opposite question.
+      let existing = listedViews.find((v) => nameKey(v.Title) === nameKey(view.title)) || null;
+      // A previous title is only interesting on a DIFFERENT view. Excluding
+      // the one already matched as current is what makes a casing-only
+      // rename possible: `title: Open` with `renamed_from: [open]` matches
+      // the same live view twice under case-insensitive comparison, and the
+      // conflict check below would then refuse to choose between a view and
+      // itself — on every run, so the rename could never land.
       const previousMatches = listedViews.filter(
-        (v) => view.renamed_from.includes(v.Title),
+        (v) => (!existing || v.Id !== existing.Id)
+          && view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
       );
       if (previousMatches.length > 1) {
         throw new Error(`multiple previous-title views exist for '${view.title}': ${previousMatches.map((v) => v.Title).join(', ')}`);
@@ -2270,7 +2397,7 @@
       // URL is never touched — the create below would get a suffixed .aspx
       // and the URL drift gate fails the view closed.
       const halfMigrated = listedViews.find(
-        (v) => v.Title === view.url_slug && urlBasename(v) === desiredBasename,
+        (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
       ) || null;
       if (!existing) {
         if (halfMigrated) {
@@ -2815,19 +2942,59 @@
         // failure aborts the list before exact mode removes a single binding.
         // GetByPrincipalId is positional in SharePoint REST; add/remove role
         // assignment methods below use their documented named parameters.
-        for (const resolved of resolvedAssignments) {
-          const desiredResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-          let desiredPresent = false;
-          if (desiredResp.ok) {
-            const desiredJson = await desiredResp.json();
-            const desiredBindings = (desiredJson.d && desiredJson.d.RoleDefinitionBindings && desiredJson.d.RoleDefinitionBindings.results) || [];
-            desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
-          } else if (desiredResp.status !== 404) {
-            const text = await desiredResp.text();
-            throw new Error(`desired binding probe failed: HTTP ${desiredResp.status} ${text}`);
+        // ONE enumeration answers every question below. getbyprincipalid
+        // answers 404 for a principal that has no assignment on this list
+        // yet — which every declared principal is on a first deploy — and
+        // the browser paints that red whether or not the script handles it.
+        // Same treatment lists, views and site groups already get.
+        //
+        // Deliberately not fatal: if the enumeration is refused we fall
+        // back to per-principal probing, which is noisier and still
+        // correct. Exact mode below reuses this same snapshot; it was
+        // taken BEFORE the adds, which changes no removal because a
+        // binding this run adds is by definition declared, and exact mode
+        // only removes bindings that are not.
+        let existingAssignments = null;
+        {
+          const collected = [];
+          let pageUrl = apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
+          let ok = true;
+          while (pageUrl && ok) {
+            const pageResp = await fetchWithRetry(pageUrl, {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (!pageResp.ok) { ok = false; break; }
+            const pageJson = await pageResp.json();
+            collected.push(...((pageJson.d && pageJson.d.results) || []));
+            pageUrl = (pageJson.d && pageJson.d.__next) || null;
           }
+          if (ok) existingAssignments = collected;
+        }
+        const bindingsFor = (principalId) => {
+          if (!existingAssignments) return null;
+          const hit = existingAssignments.find(
+            (a) => a.Member && a.Member.Id === principalId,
+          );
+          return (hit && hit.RoleDefinitionBindings && hit.RoleDefinitionBindings.results) || [];
+        };
+
+        for (const resolved of resolvedAssignments) {
+          let desiredBindings = bindingsFor(resolved.principalId);
+          if (desiredBindings === null) {
+            const desiredResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`), {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (desiredResp.ok) {
+              const desiredJson = await desiredResp.json();
+              desiredBindings = (desiredJson.d && desiredJson.d.RoleDefinitionBindings && desiredJson.d.RoleDefinitionBindings.results) || [];
+            } else if (desiredResp.status === 404) {
+              desiredBindings = [];
+            } else {
+              const text = await desiredResp.text();
+              throw new Error(`desired binding probe failed: HTTP ${desiredResp.status} ${text}`);
+            }
+          }
+          const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
           if (!desiredPresent) {
             digest4 = await getDigest();
             const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
@@ -2850,21 +3017,29 @@
           const expected = new Set(resolvedAssignments.map(
             x => `${x.principalId}:${x.roleDefId}`,
           ));
-          const existingAssignments = [];
-          let assignmentsUrl = apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
-          while (assignmentsUrl) {
-            const allResp = await fetchWithRetry(assignmentsUrl, {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (!allResp.ok) {
-              const text = await allResp.text();
-              throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
+          // Reuses the snapshot taken above when it succeeded. Exact mode
+          // is an allowlist, so it must never run on a PARTIAL view of the
+          // bindings: if that enumeration was refused, this one repeats it
+          // and stays fatal on failure rather than pruning against
+          // whatever it managed to read.
+          let allAssignments = existingAssignments;
+          if (allAssignments === null) {
+            allAssignments = [];
+            let assignmentsUrl = apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
+            while (assignmentsUrl) {
+              const allResp = await fetchWithRetry(assignmentsUrl, {
+                headers: { 'Accept': 'application/json;odata=verbose' },
+              });
+              if (!allResp.ok) {
+                const text = await allResp.text();
+                throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
+              }
+              const allJson = await allResp.json();
+              allAssignments.push(...((allJson.d && allJson.d.results) || []));
+              assignmentsUrl = (allJson.d && allJson.d.__next) || null;
             }
-            const allJson = await allResp.json();
-            existingAssignments.push(...((allJson.d && allJson.d.results) || []));
-            assignmentsUrl = (allJson.d && allJson.d.__next) || null;
           }
-          for (const existing of existingAssignments) {
+          for (const existing of allAssignments) {
             const principalId = existing.Member && existing.Member.Id;
             if (principalId == null) {
               throw new Error('role assignment enumeration returned an entry without Member.Id');
@@ -2883,20 +3058,25 @@
           // Backward-compatible configured-principal mode: remove stale levels
           // for declared principals but leave unrelated principals untouched.
           for (const resolved of resolvedAssignments) {
-            const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (raResp.ok) {
-              const raJson = await raResp.json();
-              const bindings = (raJson.d && raJson.d.RoleDefinitionBindings && raJson.d.RoleDefinitionBindings.results) || [];
-              for (const binding of bindings) {
-                if (binding.Name !== 'Limited Access' && binding.Id !== resolved.roleDefId) {
-                  await removeBinding(resolved.principalId, binding.Id, 'stale');
-                }
+            let bindings = bindingsFor(resolved.principalId);
+            if (bindings === null) {
+              const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
+                headers: { 'Accept': 'application/json;odata=verbose' },
+              });
+              if (raResp.ok) {
+                const raJson = await raResp.json();
+                bindings = (raJson.d && raJson.d.RoleDefinitionBindings && raJson.d.RoleDefinitionBindings.results) || [];
+              } else if (raResp.status === 404) {
+                bindings = [];
+              } else {
+                const text = await raResp.text();
+                throw new Error(`role assignment probe failed: HTTP ${raResp.status} ${text}`);
               }
-            } else if (raResp.status !== 404) {
-              const text = await raResp.text();
-              throw new Error(`role assignment probe failed: HTTP ${raResp.status} ${text}`);
+            }
+            for (const binding of bindings) {
+              if (binding.Name !== 'Limited Access' && binding.Id !== resolved.roleDefId) {
+                await removeBinding(resolved.principalId, binding.Id, 'stale');
+              }
             }
           }
         }
