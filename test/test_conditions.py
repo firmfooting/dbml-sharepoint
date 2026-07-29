@@ -430,10 +430,10 @@ def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
     """`now` is the one sentinel here whose every rendering contradicts a
     published Microsoft source, so the evidence has to stay findable.
 
-    Not a style check: if the probe were later trimmed of the rows that
+    Not a style check: if the probe were trimmed of the rows that
     established this, the comments in conditions.py would be citing a run
-    nobody could reproduce. The same failure as a build error naming a probe
-    that does not ask — which this file has already had to fix once.
+    nobody could reproduce — the same failure as a build error naming a
+    probe that does not ask the question.
     """
     probe = Path(__file__).parent / "manual" / "datetime-sentinel-probe.js"
     text = probe.read_text(encoding="utf-8")
@@ -441,15 +441,46 @@ def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
         assert marker in text, f"the probe of record no longer mentions {marker}"
 
 
-def test_now_takes_no_offset_form() -> None:
-    """`today±N` has a verified rendering on both targets; `now±N` does not,
-    and unverified is treated as unknown. `now+1` is therefore an ordinary
-    string, and on a datetime column that is a bad date rather than a
-    sentinel — so it must not silently become NOW()+1."""
+def test_now_takes_no_offset_form_and_says_so() -> None:
+    """`today±N` has a verified rendering; `now±N` does not, and unverified
+    is treated as unknown.
+
+    Asserting merely that it does not become `NOW()+1` is not enough: the
+    value would then render as the literal string "now+1" inside a DateTime
+    value, which SharePoint accepts and answers with no rows. So the
+    refusal itself is demanded, and the message must name the offset form
+    rather than reading as a generic typo complaint.
+    """
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": "now+1"}], "ctx",
     )
-    assert "NOW()" not in to_validation(condition, TYPES)
+    for render in (to_caml, to_validation):
+        with pytest.raises(ValueError, match="takes no offset form"):
+            render(condition, TYPES)
+
+
+def test_an_unparseable_date_literal_is_refused_on_every_target() -> None:
+    """SharePoint accepts `<Value Type="DateTime">banana</Value>` and answers
+    with no rows: invisible to the build, invisible to the deploy, and
+    visible only as a view that is mysteriously empty. The build is the only
+    place it can be caught, so it is caught here."""
+    condition = parse_condition(
+        [{"field": "Due", "op": "leq", "value": "banana"}], "ctx",
+    )
+    for render in (to_caml, to_validation, to_expression):
+        with pytest.raises(ValueError, match="is not a date"):
+            render(condition, TYPES)
+
+
+def test_real_date_literals_still_pass() -> None:
+    """The mirror. A guard this strict earns its place only if it lets
+    through everything the templates actually write — ISO dates, ISO
+    datetimes, and the trailing-Z form the demo planner emits."""
+    for value in ("2026-07-29", "2026-07-29T14:30:00", "2026-07-29T14:30:00Z"):
+        condition = parse_condition(
+            [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
+        )
+        assert value in to_caml(condition, TYPES)
 
 
 def test_operators_pending_probe_are_disabled_for_the_expression_target() -> None:

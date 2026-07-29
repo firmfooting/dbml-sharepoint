@@ -689,13 +689,12 @@ form_formatting:
 # `leq today` is therefore correct, and every date column below uses it.
 #
 # OccurredAt is the one DATETIME here, and it takes `now`, which renders as
-# NOW(). That was verified on a live tenant on 2026-07-29
-# (test/manual/datetime-sentinel-probe.js) after this template first
-# shipped with the `today+1` midnight allowance the rest of the library
-# used. The allowance was never wrong — the same probe confirmed `leq
-# today` really does reject a same-day timestamp — but it permitted up to
-# twenty-four hours of future-dating, and on a register whose entire claim
-# is contemporaneity that window was the wrong thing to leave open.
+# NOW() — verified on a live tenant on 2026-07-29
+# (test/manual/datetime-sentinel-probe.js).
+#
+# The whole-day alternative, `today+1`, would permit up to twenty-four
+# hours of future-dating. On a register whose entire claim is
+# contemporaneity, that is the wrong window to leave open.
 #
 # EVERY RULE BELOW IS AN UPPER BOUND, AND THAT IS A LIMIT RATHER THAN A
 # CHOICE. This register carries three ordered date pairs - ResponseDate after
