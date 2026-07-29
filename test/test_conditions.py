@@ -1,6 +1,8 @@
 # test/test_conditions.py
 """The shared condition grammar: parse, normalise, render."""
 
+from pathlib import Path
+
 import pytest
 
 from dbml_sharepoint.analysis.conditions import (
@@ -240,6 +242,8 @@ def test_measure_tree_counts_depth_and_leaves() -> None:
 TYPES = {
     "Status": "nvarchar", "Count": "number", "Owner": "person",
     "Note": "nvarchar", "Parent": "int", "Due": "date", "Flag": "boolean",
+    # A DATETIME, which `now` needs and `Due` deliberately is not.
+    "OccurredAt": "datetime",
 }
 
 
@@ -352,6 +356,111 @@ def test_today_sentinel_is_rejected_by_the_expression_target() -> None:
     assert to_validation(condition, TYPES) == "[Due]<TODAY()"
     with pytest.raises(ValueError, match="expression"):
         to_expression(condition, TYPES)
+
+
+def test_now_renders_now_in_a_validation_formula() -> None:
+    """The one target where the evidence reaches all the way to behaviour.
+
+    test/manual/datetime-sentinel-probe.js set `=[ProbeWhen]<=NOW()` on a
+    live tenant on 2026-07-29: SharePoint returned 204, read it back, and
+    then REFUSED an item stamped three hours in the future. That is not a
+    round-trip claim, it is the rule working.
+
+    It also contradicts Microsoft's own formula reference, which says Lists
+    and libraries do not support NOW(). True of calculated columns, where
+    the value would go stale between saves; false in a validation formula,
+    which is evaluated at save.
+    """
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
+    )
+    assert to_validation(condition, TYPES) == "[OccurredAt]<=NOW()"
+
+
+def test_now_is_gated_on_caml_until_a_saved_view_is_probed() -> None:
+    """The CAML rendering exists, is correct as far as anything has been
+    observed, and is deliberately unreachable.
+
+    `<Today/>` with IncludeTimeValue="TRUE" was verified through `getitems`
+    with an ad-hoc CamlQuery. The deploy writes a view's stored ViewQuery,
+    which is a different surface: the same probe watched SharePoint rewrite
+    that XML on save, and the only element ever observed inside a real saved
+    view was `<Now/>` — the one that does not work.
+
+    Distance between "observed here" and "shipped there" is exactly what
+    this module refuses to paper over.
+    """
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
+    )
+    with pytest.raises(ValueError, match="not through a saved ViewQuery"):
+        to_caml(condition, TYPES)
+
+
+def test_the_gated_caml_rendering_is_still_the_verified_one() -> None:
+    """Guards the rendering itself while it is unreachable. A gate that
+    outlives its probe would otherwise let the code beneath it rot, and the
+    day someone lifts it they would ship whatever had drifted in.
+
+    `<Now/>` is NOT it: Learn documents that element as a child of `<Value>`
+    and the probe found it returns nothing — the same signature an INVENTED
+    element produced, because SharePoint does not validate this position.
+    """
+    from dbml_sharepoint.analysis.conditions import _caml_value
+
+    rendered = _caml_value("datetime", "now", "ctx")
+    assert 'IncludeTimeValue="TRUE"' in rendered
+    assert "<Today/>" in rendered
+    assert "<Now/>" not in rendered, "the element Learn documents does not work"
+
+
+def test_now_is_refused_on_the_expression_target() -> None:
+    """@now stores and reads back intact, so it is not obviously absent —
+    but whether a show/hide rule built on it FIRES is a rendering behaviour
+    no probe has seen, and this target already produced one formula
+    (`length()`) that stored perfectly and evaluated false for every value.
+    """
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
+    )
+    with pytest.raises(ValueError, match="VERIFIED client-side"):
+        to_expression(condition, TYPES)
+
+
+def test_now_on_a_date_column_is_refused_and_names_today() -> None:
+    """A DATE column has no time of day, so `now` on one is `today` written
+    confusingly. Without this it would render as the literal string "now"
+    inside a DateTime value — which SharePoint accepts and answers with the
+    wrong rows, the failure shape this whole module exists to prevent."""
+    condition = parse_condition([{"field": "Due", "op": "leq", "value": "now"}], "ctx")
+    for render in (to_caml, to_validation):
+        with pytest.raises(ValueError, match="use 'today'"):
+            render(condition, TYPES)
+
+
+def test_the_caml_gate_names_a_probe_that_asks_the_question() -> None:
+    """The signpost rule, applied to the gate this file just added.
+
+    A build error saying "confirm it with X" is worse than none when X does
+    not ask — it reads as though somebody already checked. That happened
+    here once already, with the expression text operators pointing at
+    form-visibility-evidence-probe.js, and this keeps the new gate honest.
+    """
+    probe = Path(__file__).parent / "manual" / "datetime-sentinel-probe.js"
+    text = probe.read_text(encoding="utf-8")
+    for marker in ("C6", "C7", "ViewQuery"):
+        assert marker in text, f"the named probe does not mention {marker}"
+
+
+def test_now_takes_no_offset_form() -> None:
+    """`today±N` has a verified rendering on both targets; `now±N` does not,
+    and unverified is treated as unknown. `now+1` is therefore an ordinary
+    string, and on a datetime column that is a bad date rather than a
+    sentinel — so it must not silently become NOW()+1."""
+    condition = parse_condition(
+        [{"field": "OccurredAt", "op": "leq", "value": "now+1"}], "ctx",
+    )
+    assert "NOW()" not in to_validation(condition, TYPES)
 
 
 def test_operators_pending_probe_are_disabled_for_the_expression_target() -> None:

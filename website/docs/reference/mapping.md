@@ -110,11 +110,60 @@ views:
 
 - `where` takes the shared [condition grammar](../api/conditions.md):
   typed operators (`eq`, `neq`, `leq`, `geq`, `in`, `contains`, ...), date
-  sentinels such as `today+30`, and nesting through `all_of` / `any_of` /
+  sentinels such as `today+30` and `now`, and nesting through `all_of` / `any_of` /
   `none_of`. A bare list means `all_of`, so every view written before
   nesting existed keeps working unchanged. The same grammar drives
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
+
+:::tip `now` — the current-instant sentinel, for datetime columns only
+
+```yaml
+column_validation:
+  Visit:
+    columns:
+      SignedInAt:                       # a DATETIME
+        when:
+          - { field: SignedInAt, op: leq, value: now }
+        message: "A sign-in cannot be in the future."
+```
+
+`TODAY()` in a validation formula is **midnight**, so `leq today` on a
+datetime column rejects everything stamped after 00:00 — which, on a
+sign-in log, is every row anybody ever types. The library used to work
+around that with `today+1`, a midnight allowance that bought back a window
+of up to twenty-four hours' future-dating. `now` closes it exactly.
+
+**Where it works, and where it does not:**
+
+| Target | `now` |
+|---|---|
+| `column_validation` / `list_validation` | ✅ renders `NOW()` |
+| `views[].where` | ❌ refused — see below |
+| `form_visibility.when` | ❌ refused, as `today` is |
+
+Two of those need saying plainly, because both contradict a published
+source. Microsoft's formula reference states that Lists and libraries do
+not support `NOW()`. That is true of **calculated** columns, where the
+value would go stale between saves, and false in a validation formula:
+`test/manual/datetime-sentinel-probe.js` set one on a live tenant, watched
+SharePoint accept and store it, and watched it refuse a timestamp three
+hours in the future.
+
+The **view** target is refused for the opposite reason — not because the
+rendering is wrong, but because it has only been observed in the wrong
+place. `<Now/>` is documented on Learn as a child of `<Value>` and returns
+nothing at all; `<Today/>` with `IncludeTimeValue="TRUE"` does compare
+against the instant, but that was established through an ad-hoc
+`CamlQuery`, and the deploy writes a view's **stored ViewQuery**, which
+SharePoint rewrites on save. Until a probe reads rows back through a saved
+view, `now` stays refused there and `today` remains correct for the
+date-window filters every shipped view actually wants.
+
+`now` takes **no offset form**. `today±N` has a verified rendering;
+`now±N` does not, and unverified is treated as unknown.
+
+:::
 
 :::tip `me` — the current-user sentinel, and the only way to filter a person column
 
