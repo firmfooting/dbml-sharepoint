@@ -84,8 +84,16 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # on an empty string is -1, which satisfies both `< 0` and
             # `!= 0`. Its negation must therefore be false there, and the
             # null arm below would OR the blank back in — making an authored
-            # rule and its own negation both true for a blank value. Same
-            # reasoning as neq/not_in, and it must stay a separate test:
+            # rule and its own negation both true for a blank value.
+            #
+            # That -1 is arithmetic, not an observation: the probe's typed
+            # cases were all non-empty. It is row 4 of the eyes-on table now
+            # (test/manual/expression-text-operators-probe.js), which asks it
+            # directly and has not yet been run. If that row ever comes back
+            # with X2 or X6 HIDDEN for the empty box, this branch is wrong
+            # and so is the neq/not_in one below it.
+            #
+            # Same reasoning as neq/not_in, and it must stay a separate test:
             # `_TEXT_OPS` holds all four, and the `flipped.op` half of the
             # condition below would catch the POSITIVE two by their flips.
             # For those the null arm is right — `contains` is false for a
@@ -180,10 +188,12 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 # EMPTY, and the emptiness is the claim: every operator this tool renders
 # onto the expression target has been watched working in a form — with one
 # stated exception. `not_begins_with` renders `indexOf(...) != 0`, which was
-# not among the probe's candidates; it is the exact negation of the `== 0`
-# that WAS watched, over the same call whose value was watched, so it is
-# derived rather than observed. Named here rather than left for a reader to
-# assume, because the whole worth of this list is that it is honest.
+# not among the candidates the 2026-07-29 pass carried; it is the exact
+# negation of the `== 0` that WAS watched, over the same call whose value was
+# watched, so it is derived rather than observed. Named here rather than left
+# for a reader to assume, because the whole worth of this list is that it is
+# honest. The probe now asks it directly, as X6, and asking is not answering
+# — the row is unrun until somebody pastes the script and reports it.
 #
 # It stays here because storage cannot establish anything on this target.
 # SharePoint does not validate ClientValidationFormula on write — a call to

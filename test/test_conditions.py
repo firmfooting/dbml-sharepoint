@@ -656,12 +656,14 @@ def test_text_operators_render_through_indexof_on_the_expression_target() -> Non
     call to a function that does not exist — so nothing but that eyes-on
     pass could have established it.
 
-    `!= 0` is the fourth and was NOT a candidate: the probe carried `>= 0`,
-    `< 0`, `== 0`, `startsWith()` and `substring(...) ==`. It is the exact
-    negation of the `== 0` that was watched, over the same indexOf call
+    `!= 0` is the fourth and was NOT among the candidates that pass carried
+    (`>= 0`, `< 0`, `== 0`, `startsWith()`, `substring(...) ==`). It is the
+    exact negation of the `== 0` that was watched, over the same indexOf call
     whose value was watched, so it is DERIVED rather than observed. Said
     plainly here because a reader who assumes otherwise would be relying on
-    a row the probe never printed.
+    a row the probe never printed. It is now candidate X6 in that probe, so
+    the question is asked — but not yet answered, and asking is not
+    answering.
     """
     expected = {
         "contains": ">= 0",
