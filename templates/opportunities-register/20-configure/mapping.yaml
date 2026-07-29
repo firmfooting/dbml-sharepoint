@@ -1,0 +1,622 @@
+# Opportunities register — lean, health-ready physical mapping.
+prefix: "OR_"
+
+entities:
+  Opportunity: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# This is a conversation-ordering score for routine opportunities, never a
+# clinical-risk rating. Any safety, risk, equity, continuity, executive or
+# statutory override blanks the local score and says to use the existing
+# authorised priority instead.
+calculated_formulas:
+  Opportunity:
+    PriorityScore: '=IF(AND(NOT(ISBLANK([PriorityOverride])),[PriorityOverride]<>"None"),"",IF(OR(ISBLANK([BenefitPotential]),ISBLANK([TimeCriticality])),"",IF([BenefitPotential]="Limited",1,IF([BenefitPotential]="Material",2,IF([BenefitPotential]="Major",3,4)))*IF([TimeCriticality]="Flexible",1,IF([TimeCriticality]="Within 12 months",2,IF([TimeCriticality]="Within 3 months",3,4)))))'
+    PriorityBand: '=IF(AND(NOT(ISBLANK([PriorityOverride])),[PriorityOverride]<>"None"),"Use existing priority",IF(ISBLANK([PriorityScore]),"",IF([PriorityScore]>=13,"Prompt decision",IF([PriorityScore]>=9,"Prioritise",IF([PriorityScore]>=5,"Consider","Routine")))))'
+    DaysToDecision: '=IF(OR(ISBLANK([IdentifiedDate]),ISBLANK([DecisionDate])),"",DATEDIF([IdentifiedDate],[DecisionDate],"d"))'
+
+# Least privilege by default:
+#   - ordinary Site Members and Owners receive no declared list grant;
+#   - a small, deliberately populated Submitters group can create and read;
+#   - the deployment guide makes SharePoint's manual "read own items" setting
+#     a hard go-live gate, because the deployer cannot reconcile that setting;
+#   - Stewards work every item without item-delete rights. ManageLists is
+#     necessary to bypass SharePoint's read-own filtering; keep the group tiny
+#     and retain column sealing plus list-deletion protection;
+#   - Full Control stays in the administrator group.
+groups:
+  - name: "OR Opportunity Submitters"
+    description: "Named project staff allowed to submit opportunities. Keep this group small; configure read-own item-level access before adding members."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+  - name: "OR Opportunity Stewards"
+    description: "Small routing team that triages, coordinates decisions and verifies hand-offs through existing governance."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+  - name: "OR List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_operator_during_deploy: true
+
+permission_levels:
+  - name: "OR Submit Only"
+    description: "Submit and read according to list item-level settings; no edit, delete or schema rights."
+    base_permissions:
+      - AddListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+  - name: "OR Steward No Delete"
+    description: "Work all opportunities under read-own item settings. Includes ManageLists to bypass item filtering, but no item-delete permission; keep membership tightly controlled."
+    base_permissions:
+      - ManageLists
+      - AddListItems
+      - EditListItems
+      - ViewListItems
+      - ViewVersions
+      - ViewFormPages
+      - Open
+      - ViewPages
+      - BrowseUserInfo
+      - UseRemoteAPIs
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "OR Opportunity Submitters" }
+        level: "OR Submit Only"
+      - principal: { kind: group, name: "OR Opportunity Stewards" }
+        level: "OR Steward No Delete"
+      - principal: { kind: group, name: "OR List Administrators" }
+        level: "Full Control"
+
+seal_columns: true
+prevent_list_deletion: true
+
+display_names:
+  mode: auto
+  overrides:
+    Opportunity:
+      Title: "Problem or opportunity"
+      SafetyScreen: "Safety and privacy check"
+      ServiceArea: "Service or facility area"
+      EvidenceLink: "Evidence or source link"
+      ProjectReference: "Project link"
+      ScopeBoundary: "Why the project cannot own it"
+      ProjectRelationship: "Relationship to project"
+      EvidenceSummary: "Triage evidence summary"
+      TriageOutcome: "Triage route"
+      PatientConsumerImpact: "Patient, consumer and equity consideration"
+      BenefitMeasure: "Proposed benefit measure"
+      PriorityOverride: "Safety, equity or authority override"
+      DestinationReference: "Receiving record or control ID"
+      DestinationLink: "Receiving record link"
+
+# All visual states use the shared native SharePoint semantic styles. The
+# decision-row formatter uses tenant theme classes rather than a fixed palette.
+column_formatting:
+  Opportunity:
+    SafetyScreen:
+      style: severity
+      map:
+        "Required pathways checked - safe to record here": good
+        "Urgent, sensitive or unsure - use routing guide first": severe
+    Status:
+      style: severity
+      map:
+        Captured: neutral
+        Assessing: low
+        "Awaiting decision": warning
+        Accepted: low
+        Parked: warning
+        Transferred: good
+        "Not proceeding": muted
+        Duplicate: muted
+    TriageOutcome:
+      style: pill
+      map:
+        "Assess here": low
+        "Clinical incident or safety system": severe
+        "Organisational risk system": warning
+        "Complaint or open disclosure system": warning
+        "Privacy or cyber process": severe
+        "Project issue or change control": low
+        "Direct hand-off to known owner": good
+        "Duplicate or already governed": muted
+        "Close after screening": muted
+    BenefitPotential:
+      style: pill
+      map: { Limited: neutral, Material: low, Major: good, "System-wide": good }
+    TimeCriticality:
+      style: severity
+      map: { Flexible: neutral, "Within 12 months": low, "Within 3 months": warning, "Time-sensitive": severe }
+    EffortBand:
+      style: pill
+      map: { Unknown: neutral, Small: good, Medium: low, Large: warning }
+    PriorityOverride:
+      style: severity
+      map:
+        None: neutral
+        "Existing safety or risk priority applies": severe
+        "Equity or cultural safety consideration": warning
+        "Service continuity consideration": warning
+        "Executive or statutory direction": warning
+    PriorityBand:
+      style: severity
+      calculated: true
+      map: { Routine: neutral, Consider: low, Prioritise: warning, "Prompt decision": severe, "Use existing priority": severe }
+    PriorityScore:
+      style: data-bar
+      max: 16
+      calculated: true
+      color_by:
+        field: PriorityBand
+        calculated: true
+        map: { Routine: neutral, Consider: low, Prioritise: warning, "Prompt decision": severe, "Use existing priority": severe }
+    NextActionDue:
+      style: overdue-date
+      guard: { field: Status, not: [Captured, Transferred, "Not proceeding", Duplicate] }
+    DecisionDueDate:
+      style: overdue-date
+      guard: { field: Status, not: [Captured, Assessing, Accepted, Parked, Transferred, "Not proceeding", Duplicate] }
+    ReviewDueDate:
+      style: overdue-date
+      guard: { field: Status, not: [Captured, Assessing, "Awaiting decision", Accepted, Transferred, "Not proceeding", Duplicate] }
+
+# Five operational queues. There is deliberately no giant portfolio dashboard
+# and no Quick wins view: stewards work exceptions and decision points, while
+# the generated All Items view remains a hidden recovery/reporting surface.
+views:
+  Opportunity:
+    - title: "Needs triage"
+      default: true
+      fields: [Title, ServiceArea, SourceProject, Author, IdentifiedDate,
+               ScopeBoundary, Status]
+      where:
+        - { field: Status, op: eq, value: Captured }
+      sort:
+        - { field: IdentifiedDate, direction: asc }
+      widths:
+        Title: 320
+        ServiceArea: 220
+        SourceProject: 190
+        Author: 170
+        IdentifiedDate: 150
+        ScopeBoundary: 300
+        Status: 120
+    - title: "Assessments"
+      fields: [Title, ServiceArea, Theme, BenefitPotential, TimeCriticality,
+               PriorityOverride, PriorityBand, EffortBand, OpportunityOwner,
+               NextActionDue, Status]
+      where:
+        - { field: Status, op: eq, value: Assessing }
+      sort:
+        - { field: NextActionDue, direction: asc }
+        - { field: IdentifiedDate, direction: asc }
+      widths:
+        Title: 300
+        ServiceArea: 210
+        Theme: 190
+        BenefitPotential: 140
+        TimeCriticality: 150
+        PriorityOverride: 240
+        PriorityBand: 160
+        EffortBand: 110
+        OpportunityOwner: 170
+        NextActionDue: 160
+        Status: 120
+    - title: "Decisions"
+      fields: [Title, ServiceArea, PriorityOverride, BenefitPotential,
+               TimeCriticality, PriorityBand, PriorityScore, EffortBand,
+               DecisionMaker, DecisionDueDate, Status]
+      where:
+        - { field: Status, op: eq, value: "Awaiting decision" }
+      sort:
+        - { field: DecisionDueDate, direction: asc }
+      formatting: formatting/row-decision-attention.json
+      widths:
+        Title: 310
+        ServiceArea: 210
+        PriorityOverride: 240
+        BenefitPotential: 140
+        TimeCriticality: 150
+        PriorityBand: 160
+        PriorityScore: 140
+        EffortBand: 110
+        DecisionMaker: 170
+        DecisionDueDate: 170
+        Status: 150
+    - title: "Handoff and deferred"
+      fields: [Title, ServiceArea, Status, DeliveryRoute, OpportunityOwner,
+               ReviewDueDate, NextAction, NextActionDue, DestinationReference]
+      where:
+        - { field: Status, op: in, value: [Accepted, Parked] }
+      sort:
+        - { field: NextActionDue, direction: asc }
+      widths:
+        Title: 290
+        ServiceArea: 210
+        Status: 130
+        DeliveryRoute: 210
+        OpportunityOwner: 170
+        ReviewDueDate: 160
+        NextAction: 280
+        NextActionDue: 160
+        DestinationReference: 230
+    - title: "Closed and redirected"
+      fields: [Title, ServiceArea, TriageOutcome, Status, DeliveryRoute,
+               DestinationReference, DestinationLink, DecisionDate, Modified]
+      where:
+        - { field: Status, op: in, value: [Transferred, "Not proceeding", Duplicate] }
+      sort:
+        - { field: Modified, direction: desc }
+      widths:
+        Title: 300
+        ServiceArea: 210
+        TriageOutcome: 260
+        Status: 150
+        DeliveryRoute: 210
+        DestinationReference: 230
+        DestinationLink: 170
+        DecisionDate: 150
+        Modified: 170
+
+# New asks for four required facts plus the mandatory stop gate. Links and the
+# scope explanation are optional at intake; stewards complete everything else.
+form_visibility:
+  Opportunity:
+    reconcile: exact
+    columns:
+      IdentifiedDate: { new: false }
+      ProjectContact: { new: false }
+      ProjectRelationship: { new: false }
+      Theme: { new: false }
+      AffectedGroups: { new: false }
+      EvidenceSummary: { new: false }
+      TriageOutcome: { new: false }
+      OpportunityOwner: { new: false }
+      Status: { new: false }
+      NextAction: { new: false }
+      NextActionDue: { new: false }
+      BenefitType:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      BenefitPotential:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      TimeCriticality:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      EffortBand:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      StrategicAlignment:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      PatientConsumerImpact:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      BenefitMeasure:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      PriorityOverride:
+        new: false
+        when:
+          - { field: TriageOutcome, op: eq, value: "Assess here" }
+      DecisionMaker:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Assessing, "Awaiting decision"] }
+      DecisionDueDate:
+        new: false
+        when:
+          - { field: Status, op: eq, value: "Awaiting decision" }
+      DecisionDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, Parked, Transferred, "Not proceeding"] }
+      DecisionRationale:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, Parked, Transferred, "Not proceeding", Duplicate] }
+      DeliveryRoute:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, Transferred] }
+      ReviewDueDate:
+        new: false
+        when:
+          - { field: Status, op: eq, value: Parked }
+      DestinationReference:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, Transferred, Duplicate] }
+      DestinationLink:
+        new: false
+        when:
+          - { field: Status, op: in, value: [Accepted, Transferred, Duplicate] }
+
+form_formatting:
+  Opportunity:
+    header: formatting/opportunity-form-header.json
+    body: formatting/opportunity-form-body.json
+
+column_validation:
+  Opportunity:
+    reconcile: exact
+    columns:
+      SafetyScreen:
+        when:
+          - { field: SafetyScreen, op: eq, value: "Required pathways checked - safe to record here" }
+        message: "Stop and use the routing-guide link above for any urgent, sensitive or uncertain matter. Return only with a de-identified process opportunity after the required pathway has been used."
+      ScopeBoundary:
+        when:
+          any_of:
+            - { field: ScopeBoundary, op: is_null }
+            - { field: ScopeBoundary, measure: length, op: gt, value: 15 }
+        message: "Leave this blank for a steward to confirm, or explain the real scope, authority or funding boundary in more than 15 characters."
+      BenefitMeasure:
+        when:
+          any_of:
+            - { field: BenefitMeasure, op: is_null }
+            - { field: BenefitMeasure, measure: length, op: gt, value: 10 }
+        message: "Give a usable baseline, target or unit rather than only a measure label."
+      DecisionDate:
+        when:
+          any_of:
+            - { field: DecisionDate, op: is_null }
+            - { field: DecisionDate, op: leq, value: today }
+        message: "Use the date the decision occurred; it cannot be in the future."
+
+# Fast exits are intentionally cheap. Full benefit data is required only when
+# the register commissions a decision or accepts/parks an item. Redirects,
+# direct hand-offs, screening closures, assessed no decisions and duplicates
+# need only the facts relevant to that outcome. Stewards check that Status and
+# Triage Outcome tell the same story; the scalar formula stays below
+# SharePoint's 32-condition ceiling.
+list_validation:
+  Opportunity:
+    when:
+      - any_of:
+          - { field: Status, op: eq, value: Captured }
+          - all_of:
+              - { field: TriageOutcome, op: is_not_null }
+              - { field: ScopeBoundary, op: is_not_null }
+      - any_of:
+          - { field: Status, op: not_in, value: ["Awaiting decision", Accepted, Parked] }
+          - all_of:
+              - { field: BenefitType, op: is_not_null }
+              - { field: BenefitPotential, op: is_not_null }
+              - { field: TimeCriticality, op: is_not_null }
+              - { field: EffortBand, op: is_not_null }
+              - { field: EffortBand, op: neq, value: Unknown }
+              - { field: BenefitMeasure, op: is_not_null }
+      - any_of:
+          - { field: Status, op: in, value: [Captured, Transferred, "Not proceeding", Duplicate] }
+          - all_of:
+              - { field: NextAction, op: is_not_null }
+              - { field: NextActionDue, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: "Awaiting decision" }
+          - { field: DecisionDueDate, op: is_not_null }
+      - any_of:
+          - { field: Status, op: not_in, value: [Accepted, Parked] }
+          - { field: DecisionDate, op: is_not_null }
+      - any_of:
+          - { field: Status, op: not_in, value: [Accepted, Transferred] }
+          - { field: DeliveryRoute, op: is_not_null }
+      - any_of:
+          - { field: Status, op: neq, value: Parked }
+          - { field: ReviewDueDate, op: is_not_null }
+      - any_of:
+          - { field: Status, op: not_in, value: [Transferred, Duplicate] }
+          - { field: DestinationReference, op: is_not_null }
+    message: "Check this stage: leaving Captured needs a triage route and confirmed project boundary. Full benefit data is needed only for Awaiting decision, Accepted or Parked. Active work needs a dated next action. Decision, parking, transfer and duplicate stages need their relevant date, route or receiving reference."
+
+demo_items:
+  Opportunity:
+    - key: opportunity-captured
+      values:
+        Title: "[DEMO] Reduce duplicate discharge follow-up calls"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. Two project teams found that the same routine discharge follow-up question is asked by separate services, creating avoidable calls for patients and staff. No patient-level detail is recorded here."
+        ServiceArea: "Inpatient services"
+        SourceProject: "Digital Discharge Project"
+        IdentifiedDate: "today-3"
+        Status: Captured
+    - key: opportunity-safety-redirect
+      values:
+        Title: "[DEMO] Link medication handover pattern to the clinical incident system"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. A de-identified handover pattern discovered by the project may contribute to medication communication failures. The clinical pathway has already been used; this row only preserves the project-to-system hand-off."
+        ServiceArea: "Inpatient services"
+        SourceProject: "Electronic Medication Management"
+        ScopeBoundary: "The project cannot investigate clinical incidents or own the mandated safety response."
+        IdentifiedDate: "today-7"
+        TriageOutcome: "Clinical incident or safety system"
+        Status: Transferred
+        DeliveryRoute: "Clinical governance or risk system"
+        DestinationReference: "[DEMO] IMS-2026-0142"
+    - key: opportunity-direct-handoff
+      values:
+        Title: "[DEMO] Reuse the theatre utilisation dashboard"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. The project dashboard already exposes unused session patterns that the established theatre optimisation program can act on without another assessment."
+        ServiceArea: "Clinical support services"
+        SourceProject: "Theatre Data Improvement"
+        ScopeBoundary: "Ongoing operational utilisation management sits outside the time-limited data project."
+        IdentifiedDate: "today-10"
+        TriageOutcome: "Direct hand-off to known owner"
+        Status: Transferred
+        DeliveryRoute: "Existing initiative"
+        DestinationReference: "[DEMO] Theatre Optimisation workplan item 18"
+    - key: opportunity-assessing-override
+      values:
+        Title: "[DEMO] Improve interpreter booking visibility"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. Project testing found that teams cannot see whether an interpreter has been booked until late in the patient journey, causing avoidable rework and access barriers."
+        ServiceArea: "Multi-service or external interface"
+        SourceProject: "Patient Flow Renewal"
+        ScopeBoundary: "Interpreter-service workflow redesign is outside the approved patient-flow technology scope."
+        IdentifiedDate: "today-16"
+        ProjectRelationship: "Benefits enabler"
+        Theme: "Access, flow or coordination"
+        EvidenceSummary: "Demo row. Four of ten de-identified test journeys required a second booking check; the small sample is an assumption to validate."
+        TriageOutcome: "Assess here"
+        OpportunityOwner: "@me"
+        Status: Assessing
+        NextAction: "Validate the booking-visibility problem with the interpreter service and consumer adviser"
+        NextActionDue: "today+7"
+        BenefitType: "Access or equity"
+        BenefitPotential: Material
+        TimeCriticality: "Within 3 months"
+        EffortBand: Medium
+        StrategicAlignment: "Equitable access to care"
+        PatientConsumerImpact: "Interpreter users may experience delays; consumer and cultural-safety input is required."
+        BenefitMeasure: "4 of 10 test journeys rechecked -> fewer than 1 of 10"
+        PriorityOverride: "Equity or cultural safety consideration"
+    - key: opportunity-decision
+      values:
+        Title: "[DEMO] Standardise referral rules before subject-matter experts leave"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. Referral rules remain in local files and will lose their only subject-matter experts at the end of the quarter, risking inconsistent access and rework."
+        ServiceArea: "Outpatient and ambulatory care"
+        SourceProject: "Referral Platform Replacement"
+        ScopeBoundary: "The project migrates configured rules but does not redesign or govern the referral process."
+        IdentifiedDate: "today-35"
+        ProjectRelationship: "Operational readiness dependency"
+        Theme: "Access, flow or coordination"
+        EvidenceSummary: "Demo row. Twelve rule variants were found across four services; two subject-matter experts leave this quarter."
+        TriageOutcome: "Assess here"
+        OpportunityOwner: "@me"
+        Status: "Awaiting decision"
+        NextAction: "Use the existing operations forum to decide whether to commission a bounded discovery"
+        NextActionDue: "today-2"
+        BenefitType: "Integrated care"
+        BenefitPotential: "System-wide"
+        TimeCriticality: "Time-sensitive"
+        EffortBand: Medium
+        StrategicAlignment: "Safe and consistent access"
+        PatientConsumerImpact: "Consistent referral rules should reduce avoidable access variation across services."
+        BenefitMeasure: "12 local variants -> one governed referral standard"
+        PriorityOverride: None
+        DecisionMaker: "@me"
+        DecisionDueDate: "today-2"
+    - key: opportunity-accepted
+      values:
+        Title: "[DEMO] Simplify the equipment handover checklist"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. The asset project exposed a 42-step handover checklist with repeated approvals that delays equipment availability without adding a known control."
+        ServiceArea: "Corporate and operational support"
+        SourceProject: "Asset System Rollout"
+        ScopeBoundary: "Changing the controlled handover process requires a separate improvement cycle."
+        IdentifiedDate: "today-45"
+        ProjectRelationship: "Adoption enabler"
+        Theme: "Facilities or equipment"
+        EvidenceSummary: "Demo row. Three pilot handovers averaged nine days; four approvals captured the same confirmation."
+        TriageOutcome: "Assess here"
+        OpportunityOwner: "@me"
+        Status: Accepted
+        NextAction: "Create the quality-improvement record and obtain acceptance from its owner"
+        NextActionDue: "today+5"
+        BenefitType: "Time or operational capacity"
+        BenefitPotential: Major
+        TimeCriticality: "Within 3 months"
+        EffortBand: Small
+        StrategicAlignment: "More time for service delivery"
+        PatientConsumerImpact: "Faster equipment availability supports care; the improvement cycle will confirm any safety controls."
+        BenefitMeasure: "9 days average handover -> 3 days"
+        PriorityOverride: None
+        DecisionMaker: "@me"
+        DecisionDate: "today-4"
+        DecisionRationale: "Demo row. Accepted into the existing quality-improvement system for a bounded test; no new committee was created."
+        DeliveryRoute: "Quality improvement system"
+    - key: opportunity-parked
+      values:
+        Title: "[DEMO] Consolidate low-volume supplier portals"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. Staff maintain separate credentials and procedures for several low-volume supplier portals, but contract options are not yet known."
+        ServiceArea: "Corporate and operational support"
+        SourceProject: "Supplier Master Data"
+        ScopeBoundary: "Portal contracts and commercial negotiations are outside the supplier-data project mandate."
+        IdentifiedDate: "today-60"
+        ProjectRelationship: "Separate from delivery"
+        Theme: "Digital, data or information"
+        EvidenceSummary: "Demo row. Six portals each receive fewer than ten transactions per month."
+        TriageOutcome: "Assess here"
+        OpportunityOwner: "@me"
+        Status: Parked
+        NextAction: "Return only when the existing contract review has produced viable options"
+        NextActionDue: "today+30"
+        BenefitType: "Cost or value"
+        BenefitPotential: Material
+        TimeCriticality: "Within 12 months"
+        EffortBand: Large
+        StrategicAlignment: "Efficient support services"
+        PatientConsumerImpact: "No direct patient impact identified."
+        BenefitMeasure: "6 portals -> no more than 3 if the contract review supports consolidation"
+        PriorityOverride: None
+        DecisionMaker: "@me"
+        DecisionDate: "today-10"
+        DecisionRationale: "Demo row. Deferred to the existing contract review; re-open only when that evidence exists."
+        ReviewDueDate: "today+30"
+    - key: opportunity-screened-close
+      values:
+        Title: "[DEMO] Build a bespoke mobile stock-count application"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. Staff expressed a preference for a dedicated application, but the supported mobile screen has no evidenced access, delay or error problem."
+        ServiceArea: "Corporate and operational support"
+        SourceProject: "Inventory Controls"
+        ScopeBoundary: "A bespoke channel is outside the approved inventory-control outcome and supported architecture."
+        IdentifiedDate: "today-12"
+        TriageOutcome: "Close after screening"
+        Status: "Not proceeding"
+        DecisionRationale: "Demo row. Screened out without a full assessment because no material problem or governed destination was evidenced."
+    - key: opportunity-duplicate
+      values:
+        Title: "[DEMO] Replace manual new-starter equipment requests"
+        SafetyScreen: "Required pathways checked - safe to record here"
+        ProblemStatement: "Demo row. The project found that managers still email equipment requests for new starters; triage confirmed the same problem is already governed elsewhere."
+        ServiceArea: "Corporate and operational support"
+        SourceProject: "Workplace Refresh"
+        ScopeBoundary: "The workflow is owned by People Operations rather than the workplace-refresh project."
+        IdentifiedDate: "today-8"
+        TriageOutcome: "Duplicate or already governed"
+        Status: Duplicate
+        DecisionRationale: "Demo row. Closed as already governed after the destination owner confirmed the existing record."
+        DestinationReference: "[DEMO] QI-2026-0017"
