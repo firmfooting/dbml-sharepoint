@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The idea",
+      "fields": ["Title", "Source", "SourceRef", "Owner", "RaisedDate", "Problem"]
+    },
+    {
+      "displayname": "Plan the test",
+      "fields": ["ChangeIdea", "BenefitType", "MeasureBefore"]
+    },
+    {
+      "displayname": "Test and outcome",
+      "fields": ["Stage", "TestNotes", "MeasureAfter", "AdoptedDate"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["DaysIdeaToOutcome"]
+    }
+  ]
+}

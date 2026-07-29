@@ -58,12 +58,351 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (the lookup,
+# the indexes, the views and the reporting bundle all key on them); the
+# deployer renames the display Title after create. Auto PascalCase
+# splitting handles every column here correctly, so there are no
+# overrides.
+display_names:
+  mode: auto
+
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md) — status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
+#
+# DueDate carries the deadline treatment guarded on the two closed
+# statuses. StartDate deliberately does NOT: a start date in the past
+# means the person has arrived, which is the opposite of overdue, and a
+# register that reddens every started hire teaches people to ignore red.
 column_formatting:
   Starter:
     Status: { style: severity, map: { Preparing: neutral, Started: low, Complete: good, Withdrawn: muted } }
   OnboardingTask:
     Status: { style: severity, map: { Open: low, Done: good, "Not applicable": muted } }
+    DueDate: { style: overdue-date, guard: { field: Status, not: [Done, "Not applicable"] } }
+
+# Every task view shows the same six identifying columns and then its own
+# payload, so the spine is declared once — four repetitions, comfortably
+# past the three the standard sets as the threshold.
+field_sets:
+  OnboardingTask:
+    task: [Title, Starter, TaskFunction, AssignedTo, DueDate, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view and the
+# keys are INTERNAL names — the build rewrites them to display titles,
+# because ColumnWidth binds by display name and an internal name silently
+# resets.
+views:
+  Starter:
+    - title: "In progress"
+      default: true
+      fields: [Title, Role, Department, StartDate, Manager, Status]
+      where:
+        - { field: Status, op: in, value: ["Preparing", "Started"] }
+      sort:
+        - { field: StartDate, direction: asc }
+      widths:
+        Title: 280
+        Role: 200
+        Department: 200
+        StartDate: 160
+        Manager: 160
+        Status: 110
+    # The published row was "Status = Preparing, sort StartDate", which is
+    # every future hire including the one starting in six months. The
+    # 30-day window is what makes "soon" mean something at the top of a
+    # weekly stand-up.
+    - title: "Starting soon"
+      fields: [Title, Role, Department, StartDate, Manager, Status]
+      where:
+        - { field: Status, op: eq, value: "Preparing" }
+        - { field: StartDate, op: leq, value: today+30 }
+      sort:
+        - { field: StartDate, direction: asc }
+      widths:
+        Title: 280
+        Role: 200
+        Department: 200
+        StartDate: 160
+        Manager: 160
+        Status: 110
+    # The privacy surface. GOVERNANCE.md's trim — withdrawn records cut
+    # back to name and status, completed ones deleted or anonymised after
+    # the retention rule — is worked from here.
+    - title: "Complete and withdrawn"
+      fields: [Title, Role, Department, StartDate, Manager, Status]
+      where:
+        - { field: Status, op: in, value: ["Complete", "Withdrawn"] }
+      sort:
+        - { field: StartDate, direction: desc }
+      widths:
+        Title: 280
+        Role: 200
+        Department: 200
+        StartDate: 160
+        Manager: 160
+        Status: 110
+  OnboardingTask:
+    # THE PUBLISHED ROW WAS "My function's queue — TaskFunction =
+    # (theirs)". That is not buildable and the reason is worth stating
+    # where someone will look for it: the `me` sentinel resolves to the
+    # signed-in USER, and it is permitted on person columns only.
+    # TaskFunction is a Choice — SharePoint has no notion of which choice
+    # member the reader belongs to, so there is nothing for a filter to
+    # compare. One grouped view instead, collapsed, which is one view
+    # rather than six and stays correct when the enum changes.
+    - title: "Open by function"
+      default: true
+      fields: ["@task"]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+      group_by: { field: TaskFunction, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Starter: 220
+        TaskFunction: 160
+        AssignedTo: 160
+        DueDate: 160
+        Status: 110
+    # The per-PERSON queue the sentinel can express, and the reason
+    # 40-adopt/STAFF-GUIDE.md tells people to put themselves in AssignedTo
+    # when they pick a task up. AssignedTo is a person column, so this is
+    # exactly the case `me` exists for.
+    - title: "My tasks"
+      fields: ["@task", Notes]
+      where:
+        - { field: AssignedTo, op: eq, value: me }
+        - { field: Status, op: eq, value: "Open" }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Starter: 220
+        TaskFunction: 160
+        AssignedTo: 160
+        DueDate: 160
+        Status: 110
+        Notes: 200
+    # THE PUBLISHED ROW WAS "Per starter — filter by Starter". A static
+    # view cannot filter to one parent; the choices were N views that rot
+    # as hires are added, or one grouped view that does not. Collapsed, so
+    # a manager opens their own hire and reads the whole checklist —
+    # including the Done and Not applicable rows, because "everything is
+    # closed" is the answer they are checking for.
+    - title: "By starter"
+      fields: ["@task", DoneDate]
+      group_by: { field: Starter, collapsed: true }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Starter: 220
+        TaskFunction: 160
+        AssignedTo: 160
+        DueDate: 160
+        Status: 110
+        DoneDate: 160
+    # The published table called this "Overdue before start". The filter
+    # cannot say "before start": a task's link to its starter is a LOOKUP,
+    # and CAML cannot reach a column on the other list, so the start date
+    # is not filterable from here. Denormalising it onto the task would
+    # make it filterable and would then rot — SharePoint copies nothing
+    # between lists, so the duplicate would be stale the first time a start
+    # date moved, and a stale date on a readiness queue is worse than none.
+    #
+    # So the view is named for what it does: every open task past its due
+    # date, whether or not the starter has begun. That is a superset of the
+    # pre-start failures, and the right one to work — an open onboarding
+    # task overdue three weeks AFTER someone started is not less urgent.
+    - title: "Overdue"
+      fields: ["@task", Notes]
+      where:
+        - { field: Status, op: eq, value: "Open" }
+        - { field: DueDate, op: lt, value: today }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Starter: 220
+        TaskFunction: 160
+        AssignedTo: 160
+        DueDate: 160
+        Status: 110
+        Notes: 200
+
+# Form layouts: a strapline header and a sectioned body per list. Section
+# field lists are authored with INTERNAL names; the build rewrites them to
+# display titles. Per-field description hints render on the NEW form only —
+# SharePoint suppresses column descriptions on the Edit form.
+form_formatting:
+  Starter:
+    header: formatting/starter-form-header.json
+    body: formatting/starter-form-body.json
+  OnboardingTask:
+    header: formatting/onboardingtask-form-header.json
+    body: formatting/onboardingtask-form-body.json
+
+# A done date only exists once the task is done, and Status defaults to
+# Open, so the field is absent on the New form and appears the moment
+# someone sets Status to Done. It pairs with the save rule below: the
+# field is on screen exactly when it is mandatory, rather than sitting
+# there inviting a date on an open task.
+#
+# Moving Status back off Done does NOT clear a date already entered —
+# SharePoint has no such mechanism — so the field hides while keeping its
+# value.
+form_visibility:
+  OnboardingTask:
+    columns:
+      DoneDate:
+        when:
+          - { field: Status, op: eq, value: "Done" }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule shares one message.
+column_validation:
+  OnboardingTask:
+    columns:
+      # A task cannot have been completed tomorrow. Left unchecked, a
+      # forward-dated completion is indistinguishable from a real one in
+      # every view and in the monthly per-function stats.
+      DoneDate:
+        when:
+          - { field: DoneDate, op: leq, value: today }
+        message: "A task cannot have been completed in the future. Use the date the work was actually finished."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# TWO rules, chained. A list has ONE ValidationFormula, so both share this
+# slot and both share the message — which is why the message names both
+# checks rather than describing one.
+#
+# Each is written as an implication: `if A then B` is `any_of[not A, B]`,
+# which is why each branch starts with the case the rule does not apply to.
+#
+# Together they are the discipline 40-adopt/STAFF-GUIDE.md asks for in
+# prose: close a task honestly, or say why it does not apply. A task left
+# Open is visible in three views; a task closed with nothing behind it was
+# invisible everywhere until now.
+list_validation:
+  OnboardingTask:
+    when:
+      - any_of:
+          - { field: Status, op: neq, value: "Done" }
+          - { field: DoneDate, op: is_not_null }
+      # Notes is single-line nvarchar rather than multi-line precisely so
+      # that a validation formula can reference it — SharePoint refuses a
+      # multi-line column as an operand.
+      - any_of:
+          - { field: Status, op: neq, value: "Not applicable" }
+          - { field: Notes, op: is_not_null }
+    message: "Closing a task needs the closing fact. Done needs a done date; Not applicable needs a word in Notes saying why it does not apply to this starter."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Dates are today±N so the
+# date-derived views land correctly on whatever day the demo runs, and
+# "@me" is the pasting operator.
+#
+# The titles describe a ROLE rather than naming a person. This tracker
+# holds personal data and 50-govern/GOVERNANCE.md is load-bearing about
+# that; four invented names would teach the wrong reflex on the first
+# screen anyone sees.
+#
+# Coverage: four starters spanning every status, and six tasks including
+# one nobody has picked up and which is already overdue with the start
+# date still ahead — the pre-start failure the "Overdue" view exists to
+# surface, and the reason the demo seeds one.
+demo_items:
+  Starter:
+    - key: str-analyst
+      values:
+        Title: "[DEMO] Data analyst starting in a fortnight"
+        Role: "Data analyst"
+        Department: "Corporate services"
+        StartDate: "today+14"
+        Manager: "@me"
+        Status: "Preparing"
+        Notes: "Demo row. Part-time, Tuesday to Thursday. Second monitor and a locker — the kind of detail the functions read here rather than chase by email."
+    - key: str-nurse
+      values:
+        Title: "[DEMO] Registered nurse — started last week"
+        Role: "Registered nurse"
+        Department: "Ward 3"
+        StartDate: "today-7"
+        Manager: "@me"
+        Status: "Started"
+        Notes: "Demo row. Before-start tasks all closed; the post-start ones run over the next fortnight."
+    - key: str-admin
+      values:
+        Title: "[DEMO] Administration officer — onboarding complete"
+        Role: "Administration officer"
+        Department: "Reception"
+        StartDate: "today-60"
+        Manager: "@me"
+        Status: "Complete"
+    - key: str-withdrawn
+      values:
+        Title: "[DEMO] Withdrawn hire — offer declined"
+        Role: "Project officer"
+        Department: "Programme office"
+        StartDate: "today+30"
+        Manager: "@me"
+        Status: "Withdrawn"
+        Notes: "Demo row. Declined a week out. Remaining tasks closed as Not applicable, and the record is due the privacy trim described in governance."
+  OnboardingTask:
+    - key: tsk-account
+      values:
+        Title: "[DEMO] Create account and assign licences"
+        Starter: { demo_ref: str-analyst }
+        TaskFunction: "IT"
+        AssignedTo: "@me"
+        DueDate: "today+11"
+        Status: "Open"
+    - key: tsk-laptop
+      values:
+        Title: "[DEMO] Order and image the laptop"
+        Starter: { demo_ref: str-analyst }
+        TaskFunction: "IT"
+        AssignedTo: "@me"
+        DueDate: "today+11"
+        Status: "Open"
+        Notes: "Picked up; stock confirmed."
+    - key: tsk-payroll
+      values:
+        Title: "[DEMO] Payroll and superannuation setup"
+        Starter: { demo_ref: str-analyst }
+        TaskFunction: "Finance / payroll"
+        DueDate: "today-2"
+        Status: "Open"
+        Notes: "Demo row. Nobody in AssignedTo and already past due with the start date still ahead. This is the whole point of the tracker: the surprise surfaces now rather than on day one."
+    - key: tsk-desk
+      values:
+        Title: "[DEMO] Desk, access pass and parking"
+        Starter: { demo_ref: str-nurse }
+        TaskFunction: "Facilities"
+        AssignedTo: "@me"
+        DueDate: "today-9"
+        Status: "Done"
+        DoneDate: "today-10"
+    - key: tsk-buddy
+      values:
+        Title: "[DEMO] First-week plan and buddy assigned"
+        Starter: { demo_ref: str-nurse }
+        TaskFunction: "Manager"
+        AssignedTo: "@me"
+        DueDate: "today-9"
+        Status: "Done"
+        DoneDate: "today-9"
+    - key: tsk-parking
+      values:
+        Title: "[DEMO] Car park allocation"
+        Starter: { demo_ref: str-withdrawn }
+        TaskFunction: "Facilities"
+        DueDate: "today+28"
+        Status: "Not applicable"
+        Notes: "Demo row. Hire withdrawn — closed as not applicable rather than left Open to rot, which is what the second save rule is for."

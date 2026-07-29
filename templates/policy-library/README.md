@@ -12,6 +12,21 @@ dates a filterable fact; the library's major/minor versioning separates
 published policies (1.0, 2.0) from what authors are iterating on
 (1.1, 1.2 …).
 
+**Four register views deploy with the list** — *By area* (the default,
+grouped and filtered to policies in force), *Review due*, *In development*
+and *Retired* — and an approved or published policy cannot be saved without
+the date its review interval is measured from. An **Approved** policy
+renders amber rather than green, because a decision staff cannot yet read
+is a job half done. Build with `--seed` and six demo policies show every
+status and every group heading before you register a real one.
+
+> **The document library is uplifted only as far as its display titles.**
+> `views:`, a form body and demo data all describe a *list*, and three of
+> them are refused outright on a `DocumentLibrary` — the file name column
+> is not addressable from a mapping. `30-deploy/DEPLOY.md` sets out exactly
+> what does not fit and leaves the library's one recommended view as a
+> manual step.
+
 > **Minor versions alone do not hide drafts from readers.** The deploy
 > enables major and minor versioning; it does **not** set *Draft Item
 > Security*, which SharePoint leaves at "Any user who can read items". So

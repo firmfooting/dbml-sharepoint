@@ -12,6 +12,22 @@ written down the same way, scored the same way, and decided at a recorded
 gate. The kill decisions become findable ("we declined that in March —
 here's why"), which is half of what a PMO buys, at none of the cost.
 
+**Five declared views**, deployed with the paste — nothing to build by
+hand: *The funnel* (the default, grouped by stage), *Decision queue* (the
+gate agenda, in score order), *Portfolio* (grouped by sponsor), *Graveyard*
+(kept, and kept under that name — governance reads it annually), and
+*Delivered*. The score renders as a bar out of 9, coloured from the
+**Benefit** beside it, so a high-benefit proposal reads as green whatever
+its feasibility drags the number down to. An unscored idea shows a blank
+score, not a low one.
+
+**Three save rules.** Ready for decision needs Benefit, Feasibility and
+Cost Band; anything past the gate needs a decision date; Delivered needs a
+delivered date. The rest of `50-govern`'s data-quality list stays a
+governance check, and that document now says which parts and why —
+Problem, Outcome and Sponsor are column types SharePoint validation
+formulas cannot read.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
@@ -24,4 +40,12 @@ here's why"), which is half of what a PMO buys, at none of the cost.
 
 **Customisation points:** `CostBand` thresholds; the score is deliberately
 simple (3×3) — resist adding weights until you've run the simple version
-for two quarters and can say what it got wrong.
+for two quarters and can say what it got wrong. If you rename a `Stage`
+member, re-read every `where:` in `mapping.yaml`: five views filter on
+stage names, and a renamed member empties a view without failing the build.
+
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+that pastes six `[DEMO] `-titled rows — one per live stage plus a declined
+and a delivered one — so every view, every rating band and the score bar
+render on a first look. One is deliberately left unscored. See
+`30-deploy/DEPLOY.md`.

@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The interest",
+      "fields": ["Title", "InterestType", "DeclaredBy", "DeclaredDate", "Detail"]
+    },
+    {
+      "displayname": "Assessment",
+      "fields": ["Status", "ManagementPlan"]
+    },
+    {
+      "displayname": "Review and cessation",
+      "fields": ["ReviewDate", "CeasedDate"]
+    }
+  ]
+}

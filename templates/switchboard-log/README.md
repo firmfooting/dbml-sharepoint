@@ -23,6 +23,18 @@ reviews.
 (welfare calls, police contact) — ordinary site members get **no access**;
 operators record, supervisors oversee.
 
+**What deploys with it:** twelve views across the four lists. The two that
+change the job most are **Still running** — every code with no all-clear,
+with that cell reading "Running" in red rather than sitting empty, which
+is the gap governance calls the classic one — and **Pending relay**, the
+live board, where an **Emergency** message still waiting washes its whole
+row. Also **Drills** grouped by code type, so the coverage *gap* is
+visible and not just the coverage; **By key**, every movement grouped under
+its key for the quarterly audit; and **Relay times** against the published
+escalation targets. Plus two-pass forms that ask for the all-clear, the
+relay and the return only once they exist, save rules that refuse a
+relayed message with nobody named, and nineteen demo rows behind `--seed`.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
@@ -34,5 +46,8 @@ operators record, supervisors oversee.
 | 5 | `50-govern/` | Code-log review, message follow-up, key audits |
 
 **Customisation points:** the `CodeType` enum ships with the Australian
-AS 4083 code set — replace with your jurisdiction's; `Urgency` and key
-vocabulary to your procedures.
+AS 4083 code set — replace with your jurisdiction's, and note that it is
+the grouping column of the drill-coverage view, so the code set you deploy
+is the report you get; `Urgency` and the two `Status` enums are named in
+view filters, form rules and save rules, so read the "Before you build"
+block in `30-deploy/DEPLOY.md` before editing any of them.

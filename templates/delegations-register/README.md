@@ -16,6 +16,16 @@ extension authorities all say *"per your delegations"*. This is where that
 finally points. When an auditor asks "who approved this and were they
 authorised?", the second half of the answer comes from here.
 
+**Four views deploy with the list**: *By area* (the default working
+lookup), *By role* — the ten-second check before you sign — *Reviews due*,
+and *History*, which is how an approval made three years ago is read back
+against the authority that existed then. A superseded delegation cannot be
+saved without recording what replaced it. The form header links straight
+to the instrument, because when the two disagree the instrument wins;
+substituting that URL is a blocking step in `30-deploy/DEPLOY.md`. Build
+with `--seed` and five demo rows show every view working before you
+transcribe a clause.
+
 **Work the folders in order:**
 
 | Step | Folder | You |

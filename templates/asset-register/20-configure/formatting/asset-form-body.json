@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "What it is",
+      "fields": ["Title", "AssetTag", "Category", "Notes"]
+    },
+    {
+      "displayname": "Where it is",
+      "fields": ["Location", "AssignedTo", "Status"]
+    },
+    {
+      "displayname": "Purchase and warranty",
+      "fields": ["PurchaseDate", "PurchaseCost", "WarrantyExpiry"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["WarrantyMonths"]
+    }
+  ]
+}

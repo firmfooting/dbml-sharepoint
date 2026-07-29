@@ -80,10 +80,337 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
-# Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
-# SharePoint's own severity boxes with icons, consistent across every
-# template.
+# Internal names stay authoritative; only the display title changes.
+# "RequestLocation" exists to keep a bare "Location" out of the DBML, and
+# a person filling in the form is being asked for a location.
+display_names:
+  mode: auto
+  overrides:
+    Request:
+      RequestLocation: "Location"
+
+# Column formatting: the fleet style standard (website/docs/reference/
+# style-guide.md), with tokens mapped by the ROLE a member plays in the
+# lifecycle rather than by what it is called.
+#
+# Accepted was mapped `good` before this uplift, which is the mistake the
+# role table exists to prevent: "someone has picked this up" is in motion,
+# not complete, and colouring it the same green as Completed made an
+# accepted queue look finished.
+#
+# DaysToComplete takes its bar fill from Priority through the standard
+# `color_by` translation, so an urgent request that took eleven days is
+# red at a glance and a low-priority one that took the same eleven days is
+# not. The two can never disagree because they read the same map.
 column_formatting:
   Request:
-    Status: { style: severity, map: { Submitted: low, Accepted: good, "In progress": low, "Waiting - parts or approval": neutral, Completed: good, Declined: muted } }
+    Status:
+      style: severity
+      map:
+        "Submitted": neutral
+        "Accepted": low
+        "In progress": low
+        "Waiting - parts or approval": warning
+        "Completed": good
+        "Declined": muted
+    Priority:
+      style: pill
+      map: { "Low": neutral, "Normal": low, "Urgent": severe }
+    # max 30 is the Low-priority target (20 business days) with headroom;
+    # anything past it fills the bar, which is the message.
+    DaysToComplete:
+      style: data-bar
+      max: 30
+      calculated: true
+      color_by:
+        field: Priority
+        map: { "Low": neutral, "Normal": low, "Urgent": severe }
+
+# The identifying spine every queue view shows. Five of the six views
+# below open with it, which is well past §1.9's three-repetition
+# threshold; adding a column to the queue is one edit here.
+field_sets:
+  Request:
+    queue: [Title, Category, Priority, RequestLocation, RequestedBy,
+            RequestedDate, AssignedTo, Status]
+
+# Declared views. SIX rather than the usual five, because §2.5 of the
+# family standard resolves this template's literal `*(one per category)*`
+# table row into a grouped queue view PLUS the two per-team queues the
+# template actually names — three queue lenses where other lists have one.
+#
+# Sorting by Priority descending puts Urgent above Normal above Low, and
+# it does so by luck: SharePoint sorts a Choice column as text, and
+# "Urgent" > "Normal" > "Low" alphabetically. RENAMING A PRIORITY MEMBER
+# CAN THEREFORE REORDER EVERY QUEUE — see the checklist in
+# 30-deploy/DEPLOY.md before editing that enum.
+views:
+  Request:
+    - title: "Open by category"
+      default: true
+      fields: ["@queue"]
+      where:
+        - { field: Status, op: not_in, value: ["Completed", "Declined"] }
+      group_by: { field: Category, collapsed: true }
+      sort:
+        - { field: Priority, direction: desc }
+        - { field: RequestedDate, direction: asc }
+      widths:
+        Title: 280
+        Category: 220
+        Priority: 120
+        RequestLocation: 180
+        RequestedBy: 160
+        RequestedDate: 160
+        AssignedTo: 160
+        Status: 220
+    - title: "Facilities queue"
+      fields: ["@queue"]
+      where:
+        - { field: Category, op: eq, value: "Facilities / maintenance" }
+        - { field: Status, op: not_in, value: ["Completed", "Declined"] }
+      sort:
+        - { field: Priority, direction: desc }
+        - { field: RequestedDate, direction: asc }
+      widths:
+        Title: 300
+        Category: 220
+        Priority: 120
+        RequestLocation: 180
+        RequestedBy: 160
+        RequestedDate: 160
+        AssignedTo: 160
+        Status: 220
+    - title: "IT queue"
+      fields: ["@queue"]
+      where:
+        - { field: Category, op: eq, value: "IT / equipment" }
+        - { field: Status, op: not_in, value: ["Completed", "Declined"] }
+      sort:
+        - { field: Priority, direction: desc }
+        - { field: RequestedDate, direction: asc }
+      widths:
+        Title: 300
+        Category: 220
+        Priority: 120
+        RequestLocation: 180
+        RequestedBy: 160
+        RequestedDate: 160
+        AssignedTo: 160
+        Status: 220
+    # Reviewed weekly by queue leads. Resolution is in the view because a
+    # request waiting with no stated reason is the thing the review is
+    # looking for, and a view that makes you open the item to find out
+    # does not get reviewed.
+    - title: "Waiting"
+      fields: ["@queue", Resolution]
+      where:
+        - { field: Status, op: eq, value: "Waiting - parts or approval" }
+      sort:
+        - { field: RequestedDate, direction: asc }
+      widths:
+        Title: 260
+        Category: 220
+        Priority: 120
+        RequestLocation: 180
+        RequestedBy: 160
+        RequestedDate: 160
+        AssignedTo: 160
+        Status: 220
+        Resolution: 200
+    # The requester's tracking view, and the reason the `me` sentinel
+    # exists: CAML's <UserID/> compares the person column's user id, so
+    # this is one view for everybody rather than one per person.
+    - title: "My requests"
+      fields: ["@queue", CompletedDate]
+      where:
+        - { field: RequestedBy, op: eq, value: me }
+      sort:
+        - { field: RequestedDate, direction: desc }
+      widths:
+        Title: 280
+        Category: 220
+        Priority: 120
+        RequestLocation: 180
+        RequestedBy: 160
+        RequestedDate: 160
+        AssignedTo: 160
+        Status: 220
+        CompletedDate: 170
+    # The published table called this "Turnaround report" and asked for
+    # completions "in month" with DaysToComplete shown. ONE substitution
+    # remains, stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
+    # predicate, so this is a rolling ninety days.
+    #
+    # The per-category figure IS here, as a mean rather than a sum — adding
+    # up day-counts answers nothing, and "how long does this team take" is
+    # the question the report exists for. Grouped and collapsed, SharePoint
+    # renders it per category as well as overall.
+    - title: "Turnaround"
+      fields: [Title, Category, Priority, RequestedBy, AssignedTo,
+               RequestedDate, CompletedDate, DaysToComplete, Status]
+      where:
+        - { field: Status, op: in, value: ["Completed", "Declined"] }
+        - { field: CompletedDate, op: geq, value: today-90 }
+      group_by: { field: Category, collapsed: true }
+      totals:
+        DaysToComplete: avg
+      sort:
+        - { field: CompletedDate, direction: desc }
+      widths:
+        Title: 260
+        Category: 220
+        Priority: 120
+        RequestedBy: 160
+        AssignedTo: 160
+        RequestedDate: 160
+        CompletedDate: 170
+        DaysToComplete: 150
+        Status: 220
+
+# Three fields the requester should never be shown at creation, because
+# every one of them is a fact about work that has not happened yet. A form
+# that asks a requester who will fix their screen and when it was
+# completed teaches them the form is not for them.
+#
+# reconcile: exact makes this file authoritative for the whole list —
+# every other column's conditional formula is cleared on each deploy.
+form_visibility:
+  Request:
+    reconcile: exact
+    columns:
+      AssignedTo: { new: false }
+      CompletedDate:
+        new: false
+        when:
+          - { field: Status, op: in, value: ["Completed", "Declined"] }
+      # Also the place a waiting request says what it is waiting for, which
+      # is why the condition is not just the two terminal states.
+      Resolution:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["Waiting - parts or approval", "Completed", "Declined"] }
+
+# Form layout: a strapline header and five sections following the standard
+# arc. Per-field description hints render on the NEW form only —
+# SharePoint suppresses column descriptions on the Edit form. Section field
+# lists are authored with INTERNAL names; the build rewrites them.
+form_formatting:
+  Request:
+    header: formatting/request-form-header.json
+    body: formatting/request-form-body.json
+
+# Per-column save rules. Each carries its own message, and they all run —
+# unlike list_validation, where one formula and one message serve the whole
+# list.
+column_validation:
+  Request:
+    columns:
+      RequestedDate:
+        when:
+          - { field: RequestedDate, op: leq, value: today }
+        message: "A request cannot be dated in the future. Use the day it was actually raised."
+      CompletedDate:
+        when:
+          - { field: CompletedDate, op: leq, value: today }
+        message: "A completion cannot be dated in the future. Leave it blank until the work is done."
+
+# Save-time enforcement, on the LIST so it may reference more than one
+# column. This is governance's first data-quality rule, which until now
+# was a rule nothing enforced: a completed request with no date has no
+# turnaround, and a declined request with no reason is a slow nothing
+# dressed as an answer.
+#
+# NOTE: `Detail` is rich text, which SharePoint validation formulas cannot
+# reference at all — the "photos and detail help" ask stays a habit.
+list_validation:
+  Request:
+    when:
+      any_of:
+        - { field: Status, op: not_in, value: ["Completed", "Declined"] }
+        - all_of:
+            - { field: CompletedDate, op: is_not_null }
+            - { field: Resolution, op: is_not_null }
+    message: "Completing or declining a request needs a Completed Date and one line in Resolution saying what was done, or why it was declined and where to go instead."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. "@me" is the pasting
+# operator, which is also what makes "My requests" show content on a
+# seeded site. Coverage: one row per Status and one per Priority, a
+# facilities request and an IT request so both named queues fill, a
+# waiting request with its reason, and two closed-out rows inside the
+# ninety-day turnaround window.
+demo_items:
+  Request:
+    - key: sr-facilities-urgent
+      values:
+        Title: "[DEMO] Fire door in the west corridor will not latch"
+        Category: "Facilities / maintenance"
+        Priority: "Urgent"
+        RequestLocation: "West corridor, level 1 - door WC-04"
+        RequestedBy: "@me"
+        RequestedDate: "today-2"
+        Detail: "Demo row. The door swings back open on its own. It is on the evacuation route, so it needs to latch."
+        AssignedTo: "@me"
+        Status: "Accepted"
+    - key: sr-it-inprogress
+      values:
+        Title: "[DEMO] Meeting room 2 screen not detecting laptops"
+        Category: "IT / equipment"
+        Priority: "Normal"
+        RequestLocation: "Meeting room 2"
+        RequestedBy: "@me"
+        RequestedDate: "today-5"
+        Detail: "Demo row. HDMI works from the room PC but not from a laptop, on two different laptops."
+        AssignedTo: "@me"
+        Status: "In progress"
+    - key: sr-facilities-waiting
+      values:
+        Title: "[DEMO] Replace the broken blind in the front office"
+        Category: "Facilities / maintenance"
+        Priority: "Normal"
+        RequestLocation: "Front office"
+        RequestedBy: "@me"
+        RequestedDate: "today-9"
+        Detail: "Demo row. Slats snapped; the blind will not lower past halfway."
+        AssignedTo: "@me"
+        Status: "Waiting - parts or approval"
+        Resolution: "Demo row. Replacement blind ordered; supplier quoted three weeks. Chase on the 20th."
+    - key: sr-admin-submitted
+      values:
+        Title: "[DEMO] New starter needs a chair and a monitor arm"
+        Category: "Admin / office services"
+        Priority: "Low"
+        RequestLocation: "Administration, desk 14"
+        RequestedBy: "@me"
+        RequestedDate: "today-1"
+        Detail: "Demo row. Starts a week Monday. Standard desk setup is fine."
+        Status: "Submitted"
+    - key: sr-it-completed
+      values:
+        Title: "[DEMO] Reception printer jams on every duplex job"
+        Category: "IT / equipment"
+        Priority: "Normal"
+        RequestLocation: "Reception"
+        RequestedBy: "@me"
+        RequestedDate: "today-14"
+        Detail: "Demo row. Single-sided printing is fine; duplex jams every time at the second page."
+        AssignedTo: "@me"
+        Status: "Completed"
+        CompletedDate: "today-11"
+        Resolution: "Demo row. Worn duplex roller replaced under warranty; test job of 40 duplex pages ran clean."
+    - key: sr-grounds-declined
+      values:
+        Title: "[DEMO] Sealed car park extension to the south boundary"
+        Category: "Grounds / vehicles"
+        Priority: "Low"
+        RequestLocation: "South car park"
+        RequestedBy: "@me"
+        RequestedDate: "today-30"
+        Detail: "Demo row. Overflow parking spills onto the verge on clinic days."
+        AssignedTo: "@me"
+        Status: "Declined"
+        CompletedDate: "today-28"
+        Resolution: "Demo row. New capital spend, not a service request - raise it through the change register with a costing."

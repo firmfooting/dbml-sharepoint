@@ -69,10 +69,303 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes and the TermMonths formula all key on them); the deployer renames
+# the display Title after create. PascalCase splitting handles every column
+# here except the initialism in DocumentUrl, which auto-splits to
+# "Document Url".
+display_names:
+  mode: auto
+  overrides:
+    Contract:
+      DocumentUrl: "Document URL"
+
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md) — status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
-# template.
+# template. Tokens map by the ROLE a member plays in the lifecycle, never
+# by its name.
 column_formatting:
   Contract:
-    Status: { style: severity, map: { Draft: neutral, Active: low, Expiring: severe, "In renewal": neutral, Exited: muted } }
+    # "In renewal" moves from neutral to warning. Neutral is the intake
+    # band — a row nobody has looked at yet — and a contract in renewal
+    # talks is the opposite of that: it is a decision someone is holding,
+    # inside a notice window, which is the "needs attention" role.
+    Status:
+      style: severity
+      map:
+        Draft: neutral
+        Active: low
+        Expiring: severe
+        "In renewal": warning
+        Exited: muted
+    # Not a lifecycle, but the one field on the form that decides whether
+    # this contract can renew itself while nobody is watching. Auto-renews
+    # is the state that needs attention; a fixed term cannot surprise
+    # anyone, so it reads as muted.
+    RenewalType:
+      style: severity
+      map:
+        "Auto-renews": warning
+        "Manual renewal": low
+        "Fixed term — no renewal": muted
+    # The register's deadline. Guarded on Exited: a date that keeps
+    # shouting after the contract has ended trains people to ignore the
+    # colour. Note the guard is NOT on Expiring — an expiring contract is
+    # exactly the row the escalation is for.
+    EndDate: { style: overdue-date, guard: { field: Status, not: [Exited] } }
+    # Calculated whole months, so `calculated: true` (the value arrives
+    # prefixed `number;#`). max 60 is five years — long enough that a
+    # normal services contract reads as a partial bar and a decade-long
+    # lease pins full, which is the comparison the column is for.
+    TermMonths: { style: data-bar, max: 60, calculated: true }
+    # AnnualValue and NoticePeriodDays are deliberately NOT data-bars.
+    # A data-bar needs an explicit `max`, and neither has one that is
+    # defensible across adopters: a bar scaled to someone else's contract
+    # values is a bar that reads as full or empty for everyone.
+
+# Every lens on this list shows the same five identifying columns before
+# its own payload, so the spine is declared once (§1.9 — a set earns its
+# place at three or more repetitions; this one is used by all five views).
+field_sets:
+  Contract:
+    identity: [Title, Counterparty, ContractType, Owner, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). "Live contracts" is the default working list;
+# the four lenses are the ones 30-deploy/DEPLOY.md used to ask the adopter
+# to build by hand, now with filters, sorts and pixel widths. Widths are
+# keyed on INTERNAL names — the build rewrites them to display titles,
+# because ColumnWidth binds by display name and an internal name silently
+# resets.
+views:
+  Contract:
+    - title: "Live contracts"
+      default: true
+      fields: ["@identity", StartDate, EndDate, TermMonths, AnnualValue]
+      where:
+        - { field: Status, op: neq, value: "Exited" }
+      sort:
+        - { field: EndDate, direction: asc }
+      widths:
+        Title: 280
+        Counterparty: 180
+        ContractType: 130
+        Owner: 160
+        Status: 110
+        StartDate: 160
+        EndDate: 160
+        TermMonths: 140
+        AnnualValue: 140
+    # The deadline lens. today+90 is a ROLLING window, not "next quarter":
+    # CAML has no calendar predicate, and the register's own governance
+    # cadence is monthly, so a rolling ninety days is the honest reading of
+    # "expiring soon".
+    - title: "Expiring 90 days"
+      fields: ["@identity", EndDate, NoticePeriodDays, RenewalType]
+      where:
+        - { field: Status, op: neq, value: "Exited" }
+        - { field: EndDate, op: leq, value: today+90 }
+      sort:
+        - { field: EndDate, direction: asc }
+      widths:
+        Title: 300
+        Counterparty: 180
+        ContractType: 130
+        Owner: 160
+        Status: 110
+        EndDate: 160
+        NoticePeriodDays: 150
+        RenewalType: 220
+    # The one view that exists to prevent a renewal nobody chose. The
+    # notice period sits beside the end date on purpose: the last date a
+    # decision can be made is EndDate minus NoticePeriodDays, and the
+    # register deliberately does not calculate it — the notice window is a
+    # contract term that changes at renewal, so a derived column would be
+    # silently wrong on every historic row.
+    - title: "Auto-renewals"
+      fields: ["@identity", RenewalType, NoticePeriodDays, EndDate]
+      where:
+        - { field: Status, op: neq, value: "Exited" }
+        - { field: RenewalType, op: eq, value: "Auto-renews" }
+      sort:
+        - { field: EndDate, direction: asc }
+      widths:
+        Title: 300
+        Counterparty: 180
+        ContractType: 130
+        Owner: 160
+        Status: 110
+        RenewalType: 220
+        NoticePeriodDays: 150
+        EndDate: 160
+    - title: "By counterparty"
+      fields: ["@identity", EndDate, AnnualValue]
+      where:
+        - { field: Status, op: neq, value: "Exited" }
+      group_by: { field: Counterparty, collapsed: true }
+      sort:
+        - { field: EndDate, direction: asc }
+      widths:
+        Title: 280
+        Counterparty: 180
+        ContractType: 130
+        Owner: 160
+        Status: 110
+        EndDate: 160
+        AnnualValue: 140
+    - title: "Exited"
+      fields: ["@identity", StartDate, EndDate, TermMonths, AnnualValue]
+      where:
+        - { field: Status, op: eq, value: "Exited" }
+      sort:
+        - { field: EndDate, direction: desc }
+      widths:
+        Title: 260
+        Counterparty: 180
+        ContractType: 130
+        Owner: 160
+        Status: 110
+        StartDate: 160
+        EndDate: 160
+        TermMonths: 140
+        AnnualValue: 140
+
+# Form layouts: a strapline header and a sectioned body. Per-field
+# description hints render on the NEW form only — the edit form suppresses
+# column descriptions (platform limitation). Section field lists are
+# authored with INTERNAL names; the build rewrites them to display titles.
+form_formatting:
+  Contract:
+    header: formatting/contract-form-header.json
+    body: formatting/contract-form-body.json
+
+# A notice period is a term of a renewable agreement. On a fixed term with
+# no renewal there is nothing to give notice of, so the field leaves the
+# form there rather than sitting empty and inviting a number that means
+# nothing. It pairs with the save rule below: the field is visible exactly
+# when it can be mandatory.
+#
+# Deliberately NOT declared: any rule conditioned on TermMonths.
+# Conditional show/hide cannot read a calculated column — the formula stays
+# syntactically valid, so it saves, the readback compares equal and the
+# phase passes, but the form never reacts. The build refuses it.
+form_visibility:
+  Contract:
+    columns:
+      NoticePeriodDays:
+        when:
+          - { field: RenewalType, op: neq, value: "Fixed term — no renewal" }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule has to share one message.
+column_validation:
+  Contract:
+    columns:
+      # A negative notice period is a typed minus sign, and it inverts the
+      # only arithmetic anyone ever does with this column.
+      NoticePeriodDays:
+        when:
+          - { field: NoticePeriodDays, op: geq, value: 0 }
+        message: "Notice period is a number of days, counted forward. Enter 0 if no notice is required."
+      AnnualValue:
+        when:
+          - { field: AnnualValue, op: geq, value: 0 }
+        message: "Annual value cannot be negative. Leave it blank if the contract has no recurring value."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+#
+# NOT enforceable here, and therefore left to the governance cadence:
+# EndDate after StartDate. The condition grammar compares a column to a
+# LITERAL, never to another column, so "EndDate > StartDate" has no
+# spelling — see 50-govern/GOVERNANCE.md.
+list_validation:
+  Contract:
+    when:
+      # Written as an implication: `if A then B` is `any_of[not A, B]`.
+      # An auto-renewing contract with no notice period is the exact
+      # failure this register exists to prevent — the renewal happens, and
+      # nobody knew when the last chance to stop it was.
+      - any_of:
+          - { field: RenewalType, op: neq, value: "Auto-renews" }
+          - { field: NoticePeriodDays, op: is_not_null }
+    message: "An auto-renewing contract needs a Notice Period Days value — that number is the only thing standing between this contract and a renewal nobody chose."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# expiry surfaces land on whatever day the demo runs; "@me" is the pasting
+# operator. Coverage: one row per Status member, an auto-renewer already
+# inside its own notice window, and an exited contract for the history lens.
+demo_items:
+  Contract:
+    - key: ct-cleaning
+      values:
+        Title: "[DEMO] Office cleaning — Sparkle Facilities"
+        Counterparty: "[DEMO] Sparkle Facilities Pty Ltd"
+        ContractRef: "[DEMO] CT-2024-011"
+        ContractType: "Services"
+        Status: "Active"
+        Owner: "@me"
+        StartDate: "today-480"
+        EndDate: "today+250"
+        RenewalType: "Manual renewal"
+        NoticePeriodDays: 60
+        AnnualValue: 48000
+        Summary: "Demo row. Nightly cleaning of the ground and first floors, including consumables."
+        DocumentUrl: "https://example.sharepoint.com/sites/contracts/demo-cleaning.pdf"
+    - key: ct-payroll
+      values:
+        Title: "[DEMO] Payroll software licence"
+        Counterparty: "[DEMO] Northwind Systems"
+        ContractRef: "[DEMO] CT-2023-004"
+        ContractType: "Licence"
+        Status: "Expiring"
+        Owner: "@me"
+        StartDate: "today-700"
+        EndDate: "today+45"
+        RenewalType: "Auto-renews"
+        NoticePeriodDays: 90
+        AnnualValue: 26500
+        Summary: "Demo row. Annual per-seat licence. It renews itself unless notice is given ninety days out - which this row is already inside."
+        DocumentUrl: "https://example.sharepoint.com/sites/contracts/demo-payroll.pdf"
+    - key: ct-grounds
+      values:
+        Title: "[DEMO] Grounds maintenance panel"
+        Counterparty: "[DEMO] Greenline Grounds"
+        ContractRef: "[DEMO] CT-2022-018"
+        ContractType: "Services"
+        Status: "In renewal"
+        Owner: "@me"
+        StartDate: "today-1000"
+        EndDate: "today+80"
+        RenewalType: "Manual renewal"
+        NoticePeriodDays: 30
+        AnnualValue: 19000
+        Summary: "Demo row. Renewal terms under negotiation; scope reduced to the two main sites."
+    - key: ct-waste
+      values:
+        Title: "[DEMO] Clinical waste collection"
+        Counterparty: "[DEMO] Safehands Waste"
+        ContractType: "Supply of goods"
+        Status: "Draft"
+        Owner: "@me"
+        StartDate: "today+30"
+        EndDate: "today+395"
+        RenewalType: "Fixed term — no renewal"
+        AnnualValue: 12000
+        Summary: "Demo row. Twelve-month fixed term with no renewal option; a fresh procurement at the end of it."
+    - key: ct-telephony
+      values:
+        Title: "[DEMO] Legacy telephony support"
+        Counterparty: "[DEMO] Copperline Telecom"
+        ContractRef: "[DEMO] CT-2019-002"
+        ContractType: "Services"
+        Status: "Exited"
+        Owner: "@me"
+        StartDate: "today-1460"
+        EndDate: "today-120"
+        RenewalType: "Fixed term — no renewal"
+        AnnualValue: 8000
+        Summary: "Demo row. Exited at the end of term when the desk handsets were retired."

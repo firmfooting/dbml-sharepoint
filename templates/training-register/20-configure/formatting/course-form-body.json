@@ -1,0 +1,16 @@
+{
+  "sections": [
+    {
+      "displayname": "The course",
+      "fields": ["Title", "Category", "Provider"]
+    },
+    {
+      "displayname": "Requirement and validity",
+      "fields": ["Mandatory", "ValidityMonths"]
+    },
+    {
+      "displayname": "Booking and content",
+      "fields": ["Notes"]
+    }
+  ]
+}

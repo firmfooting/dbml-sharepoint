@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "The organisation",
+      "fields": ["Title", "OrgType", "Website"]
+    },
+    {
+      "displayname": "Ownership",
+      "fields": ["Owner", "Notes"]
+    }
+  ]
+}

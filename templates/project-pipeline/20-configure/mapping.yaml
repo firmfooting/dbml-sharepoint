@@ -63,3 +63,380 @@ list_permissions:
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
+
+# Backend internal names stay exactly as authored in the DBML (views,
+# indexes and formulas all key on them); the deployer renames the display
+# Title after create — "PriorityScore" shows as "Priority Score". Auto
+# PascalCase splitting handles every column here correctly, so there are no
+# overrides.
+display_names:
+  mode: auto
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# website/docs/reference/style-guide.md). This template shipped with none
+# at all, so every colour here is new. Tokens map by the ROLE a member
+# plays in its lifecycle: Idea is intake, Scoping and In delivery are in
+# motion, Ready for decision is the one state that needs attention from
+# somebody other than its proposer, and Declined and Parked are muted
+# rather than blocked — a declined proposal is a decision that was taken,
+# not a project that failed.
+#
+# PriorityScore takes the theme's shared treatment: data-bar, explicit max,
+# fill translated from the band column beside it so the bar and that column
+# can never disagree. The band is Benefit, and the direction is deliberately
+# the opposite of the process register's: there a tall bar is pain, so the
+# fill runs to severe; here a tall bar is an opportunity, so it runs to
+# good. Same mechanism, opposite subject matter, and the colour has to
+# follow the subject or it lies.
+column_formatting:
+  Proposal:
+    Stage:
+      style: severity
+      map:
+        Idea: neutral
+        Scoping: low
+        "Ready for decision": warning
+        Approved: good
+        "In delivery": low
+        Delivered: good
+        Declined: muted
+        Parked: muted
+    Benefit: { style: severity, map: { Low: neutral, Medium: low, High: good } }
+    Feasibility: { style: severity, map: { Hard: severe, Moderate: warning, Easy: good } }
+    CostBand:
+      style: severity
+      map:
+        "Minimal - existing resources": good
+        "Small - under 10k": low
+        "Medium - 10k to 100k": warning
+        "Large - over 100k": severe
+    PriorityScore:
+      style: data-bar
+      max: 9
+      calculated: true
+      color_by:
+        field: Benefit
+        map: { Low: neutral, Medium: low, High: good }
+
+# The identifying spine every lens repeats. Five views share it, above
+# §1.9's three-repetition threshold.
+field_sets:
+  Proposal:
+    identity: [Title, Stage, ProposedBy]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). "The funnel" is the default: everything still
+# alive, grouped by the gate it is waiting at, ranked by score inside each
+# group. The four lenses are the pipeline's own cadence — the monthly gate
+# agenda, the quarterly portfolio-against-capacity read, the annual
+# graveyard read-through, and the delivered work that is the only evidence
+# any of it was worth doing.
+#
+# Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
+# rewrites them to display titles — ColumnWidth binds by display name, and
+# internal names silently reset).
+#
+# Every view showing PriorityScore also shows Benefit: the bar's fill is
+# translated from that column, and a column formatter can only read columns
+# the view carries.
+views:
+  Proposal:
+    # The published table said "Stage ≠ Delivered/Declined". Parked is
+    # excluded too, because the Graveyard below holds Declined AND Parked,
+    # and a proposal counted in both the live funnel and the graveyard makes
+    # the funnel counts the pipeline owner reports monthly wrong.
+    - title: "The funnel"
+      default: true
+      fields: ["@identity", Sponsor, Benefit, Feasibility, PriorityScore,
+               CostBand, ProposedDate]
+      where:
+        - { field: Stage, op: not_in, value: ["Delivered", "Declined", "Parked"] }
+      group_by: { field: Stage, collapsed: false }
+      sort:
+        - { field: PriorityScore, direction: desc }
+      widths:
+        Title: 280
+        Stage: 160
+        ProposedBy: 160
+        Sponsor: 160
+        Benefit: 120
+        Feasibility: 130
+        PriorityScore: 150
+        CostBand: 220
+        ProposedDate: 160
+    # The gate agenda, in score order. Governance is explicit that the score
+    # ranks the conversation rather than ending it — a strategic Hard/High
+    # at 3 can beat a trivial Easy/Medium at 6 — so this view puts the
+    # inputs beside the score, because overruling it out loud is only
+    # possible if everyone can see what it was computed from.
+    - title: "Decision queue"
+      fields: ["@identity", Sponsor, Benefit, Feasibility, PriorityScore, CostBand]
+      where:
+        - { field: Stage, op: eq, value: "Ready for decision" }
+      sort:
+        - { field: PriorityScore, direction: desc }
+      widths:
+        Title: 300
+        Stage: 160
+        ProposedBy: 160
+        Sponsor: 160
+        Benefit: 120
+        Feasibility: 130
+        PriorityScore: 150
+        CostBand: 220
+    - title: "Portfolio"
+      fields: ["@identity", Sponsor, Benefit, PriorityScore, CostBand, DecisionDate]
+      where:
+        - { field: Stage, op: in, value: ["Approved", "In delivery"] }
+      group_by: { field: Sponsor, collapsed: true }
+      sort:
+        - { field: DecisionDate, direction: asc }
+      widths:
+        Title: 280
+        Stage: 160
+        ProposedBy: 160
+        Sponsor: 160
+        Benefit: 120
+        PriorityScore: 150
+        CostBand: 220
+        DecisionDate: 160
+    # Kept, and kept under this name. Governance schedules an annual
+    # read-through of it, because patterns in what gets declined are
+    # strategy telling you something — and a "Closed proposals" view nobody
+    # opens would not be read once a year. DecisionNotes is on it for the
+    # same reason: an unannotated graveyard is a list of dates.
+    - title: "Graveyard"
+      fields: ["@identity", Sponsor, Benefit, Feasibility, PriorityScore,
+               CostBand, DecisionDate, DecisionNotes]
+      where:
+        - { field: Stage, op: in, value: ["Declined", "Parked"] }
+      sort:
+        - { field: DecisionDate, direction: desc }
+      widths:
+        Title: 240
+        Stage: 160
+        ProposedBy: 160
+        Sponsor: 160
+        Benefit: 120
+        Feasibility: 130
+        PriorityScore: 150
+        CostBand: 220
+        DecisionDate: 160
+        DecisionNotes: 200
+    # Not in the published table, and the gap it leaves is real: a Delivered
+    # proposal fell out of every recommended view the moment it was
+    # finished, so the one thing a pipeline exists to produce was the one
+    # thing it could not show.
+    - title: "Delivered"
+      fields: ["@identity", Sponsor, Benefit, PriorityScore, CostBand,
+               DecisionDate, DeliveredDate]
+      where:
+        - { field: Stage, op: eq, value: "Delivered" }
+      sort:
+        - { field: DeliveredDate, direction: desc }
+      widths:
+        Title: 260
+        Stage: 160
+        ProposedBy: 160
+        Sponsor: 160
+        Benefit: 120
+        PriorityScore: 150
+        CostBand: 220
+        DecisionDate: 160
+        DeliveredDate: 160
+
+# Form layouts: a strapline header and a sectioned body. SharePoint renders
+# per-field description hints inside sectioned forms on the NEW form only —
+# the edit form suppresses column descriptions (platform limitation).
+# Section field lists are authored with INTERNAL names; the build rewrites
+# them to display titles.
+#
+# Four beats, not five: decision and delivery are one act here. Splitting
+# them left a "Delivery" heading with a single conditional date under it,
+# which on the New form is a heading with nothing under it at all.
+#
+# System is last and holds only PriorityScore, so on the New form it is a
+# bare heading — calculated columns never render on entry forms. Cosmetic
+# and expected, the same shape risk-register's System section has.
+form_formatting:
+  Proposal:
+    header: formatting/proposal-form-header.json
+    body: formatting/proposal-form-body.json
+
+# Ideas are welcome half-formed — that is the staff guide's promise, and
+# this is what keeps the New form honest about it. A proposer writes the
+# problem and the outcome; the sponsor and the gate record arrive later,
+# when there is something to record.
+#
+# Deliberately NOT declared: any rule conditioned on PriorityScore.
+# Conditional show/hide cannot read a calculated column — the formula stays
+# syntactically valid, so it saves, the readback compares equal and the
+# phase passes, but the form never reacts. The build refuses it, and the
+# most natural rule here ("ask for a sponsor once the score is 6 or more")
+# is exactly that trap.
+form_visibility:
+  Proposal:
+    columns:
+      # An Idea moves to Scoping when an executive agrees to sponsor the
+      # question. Asking the proposer to name one at creation invites them
+      # to nominate somebody who has not agreed.
+      Sponsor: { new: false }
+      # The gate record exists once the gate has sat, and it stays on the
+      # form for every stage DOWNSTREAM of one. In delivery and Delivered
+      # are post-gate stages: listing only the three immediate outcomes
+      # would hide the recorded decision as soon as work started, and a
+      # proposal moved straight to In delivery would be refused by the save
+      # rule below for a missing DecisionDate with no field on screen to
+      # supply it. The visible set must cover every stage the rule fires in.
+      DecisionDate:
+        new: false
+        when:
+          - { field: Stage, op: in,
+              value: ["Approved", "Declined", "Parked", "In delivery", "Delivered"] }
+      DecisionNotes:
+        new: false
+        when:
+          - { field: Stage, op: in,
+              value: ["Approved", "Declined", "Parked", "In delivery", "Delivered"] }
+      DeliveredDate:
+        new: false
+        when:
+          - { field: Stage, op: eq, value: "Delivered" }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has a
+# single ValidationFormula and every cross-column rule shares one message.
+column_validation:
+  Proposal:
+    columns:
+      ProposedDate:
+        when:
+          - { field: ProposedDate, op: leq, value: today }
+        message: "A proposal cannot have been raised in the future. Use the date it was actually put forward, or today's date."
+      # Time-in-stage is a monthly report line, and it is counted from this
+      # date. A gate decision dated next quarter makes the funnel report
+      # quietly wrong rather than obviously wrong.
+      DecisionDate:
+        when:
+          any_of:
+            - { field: DecisionDate, op: is_null }
+            - { field: DecisionDate, op: leq, value: today }
+        message: "A gate decision cannot have been made in the future. Use the date the gate actually sat."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# This is as much of data-quality rule 1 in 50-govern/GOVERNANCE.md as
+# SharePoint can hold; the governance document now says which part and why.
+list_validation:
+  Proposal:
+    # THREE rules, chained. A list has ONE ValidationFormula, so every
+    # cross-column rule shares this slot — the top-level list is an AND, so
+    # they compose, and each is written as an implication: `if A then B` is
+    # `any_of[not A, B]`.
+    when:
+      # An unscored proposal cannot be ranked, so it cannot be on the gate
+      # agenda: "Decision queue" sorts by a score it does not have, and it
+      # lands at the bottom of a list nobody reads to the bottom of.
+      - any_of:
+          - { field: Stage, op: neq, value: "Ready for decision" }
+          - all_of:
+              - { field: Benefit, op: is_not_null }
+              - { field: Feasibility, op: is_not_null }
+              - { field: CostBand, op: is_not_null }
+      # Every gate outcome carries its date — and so does everything
+      # downstream of one, since a proposal in delivery passed a gate to get
+      # there.
+      - any_of:
+          - { field: Stage, op: in, value: ["Idea", "Scoping", "Ready for decision"] }
+          - { field: DecisionDate, op: is_not_null }
+      - any_of:
+          - { field: Stage, op: neq, value: "Delivered" }
+          - { field: DeliveredDate, op: is_not_null }
+    message: "This proposal cannot be saved yet. Check all three: Ready for decision needs Benefit, Feasibility and Cost Band; anything past the gate needs a Decision Date; and Delivered needs a Delivered Date."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without the non-empty refusal. Dates are today±N so the
+# funnel lands on whatever day the demo runs; "@me" is the pasting operator.
+# Coverage: every declared view returns rows, every benefit, feasibility
+# and cost band renders, and one row is deliberately left at Idea with
+# nothing scored so the blank score is visible — an unscored proposal
+# showing a zero-length bar rather than a 1 is the difference between "not
+# yet assessed" and "assessed as worthless".
+demo_items:
+  Proposal:
+    - key: proposal-signin
+      values:
+        Title: "[DEMO] Digitise visitor sign-in across all sites"
+        Stage: "Ready for decision"
+        ProposedBy: "@me"
+        ProposedDate: "today-40"
+        Sponsor: "@me"
+        Problem: "Demo row. Reception keeps a paper book at each of four sites. Nobody can answer who is on site during an evacuation without walking to a desk."
+        Outcome: "Demo row. One live on-site list, available on a phone, with the evacuation report generated rather than assembled."
+        Benefit: "High"
+        Feasibility: "Easy"
+        CostBand: "Small - under 10k"
+    - key: proposal-rostering
+      values:
+        Title: "[DEMO] Replace the rostering spreadsheet"
+        Stage: "Scoping"
+        ProposedBy: "@me"
+        ProposedDate: "today-25"
+        Sponsor: "@me"
+        Problem: "Demo row. Rosters are built in a spreadsheet only two people understand, and the award rules in it have never been checked against the award."
+        Outcome: "Demo row. Rosters built in a system that knows the award, with the rules visible to the people they apply to."
+        Benefit: "High"
+        Feasibility: "Hard"
+        CostBand: "Medium - 10k to 100k"
+    # Deliberately unscored: an Idea with no sponsor and no ratings, so the
+    # score renders blank rather than as a low number.
+    - key: proposal-kiosk
+      values:
+        Title: "[DEMO] Self-service kiosk in the main foyer"
+        Stage: "Idea"
+        ProposedBy: "@me"
+        ProposedDate: "today-8"
+        Problem: "Demo row. The foyer queue at 9am is mostly people collecting a pass they already booked."
+    - key: proposal-invoices
+      values:
+        Title: "[DEMO] Automate invoice matching"
+        Stage: "In delivery"
+        ProposedBy: "@me"
+        ProposedDate: "today-160"
+        Sponsor: "@me"
+        Problem: "Demo row. Purchase orders, delivery dockets and invoices are matched by hand, and the mismatches are found at year end."
+        Outcome: "Demo row. Three-way matching automated, exceptions queued for a human, and the year-end reconciliation stops being an event."
+        Benefit: "Medium"
+        Feasibility: "Moderate"
+        CostBand: "Large - over 100k"
+        DecisionDate: "today-90"
+        DecisionNotes: "Demo row. Approved by the executive team; sponsor confirmed. Staged delivery, finance first."
+    - key: proposal-parking
+      values:
+        Title: "[DEMO] Site-wide parking app"
+        Stage: "Declined"
+        ProposedBy: "@me"
+        ProposedDate: "today-200"
+        Sponsor: "@me"
+        Problem: "Demo row. Staff circle the car park for ten minutes at shift change."
+        Outcome: "Demo row. Bay availability visible before arrival."
+        Benefit: "Low"
+        Feasibility: "Moderate"
+        CostBand: "Medium - 10k to 100k"
+        DecisionDate: "today-150"
+        DecisionNotes: "Demo row. Declined. The car park is full at shift change whatever the app says; the benefit is information about a shortage, not a fix for one. Revisit only alongside a real capacity change."
+    - key: proposal-onboarding
+      values:
+        Title: "[DEMO] Onboarding checklist in SharePoint"
+        Stage: "Delivered"
+        ProposedBy: "@me"
+        ProposedDate: "today-300"
+        Sponsor: "@me"
+        Problem: "Demo row. Every manager kept their own starter checklist, and half of them were out of date."
+        Outcome: "Demo row. One checklist, one owner, and a starter's first day no longer depends on which manager they got."
+        Benefit: "Medium"
+        Feasibility: "Easy"
+        CostBand: "Minimal - existing resources"
+        DecisionDate: "today-260"
+        DecisionNotes: "Demo row. Approved by the pipeline owner and the people manager. No spend; delivered from existing capacity."
+        DeliveredDate: "today-120"

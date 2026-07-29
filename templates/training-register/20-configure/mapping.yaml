@@ -71,10 +71,342 @@ list_permissions:
 seal_columns: true
 prevent_list_deletion: true
 
+# Backend internal names stay exactly as authored in the DBML (the lookup,
+# the indexes, the views and the reporting bundle all key on them); the
+# deployer renames the display Title after create. Auto splitting handles
+# every column here except the URL one, which it renders "Evidence Url".
+display_names:
+  mode: auto
+  overrides:
+    TrainingRecord:
+      EvidenceUrl: "Evidence URL"
+
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md) — status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
+#
+# The guard on ExpiryDate names the two terminal states. Once a
+# coordinator has marked a record Expired the Status chip carries the
+# signal, and a date that keeps shouting underneath it is the noise that
+# trains people to stop reading the colour.
+#
+# NOTHING IS DECLARED ON Course, and both omissions are deliberate.
+# Category is a taxonomy, not a lifecycle — mapping "Compliance" onto a
+# severity token would give the fleet's colour vocabulary a second,
+# incompatible meaning (see the style guide's role-not-word rule).
+# ValidityMonths is not given a data-bar either: blank means "never
+# expires", and an empty bar beside a filled one reads as "expires
+# immediately" — the exact inverse of the truth.
 column_formatting:
   TrainingRecord:
     Status: { style: severity, map: { Current: good, Expiring: severe, Expired: blocked, "Not required": muted } }
+    ExpiryDate: { style: overdue-date, guard: { field: Status, not: [Expired, "Not required"] } }
+
+# Every TrainingRecord view shows the same six identifying columns and
+# then its own payload, so the spine is declared once. Four repetitions is
+# comfortably past the three the standard sets as the threshold; below
+# that the indirection costs more than it saves.
+field_sets:
+  TrainingRecord:
+    record: [Title, Person, Course, CompletedDate, ExpiryDate, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view and the
+# keys are INTERNAL names — the build rewrites them to display titles,
+# because ColumnWidth binds by display name and an internal name silently
+# resets.
+views:
+  Course:
+    - title: "Catalogue"
+      default: true
+      fields: [Title, Category, Mandatory, ValidityMonths, Provider]
+      group_by: { field: Category }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Category: 220
+        Mandatory: 120
+        ValidityMonths: 150
+        Provider: 200
+    - title: "Mandatory catalogue"
+      fields: [Title, Category, ValidityMonths, Provider, Mandatory]
+      where:
+        - { field: Mandatory, op: eq, value: true }
+      sort:
+        - { field: Category, direction: asc }
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Category: 220
+        ValidityMonths: 150
+        Provider: 200
+        Mandatory: 120
+    # The courses the expiry sweep can never surface, because they claim
+    # never to lapse. Worth an annual look: "never expires" is usually
+    # true of an induction and usually a data-entry omission everywhere
+    # else, and nothing else in the register distinguishes the two.
+    - title: "Never expires"
+      fields: [Title, Category, Mandatory, ValidityMonths, Provider]
+      where:
+        - { field: ValidityMonths, op: is_null }
+      sort:
+        - { field: Category, direction: asc }
+        - { field: Title, direction: asc }
+      widths:
+        Title: 300
+        Category: 220
+        Mandatory: 120
+        ValidityMonths: 150
+        Provider: 200
+  TrainingRecord:
+    # The default is the view 40-adopt/STAFF-GUIDE.md sends every member of
+    # staff to: their own coverage, as the organisation knows it. Collapsed,
+    # because on a real register this is one group per employee.
+    - title: "By person"
+      default: true
+      fields: ["@record", EvidenceUrl]
+      group_by: { field: Person, collapsed: true }
+      sort:
+        - { field: ExpiryDate, direction: asc }
+      widths:
+        Title: 260
+        Person: 160
+        Course: 220
+        CompletedDate: 160
+        ExpiryDate: 160
+        Status: 110
+        EvidenceUrl: 180
+    - title: "Expiring 60 days"
+      fields: ["@record", EvidenceUrl]
+      where:
+        - { field: Status, op: not_in, value: ["Expired", "Not required"] }
+        - { field: ExpiryDate, op: leq, value: today+60 }
+      sort:
+        - { field: ExpiryDate, direction: asc }
+      widths:
+        Title: 260
+        Person: 160
+        Course: 220
+        CompletedDate: 160
+        ExpiryDate: 160
+        Status: 110
+        EvidenceUrl: 180
+    # The coverage view: who currently holds what. Grouped by the Course
+    # lookup, so the monthly count of Current-versus-headcount per
+    # mandatory course reads straight off the group headers.
+    - title: "By course"
+      fields: ["@record"]
+      where:
+        - { field: Status, op: eq, value: "Current" }
+      group_by: { field: Course, collapsed: true }
+      sort:
+        - { field: ExpiryDate, direction: asc }
+      widths:
+        Title: 260
+        Person: 160
+        Course: 220
+        CompletedDate: 160
+        ExpiryDate: 160
+        Status: 110
+    # The escalation surface. Newest lapse first, because that is the one
+    # still worth a phone call.
+    - title: "Expired"
+      fields: ["@record", Notes]
+      where:
+        - { field: Status, op: eq, value: "Expired" }
+      sort:
+        - { field: ExpiryDate, direction: desc }
+      widths:
+        Title: 260
+        Person: 160
+        Course: 220
+        CompletedDate: 160
+        ExpiryDate: 160
+        Status: 110
+        Notes: 200
+
+# Form layouts: a strapline header and a sectioned body per list. Section
+# field lists are authored with INTERNAL names; the build rewrites them to
+# display titles. Per-field description hints render on the NEW form only —
+# SharePoint suppresses column descriptions on the Edit form.
+form_formatting:
+  Course:
+    header: formatting/course-form-header.json
+    body: formatting/course-form-body.json
+  TrainingRecord:
+    header: formatting/trainingrecord-form-header.json
+    body: formatting/trainingrecord-form-body.json
+
+# Status is maintained by the weekly sweep, not by whoever records the
+# completion — the column's own schema note says "leave as Current for a
+# new record", and the column defaults to exactly that. So it leaves the
+# New form and stays on Edit and Display, where the sweep works it.
+#
+# The alternative is the status quo: a required field, pre-filled
+# correctly, sitting on the New form inviting someone to change it to
+# something the sweep has not decided yet.
+form_visibility:
+  TrainingRecord:
+    columns:
+      Status: { new: false }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule shares one message.
+column_validation:
+  Course:
+    columns:
+      # Blank means "never expires" and is legitimate, so the rule is an
+      # OR rather than a bare `> 0`: SharePoint reads a blank number as
+      # zero, and `[ValidityMonths]>0` alone would refuse every
+      # never-expiring course while reporting nothing about why.
+      ValidityMonths:
+        when:
+          any_of:
+            - { field: ValidityMonths, op: is_null }
+            - { field: ValidityMonths, op: gt, value: 0 }
+        message: "Validity months must be a positive number of months. Leave it blank for a course that never expires — blank is how the catalogue says that."
+  TrainingRecord:
+    columns:
+      # A completion dated in the future pushes the expiry out with it and
+      # drops the record off the sweep silently — no error, no empty cell,
+      # just coverage nobody is asked to check again.
+      CompletedDate:
+        when:
+          - { field: CompletedDate, op: leq, value: today }
+        message: "A completion cannot have happened in the future. Use the date the training was actually completed."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# ONE rule: a record the sweep has flagged has to say what it is counting
+# down from. Expiring and Expired are both statements about a date, and a
+# record carrying either with no ExpiryDate is unfalsifiable — it cannot
+# appear in "Expiring 60 days", cannot be sorted by lapse, and cannot be
+# checked by anyone.
+#
+# NOT enforced here, deliberately: the governance rule that a Current
+# record must link its evidence. Two reasons, and the second is the one
+# that matters — the build has no verified evidence that a URL column can
+# be an operand in a SharePoint validation formula, and "linked" is not
+# "sighted" in any case. A rule that passes on a link to the wrong
+# document buys nothing and costs the coordinator a save. It stays a
+# governance check; see 50-govern/GOVERNANCE.md.
+list_validation:
+  TrainingRecord:
+    when:
+      any_of:
+        - { field: Status, op: not_in, value: ["Expiring", "Expired"] }
+        - { field: ExpiryDate, op: is_not_null }
+    message: "A record marked Expiring or Expired needs an expiry date — that date is what the sweep, the views and the escalation all count from."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Dates are today±N so the
+# sweep-derived views land correctly on whatever day the demo runs, and
+# "@me" is the pasting operator.
+#
+# EvidenceUrl is left blank on every demo row. A SharePoint URL column
+# takes a structured value over REST rather than a bare string, and this
+# repository has not read that write back from a live list — a demo paste
+# failing in front of an audience is exactly the failure the demo
+# validation exists to prevent. Link one by hand after the paste; the
+# checklist in 30-deploy/DEPLOY.md says so.
+#
+# Coverage: a five-course catalogue including two that never expire and
+# three that are mandatory, and six records spanning current, expiring,
+# flagged and expired — including a lapse and its refresher as two rows,
+# which is the register's central data-quality rule made visible.
+demo_items:
+  Course:
+    - key: crs-induction
+      values:
+        Title: "[DEMO] Corporate induction"
+        Category: "Induction"
+        Mandatory: true
+        Provider: "People & Culture"
+        Notes: "Demo row. Once, at hire. No validity months — an induction is not repeated, which is what a blank says here."
+    - key: crs-manual-handling
+      values:
+        Title: "[DEMO] Manual handling"
+        Category: "Health & safety"
+        ValidityMonths: 24
+        Mandatory: true
+        Provider: "WHS team"
+        Notes: "Demo row. Half-day practical; book through the WHS team's calendar."
+    - key: crs-bls
+      values:
+        Title: "[DEMO] Basic life support"
+        Category: "Clinical / professional"
+        ValidityMonths: 12
+        Mandatory: false
+        Provider: "Clinical education"
+        Notes: "Demo row. Annual reaccreditation. Mandatory for clinical roles only — which is a role requirement, so it lives in the governance matrix rather than in this checkbox."
+    - key: crs-records
+      values:
+        Title: "[DEMO] Records and privacy awareness"
+        Category: "Compliance"
+        ValidityMonths: 36
+        Mandatory: true
+        Provider: "Governance"
+        Notes: "Demo row. Online module, 40 minutes."
+    - key: crs-collab
+      values:
+        Title: "[DEMO] Collaboration tools essentials"
+        Category: "Systems & IT"
+        Mandatory: false
+        Provider: "IT service desk"
+        Notes: "Demo row. No expiry — and worth an annual look at whether that is still true, which is what the Never expires view is for."
+  TrainingRecord:
+    - key: rec-induction
+      values:
+        Title: "[DEMO] Corporate induction — completed at hire"
+        Person: "@me"
+        Course: { demo_ref: crs-induction }
+        CompletedDate: "today-400"
+        Status: "Current"
+        Notes: "Demo row. No expiry date, because the course has no validity months."
+    - key: rec-records
+      values:
+        Title: "[DEMO] Records and privacy awareness — in date"
+        Person: "@me"
+        Course: { demo_ref: crs-records }
+        CompletedDate: "today-200"
+        ExpiryDate: "today+890"
+        Status: "Current"
+    - key: rec-manual-expiring
+      values:
+        Title: "[DEMO] Manual handling — lapses inside 60 days"
+        Person: "@me"
+        Course: { demo_ref: crs-manual-handling }
+        CompletedDate: "today-690"
+        ExpiryDate: "today+40"
+        Status: "Current"
+        Notes: "Demo row. Still Current, and already inside the sweep window — this is what the coordinator sees before anyone is late."
+    - key: rec-bls-flagged
+      values:
+        Title: "[DEMO] Basic life support — flagged by the sweep"
+        Person: "@me"
+        Course: { demo_ref: crs-bls }
+        CompletedDate: "today-350"
+        ExpiryDate: "today+15"
+        Status: "Expiring"
+        Notes: "Demo row. The sweep has been run: person and manager notified, refresher being booked."
+    - key: rec-bls-expired
+      values:
+        Title: "[DEMO] Basic life support — lapsed last year"
+        Person: "@me"
+        Course: { demo_ref: crs-bls }
+        CompletedDate: "today-740"
+        ExpiryDate: "today-10"
+        Status: "Expired"
+        Notes: "Demo row. Escalated on the day it lapsed. Kept, not overwritten — the history is the audit trail."
+    - key: rec-bls-refresher
+      values:
+        Title: "[DEMO] Basic life support — refresher, recorded as a new row"
+        Person: "@me"
+        Course: { demo_ref: crs-bls }
+        CompletedDate: "today-3"
+        ExpiryDate: "today+362"
+        Status: "Current"
+        Notes: "Demo row. The pair above and below is the whole rule: a refresher is a new row and the old one is set Expired. Overwrite the old row instead and the register can no longer show that coverage ever lapsed."

@@ -11,6 +11,17 @@ recur". The permission model matches the process: **all staff can report**
 (a custom report-only permission level — add and read, no editing others'
 reports), while the response team maintains records.
 
+**What deploys with it:** seven views — *Open by severity* (the incident
+default, grouped and collapsed, with an open **Critical** incident washing
+its whole row), *Triage queue*, *Resolved last 90 days*, and on the action
+list *Open actions*, *Overdue*, *By owner* (the chase list, grouped by
+name) and *By incident* (the closure check: expand an incident, read its
+actions) — a severity ladder and a resolution-time bar that takes its
+colour from the severity rather than from itself, due dates that go red and
+then stop once an action is finished, forms that keep triage and resolution
+off the reporter's three-minute New form, save rules on both lists, and
+eleven demo rows behind `--seed`.
+
 **Work the folders in order:**
 
 | Step | Folder | You |
@@ -21,6 +32,8 @@ reports), while the response team maintains records.
 | 4 | `40-adopt/` | Staff guide: how to report; handlers guide: how to run one |
 | 5 | `50-govern/` | Triage SLAs, severity definitions, trend review |
 
-**Customisation points:** `Severity` and `Category` enums; whether reporters
-may also *edit* their own reports (SharePoint levels can't scope "own items
-only" — see `50-govern/GOVERNANCE.md` for the honest options).
+**Customisation points:** `Severity` and `Category` enums — note that
+`Critical` drives the row wash and every `Status` member is named in a view
+filter, a form rule or a save rule; and whether reporters may also *edit*
+their own reports (SharePoint levels can't scope "own items only" — see
+`50-govern/GOVERNANCE.md` for the honest options).

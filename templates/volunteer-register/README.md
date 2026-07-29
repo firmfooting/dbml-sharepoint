@@ -8,6 +8,12 @@ people they serve) safe: police check and Working with Children Check
 expiries, induction status, and an honest active/inactive picture. One
 list: `VL_Volunteer`.
 
+**Deploys with:** five views (the team roster, the 90-day expiry sweep, a
+missing-checks surface, the applicant pipeline and the retention list), a
+sectioned form whose Start Date only appears once the volunteer is off
+Applying, expiry dates that turn red past due, two save rules, and six
+demo rows so the whole thing is visible the minute you paste it.
+
 **The value case.** Volunteers arrive through goodwill and stay off the
 HR system — which means their checks live in a drawer and their expiry
 dates live nowhere. For services working with patients, elders or
