@@ -144,6 +144,7 @@ register at all.
 |---|---|
 | Weekly | Curator works **Needs review**: accept, reject as *Not substantiated*, or send back for detail. A queue worked weekly stays honest; one worked before a review does not. |
 | Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row, and `Last Followed Up` on the event is carried across in the same pass — contributors cannot write it. |
+| Weekly | Curator works **Awaiting a response** on `FollowUp` and records what came back — *What came back*, *Response Date*, the summary — on the row that did the asking. Contributors hold `SE Log Only` and cannot write them, so a row left here is either still unanswered or an answer nobody recorded, and only this pass tells the two apart. The same hand-off applies to `Resolved Date` and `Outcome for us` on an event that has since been resolved. |
 | Monthly | Reconcile `Last Followed Up` against the **By event** view. Update `Event Count` on any theme being assembled. |
 | Monthly | Review whether the categories being logged still match what was agreed, and whether any team has stopped logging. |
 | Per service review | Assemble the pack from **Evidence pack** and **By failure mode**. Bring the denominator. |
@@ -177,6 +178,18 @@ may still belong to a theme worth raising.
   approximations and should be described that way in any pack. Precision you
   do not have is the fastest way to lose an argument you would otherwise win.
 - **Individuals' names** are a defect. Edit them out.
+- **Write *The theme* as though a contributor will read it.** Once an event
+  is Accepted or Escalated it shows **Part of theme**, which displays the
+  theme's one-line title on a record every contributor can open. Contributors
+  cannot open the themes list itself, and *Escalation Level* and *Raised
+  Date* are not shown to them — but assume the title line is. Keep the frank
+  assessment in **The pattern**, which stays on the themes list.
+- **A response date earlier than the date it answers.** Neither *Response
+  Date* against its *Follow-up Date*, nor a theme's *Response Date* against
+  its *Raised Date*, can be refused when the row is saved — the form can
+  compare a date against today, but not against another date on the same row.
+  A reversed pair shows up as a negative *Days to respond* or *Days to
+  response*. Look for it in the monthly reconciliation.
 
 ## Retention and lifecycle
 

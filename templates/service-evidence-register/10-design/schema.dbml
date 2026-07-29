@@ -67,7 +67,7 @@ Enum issue_status {
 // the evidence behind it and what happened when you raised it.
 Table ServiceIssue {
   Id                   int                [pk, increment]
-  Title                nvarchar           [not null, note: 'The theme in one line, as you would say it in the meeting where you raise it']
+  Title                nvarchar           [not null, note: 'The theme in one line, as you would say it in the meeting where you raise it. Anyone who logs an event may see this line, so keep the frank version for The pattern']
   Provider             nvarchar           [not null, note: 'The provider or service arrangement this concerns. Write the name the same way on every record so the grouped views hold together']
   ServiceAffected      service_domain     [note: 'The part of the service this pattern sits in']
   IssueSummary         longtext           [not null, note: 'The pattern in three or four sentences: what keeps happening, since when, and what it is costing']
