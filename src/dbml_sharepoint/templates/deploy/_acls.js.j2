@@ -163,19 +163,59 @@
         // failure aborts the list before exact mode removes a single binding.
         // GetByPrincipalId is positional in SharePoint REST; add/remove role
         // assignment methods below use their documented named parameters.
-        for (const resolved of resolvedAssignments) {
-          const desiredResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-          let desiredPresent = false;
-          if (desiredResp.ok) {
-            const desiredJson = await desiredResp.json();
-            const desiredBindings = (desiredJson.d && desiredJson.d.RoleDefinitionBindings && desiredJson.d.RoleDefinitionBindings.results) || [];
-            desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
-          } else if (desiredResp.status !== 404) {
-            const text = await desiredResp.text();
-            throw new Error(`desired binding probe failed: HTTP ${desiredResp.status} ${text}`);
+        // ONE enumeration answers every question below. getbyprincipalid
+        // answers 404 for a principal that has no assignment on this list
+        // yet — which every declared principal is on a first deploy — and
+        // the browser paints that red whether or not the script handles it.
+        // Same treatment lists, views and site groups already get.
+        //
+        // Deliberately not fatal: if the enumeration is refused we fall
+        // back to per-principal probing, which is noisier and still
+        // correct. Exact mode below reuses this same snapshot; it was
+        // taken BEFORE the adds, which changes no removal because a
+        // binding this run adds is by definition declared, and exact mode
+        // only removes bindings that are not.
+        let existingAssignments = null;
+        {
+          const collected = [];
+          let pageUrl = apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
+          let ok = true;
+          while (pageUrl && ok) {
+            const pageResp = await fetchWithRetry(pageUrl, {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (!pageResp.ok) { ok = false; break; }
+            const pageJson = await pageResp.json();
+            collected.push(...((pageJson.d && pageJson.d.results) || []));
+            pageUrl = (pageJson.d && pageJson.d.__next) || null;
           }
+          if (ok) existingAssignments = collected;
+        }
+        const bindingsFor = (principalId) => {
+          if (!existingAssignments) return null;
+          const hit = existingAssignments.find(
+            (a) => a.Member && a.Member.Id === principalId,
+          );
+          return (hit && hit.RoleDefinitionBindings && hit.RoleDefinitionBindings.results) || [];
+        };
+
+        for (const resolved of resolvedAssignments) {
+          let desiredBindings = bindingsFor(resolved.principalId);
+          if (desiredBindings === null) {
+            const desiredResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id`), {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (desiredResp.ok) {
+              const desiredJson = await desiredResp.json();
+              desiredBindings = (desiredJson.d && desiredJson.d.RoleDefinitionBindings && desiredJson.d.RoleDefinitionBindings.results) || [];
+            } else if (desiredResp.status === 404) {
+              desiredBindings = [];
+            } else {
+              const text = await desiredResp.text();
+              throw new Error(`desired binding probe failed: HTTP ${desiredResp.status} ${text}`);
+            }
+          }
+          const desiredPresent = desiredBindings.some(binding => binding.Id === resolved.roleDefId);
           if (!desiredPresent) {
             digest4 = await getDigest();
             const assignResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/addroleassignment(principalid=${resolved.principalId},roleDefId=${resolved.roleDefId})`), {
@@ -198,21 +238,29 @@
           const expected = new Set(resolvedAssignments.map(
             x => `${x.principalId}:${x.roleDefId}`,
           ));
-          const existingAssignments = [];
-          let assignmentsUrl = apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
-          while (assignmentsUrl) {
-            const allResp = await fetchWithRetry(assignmentsUrl, {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (!allResp.ok) {
-              const text = await allResp.text();
-              throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
+          // Reuses the snapshot taken above when it succeeded. Exact mode
+          // is an allowlist, so it must never run on a PARTIAL view of the
+          // bindings: if that enumeration was refused, this one repeats it
+          // and stays fatal on failure rather than pruning against
+          // whatever it managed to read.
+          let allAssignments = existingAssignments;
+          if (allAssignments === null) {
+            allAssignments = [];
+            let assignmentsUrl = apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments?$expand=Member,RoleDefinitionBindings&$select=Member/Id,Member/Title,RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`);
+            while (assignmentsUrl) {
+              const allResp = await fetchWithRetry(assignmentsUrl, {
+                headers: { 'Accept': 'application/json;odata=verbose' },
+              });
+              if (!allResp.ok) {
+                const text = await allResp.text();
+                throw new Error(`role assignment enumeration failed: HTTP ${allResp.status} ${text}`);
+              }
+              const allJson = await allResp.json();
+              allAssignments.push(...((allJson.d && allJson.d.results) || []));
+              assignmentsUrl = (allJson.d && allJson.d.__next) || null;
             }
-            const allJson = await allResp.json();
-            existingAssignments.push(...((allJson.d && allJson.d.results) || []));
-            assignmentsUrl = (allJson.d && allJson.d.__next) || null;
           }
-          for (const existing of existingAssignments) {
+          for (const existing of allAssignments) {
             const principalId = existing.Member && existing.Member.Id;
             if (principalId == null) {
               throw new Error('role assignment enumeration returned an entry without Member.Id');
@@ -231,20 +279,25 @@
           // Backward-compatible configured-principal mode: remove stale levels
           // for declared principals but leave unrelated principals untouched.
           for (const resolved of resolvedAssignments) {
-            const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (raResp.ok) {
-              const raJson = await raResp.json();
-              const bindings = (raJson.d && raJson.d.RoleDefinitionBindings && raJson.d.RoleDefinitionBindings.results) || [];
-              for (const binding of bindings) {
-                if (binding.Name !== 'Limited Access' && binding.Id !== resolved.roleDefId) {
-                  await removeBinding(resolved.principalId, binding.Id, 'stale');
-                }
+            let bindings = bindingsFor(resolved.principalId);
+            if (bindings === null) {
+              const raResp = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(la.list)}')/roleassignments/getbyprincipalid(${resolved.principalId})?$expand=RoleDefinitionBindings&$select=RoleDefinitionBindings/Id,RoleDefinitionBindings/Name`), {
+                headers: { 'Accept': 'application/json;odata=verbose' },
+              });
+              if (raResp.ok) {
+                const raJson = await raResp.json();
+                bindings = (raJson.d && raJson.d.RoleDefinitionBindings && raJson.d.RoleDefinitionBindings.results) || [];
+              } else if (raResp.status === 404) {
+                bindings = [];
+              } else {
+                const text = await raResp.text();
+                throw new Error(`role assignment probe failed: HTTP ${raResp.status} ${text}`);
               }
-            } else if (raResp.status !== 404) {
-              const text = await raResp.text();
-              throw new Error(`role assignment probe failed: HTTP ${raResp.status} ${text}`);
+            }
+            for (const binding of bindings) {
+              if (binding.Name !== 'Limited Access' && binding.Id !== resolved.roleDefId) {
+                await removeBinding(resolved.principalId, binding.Id, 'stale');
+              }
             }
           }
         }

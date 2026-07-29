@@ -2799,3 +2799,27 @@ def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None
     # still cleared — the guard must not become "skip everything".
     assert fields["Note"]["validation_formula"] != UNMANAGED
     assert fields["Comment"]["validation_formula"] == ""
+
+
+def test_role_assignments_are_enumerated_before_any_principal_probe() -> None:
+    """A list's roleassignments/getbyprincipalid answers 404 for a principal
+    with no assignment yet — every declared principal, on a first deploy —
+    and the browser paints that red whatever the script does with it.
+
+    Asserted on the generated source rather than by running it: the mock in
+    test_deploy_runtime never resolves a principal Id, so its run never
+    reaches these calls, and a runtime assertion would pass while testing
+    nothing.
+    """
+    js = _generate_simple_js()
+    enumerate_at = js.index("roleassignments?$expand=Member,RoleDefinitionBindings")
+    probe_at = js.index("roleassignments/getbyprincipalid")
+    assert enumerate_at < probe_at, (
+        "the one-shot enumeration must come before any per-principal probe, "
+        "or the probe is what an operator sees painted red"
+    )
+    # Every probe site must be reachable only when the enumeration failed.
+    assert js.count("bindingsFor(resolved.principalId)") == 2, (
+        "both the add check and the stale-level pass must consult the "
+        "enumeration first and fall back to probing only when it is null"
+    )
