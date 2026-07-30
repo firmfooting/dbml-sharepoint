@@ -337,4 +337,62 @@
   );
 
   report();
+
+  // ---- Cleanup --------------------------------------------------------
+  if (!CLEANUP_AT_END) {
+    log('INFO', `Fixture lists remain: '${LIST}' and '${PARENT}'.`);
+    log('INFO', 'When finished, set CLEANUP_AT_END=true with both write gates');
+    log('INFO', 'and re-paste. Expect to re-paste more than once past 5,000 rows.');
+    return;
+  }
+
+  // Past 5,000 items a list will not empty in one page, and a cleanup that
+  // silently leaves rows behind lets THIS run's rows answer the NEXT run's
+  // questions. So: page until empty or until a page stops making progress,
+  // then say exactly what is left rather than reporting success.
+  const emptyList = async (title) => {
+    let removed = 0;
+    for (let page = 0; page < 20; page += 1) {
+      const found = await spGet(
+        `web/lists/getbytitle('${odata(title)}')/items?$select=Id&$top=1000`);
+      const rows = (found.ok && found.body && found.body.value) || [];
+      if (!rows.length) break;
+      let removedThisPage = 0;
+      for (const row of rows) {
+        const digest = await getDigest();
+        const gone = await spPost(
+          `web/lists/getbytitle('${odata(title)}')/items(${row.Id})/recycle`, {}, digest);
+        if (gone.ok) removedThisPage += 1;
+      }
+      removed += removedThisPage;
+      // A page that removed nothing will not do better on the next attempt —
+      // retention, a lock or permissions — and looping twenty times over it
+      // would just bury the reason.
+      if (removedThisPage === 0) {
+        log('FAIL', `CLEANUP '${title}': a page of ${rows.length} row(s) would not recycle; stopping.`);
+        break;
+      }
+    }
+    const left = await spGet(`web/lists/getbytitle('${odata(title)}')?$select=ItemCount`);
+    const remaining = (left.ok && left.body) ? left.body.ItemCount : -1;
+    log(remaining === 0 ? 'OK' : 'FAIL',
+        `CLEANUP '${title}': recycled ${removed} item(s), ${remaining} REMAINING` +
+        (remaining === 0 ? '.' : ' — re-run with CLEANUP_AT_END until this reads 0.'));
+    return remaining === 0;
+  };
+
+  // CHILD FIRST. SharePoint refuses to recycle a list that a live Lookup
+  // column still targets, so the parent cannot go until the child has. This is
+  // the reverse of provisioning order, and calculated-operand-probe.js already
+  // learned it the hard way.
+  for (const title of [LIST, PARENT]) {
+    await emptyList(title);
+    const digest = await getDigest();
+    const recycled = await spPost(
+      `web/lists/getbytitle('${odata(title)}')/recycle`, {}, digest);
+    log(recycled.ok ? 'OK' : 'FAIL',
+        recycled.ok
+          ? `Recycled '${title}'. Restorable from the site recycle bin.`
+          : `Could not recycle '${title}': HTTP ${recycled.status} ${recycled.text.slice(0, 300)}`);
+  }
 })();
