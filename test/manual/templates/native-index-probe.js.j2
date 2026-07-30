@@ -76,11 +76,13 @@
  * are void. The first version of this probe reported those five as
  * "INDEXED ON NONE" — five confident rows its own header said to disregard,
  * which is precisely the shape of false finding this directory exists to
- * prevent. The control's consequence is enforced in code as of that run, and
- * AutoIndexed is now read alongside Indexed.
+ * prevent. The control's consequence is enforced in code as a result.
  *
- * The behavioural test did not run: the web's largest generic list held 21
- * items against a 5,000 threshold.
+ * AutoIndexed was NOT read on that run. It was added afterwards, so no
+ * observation of it exists yet — and none would have been visible anyway, for
+ * the same reason the behavioural test did not run: the web's largest generic
+ * list held 21 items against a 5,000 threshold, so no automatic index would
+ * have been created for the flag to report.
  *
  * So both of the check's unknowns in analysis/checks/_views.py REMAIN
  * unknown, and its conservative behaviour is unchanged and still correct —
@@ -93,6 +95,21 @@
  *   - paste this into a site that HAS a list past the threshold; or
  *   - build such a list first. That is a write of 5,000+ rows and belongs in
  *     its own gated probe, not this one.
+ *
+ * AND NOTE WHAT THIS PROBE STILL COULD NOT TELL YOU EVEN THEN. Two limits are
+ * in the surface, not in the method:
+ *
+ *   - AutoIndexed's meaning stays inference until somebody WATCHES SharePoint
+ *     create an index: sort a modern view on an unindexed column of a large
+ *     list, then re-read the field and see the flag turn over. Reading the flag
+ *     on a list whose history nobody watched cannot establish what sets it.
+ *
+ *   - A per-field boolean cannot express a COMPOUND index. Microsoft's index
+ *     model has a primary and an optional secondary column; SPFieldIndex and
+ *     SPList.FieldIndexes are server-only with no CSOM or REST equivalent. So
+ *     `Indexed` says a column takes part in indexing and never says in what
+ *     shape — which also means the deployer's per-field view of the 20-index
+ *     budget is an approximation of SharePoint's own accounting.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -153,30 +170,50 @@
     .sort((a, b) => b.ItemCount - a.ItemCount)
     .slice(0, SAMPLE_LISTS);
 
-  // {column: {yes: [], no: [], auto: [], unread: n}}. `auto` is tallied
-  // separately from `yes` because AutoIndexed is a DIFFERENT claim from
-  // Indexed and conflating them is how a platform index would get counted as
-  // an author's, or the reverse.
+  // {column: {yes: [], no: [], auto: [], autoAbsent: n, unread: n}}
+  //
+  // `auto` is tallied apart from `yes` because they are different claims.
+  // SP.Field.Indexed is documented — "TRUE if the column is indexed for use in
+  // view filters" (schema/field-element-field) — and is read/write: it is the
+  // lever List Settings and this deployer both pull.
+  //
+  // SP.Field.AutoIndexed has a CSOM signature and NO first-party prose
+  // anywhere: get-only, and absent from the Field schema element's attribute
+  // list, so it is server-maintained rather than authorable. Get-only plus
+  // unauthorable is CONSISTENT with "an index SharePoint created for itself",
+  // and that reading is inference — community sources attest a large-list
+  // timer job and modern-UI sort creating indexes automatically. Nothing
+  // Microsoft publishes states the semantics, so this probe REPORTS the flag
+  // and does not interpret it.
   const tally = {};
   for (const column of SYSTEM_COLUMNS) {
-    tally[column] = { yes: [], no: [], auto: [], unread: 0 };
+    tally[column] = { yes: [], no: [], auto: [], autoAbsent: 0, unread: 0 };
   }
 
   for (const list of sample) {
     for (const column of SYSTEM_COLUMNS) {
+      // NO $select, deliberately. An unrecognised property in $select errors
+      // the WHOLE request, so selecting AutoIndexed on a tenant that does not
+      // expose it would report every column unreadable and look like a
+      // permissions problem. A field object is small; read all of it and pick.
       const field = await spGet(
         `web/lists/getbytitle('${odata(list.Title)}')/fields/` +
-        `getbyinternalnameortitle('${column}')` +
-        `?$select=InternalName,Indexed,AutoIndexed,TypeAsString`);
-      // `Indexed` absent is NOT `Indexed: false`. An older $select shape or a
-      // field the account cannot read would otherwise be counted as a
-      // measured "no" and quietly become half the evidence.
+        `getbyinternalnameortitle('${column}')`);
+      // `Indexed` absent is NOT `Indexed: false`. A field the account cannot
+      // read would otherwise be counted as a measured "no" and quietly become
+      // half the evidence.
       if (readFailed(field) || typeof field.body.Indexed !== 'boolean') {
         tally[column].unread += 1;
         continue;
       }
       tally[column][field.body.Indexed ? 'yes' : 'no'].push(list.Title);
-      if (field.body.AutoIndexed === true) tally[column].auto.push(list.Title);
+      // Whether the property is EXPOSED is itself unestablished, so absence is
+      // counted rather than folded into "false".
+      if (typeof field.body.AutoIndexed !== 'boolean') {
+        tally[column].autoAbsent += 1;
+      } else if (field.body.AutoIndexed) {
+        tally[column].auto.push(list.Title);
+      }
     }
   }
 
@@ -188,8 +225,9 @@
       evidence:
         `${read} of ${sample.length} list(s) read: Indexed true on ${t.yes.length}, ` +
         `false on ${t.no.length}, unreadable on ${t.unread}; ` +
-        `AutoIndexed true on ${t.auto.length}` +
-        (t.yes.length ? ` — Indexed on: ${t.yes.slice(0, 5).join(', ')}` : ''),
+        `AutoIndexed true on ${t.auto.length}, not exposed on ${t.autoAbsent}` +
+        (t.yes.length ? ` — Indexed on: ${t.yes.slice(0, 5).join(', ')}` : '') +
+        (t.auto.length ? ` — AutoIndexed on: ${t.auto.slice(0, 5).join(', ')}` : ''),
     };
   };
 
