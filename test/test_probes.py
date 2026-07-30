@@ -173,3 +173,81 @@ def test_rendered_probes_are_syntactically_valid() -> None:
             capture_output=True, text=True, check=False,
         )
         assert result.returncode == 0, f"{path.name} does not parse:\n{result.stderr}"
+
+
+# === The threshold fixture's two halves must agree ==========================
+
+THRESHOLD_PROBE = MANUAL / "threshold-index-probe.js"
+
+
+def _threshold_rows() -> ModuleType:
+    """The row generator, loaded the same by-path way as render_probes."""
+    spec = importlib.util.spec_from_file_location(
+        "dbmlsp_threshold_rows_gate", MANUAL / "make_threshold_rows.py",
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_probe_provisions_every_column_the_csv_supplies() -> None:
+    """Two files have to agree on one column set. A column written to the CSV
+    but never provisioned loads into nothing; one provisioned but never written
+    is silently always blank. Either way the fixture stops testing what it
+    claims to, and the probe would report a confident SERVED about an empty
+    column."""
+    rows = _threshold_rows()
+    probe = THRESHOLD_PROBE.read_text(encoding="utf-8")
+    for header in rows.HEADERS:
+        if header == "Title":
+            continue  # the platform provides it
+        # Person and Lookup arrive as OwnerId/ParentId in the CSV, because that
+        # is what the REST body needs, but are provisioned as Owner/Parent.
+        provisioned = header.removesuffix("Id") if header.endswith("Id") else header
+        assert f"'{provisioned}'" in probe, (
+            f"{header!r} is written to the CSV but {provisioned!r} never appears "
+            f"in {THRESHOLD_PROBE.name}. One of the two files is wrong."
+        )
+
+
+def test_the_probe_and_the_generator_agree_on_the_checkpoints() -> None:
+    """The probe asserts the live ItemCount against these. A drift files every
+    observation under a row count the list never held."""
+    rows = _threshold_rows()
+    probe = THRESHOLD_PROBE.read_text(encoding="utf-8")
+    expected = f"const CHECKPOINTS = [{', '.join(str(c) for c in rows.CHECKPOINTS)}];"
+    assert expected in probe, f"expected {expected!r} in {THRESHOLD_PROBE.name}"
+
+
+def test_the_probe_and_the_generator_agree_on_the_fixture_size() -> None:
+    """The probe divides ItemCount by TOTAL/MATCHING_ROWS to get the expected
+    match count for every selectivity-matched filter. If either constant drifts
+    from the generator, every one of those filters compares its result against
+    the wrong number and reports NOT ESTABLISHED across the board."""
+    rows = _threshold_rows()
+    probe = THRESHOLD_PROBE.read_text(encoding="utf-8")
+    assert f"const FIXTURE_TOTAL = {rows.TOTAL};" in probe
+    assert f"const MATCHING_ROWS = {rows.MATCHING_ROWS};" in probe
+    assert f"const RARE_BUCKET = '{rows.RARE_BUCKET}';" in probe
+
+
+def test_every_selectivity_matched_population_divides_every_checkpoint() -> None:
+    """The probe's expected match count is ItemCount / (TOTAL / MATCHING_ROWS),
+    floored. That is only EXACT at every checkpoint while each checkpoint is a
+    whole multiple of that ratio — otherwise the count is off by one at some
+    checkpoints and every matched filter there reads NOT ESTABLISHED for
+    arithmetic reasons rather than SharePoint ones."""
+    rows = _threshold_rows()
+    per_hundred = rows.TOTAL // rows.MATCHING_ROWS
+    for checkpoint in rows.CHECKPOINTS:
+        assert checkpoint % per_hundred == 0, (
+            f"checkpoint {checkpoint} is not a multiple of {per_hundred}, so the "
+            f"probe's expected match count is not exact there"
+        )
+        # And the offsets must all fall below the ratio, or a population is not
+        # evenly spread across the prefix the checkpoint cuts.
+        for offset in (rows._Z_OFFSET, rows._NULL_OFFSET,
+                       rows._OWNER_OFFSET, rows._PARENT_OFFSET):
+            assert 0 < offset < per_hundred, f"offset {offset} is outside 1..{per_hundred - 1}"

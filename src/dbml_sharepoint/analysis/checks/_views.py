@@ -101,6 +101,13 @@ _LOOKUP_FIELD_TYPES = frozenset({"person"})
 #
 # None of it changes the exclusion, because the exclusion rests on the DBML
 # side. That is why it is safe to leave standing while the question stays open.
+#
+# test/manual/threshold-index-probe.js is the fixture that can answer this. It
+# provisions a list past the threshold and filters Created, Modified, Author and
+# Editor directly — a behavioural answer, where a flag read is what failed. Note
+# what it will NOT settle: those four are set by the loader on every row, so no
+# selective filter over them exists, and a refusal there is attributable to
+# result-set size rather than to indexing. Only a SERVED would be informative.
 
 # Operators that test only for presence. Microsoft's threshold guidance is
 # written for comparison filters; whether an index serves a CAML <IsNull> is
@@ -111,6 +118,12 @@ _LOOKUP_FIELD_TYPES = frozenset({"person"})
 # test/manual/native-index-probe.js asks this too and, as of its 2026-07-30
 # run, has not answered it: the test needs a list past the threshold, and the
 # site it ran on topped out at 21 items. Still open.
+#
+# test/manual/threshold-index-probe.js builds the list that run lacked. It puts
+# a CAML <IsNull> and a CAML comparison on the SAME indexed column, matching the
+# same number of rows, so the pair differs only in the operator — and it asks
+# CAML rather than only OData, because a view renders CAML and `eq null` is not
+# in Microsoft's documented operator list for the REST service at all.
 _NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
