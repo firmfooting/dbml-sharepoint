@@ -142,26 +142,40 @@ Surfaced at build time by the validator, not discovered at deploy time:
 
 :::warning Calculated-formula operand types
 
-The build refuses a calculated formula that references a **Lookup** or
-**Person** column. The error names the calculated column and operand before
-scripts are emitted; SharePoint otherwise rejects the field creation with
-HTTP 500 part-way through provisioning.
+The build refuses a calculated formula whose operand SharePoint will not
+accept. The error names the calculated column and the operand before any
+script is emitted; SharePoint otherwise rejects the field creation with HTTP
+500 part-way through provisioning.
 
-Microsoft's formula reference lists Single line of text, Number, Currency,
-Date and Time, Choice, Yes/No and Calculated as supported operand types, and
-states explicitly that [Lookup fields are not supported in a
+The matrix is **live-verified**, not inferred. `calculated-operand-probe.js`
+was run against SharePoint Online on 2026-07-30 and answered every question:
+
+| Operand column type | Result |
+|---|---|
+| Single line of text (`nvarchar`) | accepted |
+| Number (`number`, `int`) | accepted |
+| Date, Date/Time (`date`, `datetime`) | accepted |
+| Choice (a named enum) | accepted |
+| Yes/No (`boolean`) | accepted |
+| Another calculated column | accepted |
+| Lookup (a `ref` column) | **refused** |
+| Person (`person`) | **refused** |
+| Plain multi-line text (`longtext`) | **refused** |
+| Rich text (`richtext`) | **refused** |
+| Hyperlink (`hyperlink`) | **refused** |
+
+Every refusal returned the same body: *"One or more column references are not
+allowed, because the columns are defined as a data type that is not supported
+in formulas."* This agrees with Microsoft's formula reference, which lists the
+supported operand types and states explicitly that [Lookup fields are not
+supported in a
 formula](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists).
-The Person refusal is also live-verified in SharePoint Online.
+
 Calc-on-calc chains are provisioned in dependency order and cycles are
 refused.
 
 Cross-site logical refs do not deploy as lookups. A generated
 `<column>Abbreviation` companion is Text and can be used in a formula; the
-logical ref name cannot because no such field is created.
-
-Plain multi-line text, rich text and hyperlink operands remain allowed while
-the comprehensive live probe added on 2026-07-30 is unrun. That is an
-explicit unknown, not a compatibility claim: ambiguous types stay out of the
-denylist until verified.
+logical ref name cannot, because no such field is created.
 
 :::
