@@ -213,13 +213,28 @@
   // guidance puts a 20,000-item ceiling on adding or removing an indexed
   // column, and provisioning first removes the question entirely.
   //
-  // __metadata carries SP.Field because that is the shape this repo's deployer
-  // uses and has verified live (templates/deploy/_indexes.js.j2).
+  // VERBOSE OData for this one call, and that is not optional. The body needs
+  // __metadata, and odata=nometadata REJECTS the type hint rather than
+  // ignoring it: "The property '__metadata' does not exist on type ...". The
+  // first live run of this probe failed all four MERGEs with HTTP 400 for
+  // exactly that reason — the body was byte-identical to the deployer's proven
+  // patchField, but _http_write.js.j2 sends verbose and the probe harness
+  // sends nometadata. calculated-choice-operand.js and datetime-sentinel-probe
+  // .js both already carried the lesson in a comment; this is the fourth time
+  // this repository has paid for it.
+  //
+  // Overriding Content-Type in extraHeaders works because the harness spreads
+  // extraHeaders LAST, so a caller can replace a default rather than only add.
   const setIndexed = async (name) => {
     const digest = await getDigest();
     return spPost(`${fieldsPath}/getbyinternalnameortitle('${name}')`,
                   { __metadata: { type: 'SP.Field' }, Indexed: true }, digest,
-                  { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+                  {
+                    Accept: 'application/json;odata=verbose',
+                    'Content-Type': 'application/json;odata=verbose',
+                    'X-HTTP-Method': 'MERGE',
+                    'IF-MATCH': '*',
+                  });
   };
 
   const schemas = COLUMNS.concat([[
@@ -456,10 +471,45 @@
            `[${stamp}] CAML ${where} — HTTP ${r.status}: ${(r.text || '').slice(0, 300)}`);
   };
 
+  // ---- Is anything below worth measuring at all? ----------------------
+  // The first live run recorded thirteen answers against an EMPTY list: every
+  // filter returned HTTP 200 with zero rows, judge() saw r.ok, and the summary
+  // read "13 answered, 1 NOT established" one screen below IDXSET reporting
+  // TABLE VOID. A filter over a list that is empty, off-checkpoint, or whose
+  // index flags are not what they claim is not evidence about anything — so
+  // the queries are not sent and every row says why.
+  const blocked =
+    count <= 0 ? 'the list is empty; load a CSV first'
+    : !onCheckpoint ? `ItemCount ${count} is not a declared checkpoint`
+    : wrong.length ? 'the index flags are not what they claim (see IDXSET)'
+    : '';
+  if (blocked) {
+    for (const [id, question] of [
+      ['CMPIDX', 'OData comparison, INDEXED Text (positive control)'],
+      ['CMPUNI', 'OData comparison, UNINDEXED twin of Bucket (negative control)'],
+      ['NULIDX', 'OData null test, INDEXED DateTime'],
+      ['CMPCAM', 'CAML comparison, INDEXED Text'],
+      ['NULCAM', 'CAML IsNull, INDEXED DateTime (the question as _views.py asks it)'],
+      ['PERSID', 'OData comparison, INDEXED Person'],
+      ['LOOKID', 'OData comparison, INDEXED Lookup'],
+      ['SYSCRE', 'OData comparison on Created'],
+      ['SYSMOD', 'OData comparison on Modified'],
+      ['SYSAUT', 'OData comparison on Author'],
+      ['SYSEDI', 'OData comparison on Editor'],
+    ]) {
+      record(id, question, 'NOT ESTABLISHED',
+             `[${stamp}] not measured: ${blocked}.`);
+    }
+    log('INFO', `No filter was measured: ${blocked}.`);
+  }
+
+  // Not an early return: CLEANUP_AT_END lives below, and an operator tearing
+  // down after a failed load needs to reach it.
+  const measureFilters = async () => {
   // One row in a hundred, so this is the expected match count at any
   // checkpoint — every offset is below 100 and every checkpoint is a multiple
   // of 100, so it is exact at all five, not only at 6,000.
-  const matched = count > 0 ? Math.floor(count / PER_HUNDRED) : null;
+  const matched = Math.floor(count / PER_HUNDRED);
 
   await ask('CMPIDX', 'OData comparison, INDEXED Text (positive control)',
             `Bucket eq '${RARE_BUCKET}'`, matched);
@@ -516,11 +566,18 @@
            `[${stamp}] $filter=${filter} — HTTP ${r.status}: ` +
            `${r.body ? JSON.stringify(r.body).slice(0, 200) : '(no JSON body)'}${SYS_CAVEAT}`);
   }
+  };
+
+  if (!blocked) await measureFilters();
 
   report();
-  if (count > 0 && !onCheckpoint) {
-    log('FAIL', '*** ItemCount is not on a checkpoint. The table above is not');
-    log('FAIL', '*** evidence until the list is reconciled. See RUNCNT.');
+  // report() counts only literal NOT ESTABLISHED outcomes, so a table that is
+  // void for any other reason reads as reassuring. Say so after the summary,
+  // which is the last thing on screen and the thing that gets pasted back.
+  if (blocked) {
+    log('FAIL', `*** Nothing above is evidence: ${blocked}.`);
+  } else if (wrong.length) {
+    log('FAIL', '*** The index flags are not what they claim — see IDXSET.');
   }
 
   // ---- Cleanup --------------------------------------------------------
