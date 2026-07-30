@@ -1060,7 +1060,10 @@ def test_calculated_formula_lookup_operand_is_error() -> None:
     )
     assert "Lookup" in message
     assert "HTTP 500" in message
-    assert "non-lookup source column" in message
+    assert "not supported in formulas" in message
+    # Naming the supported set matters more than naming the excluded one: an
+    # author who reads "not a Lookup" still has to guess what IS allowed.
+    assert "Yes/No" in message
 
 
 def test_calculated_formula_person_operand_is_error() -> None:
@@ -1086,13 +1089,50 @@ def test_calculated_formula_person_operand_is_error() -> None:
     )
     assert "Person" in message
     assert "HTTP 500" in message
-    assert "non-person source column" in message
+    assert "not supported in formulas" in message
+    assert "Yes/No" in message
 
 
-@pytest.mark.parametrize("operand_type", ["longtext", "richtext", "hyperlink"])
-def test_unverified_calculated_operand_types_stay_allowed(operand_type: str) -> None:
-    """Issue #25 requires ambiguous types to stay allowed until its live
-    probe settles them; do not grow the denylist from plausibility."""
+@pytest.mark.parametrize(
+    ("operand_type", "described_as"),
+    [
+        ("longtext", "plain multi-line-text"),
+        ("richtext", "rich-text"),
+        ("hyperlink", "Hyperlink"),
+    ],
+)
+def test_probed_calculated_operand_types_are_errors(
+    operand_type: str, described_as: str,
+) -> None:
+    """These three were held OUT of the denylist while unverified, because
+    Microsoft's silence about a type is not evidence against it.
+    test/manual/calculated-operand-probe.js was run live on 2026-07-30 and
+    refused all three with HTTP 500 and the same "not supported in formulas"
+    body as Lookup and Person, so they belong in it now.
+    """
+    table = Table(name="Risk", columns=[
+        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
+        Column(name="Title", type="nvarchar", required=True),
+        Column(name="Source", type=operand_type),
+        Column(name="Copy", type="calculated_text"),
+    ])
+    bundle = _bundle_with_formulas({"Risk": {"Copy": "=[Source]"}}, "Risk")
+    message = next(
+        finding.message
+        for finding in validate_against_mapping(_schema(table), bundle)
+        if finding.severity == "error" and "[Source]" in finding.message
+    )
+    assert "Risk.Copy" in message
+    assert described_as in message
+    assert "not supported in formulas" in message
+
+
+@pytest.mark.parametrize("operand_type", ["nvarchar", "number", "boolean", "datetime"])
+def test_probe_accepted_calculated_operand_types_stay_allowed(operand_type: str) -> None:
+    """The other half of the same live run, and the reason the denylist is a
+    denylist. Yes/No in particular was never refused — a probe-free guess that
+    "SharePoint only does text and numbers in formulas" would have banned it.
+    """
     table = Table(name="Risk", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
         Column(name="Title", type="nvarchar", required=True),
@@ -1372,6 +1412,102 @@ def test_indexed_lookup_filter_still_warns(tmp_path: Path) -> None:
     assert "Parent" in warnings[0]
     assert "Lookup" in warnings[0]
     assert "5,000" in warnings[0]
+
+
+def test_indexed_person_filter_still_warns(tmp_path: Path) -> None:
+    """Microsoft classifies Person or Group (single value) as a lookup field,
+    and reference/dbml.md already says a Person index does not make the column
+    suitable as a threshold query's first filter. Read narrowly as
+    `col.ref is not None`, the check scored this view as safe.
+    """
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Request {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  RequestedBy person\n"
+        "  indexes { RequestedBy }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Request: { kind: List, base_template: 100, site_role: default }\n"
+        "views:\n"
+        "  Request:\n"
+        "    - title: My requests\n"
+        "      fields: [Title, RequestedBy]\n"
+        "      where: [{ field: RequestedBy, op: eq, value: me }]\n",
+        encoding="utf-8",
+    )
+    warnings = [
+        finding.message
+        for finding in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if finding.severity == "warning" and "indexed filter" in finding.message
+    ]
+    assert len(warnings) == 1
+    assert "My requests" in warnings[0]
+    assert "RequestedBy" in warnings[0]
+    assert "Person" in warnings[0]
+
+
+def test_system_column_filter_is_not_warned_about(tmp_path: Path) -> None:
+    """A warning must name a remedy the author can carry out. `Created` is
+    filterable but not declarable, so there is no index to add — pydbml
+    refuses the declaration outright, which the second half asserts so the
+    reason for the silence cannot quietly stop being true."""
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: Recently raised\n"
+        "      fields: [Title, Created]\n"
+        "      where: [{ field: Created, op: geq, value: today }]\n",
+    )
+    warnings = [
+        finding.message
+        for finding in validate_against_mapping(schema, bundle)
+        if finding.severity == "warning" and "list view threshold" in finding.message
+    ]
+    assert not warnings, warnings
+
+    (tmp_path / "sys.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  indexes { Created }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Created"):
+        parse_dbml(tmp_path / "sys.dbml")
+
+
+def test_null_only_filter_warns_without_recommending_an_index(tmp_path: Path) -> None:
+    """The library's "blank means still open" idiom. The exposure is real, but
+    whether an index serves a CAML <IsNull> is unverified here, so the warning
+    must not tell the author to add one."""
+    schema, bundle = _view_inputs(
+        tmp_path,
+        "views:\n"
+        "  Project:\n"
+        "    - title: Still open\n"
+        "      fields: [Title, DueDate]\n"
+        "      where: [{ field: DueDate, op: is_null }]\n",
+    )
+    warnings = [
+        finding.message
+        for finding in validate_against_mapping(schema, bundle)
+        if finding.severity == "warning" and "list view threshold" in finding.message
+    ]
+    assert len(warnings) == 1
+    assert "Still open" in warnings[0]
+    assert "unverified" in warnings[0]
+    assert "add a bare DBML index" not in warnings[0].lower()
 
 
 def test_view_widths_keys_must_be_view_fields(tmp_path: Path) -> None:

@@ -7,6 +7,7 @@ from dbml_sharepoint.analysis.conditions import (
     SYSTEM_COLUMN_TYPES,
     condition_fields,
     effective_column_types,
+    leaves,
     validate_condition,
 )
 from dbml_sharepoint.analysis.typemap import NUMERIC_ONLY_TOTALS
@@ -33,19 +34,55 @@ _NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
 # Count on a person or hyperlink column.
 _NON_ARITHMETIC = frozenset({"person", "richtext", "longtext", "hyperlink"})
 
-# SharePoint Online's default list-view threshold is 5,000 items. Microsoft
-# recommends an indexed first filter column and states that an indexed Lookup
-# column does not prevent a threshold breach. An index is necessary but not
-# sufficient: selectivity and the condition shape still determine whether
-# SharePoint can use it.
-# https://learn.microsoft.com/troubleshoot/sharepoint/lists-and-libraries/items-exceeds-list-view-threshold
-# https://learn.microsoft.com/sharepoint/dev/schema/field-element-field
+# SharePoint Online's list view threshold is 5,000 items. Microsoft states it
+# CANNOT be changed for SharePoint, and that the effective number "is not
+# always 5,000" because it varies with the site and database activity — so
+# 5,000 is the documented figure, not a precise cutoff.
+#
+# The consequence is worse than an error, which is why this is worth warning
+# about at all: with Metadata Navigation and Filtering (on by default) a query
+# no index can serve falls back to returning up to 1,250 of the NEWEST items,
+# and may return none. A view that silently shows a truncated answer is the
+# failure this check exists to prevent.
+# https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
 _LIST_VIEW_THRESHOLD = 5_000
+_FALLBACK_ROW_COUNT = 1_250
 
-# SharePoint's built-in identity column is indexed by the platform and never
-# appears in the DBML index accounting (where it would incorrectly consume
-# one of the 20 author-managed slots).
-_NATIVE_FILTER_INDEXES = frozenset({"ID"})
+# Microsoft, verbatim: "Although you can index a lookup column to improve
+# performance, using an indexed lookup column to prevent exceeding the List
+# View Threshold doesn't work. Use another type of column as the primary or
+# secondary index."
+#
+# The same article's supported-column table annotates "Person or Group (single
+# value)" and "Managed Metadata" as lookup fields, and its note says to consult
+# that table to decide what counts as one. So a PERSON column is a lookup field
+# for this purpose even though its DBML declaration looks nothing like a `ref`,
+# and indexing it does not avert a threshold breach either. Read narrowly —
+# `col.ref is not None` only — this check would score an indexed Person filter
+# as safe when Microsoft says it is not.
+# https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
+_LOOKUP_FIELD_TYPES = frozenset({"person"})
+
+# SYSTEM_COLUMNS (ID, Created, Modified, Author, Editor) are dropped from this
+# check entirely, and there is no companion "natively indexed" set to pair with
+# them — that set would be unreachable, because the names are gone before any
+# intersection runs.
+#
+# They are filterable but NOT declarable, so no `indexes` entry can ever name
+# one: `indexes { Created }` is rejected by the DBML parser itself, a system
+# column not being a DBML column. Warning about them would name a remedy
+# nobody can carry out. ID is indexed by the platform and would need excluding
+# anyway; for the other four it is NOT established either way — nothing here
+# has measured it and Microsoft does not document it, so silence beats a guess
+# in either direction. test/manual/native-index-probe.js settles it.
+
+# Operators that test only for presence. Microsoft's threshold guidance is
+# written for comparison filters; whether an index serves a CAML <IsNull> is
+# unverified here. A null-only filter therefore still gets the exposure
+# warning — the truncation risk is real either way — but NOT the "add an
+# index" remedy, which this project cannot yet claim would help.
+# test/manual/native-index-probe.js settles this too.
+_NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -274,45 +311,73 @@ def check(vc: ValidationContext) -> list[Finding]:
                         context=f"{ctx}.where",
                     )
                 )
-                filtered = condition_fields(view.where)
+                # System columns are dropped before anything is decided. They
+                # are filterable but not declarable, so they can neither carry
+                # a DBML index nor be reported as missing one.
+                filtered = condition_fields(view.where) - SYSTEM_COLUMNS
                 # Do not layer an index warning on top of an unknown-field
                 # error. Once every field resolves, assess the whole
                 # dependency set without pretending to understand AND/OR
                 # selectivity in this first pass.
                 if filtered and filtered <= view_rendered:
-                    effective_indexes = (
-                        vc.effective_indexes(entity_name) | _NATIVE_FILTER_INDEXES
-                    )
-                    indexed_filters = filtered & effective_indexes
-                    useful_indexes = indexed_filters - entity_lookups
+                    indexed_filters = filtered & vc.effective_indexes(entity_name)
+                    # Wider than entity_lookups on purpose — see
+                    # _LOOKUP_FIELD_TYPES. entity_lookups stays as it is
+                    # because the totals check below means the DBML sense.
+                    lookup_fields = entity_lookups | {
+                        name for name in filtered
+                        if types_by_col.get(name) in _LOOKUP_FIELD_TYPES
+                    }
+                    useful_indexes = indexed_filters - lookup_fields
+                    # A filter that only tests presence gets the exposure
+                    # warning without the index remedy.
+                    compared = {
+                        leaf.field for leaf in leaves(view.where)
+                        if leaf.op not in _NULL_TEST_OPS
+                    }
+                    null_only = not (filtered & compared)
                     names = ", ".join(sorted(filtered))
+                    exposure = (
+                        f"SharePoint Online's list view threshold is "
+                        f"{_LIST_VIEW_THRESHOLD:,} items and cannot be raised; "
+                        f"past it SharePoint may return only the newest "
+                        f"{_FALLBACK_ROW_COUNT:,} items, or none, rather than "
+                        f"reporting an error"
+                    )
                     if not indexed_filters:
+                        remedy = (
+                            "Whether an index helps a null test is unverified by "
+                            "this project, so none is recommended here — either "
+                            "add a selective compared column to the filter, or "
+                            "accept the risk for a list that will stay small."
+                            if null_only else
+                            "Add a bare DBML index to a selective filter column, "
+                            "or accept the risk for a list that will stay small. "
+                            "An index is necessary but may not be sufficient, "
+                            "because SharePoint also considers filter order, "
+                            "selectivity and condition shape."
+                        )
                         findings.append(Finding(
                             "warning",
                             f"{ctx}.where: filtered columns ({names}) have no "
-                            f"effective index. SharePoint Online's default list "
-                            f"view threshold is {_LIST_VIEW_THRESHOLD:,} items; "
-                            f"add a bare DBML index to a selective filter column "
-                            f"or accept the risk for a list that will stay small. "
-                            f"An index is necessary but may not be sufficient "
-                            f"because SharePoint also considers filter order, "
-                            f"selectivity and condition shape.",
+                            f"effective index. {exposure}. {remedy}",
                         ))
                     elif not useful_indexes:
                         lookup_names = ", ".join(sorted(indexed_filters))
                         findings.append(Finding(
                             "warning",
                             f"{ctx}.where: the only indexed filter column(s), "
-                            f"{lookup_names}, are Lookup columns. Microsoft "
-                            f"documents that an indexed Lookup column does not "
-                            f"prevent exceeding SharePoint Online's "
-                            f"{_LIST_VIEW_THRESHOLD:,}-item list view threshold. "
+                            f"{lookup_names}, are Lookup or Person columns — "
+                            f"Microsoft classifies both as lookup fields and "
+                            f"documents that indexing one does not prevent "
+                            f"exceeding the list view threshold. {exposure}. "
                             f"Index a selective Text, Number, Choice or Date "
-                            f"filter column instead. An index is necessary but "
-                            f"may not be sufficient because SharePoint also "
-                            f"considers filter order, selectivity and condition "
-                            f"shape.",
+                            f"filter column instead.",
                         ))
+            # 5000 as a literal, deliberately NOT _LIST_VIEW_THRESHOLD. This is
+            # the per-view page-size ceiling, a different limit that happens to
+            # share the value; folding them into one constant would tie a view
+            # setting to a list-size threshold they have no reason to track.
             if view.row_limit is not None and not 1 <= view.row_limit <= 5000:
                 findings.append(Finding(
                     "error", f"{ctx}: row_limit must be between 1 and 5000.",

@@ -4,10 +4,11 @@
  * QUESTION: which SharePoint column types may a calculated field reference?
  *
  * WHY: Microsoft documents Lookup fields as unsupported and lists the
- * supported scalar operand types, while this project has live evidence that
+ * supported scalar operand types, while this project had live evidence that
  * a Person operand is refused with HTTP 500. Long text, rich text and
- * hyperlink remain ambiguous. They must not enter the validator's denylist
- * until a live run settles them.
+ * hyperlink were ambiguous — absent from Microsoft's supported list, which is
+ * not the same as documented against — so they were kept OUT of the
+ * validator's denylist until this probe ran. See STATUS.
  *
  * SOURCE
  *   https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists
@@ -29,9 +30,41 @@
  *      clean run and CLEANUP_AT_END to true to recycle both probe lists.
  *   4. Paste again and copy the complete RESULTS block back verbatim.
  *
- * STATUS: NOT YET RUN as of 2026-07-30. Until a result is recorded, only
- * Lookup (Microsoft documentation) and Person (the earlier live observation)
- * belong in the build-time denylist.
+ * STATUS: RUN 2026-07-30 against a live SharePoint Online site. All twelve
+ * questions answered, none left open. Verbatim outcome:
+ *
+ *   LOOK  REFUSED    Lookup
+ *   PERS  REFUSED    Person
+ *   LONG  REFUSED    plain multi-line text (Note, RichText="FALSE")
+ *   RICH  REFUSED    rich text (Note, RichText="TRUE")
+ *   LINK  REFUSED    Hyperlink (URL)
+ *   BOOL  ACCEPTED   Yes/No
+ *   CHOI  ACCEPTED   Choice
+ *   DATE  ACCEPTED   Date only
+ *   TIME  ACCEPTED   Date and time
+ *   NUMB  ACCEPTED   Number
+ *   TEXT  ACCEPTED   single line of text
+ *   CALC  ACCEPTED   another calculated column
+ *
+ * Every refusal was HTTP 500 with one identical body:
+ *
+ *   {"odata.error":{"code":"-2130575272, Microsoft.SharePoint.SPException",
+ *    "message":{"lang":"en-US","value":"One or more column references are not
+ *    allowed, because the columns are defined as a data type that is not
+ *    supported in formulas."}}}
+ *
+ * All five refused types are now in _FORBIDDEN_CALCULATED_OPERANDS in
+ * analysis/checks/_structure.py, so the build refuses them before a script is
+ * emitted. Note what the run also showed: the three ambiguous types were
+ * refused, so the cautious guess would have been RIGHT — and that is not a
+ * reason to guess next time. The same caution kept Yes/No out of the
+ * denylist, where a guess would have been WRONG.
+ *
+ * Incidental, and worth knowing before reading a future run: a GET on
+ * fields/getbyinternalnameortitle() for a field that does not exist answers
+ * HTTP 400, not 404. fieldExists() treats any non-2xx as absent, so this is
+ * already handled — but a reader scanning the console for 404s will not find
+ * them.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -242,9 +275,12 @@
     ['TEXT', 'Single-line-text operand in a calculated formula'],
     ['CALC', 'Calculated-column operand in another calculated formula'],
   ];
-  // Literal registrations are deliberate: test_probes statically proves
-  // that every record('ID', ...) has a matching upfront expect('ID', ...),
-  // so an aborted run cannot make unanswered questions disappear.
+  // Literal registrations are deliberate: test_probes statically proves that
+  // every record('ID', ...) of a DECLARED QUESTION has a matching upfront
+  // expect('ID', ...), so an aborted run cannot make unanswered questions
+  // disappear. BOOT-prefixed ids are exempt there by design — they report a
+  // bootstrap failure rather than answering a question, so there is no
+  // question for them to hide.
   expect('LOOK', 'Lookup operand in a calculated formula');
   expect('PERS', 'Person operand in a calculated formula');
   expect('LONG', 'Plain multi-line-text operand in a calculated formula');
@@ -275,7 +311,11 @@
   await resetList(TARGET);
 
   let digest = await getDigest();
-  const ensureList = async (title) => {
+  // bootId is per LIST, not a shared 'BOOT'. record() overwrites by id, so one
+  // id for both lists means whichever fails second erases the first — and the
+  // surviving row names the wrong list in its own question text. Two lists
+  // bootstrap here, so two ids.
+  const ensureList = async (title, bootId) => {
     const existing = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
     if (existing.ok) return existing.body;
     digest = await getDigest();
@@ -285,7 +325,7 @@
       Description: 'dbml-sharepoint calculated-operand probe. Safe to recycle.',
     }, digest);
     if (!created.ok) {
-      record('BOOT', `Create probe list ${title}`, 'FAIL',
+      record(bootId, `Create probe list ${title}`, 'FAIL',
              `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
       return null;
     }
@@ -294,15 +334,17 @@
     // always receives a measured Id rather than trusting the POST payload.
     const reread = await spGet(`web/lists/getbytitle('${title}')?$select=Id`);
     if (!reread.ok || !reread.body || !reread.body.Id) {
-      record('BOOT', `Read back probe list ${title}`, 'FAIL',
+      record(bootId, `Read back probe list ${title}`, 'FAIL',
              `HTTP ${reread.status}: successful create returned no usable list Id`);
       return null;
     }
     return reread.body;
   };
 
-  const target = await ensureList(TARGET);
-  const main = await ensureList(LIST);
+  // Both are attempted even if the first fails, so one run reports the state
+  // of both lists rather than only the one it reached.
+  const target = await ensureList(TARGET, 'BOOTTARGET');
+  const main = await ensureList(LIST, 'BOOTMAIN');
   if (!target || !main) {
     report();
     return;

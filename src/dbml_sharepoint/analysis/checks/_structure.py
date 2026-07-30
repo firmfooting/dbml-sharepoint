@@ -17,22 +17,42 @@ _UNSUPPORTED_INDEX_TYPES = {
     "hyperlink": "Hyperlink",
 }
 
-# Calculated fields accept only a documented subset of column types as
-# operands. Microsoft lists Single line of text, Number, Currency, Date and
-# Time, Choice, Yes/No, and Calculated; its formula examples state explicitly
+# Calculated fields accept only a subset of column types as operands.
+# Microsoft lists Single line of text, Number, Currency, Date and Time,
+# Choice, Yes/No and Calculated, and its formula examples state explicitly
 # that Lookup fields are not supported:
 # https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists
 #
-# Person is also absent from the supported-type list and was refused live
-# with HTTP 500 ("data type ... not supported in formulas"), recorded in the
-# DBML reference on 2026-07-27. The broader manual matrix added on 2026-07-30
-# at test/manual/calculated-operand-probe.js has not yet been run, so
-# longtext, richtext and hyperlink stay allowed rather than guessed into this
-# denylist.
+# MEASURED, not inferred. test/manual/calculated-operand-probe.js was run
+# against a live SharePoint Online site on 2026-07-30 and answered all twelve
+# of its questions. Every type below was REFUSED at createfieldasxml with
+# HTTP 500 and one identical body:
+#
+#   "One or more column references are not allowed, because the columns are
+#    defined as a data type that is not supported in formulas."
+#
+# The same run ACCEPTED Yes/No, Choice, Date-only, Date-and-time, Number,
+# single line of text, and a calculated column feeding another calculated
+# column — which is where _SUPPORTED_CALCULATED_OPERANDS below comes from.
+#
+# longtext, richtext and hyperlink were deliberately left OUT of this denylist
+# until that run existed, on the grounds that Microsoft's silence about a type
+# is not evidence against it. The run closed the question: all three are
+# refused, and the guess would have been right for the wrong reason.
 _FORBIDDEN_CALCULATED_OPERANDS = {
     "lookup": "a Lookup column",
     "person": "a Person column",
+    "longtext": "a plain multi-line-text column",
+    "richtext": "a rich-text column",
+    "hyperlink": "a Hyperlink column",
 }
+
+# The operand types the same live run accepted. Named in the error message
+# because "not that one" leaves an author guessing which types remain.
+_SUPPORTED_CALCULATED_OPERANDS = (
+    "single line of text, number, date, date/time, Choice, Yes/No, or another "
+    "calculated column"
+)
 
 # The generic list. It is the only BaseTemplate this tool builds for, and
 # every declaration in the repository is this value.
@@ -320,6 +340,19 @@ def check(vc: ValidationContext) -> list[Finding]:
     # other unsupported index field kinds checked above).
     calc_columns_by_table: dict[str, set[str]] = {}
     for table in schema.tables:
+        # Per TABLE, not per calculated column: all three are pure functions
+        # of the table, and rebuilding them inside the column loop was three
+        # identical derivations per calculated field.
+        #
+        # Checked against the RENDERED columns, not the declared ones.
+        # `Id int [pk, increment]` is skipped at render time and a cross-site
+        # column is expanded into <col>Abbreviation and <col>SiteUrl, so both
+        # are names the deploy never creates while sitting in table.columns —
+        # and a formula naming either passed this very check before dying at
+        # paste time.
+        xcols = vc.cross_site_columns(table.name)
+        declared = _rendered_columns(table, xcols)
+        columns_by_name = {candidate.name: candidate for candidate in table.columns}
         for col in table.columns:
             if col.type not in CALCULATED_TYPES:
                 continue
@@ -352,16 +385,6 @@ def check(vc: ValidationContext) -> list[Finding]:
             # CREATED and rejects the POST (HTTP 500, "The formula refers to
             # a column that does not exist") on any miss — fail at build, not
             # at paste.
-            #
-            # Checked against the RENDERED columns, not the declared ones.
-            # `Id int [pk, increment]` is skipped at render time and a
-            # cross-site column is expanded into <col>Abbreviation and
-            # <col>SiteUrl, so both are names the deploy never creates while
-            # sitting in table.columns — and a formula naming either passed
-            # this very check before dying at paste time.
-            declared = _rendered_columns(
-                table, cross_site_by_entity.get(table.name, set()),
-            )
             refs = formula_column_refs(formula)
             if col.name in refs:
                 findings.append(Finding(
@@ -377,15 +400,16 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{table.name} — SharePoint would reject the field "
                     f"creation at deploy time.",
                 ))
-            columns_by_name = {candidate.name: candidate for candidate in table.columns}
-            xcols = cross_site_by_entity.get(table.name, set())
             for ref in sorted(refs & declared):
                 operand = columns_by_name.get(ref)
-                # Generated cross-site companions have no declared Column
-                # object and are plain Text/Hyperlink fields. In particular,
-                # <ref>Abbreviation is the supported formula rewrite; do not
-                # mistake the logical ref it replaces for this companion.
-                if operand is None or operand.name in xcols:
+                # No Column object means a generated cross-site companion —
+                # <ref>Abbreviation or <ref>SiteUrl, both plain Text/Hyperlink
+                # fields and both fine in a formula. The LOGICAL ref they
+                # replace cannot reach here at all: `declared` comes from
+                # _rendered_columns, which drops it, so it is already reported
+                # above as not a rendered column. Do not add an `in xcols`
+                # test here expecting it to fire — it cannot.
+                if operand is None:
                     continue
                 forbidden_kind = (
                     "lookup"
@@ -398,10 +422,12 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     "error",
                     f"{table.name}.{col.name}: calculated formula references "
-                    f"[{ref}], {description}. SharePoint rejects this operand "
-                    f"during calculated-field creation with HTTP 500, after "
-                    f"earlier deploy phases may already have written to the "
-                    f"site. Compute from a non-{forbidden_kind} source column "
+                    f"[{ref}], {description}. SharePoint refuses this operand "
+                    f"when the calculated field is created — HTTP 500, \"the "
+                    f"columns are defined as a data type that is not supported "
+                    f"in formulas\" — after earlier deploy phases may already "
+                    f"have written to the site. Compute from a supported "
+                    f"operand type instead ({_SUPPORTED_CALCULATED_OPERANDS}), "
                     f"or drop the formula.",
                 ))
             # A DEFERRED lookup exists by the end of the deploy but not when
