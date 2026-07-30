@@ -13,7 +13,10 @@ only if the expected number is known, and known-ness comes from the tests in
 test/test_threshold_rows.py. A browser-generated file cannot have any.
 """
 
+import argparse
+import csv
 import datetime as dt
+from pathlib import Path
 
 TOTAL = 6000
 
@@ -37,6 +40,8 @@ _BUCKETS: tuple[str, ...] = ("B1", "B2", "B3", "B4", "B5", "B6", "B7")
 RARE_BUCKET = "Z"
 
 _EPOCH = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
+
+_DEFAULT_OUT = Path(__file__).parent / "rows"
 
 
 def bucket_for(row: int) -> str:
@@ -89,3 +94,78 @@ def build_rows(
             "ParentId": parent_id,
         })
     return rows
+
+
+def split_plan(
+    checkpoints: tuple[int, ...] = CHECKPOINTS,
+) -> list[tuple[int, int, int]]:
+    """`(sequence, first row, last row)` per file, one file per checkpoint.
+
+    Split to match the RUN PLAN rather than the batch size. SharePoint's batch
+    API takes up to a thousand operations per request and the flow chunks
+    internally, so file boundaries are free to mean something else — here,
+    "load this and the list is at the next checkpoint".
+    """
+    plan: list[tuple[int, int, int]] = []
+    previous = 0
+    for sequence, checkpoint in enumerate(checkpoints, start=1):
+        plan.append((sequence, previous + 1, checkpoint))
+        previous = checkpoint
+    return plan
+
+
+def file_name(sequence: int, checkpoint: int) -> str:
+    """`to-<n>` is the list total AFTER loading this file, not its row count.
+    The operator reads the run plan off the file names."""
+    return f"threshold-rows-{sequence:02d}-to-{checkpoint}.csv"
+
+
+def write_csvs(rows: list[dict[str, str]], out_dir: Path) -> list[Path]:
+    """Write one CSV per checkpoint. Returns what was written, in load order."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[Path] = []
+    for sequence, first, last in split_plan():
+        target = out_dir / file_name(sequence, last)
+        # newline="" is required: csv writes its own line terminators, and
+        # without this Windows turns each into CRLF and every row gains a
+        # blank line.
+        with target.open("w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=list(HEADERS))
+            writer.writeheader()
+            writer.writerows(rows[first - 1:last])
+        written.append(target)
+    return written
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Write the threshold probe's split CSVs.",
+    )
+    parser.add_argument(
+        "--owner-id", default="",
+        help="Site user id for the Person column. The probe prints it on run 1.",
+    )
+    parser.add_argument(
+        "--parent-id", default="",
+        help="Item id in the parent list. The probe prints it on run 1.",
+    )
+    parser.add_argument("--out", type=Path, default=_DEFAULT_OUT)
+    args = parser.parse_args()
+
+    rows = build_rows(owner_id=args.owner_id, parent_id=args.parent_id)
+    for path in write_csvs(rows, args.out):
+        print(f"wrote {path}")
+    if not args.owner_id or not args.parent_id:
+        # Not an error: generating without a tenant is useful. But the two
+        # columns will be empty, and the Person and Lookup questions then have
+        # no data to answer from — say so rather than let a run report them
+        # NOT ESTABLISHED for a reason nobody remembers.
+        print(
+            "WARNING: --owner-id and/or --parent-id were not supplied, so the "
+            "Person and Lookup columns are blank. PERSID and LOOKID cannot be "
+            "answered from these files.",
+        )
+
+
+if __name__ == "__main__":
+    main()

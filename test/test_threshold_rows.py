@@ -6,6 +6,7 @@ against. A row generator that silently changes a count turns "this query
 returned fewer rows than expected" from a finding into a mystery.
 """
 
+import csv
 import importlib.util
 import sys
 from pathlib import Path
@@ -72,3 +73,62 @@ def test_owner_is_set_on_a_quarter_of_rows_when_supplied() -> None:
     rows = m.build_rows(owner_id="7", parent_id="1")
     assert len([r for r in rows if r["OwnerId"] == "7"]) == 1500
     assert all(r["ParentId"] == "1" for r in rows)
+
+
+def test_split_totals_land_exactly_on_the_checkpoints() -> None:
+    """Each file advances the list to the next checkpoint. If the cumulative
+    totals drift, every snapshot is filed under a row count the list never
+    actually held."""
+    m = _load()
+    plan = m.split_plan()
+    assert [last for _, _, last in plan] == list(m.CHECKPOINTS)
+    assert [last - first + 1 for _, first, last in plan] == [1000, 2000, 1900, 200, 900]
+    assert sum(last - first + 1 for _, first, last in plan) == m.TOTAL
+
+
+def test_split_rows_are_contiguous_with_no_gaps_or_repeats() -> None:
+    m = _load()
+    covered: list[int] = []
+    for _, first, last in m.split_plan():
+        covered.extend(range(first, last + 1))
+    assert covered == list(range(1, m.TOTAL + 1))
+
+
+def test_file_names_encode_the_resulting_list_total() -> None:
+    m = _load()
+    names = [m.file_name(seq, last) for seq, _, last in m.split_plan()]
+    assert names == [
+        "threshold-rows-01-to-1000.csv",
+        "threshold-rows-02-to-3000.csv",
+        "threshold-rows-03-to-4900.csv",
+        "threshold-rows-04-to-5100.csv",
+        "threshold-rows-05-to-6000.csv",
+    ]
+
+
+def test_written_csvs_carry_internal_names_and_the_right_row_counts(tmp_path: Path) -> None:
+    m = _load()
+    written = m.write_csvs(m.build_rows(owner_id="7", parent_id="1"), tmp_path)
+    assert [p.name for p in written] == [
+        m.file_name(seq, last) for seq, _, last in m.split_plan()
+    ]
+    with written[0].open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        assert reader.fieldnames == list(m.HEADERS)
+        first_file = list(reader)
+    assert len(first_file) == 1000
+    assert first_file[0]["Title"] == "Row 000001"
+    # The Person and Lookup headers carry the `Id` suffix REST requires.
+    assert "OwnerId" in m.HEADERS
+    assert "Owner" not in m.HEADERS
+    assert "ParentId" in m.HEADERS
+    assert "Parent" not in m.HEADERS
+
+
+def test_the_last_file_ends_on_the_last_row(tmp_path: Path) -> None:
+    m = _load()
+    written = m.write_csvs(m.build_rows(), tmp_path)
+    with written[-1].open(encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    assert len(rows) == 900
+    assert rows[-1]["Title"] == f"Row {m.TOTAL:06d}"
