@@ -60,7 +60,16 @@ _FALLBACK_ROW_COUNT = 1_250
 # and indexing it does not avert a threshold breach either. Read narrowly —
 # `col.ref is not None` only — this check would score an indexed Person filter
 # as safe when Microsoft says it is not.
+#
+# TWO citations, and keep both. The support article carries the supported-column
+# table that makes Person a lookup field. The schema reference carries the same
+# threshold rule attached to the `Indexed` attribute itself, which is the
+# property the deployer writes — so it is the one a reader checking THIS code
+# against the platform contract will want. A review of this file removed it as
+# "a schema page that says nothing about thresholds"; that was wrong, the Note
+# under `Indexed` says exactly this, and it went back in.
 # https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
+# https://learn.microsoft.com/sharepoint/dev/schema/field-element-field
 _LOOKUP_FIELD_TYPES = frozenset({"person"})
 
 # SYSTEM_COLUMNS (ID, Created, Modified, Author, Editor) are dropped from this
@@ -68,22 +77,30 @@ _LOOKUP_FIELD_TYPES = frozenset({"person"})
 # them — that set would be unreachable, because the names are gone before any
 # intersection runs.
 #
-# They are filterable but NOT declarable, so no `indexes` entry can ever name
-# one: `indexes { Created }` is rejected by the DBML parser itself, a system
-# column not being a DBML column. Warning about them would name a remedy
-# nobody can carry out. ID is indexed by the platform and would need excluding
-# anyway; for the other four it is NOT established either way — nothing here
-# has measured it and Microsoft does not document it, so silence beats a guess
-# in either direction.
+# The reason is the DBML side, not the SharePoint side, and that matters: they
+# are filterable but NOT declarable, so no `indexes` entry can ever name one.
+# `indexes { Created }` is rejected by the DBML parser itself, a system column
+# not being a DBML column. Warning about any of the five would therefore name a
+# remedy nobody can carry out, whatever SharePoint does internally.
+#
+# Which is fortunate, because what SharePoint does internally is NOT
+# established for any of the five — INCLUDING ID. "SharePoint indexes ID
+# natively" is repeated widely and by this repository (see the comment in
+# validator._rendered_columns), and Microsoft documents it nowhere: not in the
+# index article, not in the large-list article, and the protocol spec defines
+# tp_Id as a column without enumerating the table's indexes.
 #
 # test/manual/native-index-probe.js was RUN on 2026-07-30 and established
-# NOTHING. Its control failed: SP.Field.Indexed read false for ID itself on
-# every list, so that property reports author-added indexes only — or ID
-# carries no index and the premise was wrong. Either way a metadata read
-# cannot answer this, and the probe's behavioural test needs a list past the
-# threshold that the site did not have. The exclusion above does not depend on
-# the answer, which is why it is safe to leave standing: no author can declare
-# an index for a system column whatever SharePoint does internally.
+# NOTHING. Its control failed: SP.Field.Indexed — documented as "TRUE if the
+# column is indexed for use in view filters" — read FALSE for ID itself on 7 of
+# 7 lists. Either that property reports only registered list-column indexes and
+# whatever serves ID sits outside that model, or ID carries no such index. The
+# probe cannot separate those and neither can the documentation, so this comment
+# will not pick one. The behavioural half of the probe needs a list past the
+# threshold, which the site did not have.
+#
+# None of it changes the exclusion, because the exclusion rests on the DBML
+# side. That is why it is safe to leave standing while the question stays open.
 
 # Operators that test only for presence. Microsoft's threshold guidance is
 # written for comparison filters; whether an index serves a CAML <IsNull> is
