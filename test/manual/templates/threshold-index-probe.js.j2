@@ -85,6 +85,20 @@
   // generator's MATCHING_ROWS; test_probes.py pins the two together.
   const MATCHING_ROWS = 60;
 
+  // Registered up front, so a run that aborts partway reports what it never
+  // reached instead of quietly shortening its own summary.
+  expect('RUNCNT', 'Live ItemCount matches a declared checkpoint');
+  expect('CMPIDX', 'Comparison filter, INDEXED Text (positive control)');
+  expect('CMPUNI', 'Comparison filter, UNINDEXED twin of Bucket (negative control)');
+  expect('NULIDX', 'Null filter, INDEXED DateTime (the question)');
+  expect('PERSID', 'Comparison filter, INDEXED Person');
+  expect('LOOKID', 'Comparison filter, INDEXED Lookup');
+  expect('SYSCRE', 'Comparison filter on Created');
+  expect('SYSMOD', 'Comparison filter on Modified');
+  expect('SYSAUT', 'Comparison filter on Author');
+  expect('SYSEDI', 'Comparison filter on Editor');
+  expect('AUTOBT', 'SortBait Indexed/AutoIndexed flags, across a modern sort');
+
   const odata = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
 
   // Indexed on purpose, and NOT indexed on purpose. Shadow mirrors Bucket's
@@ -239,6 +253,88 @@
   log('INFO', `  ListItemEntityTypeFullName: ${main.ListItemEntityTypeFullName}`);
   log('INFO', '  — some batch-create flows need that as the __metadata type.');
   log('INFO', '===========================================================');
+
+  // ---- Snapshot -------------------------------------------------------
+  const live = await spGet(`web/lists/getbytitle('${odata(LIST)}')?$select=ItemCount`);
+  const count = readFailed(live) ? -1 : live.body.ItemCount;
+  const stamp = `${count} item(s)${RUN_LABEL ? `, run '${RUN_LABEL}'` : ''}`;
+  log('INFO', `=== SNAPSHOT at ${stamp} ===`);
+  if (!RUN_LABEL) {
+    log('INFO', "RUN_LABEL is unset. Step 5 of the run plan needs it: the");
+    log('INFO', "before/after-sort pair is taken at the SAME row count, and");
+    log('INFO', "nothing else distinguishes the two transcripts.");
+  }
+
+  // SharePoint's batch API is explicitly non-transactional — "if any of the
+  // child operations fails, the others still complete and aren't rolled back"
+  // — so a half-loaded batch is SILENT. Without this, every observation below
+  // would be filed under a row count the list never actually reached.
+  const onCheckpoint = CHECKPOINTS.includes(count);
+  record(
+    'RUNCNT', 'Live ItemCount matches a declared checkpoint',
+    count < 0 ? 'NOT ESTABLISHED' : (onCheckpoint ? 'ON CHECKPOINT' : 'OFF CHECKPOINT'),
+    `ItemCount=${count}; checkpoints are ${CHECKPOINTS.join(', ')}` + (
+      onCheckpoint ? '' :
+      '. A batch load may have partly failed, or a file was loaded twice. ' +
+      'Reconcile before trusting any row below — they are all stamped with ' +
+      'this count.'
+    ),
+  );
+
+  const items = `web/lists/getbytitle('${odata(LIST)}')/items`;
+  const ask = async (id, question, filter) => {
+    const r = await spGet(
+      `${items}?$select=Id&$top=1&$filter=${encodeURIComponent(filter)}`);
+    const body = r.body ? JSON.stringify(r.body).slice(0, 300) : '(no JSON body)';
+    // BELOW the threshold, a failure means the FILTER is wrong — not that
+    // SharePoint refused it. A 400 reads as a refusal to isRefusal() and is
+    // otherwise indistinguishable from a threshold refusal, so checkpoint 1
+    // doubles as the syntax control for every filter here.
+    const suspect = count > 0 && count < LIST_VIEW_THRESHOLD && !r.ok;
+    record(
+      id, question,
+      r.ok ? 'SERVED' : (isRefusal(r.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
+      `[${stamp}] $filter=${filter} — HTTP ${r.status}: ${body}` + (
+        suspect
+          ? '  <-- FAILED BELOW THE THRESHOLD, so this is a broken filter, not evidence.'
+          : ''
+      ),
+    );
+  };
+
+  // Every one of these matches MATCHING_ROWS rows on the loaded fixture, so
+  // they are comparable to each other and to CMPIDX by construction.
+  await ask('CMPIDX', 'Comparison filter, INDEXED Text (positive control)',
+            `Bucket eq '${RARE_BUCKET}'`);
+  await ask('CMPUNI', 'Comparison filter, UNINDEXED twin of Bucket (negative control)',
+            `Shadow eq '${RARE_BUCKET}'`);
+  await ask('NULIDX', 'Null filter, INDEXED DateTime (the question)',
+            'ClosedAt eq null');
+  await ask('PERSID', 'Comparison filter, INDEXED Person', `OwnerId eq ${myId}`);
+  await ask('LOOKID', 'Comparison filter, INDEXED Lookup', 'ParentId eq 1');
+  // Created/Modified/Author/Editor are set by the platform on every row, so
+  // these four are NOT selectivity-matched with the five above and must not be
+  // compared against them. They answer only "is this filterable at this size".
+  await ask('SYSCRE', 'Comparison filter on Created',
+            "Created ge datetime'2020-01-01T00:00:00Z'");
+  await ask('SYSMOD', 'Comparison filter on Modified',
+            "Modified ge datetime'2020-01-01T00:00:00Z'");
+  await ask('SYSAUT', 'Comparison filter on Author', `AuthorId eq ${myId}`);
+  await ask('SYSEDI', 'Comparison filter on Editor', `EditorId eq ${myId}`);
+
+  // No $select: an unrecognised property in $select errors the WHOLE request,
+  // so asking for AutoIndexed on a tenant that does not expose it would look
+  // like a permissions failure. Read the field and pick.
+  const bait = await spGet(`${fieldsPath}/getbyinternalnameortitle('SortBait')`);
+  record(
+    'AUTOBT', 'SortBait Indexed/AutoIndexed flags, across a modern sort',
+    readFailed(bait) ? 'NOT ESTABLISHED' : 'OBSERVED',
+    readFailed(bait) ? `HTTP ${bait.status}` :
+      `[${stamp}] Indexed=${bait.body.Indexed}, AutoIndexed=` +
+      `${typeof bait.body.AutoIndexed === 'boolean' ? bait.body.AutoIndexed : '(not exposed)'}` +
+      '. Meaningless on its own: only a CHANGE across the before/after-sort ' +
+      'pair establishes what sets this flag.',
+  );
 
   report();
 })();
