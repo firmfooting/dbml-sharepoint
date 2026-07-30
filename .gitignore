@@ -16,6 +16,9 @@ examples/**/reports/
 templates/**/build/
 templates/**/reports/
 
+# Generated fixture data for the threshold index probe.
+test/manual/rows/
+
 # Editors / OS
 .vscode/
 .idea/
