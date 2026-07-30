@@ -274,7 +274,20 @@
   // identical transcripts otherwise — this has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision f90e45d4 — quote this when reporting results.');
+  log('INFO', 'probe revision bbca89bd — quote this when reporting results.');
+
+  // Say it at RUN TIME, not only in the header. An operator set this flag,
+  // reasonably believed it was resetting the fixture between runs, and read
+  // four accumulated parent rows as "a new list each time" — when in fact the
+  // same two lists had persisted throughout. A flag that is on and silently
+  // does nothing is worse than one that does not exist, and the header comment
+  // saying so was not enough.
+  if (CLEANUP) {
+    log('FAIL', 'CLEANUP is ON and is IGNORED by this probe. It resets nothing.');
+    log('FAIL', 'resetList() is never called here, deliberately: you do not want');
+    log('FAIL', 'a 6,000-row fixture silently emptied because a flag was left on.');
+    log('FAIL', 'Teardown is CLEANUP_AT_END, at the bottom. Your lists persist.');
+  }
 
   // Set before re-pasting. The probe CANNOT tell one run from another — a
   // fresh JavaScript context has no memory and nowhere to keep one — so the
