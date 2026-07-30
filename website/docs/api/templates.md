@@ -17,7 +17,7 @@ Companion manifest for assess.js: how to run the read-only assessment, what each
 
 dbml-sharepoint SITE ASSESSMENT script (READ-ONLY).
 
-Probes the site's capabilities against this pack's requirements and prints a COMPATIBLE / DEGRADED / BLOCKED verdict. Makes NO changes: every call is a GET except the contextinfo digest fetch, one read-only CSOM ProcessQuery.
+Probes the site's capabilities against this pack's requirements and prints a COMPATIBLE / DEGRADED / BLOCKED verdict. Makes NO changes: every call is a GET except the contextinfo digest fetch and one read-only CSOM ProcessQuery.
 
 ### `demo.js.j2`
 

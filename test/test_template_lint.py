@@ -204,3 +204,116 @@ def test_generated_api_docs_are_current(tmp_path: Path) -> None:
         "generated API docs are stale — regenerate with:\n"
         "  uv run python website/scripts/generate_api.py"
     )
+
+
+# === The security model's endpoint inventory ================================
+
+SECURITY_MODEL = REPO_ROOT / "website" / "docs" / "concepts" / "security-model.md"
+
+# Every URL-building call site in the template tree. A suffix is either a
+# literal or a template literal opening with a `${name}` this file resolves
+# below; anything else is unresolvable and fails rather than passing quietly.
+_URL_CALL = re.compile(r"""(?:apiUrl|probeGet)\(\s*[`'"]([^`'"]+)""")
+_PATH_CONST = re.compile(r"""const\s+(\w*[Pp]ath)\s*=\s*[`'"]([^`'"$]+)""")
+_LEADING_VAR = re.compile(r"^\$\{(\w+)\}")
+# The documented families, read out of the doc's own table.
+_DOCUMENTED = re.compile(r"`/_api/([^`]+)`")
+
+
+def _path_consts() -> dict[str, str]:
+    """A backtick-quoted `const listPath = web/lists/...` declaration becomes
+    {"listPath": "web/lists/..."}.
+
+    One level of indirection is all the templates use, and all this resolves.
+    A second level would show up as an unresolvable suffix below, which fails.
+    """
+    found: dict[str, str] = {}
+    for rel in ALL_TEMPLATES:
+        text = (TEMPLATES_DIR / rel).read_text(encoding="utf-8")
+        for name, value in _PATH_CONST.findall(text):
+            found[name] = value
+    return found
+
+
+def _family(suffix: str, consts: dict[str, str], where: str) -> str:
+    """The `/_api/<family>` one call site reaches."""
+    var = _LEADING_VAR.match(suffix)
+    if var:
+        resolved = consts.get(var.group(1))
+        assert resolved is not None, (
+            f"{where}: apiUrl() opens with ${{{var.group(1)}}}, which this test "
+            f"cannot resolve to a path. Declare it as `const {var.group(1)} = "
+            f"`web/...`` like the others, or teach _path_consts about it — an "
+            f"unresolvable call site is an undocumented endpoint."
+        )
+        suffix = _LEADING_VAR.sub(resolved, suffix)
+    return re.split(r"[/?(]", suffix.lstrip("/"), maxsplit=1)[0]
+
+
+def _used_families() -> dict[str, set[str]]:
+    """{family: {templates that reach it}}."""
+    consts = _path_consts()
+    used: dict[str, set[str]] = {}
+    for rel in ALL_TEMPLATES:
+        text = (TEMPLATES_DIR / rel).read_text(encoding="utf-8")
+        for suffix in _URL_CALL.findall(text):
+            family = _family(suffix, consts, f"{rel} ({suffix!r})")
+            if family:
+                used.setdefault(family, set()).add(rel)
+    return used
+
+
+def test_one_helper_builds_every_api_url() -> None:
+    """The security model tells a reviewer that every request goes through one
+    site-guarded helper. If a template ever writes `_api/` itself, that claim
+    is false and the endpoint inventory below stops seeing everything."""
+    offenders = {
+        rel for rel in ALL_TEMPLATES
+        if "_api/" in (TEMPLATES_DIR / rel).read_text(encoding="utf-8")
+        and rel != "_site_guard.js.j2"
+    }
+    assert not offenders, (
+        f"{sorted(offenders)} build an '_api/' URL without apiUrl(). Route it "
+        f"through the helper in _site_guard.js.j2, so the site guard applies "
+        f"and website/docs/concepts/security-model.md stays true."
+    )
+
+
+def test_every_endpoint_family_is_in_the_security_model() -> None:
+    """The security model's endpoint table is what a tenant reviewer reads
+    instead of the scripts. A hand-maintained inventory drifts — this repo has
+    already shipped one stale entry (a GetSiteScriptFromWeb extraction that no
+    longer existed) — so the table is checked against the templates.
+    """
+    documented = SECURITY_MODEL.read_text(encoding="utf-8")
+    undocumented = sorted(
+        f"{family} (used by {', '.join(sorted(where))})"
+        for family, where in _used_families().items()
+        if f"/_api/{family}" not in documented
+    )
+    assert not undocumented, (
+        "endpoint families reached by the templates but absent from the "
+        f"security model's table: {undocumented}. Add a row to "
+        "website/docs/concepts/security-model.md saying what it is for."
+    )
+
+
+def test_the_security_model_documents_no_unused_endpoint_family() -> None:
+    """The mirror. A row describing an endpoint nothing calls any more
+    overstates the script's reach to the reviewer deciding on it."""
+    used = set(_used_families())
+    stale = []
+    for raw in _DOCUMENTED.findall(SECURITY_MODEL.read_text(encoding="utf-8")):
+        documented = re.sub(r"\(.*", "", raw).removesuffix("/...").strip("/")
+        if not any(
+            documented == family
+            or documented.startswith(f"{family}/")
+            or family.startswith(f"{documented}/")
+            for family in used
+        ):
+            stale.append(documented)
+    assert not stale, (
+        f"the security model documents /_api/ families nothing reaches: "
+        f"{sorted(set(stale))}. Remove the row — an endpoint table that "
+        f"overstates the surface is as misleading as one that understates it."
+    )

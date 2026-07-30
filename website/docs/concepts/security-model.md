@@ -33,16 +33,27 @@ write requests in addition to the signed-in session. See Microsoft's
 
 ## Network surface
 
-Every request URL is constructed as:
+Every request URL is built by one shared helper. From
+`src/dbml_sharepoint/templates/_site_guard.js.j2`, with the abort branch
+elided:
 
 ```js
-const WEB = _spPageContextInfo.webServerRelativeUrl;
+const expectedOrigin = new URL(SITE_URL).origin;
+const expectedPath = new URL(SITE_URL).pathname.replace(/\/$/, '');
+const actualOrigin = window.location.origin;
+const actualPath = (_spPageContextInfo.webServerRelativeUrl || '').replace(/\/$/, '');
+if (actualOrigin !== expectedOrigin || actualPath !== expectedPath) {
+  /* logs a site mismatch and aborts before any request */
+}
+const WEB = actualPath;  // '' for the tenant root, '/sites/foo' for a site collection, etc.
 const apiUrl = (suffix) => `${WEB}/_api/${suffix}`;
 ```
 
-That is a relative URL, so the browser sends it only to the origin of the
-SharePoint page currently open. A site guard first compares that origin and
-web path with the build's declared target and aborts on any mismatch.
+Note the order: the origin and web path are compared with the build's declared
+target, and a mismatch aborts, *before* `WEB` is bound or any request is made.
+`WEB` is then a server-relative path, so every `apiUrl()` call is a relative
+URL the browser can only send to the origin of the SharePoint page already
+open.
 
 The current templates use these endpoint families:
 
@@ -56,8 +67,15 @@ The current templates use these endpoint families:
 | `/_api/SP_TenantSettings_Current` | Read-only assessment of the tenant app-catalog setting |
 | `/_api/ProcessQuery` | Read-only capability probe, and CSOM group-owner assignment where the REST surface cannot express that write |
 
-The `http://schemas.microsoft.com/sharepoint/clientquery/2009` string in the
-CSOM request body is an XML namespace, not a network destination.
+A reviewer grepping the generated scripts for `http://` or `https://` will
+find exactly two classes of hit, neither of them a request:
+
+- `http://schemas.microsoft.com/sharepoint/clientquery/2009` in the CSOM
+  request body — an XML namespace, not a network destination.
+- documentation links in comments, such as the retention-policy reference in
+  `rollback.js`. They are never fetched; nothing reads a comment.
+
+Every hit that is not one of those two is worth stopping on.
 
 There are no calls to Microsoft Graph, PnP services, package registries,
 telemetry or analytics endpoints. There are no third-party hosts and no
@@ -93,6 +111,32 @@ The [safety model's undocumented-surfaces policy](safety-model.md#undocumented-s
 explains the live verification and read-splice-diff-write-readback guard
 required before such a surface is used.
 
+## What rollback is allowed to do
+
+`rollback.js` is the most destructive artifact the build emits, so its
+authority is worth stating rather than summarising. It targets only the lists
+this schema declares at this site, and reaching a delete requires the operator
+to type the site's leaf path at a first prompt. Within that scope it will:
+
+- **Recycle list items**, never permanently delete them — every row it removes
+  is restorable from the site recycle bin.
+- **Delete a non-empty list** whose items are not all `[DEMO] `-marked, but
+  only after the operator types `DELETE NON-EMPTY` at a second prompt that is
+  re-asked for each such list.
+- **Clear a list's deletion block.** When a target list has
+  `AllowDeletion = false`, rollback MERGEs it to `true`, verifies the change
+  took effect, deletes the list, and re-locks it if the delete fails. A
+  protection the site owner set is therefore overridden, per list, once
+  deletion is authorised.
+- **Delete lists by title.** A pre-existing list whose title collides with a
+  prefixed deploy list is indistinguishable to rollback and would be deleted.
+  The script logs this warning before the first prompt; confirm target lists
+  are deploy-owned before confirming.
+
+The list itself is removed with a REST `DELETE`, not `recycle()`. Treat list
+recoverability as a tenant recycle-bin question rather than something this
+project asserts.
+
 ## Reviewer checklist
 
 1. Review the repository revision and build inputs; generate the artifacts on
@@ -108,9 +152,11 @@ required before such a surface is used.
    `BLOCKED` and review every `DEGRADED` finding before authorising deploy.
 6. Review the [fail-closed behaviours](safety-model.md#fail-closed-everywhere)
    and confirm existing objects with incompatible shapes abort before writes.
-7. Confirm `rollback.js` is restricted to abandoning a failed first
-   provision, and that it recycles list items rather than permanently
-   deleting them.
+7. Review [what rollback is allowed to do](#what-rollback-is-allowed-to-do)
+   against your own tolerance. Confirm it is restricted to the lists this
+   schema declares, that it recycles items rather than permanently deleting
+   them, and decide explicitly whether overriding a list's
+   `AllowDeletion = false` protection is acceptable in your tenant.
 
 ## Governance may still say no
 
