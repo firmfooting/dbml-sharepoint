@@ -34,6 +34,25 @@ Selecting only 60 of 6000 rows also tests the BEST case for an index, which is
 the right way round for this question: if a highly selective indexed null test
 still cannot be served, that is decisive, whereas a failure at low selectivity
 would be ambiguous with selectivity itself.
+
+LOADING THE TWO ID COLUMNS. OwnerId and ParentId are blank on the rows that are
+not in their population — 5940 of 6000 each. That is the design, not an
+oversight: a Person or Lookup filter matching every row would breach the
+threshold on result-set size alone and prove nothing about indexing.
+
+A CSV has no way to say null, so a blank cell arrives as the empty string, and
+SharePoint refuses "" for a lookup id. The conversion belongs in the flow, one
+expression per id column:
+
+    if(empty(item()?['OwnerId']), null, int(item()?['OwnerId']))
+    if(empty(item()?['ParentId']), null, int(item()?['ParentId']))
+
+null is valid for both — it is how you clear a Person or Lookup field. The
+other five columns are strings and need no conversion.
+
+This cannot be fixed on the CSV side. Giving every row an id would need a
+second user and a second parent item, and would cost the matched selectivity
+the whole experiment rests on.
 """
 
 import argparse
@@ -198,11 +217,19 @@ def write_csvs(rows: list[dict[str, str]], out_dir: Path) -> list[Path]:
         # a syntactically valid CSV with fewer rows than it claims, and the
         # only signal would be a missing line of output.
         staging = target.with_name(target.name + ".tmp")
-        # newline="" is required: csv writes its own line terminators, and
-        # without this Windows turns each into CRLF and every row gains a
-        # blank line.
+        # newline="" stops the OS translating what csv writes, so a terminator
+        # cannot be doubled into \r\r\n. It does NOT decide the terminator —
+        # csv.writer defaults to \r\n on every platform, which is the part an
+        # earlier version of this comment got wrong and paid for.
+        #
+        # lineterminator="\n" because Power Automate split rows on LF and got a
+        # bare CR as the value of the LAST column. That was ParentId, a Lookup
+        # id, so SharePoint received "\r" and refused the item — silently, batch
+        # creation being non-transactional. A trailing CR is invisible in a
+        # spreadsheet and fatal to a typed field.
         with staging.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=list(HEADERS))
+            writer = csv.DictWriter(handle, fieldnames=list(HEADERS),
+                                    lineterminator="\n")
             writer.writeheader()
             writer.writerows(rows[first - 1:last])
         staging.replace(target)

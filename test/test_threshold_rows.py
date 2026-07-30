@@ -244,3 +244,34 @@ def test_no_staging_files_survive_a_successful_write(tmp_path: Path) -> None:
     m = _load()
     m.write_csvs(m.build_rows(), tmp_path)
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_written_files_use_lf_only_line_endings(tmp_path: Path) -> None:
+    """Power Automate split on LF and got a bare CR as the last column's value.
+
+    csv.writer defaults to lineterminator='\r\n'. `newline=""` stops the OS
+    translating on top of that, which is why the file was not CRLF-doubled —
+    but the csv module still wrote CR itself, and a parser that splits on LF
+    leaves it on whichever column happens to be last. Here that was ParentId,
+    a Lookup id, so SharePoint received "\r" and refused the item.
+    """
+    m = _load()
+    written = m.write_csvs(m.build_rows(owner_id="11", parent_id="1"), tmp_path)
+    for target in written:
+        raw = target.read_bytes()
+        assert bytes([13]) not in raw, f"{target.name} contains a CR byte"
+    # And the value a LF-splitting parser sees for the LAST column is clean.
+    lines = written[0].read_bytes().decode("utf-8").split("\n")
+    assert lines[0].split(",")[-1] == "ParentId"
+    assert lines[1].split(",")[-1] == ""
+
+
+def test_no_field_carries_leading_or_trailing_whitespace(tmp_path: Path) -> None:
+    """A stray space or CR in an id column is invisible in a spreadsheet and
+    fatal to a batch create, which is non-transactional and so fails per item
+    in silence."""
+    m = _load()
+    m.write_csvs(m.build_rows(owner_id="11", parent_id="1"), tmp_path)
+    for row in _union(tmp_path):
+        for column, value in row.items():
+            assert value == value.strip(), f"{column}={value!r} has stray whitespace"
