@@ -274,7 +274,7 @@
   // identical transcripts otherwise — this has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision bfda842d — quote this when reporting results.');
+  log('INFO', 'probe revision f90e45d4 — quote this when reporting results.');
 
   // Set before re-pasting. The probe CANNOT tell one run from another — a
   // fresh JavaScript context has no memory and nowhere to keep one — so the
@@ -449,13 +449,31 @@
         `${name}: Indexed=true ${flagged.ok ? 'requested' : `FAILED HTTP ${flagged.status}`}`);
   }
 
-  // One parent row for every child row to point at.
-  if (parent.ItemCount === 0) {
+  // One parent row for every child row to point at, and its REAL id.
+  //
+  // Asks for the items rather than trusting SP.List.ItemCount, which lags:
+  // three consecutive runs all read ItemCount 0 on a list that already had a
+  // row and each added another. Harmless to the measurements, but the run plan
+  // pastes this seven more times and "idempotent" has to mean it.
+  //
+  // The id is then MEASURED rather than assumed to be 1. A hardcoded 1 is a
+  // filter that silently matches nothing if item 1 is ever recycled — the
+  // match-count check would catch it, but as a mystery rather than a cause.
+  const parentItems = await spGet(
+    `web/lists/getbytitle('${odata(PARENT)}')/items?$select=Id&$top=1&$orderby=Id asc`);
+  let parentItemId = (!readFailed(parentItems) && parentItems.body.value
+                      && parentItems.body.value.length)
+    ? parentItems.body.value[0].Id
+    : 0;
+  if (!parentItemId) {
     const digest = await getDigest();
     const seeded = await spPost(
       `web/lists/getbytitle('${odata(PARENT)}')/items`, { Title: 'Probe parent' }, digest);
+    parentItemId = (seeded.ok && seeded.body && seeded.body.Id) ? seeded.body.Id : 0;
     log(seeded.ok ? 'OK' : 'FAIL',
-        `parent item ${seeded.ok ? 'created' : `FAILED HTTP ${seeded.status}`}`);
+        `parent item ${seeded.ok ? `created, Id=${parentItemId}` : `FAILED HTTP ${seeded.status}`}`);
+  } else {
+    log('OK', `parent item already present, Id=${parentItemId}`);
   }
 
   // ---- Views ----------------------------------------------------------
@@ -508,8 +526,8 @@
     : `${me.body.Id} / ${me.body.LoginName}`;
   log('INFO', '=============== FEED THESE TO THE GENERATOR ===============');
   log('INFO', `  .venv/Scripts/python.exe test/manual/make_threshold_rows.py \\`);
-  log('INFO', `      --owner-id ${readFailed(me) ? 'UNREADABLE' : me.body.Id} --parent-id 1`);
-  log('INFO', `  (--parent-id 1 is the first item of '${PARENT}')`);
+  log('INFO', `      --owner-id ${readFailed(me) ? 'UNREADABLE' : me.body.Id} --parent-id ${parentItemId}`);
+  log('INFO', `  (--parent-id ${parentItemId} is the measured first item of '${PARENT}')`);
   log('INFO', `  Then set OWNER_ID in this probe to the same value.`);
   log('INFO', `  ListItemEntityTypeFullName: ${main.ListItemEntityTypeFullName}`);
   log('INFO', '  — some batch-create flows need that as the __metadata type.');
@@ -726,7 +744,8 @@
            'would match nothing, return HTTP 200 and read as SERVED. Set ' +
            'OWNER_ID to the value passed to --owner-id and re-paste.');
   }
-  await ask('LOOKID', 'OData comparison, INDEXED Lookup', 'ParentId eq 1', matched);
+  await ask('LOOKID', 'OData comparison, INDEXED Lookup',
+            `ParentId eq ${parentItemId}`, matched);
 
   await askCaml(
     'CMPCAM', 'CAML comparison, INDEXED Text',
