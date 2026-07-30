@@ -35,29 +35,32 @@ the right way round for this question: if a highly selective indexed null test
 still cannot be served, that is decisive, whereas a failure at low selectivity
 would be ambiguous with selectivity itself.
 
-LOADING THE TWO ID COLUMNS. OwnerId and ParentId are blank on the rows that are
-not in their population — 5940 of 6000 each. That is the design, not an
-oversight: a Person or Lookup filter matching every row would breach the
-threshold on result-set size alone and prove nothing about indexing.
+BLANK CELLS AND TYPED COLUMNS. Three columns are blank on the rows outside
+their population: ClosedAt on 60, OwnerId and ParentId on 5940 each. That is
+the design — a filter matching every row would breach the threshold on
+result-set size alone and prove nothing about indexing.
 
-A CSV has no way to say null, so a blank cell arrives as the empty string, and
-SharePoint refuses "" for a lookup id. The conversion belongs in the flow, one
-expression per id column:
+None of the three is a string column, and SharePoint refuses "" for a DateTime,
+a Person id or a Lookup id alike. A CSV cannot express null, so a blank cell
+arrives as the empty string and the item is rejected — silently, batch creation
+being non-transactional. This cost a real load: ten rows vanished from a
+thousand, exactly the ClosedAt population, because that column was left out of
+a hand-written list of the ones needing conversion.
 
-    if(empty(item()?['OwnerId']), null, int(item()?['OwnerId']))
-    if(empty(item()?['ParentId']), null, int(item()?['ParentId']))
+So the list is no longer hand-written. NULLABLE_COLUMNS below is the single
+source of truth, main() prints the flow expression for each, and a test asserts
+it holds exactly the columns that are ever blank — in both directions, so a
+column added to one and not the other fails rather than silently loading short.
 
-null is valid for both — it is how you clear a Person or Lookup field. The
-other five columns are strings and need no conversion.
-
-This cannot be fixed on the CSV side. Giving every row an id would need a
-second user and a second parent item, and would cost the matched selectivity
-the whole experiment rests on.
+The JSON files written alongside the CSVs avoid the problem entirely: they carry
+real nulls and real integers, so a flow can pass them straight to the batch body
+with no conversion at all. Prefer them if your flow can read JSON.
 """
 
 import argparse
 import csv
 import datetime as dt
+import json
 from pathlib import Path
 
 TOTAL = 6000
@@ -77,6 +80,19 @@ CHECKPOINTS: tuple[int, ...] = (1000, 3000, 4900, 5100, 6000)
 HEADERS: tuple[str, ...] = (
     "Title", "Bucket", "Shadow", "ClosedAt", "SortBait", "OwnerId", "ParentId",
 )
+
+# Columns that are sometimes blank and are NOT strings, mapped to the SharePoint
+# type that rejects "". The single source of truth for what a flow has to
+# convert, and for what the JSON writer emits as null rather than "".
+#
+# `int` marks a column whose JSON value must be a NUMBER, not a quoted digit
+# string: a Person or Lookup id. ClosedAt stays a string when present, because
+# an ISO-8601 datetime is a string in JSON.
+NULLABLE_COLUMNS: dict[str, str] = {
+    "ClosedAt": "DateTime",
+    "OwnerId": "int",
+    "ParentId": "int",
+}
 
 _BUCKETS: tuple[str, ...] = ("B1", "B2", "B3", "B4", "B5", "B6", "B7")
 
@@ -193,6 +209,28 @@ def file_name(sequence: int, checkpoint: int) -> str:
     return f"threshold-rows-{sequence:02d}-to-{checkpoint}.csv"
 
 
+def as_json_rows(rows: list[dict[str, str]]) -> list[dict[str, object]]:
+    """The same rows with real nulls and real integers.
+
+    A blank cell becomes null, and an id becomes a number rather than a quoted
+    digit string. This is the shape a batch-create body wants, so a flow reading
+    these needs no per-column conversion — which is the whole point, the
+    conversions having already eaten one load.
+    """
+    typed: list[dict[str, object]] = []
+    for row in rows:
+        item: dict[str, object] = {}
+        for column, value in row.items():
+            if value == "" and column in NULLABLE_COLUMNS:
+                item[column] = None
+            elif value != "" and NULLABLE_COLUMNS.get(column) == "int":
+                item[column] = int(value)
+            else:
+                item[column] = value
+        typed.append(item)
+    return typed
+
+
 def write_csvs(rows: list[dict[str, str]], out_dir: Path) -> list[Path]:
     """Write one CSV per checkpoint. Returns what was written, in load order."""
     plan = split_plan()
@@ -208,11 +246,18 @@ def write_csvs(rows: list[dict[str, str]], out_dir: Path) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
     # A shortened run plan would otherwise leave the previous plan's tail files
     # sitting beside the new ones, loadable and indistinguishable.
-    for stale in out_dir.glob("threshold-rows-*.csv"):
-        stale.unlink()
+    for pattern in ("threshold-rows-*.csv", "threshold-rows-*.json"):
+        for stale in out_dir.glob(pattern):
+            stale.unlink()
     written: list[Path] = []
     for sequence, first, last in plan:
         target = out_dir / file_name(sequence, last)
+        # The JSON sibling, with real nulls, for a flow that can read it.
+        json_target = target.with_suffix(".json")
+        json_target.write_text(
+            json.dumps(as_json_rows(rows[first - 1:last]), indent=1),
+            encoding="utf-8", newline="\n",
+        )
         # Write beside, then rename. An interrupted write would otherwise leave
         # a syntactically valid CSV with fewer rows than it claims, and the
         # only signal would be a missing line of output.
@@ -289,6 +334,17 @@ def main() -> None:
             "not positive), so the Person and Lookup columns are blank. PERSID "
             "and LOOKID cannot be answered from these files.",
         )
+    # Derived, never hand-listed. A hand-written list of the columns needing
+    # conversion omitted ClosedAt, and ten rows silently failed to load.
+    print()
+    print("The .json files carry real nulls — point your flow at those and no")
+    print("conversion is needed. If you load the .csv files instead, every one")
+    print("of these columns arrives as \"\" when blank and SharePoint rejects it:")
+    for column, kind in NULLABLE_COLUMNS.items():
+        cast = "int(" if kind == "int" else ""
+        close = ")" if kind == "int" else ""
+        print(f"    {column:9} ({kind:8})  "
+              f"if(empty(item()?['{column}']), null, {cast}item()?['{column}']{close})")
 
 
 if __name__ == "__main__":

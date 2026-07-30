@@ -275,3 +275,71 @@ def test_no_field_carries_leading_or_trailing_whitespace(tmp_path: Path) -> None
     for row in _union(tmp_path):
         for column, value in row.items():
             assert value == value.strip(), f"{column}={value!r} has stray whitespace"
+
+
+def test_nullable_columns_is_exactly_the_set_that_is_ever_blank() -> None:
+    """The test that would have saved a load.
+
+    A hand-written list of the columns needing empty-to-null conversion named
+    OwnerId and ParentId and omitted ClosedAt. Ten rows of a thousand were
+    rejected — exactly the ClosedAt population — and batch creation being
+    non-transactional, the flow reported success.
+
+    Checked in BOTH directions. A newly-blank column missing from
+    NULLABLE_COLUMNS silently loads short; a listed column that is never blank
+    means the printed guidance tells an operator to convert something that
+    needs no conversion, which teaches them to ignore it.
+    """
+    m = _load()
+    rows = m.build_rows(owner_id="11", parent_id="1")
+    ever_blank = {
+        column for column in m.HEADERS
+        if any(row[column] == "" for row in rows)
+    }
+    assert ever_blank == set(m.NULLABLE_COLUMNS), (
+        f"columns that are blank somewhere: {sorted(ever_blank)}; "
+        f"columns declared nullable: {sorted(m.NULLABLE_COLUMNS)}"
+    )
+
+
+def test_json_rows_carry_real_nulls_and_real_integers(tmp_path: Path) -> None:
+    """The JSON sibling exists so a flow needs no conversion at all. If a blank
+    came through as "" there, it would fail the same way the CSV did."""
+    import json
+
+    m = _load()
+    m.write_csvs(m.build_rows(owner_id="11", parent_id="1"), tmp_path)
+    payload = json.loads(
+        (tmp_path / "threshold-rows-01-to-1000.json").read_text(encoding="utf-8"))
+    assert len(payload) == 1000
+    # No empty string anywhere in a nullable column.
+    for item in payload:
+        for column in m.NULLABLE_COLUMNS:
+            assert item[column] != "", f"{column} is an empty string, not null"
+    blank_dates = [i for i in payload if i["ClosedAt"] is None]
+    owned = [i for i in payload if i["OwnerId"] is not None]
+    parented = [i for i in payload if i["ParentId"] is not None]
+    assert len(blank_dates) == 10
+    assert len(owned) == 10
+    assert len(parented) == 10
+    # Ids are NUMBERS, not quoted digit strings — a Person id must not be "11".
+    assert owned[0]["OwnerId"] == 11
+    assert parented[0]["ParentId"] == 1
+    # And a present date is still a string.
+    assert isinstance(payload[0]["ClosedAt"], str)
+
+
+def test_the_json_and_csv_files_describe_the_same_rows(tmp_path: Path) -> None:
+    """Two serialisations of one fixture. If they drift, the row counts the
+    probe expects hold for one file and not the other."""
+    import json
+
+    m = _load()
+    m.write_csvs(m.build_rows(owner_id="11", parent_id="1"), tmp_path)
+    for sequence, _, last in m.split_plan():
+        name = m.file_name(sequence, last)
+        with (tmp_path / name).open(encoding="utf-8", newline="") as handle:
+            csv_titles = [r["Title"] for r in csv.DictReader(handle)]
+        payload = json.loads(
+            (tmp_path / name).with_suffix(".json").read_text(encoding="utf-8"))
+        assert [i["Title"] for i in payload] == csv_titles, name
