@@ -1,0 +1,244 @@
+/**
+ * dbml-sharepoint PROBE — LIST VIEW THRESHOLD FIXTURE
+ *
+ * TWO QUESTIONS, both recorded as unknown in analysis/checks/_views.py:
+ *
+ *   1. Can a null test be served past the list view threshold when the column
+ *      IS indexed? Microsoft's threshold guidance is written for comparison
+ *      filters and says nothing about presence tests. Four views in the
+ *      shipped template library filter on nothing but is_null — the library's
+ *      "blank means still open" idiom — so the answer decides whether they can
+ *      be fixed at all or only accepted.
+ *
+ *   2. Do Created, Modified, Author and Editor behave as indexed? The check
+ *      excludes all five system columns, and that exclusion rests on the DBML
+ *      side, so it is correct either way — but the project cannot currently
+ *      say what SharePoint does.
+ *
+ * A third rides along, because the same fixture answers it: does indexing a
+ * PERSON column avert a breach? Microsoft says no, and _LOOKUP_FIELD_TYPES
+ * already acts on that, but on documentation alone.
+ *
+ * WHY A NEW FIXTURE: native-index-probe.js ran on 2026-07-30 and established
+ * none of it. Its metadata half is void — SP.Field.Indexed read false for ID
+ * itself — and its behavioural half never ran, because the site's largest
+ * generic list held 21 items against a threshold of 5,000. The blocker was the
+ * fixture, not the method. This builds the fixture.
+ *
+ * THIS PROBE WRITES. It creates two lists, six columns, four indexes and four
+ * views, and the operator then loads 6,000 rows into it. Both write gates must
+ * be turned on deliberately. Nothing happens to a pasted, unedited copy.
+ *
+ * MATCHED SELECTIVITY IS THE DESIGN. Every filter below matches exactly 60 of
+ * 6,000 rows, on disjoint row sets, so each differs from the positive control
+ * in exactly ONE respect — the index, the operator, or the field type. See the
+ * docstring of test/manual/make_threshold_rows.py for what an earlier,
+ * unmatched draft would have concluded and why it was wrong.
+ *
+ * WHAT IT ASKS
+ *   RUNCNT  live ItemCount matches a declared checkpoint
+ *   CMPIDX  comparison, INDEXED Text          (positive control)
+ *   CMPUNI  comparison, UNINDEXED twin        (negative control)
+ *   NULIDX  null test, INDEXED DateTime       (the question)
+ *   PERSID  comparison, INDEXED Person
+ *   LOOKID  comparison, INDEXED Lookup
+ *   SYSCRE  comparison on Created             SYSMOD  on Modified
+ *   SYSAUT  comparison on Author              SYSEDI  on Editor
+ *   AUTOBT  SortBait's Indexed/AutoIndexed flags, across a modern sort
+ *
+ * HOW TO RUN — the run plan, in order
+ *   1. Open a SharePoint site you are willing to put a 6,000-row list on.
+ *   2. Set CONFIRMED and ALLOW_WRITES to true. Paste. This provisions
+ *      everything and prints the two ids the row generator needs.
+ *   3. Locally:  .venv/Scripts/python.exe test/manual/make_threshold_rows.py \
+ *                    --owner-id <printed> --parent-id <printed>
+ *   4. Load threshold-rows-01-to-1000.csv. Re-paste. Snapshot at 1,000.
+ *   5. Load 02. Re-paste with RUN_LABEL='before sort'. Then OPEN the
+ *      'Sort bait' view in the browser. Then re-paste with
+ *      RUN_LABEL='after sort'. That pair is the only thing that can establish
+ *      what AutoIndexed means.
+ *   6. Load 03, 04, 05, re-pasting after each. Copy every RESULTS block.
+ *
+ * Re-pasting is safe at any point: provisioning is idempotent and later runs
+ * only measure.
+ *
+ * STATUS: NOT YET RUN as of 2026-07-30.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  // Set before re-pasting. The probe CANNOT tell one run from another — a
+  // fresh JavaScript context has no memory and nowhere to keep one — so the
+  // before/after-sort pair, both taken at 3,000 rows, is distinguished by this
+  // label and nothing else. Interpreting the pair is the operator's job.
+  const RUN_LABEL = '';
+
+  // Ships off so a pasted copy never removes anything. See the cleanup block.
+  const CLEANUP_AT_END = false;
+
+  const LIST = 'dbmlsp Probe Threshold';
+  const PARENT = 'dbmlsp Probe Threshold Parent';
+  const CHECKPOINTS = [1000, 3000, 4900, 5100, 6000];
+  const LIST_VIEW_THRESHOLD = 5000;
+  const RARE_BUCKET = 'Z';
+  // Every filtered population is one row in a hundred. Kept beside the
+  // generator's MATCHING_ROWS; test_probes.py pins the two together.
+  const MATCHING_ROWS = 60;
+
+  const odata = (name) => encodeURIComponent(String(name).replace(/'/g, "''"));
+
+  // Indexed on purpose, and NOT indexed on purpose. Shadow mirrors Bucket's
+  // data exactly, so that pair differs only in this column of the table.
+  const COLUMNS = [
+    ['Bucket',   true,  '<Field Type="Text" DisplayName="Bucket" Name="Bucket" MaxLength="255"/>'],
+    ['Shadow',   false, '<Field Type="Text" DisplayName="Shadow" Name="Shadow" MaxLength="255"/>'],
+    ['SortBait', false, '<Field Type="Text" DisplayName="SortBait" Name="SortBait" MaxLength="255"/>'],
+    ['ClosedAt', true,  '<Field Type="DateTime" DisplayName="ClosedAt" Name="ClosedAt" Format="DateTime"/>'],
+    ['Owner',    true,  '<Field Type="User" DisplayName="Owner" Name="Owner" UserSelectionMode="PeopleOnly"/>'],
+  ];
+
+  if (!CONFIRMED) {
+    log('INFO', `Would create lists '${PARENT}' and '${LIST}', add 6 columns,`);
+    log('INFO', 'set Indexed=true on Bucket, ClosedAt, Owner and Parent, create 4');
+    log('INFO', 'views, then print the ids needed by make_threshold_rows.py.');
+    log('INFO', 'Nothing has been written. Set CONFIRMED and ALLOW_WRITES to true.');
+    return;
+  }
+  if (!ALLOW_WRITES) {
+    log('INFO', 'CONFIRMED, but ALLOW_WRITES is false. Stopping without writes.');
+    return;
+  }
+
+  // ---- Provision: PARENT FIRST ---------------------------------------
+  // The child's Lookup field needs the parent list's id in its schema XML.
+  // Cleanup reverses this; see the CLEANUP_AT_END block.
+  const listShape = '?$select=Id,ItemCount,ListItemEntityTypeFullName';
+  const ensureList = async (title, bootId) => {
+    const existing = await spGet(`web/lists/getbytitle('${odata(title)}')${listShape}`);
+    if (existing.ok) return existing.body;
+    let digest = await getDigest();
+    const created = await spPost('web/lists', {
+      Title: title,
+      BaseTemplate: 100,
+      Description: 'dbml-sharepoint list view threshold probe. Safe to recycle.',
+    }, digest);
+    if (!created.ok) {
+      record(bootId, `Create ${title}`, 'FAIL',
+             `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
+      return null;
+    }
+    // Re-read: the create response shape varies with OData mode and can be
+    // empty, and the child's Lookup schema needs a MEASURED id.
+    digest = await getDigest();
+    const reread = await spGet(`web/lists/getbytitle('${odata(title)}')${listShape}`);
+    if (readFailed(reread) || !reread.body.Id) {
+      record(bootId, `Read back ${title}`, 'FAIL',
+             `HTTP ${reread.status}: no usable list Id`);
+      return null;
+    }
+    return reread.body;
+  };
+
+  // Separate boot ids, not one shared 'BOOT': record() overwrites by id, so a
+  // single id would let whichever list failed second erase the first, and the
+  // surviving row would name the wrong list.
+  const parent = await ensureList(PARENT, 'BOOTPARENT');
+  const main = await ensureList(LIST, 'BOOTMAIN');
+  if (!parent || !main) {
+    report();
+    return;
+  }
+
+  // ---- Columns and indexes -------------------------------------------
+  const fieldsPath = `web/lists/getbytitle('${odata(LIST)}')/fields`;
+  const fieldExists = async (name) =>
+    (await spGet(`${fieldsPath}/getbyinternalnameortitle('${name}')?$select=Id`)).ok;
+
+  const addField = async (schemaXml) => {
+    const digest = await getDigest();
+    return spPost(`${fieldsPath}/createfieldasxml`,
+                  { parameters: { SchemaXml: schemaXml, Options: 8 } }, digest);
+  };
+
+  // Indexed is read/write and documented as "TRUE if the column is indexed for
+  // use in view filters". Set on the EMPTY list: Microsoft's troubleshooting
+  // guidance puts a 20,000-item ceiling on adding or removing an indexed
+  // column, and provisioning first removes the question entirely.
+  const setIndexed = async (name) => {
+    const digest = await getDigest();
+    return spPost(`${fieldsPath}/getbyinternalnameortitle('${name}')`,
+                  { Indexed: true }, digest,
+                  { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
+  };
+
+  const schemas = COLUMNS.concat([[
+    'Parent', true,
+    `<Field Type="Lookup" DisplayName="Parent" Name="Parent" ` +
+    `List="{${parent.Id}}" ShowField="Title"/>`,
+  ]]);
+
+  for (const [name, indexed, schemaXml] of schemas) {
+    if (!(await fieldExists(name))) {
+      const made = await addField(schemaXml);
+      if (!made.ok) {
+        log('FAIL', `Could not create ${name}: HTTP ${made.status} ${made.text.slice(0, 300)}`);
+        continue;
+      }
+    }
+    if (!indexed) continue;
+    const flagged = await setIndexed(name);
+    log(flagged.ok ? 'OK' : 'FAIL',
+        `${name}: Indexed=true ${flagged.ok ? 'set' : `FAILED HTTP ${flagged.status}`}`);
+  }
+
+  // One parent row for every child row to point at.
+  if (parent.ItemCount === 0) {
+    const digest = await getDigest();
+    const seeded = await spPost(
+      `web/lists/getbytitle('${odata(PARENT)}')/items`, { Title: 'Probe parent' }, digest);
+    log(seeded.ok ? 'OK' : 'FAIL',
+        `parent item ${seeded.ok ? 'created' : `FAILED HTTP ${seeded.status}`}`);
+  }
+
+  // ---- Views ----------------------------------------------------------
+  // CAML, because a view filter is not an OData filter. The probe measures
+  // $filter for a crisp HTTP answer; these exist so the operator can OPEN them
+  // and report what a human sees. The two are different code paths and can
+  // disagree — a disagreement is itself the finding.
+  const VIEWS = [
+    ['Cmp indexed',
+     `<Where><Eq><FieldRef Name='Bucket'/><Value Type='Text'>${RARE_BUCKET}</Value></Eq></Where>`],
+    ['Null indexed',
+     "<Where><IsNull><FieldRef Name='ClosedAt'/></IsNull></Where>"],
+    ['Cmp unindexed',
+     `<Where><Eq><FieldRef Name='Shadow'/><Value Type='Text'>${RARE_BUCKET}</Value></Eq></Where>`],
+    ['Sort bait',
+     "<OrderBy><FieldRef Name='SortBait'/></OrderBy>"],
+  ];
+  const viewsPath = `web/lists/getbytitle('${odata(LIST)}')/views`;
+  for (const [title, query] of VIEWS) {
+    if ((await spGet(`${viewsPath}/getbytitle('${odata(title)}')?$select=Id`)).ok) continue;
+    const digest = await getDigest();
+    const made = await spPost(viewsPath, {
+      Title: title, ViewQuery: query, RowLimit: 30, ViewFields: { results: [] },
+    }, digest);
+    log(made.ok ? 'OK' : 'FAIL',
+        `view '${title}' ${made.ok ? 'created'
+          : `FAILED HTTP ${made.status} ${made.text.slice(0, 300)}`}`);
+  }
+
+  // ---- Handshake ------------------------------------------------------
+  // The generator cannot know these, and the probe cannot know them before the
+  // lists exist. Printing them is the handshake between the two halves.
+  const me = await spGet('web/currentuser?$select=Id,LoginName');
+  const myId = readFailed(me) ? 0 : me.body.Id;
+  log('INFO', '=============== FEED THESE TO THE GENERATOR ===============');
+  log('INFO', `  .venv/Scripts/python.exe test/manual/make_threshold_rows.py \\`);
+  log('INFO', `      --owner-id ${myId || 'UNREADABLE'} --parent-id 1`);
+  log('INFO', `  (--parent-id 1 is the first item of '${PARENT}')`);
+  log('INFO', `  ListItemEntityTypeFullName: ${main.ListItemEntityTypeFullName}`);
+  log('INFO', '  — some batch-create flows need that as the __metadata type.');
+  log('INFO', '===========================================================');
+
+  report();
+})();
