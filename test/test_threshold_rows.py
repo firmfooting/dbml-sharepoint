@@ -4,15 +4,25 @@
 Every number here is one the threshold probe's expectations are written
 against. A row generator that silently changes a count turns "this query
 returned fewer rows than expected" from a finding into a mystery.
+
+Note what several of these assert: properties of the BYTES ON DISK across all
+five files, not of `build_rows()`. A review of an earlier version broke
+`write_csvs` so that 1900 rows were duplicated and 1900 omitted — same file
+names, same per-file counts, same 6000 total — and every assertion in this file
+passed, because nothing read the union.
 """
 
 import csv
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 MANUAL = Path(__file__).parent / "manual"
+GENERATOR = MANUAL / "make_threshold_rows.py"
 
 
 def _load() -> ModuleType:
@@ -20,7 +30,7 @@ def _load() -> ModuleType:
     through it is a collision waiting to happen on someone else's machine.
     Same reason test_probes.py loads render_probes this way."""
     spec = importlib.util.spec_from_file_location(
-        "dbmlsp_make_threshold_rows", MANUAL / "make_threshold_rows.py",
+        "dbmlsp_make_threshold_rows", GENERATOR,
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -29,19 +39,52 @@ def _load() -> ModuleType:
     return module
 
 
-def test_closed_at_is_blank_on_exactly_a_fifth_of_rows() -> None:
+def _union(out_dir: Path) -> list[dict[str, str]]:
+    """Every row of every written file, in load order."""
     m = _load()
-    rows = m.build_rows()
-    blank = [r for r in rows if r["ClosedAt"] == ""]
+    rows: list[dict[str, str]] = []
+    for sequence, _, last in m.split_plan():
+        target = out_dir / m.file_name(sequence, last)
+        with target.open(encoding="utf-8", newline="") as handle:
+            rows.extend(csv.DictReader(handle))
+    return rows
+
+
+# === Composition ============================================================
+
+
+def test_every_filtered_population_is_the_same_size() -> None:
+    """Matched selectivity is the design. Each of these filters differs from
+    `Bucket eq 'Z'` in exactly ONE respect — the index, the operator, or the
+    field type — which is only true while the row counts agree."""
+    m = _load()
+    rows = m.build_rows(owner_id="7", parent_id="1")
     assert len(rows) == 6000
-    assert len(blank) == 1200
+    assert m.MATCHING_ROWS == 60
+    assert len([r for r in rows if r["Bucket"] == m.RARE_BUCKET]) == 60
+    assert len([r for r in rows if r["Shadow"] == m.RARE_BUCKET]) == 60
+    assert len([r for r in rows if r["ClosedAt"] == ""]) == 60
+    assert len([r for r in rows if r["OwnerId"] == "7"]) == 60
+    assert len([r for r in rows if r["ParentId"] == "1"]) == 60
 
 
-def test_rare_bucket_is_selective_and_exactly_counted() -> None:
+def test_the_filtered_populations_are_pairwise_disjoint() -> None:
+    """No row may be both a `Z` and a blank `ClosedAt`. Overlap would let one
+    result be read as a consequence of another — and in the first draft every
+    single `Z` row was also blank and also owned, because all three offsets
+    were multiples of 100."""
     m = _load()
-    rows = m.build_rows()
-    rare = [r for r in rows if r["Bucket"] == m.RARE_BUCKET]
-    assert len(rare) == 60
+    rows = m.build_rows(owner_id="7", parent_id="1")
+    populations = {
+        "bucket": {i for i, r in enumerate(rows) if r["Bucket"] == m.RARE_BUCKET},
+        "null": {i for i, r in enumerate(rows) if r["ClosedAt"] == ""},
+        "owner": {i for i, r in enumerate(rows) if r["OwnerId"] == "7"},
+        "parent": {i for i, r in enumerate(rows) if r["ParentId"] == "1"},
+    }
+    for left, left_rows in populations.items():
+        for right, right_rows in populations.items():
+            if left < right:
+                assert not (left_rows & right_rows), f"{left} overlaps {right}"
 
 
 def test_shadow_is_byte_identical_to_bucket() -> None:
@@ -51,11 +94,45 @@ def test_shadow_is_byte_identical_to_bucket() -> None:
     assert all(r["Shadow"] == r["Bucket"] for r in m.build_rows())
 
 
-def test_sort_bait_is_high_cardinality_and_deterministic() -> None:
+def test_closed_at_is_iso_8601_utc_with_a_z() -> None:
+    """SharePoint REST rejects the `+00:00` that isoformat() emits. Unpinned,
+    dropping the replace() would only surface as silent per-item batch
+    failures, batch creation being non-transactional."""
     m = _load()
-    first = m.build_rows()
-    assert len({r["SortBait"] for r in first}) == 6000
-    assert [r["SortBait"] for r in m.build_rows()] == [r["SortBait"] for r in first]
+    assert m.closed_at_for(1) == "2020-01-02T00:00:00Z"
+    assert all("+" not in r["ClosedAt"] for r in m.build_rows())
+
+
+def test_sort_bait_is_pinned_to_literals_that_survive_a_new_process() -> None:
+    """`len(set(...)) == 6000` cannot fail while the `-{row}` suffix exists, so
+    it proves nothing about the hash. And an in-process determinism check
+    passes for `hash()`, which is salted per interpreter — regenerating
+    mid-run would then leave the list holding a mixture and void the sort
+    observation. Literals are what actually survives a process boundary.
+    """
+    m = _load()
+    assert m.sort_bait_for(1) == "435761-000001"
+    assert m.sort_bait_for(6000) == "566000-006000"
+    baits = [r["SortBait"] for r in m.build_rows()]
+    # The hash half alone must be injective, suffix removed.
+    assert len({bait.split("-")[0] for bait in baits}) == 6000
+    # And it must not be in row order, or it is not bait.
+    assert sorted(baits) != baits
+
+
+def test_sort_bait_is_identical_in_a_separate_interpreter() -> None:
+    """The claim is "byte-identical on every run", so cross the process
+    boundary the in-process check cannot."""
+    m = _load()
+    result = subprocess.run(  # noqa: S603
+        [sys.executable, "-c",
+         f"import importlib.util as u; "
+         f"s = u.spec_from_file_location('g', r'{GENERATOR}'); "
+         f"g = u.module_from_spec(s); s.loader.exec_module(g); "
+         f"print(g.sort_bait_for(1), g.sort_bait_for(6000))"],
+        capture_output=True, text=True, check=True,
+    )
+    assert result.stdout.split() == [m.sort_bait_for(1), m.sort_bait_for(6000)]
 
 
 def test_owner_and_parent_are_blank_until_ids_are_supplied() -> None:
@@ -68,11 +145,7 @@ def test_owner_and_parent_are_blank_until_ids_are_supplied() -> None:
     assert all(r["ParentId"] == "" for r in rows)
 
 
-def test_owner_is_set_on_a_quarter_of_rows_when_supplied() -> None:
-    m = _load()
-    rows = m.build_rows(owner_id="7", parent_id="1")
-    assert len([r for r in rows if r["OwnerId"] == "7"]) == 1500
-    assert all(r["ParentId"] == "1" for r in rows)
+# === The split ==============================================================
 
 
 def test_split_totals_land_exactly_on_the_checkpoints() -> None:
@@ -106,18 +179,39 @@ def test_file_names_encode_the_resulting_list_total() -> None:
     ]
 
 
-def test_written_csvs_carry_internal_names_and_the_right_row_counts(tmp_path: Path) -> None:
+# === The bytes on disk ======================================================
+
+
+def test_the_written_files_hold_every_row_exactly_once(tmp_path: Path) -> None:
+    """The assertion an earlier draft was missing. Per-file counts and the
+    grand total can all be right while rows are duplicated and omitted in
+    equal measure — only the union catches it, and the probe's RUNCNT guard
+    would read the resulting list as ON CHECKPOINT and trust the whole run."""
     m = _load()
-    written = m.write_csvs(m.build_rows(owner_id="7", parent_id="1"), tmp_path)
-    assert [p.name for p in written] == [
-        m.file_name(seq, last) for seq, _, last in m.split_plan()
-    ]
+    m.write_csvs(m.build_rows(owner_id="7", parent_id="1"), tmp_path)
+    titles = [r["Title"] for r in _union(tmp_path)]
+    assert titles == [f"Row {i:06d}" for i in range(1, m.TOTAL + 1)]
+
+
+def test_the_written_files_preserve_every_composition_invariant(tmp_path: Path) -> None:
+    """Measured across the union, of the actual deliverable. Everything else in
+    this file tests build_rows(); the operator loads these bytes."""
+    m = _load()
+    m.write_csvs(m.build_rows(owner_id="7", parent_id="1"), tmp_path)
+    rows = _union(tmp_path)
+    assert len(rows) == m.TOTAL
+    assert len([r for r in rows if r["Bucket"] == m.RARE_BUCKET]) == 60
+    assert len([r for r in rows if r["ClosedAt"] == ""]) == 60
+    assert len([r for r in rows if r["OwnerId"] == "7"]) == 60
+    assert len([r for r in rows if r["ParentId"] == "1"]) == 60
+    assert all(r["Shadow"] == r["Bucket"] for r in rows)
+
+
+def test_written_csvs_carry_the_internal_column_names(tmp_path: Path) -> None:
+    m = _load()
+    written = m.write_csvs(m.build_rows(), tmp_path)
     with written[0].open(encoding="utf-8", newline="") as handle:
-        reader = csv.DictReader(handle)
-        assert reader.fieldnames == list(m.HEADERS)
-        first_file = list(reader)
-    assert len(first_file) == 1000
-    assert first_file[0]["Title"] == "Row 000001"
+        assert csv.DictReader(handle).fieldnames == list(m.HEADERS)
     # The Person and Lookup headers carry the `Id` suffix REST requires.
     assert "OwnerId" in m.HEADERS
     assert "Owner" not in m.HEADERS
@@ -125,10 +219,28 @@ def test_written_csvs_carry_internal_names_and_the_right_row_counts(tmp_path: Pa
     assert "Parent" not in m.HEADERS
 
 
-def test_the_last_file_ends_on_the_last_row(tmp_path: Path) -> None:
+def test_a_row_count_that_does_not_match_the_run_plan_is_refused(tmp_path: Path) -> None:
+    """Short input silently produced header-only tail files, and long input
+    silently dropped the overflow. Either hands over a directory that looks
+    like a complete run plan."""
     m = _load()
-    written = m.write_csvs(m.build_rows(), tmp_path)
-    with written[-1].open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
-    assert len(rows) == 900
-    assert rows[-1]["Title"] == f"Row {m.TOTAL:06d}"
+    with pytest.raises(ValueError, match="run plan needs exactly 6000"):
+        m.write_csvs(m.build_rows(total=1000), tmp_path)
+
+
+def test_writing_clears_a_previous_run_plans_files(tmp_path: Path) -> None:
+    """A shortened plan would otherwise leave the old tail sitting beside the
+    new files, loadable and indistinguishable — and the file names are what
+    the operator reads the run plan off."""
+    m = _load()
+    stale = tmp_path / m.file_name(9, 99999)
+    stale.write_text("Title\nstale\n", encoding="utf-8")
+    m.write_csvs(m.build_rows(), tmp_path)
+    assert not stale.exists()
+    assert len(list(tmp_path.glob("threshold-rows-*.csv"))) == len(m.CHECKPOINTS)
+
+
+def test_no_staging_files_survive_a_successful_write(tmp_path: Path) -> None:
+    m = _load()
+    m.write_csvs(m.build_rows(), tmp_path)
+    assert not list(tmp_path.glob("*.tmp"))

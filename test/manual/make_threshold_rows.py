@@ -7,10 +7,33 @@ Run me AFTER the probe's first paste, which prints the two ids needed here:
         --owner-id 7 --parent-id 1
 
 Row data lives in Python rather than in the probe because the experiment's
-validity rests on knowing EXACTLY how many rows carry a blank in the
-null-test column. A query that returns fewer rows than expected is a finding
-only if the expected number is known, and known-ness comes from the tests in
-test/test_threshold_rows.py. A browser-generated file cannot have any.
+validity rests on knowing EXACTLY how many rows each filter matches. A query
+that returns fewer rows than expected is a finding only if the expected number
+is known, and known-ness comes from the tests in test/test_threshold_rows.py.
+A browser-generated file cannot have any.
+
+MATCHED SELECTIVITY IS THE WHOLE DESIGN. Every filtered column matches exactly
+MATCHING_ROWS rows, on offsets chosen to be pairwise disjoint. So:
+
+    Bucket eq 'Z'      indexed Text     60 rows
+    Shadow eq 'Z'      UNindexed Text   60 rows, byte-identical data
+    ClosedAt eq null   indexed DateTime 60 rows
+    OwnerId eq <id>    indexed Person   60 rows
+    ParentId eq <id>   indexed Lookup   60 rows
+
+Each of those differs from the first in exactly one respect — the index, the
+operator, or the field type — so a divergence has one candidate explanation
+instead of three. An earlier draft had these at 60, 60, 1200, 1500 and 6000
+rows, which would have made "comparison served, null test refused"
+uninterpretable: the two queries differed in result size by twenty times as
+well as in operator. The 6000-row Lookup case was worse still, matching the
+entire list, so it would have breached the threshold on result size alone and
+produced a false corroboration of Microsoft's documented Lookup rule.
+
+Selecting only 60 of 6000 rows also tests the BEST case for an index, which is
+the right way round for this question: if a highly selective indexed null test
+still cannot be served, that is decisive, whereas a failure at low selectivity
+would be ambiguous with selectivity itself.
 """
 
 import argparse
@@ -29,57 +52,88 @@ CHECKPOINTS: tuple[int, ...] = (1000, 3000, 4900, 5100, 6000)
 # batch-create pattern maps headers straight through to the request body, so
 # Person and Lookup columns must appear with the `Id` suffix the REST API
 # expects — `Owner` and `Parent` would be silently ignored.
+#
+# Order matches the insertion order in build_rows() so the two can be read
+# against each other without a diff.
 HEADERS: tuple[str, ...] = (
-    "Title", "Bucket", "ClosedAt", "Shadow", "SortBait", "OwnerId", "ParentId",
+    "Title", "Bucket", "Shadow", "ClosedAt", "SortBait", "OwnerId", "ParentId",
 )
 
 _BUCKETS: tuple[str, ...] = ("B1", "B2", "B3", "B4", "B5", "B6", "B7")
 
-# The value every comparison filter asks for. Rare enough to be selective,
-# and its count is exactly known, which is the point.
+# The value every comparison filter asks for.
 RARE_BUCKET = "Z"
+
+# Every filtered population is one row in each hundred, so they are all this
+# size and all equally selective. For the default TOTAL only; write_csvs
+# refuses a row count that does not match the run plan.
+MATCHING_ROWS = TOTAL // 100
+
+# Distinct residues mod 100, which is what makes the five populations pairwise
+# disjoint — no row is both a `Z` and a blank `ClosedAt`, so no result can be
+# read as a consequence of another. Change one of these and the disjointness
+# test in test_threshold_rows.py fails, which is the point of it.
+_Z_OFFSET = 3
+_NULL_OFFSET = 23
+_OWNER_OFFSET = 43
+_PARENT_OFFSET = 63
 
 _EPOCH = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
 
 _DEFAULT_OUT = Path(__file__).parent / "rows"
 
 
+def _one_in_a_hundred(row: int, offset: int) -> bool:
+    """Whether this row is in the population at `offset`."""
+    return row % 100 == offset
+
+
 def bucket_for(row: int) -> str:
-    """`Z` on every 100th row, else the B1-B7 cycle.
+    """`Z` on one row in a hundred, else the B1-B7 cycle.
 
     The substitution OVERRIDES the cycle rather than extending it, so the
     seven common values are not evenly sized. Deliberate and harmless: the
     filters only ever ask for `Z`.
     """
-    if row % 100 == 0:
+    if _one_in_a_hundred(row, _Z_OFFSET):
         return RARE_BUCKET
     return _BUCKETS[(row - 1) % len(_BUCKETS)]
 
 
 def closed_at_for(row: int) -> str:
-    """Blank on every 5th row — the null-test population, 1200 of 6000."""
-    if row % 5 == 0:
+    """Blank on one row in a hundred — the null-test population.
+
+    Non-blank values repeat (`row % 1000`), so this column supports `eq null`
+    and nothing else. Range filters over it have no expected count and are out
+    of scope for this fixture.
+    """
+    if _one_in_a_hundred(row, _NULL_OFFSET):
         return ""
     stamp = _EPOCH + dt.timedelta(days=row % 1000)
+    # SharePoint REST wants ISO-8601 UTC with a `Z`, not the `+00:00` that
+    # isoformat() emits for an aware datetime. Pinned by a test, because a
+    # rejected value would only surface as silent per-item batch failures.
     return stamp.isoformat().replace("+00:00", "Z")
 
 
 def sort_bait_for(row: int) -> str:
     """High-cardinality and deliberately out of order, so sorting on it costs
-    SharePoint real work. A multiplicative hash, NOT random: the files must be
-    byte-identical on every run or the tests cannot pin anything."""
+    SharePoint real work.
+
+    A multiplicative hash, NOT random and NOT `hash()`: the files must be
+    byte-identical across separate interpreter runs, or regenerating mid-run
+    leaves the list holding a mixture and the sort observation is void.
+    435761 is coprime to 1e6, so the leading half alone is injective for every
+    row below a million — the `-{row}` suffix is for readability, not
+    uniqueness.
+    """
     return f"{(row * 2654435761) % 1_000_000:06d}-{row:06d}"
 
 
 def build_rows(
     total: int = TOTAL, owner_id: str = "", parent_id: str = "",
 ) -> list[dict[str, str]]:
-    """One dict per row, keyed by the CSV headers.
-
-    `OwnerId` lands on every 4th row and `ClosedAt` blanks on every 5th, so
-    the two populations overlap on only every 20th row. Offsetting them keeps
-    the Person result from being read as a consequence of the null result.
-    """
+    """One dict per row, keyed by the CSV headers."""
     rows: list[dict[str, str]] = []
     for row in range(1, total + 1):
         bucket = bucket_for(row)
@@ -90,8 +144,8 @@ def build_rows(
             "Shadow": bucket,
             "ClosedAt": closed_at_for(row),
             "SortBait": sort_bait_for(row),
-            "OwnerId": owner_id if row % 4 == 0 else "",
-            "ParentId": parent_id,
+            "OwnerId": owner_id if _one_in_a_hundred(row, _OWNER_OFFSET) else "",
+            "ParentId": parent_id if _one_in_a_hundred(row, _PARENT_OFFSET) else "",
         })
     return rows
 
@@ -122,19 +176,57 @@ def file_name(sequence: int, checkpoint: int) -> str:
 
 def write_csvs(rows: list[dict[str, str]], out_dir: Path) -> list[Path]:
     """Write one CSV per checkpoint. Returns what was written, in load order."""
+    plan = split_plan()
+    expected = plan[-1][2]
+    if len(rows) != expected:
+        # Silently writing header-only tail files, or dropping the overflow,
+        # would hand the operator a directory that looks like a complete run
+        # plan and is not.
+        raise ValueError(
+            f"got {len(rows)} row(s) but the run plan needs exactly {expected}; "
+            f"the split would be short or truncated.",
+        )
     out_dir.mkdir(parents=True, exist_ok=True)
+    # A shortened run plan would otherwise leave the previous plan's tail files
+    # sitting beside the new ones, loadable and indistinguishable.
+    for stale in out_dir.glob("threshold-rows-*.csv"):
+        stale.unlink()
     written: list[Path] = []
-    for sequence, first, last in split_plan():
+    for sequence, first, last in plan:
         target = out_dir / file_name(sequence, last)
+        # Write beside, then rename. An interrupted write would otherwise leave
+        # a syntactically valid CSV with fewer rows than it claims, and the
+        # only signal would be a missing line of output.
+        staging = target.with_name(target.name + ".tmp")
         # newline="" is required: csv writes its own line terminators, and
         # without this Windows turns each into CRLF and every row gains a
         # blank line.
-        with target.open("w", encoding="utf-8", newline="") as handle:
+        with staging.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(HEADERS))
             writer.writeheader()
             writer.writerows(rows[first - 1:last])
+        staging.replace(target)
         written.append(target)
     return written
+
+
+def _site_id(value: str, label: str) -> str:
+    """A SharePoint item or user id, or "" for not-supplied.
+
+    Validated because a login claim or a stray character pasted out of the
+    console produces a well-formed CSV that SharePoint rejects per item — and
+    batch creation is non-transactional, so those rejections are silent.
+    """
+    if not value:
+        return ""
+    try:
+        number = int(value)
+    except ValueError:
+        raise SystemExit(f"{label} must be a whole number, got {value!r}") from None
+    if number < 1:
+        # 0 is truthy as a string and would sail past a plain falsiness check.
+        return ""
+    return str(number)
 
 
 def main() -> None:
@@ -152,18 +244,23 @@ def main() -> None:
     parser.add_argument("--out", type=Path, default=_DEFAULT_OUT)
     args = parser.parse_args()
 
-    rows = build_rows(owner_id=args.owner_id, parent_id=args.parent_id)
+    owner_id = _site_id(args.owner_id, "--owner-id")
+    parent_id = _site_id(args.parent_id, "--parent-id")
+
+    rows = build_rows(owner_id=owner_id, parent_id=parent_id)
     for path in write_csvs(rows, args.out):
-        print(f"wrote {path}")
-    if not args.owner_id or not args.parent_id:
+        with path.open(encoding="utf-8", newline="") as handle:
+            written_rows = sum(1 for _ in csv.DictReader(handle))
+        print(f"wrote {path} ({written_rows} rows)")
+    if not owner_id or not parent_id:
         # Not an error: generating without a tenant is useful. But the two
         # columns will be empty, and the Person and Lookup questions then have
         # no data to answer from — say so rather than let a run report them
         # NOT ESTABLISHED for a reason nobody remembers.
         print(
-            "WARNING: --owner-id and/or --parent-id were not supplied, so the "
-            "Person and Lookup columns are blank. PERSID and LOOKID cannot be "
-            "answered from these files.",
+            "WARNING: --owner-id and/or --parent-id were not supplied (or were "
+            "not positive), so the Person and Lookup columns are blank. PERSID "
+            "and LOOKID cannot be answered from these files.",
         )
 
 
