@@ -251,3 +251,39 @@ def test_every_selectivity_matched_population_divides_every_checkpoint() -> None
         for offset in (rows._Z_OFFSET, rows._NULL_OFFSET,
                        rows._OWNER_OFFSET, rows._PARENT_OFFSET):
             assert 0 < offset < per_hundred, f"offset {offset} is outside 1..{per_hundred - 1}"
+
+
+def test_a_probe_sending_metadata_uses_verbose_odata() -> None:
+    """`__metadata` is a VERBOSE OData construct. Sent with the harness's
+    default `odata=nometadata` content type, SharePoint rejects the whole
+    request with HTTP 400.
+
+    Not hypothetical: the threshold probe's first live run failed all four of
+    its index MERGEs exactly this way. Its body was byte-identical to the
+    deployer's proven patchField — same URL, same IF-MATCH, same
+    X-HTTP-Method, same __metadata — and the only difference was that
+    _http_write.js.j2 sends odata=verbose and _probe_harness.js.j2 sends
+    odata=nometadata.
+
+    Asserts on CONTENT-TYPE specifically, not on the string "odata=verbose".
+    The first version of this test looked for the latter and passed on a probe
+    with the bug, because the harness's getDigest sets an `Accept` of
+    `application/json;odata=verbose` — so that string is in every probe here
+    whether or not any write uses it. What decides how SharePoint parses a
+    request BODY is Content-Type.
+    """
+    verbose_content_type = "'Content-Type': 'application/json;odata=verbose'"
+    # The object-literal form, not the bare word. Two probes explain in prose
+    # why they do NOT send __metadata, and "__metadata: the harness sends..."
+    # matched a looser pattern — flagging the files that got this right.
+    sends_metadata = re.compile(r"__metadata\s*:\s*\{")
+    for path in _probe_scripts():
+        text = path.read_text(encoding="utf-8")
+        if not sends_metadata.search(text):
+            continue
+        assert verbose_content_type in text, (
+            f"{path.name} sends __metadata but never sets a verbose "
+            f"Content-Type. SharePoint answers 400 — __metadata is meaningless "
+            f"to a nometadata endpoint. Override Content-Type in that call's "
+            f"spPost extraHeaders, as _http_write.js.j2 does."
+        )
