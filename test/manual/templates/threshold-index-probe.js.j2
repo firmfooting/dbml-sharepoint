@@ -84,6 +84,13 @@
 (async () => {
 {% include "_probe_harness.js.j2" %}
 
+  // Printed FIRST, before any gate, so it appears even on a run that stops
+  // immediately. A stale clipboard and a fix that did not work produce
+  // identical transcripts otherwise — this has already cost a round trip of
+  // diagnosis, where the only tell was a stack-trace line number. Injected by
+  // render_probes.py from a hash of this template and every partial.
+  log('INFO', 'probe revision {{ revision }} — quote this when reporting results.');
+
   // Set before re-pasting. The probe CANNOT tell one run from another — a
   // fresh JavaScript context has no memory and nowhere to keep one — so the
   // before/after-sort pair, both taken at 3,000 rows, is distinguished by this
