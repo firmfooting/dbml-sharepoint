@@ -74,14 +74,26 @@ _LOOKUP_FIELD_TYPES = frozenset({"person"})
 # nobody can carry out. ID is indexed by the platform and would need excluding
 # anyway; for the other four it is NOT established either way — nothing here
 # has measured it and Microsoft does not document it, so silence beats a guess
-# in either direction. test/manual/native-index-probe.js settles it.
+# in either direction.
+#
+# test/manual/native-index-probe.js was RUN on 2026-07-30 and established
+# NOTHING. Its control failed: SP.Field.Indexed read false for ID itself on
+# every list, so that property reports author-added indexes only — or ID
+# carries no index and the premise was wrong. Either way a metadata read
+# cannot answer this, and the probe's behavioural test needs a list past the
+# threshold that the site did not have. The exclusion above does not depend on
+# the answer, which is why it is safe to leave standing: no author can declare
+# an index for a system column whatever SharePoint does internally.
 
 # Operators that test only for presence. Microsoft's threshold guidance is
 # written for comparison filters; whether an index serves a CAML <IsNull> is
 # unverified here. A null-only filter therefore still gets the exposure
 # warning — the truncation risk is real either way — but NOT the "add an
 # index" remedy, which this project cannot yet claim would help.
-# test/manual/native-index-probe.js settles this too.
+#
+# test/manual/native-index-probe.js asks this too and, as of its 2026-07-30
+# run, has not answered it: the test needs a list past the threshold, and the
+# site it ran on topped out at 21 items. Still open.
 _NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
