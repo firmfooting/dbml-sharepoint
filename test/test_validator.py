@@ -4049,3 +4049,75 @@ def test_a_calculated_display_column_does_not_count_as_an_index(tmp_path: Path) 
         parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
     )
     assert "Label" not in vc.effective_indexes("Event")
+
+
+_SHAPE_SCHEMA = (
+    "Project t { database_type: 'SharePoint Online' }\n"
+    "Table Job {\n"
+    "  Id int [pk, increment]\n"
+    "  Title nvarchar\n"
+    "  Status nvarchar\n"
+    "  DueDate date\n"
+    "  indexes { Status }\n"
+    "}\n"
+)
+
+
+def _shape_warnings(tmp_path: Path, where: str) -> list[str]:
+    (tmp_path / "s.dbml").write_text(_SHAPE_SCHEMA, encoding="utf-8")
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Job: { kind: List, base_template: 100, site_role: default }\n"
+        "views:\n"
+        "  Job:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status, DueDate]\n" + where,
+        encoding="utf-8",
+    )
+    return [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if "list view threshold" in f.message
+    ]
+
+
+def test_an_or_needs_every_branch_indexed(tmp_path: Path) -> None:
+    """An OR cannot narrow to one index. A row matching only the unindexed
+    branch is still a row SharePoint has to find, so an indexed branch beside
+    an unindexed one buys nothing — and scoring it safe because SOME filtered
+    column is indexed is how a scanning view passes validation."""
+    assert len(_shape_warnings(
+        tmp_path,
+        "      where:\n"
+        "        any_of:\n"
+        "          - { field: Status, op: eq, value: Open }\n"
+        "          - { field: DueDate, op: leq, value: today }\n",
+    )) == 1
+
+
+def test_an_or_with_every_branch_indexed_is_quiet(tmp_path: Path) -> None:
+    """Both branches narrow, so neither forces a scan."""
+    assert _shape_warnings(
+        tmp_path,
+        "      where:\n"
+        "        any_of:\n"
+        "          - { field: Status, op: eq, value: Open }\n"
+        "          - { field: Status, op: eq, value: Held }\n",
+    ) == []
+
+
+def test_an_and_needs_only_one_branch_indexed(tmp_path: Path) -> None:
+    """Measured at 6,000 items: an unindexed comparison refused on its own is
+    served when ANDed with an indexed one, in either order — SharePoint picks
+    the index rather than taking the first column and stopping. So an AND is
+    covered by one indexed condition wherever it sits, and this test is what
+    stops the OR rule above being applied to both."""
+    assert _shape_warnings(
+        tmp_path,
+        "      where:\n"
+        "        - { field: Status, op: eq, value: Open }\n"
+        "        - { field: DueDate, op: leq, value: today }\n",
+    ) == []
