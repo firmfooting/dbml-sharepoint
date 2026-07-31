@@ -142,6 +142,24 @@ def measure_tree(node: Condition) -> tuple[int, int]:
     return (1 + max(depth for depth, _ in measured), sum(count for _, count in measured))
 
 
+def condition_fields(node: Condition) -> frozenset[str]:
+    """Every field referenced by a condition tree.
+
+    Values are deliberately ignored: valueless operators such as
+    ``is_null`` still carry a field, while sentinels such as ``today`` are
+    operands rather than column references. The helper is shared by
+    checks that need the dependency set without rendering or re-walking
+    the grammar in their own way.
+    """
+    if isinstance(node, Leaf):
+        return frozenset({node.field})
+    return frozenset(
+        field
+        for child in node.children
+        for field in condition_fields(child)
+    )
+
+
 # === Rendering ==============================================================
 # Three targets, three syntaxes, none of them the author's problem. Every
 # rule below was established by running it against a live tenant and is

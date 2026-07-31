@@ -5,7 +5,9 @@ from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,
+    condition_fields,
     effective_column_types,
+    leaves,
     validate_condition,
 )
 from dbml_sharepoint.analysis.typemap import NUMERIC_ONLY_TOTALS
@@ -31,6 +33,85 @@ _NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
 # `count` is NOT blocked on these: it counts rows, and SharePoint offers
 # Count on a person or hyperlink column.
 _NON_ARITHMETIC = frozenset({"person", "richtext", "longtext", "hyperlink"})
+
+# SharePoint Online's list view threshold is 5,000 items. Microsoft states it
+# CANNOT be changed for SharePoint, and that the effective number "is not
+# always 5,000" because it varies with the site and database activity — so
+# 5,000 is the documented figure, not a precise cutoff.
+#
+# The consequence is worse than an error, which is why this is worth warning
+# about at all: with Metadata Navigation and Filtering (on by default) a query
+# no index can serve falls back to returning up to 1,250 of the NEWEST items,
+# and may return none. A view that silently shows a truncated answer is the
+# failure this check exists to prevent.
+# https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
+_LIST_VIEW_THRESHOLD = 5_000
+_FALLBACK_ROW_COUNT = 1_250
+
+# Microsoft, verbatim: "Although you can index a lookup column to improve
+# performance, using an indexed lookup column to prevent exceeding the List
+# View Threshold doesn't work. Use another type of column as the primary or
+# secondary index."
+#
+# The same article's supported-column table annotates "Person or Group (single
+# value)" and "Managed Metadata" as lookup fields, and its note says to consult
+# that table to decide what counts as one. So a PERSON column is a lookup field
+# for this purpose even though its DBML declaration looks nothing like a `ref`,
+# and indexing it does not avert a threshold breach either. Read narrowly —
+# `col.ref is not None` only — this check would score an indexed Person filter
+# as safe when Microsoft says it is not.
+#
+# TWO citations, and keep both. The support article carries the supported-column
+# table that makes Person a lookup field. The schema reference carries the same
+# threshold rule attached to the `Indexed` attribute itself, which is the
+# property the deployer writes — so it is the one a reader checking THIS code
+# against the platform contract will want. A review of this file removed it as
+# "a schema page that says nothing about thresholds"; that was wrong, the Note
+# under `Indexed` says exactly this, and it went back in.
+# https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
+# https://learn.microsoft.com/sharepoint/dev/schema/field-element-field
+_LOOKUP_FIELD_TYPES = frozenset({"person"})
+
+# SYSTEM_COLUMNS (ID, Created, Modified, Author, Editor) are dropped from this
+# check entirely, and there is no companion "natively indexed" set to pair with
+# them — that set would be unreachable, because the names are gone before any
+# intersection runs.
+#
+# The reason is the DBML side, not the SharePoint side, and that matters: they
+# are filterable but NOT declarable, so no `indexes` entry can ever name one.
+# `indexes { Created }` is rejected by the DBML parser itself, a system column
+# not being a DBML column. Warning about any of the five would therefore name a
+# remedy nobody can carry out, whatever SharePoint does internally.
+#
+# Which is fortunate, because what SharePoint does internally is NOT
+# established for any of the five — INCLUDING ID. "SharePoint indexes ID
+# natively" is repeated widely and by this repository (see the comment in
+# validator._rendered_columns), and Microsoft documents it nowhere: not in the
+# index article, not in the large-list article, and the protocol spec defines
+# tp_Id as a column without enumerating the table's indexes.
+#
+# test/manual/native-index-probe.js was RUN on 2026-07-30 and established
+# NOTHING. Its control failed: SP.Field.Indexed — documented as "TRUE if the
+# column is indexed for use in view filters" — read FALSE for ID itself on 7 of
+# 7 lists. Either that property reports only registered list-column indexes and
+# whatever serves ID sits outside that model, or ID carries no such index. The
+# probe cannot separate those and neither can the documentation, so this comment
+# will not pick one. The behavioural half of the probe needs a list past the
+# threshold, which the site did not have.
+#
+# None of it changes the exclusion, because the exclusion rests on the DBML
+# side. That is why it is safe to leave standing while the question stays open.
+
+# Operators that test only for presence. Microsoft's threshold guidance is
+# written for comparison filters; whether an index serves a CAML <IsNull> is
+# unverified here. A null-only filter therefore still gets the exposure
+# warning — the truncation risk is real either way — but NOT the "add an
+# index" remedy, which this project cannot yet claim would help.
+#
+# test/manual/native-index-probe.js asks this too and, as of its 2026-07-30
+# run, has not answered it: the test needs a list past the threshold, and the
+# site it ran on topped out at 21 items. Still open.
+_NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -259,6 +340,73 @@ def check(vc: ValidationContext) -> list[Finding]:
                         context=f"{ctx}.where",
                     )
                 )
+                # System columns are dropped before anything is decided. They
+                # are filterable but not declarable, so they can neither carry
+                # a DBML index nor be reported as missing one.
+                filtered = condition_fields(view.where) - SYSTEM_COLUMNS
+                # Do not layer an index warning on top of an unknown-field
+                # error. Once every field resolves, assess the whole
+                # dependency set without pretending to understand AND/OR
+                # selectivity in this first pass.
+                if filtered and filtered <= view_rendered:
+                    indexed_filters = filtered & vc.effective_indexes(entity_name)
+                    # Wider than entity_lookups on purpose — see
+                    # _LOOKUP_FIELD_TYPES. entity_lookups stays as it is
+                    # because the totals check below means the DBML sense.
+                    lookup_fields = entity_lookups | {
+                        name for name in filtered
+                        if types_by_col.get(name) in _LOOKUP_FIELD_TYPES
+                    }
+                    useful_indexes = indexed_filters - lookup_fields
+                    # A filter that only tests presence gets the exposure
+                    # warning without the index remedy.
+                    compared = {
+                        leaf.field for leaf in leaves(view.where)
+                        if leaf.op not in _NULL_TEST_OPS
+                    }
+                    null_only = not (filtered & compared)
+                    names = ", ".join(sorted(filtered))
+                    exposure = (
+                        f"SharePoint Online's list view threshold is "
+                        f"{_LIST_VIEW_THRESHOLD:,} items and cannot be raised; "
+                        f"past it SharePoint may return only the newest "
+                        f"{_FALLBACK_ROW_COUNT:,} items, or none, rather than "
+                        f"reporting an error"
+                    )
+                    if not indexed_filters:
+                        remedy = (
+                            "Whether an index helps a null test is unverified by "
+                            "this project, so none is recommended here — either "
+                            "add a selective compared column to the filter, or "
+                            "accept the risk for a list that will stay small."
+                            if null_only else
+                            "Add a bare DBML index to a selective filter column, "
+                            "or accept the risk for a list that will stay small. "
+                            "An index is necessary but may not be sufficient, "
+                            "because SharePoint also considers filter order, "
+                            "selectivity and condition shape."
+                        )
+                        findings.append(Finding(
+                            "warning",
+                            f"{ctx}.where: filtered columns ({names}) have no "
+                            f"effective index. {exposure}. {remedy}",
+                        ))
+                    elif not useful_indexes:
+                        lookup_names = ", ".join(sorted(indexed_filters))
+                        findings.append(Finding(
+                            "warning",
+                            f"{ctx}.where: the only indexed filter column(s), "
+                            f"{lookup_names}, are Lookup or Person columns — "
+                            f"Microsoft classifies both as lookup fields and "
+                            f"documents that indexing one does not prevent "
+                            f"exceeding the list view threshold. {exposure}. "
+                            f"Index a selective Text, Number, Choice or Date "
+                            f"filter column instead.",
+                        ))
+            # 5000 as a literal, deliberately NOT _LIST_VIEW_THRESHOLD. This is
+            # the per-view page-size ceiling, a different limit that happens to
+            # share the value; folding them into one constant would tie a view
+            # setting to a list-size threshold they have no reason to track.
             if view.row_limit is not None and not 1 <= view.row_limit <= 5000:
                 findings.append(Finding(
                     "error", f"{ctx}: row_limit must be between 1 and 5000.",

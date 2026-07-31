@@ -134,7 +134,14 @@ def _rendered_columns(table: "Table", cross_site_cols: set[str]) -> set[str]:
     rendered: set[str] = set()
     for col in table.columns:
         if col.name == "Id" and col.is_pk and col.is_auto_increment:
-            continue  # skipped at render time; SP indexes Id natively
+            # Skipped because SharePoint provides the identity column itself,
+            # so the deploy must not create one. This used to add "SP indexes
+            # Id natively" — dropped, because nothing here has measured that
+            # and Microsoft documents it nowhere; the 2026-07-30 native-index
+            # probe found SP.Field.Indexed FALSE for ID on every list it read.
+            # Nothing branches on the claim, which is why it was easy to leave
+            # standing unexamined. See analysis/checks/_views.py.
+            continue
         if col.name in cross_site_cols:
             rendered.add(col.name + "Abbreviation")
             rendered.add(col.name + "SiteUrl")
