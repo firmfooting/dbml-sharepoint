@@ -70,7 +70,53 @@ _FALLBACK_ROW_COUNT = 1_250
 # under `Indexed` says exactly this, and it went back in.
 # https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
 # https://learn.microsoft.com/sharepoint/dev/schema/field-element-field
-_LOOKUP_FIELD_TYPES = frozenset({"person"})
+#
+# THAT RULE IS NOT FOLLOWED HERE: it is measured, and it does not hold. This is
+# the only place in this project where a Microsoft-documented statement is set
+# aside, so the evidence is set out in full and reinstating it is one line —
+# put "person" back in the frozenset and restore the branch in check().
+#
+# MEASURED 2026-07-31 AT ODDS WITH THAT RULE, on the shape this check governs.
+# At 6,000 items, with both controls valid in the same run — indexed Text
+# comparison served, unindexed twin of identical selectivity refused
+# SPQueryThrottledException — an indexed Person and an indexed Lookup filtered
+# to 60 of 6,000 were SERVED across seven query shapes: OData; CAML in the
+# LookupId form; CAML in the projected-value form; and CAML naming the lookup
+# column in <ViewFields>, which is what a real view renders.
+#
+# The last pair is the one that counts, and it is self-verified: the probe reads
+# the returned rows' keys back and records `PROJECTED: Title=Title,
+# Parent=Parent`. So the JOIN was paid for and the query was still served.
+# Without that readback the row is unreadable — RenderListDataAsStream sends a
+# standard field preamble whatever is asked for, so ViewFields being silently
+# ignored looks exactly like a join that succeeded.
+#
+# THE APPARENT COUNTER-EXAMPLE IS NOT ONE. Adding `Parent` to an All Items view
+# of the same fixture does fail — "The number of items in the list exceeds the
+# list view threshold, which is 5000 items." That view has NO selective filter,
+# so the join runs across all 6,000 rows. No index on any column averts that,
+# lookup or otherwise. The two observations agree: the index makes the FILTER
+# selective, and the join is then cheap because it runs over 60 rows.
+#
+# THE TARGET'S SIZE DOES NOT RESCUE THE RULE EITHER. The projecting query is
+# measured at two target sizes, because a join into a one-item list is the
+# cheapest that exists and proves nothing on its own. With 6,500 items in the
+# TARGET and 6,000 in the source, it is served, 60 of 60.
+#
+# SCOPE, and it is the usual scope: one tenant, one day, one selectivity — 60 of
+# 6,000, which is 1%. A less selective filter is untested and Microsoft's claim
+# is general, so an indexed lookup filter is safe at high selectivity and
+# unmeasured below it.
+#
+# A LARGE LOOKUP TARGET IS STILL A REAL PROBLEM — just not this check's. With
+# the target list past 5,000 the NEW-ITEM FORM breaks: the lookup picker refuses
+# with "This is a lookup column that displays data from another list that
+# currently exceeds the List View Threshold defined by the administrator
+# (5000)." Views read the column fine; nobody can set it. That is a form and
+# column concern, not a view filter concern, and this check says nothing about
+# it. A lookup into a large list is not safe; it is safe to READ in a view.
+# Whatever warns about the form should cite the same fixture.
+_LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 
 # SYSTEM_COLUMNS (ID, Created, Modified, Author, Editor) are dropped from this
 # check entirely, and there is no companion "natively indexed" set to pair with
@@ -108,6 +154,37 @@ _LOOKUP_FIELD_TYPES = frozenset({"person"})
 # what it will NOT settle: those four are set by the loader on every row, so no
 # selective filter over them exists, and a refusal there is attributable to
 # result-set size rather than to indexing. Only a SERVED would be informative.
+#
+# Measured 2026-07-31 at 6,000 items, and STILL NOT ESTABLISHED — exactly as
+# that probe warns it cannot be. All four were refused with HTTP 500
+# SPQueryThrottledException, which is uninformative here: the loader owns every
+# row, so each filter matches the whole list and breaches on result-set size
+# alone. Only a SERVED would have said anything about indexing. Answering this
+# needs a fixture whose rows are created by more than one principal over more
+# than one interval — a different fixture, not a longer run.
+#
+# The exclusion rests on the DBML side, so this check is unaffected either way.
+
+# FILTER ORDER DOES NOT DECIDE IT, measured 2026-07-31 at 6,000 items. The
+# fixture's unindexed column carries byte-identical data to its indexed twin, so
+# `indexed='Z' AND unindexed='Z'` matches exactly the rows either matches alone
+# — the AND restricts nothing, and the pair differs only in which condition is
+# written first. Both orderings were served, 60 of 60.
+#
+# The unindexed condition ALONE is refused with SPQueryThrottledException in the
+# same run. So an indexed condition anywhere in an AND rescues one that would
+# breach on its own, whichever is authored first: SharePoint picks the index, it
+# does not take the first column and stop. Widely-repeated advice to "put the
+# indexed column first" is not describing this platform's behaviour.
+#
+# What that does NOT license: the AND here is degenerate, both conditions
+# matching the same 60 rows. An AND whose conditions select different sets, or
+# an OR, is unmeasured — OR especially, since it cannot narrow to either index.
+#
+# NEITHER A CALCULATED NOR A MULTI-LINE TEXT COLUMN CAN CARRY AN INDEX. Both
+# were created and MERGEd with Indexed=true; the request was accepted and the
+# flag read back false. So no remedy anywhere in this file may name one, and a
+# status code alone would have reported both as indexed.
 
 # Operators that test only for presence. Microsoft's threshold guidance is
 # written for comparison filters; whether an index serves a CAML <IsNull> is
@@ -124,6 +201,44 @@ _LOOKUP_FIELD_TYPES = frozenset({"person"})
 # same number of rows, so the pair differs only in the operator — and it asks
 # CAML rather than only OData, because a view renders CAML and `eq null` is not
 # in Microsoft's documented operator list for the REST service at all.
+#
+# ANSWERED 2026-07-31, revision 1799a1e8, at 6,000 items on one site: YES, a
+# CAML <IsNull> on an INDEXED DateTime column IS served past the threshold.
+# NULCAM returned HTTP 200 with exactly its 60 expected rows, while the negative
+# control — an UNINDEXED Text comparison of identical selectivity, 60 of 6,000 —
+# was refused HTTP 500 SPQueryThrottledException, "the attempted operation is
+# prohibited because it exceeds the list view threshold", and the positive
+# control on an indexed column was served. Controls valid in both directions, so
+# the null test is not riding on a threshold that failed to engage. OData
+# `ClosedAt eq null` was served at 60 rows too — a second code path agreeing.
+#
+# The remedy below therefore recommends an index for a null-only filter.
+#
+# THE INDEX IS NECESSARY, NOT MERELY SUFFICIENT, and the way it fails without
+# one is the reason this whole check exists. Measured with a matched pair: two
+# DateTime columns holding identical values on the same 60 of 6,000 rows,
+# written in a single MERGE per row so they cannot diverge, differing ONLY in
+# the index. At 6,000 items, a CAML <IsNotNull> over each:
+#
+#   INDEXED    HTTP 200, 60 rows — correct
+#   UNINDEXED  HTTP 200, 50 rows — WRONG, AND NOT AN ERROR
+#
+# The unindexed column was not refused. It returned a partial answer, with a
+# success status and nothing to say it was partial. A separate readback through
+# an indexed filter confirmed all 60 rows really do hold both values, so this is
+# SharePoint truncating rather than data that was never there.
+#
+# That is the silent truncation described at the top of this block, caught in
+# the act — and note it truncated to 50, not to the documented 1,250 fallback,
+# so that figure is a ceiling rather than a prediction. A view built this way
+# does not break. It quietly shows the wrong rows, forever, and nothing in a
+# build or a deploy can see it.
+#
+# Recorded because it contradicts the paragraph above: OData `eq null` is absent
+# from Microsoft's documented operator list for the REST service, and the only
+# Microsoft-hosted statement found says that service does not support filtering
+# on null. It does here, under and over the threshold. That reasoning described
+# the documentation rather than the behaviour.
 _NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
@@ -363,14 +478,13 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # selectivity in this first pass.
                 if filtered and filtered <= view_rendered:
                     indexed_filters = filtered & vc.effective_indexes(entity_name)
-                    # Wider than entity_lookups on purpose — see
-                    # _LOOKUP_FIELD_TYPES. entity_lookups stays as it is
-                    # because the totals check below means the DBML sense.
-                    lookup_fields = entity_lookups | {
-                        name for name in filtered
-                        if types_by_col.get(name) in _LOOKUP_FIELD_TYPES
-                    }
-                    useful_indexes = indexed_filters - lookup_fields
+                    # An index on a Lookup or Person column counts here, same
+                    # as any other: measured at 6,000 items with the column
+                    # projected and the join verified, the query is served. See
+                    # _LOOKUP_FIELD_TYPES.
+                    #
+                    # entity_lookups is read only by the totals check below,
+                    # which means it in the DBML sense.
                     # A filter that only tests presence gets the exposure
                     # warning without the index remedy.
                     compared = {
@@ -388,34 +502,31 @@ def check(vc: ValidationContext) -> list[Finding]:
                     )
                     if not indexed_filters:
                         remedy = (
-                            "Whether an index helps a null test is unverified by "
-                            "this project, so none is recommended here — either "
-                            "add a selective compared column to the filter, or "
-                            "accept the risk for a list that will stay small."
+                            "Add a bare DBML index to the tested column. "
+                            "Measured on a matched pair at 6,000 items, the "
+                            "indexed column returned all 60 expected rows and "
+                            "the unindexed one returned 50 of 60 with HTTP 200 "
+                            "and no error — the view does not break, it "
+                            "quietly shows the wrong rows. Selectivity still "
+                            "matters: a blank that most rows share is not a "
+                            "selective filter."
                             if null_only else
                             "Add a bare DBML index to a selective filter column, "
                             "or accept the risk for a list that will stay small. "
-                            "An index is necessary but may not be sufficient, "
-                            "because SharePoint also considers filter order, "
-                            "selectivity and condition shape."
+                            "One indexed condition is enough and its position in "
+                            "the filter does not matter, but selectivity does: "
+                            "an index over a value most rows share will not save "
+                            "the query."
                         )
                         findings.append(Finding(
                             "warning",
                             f"{ctx}.where: filtered columns ({names}) have no "
                             f"effective index. {exposure}. {remedy}",
                         ))
-                    elif not useful_indexes:
-                        lookup_names = ", ".join(sorted(indexed_filters))
-                        findings.append(Finding(
-                            "warning",
-                            f"{ctx}.where: the only indexed filter column(s), "
-                            f"{lookup_names}, are Lookup or Person columns — "
-                            f"Microsoft classifies both as lookup fields and "
-                            f"documents that indexing one does not prevent "
-                            f"exceeding the list view threshold. {exposure}. "
-                            f"Index a selective Text, Number, Choice or Date "
-                            f"filter column instead.",
-                        ))
+                    # One branch only, deliberately. A view whose sole indexed
+                    # filter column is a Lookup or a Person needs no warning: an
+                    # index on either is served past the threshold. See
+                    # _LOOKUP_FIELD_TYPES for the measurement.
             # 5000 as a literal, deliberately NOT _LIST_VIEW_THRESHOLD. This is
             # the per-view page-size ceiling, a different limit that happens to
             # share the value; folding them into one constant would tie a view
