@@ -531,6 +531,67 @@ def test_dbml_index_must_not_repeat_a_unique_column(tmp_path: Path) -> None:
     )
 
 
+def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
+    """The budget cannot be counted exactly: SharePoint creates indexes itself.
+    Opening a modern view sorted on an unindexed column produced
+    "SortBait (Automatically created)", which consumes a real slot, and nothing
+    reachable from script reports the true count. So a schema that validates at
+    exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 19))
+    indexes = " ".join(f"C{i}" for i in range(1, 19))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning" and "18 of the 20" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "sorted view" in warnings[0]
+
+
+def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
+    """The budget cannot be counted exactly: SharePoint creates indexes itself.
+    Opening a modern view sorted on an unindexed column produced
+    "SortBait (Automatically created)", which consumes a real slot, and nothing
+    reachable from script reports the true count. So a schema that validates at
+    exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 18))
+    indexes = " ".join(f"C{i}" for i in range(1, 18))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning" and "18 of the 20" in f.message
+    ]
+    assert warnings == []
+
+
 def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
