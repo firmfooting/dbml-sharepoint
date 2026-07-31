@@ -3081,12 +3081,44 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     build that passes a view the deploy then creates over the ceiling, or one
     refused that was never going to exist. Nothing else in the suite catches it.
 
-    The fixture carries every shape that could pull the two apart: a real `ref`
-    (a Lookup, emitted in phase 2, not phase 1), a CROSS-SITE ref (which exists
-    only as <col>Abbreviation / <col>SiteUrl and never under its own name), a
-    `person` column, a plain `nvarchar`, and the auto-increment `Id` the
-    validator drops at validator.py:136-144 while SharePoint supplies `ID`.
+    The fixture carries every shape that could pull the two apart:
+
+    - `Assignee`, a real `ref` resolved in PHASE 1 (Person precedes Task in
+      creation order, so nothing defers it).
+    - `Parent`, a self-ref on Task — `ordering.py` always defers a self-ref,
+      so this one is a genuine phase-2 Lookup on Task's OWN list.
+    - `Manager`, a self-ref on Person — a phase-2 Lookup belonging to a
+      DIFFERENT list, so `jsgen.py`'s `lookup["list"] == list_title` filter
+      has to actually discriminate rather than pass every phase-2 entry
+      through unfiltered.
+    - `Elsewhere`, a CROSS-SITE ref, which exists only as
+      <col>Abbreviation / <col>SiteUrl and never under its own name.
+    - `Owner`, a `person` column, also named in `hide_from_all_items` — so
+      the hidden-set subtraction is load-bearing on both sides, not just
+      exercised by the generator's own tests above.
+    - `Notes`, a plain `nvarchar`.
+    - The auto-increment `Id`, which the validator drops at
+      validator.py:136-144 while SharePoint supplies `ID`.
+
+    TWO assertions, not one, because a single hand-recomputed expectation
+    re-types the validator's arithmetic instead of calling it — the exact
+    anti-pattern `analysis/joins.py`'s own docstring warns about for the
+    survey test. The first assertion pins the FIELD LIST jsgen renders
+    against an expression written by hand in this test; deleting a term
+    from `all_items_joining_fields`'s own composition in `joins.py` would
+    NOT turn it red, because it does not call that function. The second
+    assertion does call it — `all_items_joining_fields`, the validator's
+    actual shared derivation — so THAT one goes red if `| SYSTEM_COLUMNS`,
+    `| {"Title"}`, or the `hide_from_all_items` subtraction is ever dropped
+    from `joins.py`. See task-6-report.md for the drop-a-term red/green
+    evidence.
     """
+    from dbml_sharepoint.analysis.joins import (
+        all_items_hidden,
+        all_items_joining_fields,
+        join_bearing_columns,
+        joining_fields,
+    )
     from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
@@ -3095,6 +3127,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         "Table Person {\n"
         "  Id int [pk, increment]\n"
         "  Title nvarchar [not null]\n"
+        "  Manager int [ref: > Person.Id]\n"
         "}\n"
         "Table Task {\n"
         "  Id int [pk, increment]\n"
@@ -3102,6 +3135,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         "  Owner person\n"
         "  Assignee int [ref: > Person.Id]\n"
         "  Elsewhere int [ref: > Person.Id]\n"
+        "  Parent int [ref: > Task.Id]\n"
         "  Notes nvarchar\n"
         "}\n",
         encoding="utf-8",
@@ -3110,7 +3144,11 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         'prefix: "APP_"\n'
         "entities:\n"
         "  Person: { kind: List, base_template: 100, site_role: default }\n"
-        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_items: [Owner]\n"
         "cross_site_reference_columns:\n"
         "  - { entity: Task, column: Elsewhere }\n",
         encoding="utf-8",
@@ -3129,6 +3167,18 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     )["view_fields"]
 
     table = next(t for t in schema.tables if t.name == "Task")
-    derived = _rendered_columns(table, {"Elsewhere"}) | {"Title"} | SYSTEM_COLUMNS
+    entity = bundle.mapping.entities["Task"]
+    xcols = {"Elsewhere"}
 
+    derived = (
+        _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
+    ) - all_items_hidden(entity)
     assert set(generated) == derived
+
+    # Calls the validator's REAL function rather than re-typing its formula.
+    # This is what actually goes red if `joins.py`'s composition drifts from
+    # what jsgen renders — see the docstring above.
+    assert (
+        joining_fields(generated, join_bearing_columns(table, xcols))
+        == all_items_joining_fields(table, entity, xcols)
+    )
