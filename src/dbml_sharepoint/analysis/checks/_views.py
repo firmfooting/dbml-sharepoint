@@ -11,6 +11,12 @@ from dbml_sharepoint.analysis.conditions import (
     normalise,
     validate_condition,
 )
+from dbml_sharepoint.analysis.joins import (
+    JOIN_LIMIT,
+    JOIN_WARN_AT,
+    join_bearing_columns,
+    joining_fields,
+)
 from dbml_sharepoint.analysis.typemap import (
     NUMERIC_ONLY_TOTALS,
     UNSUPPORTED_INDEX_TYPES,
@@ -283,6 +289,51 @@ def _index_covered(node: Condition, indexed: frozenset[str] | set[str]) -> bool:
     return all(_index_covered(child, indexed) for child in node.children)
 
 
+def _join_finding(subject: str, columns: list[str], remedy: str) -> Finding:
+    """One finding about the list view LOOKUP threshold.
+
+    `subject` carries its own punctuation so a declared view reads
+    "views[X].Y: renders ..." while the generated view reads
+    "entities[X]: the generated 'All Items' view renders ...".
+
+    The columns are always named, in the FIRST parenthesised list in the
+    message. Author and Editor are the two nobody expects, and on All Items there
+    is no declaration to read them off. Tests assert against that list, never
+    against the whole message, because `shared` below mentions all four system
+    columns by name unconditionally.
+    """
+    count = len(columns)
+    names = ", ".join(columns)
+    # NOT f-strings: `shared` interpolates nothing, and ruff selects "F", so an
+    # `f` prefix on each of these four parts is 4 x F541
+    # ("f-string without any placeholders") and the lint step below is not
+    # clean. The two Finding(...) groups DO interpolate and keep their prefixes.
+    shared = (
+        "Every Lookup and Person column costs one join, including Created By "
+        "(Author) and Modified By (Editor); Created and Modified cost nothing, "
+        "and a cross-site reference costs nothing because it expands to a "
+        "Choice + URL pair."
+    )
+    if count > JOIN_LIMIT:
+        return Finding(
+            "error",
+            f"{subject} renders {count} join-bearing columns ({names}). "
+            f"SharePoint Online refuses a view query with more than "
+            f"{JOIN_LIMIT} join operations and returns the view BLANK, at any "
+            f"list size — indexing does not help and a small list does not "
+            f"escape it. Measured 2026-07-31 at 6,000 items: 12 rendered, 13 "
+            f"raised SPQueryThrottledException (-2147024749). {shared} {remedy}",
+        )
+    return Finding(
+        "warning",
+        f"{subject} renders {count} join-bearing columns ({names}), against a "
+        f"measured ceiling of {JOIN_LIMIT} join operations per view. That "
+        f"ceiling held on the tenant measured 2026-07-31 at 6,000 items, but 8 "
+        f"was a real limit on some SharePoint farms and the SharePoint Online "
+        f"citation is thin, so this view may not travel. {shared} {remedy}",
+    )
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
@@ -378,6 +429,12 @@ def check(vc: ValidationContext) -> list[Finding]:
         # Entity-level: the totals check needs it too, and a lookup's DBML
         # type is `int`, so nothing downstream can infer it from the type.
         entity_lookups = {c.name for c in view_table.columns if c.ref is not None}
+        # The list view LOOKUP threshold: one join per rendered Lookup or
+        # Person column, refused above 12 at ANY list size. Derived once per
+        # entity because the per-view count and the All Items count below both
+        # need it. A different limit from the 5,000-item threshold checked
+        # further down; see analysis/joins.py.
+        entity_join_bearing = join_bearing_columns(view_table, xcols)
         titles = [v.title for v in views]
         if "All Items" in titles:
             findings.append(Finding(
@@ -493,6 +550,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{ctx}: {part} references {name!r}, which is not a "
                         f"rendered column of {entity_name}.",
                     ))
+            # Counted on view.fields, which the loader has already expanded, so
+            # a view whose authored fields is ["@core"] is counted on what the
+            # set resolves to rather than as zero.
+            view_joins = joining_fields(view.fields, entity_join_bearing)
+            if len(view_joins) >= JOIN_WARN_AT:
+                findings.append(_join_finding(
+                    f"{ctx}:", view_joins, "Remove fields from this view.",
+                ))
             if view.where is not None:
                 # The shared grammar owns operator, operand and capability
                 # rules for every conditional surface; duplicating them here

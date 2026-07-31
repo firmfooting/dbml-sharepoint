@@ -4121,3 +4121,265 @@ def test_an_and_needs_only_one_branch_indexed(tmp_path: Path) -> None:
         "        - { field: Status, op: eq, value: Open }\n"
         "        - { field: DueDate, op: leq, value: today }\n",
     ) == []
+
+
+# --- View join threshold (the list view LOOKUP threshold, not the item count) ---
+
+
+def _persons(count: int) -> str:
+    """`count` person columns, P1..Pn — the cheapest join-bearing column."""
+    return "".join(f"  P{n} person\n" for n in range(1, count + 1))
+
+
+def _join_inputs(
+    tmp_path: Path, columns: str, mapping_tail: str = "",
+) -> tuple[Schema, MappingBundle]:
+    """A Project table whose extra columns the caller supplies, so a test can
+    put an exact number of join-bearing columns on it. `mapping_tail` is
+    appended inside the Project entity block — indent it four spaces to add an
+    entity key, or start at column zero to open a new top-level section."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Person {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Notes nvarchar\n"
+        f"{columns}"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Person: { kind: List, base_template: 100, site_role: default }\n"
+        "  Project:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        + mapping_tail,
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def _join_findings(
+    schema: Schema, bundle: MappingBundle, subject: str,
+) -> list[Finding]:
+    """Join-threshold findings about one subject.
+
+    Both substrings are required. 'join-bearing columns' and 'join operations'
+    occur together in no other message in this codebase, so if the check is
+    deleted this returns [] and every assertion below fails — while the
+    unnecessary-suppression warning added in Task 5, which also says
+    'join-bearing columns', is excluded because it never says 'join
+    operations'."""
+    return [
+        f for f in validate_against_mapping(schema, bundle)
+        if "join-bearing columns" in f.message
+        and "join operations" in f.message
+        and f.message.startswith(subject)
+    ]
+
+
+def _named(message: str) -> list[str]:
+    """The columns a join finding NAMES, taken from its parenthesised list.
+
+    Assert against this, never against the whole message, whenever a test cares
+    whether a column name is present or absent. `_join_finding` appends a shared
+    sentence reading "...including Created By (Author) and Modified By (Editor);
+    Created and Modified cost nothing...", so `"Created" not in f.message` and
+    `"Author" in f.message` are BOTH vacuous — the first can never pass and the
+    second passes even if the column was never counted. The parenthesised list is
+    the only part of the message that varies with the count.
+
+    The first "(" in every join finding opens that list: the subject prefixes
+    (`views[X].Y:` and `entities[X]: the generated 'All Items' view`) use
+    brackets and quotes, never parentheses."""
+    return message.split("(", 1)[1].split(")", 1)[0].split(", ")
+
+
+def _view_block(title: str, fields: list[str]) -> str:
+    return (
+        "views:\n"
+        "  Project:\n"
+        f"    - title: {title}\n"
+        f"      fields: [{', '.join(fields)}]\n"
+    )
+
+
+def test_a_view_with_eight_join_columns_is_silent(tmp_path: Path) -> None:
+    """Under every figure ever documented, anywhere. The subject filter matters:
+    this entity's generated All Items carries 10 and is warned about separately."""
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(8),
+        _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 9))]),
+    )
+    assert _join_findings(schema, bundle, "views[Project].Wide") == []
+
+
+def test_a_view_with_nine_join_columns_warns(tmp_path: Path) -> None:
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(9),
+        _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 10))]),
+    )
+    found = _join_findings(schema, bundle, "views[Project].Wide")
+    assert len(found) == 1
+    assert found[0].severity == "warning"
+    assert "9 join-bearing columns" in found[0].message
+    assert "P9" in _named(found[0].message)
+    assert "Remove fields from this view." in found[0].message
+
+
+def test_a_view_with_thirteen_join_columns_errors(tmp_path: Path) -> None:
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(13),
+        _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 14))]),
+    )
+    found = _join_findings(schema, bundle, "views[Project].Wide")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert "13 join-bearing columns" in found[0].message
+    assert "-2147024749" in found[0].message
+    assert "Remove fields from this view." in found[0].message
+
+
+def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none(
+    tmp_path: Path,
+) -> None:
+    """The pairing is the whole point: the same 12 columns pass, and adding one
+    system PERSON column fails while adding two system DATES does not.
+
+    Every name assertion goes through `_named`. Asserted against the whole
+    message they would all be vacuous — the shared sentence `_join_finding`
+    appends says "including Created By (Author) and Modified By (Editor); Created
+    and Modified cost nothing", so "Created"/"Modified"/"Author" are in EVERY
+    join message regardless of what was counted."""
+    twelve = [f"P{n}" for n in range(1, 13)]
+
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(12),
+        _view_block("Dates", ["Title", *twelve, "Created", "Modified"]),
+    )
+    dates = _join_findings(schema, bundle, "views[Project].Dates")
+    assert len(dates) == 1
+    assert dates[0].severity == "warning"
+    assert "12 join-bearing columns" in dates[0].message
+    assert "Created" not in _named(dates[0].message)
+    assert "Modified" not in _named(dates[0].message)
+
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(12), _view_block("WithAuthor", ["Title", *twelve, "Author"]),
+    )
+    with_author = _join_findings(schema, bundle, "views[Project].WithAuthor")
+    assert len(with_author) == 1
+    assert with_author[0].severity == "error"
+    assert "13 join-bearing columns" in with_author[0].message
+    assert "Author" in _named(with_author[0].message)
+
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(12), _view_block("WithEditor", ["Title", *twelve, "Editor"]),
+    )
+    with_editor = _join_findings(schema, bundle, "views[Project].WithEditor")
+    assert len(with_editor) == 1
+    assert with_editor[0].severity == "error"
+    assert "13 join-bearing columns" in with_editor[0].message
+    assert "Editor" in _named(with_editor[0].message)
+
+
+def test_a_real_ref_column_costs_a_join(tmp_path: Path) -> None:
+    """The control for the cross-site test below. The schema is identical; the
+    view must name the expanded pair rather than the column, because a cross-site
+    column never exists under its own name (validator.py:145-147). The COUNT is
+    what is being compared: 13 here, 12 there."""
+    twelve = [f"P{n}" for n in range(1, 13)]
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(12) + "  Elsewhere int [ref: > Person.Id]\n",
+        _view_block("Wide", ["Title", *twelve, "Elsewhere"]),
+    )
+    found = _join_findings(schema, bundle, "views[Project].Wide")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert "13 join-bearing columns" in found[0].message
+    assert "Elsewhere" in _named(found[0].message)
+
+
+def test_a_cross_site_ref_costs_no_join_in_a_view(tmp_path: Path) -> None:
+    twelve = [f"P{n}" for n in range(1, 13)]
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(12) + "  Elsewhere int [ref: > Person.Id]\n",
+        _view_block(
+            "Wide",
+            ["Title", *twelve, "ElsewhereAbbreviation", "ElsewhereSiteUrl"],
+        )
+        + "cross_site_reference_columns:\n"
+        "  - { entity: Project, column: Elsewhere }\n",
+    )
+    found = _join_findings(schema, bundle, "views[Project].Wide")
+    assert len(found) == 1
+    assert found[0].severity == "warning"
+    assert "12 join-bearing columns" in found[0].message
+    assert "Elsewhere" not in _named(found[0].message)
+
+
+def test_a_view_declaring_a_field_set_counts_the_join_columns_it_expands_to(
+    tmp_path: Path,
+) -> None:
+    """Sets are expanded into ViewDef.fields at load time. A view whose authored
+    fields is ["@wide"] must count what @wide resolves to, not zero.
+
+    NAMED with "join" in it on purpose. The earlier name
+    `..._is_counted_on_its_expansion` contained no "join", so `-k join` never
+    collected it and the step that was meant to watch it fail first ran five
+    words of nothing."""
+    thirteen = ", ".join(f"P{n}" for n in range(1, 14))
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(13),
+        "field_sets:\n"
+        "  Project:\n"
+        f"    wide: [{thirteen}]\n"
+        "views:\n"
+        "  Project:\n"
+        "    - title: Wide\n"
+        '      fields: [Title, "@wide"]\n',
+    )
+    found = _join_findings(schema, bundle, "views[Project].Wide")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert "13 join-bearing columns" in found[0].message
+
+
+def test_a_declared_view_counts_every_join_it_declares_even_when_hidden(
+    tmp_path: Path,
+) -> None:
+    """`hide_from_all_items` must not reach the DECLARED-view count.
+
+    The generator-side half of this rule is tested in test_jsgen.py; this is the
+    VALIDATOR-side half, and without it a plausible 'consistency' edit — both
+    derivations sit in the same entity loop, so subtracting `all_items_hidden`
+    from the per-view count looks tidy — would quietly stop erroring on a view
+    over 13 join columns with the whole suite still green.
+
+    13, not 11: P1 and P2 are hidden from All Items and the declared view keeps
+    them."""
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(13),
+        "    hide_from_all_items: [P1, P2]\n"
+        + _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 14))]),
+    )
+    found = _join_findings(schema, bundle, "views[Project].Wide")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert "13 join-bearing columns" in found[0].message
+    assert "P1" in _named(found[0].message)
+    assert "P2" in _named(found[0].message)
