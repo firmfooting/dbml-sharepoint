@@ -75,6 +75,12 @@ class EntityMapping:
     # list has one primary display field; declare it here when it is not the
     # built-in "Title" (e.g. Membership uses DisplayName). Absent → "Title".
     display_column: str | None = None
+    # The author's deliberate acceptance that this entity's display column is
+    # calculated, and therefore cannot be indexed — so a lookup into this list
+    # stops being settable once it passes ~5,000 items. Legitimate for a list
+    # that will stay small. Silences the warning completely; the acceptance is
+    # visible here, where a reviewer sees it.
+    accept_unindexable_display_column: bool = False
 
 
 @dataclass(frozen=True)

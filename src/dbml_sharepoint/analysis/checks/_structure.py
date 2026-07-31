@@ -2,6 +2,10 @@
 """Entities, cross-site references, indexes, deferred lookups, calculated columns."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.lookups import (
+    DEFAULT_DISPLAY_COLUMN,
+    lookup_target_entities,
+)
 from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.analysis.typemap import UNSUPPORTED_INDEX_TYPES
 from dbml_sharepoint.analysis.validator import (
@@ -69,6 +73,13 @@ def check(vc: ValidationContext) -> list[Finding]:
     cross_site_by_entity = vc.cross_site_by_entity
     findings: list[Finding] = []
 
+    # Shared with `lookup_display_columns`, which decides which lists get the
+    # picker's index. A second copy of this comprehension is how the warning
+    # below comes to fire for a list the deployer never indexes, or stay silent
+    # for one it does — and it did: a list reached only by a CROSS-SITE ref has
+    # no picker at all, so it was told its picker would stop working.
+    lookup_targets = lookup_target_entities(schema, vc.cross_site_pairs)
+
     # `kind: DocumentLibrary` is REFUSED, and refused here so that it fails
     # at build rather than part-way through a paste.
     #
@@ -120,6 +131,107 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"'{entity.kind}'. If you meant a document library, that kind is "
                 f"refused outright — see issue #14.",
             ))
+
+        # A lookup's picker enumerates its target list. A calculated display
+        # column cannot be indexed, so the enumeration is refused once the
+        # target passes the threshold and the column becomes unsettable.
+        # MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2:
+        # at 6,500 items in the target, GetLookupFieldChoices served an indexed
+        # ShowField (2,000 choices) and refused both calculated ones with
+        # SPQueryThrottledException; and CALCIDX set Indexed=true on a
+        # calculated column, the MERGE was ACCEPTED, and the flag read back
+        # false.
+        #
+        # A warning rather than an error because a list that stays small has no
+        # problem, and that is a common, legitimate case.
+        display = entity.display_column or DEFAULT_DISPLAY_COLUMN
+        is_calculated = display in vc.calculated_by_entity.get(entity_name, set())
+        if entity_name in lookup_targets and is_calculated:
+            if not entity.accept_unindexable_display_column:
+                findings.append(Finding(
+                    "warning",
+                    f"{entity_name}.display_column: {display!r} is a calculated "
+                    f"column. Calculated columns cannot be indexed, so this "
+                    f"list's lookup picker stops working once it passes roughly "
+                    f"5,000 items: the new-item form fails with \"exceeds the "
+                    f"list view threshold\" while views carry on working "
+                    f"normally. If this list will stay small, set "
+                    f"accept_unindexable_display_column: true on the entity.",
+                ))
+        elif entity.accept_unindexable_display_column:
+            # Reaching here means NOT (target AND calculated), which is three
+            # combinations, not one. The message used to assert "the display
+            # column is not calculated" in all three — false for a calculated
+            # display column on an entity nothing looks up, which is precisely
+            # the case an author is most likely to have set the key for. State
+            # only what is true of the branch actually taken.
+            reasons = []
+            if entity_name not in lookup_targets:
+                reasons.append("nothing looks this entity up")
+            if not is_calculated:
+                reasons.append(f"the display column {display!r} is not calculated")
+            findings.append(Finding(
+                "warning",
+                f"{entity_name}: accept_unindexable_display_column is set, but "
+                + " and ".join(reasons)
+                + ". Remove it — there is nothing to accept.",
+            ))
+
+        # The display column's index is IMPLICIT: it is appended in
+        # generators/jsgen.py after everything below has run, so neither of the
+        # two guards a declared `indexes { }` entry passes applies to it. Both
+        # apply just as hard.
+        #
+        # An unindexable type here is a DEPLOY ABORT, not a cosmetic miss:
+        # templates/deploy/_field_reconcile.js.j2 sets desired.indexed = true,
+        # MERGEs it, reads the flag back and THROWS when it did not stick —
+        # part-way through a run, after earlier phases have written to the site.
+        # Errors, not warnings: no acceptance can make a Note column indexable,
+        # which is what separates these from the calculated case above.
+        display_table = tables_by_name.get(entity_name)
+        if (
+            entity_name in lookup_targets
+            and not is_calculated
+            and display_table is not None
+        ):
+            display_xcols = cross_site_by_entity.get(entity_name, set())
+            declared_names = {col.name: col for col in display_table.columns}
+            rendered_names = _rendered_columns(display_table, display_xcols)
+            if display in declared_names and display not in rendered_names:
+                # A name that is not declared AT ALL is already reported by
+                # analysis.checks._naming, which sees every lookup into this
+                # entity. Only the declared-but-not-rendered case is invisible
+                # there: a cross-site logical column, or the auto-increment Id.
+                hint = (
+                    " — a cross-site logical column is replaced by generated "
+                    "Abbreviation and SiteUrl fields, so it never exists on the "
+                    "list"
+                    if display in display_xcols
+                    else ""
+                )
+                findings.append(Finding(
+                    "error",
+                    f"{entity_name}.display_column: {display!r} is not a "
+                    f"rendered column of {entity_name}{hint}. It is indexed "
+                    f"automatically because this list is a lookup target, so "
+                    f"the deploy would create that index on a field that does "
+                    f"not exist.",
+                ))
+            display_column = declared_names.get(display)
+            if (
+                display_column is not None
+                and display_column.type in UNSUPPORTED_INDEX_TYPES
+            ):
+                findings.append(Finding(
+                    "error",
+                    f"{entity_name}.display_column: {display!r} is a "
+                    f"{UNSUPPORTED_INDEX_TYPES[display_column.type]} column, "
+                    f"which SharePoint cannot index. A lookup target's display "
+                    f"column is indexed automatically so its picker keeps "
+                    f"working past 5,000 items, and the deploy sets "
+                    f"Indexed=true, reads it back and fails when it did not "
+                    f"stick. Name an indexable column as display_column.",
+                ))
 
     # Every entity in the mapping must exist in the schema.
     for entity_name in bundle.mapping.entities:
@@ -242,11 +354,55 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
         effective_indexes = vc.effective_indexes(entity_name)
         if len(effective_indexes) > 20:
+            # Name the implicit contributors. The old message said only
+            # "(including unique columns)", which on the case this rule exists
+            # for — twenty declared indexes on a lookup target, no unique
+            # columns anywhere — is both unhelpful and false: the author counts
+            # twenty and is told the twenty-first comes from something that is
+            # not there.
+            declared = vc.explicit_indexes_by_entity.get(entity_name, set())
+            extra: list[str] = []
+            implicit_unique = sorted(unique_indexes - declared)
+            if implicit_unique:
+                extra.append(
+                    ", ".join(repr(name) for name in implicit_unique)
+                    + (" from a [unique] column" if len(implicit_unique) == 1
+                       else " from [unique] columns"),
+                )
+            display_index = vc.display_index_by_entity.get(entity_name)
+            if display_index is not None and display_index not in declared | unique_indexes:
+                extra.append(
+                    f"{display_index!r}, indexed automatically because this "
+                    f"list is a lookup target — a picker cannot enumerate an "
+                    f"unindexed column past 5,000 items",
+                )
             findings.append(Finding(
                 "error",
                 f"{entity_name}.indexes: {len(effective_indexes)} "
-                f"effective indexes exceed SharePoint's limit of 20 "
-                f"(including unique columns).",
+                f"effective indexes exceed SharePoint's limit of 20. "
+                f"{len(declared)} declared in indexes {{ }}"
+                + "".join(f", plus {item}" for item in extra)
+                + ".",
+            ))
+        elif len(effective_indexes) >= 18:
+            # The count is a floor, not a total. SharePoint creates indexes on
+            # its own: opening a modern view sorted on an unindexed column
+            # produces one marked "(Automatically created)" that consumes a real
+            # slot, and nothing reachable from script reports the true number —
+            # the only place it exists is the "You have created N of maximum 20
+            # indices on this list" line on IndexedColumns.aspx. So a schema
+            # that validates at exactly 20 can still hit 21 in production.
+            # MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2:
+            # opening a modern view sorted on an unindexed column at 3,000 items
+            # created an index marked "(Automatically created)" on IndexedColumns.aspx,
+            # consuming one of the twenty.
+            findings.append(Finding(
+                "warning",
+                f"{entity_name}.indexes: {len(effective_indexes)} of the 20 "
+                f"available indexes are already spoken for. SharePoint also "
+                f"creates indexes by itself — opening a sorted view on an "
+                f"unindexed column adds one — and those are invisible to this "
+                f"build, so leave headroom.",
             ))
         columns_by_name = {col.name: col for col in indexed_table.columns}
         for col_name in indexed:

@@ -63,6 +63,150 @@ def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
     assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
 
 
+def test_a_lookup_targets_display_column_is_deployed_as_an_index(
+    tmp_path: Path,
+) -> None:
+    """The validator counts this index against the ceiling; the deployer has to
+    actually create it, or the picker breaks on the first large list."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  EventRef nvarchar\n"
+        "  indexes { EventRef }\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: EventRef }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    output = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    assert {"list": "APP_Event", "field": "EventRef"} in output["indexed_columns"]
+    # Once, not twice, when it is also declared in indexes { }.
+    assert output["indexed_columns"].count(
+        {"list": "APP_Event", "field": "EventRef"},
+    ) == 1
+
+
+class _CrossSiteExpansion(BaseExtension):
+    """The Choice + URL pair a cross-site reference really becomes."""
+
+    def expand_column(
+        self, table: Any, column: Any, bundle: Any,
+    ) -> list[dict[str, Any]] | None:
+        return [
+            {
+                "title": f"{column.name}Abbreviation",
+                "body": {
+                    "__metadata": {"type": "SP.FieldChoice"},
+                    "Title": f"{column.name}Abbreviation",
+                    "FieldTypeKind": 6,
+                    "Choices": {"results": ["A"]},
+                    "Required": False,
+                },
+            },
+            {
+                "title": f"{column.name}SiteUrl",
+                "body": {
+                    "__metadata": {"type": "SP.FieldUrl"},
+                    "Title": f"{column.name}SiteUrl",
+                    "FieldTypeKind": 11,
+                    "Required": False,
+                },
+            },
+        ]
+
+
+def test_a_cross_site_ref_does_not_index_the_far_list(tmp_path: Path) -> None:
+    """A cross_site_reference_columns entry is expanded into a Choice + URL pair
+    on the source list, not a Lookup — nothing enumerates the far list, so it has
+    no picker. Emitting an index for it is a real Indexed=true MERGE on a
+    customer tenant that buys nothing."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table FlowRunLog {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Request {\n"
+        "  Id int [pk, increment]\n"
+        "  Origin int [ref: > FlowRunLog.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  FlowRunLog: { kind: List, base_template: 100, site_role: default }\n"
+        "  Request: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Request, column: Origin }\n",
+        encoding="utf-8",
+    )
+    output = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"),
+        load_mapping(tmp_path / "m.yaml"),
+        "default",
+        extension=_CrossSiteExpansion(),
+    )
+    assert output["indexed_columns"] == []
+
+
+def test_a_target_of_both_ref_kinds_still_gets_its_index(tmp_path: Path) -> None:
+    """Per-pair, not per-entity: FlowRunLog is named by a cross-site ref AND by a
+    real lookup, so its picker exists and its display column must stay indexed."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table FlowRunLog {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Request {\n"
+        "  Id int [pk, increment]\n"
+        "  Origin int [ref: > FlowRunLog.Id]\n"
+        "}\n"
+        "Table Alert {\n"
+        "  Id int [pk, increment]\n"
+        "  Source int [ref: > FlowRunLog.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  FlowRunLog: { kind: List, base_template: 100, site_role: default }\n"
+        "  Request: { kind: List, base_template: 100, site_role: default }\n"
+        "  Alert: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Request, column: Origin }\n",
+        encoding="utf-8",
+    )
+    output = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"),
+        load_mapping(tmp_path / "m.yaml"),
+        "default",
+        extension=_CrossSiteExpansion(),
+    )
+    assert output["indexed_columns"] == [{"list": "APP_FlowRunLog", "field": "Title"}]
+
+
 def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> None:
     """Single-value Choice and Lookup fields support SharePoint uniqueness."""
     from dbml_sharepoint.generators.jsgen import build_schema_json

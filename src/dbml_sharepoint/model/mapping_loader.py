@@ -129,6 +129,7 @@ KNOWN_SECTIONS = frozenset({
 
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
+    "accept_unindexable_display_column",
 })
 _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
@@ -186,7 +187,12 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             base_template=int(spec["base_template"]),
             site_role=spec["site_role"],
             singleton=_optional_bool(spec, "singleton", f"entities.{name}"),
-            display_column=spec.get("display_column"),
+            display_column=_optional_str(
+                spec, "display_column", f"entities.{name}",
+            ),
+            accept_unindexable_display_column=_optional_bool(
+                spec, "accept_unindexable_display_column", f"entities.{name}",
+            ),
         )
 
     cross_site = []
@@ -884,6 +890,21 @@ def _optional_bool(raw: dict[str, Any], key: str, context: str) -> bool:
     value = raw.get(key, False)
     if not isinstance(value, bool):
         raise ValueError(f"{context}.{key} must be a boolean, got {value!r}")
+    return value
+
+
+def _optional_str(raw: dict[str, Any], key: str, context: str) -> str | None:
+    """Read an optional string, refusing anything YAML happened to parse instead.
+
+    `display_column: [Title]` is a plausible typo and YAML accepts it as a list.
+    Passed through, it reaches a set-membership test deep in validation and
+    raises `TypeError: unhashable type: 'list'` — a traceback instead of the
+    ordinary "this column does not exist" error the author needed. Refuse the
+    shape here, where the context string can name the key.
+    """
+    value = raw.get(key)
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"{context}.{key} must be a string, got {value!r}")
     return value
 
 

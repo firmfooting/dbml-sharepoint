@@ -520,6 +520,10 @@
   ],
   "indexed_columns": [
     {
+      "field": "Title",
+      "list": "APP_Project"
+    },
+    {
       "field": "DueDate",
       "list": "APP_Task"
     }

@@ -28,7 +28,9 @@ from typing import Any
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
+from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.typemap import SPField, map_column
+from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
 from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
@@ -682,6 +684,17 @@ def generate_data_dictionary(
     }
     mapping = bundle.mapping
     prefix = mapping.prefix
+    # cross_site_keys above is exactly the pair set lookup_display_columns
+    # needs, so the report excludes a cross-site ref's target for the same
+    # reason the validator and the deployer do: it renders as a Choice + URL
+    # pair, and no picker exists on the far side to protect.
+    calculated_by_entity = {
+        table.name: {c.name for c in table.columns if c.type in CALCULATED_TYPES}
+        for table in schema.tables
+    }
+    display_columns = lookup_display_columns(
+        schema, mapping.entities, calculated_by_entity, cross_site_keys,
+    )
 
     lines = [
         f"# Data dictionary — `{prefix}` (site role `{site_role}`)",
@@ -729,7 +742,17 @@ def generate_data_dictionary(
                 f"{_md_cell(description)} |",
             )
         details: list[str] = []
-        indexed = deployable_index_columns(table)
+        # The declared indexes PLUS the one a lookup target gets for free. A
+        # list that anything looks up is indexed on its display column so the
+        # picker keeps working past 5,000 items, and that index spends one of
+        # the twenty — so a dictionary listing only the declared ones
+        # understates a budget an author is reading this page to manage.
+        # Derived from the same lookup_display_columns the deployer emits from,
+        # so the report cannot disagree with what is deployed.
+        indexed = list(deployable_index_columns(table))
+        display = display_columns.get(table.name)
+        if display is not None and display not in indexed:
+            indexed.append(f"{display} (lookup display column)")
         if indexed:
             details.append(f"Indexed columns: {', '.join(indexed)}.")
         v_override = mapping.versioning_overrides.get(table.name, {})

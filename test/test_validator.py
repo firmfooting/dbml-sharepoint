@@ -531,6 +531,177 @@ def test_dbml_index_must_not_repeat_a_unique_column(tmp_path: Path) -> None:
     )
 
 
+def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
+    """The budget cannot be counted exactly: SharePoint creates indexes itself.
+    Opening a modern view sorted on an unindexed column produced
+    "SortBait (Automatically created)", which consumes a real slot, and nothing
+    reachable from script reports the true count. So a schema that validates at
+    exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 19))
+    indexes = " ".join(f"C{i}" for i in range(1, 19))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning" and "18 of the 20" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "sorted view" in warnings[0]
+
+
+def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
+    """The budget cannot be counted exactly: SharePoint creates indexes itself.
+    Opening a modern view sorted on an unindexed column produced
+    "SortBait (Automatically created)", which consumes a real slot, and nothing
+    reachable from script reports the true count. So a schema that validates at
+    exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 18))
+    indexes = " ".join(f"C{i}" for i in range(1, 18))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning" and "18 of the 20" in f.message
+    ]
+    assert warnings == []
+
+
+def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> None:
+    """The error firing at > 20 means the warning is unreachable at that threshold.
+    This test pins the mutual exclusion: at 21 the author needs the error, and a
+    headroom warning beside it would be noise about a list that is already over."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 22))
+    indexes = " ".join(f"C{i}" for i in range(1, 22))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    errors = [
+        f.message
+        for f in findings
+        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
+    ]
+    warnings = [
+        f.message
+        for f in findings
+        if f.severity == "warning" and "available indexes are already spoken for" in f.message
+    ]
+    assert len(errors) == 1
+    assert len(warnings) == 0
+
+
+def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst(
+    tmp_path: Path,
+) -> None:
+    """The case this whole rule exists for. The author declared twenty, has no
+    unique columns, and the only hint used to be "(including unique columns)" —
+    which is false here. The error must name the display column as the index
+    they cannot see."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 21))
+    indexes = " ".join(f"C{i}" for i in range(1, 21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Event {{\n  Id int [pk, increment]\n  Title nvarchar\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    errors = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "21 " in errors[0]
+    assert "20 declared in indexes" in errors[0]
+    assert "'Title'" in errors[0]
+    assert "lookup target" in errors[0]
+    # The old parenthetical claimed unique columns were in the count. There are
+    # none on this list, so it must not say so.
+    assert "unique" not in errors[0]
+
+
+def test_the_over_budget_error_names_unique_columns_when_there_are_some(
+    tmp_path: Path,
+) -> None:
+    """The other implicit contributor. Naming one and not the other would send
+    an author looking in the wrong place."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 21))
+    indexes = " ".join(f"C{i}" for i in range(1, 21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n  Code nvarchar [unique]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    errors = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "'Code' from a [unique] column" in errors[0]
+    # Nothing looks Big up, so there is no display-column index to blame.
+    assert "lookup target" not in errors[0]
+
+
 def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1200,6 +1371,263 @@ def test_indexed_calculated_column_is_error() -> None:
     )
 
 
+# --- Lookup target's display column must be indexable -----------------------
+
+
+def _calculated_display_inputs(
+    tmp_path: Path, *, accepted: bool,
+) -> tuple[Schema, MappingBundle]:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Ref nvarchar\n"
+        "  Label calculated_text\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    accept = ", accept_unindexable_display_column: true" if accepted else ""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        f"display_column: Label{accept} }}\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_calculated_display_column_warns_about_the_form(tmp_path: Path) -> None:
+    """A warning, not an error: a target that stays under 5,000 has no problem.
+    But the message must say the FORM breaks — "cannot be indexed" does not tell
+    an author what their users will see."""
+    schema, bundle = _calculated_display_inputs(tmp_path, accepted=False)
+    warnings = [
+        f.message
+        for f in validate_against_mapping(schema, bundle)
+        if f.severity == "warning" and "display_column" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "Label" in warnings[0]
+    assert "new-item form" in warnings[0]
+    assert "5,000" in warnings[0]
+    assert "accept_unindexable_display_column" in warnings[0]
+    # Not an error: a small list is a legitimate case.
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error" and "display_column" in f.message
+    ]
+
+
+def test_accepting_it_silences_the_warning_completely(tmp_path: Path) -> None:
+    """Silent, not downgraded. The acceptance is visible in the mapping; an
+    info line every build is the same noise one rung down, and a notice nobody
+    can resolve is a notice everyone learns to skim."""
+    schema, bundle = _calculated_display_inputs(tmp_path, accepted=True)
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if "display_column" in f.message
+    ]
+
+
+def _display_type_inputs(
+    tmp_path: Path, column_type: str, *, looked_up: bool,
+) -> tuple[Schema, MappingBundle]:
+    follow_up = (
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n"
+        if looked_up else ""
+    )
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        f"  Notes {column_type}\n"
+        "}\n" + follow_up,
+        encoding="utf-8",
+    )
+    entities = (
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Notes }\n"
+    )
+    if looked_up:
+        entities += "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\nentities:\n' + entities, encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+@pytest.mark.parametrize(
+    ("column_type", "described_as"),
+    [
+        ("longtext", "Multiple lines of text (Note)"),
+        ("richtext", "Multiple lines of text (Note)"),
+        ("hyperlink", "Hyperlink"),
+    ],
+)
+def test_an_unindexable_display_column_type_is_an_error(
+    tmp_path: Path, column_type: str, described_as: str,
+) -> None:
+    """The display column's index is appended by jsgen AFTER validation, so it
+    never met the type guard every declared `indexes { }` entry passes. It is a
+    deploy abort: _field_reconcile.js.j2 MERGEs Indexed=true, reads it back and
+    throws part-way through a run. An ERROR, not a warning — no acceptance can
+    make a Note column indexable."""
+    schema, bundle = _display_type_inputs(tmp_path, column_type, looked_up=True)
+    errors = [
+        f.message
+        for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error" and "display_column" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "Notes" in errors[0]
+    assert described_as in errors[0]
+    assert "cannot index" in errors[0]
+
+
+def test_an_unindexable_display_column_is_fine_when_nothing_looks_it_up(
+    tmp_path: Path,
+) -> None:
+    """No lookup into it means no implicit index, so there is nothing to refuse.
+    Erroring here would ban a perfectly good Note column from being the label a
+    report happens to print."""
+    schema, bundle = _display_type_inputs(tmp_path, "longtext", looked_up=False)
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error" and "display_column" in f.message
+    ]
+
+
+def test_a_display_column_that_is_never_rendered_is_an_error(tmp_path: Path) -> None:
+    """A cross-site logical column is declared in the DBML but replaced at deploy
+    time by generated Abbreviation and SiteUrl fields, so it never exists on the
+    list. _naming.py cannot see this — the name IS a declared column — and the
+    implicit index would be created on a field that is not there."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Region {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Region int [ref: > Region.Id]\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Region: { kind: List, base_template: 100, site_role: default }\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Region }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Event, column: Region }\n",
+        encoding="utf-8",
+    )
+    errors = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "error" and "display_column" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "not a rendered column" in errors[0]
+    assert "Abbreviation" in errors[0]
+
+
+def test_a_pointless_acceptance_warns(tmp_path: Path) -> None:
+    """Set where the display column is perfectly indexable, it signals a
+    misunderstanding rather than a decision."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Ref nvarchar\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Ref, accept_unindexable_display_column: true }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning"
+        and "accept_unindexable_display_column" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "is not calculated" in warnings[0]
+
+
+def test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth(
+    tmp_path: Path,
+) -> None:
+    """Not a lookup target, display column IS calculated, key set. The verdict
+    (remove it) is right, but the message used to say "the display column
+    'Label' is not calculated" about a column that is. The combination had no
+    test, which is why the false message shipped."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Label calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Label, accept_unindexable_display_column: true }\n"
+        "calculated_formulas:\n"
+        "  Event:\n"
+        '    Label: "=[Title]"\n',
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning"
+        and "accept_unindexable_display_column" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "nothing looks this entity up" in warnings[0]
+    # 'Label' IS calculated. Saying otherwise is simply untrue.
+    assert "is not calculated" not in warnings[0]
+    assert "Remove it" in warnings[0]
+
+
 # --- Declared views ---------------------------------------------------------
 
 
@@ -1418,6 +1846,76 @@ def test_indexed_lookup_filter_does_not_warn(tmp_path: Path) -> None:
         and "list view threshold" in finding.message
     ]
     assert warnings == []
+
+
+@pytest.mark.parametrize(
+    "display_column",
+    [None, "Label"],
+    ids=["default_title", "declared_display_column"],
+)
+def test_view_filtered_on_lookup_targets_display_column_does_not_warn(
+    tmp_path: Path, display_column: str | None,
+) -> None:
+    """Locks in what Task 2 exists to produce: a lookup target's display
+    column carries an implicit index (a picker past the 5,000-item threshold
+    needs it — see analysis/lookups.py), so THIS check — which only ever
+    reads `vc.effective_indexes` — must score a view on the TARGET entity
+    that filters on that column as safe, even with no explicit `indexes {}`
+    entry naming it. Parameterised over the default display column (Title,
+    when the mapping declares nothing) and an explicit `display_column`,
+    because Task 2 folds both in the same way.
+
+    Filtering on a different, non-display, unindexed column on the same
+    entity must still warn — proving the check still fires at all, so a bug
+    that silenced it completely could not pass the first half vacuously.
+    """
+    filtered_column = display_column or "Title"
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Label nvarchar\n"
+        "  Status nvarchar\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    display_clause = f", display_column: {display_column}" if display_column else ""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        f"  Event: {{ kind: List, base_template: 100, site_role: default"
+        f"{display_clause} }}\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
+        "views:\n"
+        "  Event:\n"
+        "    - title: Filtered by display\n"
+        "      fields: [Title, Label, Status]\n"
+        f"      where: [{{ field: {filtered_column}, op: eq, value: X }}]\n"
+        "    - title: Filtered by other\n"
+        "      fields: [Title, Label, Status]\n"
+        "      where: [{ field: Status, op: eq, value: Y }]\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    threshold_warnings = [
+        f.message for f in findings
+        if f.severity == "warning" and "list view threshold" in f.message
+    ]
+    display_warnings = [
+        m for m in threshold_warnings if "views[Event].Filtered by display" in m
+    ]
+    other_warnings = [
+        m for m in threshold_warnings if "views[Event].Filtered by other" in m
+    ]
+    assert display_warnings == [], display_warnings
+    assert other_warnings != [], "the check must still warn on a real gap"
 
 
 def test_indexed_person_filter_does_not_warn(tmp_path: Path) -> None:
@@ -3390,3 +3888,236 @@ def test_names_that_differ_only_in_case_are_refused(tmp_path: Path) -> None:
         assert any(
             f.message.startswith(what) and "case" in f.message for f in errors
         ), (what, [f.message for f in errors])
+
+
+def test_a_lookup_targets_display_column_counts_as_an_index(tmp_path: Path) -> None:
+    """The picker's index is real and spends a real slot, so the ceiling must
+    see it. Declaring 20 and needing a 21st has to fail at validate time, not at
+    deploy time on someone's tenant."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Status nvarchar\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    vc = ValidationContext.build(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert "Title" in vc.effective_indexes("Event")
+    # The child is not a target of anything.
+    assert vc.effective_indexes("FollowUp") == set()
+
+
+def _cross_site_only_target(tmp_path: Path, *, calculated: bool) -> tuple[Schema, MappingBundle]:
+    """FlowRunLog is pointed at by exactly one ref, and that ref is cross-site."""
+    display = "  Label calculated_text\n" if calculated else "  Label nvarchar\n"
+    formulas = (
+        "calculated_formulas:\n  FlowRunLog:\n    Label: \"=[Title]\"\n"
+        if calculated else ""
+    )
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table FlowRunLog {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        + display +
+        "}\n"
+        "Table Request {\n"
+        "  Id int [pk, increment]\n"
+        "  Origin int [ref: > FlowRunLog.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  FlowRunLog: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Label }\n"
+        "  Request: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Request, column: Origin }\n"
+        + formulas,
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_cross_site_only_target_spends_no_index(tmp_path: Path) -> None:
+    """A cross-site ref becomes a Choice + URL pair on the SOURCE list. Nothing
+    enumerates FlowRunLog, so it has no picker — charging it an index would spend
+    one of its twenty on a query that never happens."""
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    schema, bundle = _cross_site_only_target(tmp_path, calculated=False)
+    vc = ValidationContext.build(schema, bundle)
+    assert vc.effective_indexes("FlowRunLog") == set()
+
+
+def test_a_cross_site_only_target_is_not_told_its_picker_breaks(
+    tmp_path: Path,
+) -> None:
+    """The warning claims 'this list's lookup picker stops working'. Said about a
+    list with no picker it is simply false, and the author's only way to silence
+    it is to accept a consequence that cannot occur."""
+    schema, bundle = _cross_site_only_target(tmp_path, calculated=True)
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if "display_column" in f.message and "FlowRunLog" in f.message
+    ], [f.message for f in validate_against_mapping(schema, bundle)]
+
+
+def test_a_target_of_both_ref_kinds_keeps_its_index(tmp_path: Path) -> None:
+    """Per-pair, not per-entity. Excluding every entity NAMED in
+    cross_site_reference_columns would strip the index off a list whose picker is
+    real, which is the same defect pointing the other way."""
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table FlowRunLog {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Request {\n"
+        "  Id int [pk, increment]\n"
+        "  Origin int [ref: > FlowRunLog.Id]\n"
+        "}\n"
+        "Table Alert {\n"
+        "  Id int [pk, increment]\n"
+        "  Source int [ref: > FlowRunLog.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  FlowRunLog: { kind: List, base_template: 100, site_role: default }\n"
+        "  Request: { kind: List, base_template: 100, site_role: default }\n"
+        "  Alert: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Request, column: Origin }\n",
+        encoding="utf-8",
+    )
+    vc = ValidationContext.build(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert vc.effective_indexes("FlowRunLog") == {"Title"}
+
+
+def test_a_calculated_display_column_does_not_count_as_an_index(tmp_path: Path) -> None:
+    """It cannot be indexed, so counting it would push a schema over the ceiling
+    for an index that cannot exist — the failure mode in the other direction."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Ref nvarchar\n"
+        "  Label calculated_text\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Label }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    vc = ValidationContext.build(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert "Label" not in vc.effective_indexes("Event")
+
+
+_SHAPE_SCHEMA = (
+    "Project t { database_type: 'SharePoint Online' }\n"
+    "Table Job {\n"
+    "  Id int [pk, increment]\n"
+    "  Title nvarchar\n"
+    "  Status nvarchar\n"
+    "  DueDate date\n"
+    "  indexes { Status }\n"
+    "}\n"
+)
+
+
+def _shape_warnings(tmp_path: Path, where: str) -> list[str]:
+    (tmp_path / "s.dbml").write_text(_SHAPE_SCHEMA, encoding="utf-8")
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Job: { kind: List, base_template: 100, site_role: default }\n"
+        "views:\n"
+        "  Job:\n"
+        "    - title: V\n"
+        "      fields: [Title, Status, DueDate]\n" + where,
+        encoding="utf-8",
+    )
+    return [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if "list view threshold" in f.message
+    ]
+
+
+def test_an_or_needs_every_branch_indexed(tmp_path: Path) -> None:
+    """An OR cannot narrow to one index. A row matching only the unindexed
+    branch is still a row SharePoint has to find, so an indexed branch beside
+    an unindexed one buys nothing — and scoring it safe because SOME filtered
+    column is indexed is how a scanning view passes validation."""
+    assert len(_shape_warnings(
+        tmp_path,
+        "      where:\n"
+        "        any_of:\n"
+        "          - { field: Status, op: eq, value: Open }\n"
+        "          - { field: DueDate, op: leq, value: today }\n",
+    )) == 1
+
+
+def test_an_or_with_every_branch_indexed_is_quiet(tmp_path: Path) -> None:
+    """Both branches narrow, so neither forces a scan."""
+    assert _shape_warnings(
+        tmp_path,
+        "      where:\n"
+        "        any_of:\n"
+        "          - { field: Status, op: eq, value: Open }\n"
+        "          - { field: Status, op: eq, value: Held }\n",
+    ) == []
+
+
+def test_an_and_needs_only_one_branch_indexed(tmp_path: Path) -> None:
+    """Measured at 6,000 items: an unindexed comparison refused on its own is
+    served when ANDed with an indexed one, in either order — SharePoint picks
+    the index rather than taking the first column and stopping. So an AND is
+    covered by one indexed condition wherever it sits, and this test is what
+    stops the OR rule above being applied to both."""
+    assert _shape_warnings(
+        tmp_path,
+        "      where:\n"
+        "        - { field: Status, op: eq, value: Open }\n"
+        "        - { field: DueDate, op: leq, value: today }\n",
+    ) == []

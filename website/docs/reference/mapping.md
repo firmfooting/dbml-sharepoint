@@ -39,7 +39,58 @@ entities:
 | `base_template` | SP base template id. **Must be `100`**, the generic list — anything else fails the build |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
-| `display_column` | Optional; which column represents the row in lookups |
+| `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** — a picker cannot enumerate an unindexed column past 5,000 items — so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build |
+| `accept_unindexable_display_column` | Optional; accept that a **calculated** `display_column` cannot be indexed, and that this list's lookup picker will therefore stop working past ~5,000 items. Silences the warning |
+
+:::warning A lookup into a large list breaks the FORM, not the views
+
+A Lookup column's picker enumerates its target list. Past the 5,000-item list
+view threshold that enumeration is refused, and the **new-item form stops
+working** — the column cannot be set at all — while every view that merely
+displays it carries on normally. The failure looks like a form bug and arrives
+late, on the busiest list.
+
+Measured at 6,500 items against `GetLookupFieldChoices`, the call the form itself
+makes (`test/manual/threshold-index-probe.js`, 2026-07-31). The column varied is
+SharePoint's `ShowField`, which is what `display_column` sets:
+
+| ShowField | Result |
+|---|---|
+| `Title`, indexed | served, 2,000 choices |
+| a Calculated column | refused, `SPQueryThrottledException` |
+
+This is why `display_column` is indexed for you. A **calculated** display column
+cannot be indexed at all — setting `Indexed=true` is accepted and reads back
+`false` — so there is no index to create and the picker will fail once the list
+grows. That is what `accept_unindexable_display_column` accepts.
+
+A `cross_site_reference_columns` entry is **not** a Lookup and none of this
+applies to it. It is expanded into a Choice + URL pair on the source list, so
+nothing enumerates the target: a list reached only that way keeps all twenty of
+its indexes and is never warned about a picker it does not have.
+:::
+
+:::danger SharePoint cannot filter a lookup
+
+There is no way to restrict which rows a Lookup's picker offers. All three
+apparent levers were measured on a live tenant and all three are closed:
+
+- **The field has no filtering attribute.** A Lookup carries `List`, `ShowField`
+  and `Mult`, and nothing that restricts its choices.
+- **A conditional calculated column returning `""` does not work past 5,000.**
+  This is the workaround most community guidance recommends, and its ceiling is
+  undocumented: a calculated column cannot be indexed, so the picker's
+  enumeration must scan and is refused.
+- **The target list's default view filter is ignored.** With a view filtering the
+  target to 1,000 of 6,500 rows *and set as the default*, the picker still
+  offered rows outside it.
+
+If you need a filtered picker, the options are outside a list schema: an SPFx
+form customizer built on `@pnp/spfx-controls-react`'s `ListItemPicker` — PnP's
+own documentation, not a measurement made here, says it takes a real OData
+filter — or a smaller curated target list. Neither is expressible in
+`mapping.yaml`, and this tool will not pretend otherwise.
+:::
 
 :::danger `kind: DocumentLibrary` is refused at build time
 
