@@ -140,23 +140,42 @@ Surfaced at build time by the validator, not discovered at deploy time:
 - A calculated formula referencing a name that is not a column of the
   entity is refused, naming the reference.
 
-:::warning Calculated formulas: check the operand types yourself
+:::warning Calculated-formula operand types
 
-SharePoint does not allow a calculated column to reference a **Lookup** or
-**Person** column, and the validator does **not** catch it. Verified:
-`OwnerCopy: '=[Owner]'` over a `person` column builds with exit 0 and zero
-findings. SharePoint rejects it at paste time with an HTTP 500, part-way
-through provisioning.
+The build refuses a calculated formula whose operand SharePoint will not
+accept. The error names the calculated column and the operand before any
+script is emitted; SharePoint otherwise rejects the field creation with HTTP
+500 part-way through provisioning.
 
-The reference check is a name check, not a type check — it verifies the
-name is a column of the entity and nothing more. `[Today]` happens to be
-caught only because no column is called `Today`.
+The matrix is **live-verified**, not inferred. `calculated-operand-probe.js`
+was run against SharePoint Online on 2026-07-30 and answered every question:
 
-Until this is a build error, treat the operands of every
-`calculated_formulas` entry as your responsibility: single-select Choice,
-Text, Number, Boolean, Date and other **calculated** columns of the same
-list. Calculated operands are supported — the build provisions a
-calc-on-calc chain in dependency order and refuses a cycle — but Person
-and Lookup are not, and nothing checks them for you.
+| Operand column type | Result |
+|---|---|
+| Single line of text (`nvarchar`) | accepted |
+| Number (`number`, `int`) | accepted |
+| Date, Date/Time (`date`, `datetime`) | accepted |
+| Choice (a named enum) | accepted |
+| Yes/No (`boolean`) | accepted |
+| Another calculated column | accepted |
+| Lookup (a `ref` column) | **refused** |
+| Person (`person`) | **refused** |
+| Plain multi-line text (`longtext`) | **refused** |
+| Rich text (`richtext`) | **refused** |
+| Hyperlink (`hyperlink`) | **refused** |
+
+Every refusal returned the same body: *"One or more column references are not
+allowed, because the columns are defined as a data type that is not supported
+in formulas."* This agrees with Microsoft's formula reference, which lists the
+supported operand types and states explicitly that [Lookup fields are not
+supported in a
+formula](https://support.microsoft.com/en-us/sharepoint/lists/data-and-lists/examples-of-common-formulas-in-lists).
+
+Calc-on-calc chains are provisioned in dependency order and cycles are
+refused.
+
+Cross-site logical refs do not deploy as lookups. A generated
+`<column>Abbreviation` companion is Text and can be used in a formula; the
+logical ref name cannot, because no such field is created.
 
 :::

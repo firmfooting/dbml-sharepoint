@@ -102,9 +102,9 @@
   // "already present" from a previous run — which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
-  // ever touches the single list the probe declares; it never enumerates or
-  // deletes anything else. The list is RECYCLED, not purged, so a mistake
-  // is recoverable from the site recycle bin.
+  // ever touches the explicitly named probe-owned list or lists; it never
+  // enumerates or deletes anything else. Each list is RECYCLED, not purged,
+  // so a mistake is recoverable from the site recycle bin.
   const CLEANUP = false;
 
   // No SITE_URL constant, deliberately. The probe reads the site it was

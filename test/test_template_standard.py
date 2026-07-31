@@ -1175,3 +1175,114 @@ def test_the_documented_exception_is_still_an_exception() -> None:
         f"everything. Remove them from STANDARD_EXEMPT_ENTITIES and from the "
         f"exception paragraph in templates/README.md."
     )
+
+
+# === Threshold exposure =====================================================
+
+# Views the library ships whose filter no usable index serves. Each is a
+# REVIEWED ACCEPTANCE with its reason recorded beside it, keyed by
+# (template, "views[Entity].<title>").
+#
+# The validator reports these as WARNINGS, so every build stays green and
+# nothing in CI notices them. That is precisely why the register exists: an
+# unpinned warning grows. A new one fails this sweep until somebody either
+# fixes the view or writes down why it is acceptable — the same
+# reviewable-act pattern as NOT_YET_UPLIFTED above, applied to a finding
+# class instead of a template.
+#
+# Three kinds of entry appear here, and only the third is a deferral:
+#
+#   PERSON     The only filter column is a Person column. Microsoft classifies
+#              Person or Group (single value) as a lookup field and documents
+#              that indexing a lookup field does NOT prevent exceeding the
+#              list view threshold, so there is no index to add. The view is a
+#              personal work queue; the alternative is not having one.
+#   NULL-TEST  The filter is a bare is_null / is_not_null — the library's
+#              "blank means still open" idiom. Whether SharePoint can serve a
+#              CAML <IsNull> from an index is unverified by this project, so
+#              no index is recommended. test/manual/native-index-probe.js
+#              settles it.
+#   DEFERRED   An index IS the documented remedy and the column type supports
+#              one. Not applied here: template schemas are being uplifted in
+#              parallel theme branches, and editing one from this branch would
+#              collide. See the template-family-standard work.
+ACCEPTED_THRESHOLD_EXPOSURE: dict[tuple[str, str], str] = {
+    ("declarations-register", "views[Interest].My interests"):
+        "PERSON — DeclaredBy is indexed, but a Person index does not avert the "
+        "threshold.",
+    ("service-requests", "views[Request].My requests"):
+        "PERSON — RequestedBy; indexing it would not help.",
+    ("vehicle-log", "views[Trip].My trips"):
+        "PERSON — Driver is indexed, but a Person index does not avert the "
+        "threshold.",
+    ("switchboard-log", "views[CodeEvent].Still running"):
+        "NULL-TEST — AllClearAt is_null means the code event has not stood down.",
+    ("training-register", "views[Course].Never expires"):
+        "NULL-TEST — ValidityMonths is_null means the completion never expires.",
+    ("vehicle-log", "views[Trip].Out now"):
+        "NULL-TEST — ReturnedAt is_null means the vehicle is still out.",
+    ("visitor-log", "views[Visit].On site now"):
+        "NULL-TEST — SignedOutAt is_null means the visitor is still on site.",
+    ("tiered-huddle", "views[Escalation].Escalated up"):
+        "DEFERRED — Direction is a three-value Choice and can carry an index.",
+    ("tiered-huddle", "views[Escalation].Delegated down"):
+        "DEFERRED — same Direction column as 'Escalated up'; one index clears both.",
+    ("training-register", "views[Course].Mandatory catalogue"):
+        "DEFERRED — Mandatory is Yes/No; indexable, but a course catalogue is "
+        "small enough that an index would spend one of twenty slots for nothing.",
+}
+
+# The substring every threshold warning carries. Sniffing the message is the
+# only handle a Finding offers, and it is self-guarding: reword the warning
+# past this marker and the register goes stale, which
+# `test_the_threshold_register_is_still_needed` fails on.
+_THRESHOLD_MARKER = "list view threshold"
+
+
+def _threshold_exposed_views(template: str) -> dict[str, str]:
+    """{"views[Entity].<title>": message} for one template's threshold warnings."""
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+
+    root = TEMPLATES / template
+    findings = validate_against_mapping(
+        parse_dbml(root / "10-design" / "schema.dbml"),
+        load_mapping(root / "20-configure" / "mapping.yaml"),
+    )
+    return {
+        finding.message.split(".where:", 1)[0]: finding.message
+        for finding in findings
+        if finding.severity == "warning" and _THRESHOLD_MARKER in finding.message
+    }
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_unregistered_threshold_exposure(template: str) -> None:
+    """A filtered view with no usable index is a view that can silently show a
+    truncated answer once the list passes the threshold. Every one the library
+    ships is either fixed or written down."""
+    found = set(_threshold_exposed_views(template))
+    registered = {view for name, view in ACCEPTED_THRESHOLD_EXPOSURE if name == template}
+    unregistered = found - registered
+    assert not unregistered, (
+        f"{template}: {sorted(unregistered)} filter on columns no index serves "
+        f"and are not in ACCEPTED_THRESHOLD_EXPOSURE. Index a selective filter "
+        f"column, or add an entry with the reason it is acceptable."
+    )
+
+
+def test_the_threshold_register_is_still_needed() -> None:
+    """The mirror. A stale entry would silently accept the next real exposure
+    on that view, and a register that no longer matches any warning means the
+    marker has drifted out from under it."""
+    live = {
+        (template, view)
+        for template in _all_templates()
+        for view in _threshold_exposed_views(template)
+    }
+    stale = set(ACCEPTED_THRESHOLD_EXPOSURE) - live
+    assert not stale, (
+        f"{sorted(stale)} are registered as accepted threshold exposure but no "
+        f"longer warn. Delete them from ACCEPTED_THRESHOLD_EXPOSURE — or, if "
+        f"nothing at all warns any more, check that the warning still says "
+        f"{_THRESHOLD_MARKER!r}."
+    )

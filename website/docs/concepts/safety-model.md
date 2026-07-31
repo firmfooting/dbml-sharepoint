@@ -9,6 +9,10 @@ The project's first rule: **when the script cannot prove an action is
 what the declaration intends, it stops and names the reason.** Guessing
 on someone's production site is the one unforgivable failure mode.
 
+This page covers operational safeguards. For identity, credentials,
+same-origin network reach and the governed-tenant review checklist, see the
+[security model](security-model.md).
+
 ## Fail closed, everywhere
 
 - The wrong site aborts before any request (site guard).

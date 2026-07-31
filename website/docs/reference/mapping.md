@@ -146,6 +146,36 @@ views:
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
 
+:::info A filtered view is checked against the list view threshold
+
+The build **warns** (never errors) when a view's `where` filters only on
+columns no usable index serves. The warning names the columns and the view.
+
+SharePoint Online's list view threshold is 5,000 items and
+[cannot be raised](https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59).
+Past it the view does not necessarily error: SharePoint may return only the
+newest 1,250 items, or none — a truncated answer with nothing to notice. Fix
+it with a bare DBML `indexes` entry on a selective filter column, or accept it
+for a list that will stay small.
+
+Three cases get no index recommendation, because an index is not the answer:
+
+- **Lookup and Person filters.** Microsoft classifies Person or Group
+  (single value) as a lookup field and documents that
+  [indexing a lookup field does not prevent exceeding the
+  threshold](https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0).
+  Index a selective Text, Number, Choice or Date column instead.
+- **Null-only filters** (`is_null` / `is_not_null` and nothing else). Whether
+  SharePoint can serve a presence test from an index is not established by
+  this project, so no index is recommended. The exposure is still reported.
+- **System columns** (`ID`, `Created`, `Modified`, `Author`, `Editor`) are
+  excluded from the check entirely. They are filterable but not declarable, so
+  no `indexes` entry can name them — `ID` is indexed by the platform, and the
+  other four are an open question rather than an assumption in either
+  direction.
+
+:::
+
 :::note A view filter cannot negate a substring match
 
 `not_contains` and `not_begins_with` render on `column_validation`,
