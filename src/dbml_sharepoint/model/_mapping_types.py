@@ -81,6 +81,15 @@ class EntityMapping:
     # that will stay small. Silences the warning completely; the acceptance is
     # visible here, where a reviewer sees it.
     accept_unindexable_display_column: bool = False
+    # Columns the GENERATED `All Items` view must not render. The only reason
+    # accepted is the list view LOOKUP threshold: an entity may legitimately
+    # carry more than 12 join-bearing columns while no declared view needs that
+    # many, and without this the build refuses a schema over a view nobody
+    # wrote. Every named column must be join-bearing and rendered — see
+    # analysis/checks/_views.py — because `All Items` renders everything for a
+    # reason and this is not a general hide-this feature. Declared views are
+    # unaffected; they keep every field they declare.
+    hide_from_all_items: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
