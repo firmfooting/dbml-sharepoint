@@ -4650,6 +4650,42 @@ def test_hiding_a_column_that_costs_no_join_errors(tmp_path: Path) -> None:
     assert _hide_errors(schema, bundle) == []
 
 
+def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo(
+    tmp_path: Path,
+) -> None:
+    """`hide_from_all_items: [Title]` must be refused for costing no join
+    (nvarchar, not join-bearing), never reported as an unrecognised column:
+    the wrong branch would send the author looking for a typo in a column
+    that plainly exists.
+
+    NOTE on what this test can and cannot pin, recorded here because it is
+    not obvious from the assertions alone — see task-6-report.md, 'Fix round
+    2', for the full investigation. `_join_inputs` declares `Title` as a
+    real DBML column on `Project`, so `_rendered_columns` alone already puts
+    'Title' in `rendered` — the explicit `| {"Title"}` union that exists for
+    entities that do NOT declare their own Title (SharePoint's base-template
+    Title exists regardless) is redundant for THIS fixture. That union lives
+    in two places with identical text: `analysis/joins.py:165`, inside
+    `all_items_joining_fields`, and `analysis/checks/_views.py:801`, an
+    independent literal copy the escape-hatch checks below actually read.
+    Dropping the union from `joins.py:165` changes nothing observable here —
+    confirmed by running this exact test with that line edited — because
+    `_views.py:801` is untouched by it. Dropping it from `_views.py:801`
+    alone DOES flip the message to the typo branch, but only on a fixture
+    with no declared Title column, which `_join_inputs` does not build and
+    no helper in this file currently does. This test still pins real,
+    correct, non-vacuous behaviour (the branch choice for hiding Title
+    today); it does not yet prove the union in either file is load-bearing.
+    """
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(11), "    hide_from_all_items: [Title]\n",
+    )
+    msgs = _hide_errors(schema, bundle)
+    assert len(msgs) == 1
+    assert "costs no join operation" in msgs[0]
+    assert "Check the spelling" not in msgs[0]
+
+
 def test_hiding_a_cross_site_ref_errors(tmp_path: Path) -> None:
     """It is a `ref` in DBML but expands to Choice + URL, so it costs no join
     and hiding it buys nothing."""
