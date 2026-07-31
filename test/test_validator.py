@@ -4383,3 +4383,166 @@ def test_a_declared_view_counts_every_join_it_declares_even_when_hidden(
     assert "13 join-bearing columns" in found[0].message
     assert "P1" in _named(found[0].message)
     assert "P2" in _named(found[0].message)
+
+
+def test_the_generated_all_items_counts_author_and_editor_as_joins(
+    tmp_path: Path,
+) -> None:
+    """11 declared join columns + Author + Editor = 13. Nothing declares this
+    view — the generator appends both system columns unconditionally — so the
+    message has to name all three contributions and point at the only remedy.
+
+    All three name assertions go through `_named`. Against the whole message
+    "Author" and "Editor" would pass even if SYSTEM_JOIN_COLUMNS were EMPTY and
+    neither column were counted, because `_join_finding`'s shared sentence says
+    "Created By (Author) and Modified By (Editor)" in every finding it makes."""
+    schema, bundle = _join_inputs(tmp_path, _persons(11))
+    found = _join_findings(schema, bundle, "entities[Project]")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert "13 join-bearing columns" in found[0].message
+    names = _named(found[0].message)
+    assert "Author" in names
+    assert "Editor" in names
+    assert "P11" in names
+    assert "hide_from_all_items" in found[0].message
+    # The declared-view remedy must NOT be offered: All Items cannot be edited.
+    assert "Remove fields from this view." not in found[0].message
+
+
+def test_the_generated_all_items_join_count_is_silent_under_the_band(
+    tmp_path: Path,
+) -> None:
+    """The negative case: 6 declared + Author + Editor = 8, under the band."""
+    schema, bundle = _join_inputs(tmp_path, _persons(6))
+    assert _join_findings(schema, bundle, "entities[Project]") == []
+
+
+def test_the_generated_all_items_starts_at_two_joins(tmp_path: Path) -> None:
+    """Author and Editor are 2 of the 12 before a single business column, so an
+    entity's real budget for its own columns is 10. 7 declared columns is 9."""
+    schema, bundle = _join_inputs(tmp_path, _persons(7))
+    found = _join_findings(schema, bundle, "entities[Project]")
+    assert len(found) == 1
+    assert found[0].severity == "warning"
+    assert "9 join-bearing columns" in found[0].message
+
+
+def test_hide_from_all_items_clears_the_all_items_join_error(
+    tmp_path: Path,
+) -> None:
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(11), "    hide_from_all_items: [Author, Editor]\n",
+    )
+    found = _join_findings(schema, bundle, "entities[Project]")
+    assert [f for f in found if f.severity == "error"] == []
+    # 11 remain, which is inside the 9-12 band, so the warning legitimately
+    # stays. The key raises the ceiling on what an ENTITY may carry; it does
+    # not remove the limit on what a VIEW may render.
+    assert len(found) == 1
+    assert found[0].severity == "warning"
+    assert "11 join-bearing columns" in found[0].message
+    assert "Author" not in _named(found[0].message)
+    assert "Editor" not in _named(found[0].message)
+
+
+def test_hide_from_all_items_does_not_lift_the_join_ceiling(
+    tmp_path: Path,
+) -> None:
+    """The spec's fourth validation rule, and the one an implementation can pass
+    the rest of this suite while breaking: "After suppression, the >=13 error
+    still applies. The key raises the ceiling on what an ENTITY may carry; it
+    does not remove the limit on what a VIEW may render."
+
+    Without this, an implementation that computed `shown_joins` on `rendered`
+    only when `hidden` is empty — or that skipped the band check whenever
+    `hide_from_all_items` is set — passes every other test in the plan. The
+    clears-the-error test above only proves suppression can make a finding go
+    away; nothing else proves INSUFFICIENT suppression still errors.
+
+    14 persons + Author + Editor = 16; Author and Editor are hidden; 14 remain,
+    which is still over 12."""
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(14), "    hide_from_all_items: [Author, Editor]\n",
+    )
+    found = _join_findings(schema, bundle, "entities[Project]")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert "14 join-bearing columns" in found[0].message
+    assert "Author" not in _named(found[0].message)
+    assert "hide_from_all_items" in found[0].message
+
+
+def test_a_document_library_gets_no_all_items_join_finding(
+    tmp_path: Path,
+) -> None:
+    """The `kind == "DocumentLibrary"` half of the loop guard, PAIRED.
+
+    `jsgen.py:596` builds `All Items` only when the kind is not
+    `DocumentLibrary`, so counting one here would refuse a schema over a view
+    the generator never creates — the exact validator/generator disagreement
+    this module exists to avoid. Deleting the clause must turn a test red, and
+    only the pair does that: the count alone proves nothing, because the same
+    13 columns are what the List case is asserted on.
+
+    `kind: DocumentLibrary` is separately an ERROR from `_structure.py:101-111`,
+    so this build is already red for another reason. That is not a licence to
+    skip the guard — it is why the guard is easy to delete unnoticed."""
+    library = (
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Person: { kind: List, base_template: 100, site_role: default }\n"
+        "  Project:\n"
+        "    kind: DocumentLibrary\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+    )
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Person {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        f"{_persons(13)}"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(library, encoding="utf-8")
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    assert _join_findings(schema, bundle, "entities[Project]") == []
+
+    # The pair. The identical schema declared `kind: List` DOES error, so the
+    # empty result above is the guard and not an accident of the fixture.
+    as_list, as_list_bundle = _join_inputs(tmp_path, _persons(13))
+    found = _join_findings(as_list, as_list_bundle, "entities[Project]")
+    assert len(found) == 1
+    assert found[0].severity == "error"
+    assert "15 join-bearing columns" in found[0].message
+
+
+def test_a_cross_site_ref_costs_no_join_on_all_items(tmp_path: Path) -> None:
+    """A cross-site column is rendered as a Choice + URL PAIR — two rendered
+    columns — and still costs nothing. Paired with the control below."""
+    schema, bundle = _join_inputs(
+        tmp_path,
+        _persons(10) + "  Elsewhere int [ref: > Person.Id]\n",
+        "cross_site_reference_columns:\n"
+        "  - { entity: Project, column: Elsewhere }\n",
+    )
+    found = _join_findings(schema, bundle, "entities[Project]")
+    assert len(found) == 1
+    assert found[0].severity == "warning"
+    assert "12 join-bearing columns" in found[0].message
+
+    # Control: the same column as a real ref makes it 13.
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(10) + "  Elsewhere int [ref: > Person.Id]\n",
+    )
+    control = _join_findings(schema, bundle, "entities[Project]")
+    assert len(control) == 1
+    assert control[0].severity == "error"
+    assert "13 join-bearing columns" in control[0].message

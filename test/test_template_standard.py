@@ -1284,3 +1284,75 @@ def test_the_threshold_register_is_still_needed() -> None:
         f"nothing at all warns any more, check that the warning still says "
         f"{_THRESHOLD_MARKER!r}."
     )
+
+
+# --- The list view LOOKUP threshold (joins per view), not the item count ------
+
+
+def _join_findings_for(template: str) -> list[str]:
+    """Every join-threshold finding one template produces, at ANY severity.
+
+    Deliberately unfiltered by severity: a WARNING on a shipped template is a
+    failure here too. Nothing shipped is meant to reach 9."""
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+
+    root = TEMPLATES / template
+    findings = validate_against_mapping(
+        parse_dbml(root / "10-design" / "schema.dbml"),
+        load_mapping(root / "20-configure" / "mapping.yaml"),
+    )
+    return [
+        f.message for f in findings
+        if "join-bearing columns" in f.message and "join operations" in f.message
+    ]
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_template_performs_too_many_joins(template: str) -> None:
+    """The check is purely PREVENTIVE: it must fire on nothing that ships."""
+    found = _join_findings_for(template)
+    assert not found, (
+        f"{template}: {found}. This check exists to catch a template that grows "
+        f"a sixth join column, not to fail one that ships. If this fires on a "
+        f"shipped template the COUNT is wrong — most likely Created/Modified or "
+        f"a cross-site ref being counted — not the template."
+    )
+
+
+def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
+    """The spec's survey number, pinned. It is the whole reason this check can
+    ship silently, and the parametrized test above cannot hold it: that one
+    only fires at 9, so a template could climb from 5 to 8 unnoticed and the
+    warning band would be one column away with nothing having said so.
+
+    Measured 2026-07-31 across 30 templates / 53 entities: the distribution is
+    2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1, and the 5 is
+    opportunities-register/Opportunity (DecisionMaker, OpportunityOwner,
+    ProjectContact, plus Author and Editor). If this fails at 6, that is a
+    template growing a join column — update the number here DELIBERATELY, and
+    check the spec's survey paragraph with it."""
+    from dbml_sharepoint.analysis.joins import (
+        all_items_hidden,
+        join_bearing_columns,
+        joining_fields,
+    )
+    from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
+
+    worst = 0
+    for template in _all_templates():
+        root = TEMPLATES / template
+        schema = parse_dbml(root / "10-design" / "schema.dbml")
+        bundle = load_mapping(root / "20-configure" / "mapping.yaml")
+        tables = {t.name: t for t in schema.tables}
+        by_entity: dict[str, set[str]] = {}
+        for ref in bundle.mapping.cross_site_reference_columns:
+            by_entity.setdefault(ref.entity, set()).add(ref.column)
+        for name, entity in bundle.mapping.entities.items():
+            table = tables.get(name)
+            if table is None or entity.kind == "DocumentLibrary":
+                continue
+            xcols = by_entity.get(name, set())
+            rendered = _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
+            shown = rendered - all_items_hidden(entity)
+            worst = max(worst, len(joining_fields(shown, join_bearing_columns(table, xcols))))
+    assert worst == 5
