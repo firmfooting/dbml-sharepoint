@@ -74,8 +74,8 @@ its indexes and is never warned about a picker it does not have.
 :::warning A view can only perform 12 joins, at any list size
 
 This is a **different** limit from the 5,000-item list view threshold above, and
-it does not care how big the list is: a view over 13 join-bearing columns is
-blank on a list holding ten rows. Indexing does not help.
+it does not care how big the list is: a view with 13 or more join-bearing
+columns is blank on a list holding ten rows. Indexing does not help.
 
 One join per **rendered** column of these kinds:
 
@@ -85,14 +85,15 @@ One join per **rendered** column of these kinds:
 | a `person` column | yes |
 | `Author` (Created By) | yes |
 | `Editor` (Modified By) | yes |
-| `Created`, `Modified` | no — they are dates |
+| `Created`, `Modified` | no — `datetime`-typed, so inferred rather than directly measured |
 | a `cross_site_reference_columns` entry | no — it expands to a Choice + URL pair, so no Lookup exists |
 | a lookup's additional-field projections | no — measured free, twice |
 
-Measured 2026-07-31 at 6,000 items (`test/manual/threshold-index-probe.js`), with
-the filter held constant so the join count was the only variable: **12 render, 13
-is refused** with `SPQueryThrottledException` code `-2147024749` — a different
-code from the item-count threshold's `-2147024860`, so the two are
+The four rows marked **yes** above were each pushed to the ceiling and watched
+fail. Measured 2026-07-31 at 6,000 items (`test/manual/threshold-index-probe.js`),
+with the filter held constant so the join count was the only variable: **12
+render, 13 is refused** with `SPQueryThrottledException` code `-2147024749` — a
+different code from the item-count threshold's `-2147024860`, so the two are
 distinguishable in a transcript.
 
 The build is silent at 8 or fewer, **warns** from 9 to 12, and **fails** at 13.
