@@ -171,6 +171,62 @@ def check(vc: ValidationContext) -> list[Finding]:
                 + ". Remove it — there is nothing to accept.",
             ))
 
+        # The display column's index is IMPLICIT: it is appended in
+        # generators/jsgen.py after everything below has run, so neither of the
+        # two guards a declared `indexes { }` entry passes applies to it. Both
+        # apply just as hard.
+        #
+        # An unindexable type here is a DEPLOY ABORT, not a cosmetic miss:
+        # templates/deploy/_field_reconcile.js.j2 sets desired.indexed = true,
+        # MERGEs it, reads the flag back and THROWS when it did not stick —
+        # part-way through a run, after earlier phases have written to the site.
+        # Errors, not warnings: no acceptance can make a Note column indexable,
+        # which is what separates these from the calculated case above.
+        display_table = tables_by_name.get(entity_name)
+        if (
+            entity_name in lookup_targets
+            and not is_calculated
+            and display_table is not None
+        ):
+            display_xcols = cross_site_by_entity.get(entity_name, set())
+            declared_names = {col.name: col for col in display_table.columns}
+            rendered_names = _rendered_columns(display_table, display_xcols)
+            if display in declared_names and display not in rendered_names:
+                # A name that is not declared AT ALL is already reported by
+                # analysis.checks._naming, which sees every lookup into this
+                # entity. Only the declared-but-not-rendered case is invisible
+                # there: a cross-site logical column, or the auto-increment Id.
+                hint = (
+                    " — a cross-site logical column is replaced by generated "
+                    "Abbreviation and SiteUrl fields, so it never exists on the "
+                    "list"
+                    if display in display_xcols
+                    else ""
+                )
+                findings.append(Finding(
+                    "error",
+                    f"{entity_name}.display_column: {display!r} is not a "
+                    f"rendered column of {entity_name}{hint}. It is indexed "
+                    f"automatically because this list is a lookup target, so "
+                    f"the deploy would create that index on a field that does "
+                    f"not exist.",
+                ))
+            display_column = declared_names.get(display)
+            if (
+                display_column is not None
+                and display_column.type in _UNSUPPORTED_INDEX_TYPES
+            ):
+                findings.append(Finding(
+                    "error",
+                    f"{entity_name}.display_column: {display!r} is a "
+                    f"{_UNSUPPORTED_INDEX_TYPES[display_column.type]} column, "
+                    f"which SharePoint cannot index. A lookup target's display "
+                    f"column is indexed automatically so its picker keeps "
+                    f"working past 5,000 items, and the deploy sets "
+                    f"Indexed=true, reads it back and fails when it did not "
+                    f"stick. Name an indexable column as display_column.",
+                ))
+
     # Every entity in the mapping must exist in the schema.
     for entity_name in bundle.mapping.entities:
         if entity_name not in table_names:
