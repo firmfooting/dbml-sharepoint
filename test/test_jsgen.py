@@ -3110,8 +3110,9 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     assertion does call it — `all_items_joining_fields`, the validator's
     actual shared derivation — so THAT one goes red if `| SYSTEM_COLUMNS`,
     `| {"Title"}`, or the `hide_from_all_items` subtraction is ever dropped
-    from `joins.py`. See task-6-report.md for the drop-a-term red/green
-    evidence.
+    from `joins.py`. Dropping each term by hand, one at a time, left the
+    first assertion green and turned only the second red — confirming the
+    two assertions catch different failures, not the same one twice.
     """
     from dbml_sharepoint.analysis.joins import (
         all_items_hidden,

@@ -4191,10 +4191,11 @@ def _named(message: str) -> list[str]:
     Assert against this, never against the whole message, whenever a test cares
     whether a column name is present or absent. `_join_finding` appends a shared
     sentence reading "...including Created By (Author) and Modified By (Editor);
-    Created and Modified cost nothing...", so `"Created" not in f.message` and
-    `"Author" in f.message` are BOTH vacuous — the first can never pass and the
-    second passes even if the column was never counted. The parenthesised list is
-    the only part of the message that varies with the count.
+    Created and Modified are inferred to cost nothing...", so
+    `"Created" not in f.message` and `"Author" in f.message` are BOTH vacuous —
+    the first can never pass and the second passes even if the column was never
+    counted. The parenthesised list is the only part of the message that varies
+    with the count.
 
     The first "(" in every join finding opens that list: the subject prefixes
     (`views[X].Y:` and `entities[X]: the generated 'All Items' view`) use
@@ -4259,8 +4260,8 @@ def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none(
     Every name assertion goes through `_named`. Asserted against the whole
     message they would all be vacuous — the shared sentence `_join_finding`
     appends says "including Created By (Author) and Modified By (Editor); Created
-    and Modified cost nothing", so "Created"/"Modified"/"Author" are in EVERY
-    join message regardless of what was counted."""
+    and Modified are inferred to cost nothing", so "Created"/"Modified"/"Author"
+    are in EVERY join message regardless of what was counted."""
     twelve = [f"P{n}" for n in range(1, 13)]
 
     schema, bundle = _join_inputs(
@@ -4479,7 +4480,7 @@ def test_a_document_library_gets_no_all_items_join_finding(
 ) -> None:
     """The `kind == "DocumentLibrary"` half of the loop guard, PAIRED.
 
-    `jsgen.py:596` builds `All Items` only when the kind is not
+    `jsgen.py:597` builds `All Items` only when the kind is not
     `DocumentLibrary`, so counting one here would refuse a schema over a view
     the generator never creates — the exact validator/generator disagreement
     this module exists to avoid. Deleting the clause must turn a test red, and
@@ -4537,7 +4538,11 @@ def test_hide_from_all_items_on_a_document_library_is_refused(
 
     Task 5's own covering test for this branch is already green at its
     fail-first gate, by design, because Task 4 answers this key before Task 5
-    exists — that is documented there, not a gap here."""
+    exists — that is documented there, not a gap here.
+
+    Pairs with `test_a_document_library_gets_no_all_items_join_finding` above:
+    that one catches deleting the loop's `continue`, this one catches deleting
+    the refusal that runs before it. Neither test alone covers the guard."""
     library = (
         'prefix: "APP_"\n'
         "entities:\n"
@@ -4667,9 +4672,7 @@ def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo(
     an oversight: this test pins the branch choice for an entity that DOES
     declare its own Title (a real, common case), and
     `test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch`
-    immediately below pins the case that actually exercises the union — see
-    task-6-report.md, 'Fix round 2' and 'Fix round 3', for the investigation
-    that separated the two.
+    immediately below pins the case that actually exercises the union.
     """
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [Title]\n",
