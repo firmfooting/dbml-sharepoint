@@ -110,3 +110,9 @@ NUMERIC_ONLY_TOTALS = frozenset({'avg', 'max', 'min', 'stdev', 'sum', 'var'})
 def format_description(note: str) -> str
 ```
 
+### `UNSUPPORTED_INDEX_TYPES`
+
+```python
+UNSUPPORTED_INDEX_TYPES = {'longtext': 'Multiple lines of text (Note)', 'richtext': 'Multiple lines of text (Note)', 'hyperlink': 'Hyperlink'}
+```
+
