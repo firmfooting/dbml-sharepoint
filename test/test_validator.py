@@ -4593,3 +4593,124 @@ def test_a_cross_site_ref_costs_no_join_on_all_items(tmp_path: Path) -> None:
     assert len(control) == 1
     assert control[0].severity == "error"
     assert "13 join-bearing columns" in control[0].message
+
+
+def _hide_errors(
+    schema: Schema, bundle: MappingBundle, entity: str = "Project",
+) -> list[str]:
+    prefix = f"entities[{entity}].hide_from_all_items"
+    return [
+        f.message for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error" and f.message.startswith(prefix)
+    ]
+
+
+def test_hiding_a_column_all_items_does_not_render_errors(tmp_path: Path) -> None:
+    """A typo must not silently do nothing."""
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(11), "    hide_from_all_items: [Athor]\n",
+    )
+    msgs = _hide_errors(schema, bundle)
+    assert len(msgs) == 1
+    assert "'Athor'" in msgs[0]
+    assert "not a column the generated 'All Items' view renders" in msgs[0]
+
+    # Negative case: the correctly spelled column is accepted silently.
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(11), "    hide_from_all_items: [Author]\n",
+    )
+    assert _hide_errors(schema, bundle) == []
+
+
+# test_hiding_a_column_on_an_entity_with_no_all_items_errors is deliberately
+# NOT duplicated here. Task 4's fix round already added
+# test_hide_from_all_items_on_a_document_library_is_refused above, which
+# exercises the identical branch — a hide_from_all_items key on a
+# DocumentLibrary, refused above this loop's `continue` — and asserts exactly
+# one "error" finding whose message starts with the same
+# "entities[Project].hide_from_all_items" prefix. A second test asserting the
+# same branch would be duplication, not coverage.
+
+
+def test_hiding_a_column_that_costs_no_join_errors(tmp_path: Path) -> None:
+    """All Items renders every column for a reason. The threshold is the one
+    exception, not a general hide-this feature."""
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(11), "    hide_from_all_items: [Notes]\n",
+    )
+    msgs = _hide_errors(schema, bundle)
+    assert len(msgs) == 1
+    assert "'Notes'" in msgs[0]
+    assert "costs no join operation" in msgs[0]
+
+    # Negative case: a person column on the same entity is hideable.
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(11), "    hide_from_all_items: [P1]\n",
+    )
+    assert _hide_errors(schema, bundle) == []
+
+
+def test_hiding_a_cross_site_ref_errors(tmp_path: Path) -> None:
+    """It is a `ref` in DBML but expands to Choice + URL, so it costs no join
+    and hiding it buys nothing."""
+    columns = _persons(11) + "  Elsewhere int [ref: > Person.Id]\n"
+    schema, bundle = _join_inputs(
+        tmp_path,
+        columns,
+        "    hide_from_all_items: [Elsewhere]\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Project, column: Elsewhere }\n",
+    )
+    msgs = _hide_errors(schema, bundle)
+    assert len(msgs) == 1
+    assert "'Elsewhere'" in msgs[0]
+    assert "is a cross-site reference" in msgs[0]
+
+    # Negative case: the identical column, hidden identically, is fine once it
+    # is a real Lookup. Only the cross_site_reference_columns entry differs.
+    schema, bundle = _join_inputs(
+        tmp_path, columns, "    hide_from_all_items: [Elsewhere]\n",
+    )
+    assert _hide_errors(schema, bundle) == []
+
+
+def _unnecessary_hide_warnings(schema: Schema, bundle: MappingBundle) -> list[str]:
+    return [
+        f.message for f in validate_against_mapping(schema, bundle)
+        if f.severity == "warning" and "hide_from_all_items is set, but" in f.message
+    ]
+
+
+def test_unnecessary_hide_from_all_items_warns(tmp_path: Path) -> None:
+    """Mirrors the pointless-acceptance warning already shipped for
+    accept_unindexable_display_column.
+
+    THREE cases, because the condition is a band boundary at 12/13 and the
+    boundary is where it breaks. Written `< JOIN_LIMIT` instead of `<=`, the
+    check silently stops nagging the entity that most deserves it — 12
+    unsuppressed joins with the key set for nothing — and a suite that only
+    exercised 4 and 13 would stay green through it."""
+    # Well inside: P1, P2, Author, Editor with nothing hidden.
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(2), "    hide_from_all_items: [Author]\n",
+    )
+    msgs = _unnecessary_hide_warnings(schema, bundle)
+    assert len(msgs) == 1
+    assert "renders 4 join-bearing columns with nothing hidden" in msgs[0]
+    assert "Remove it" in msgs[0]
+
+    # ON the boundary: 10 persons + Author + Editor = 12 unsuppressed, which is
+    # exactly JOIN_LIMIT, so the key was not needed and this MUST still warn.
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(10), "    hide_from_all_items: [Author]\n",
+    )
+    msgs = _unnecessary_hide_warnings(schema, bundle)
+    assert len(msgs) == 1
+    assert "renders 12 join-bearing columns with nothing hidden" in msgs[0]
+
+    # Negative case, one past the boundary: 11 + Author + Editor = 13
+    # unsuppressed. The entity genuinely needs the key and is not nagged.
+    schema, bundle = _join_inputs(
+        tmp_path, _persons(11), "    hide_from_all_items: [Author, Editor]\n",
+    )
+    assert _unnecessary_hide_warnings(schema, bundle) == []
