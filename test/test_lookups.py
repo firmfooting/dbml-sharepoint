@@ -8,9 +8,8 @@ creates. There is one function, and both call it.
 from pathlib import Path
 
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
-from dbml_sharepoint.model.mapping_loader import load_mapping
-from dbml_sharepoint.model.parser import parse_dbml, Schema
-from dbml_sharepoint.model._mapping_types import MappingBundle
+from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 _SCHEMA = (
     "Project t { database_type: 'SharePoint Online' }\n"
@@ -86,3 +85,15 @@ def test_a_calculated_display_column_is_excluded(tmp_path: Path) -> None:
     assert lookup_display_columns(
         schema, bundle.mapping.entities, {"Event": {"EventRef"}},
     ) == {}
+
+
+def test_a_ref_target_unmapped_is_absent(tmp_path: Path) -> None:
+    """A ref points at a table with no mapping entry: other checks report that
+    error. Inventing an index for it here would be a second, worse message."""
+    schema, bundle = _inputs(tmp_path, _PLAIN.replace(
+        "  Event: { kind: List, base_template: 100, site_role: default }\n",
+        "",
+    ))
+    # Schema still has Event (FollowUp refs it), but only FollowUp is mapped.
+    # The unmapped ref target is silently skipped.
+    assert lookup_display_columns(schema, bundle.mapping.entities, {}) == {}
