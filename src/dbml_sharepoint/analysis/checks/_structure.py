@@ -74,6 +74,13 @@ def check(vc: ValidationContext) -> list[Finding]:
     cross_site_by_entity = vc.cross_site_by_entity
     findings: list[Finding] = []
 
+    lookup_targets = {
+        column.ref.target_table
+        for table in vc.schema.tables
+        for column in table.columns
+        if column.ref is not None
+    }
+
     # `kind: DocumentLibrary` is REFUSED, and refused here so that it fails
     # at build rather than part-way through a paste.
     #
@@ -124,6 +131,40 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"number names while the rest of the build treats {entity_name} as a "
                 f"'{entity.kind}'. If you meant a document library, that kind is "
                 f"refused outright — see issue #14.",
+            ))
+
+        # A lookup's picker enumerates its target list. A calculated display
+        # column cannot be indexed — CALCIDX sets Indexed=true, the MERGE is
+        # ACCEPTED, and the flag reads back false — so the enumeration is
+        # refused once the target passes the threshold and the column becomes
+        # unsettable. Measured against GetLookupFieldChoices at 6,500 items:
+        # an indexed ShowField served, both calculated ones returned
+        # SPQueryThrottledException.
+        #
+        # A warning rather than an error because a list that stays small has no
+        # problem, and that is a common, legitimate case.
+        display = entity.display_column or "Title"
+        is_calculated = display in vc.calculated_by_entity.get(entity_name, set())
+        if entity_name in lookup_targets and is_calculated:
+            if not entity.accept_unindexable_display_column:
+                findings.append(Finding(
+                    "warning",
+                    f"{entity_name}.display_column: {display!r} is a calculated "
+                    f"column. Calculated columns cannot be indexed, so this "
+                    f"list's lookup picker stops working once it passes roughly "
+                    f"5,000 items: the new-item form fails with \"exceeds the "
+                    f"list view threshold\" while views carry on working "
+                    f"normally. If this list will stay small, set "
+                    f"accept_unindexable_display_column: true on the entity.",
+                ))
+        elif entity.accept_unindexable_display_column:
+            findings.append(Finding(
+                "warning",
+                f"{entity_name}: accept_unindexable_display_column is set, but "
+                f"the display column {display!r} is not calculated"
+                + ("" if entity_name in lookup_targets
+                   else " and nothing looks this entity up")
+                + ". Remove it — there is nothing to accept.",
             ))
 
     # Every entity in the mapping must exist in the schema.

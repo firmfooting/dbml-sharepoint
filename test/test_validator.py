@@ -1200,6 +1200,105 @@ def test_indexed_calculated_column_is_error() -> None:
     )
 
 
+# --- Lookup target's display column must be indexable -----------------------
+
+
+def _calculated_display_inputs(
+    tmp_path: Path, *, accepted: bool,
+) -> tuple[Schema, MappingBundle]:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Ref nvarchar\n"
+        "  Label calculated_text\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    accept = ", accept_unindexable_display_column: true" if accepted else ""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        f"display_column: Label{accept} }}\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_calculated_display_column_warns_about_the_form(tmp_path: Path) -> None:
+    """A warning, not an error: a target that stays under 5,000 has no problem.
+    But the message must say the FORM breaks — "cannot be indexed" does not tell
+    an author what their users will see."""
+    schema, bundle = _calculated_display_inputs(tmp_path, accepted=False)
+    warnings = [
+        f.message
+        for f in validate_against_mapping(schema, bundle)
+        if f.severity == "warning" and "display_column" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "Label" in warnings[0]
+    assert "new-item form" in warnings[0]
+    assert "5,000" in warnings[0]
+    assert "accept_unindexable_display_column" in warnings[0]
+    # Not an error: a small list is a legitimate case.
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error" and "display_column" in f.message
+    ]
+
+
+def test_accepting_it_silences_the_warning_completely(tmp_path: Path) -> None:
+    """Silent, not downgraded. The acceptance is visible in the mapping; an
+    info line every build is the same noise one rung down, and a notice nobody
+    can resolve is a notice everyone learns to skim."""
+    schema, bundle = _calculated_display_inputs(tmp_path, accepted=True)
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if "display_column" in f.message
+    ]
+
+
+def test_a_pointless_acceptance_warns(tmp_path: Path) -> None:
+    """Set where the display column is perfectly indexable, it signals a
+    misunderstanding rather than a decision."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Ref nvarchar\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Ref, accept_unindexable_display_column: true }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning"
+        and "accept_unindexable_display_column" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "is not calculated" in warnings[0]
+
+
 # --- Declared views ---------------------------------------------------------
 
 
