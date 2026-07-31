@@ -1192,29 +1192,27 @@ def test_the_documented_exception_is_still_an_exception() -> None:
 #
 # Three kinds of entry appear here, and only the third is a deferral:
 #
-#   PERSON     The only filter column is a Person column. Microsoft classifies
-#              Person or Group (single value) as a lookup field and documents
-#              that indexing a lookup field does NOT prevent exceeding the
-#              list view threshold, so there is no index to add. The view is a
-#              personal work queue; the alternative is not having one.
+#              (There is no PERSON category. An indexed Person column is a
+#              useful index — measured at 6,000 items with the person projected
+#              and the join verified, the query is served — so a view filtered
+#              on one raises nothing to accept. See
+#              _views.py::_LOOKUP_FIELD_TYPES.)
 #   NULL-TEST  The filter is a bare is_null / is_not_null — the library's
-#              "blank means still open" idiom. Whether SharePoint can serve a
-#              CAML <IsNull> from an index is unverified by this project, so
-#              no index is recommended. test/manual/native-index-probe.js
-#              settles it.
+#              "blank means still open" idiom. An INDEXED column's presence
+#              test is served past the threshold; an unindexed one comes back
+#              HTTP 200 holding fewer rows than the data, with no error. Each
+#              of these wants an index. They are registered rather than fixed
+#              because the schemas are uplifted on the theme branches and
+#              editing one from here would collide — same reason as DEFERRED.
 #   DEFERRED   An index IS the documented remedy and the column type supports
 #              one. Not applied here: template schemas are being uplifted in
 #              parallel theme branches, and editing one from this branch would
 #              collide. See the template-family-standard work.
 ACCEPTED_THRESHOLD_EXPOSURE: dict[tuple[str, str], str] = {
-    ("declarations-register", "views[Interest].My interests"):
-        "PERSON — DeclaredBy is indexed, but a Person index does not avert the "
-        "threshold.",
     ("service-requests", "views[Request].My requests"):
-        "PERSON — RequestedBy; indexing it would not help.",
-    ("vehicle-log", "views[Trip].My trips"):
-        "PERSON — Driver is indexed, but a Person index does not avert the "
-        "threshold.",
+        "DEFERRED — RequestedBy is a Person column and carries NO index. An "
+        "indexed Person is served past the threshold, so this wants an index "
+        "rather than acceptance.",
     ("switchboard-log", "views[CodeEvent].Still running"):
         "NULL-TEST — AllClearAt is_null means the code event has not stood down.",
     ("training-register", "views[Course].Never expires"):

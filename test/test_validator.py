@@ -1326,7 +1326,12 @@ def test_unindexed_view_filter_warns_with_threshold_and_fields(tmp_path: Path) -
     assert "Due work" in warnings[0]
     assert "DueDate" in warnings[0] and "Status" in warnings[0]
     assert "5,000" in warnings[0]
-    assert "necessary but may not be sufficient" in warnings[0]
+    # One indexed condition suffices and its position is irrelevant — measured
+    # at 6,000 items, both orderings of a degenerate AND served. Selectivity is
+    # the caveat that survives, so the message must still carry one.
+    assert "position in the filter does not matter" in warnings[0]
+    assert "selectivity does" in warnings[0]
+    assert "filter order" not in warnings[0]
 
 
 def test_explicit_or_unique_filter_index_clears_warning(tmp_path: Path) -> None:
@@ -1371,7 +1376,7 @@ def test_native_id_filter_and_view_without_filter_do_not_warn(tmp_path: Path) ->
     assert not warnings
 
 
-def test_indexed_lookup_filter_still_warns(tmp_path: Path) -> None:
+def test_indexed_lookup_filter_does_not_warn(tmp_path: Path) -> None:
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
         "Table Parent {\n"
@@ -1402,23 +1407,27 @@ def test_indexed_lookup_filter_still_warns(tmp_path: Path) -> None:
         parse_dbml(tmp_path / "s.dbml"),
         load_mapping(tmp_path / "m.yaml"),
     )
+    # No threshold warning at all: the only filter column IS indexed, and an
+    # index on a Lookup counts. Asserted over every threshold finding rather
+    # than the old "indexed filter" phrasing, so a warning reintroduced under
+    # any wording fails here.
     warnings = [
         finding.message
         for finding in findings
-        if finding.severity == "warning" and "indexed filter" in finding.message
+        if finding.severity == "warning"
+        and "list view threshold" in finding.message
     ]
-    assert len(warnings) == 1
-    assert "By parent" in warnings[0]
-    assert "Parent" in warnings[0]
-    assert "Lookup" in warnings[0]
-    assert "5,000" in warnings[0]
+    assert warnings == []
 
 
-def test_indexed_person_filter_still_warns(tmp_path: Path) -> None:
-    """Microsoft classifies Person or Group (single value) as a lookup field,
-    and reference/dbml.md already says a Person index does not make the column
-    suitable as a threshold query's first filter. Read narrowly as
-    `col.ref is not None`, the check scored this view as safe.
+def test_indexed_person_filter_does_not_warn(tmp_path: Path) -> None:
+    """An indexed Person column counts as a useful index.
+
+    Microsoft classifies Person or Group (single value) as a lookup field and
+    documents that indexing one does not avert the threshold. Measured at 6,000
+    items with the person projected into the view and the join verified, the
+    query was served — see _LOOKUP_FIELD_TYPES for the full evidence and the
+    one-line revert.
     """
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1446,12 +1455,14 @@ def test_indexed_person_filter_still_warns(tmp_path: Path) -> None:
         for finding in validate_against_mapping(
             parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
         )
-        if finding.severity == "warning" and "indexed filter" in finding.message
+        if finding.severity == "warning"
+        and "list view threshold" in finding.message
     ]
-    assert len(warnings) == 1
-    assert "My requests" in warnings[0]
-    assert "RequestedBy" in warnings[0]
-    assert "Person" in warnings[0]
+    # An indexed Person column is a useful index. Measured at 6,000 items with
+    # the person projected into the view and the join verified — see
+    # _LOOKUP_FIELD_TYPES. This is the personal-work-queue idiom the template
+    # library ships, and it needs no remedy.
+    assert warnings == []
 
 
 def test_system_column_filter_is_not_warned_about(tmp_path: Path) -> None:
@@ -1487,10 +1498,15 @@ def test_system_column_filter_is_not_warned_about(tmp_path: Path) -> None:
         parse_dbml(tmp_path / "sys.dbml")
 
 
-def test_null_only_filter_warns_without_recommending_an_index(tmp_path: Path) -> None:
-    """The library's "blank means still open" idiom. The exposure is real, but
-    whether an index serves a CAML <IsNull> is unverified here, so the warning
-    must not tell the author to add one."""
+def test_null_only_filter_recommends_an_index(tmp_path: Path) -> None:
+    """The library's "blank means still open" idiom. Measured on a matched pair
+    at 6,000 items by test/manual/threshold-index-probe.js: the indexed column
+    returned all 60 expected rows, the unindexed one returned 50 of 60 with
+    HTTP 200 and no error. So the warning names the index as the remedy.
+
+    The message must carry the SILENCE, not just the risk. An author who reads
+    "may be truncated" will ship it and wait for the error; there is no error,
+    and the view is wrong from the day it is deployed."""
     schema, bundle = _view_inputs(
         tmp_path,
         "views:\n"
@@ -1506,8 +1522,16 @@ def test_null_only_filter_warns_without_recommending_an_index(tmp_path: Path) ->
     ]
     assert len(warnings) == 1
     assert "Still open" in warnings[0]
-    assert "unverified" in warnings[0]
-    assert "add a bare DBML index" not in warnings[0].lower()
+    assert "add a bare dbml index" in warnings[0].lower()
+    # The null-test remedy, not the comparison one — they differ, and a
+    # null-only filter reaching the comparison branch would recommend indexing
+    # "a selective filter column" when the only filter column IS the null test.
+    assert "50 of 6,000" not in warnings[0]  # the pair is 50 of 60, not of 6,000
+    assert "50 of 60" in warnings[0]
+    assert "unverified" not in warnings[0]
+    # The failure is silent, and the message has to say so. "May be truncated"
+    # reads as a risk an author can wait to see; there is nothing to see.
+    assert "no error" in warnings[0]
 
 
 def test_view_widths_keys_must_be_view_fields(tmp_path: Path) -> None:
