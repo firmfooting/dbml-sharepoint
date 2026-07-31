@@ -294,6 +294,22 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"effective indexes exceed SharePoint's limit of 20 "
                 f"(including unique columns).",
             ))
+        elif len(effective_indexes) >= 18:
+            # The count is a floor, not a total. SharePoint creates indexes on
+            # its own: opening a modern view sorted on an unindexed column
+            # produces one marked "(Automatically created)" that consumes a real
+            # slot, and nothing reachable from script reports the true number —
+            # the only place it exists is the "You have created N of maximum 20
+            # indices on this list" line on IndexedColumns.aspx. So a schema
+            # that validates at exactly 20 can still hit 21 in production.
+            findings.append(Finding(
+                "warning",
+                f"{entity_name}.indexes: {len(effective_indexes)} of the 20 "
+                f"available indexes are already spoken for. SharePoint also "
+                f"creates indexes by itself — opening a sorted view on an "
+                f"unindexed column adds one — and those are invisible to this "
+                f"build, so leave headroom.",
+            ))
         columns_by_name = {col.name: col for col in indexed_table.columns}
         for col_name in indexed:
             if col_name not in rendered:
