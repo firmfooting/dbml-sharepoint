@@ -49,6 +49,10 @@ class ValidationContext:
     # filtered-view safety checks must use exactly the same accounting.
     explicit_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
     unique_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    # {entity: the display column folded into effective_indexes below}. Kept
+    # so the over-budget error can NAME the implicit twenty-first index rather
+    # than leave an author counting twenty and finding no explanation.
+    display_index_by_entity: dict[str, str] = field(default_factory=dict)
     effective_indexes_by_entity: dict[str, set[str]] = field(default_factory=dict)
 
     @classmethod
@@ -117,6 +121,7 @@ class ValidationContext:
             calculated_by_entity=calculated_by_entity,
             explicit_indexes_by_entity=explicit_indexes_by_entity,
             unique_indexes_by_entity=unique_indexes_by_entity,
+            display_index_by_entity=display_columns,
             effective_indexes_by_entity={
                 table.name: (
                     explicit_indexes_by_entity[table.name]
