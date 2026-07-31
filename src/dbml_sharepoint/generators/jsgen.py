@@ -13,10 +13,12 @@ from dbml_sharepoint.analysis.conditions import (
     to_validation,
 )
 from dbml_sharepoint.analysis.forms import compose_visibility
+from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import base_permissions_to_high_low
 from dbml_sharepoint.analysis.phases import phases_context
 from dbml_sharepoint.analysis.typemap import (
+    CALCULATED_TYPES,
     TOTAL_FUNCTIONS,
     format_description,
     map_column,
@@ -337,6 +339,17 @@ def build_schema_json(
     deferred_set = set(plan.phase2_lookups) - cross_site_keys
     enums_by_name = {e.name: e for e in schema.enums}
 
+    calculated_by_entity = {
+        table.name: {c.name for c in table.columns if c.type in CALCULATED_TYPES}
+        for table in schema.tables
+    }
+    # The picker's index. Deployed here so it actually exists; counted against
+    # the 20-index ceiling in analysis.checks._context, from this same
+    # derivation, so the validator and the deployer cannot disagree about it.
+    display_columns = lookup_display_columns(
+        schema, bundle.mapping.entities, calculated_by_entity,
+    )
+
     lists: list[dict[str, Any]] = []
     phase2: list[dict[str, Any]] = []
     indexed_columns_out: list[dict[str, Any]] = []
@@ -534,7 +547,11 @@ def build_schema_json(
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
         })
 
-        for col_name in deployable_index_columns(table):
+        indexed = list(deployable_index_columns(table))
+        display = display_columns.get(table_name)
+        if display is not None and display not in indexed:
+            indexed.append(display)
+        for col_name in indexed:
             indexed_columns_out.append({"list": list_title, "field": col_name})
 
         declared_form = bundle.mapping.form_formatting.get(table_name)
