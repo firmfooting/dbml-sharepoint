@@ -123,8 +123,14 @@ load error rather than a compatibility alias.
 Two indexes are spent without appearing in `indexes { }`:
 
 - a `[unique]` column carries one implicitly;
-- **a list that anything looks up** carries one on its `display_column`, so its
-  lookup pickers keep working past 5,000 items.
+- **a list a real Lookup points at** carries one on its `display_column`, so its
+  pickers keep working past 5,000 items. Two things do not spend it: a
+  `cross_site_reference_columns` entry, which is expanded into a Choice + URL
+  pair rather than a Lookup, so nothing ever enumerates its target; and a
+  **calculated** `display_column`, which cannot carry an index at all, so none
+  is counted or deployed and the build warns instead. A `display_column` that
+  *could* be indexed but is not an indexable type — a Note or Hyperlink column —
+  fails the build, since the implicit index would abort the deploy.
 
 SharePoint also creates indexes on its own — opening a view sorted on an
 unindexed column adds one, marked *"(Automatically created)"* on the Indexed

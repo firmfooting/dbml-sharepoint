@@ -39,7 +39,7 @@ entities:
 | `base_template` | SP base template id. **Must be `100`**, the generic list — anything else fails the build |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
-| `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **This column is indexed automatically on this list**, because a lookup's picker cannot enumerate an unindexed column past 5,000 items — so it also spends one of the list's 20 indexes |
+| `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** — a picker cannot enumerate an unindexed column past 5,000 items — so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build |
 | `accept_unindexable_display_column` | Optional; accept that a **calculated** `display_column` cannot be indexed, and that this list's lookup picker will therefore stop working past ~5,000 items. Silences the warning |
 
 :::warning A lookup into a large list breaks the FORM, not the views
@@ -63,6 +63,11 @@ This is why `display_column` is indexed for you. A **calculated** display column
 cannot be indexed at all — setting `Indexed=true` is accepted and reads back
 `false` — so there is no index to create and the picker will fail once the list
 grows. That is what `accept_unindexable_display_column` accepts.
+
+A `cross_site_reference_columns` entry is **not** a Lookup and none of this
+applies to it. It is expanded into a Choice + URL pair on the source list, so
+nothing enumerates the target: a list reached only that way keeps all twenty of
+its indexes and is never warned about a picker it does not have.
 :::
 
 :::danger SharePoint cannot filter a lookup

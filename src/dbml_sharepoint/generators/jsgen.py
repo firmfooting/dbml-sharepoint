@@ -550,7 +550,7 @@ def build_schema_json(
             "prevent_deletion": bundle.mapping.prevent_list_deletion,
         })
 
-        indexed = list(deployable_index_columns(table))
+        indexed = deployable_index_columns(table)
         display = display_columns.get(table_name)
         if display is not None and display not in indexed:
             indexed.append(display)
