@@ -3002,3 +3002,133 @@ def test_a_created_group_enters_the_enumeration_snapshot() -> None:
     reading as absent would try to create a name that now exists."""
     js = _generate_simple_js()
     assert "knownGroupNames.add(nameKey(grp.name))" in js
+
+
+def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Owner person\n"
+        "  Reviewer person\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Task:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        + hide_line
+        + "views:\n"
+        "  Task:\n"
+        "    - title: Mine\n"
+        "      fields: [Title, Owner, Reviewer]\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _all_items_fields(tmp_path: Path) -> list[str]:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema_json = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    view = next(v for v in schema_json["views"] if v["title"] == "All Items")
+    fields: list[str] = view["view_fields"]
+    return fields
+
+
+def test_all_items_renders_everything_without_the_key(tmp_path: Path) -> None:
+    """The control. If this list ever changes for an unrelated reason, fix the
+    expectation in BOTH tests — the pair is what proves the omission."""
+    _hide_fixture(tmp_path, "")
+    assert _all_items_fields(tmp_path) == [
+        "ID", "Title", "Owner", "Reviewer", "Created", "Modified", "Author", "Editor",
+    ]
+
+
+def test_all_items_omits_hidden_columns_and_nothing_else(tmp_path: Path) -> None:
+    _hide_fixture(tmp_path, "    hide_from_all_items: [Author, Editor, Owner]\n")
+    assert _all_items_fields(tmp_path) == [
+        "ID", "Title", "Reviewer", "Created", "Modified",
+    ]
+
+
+def test_a_declared_view_keeps_a_hidden_column(tmp_path: Path) -> None:
+    """hide_from_all_items affects ONLY the generated view."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    _hide_fixture(tmp_path, "    hide_from_all_items: [Author, Editor, Owner]\n")
+    schema_json = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    mine = next(v for v in schema_json["views"] if v["title"] == "Mine")
+    assert mine["view_fields"] == ["Title", "Owner", "Reviewer"]
+
+
+def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
+    tmp_path: Path,
+) -> None:
+    """The guard on the shared-module claim in this plan's Architecture section.
+
+    If this test is deleted or weakened, the validator and the generator CAN
+    drift about which fields `All Items` renders — and the drift shows up as a
+    build that passes a view the deploy then creates over the ceiling, or one
+    refused that was never going to exist. Nothing else in the suite catches it.
+
+    The fixture carries every shape that could pull the two apart: a real `ref`
+    (a Lookup, emitted in phase 2, not phase 1), a CROSS-SITE ref (which exists
+    only as <col>Abbreviation / <col>SiteUrl and never under its own name), a
+    `person` column, a plain `nvarchar`, and the auto-increment `Id` the
+    validator drops at validator.py:136-144 while SharePoint supplies `ID`.
+    """
+    from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Person {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Owner person\n"
+        "  Assignee int [ref: > Person.Id]\n"
+        "  Elsewhere int [ref: > Person.Id]\n"
+        "  Notes nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Person: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Task, column: Elsewhere }\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    # A cross-site column needs an extension that expands it, or
+    # build_schema_json raises (jsgen.py:387-392). _CrossSiteExpansion is
+    # already defined at test/test_jsgen.py:104.
+    schema_json = build_schema_json(
+        schema, bundle, "default", extension=_CrossSiteExpansion(),
+    )
+    generated = next(
+        v for v in schema_json["views"]
+        if v["title"] == "All Items" and v["list"] == "APP_Task"
+    )["view_fields"]
+
+    table = next(t for t in schema.tables if t.name == "Task")
+    derived = _rendered_columns(table, {"Elsewhere"}) | {"Title"} | SYSTEM_COLUMNS
+
+    assert set(generated) == derived
