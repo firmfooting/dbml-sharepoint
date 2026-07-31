@@ -116,3 +116,9 @@ def format_description(note: str) -> str
 UNSUPPORTED_INDEX_TYPES = {'longtext': 'Multiple lines of text (Note)', 'richtext': 'Multiple lines of text (Note)', 'hyperlink': 'Hyperlink'}
 ```
 
+### `JOIN_BEARING_TYPES`
+
+```python
+JOIN_BEARING_TYPES = frozenset({'person'})
+```
+

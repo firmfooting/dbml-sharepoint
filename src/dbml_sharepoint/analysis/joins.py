@@ -1,0 +1,140 @@
+"""How many join operations a view performs, and which of its columns pay one.
+
+Shared for the same reason `lookups.py` is: the validator refuses a view the
+platform would render blank, and `generators.jsgen` builds the one view no
+author declares. Computed separately, a drift between them means a build that
+passes a view the deploy then creates over the ceiling — or one refused that was
+never going to exist. A generator must not import from `analysis/checks/`, which
+is the other half of why this is a module and not a helper in `_views.py`.
+
+WHY IT MATTERS. This threshold is a property of a view's SHAPE, not of its size:
+a view over 13 join-bearing columns is blank on a list holding ten rows. No
+amount of indexing helps and no deployment is small enough to avoid it. It is a
+DIFFERENT limit from the 5,000-item list view threshold `_views.py` also warns
+about, and the two are distinguishable in a transcript: this one refuses with
+`SPQueryThrottledException` code `-2147024749`, the item-count one with
+`-2147024860`.
+
+MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2, at 6,000
+items with the filter held constant at the same 60-row indexed query so the join
+count was the only variable:
+
+    JOINMAX  a DBML `ref` column          12 render, 13 REFUSED
+    JOINPER  a `person` column            at the ceiling, adding one REFUSED
+    JOINSYS  Author (Created By)          at the ceiling, REFUSED
+    JOINEDT  Editor (Modified By)         at the ceiling, REFUSED
+    JOINPRJ  a lookup's dependent field   at the ceiling, SERVED and READ BACK
+
+Each suspect was tested at the ceiling PLUS EXACTLY ONE column, because that is
+the only shape that discriminates: against a ceiling of 12, adding one column to
+a base of 11 lands on 12 and renders whether or not it counts. An earlier
+revision made that mistake and reported Person as not counting. A lookup holding
+NO DATA still counts — all 14 probe columns were empty and the ceiling was still
+12.
+
+`Created` and `Modified` are NOT counted, and that row is INFERRED rather than
+measured: they are `datetime`, and only Author and Editor are person-typed in
+SYSTEM_COLUMN_TYPES. Counting all five members of SYSTEM_COLUMNS would be wrong
+by two on every list. Closing it needs two more entries in the probe's
+`suspects` array; see issue #44.
+
+A CROSS-SITE reference costs nothing: it is expanded into a Choice + URL pair, so
+no Lookup exists to join through. Same exclusion as the lookup ShowField work,
+off the same `cross_site_pairs`.
+
+A LOOKUP'S ADDITIONAL-FIELD PROJECTIONS cost nothing extra — measured free twice,
+JOINPRJ on runs 35700faa and f663165e, and on the later run the dependent field
+was verified PRESENT in the returned row (31 keys) rather than assumed. A view
+that silently dropped the field would have rendered too, which is how the earlier
+LOOPRJ question misled. So a lookup showing five of its target's fields costs
+ONE, not six. NOTHING IN THIS MODULE EXCLUDES THEM, because this tool cannot
+declare such a projection at all: there is no `projected_fields` or equivalent
+key in `_mapping_types.py` or `mapping_loader.py`. That is also why the fact is
+recorded HERE rather than in a test — there is no way to write one. If
+projections ever become declarable, this paragraph is what a test hangs off.
+
+8 IS NOT THE NUMBER. It comes from `MaxQueryLookupFields`, a farm property that
+does not exist in SharePoint Online; there is no "default 8 raised by a
+cumulative update" here, that is the on-premises upgrade story. The strongest
+first-party SPO statement of 12 is in the Power Query connector documentation.
+The citation being that thin is why the ceiling was measured, and why the
+uncertainty is carried by a warning band rather than hidden.
+"""
+
+# Two lines, not `from collections.abc import Iterable, Set as AbstractSet`:
+# that single-line form fails ruff I001 and ruff's own fix is to SPLIT it.
+# `analysis/lookups.py:28` uses the same shape.
+from collections.abc import Iterable
+from collections.abc import Set as AbstractSet
+
+from dbml_sharepoint.analysis.conditions import SYSTEM_COLUMN_TYPES
+from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
+from dbml_sharepoint.model.mapping_loader import EntityMapping
+from dbml_sharepoint.model.parser import Table
+
+# Measured: 12 rendered, 13 refused. Above this a view is blank at any list size.
+JOIN_LIMIT = 12
+
+# 8 was a real ceiling on some farms and this project cannot prove it never
+# reaches SharePoint Online. Between the two figures the finding is a warning.
+JOIN_WARN_AT = 9
+
+# Appended to every generated `All Items` view without being asked for, and the
+# two nobody counts. DERIVED, not written out: `conditions.SYSTEM_COLUMN_TYPES`
+# already records that Author and Editor are `person` while Created and Modified
+# are `datetime`, and a second hand-written copy of that fact is exactly what
+# goes stale. `Created` and `Modified` fall out of this expression on their own
+# — which is the INFERRED half of the rule, never measured; see the module
+# docstring. `test/test_joins.py::test_the_bands_are_nine_and_twelve` pins what
+# this must evaluate to.
+SYSTEM_JOIN_COLUMNS = frozenset(
+    name for name, col_type in SYSTEM_COLUMN_TYPES.items()
+    if col_type in JOIN_BEARING_TYPES
+)
+
+
+def join_bearing_columns(table: Table, cross_site_cols: AbstractSet[str]) -> set[str]:
+    """Every column whose presence in a view of `table` costs one join.
+
+    Refs are collected separately from JOIN_BEARING_TYPES because a DBML `ref`
+    is `int`-typed and a type test cannot see it. A ref named in
+    `cross_site_reference_columns` is excluded: it never becomes a Lookup.
+
+    The two system columns are always included. A declared view may name them,
+    and the generated `All Items` always does.
+    """
+    bearing = set(SYSTEM_JOIN_COLUMNS)
+    for col in table.columns:
+        if col.name in cross_site_cols:
+            continue
+        if col.ref is not None or col.type in JOIN_BEARING_TYPES:
+            bearing.add(col.name)
+    return bearing
+
+
+def joining_fields(
+    fields: Iterable[str], join_bearing: AbstractSet[str],
+) -> list[str]:
+    """The members of `fields` that cost a join, sorted and deduplicated.
+
+    Returned as NAMES rather than a count because every message has to name
+    them: `Author` and `Editor` are the two an author never wrote down, and on
+    `All Items` there is no declaration to read, so a bare number sends the
+    reader looking in the wrong file.
+
+    A lookup's additional-field projections cost nothing extra and nothing here
+    excludes them, because this tool cannot declare one. Measurement and
+    reasoning are in the module docstring; that is where a test hangs off if
+    projections ever become declarable.
+    """
+    return sorted({name for name in fields if name in join_bearing})
+
+
+def all_items_hidden(entity: EntityMapping) -> frozenset[str]:
+    """Columns the generated `All Items` view must not render.
+
+    One line, in the shared module, so the validator counts exactly what the
+    generator omits. Declared views are unaffected — they keep every field they
+    declare, and nothing here is consulted for them.
+    """
+    return frozenset(entity.hide_from_all_items)
