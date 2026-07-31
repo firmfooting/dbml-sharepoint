@@ -75,6 +75,7 @@ def test_a_lookup_targets_display_column_is_deployed_as_an_index(
         "Table Event {\n"
         "  Id int [pk, increment]\n"
         "  EventRef nvarchar\n"
+        "  indexes { EventRef }\n"
         "}\n"
         "Table FollowUp {\n"
         "  Id int [pk, increment]\n"
