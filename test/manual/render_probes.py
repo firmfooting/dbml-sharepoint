@@ -10,6 +10,7 @@ Run me after editing anything under templates/:
     .venv/Scripts/python.exe test/manual/render_probes.py
 """
 
+import hashlib
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -29,9 +30,41 @@ def _env() -> Environment:
     )
 
 
+def revision_of(template_path: Path) -> str:
+    """A short content hash of one probe's sources, for it to print at run time.
+
+    A pasted probe has no identity. An operator re-pasting a stale clipboard
+    produces a transcript indistinguishable from one where a fix did not work —
+    which has already cost a full round trip of diagnosis, the tell being the
+    line numbers in a stack trace. A probe that names its own revision makes
+    that a one-line check instead.
+
+    Hashes the SOURCES, not the output: hashing the output would have to
+    include the hash. Every partial is included because a harness change alters
+    behaviour without touching the probe's own template.
+
+    LINE ENDINGS ARE NORMALISED FIRST, and that is not tidiness. `core.autocrlf`
+    checks these templates out as CRLF on Windows and LF everywhere else, so
+    hashing raw bytes gives a DIFFERENT revision for byte-identical sources
+    depending on the machine that rendered them. Two consequences, both real:
+    the rendered .js committed from Windows is "stale" to CI on Linux, which is
+    how this was found; and worse, the revision stops being an identity — the
+    one thing it exists to be. An operator reporting `f663165e` and a reviewer
+    re-rendering to `7d6b7a5b` would be looking at the same source and
+    disagreeing about it, which is precisely the round trip of diagnosis the
+    revision was added to prevent.
+    """
+    digest = hashlib.sha256()
+    for source in [template_path, *sorted(TEMPLATES.glob("_*.js.j2"))]:
+        digest.update(source.read_bytes().replace(b"\r\n", b"\n"))
+    return digest.hexdigest()[:8]
+
+
 def render_one(template_path: Path) -> str:
     """Render one probe template to its script text."""
-    return _env().get_template(template_path.name).render()
+    return _env().get_template(template_path.name).render(
+        revision=revision_of(template_path),
+    )
 
 
 def probe_templates() -> list[Path]:
