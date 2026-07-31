@@ -245,3 +245,18 @@ def format_description(note: str) -> str:
     if len(cleaned) > 255:
         return cleaned[:252] + "..."
     return cleaned
+
+
+# SharePoint refuses an index on these, whatever the schema asks for. Kept here
+# rather than in one check because two now need it: _structure rejects a
+# DECLARED index on them, and _views must not RECOMMEND one — a remedy that
+# fails the build is worse than the warning it answers.
+#
+# Calculated columns belong to the same class and are not listed, because they
+# are identified by CALCULATED_TYPES rather than by a single type name. A
+# caller excluding unindexable columns has to consult both.
+UNSUPPORTED_INDEX_TYPES = {
+    "longtext": "Multiple lines of text (Note)",
+    "richtext": "Multiple lines of text (Note)",
+    "hyperlink": "Hyperlink",
+}

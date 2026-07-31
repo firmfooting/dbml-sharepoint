@@ -246,7 +246,16 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    const open = RESULTS.filter((r) => r.outcome === 'NOT ESTABLISHED').length;
+    // PREFIX match, not equality. Outcomes carry their reason —
+    // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
+    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // one of those as ANSWERED. A results block would then read "47 answered,
+    // 0 NOT established" with unresolved rows visible one screen above it,
+    // which is the summary lying by omission: the exact failure expect() was
+    // added to prevent, reintroduced at the other end of the same function.
+    const open = RESULTS.filter(
+      (r) => r.outcome.startsWith('NOT ESTABLISHED') || r.outcome.startsWith('SHORT'),
+    ).length;
     console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} NOT established.`);
     if (open) {
       console.log('A question with no observation is NOT a pass. Report it as open.');

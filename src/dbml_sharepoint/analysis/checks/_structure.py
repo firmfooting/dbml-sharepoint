@@ -7,6 +7,7 @@ from dbml_sharepoint.analysis.lookups import (
     lookup_target_entities,
 )
 from dbml_sharepoint.analysis.ordering import compute_phases
+from dbml_sharepoint.analysis.typemap import UNSUPPORTED_INDEX_TYPES
 from dbml_sharepoint.analysis.validator import (
     CALCULATED_TYPES,
     MAX_CALCULATED_FORMULA,
@@ -14,12 +15,6 @@ from dbml_sharepoint.analysis.validator import (
     _rendered_columns,
     formula_column_refs,
 )
-
-_UNSUPPORTED_INDEX_TYPES = {
-    "longtext": "Multiple lines of text (Note)",
-    "richtext": "Multiple lines of text (Note)",
-    "hyperlink": "Hyperlink",
-}
 
 # Calculated fields accept only a subset of column types as operands.
 # Microsoft lists Single line of text, Number, Currency, Date and Time,
@@ -425,11 +420,11 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
                 continue
             column = columns_by_name.get(col_name)
-            if column is not None and column.type in _UNSUPPORTED_INDEX_TYPES:
+            if column is not None and column.type in UNSUPPORTED_INDEX_TYPES:
                 findings.append(Finding(
                     "error",
                     f"{entity_name}.indexes: {col_name!r} is a "
-                    f"{_UNSUPPORTED_INDEX_TYPES[column.type]} column, which SharePoint "
+                    f"{UNSUPPORTED_INDEX_TYPES[column.type]} column, which SharePoint "
                     f"cannot index.",
                 ))
 
