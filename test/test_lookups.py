@@ -7,7 +7,10 @@ creates. There is one function, and both call it.
 
 from pathlib import Path
 
-from dbml_sharepoint.analysis.lookups import lookup_display_columns
+from dbml_sharepoint.analysis.lookups import (
+    lookup_display_columns,
+    lookup_target_entities,
+)
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
@@ -41,6 +44,14 @@ _PLAIN = (
     "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
     "  Untouched: { kind: List, base_template: 100, site_role: default }\n"
 )
+
+
+def test_target_entities_names_only_the_pointed_at_side(tmp_path: Path) -> None:
+    """The shared derivation. `_structure`'s calculated-display warning used to
+    carry its own byte-identical copy of this comprehension, which is how one
+    could come to fire for a list the other never indexes."""
+    schema, _ = _inputs(tmp_path, _PLAIN)
+    assert lookup_target_entities(schema) == {"Event"}
 
 
 def test_a_lookup_target_defaults_to_title(tmp_path: Path) -> None:

@@ -30,6 +30,22 @@ from dbml_sharepoint.model.parser import Schema
 DEFAULT_DISPLAY_COLUMN = "Title"
 
 
+def lookup_target_entities(schema: Schema) -> set[str]:
+    """Entity names that something points a `ref` at.
+
+    The one derivation of "is this list looked up?". `lookup_display_columns`
+    below and `analysis.checks._structure`'s calculated-display-column warning
+    both read it, so they cannot disagree about which lists are targets — the
+    same guarantee this module already gives for *which column* is displayed.
+    """
+    return {
+        column.ref.target_table
+        for table in schema.tables
+        for column in table.columns
+        if column.ref is not None
+    }
+
+
 def lookup_display_columns(
     schema: Schema,
     entities: dict[str, EntityMapping],
@@ -42,14 +58,8 @@ def lookup_display_columns(
     cannot exist. `analysis.checks._structure` warns about those separately —
     silence here is not silence overall.
     """
-    targets = {
-        column.ref.target_table
-        for table in schema.tables
-        for column in table.columns
-        if column.ref is not None
-    }
     displayed: dict[str, str] = {}
-    for name in sorted(targets):
+    for name in sorted(lookup_target_entities(schema)):
         entity = entities.get(name)
         if entity is None:
             # A ref at a table with no mapping entry. Other checks report that;

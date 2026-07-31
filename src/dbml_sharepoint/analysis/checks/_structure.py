@@ -2,6 +2,10 @@
 """Entities, cross-site references, indexes, deferred lookups, calculated columns."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.lookups import (
+    DEFAULT_DISPLAY_COLUMN,
+    lookup_target_entities,
+)
 from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.analysis.validator import (
     CALCULATED_TYPES,
@@ -74,12 +78,11 @@ def check(vc: ValidationContext) -> list[Finding]:
     cross_site_by_entity = vc.cross_site_by_entity
     findings: list[Finding] = []
 
-    lookup_targets = {
-        column.ref.target_table
-        for table in vc.schema.tables
-        for column in table.columns
-        if column.ref is not None
-    }
+    # Shared with `lookup_display_columns`, which decides which lists get the
+    # picker's index. A second copy of this comprehension is how the warning
+    # below comes to fire for a list the deployer never indexes, or stay silent
+    # for one it does.
+    lookup_targets = lookup_target_entities(schema)
 
     # `kind: DocumentLibrary` is REFUSED, and refused here so that it fails
     # at build rather than part-way through a paste.
@@ -143,7 +146,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         #
         # A warning rather than an error because a list that stays small has no
         # problem, and that is a common, legitimate case.
-        display = entity.display_column or "Title"
+        display = entity.display_column or DEFAULT_DISPLAY_COLUMN
         is_calculated = display in vc.calculated_by_entity.get(entity_name, set())
         if entity_name in lookup_targets and is_calculated:
             if not entity.accept_unindexable_display_column:
