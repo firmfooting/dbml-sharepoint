@@ -790,6 +790,16 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
+        # `rendered` and `bearing` are the same two building blocks
+        # `all_items_joining_fields` composes internally; bound here as well
+        # because the validations below need the UNDIMINISHED sets — whether a
+        # name renders at all, and whether it costs a join — not the
+        # post-suppression result `shown_joins` carries. Sharing this pair
+        # rather than re-deriving `all_items_joining_fields`'s own arithmetic
+        # (rendered minus hidden) is what keeps this file and joins.py from
+        # drifting; see analysis/joins.py's module docstring.
+        rendered = _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        bearing = join_bearing_columns(table, xcols)
         shown_joins = all_items_joining_fields(table, entity, xcols)
         if len(shown_joins) >= JOIN_WARN_AT:
             findings.append(_join_finding(
@@ -800,5 +810,52 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"{entity_name}, or name them in hide_from_all_items on "
                 f"entities[{entity_name}].",
             ))
+        # The escape hatch's own rules. Order matters: a cross-site ref is not
+        # in `rendered` under its own name either (it expands to
+        # <col>Abbreviation / <col>SiteUrl), so without this branch first it
+        # would report as a typo and the author would go looking for one.
+        #
+        # `hide_ctx` is ALREADY BOUND at the top of this loop, above the
+        # `continue` that skips a DocumentLibrary or a table-less entity — the
+        # skipped case refuses the key there. Do not re-assign it here.
+        for col_name in entity.hide_from_all_items:
+            if col_name in xcols:
+                findings.append(Finding(
+                    "error",
+                    f"{hide_ctx}: {col_name!r} is a cross-site reference. It "
+                    f"expands to a Choice + URL pair, so no Lookup exists and "
+                    f"it costs no join operation — hiding it removes columns "
+                    f"from the recovery view and buys nothing.",
+                ))
+            elif col_name not in rendered:
+                findings.append(Finding(
+                    "error",
+                    f"{hide_ctx}: {col_name!r} is not a column the generated "
+                    f"'All Items' view renders on {entity_name}, so hiding it "
+                    f"would silently do nothing. Check the spelling.",
+                ))
+            elif col_name not in bearing:
+                findings.append(Finding(
+                    "error",
+                    f"{hide_ctx}: {col_name!r} costs no join operation, and "
+                    f"only a join-bearing column may be hidden. 'All Items' "
+                    f"renders every column for a reason; the list view lookup "
+                    f"threshold is the one exception this key exists for, not "
+                    f"a general hide-this facility.",
+                ))
+        if entity.hide_from_all_items:
+            # Judged on the UNSUPPRESSED count, because the question is whether
+            # the entity needed the key at all. Mirrors the pointless
+            # accept_unindexable_display_column warning in _structure.py.
+            unsuppressed = joining_fields(rendered, bearing)
+            if len(unsuppressed) <= JOIN_LIMIT:
+                findings.append(Finding(
+                    "warning",
+                    f"entities[{entity_name}]: hide_from_all_items is set, but "
+                    f"'All Items' renders {len(unsuppressed)} join-bearing "
+                    f"columns with nothing hidden, within the measured ceiling "
+                    f"of {JOIN_LIMIT}. Remove it — it degrades the recovery "
+                    f"view for nothing.",
+                ))
 
     return findings
