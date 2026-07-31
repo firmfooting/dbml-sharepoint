@@ -16,6 +16,29 @@ examples/**/reports/
 templates/**/build/
 templates/**/reports/
 
+# Generated fixture data for the threshold index probe.
+test/manual/rows/
+
+# Probe run transcripts. A probe is pasted into a LIVE tenant, so its console
+# output carries the site URL, the operator's UPN and real item ids. Keep them
+# on disk, quote findings into code comments, never commit the raw output.
+# test_probes.py::test_no_tracked_file_under_manual_names_a_tenant enforces the
+# same rule against anything that gets past this.
+#
+# The whole directory's .txt, not a `transcript-*` prefix: an operator names the
+# file after the run, not after the ignore rule. No .txt here is tracked.
+test/manual/*.txt
+
+# Captured network traffic, which is a different order of hazard from a console
+# transcript. A HAR records REQUEST HEADERS: the auth cookie and bearer token
+# for a live tenant, plus every URL and response body. Committing one hands over
+# a working session, not just a site name. Nothing here is ever tracked, and
+# these should be deleted once whatever they were captured for is answered.
+test/manual/*.har
+test/manual/*.log
+test/manual/*.json
+test/manual/captures/
+
 # Editors / OS
 .vscode/
 .idea/

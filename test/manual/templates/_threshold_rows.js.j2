@@ -1,0 +1,78 @@
+  // ---- Row composition, in the browser --------------------------------
+  // The same rows make_threshold_rows.py writes, generated where they are
+  // loaded so the fixture needs no CSV, no flow and no file handling at all.
+  //
+  // Two copies of one composition is a drift risk, and drift here is invisible:
+  // every expected match count in this probe is computed from these offsets, so
+  // a divergence reports NOT ESTABLISHED across the board and looks like a
+  // SharePoint finding. test_probes.py::test_the_js_and_python_row_generators_agree
+  // runs THIS file under node over all 6,000 rows and compares it field by
+  // field with build_rows(). The Python tests stay the source of truth for what
+  // the composition means; this file only has to match them.
+  //
+  // Kept in a partial rather than inline for exactly that reason: a test can
+  // render it on its own and execute it, which it cannot do with a fragment
+  // buried in an async IIFE.
+
+  const THRESHOLD_BUCKETS = ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7'];
+  const THRESHOLD_RARE = 'Z';
+  const THRESHOLD_Z_OFFSET = 3;
+  const THRESHOLD_NULL_OFFSET = 23;
+  const THRESHOLD_OWNER_OFFSET = 43;
+  const THRESHOLD_PARENT_OFFSET = 63;
+  // 2020-01-01T00:00:00Z, as epoch milliseconds. A literal rather than a parsed
+  // string so no locale or timezone can move it.
+  const THRESHOLD_EPOCH_MS = 1577836800000;
+  const THRESHOLD_DAY_MS = 86400000;
+
+  const thresholdPad = (value, width) => String(value).padStart(width, '0');
+
+  // `Z` on one row in a hundred, else the B1-B7 cycle. The substitution
+  // OVERRIDES the cycle rather than extending it, so the seven common values
+  // are not evenly sized — deliberate, and harmless because the filters only
+  // ever ask for `Z`.
+  const thresholdBucket = (row) => (
+    row % 100 === THRESHOLD_Z_OFFSET
+      ? THRESHOLD_RARE
+      : THRESHOLD_BUCKETS[(row - 1) % THRESHOLD_BUCKETS.length]
+  );
+
+  // Blank on one row in a hundred — the null-test population. Non-blank values
+  // repeat every 1,000 days, so this column supports a presence test and
+  // nothing else.
+  const thresholdClosedAt = (row) => {
+    if (row % 100 === THRESHOLD_NULL_OFFSET) return null;
+    const stamp = new Date(THRESHOLD_EPOCH_MS + (row % 1000) * THRESHOLD_DAY_MS);
+    // ISO-8601 UTC with a Z. toISOString always emits milliseconds; SharePoint
+    // accepts the seconds form the Python writer produces, so trim to match it
+    // byte for byte — the agreement test compares these as strings.
+    return `${stamp.toISOString().slice(0, 19)}Z`;
+  };
+
+  // High-cardinality and deliberately out of order, so sorting on it costs
+  // SharePoint real work. A multiplicative hash, NOT random: the values must be
+  // identical across separate runs or a partly-regenerated list holds a mixture
+  // and the sort observation is void. 6000 * 2654435761 is about 1.6e13, well
+  // inside the exactly-representable integer range, so this cannot drift from
+  // Python's arbitrary-precision result.
+  const thresholdSortBait = (row) => (
+    `${thresholdPad((row * 2654435761) % 1000000, 6)}-${thresholdPad(row, 6)}`
+  );
+
+  // One row, keyed by SharePoint INTERNAL column names. Person and Lookup
+  // columns carry the `Id` suffix the REST body needs; `Owner` and `Parent`
+  // would be silently ignored.
+  //
+  // null, never "": SharePoint refuses the empty string for a DateTime, a
+  // Person id and a Lookup id alike, and a batch create reports that per item,
+  // silently.
+  const thresholdRow = (row, ownerId, parentId) => ({
+    Title: `Row ${thresholdPad(row, 6)}`,
+    Bucket: thresholdBucket(row),
+    // Byte-identical to Bucket on purpose: only the index differs.
+    Shadow: thresholdBucket(row),
+    ClosedAt: thresholdClosedAt(row),
+    SortBait: thresholdSortBait(row),
+    OwnerId: row % 100 === THRESHOLD_OWNER_OFFSET ? ownerId : null,
+    ParentId: row % 100 === THRESHOLD_PARENT_OFFSET ? parentId : null,
+  });
