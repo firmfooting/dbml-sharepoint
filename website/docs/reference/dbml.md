@@ -120,6 +120,17 @@ The supported DBML subset is intentionally narrow:
 `mapping.yaml` has no index API. The former `indexed_columns` section is a
 load error rather than a compatibility alias.
 
+Two indexes are spent without appearing in `indexes { }`:
+
+- a `[unique]` column carries one implicitly;
+- **a list that anything looks up** carries one on its `display_column`, so its
+  lookup pickers keep working past 5,000 items.
+
+SharePoint also creates indexes on its own — opening a view sorted on an
+unindexed column adds one, marked *"(Automatically created)"* on the Indexed
+Columns page — and those are invisible to this build. The validator warns once a
+list reaches 18 of its 20 for that reason.
+
 ## Column settings
 
 - `not null` → required column.
