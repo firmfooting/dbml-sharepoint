@@ -20,7 +20,12 @@ the form itself makes (`test/manual/threshold-index-probe.js`):
 
 `Title` is not indexed by default — the same run read `Indexed=false` on it and
 indexing it flipped two other target queries from refused to served.
+
+A CROSS-SITE reference is not a Lookup and gets none of this: it is expanded
+into a Choice + URL pair, so no far-side list is ever enumerated.
 """
+
+from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.model.mapping_loader import EntityMapping
 from dbml_sharepoint.model.parser import Schema
@@ -30,19 +35,35 @@ from dbml_sharepoint.model.parser import Schema
 DEFAULT_DISPLAY_COLUMN = "Title"
 
 
-def lookup_target_entities(schema: Schema) -> set[str]:
-    """Entity names that something points a `ref` at.
+def lookup_target_entities(
+    schema: Schema,
+    cross_site_pairs: AbstractSet[tuple[str, str]],
+) -> set[str]:
+    """Entity names that a real SharePoint Lookup points at.
 
     The one derivation of "is this list looked up?". `lookup_display_columns`
     below and `analysis.checks._structure`'s calculated-display-column warning
     both read it, so they cannot disagree about which lists are targets — the
     same guarantee this module already gives for *which column* is displayed.
+
+    A column named in `cross_site_reference_columns` is NOT a Lookup. It is
+    expanded into a Choice + URL pair on the source list, so nothing on the far
+    side is ever enumerated: there is no picker to protect, and indexing that
+    list's display column would be a real `Indexed=true` MERGE on a customer
+    tenant buying nothing.
+
+    Filtered per (entity, column) PAIR, not per entity. A list targeted by a
+    cross-site ref *and* a real lookup still has a picker and must keep its
+    index; excluding every entity merely named in `cross_site_reference_columns`
+    would drop it. `analysis.checks._naming` skips cross-site refs the same way,
+    for the same reason.
     """
     return {
         column.ref.target_table
         for table in schema.tables
         for column in table.columns
         if column.ref is not None
+        and (table.name, column.name) not in cross_site_pairs
     }
 
 
@@ -50,6 +71,7 @@ def lookup_display_columns(
     schema: Schema,
     entities: dict[str, EntityMapping],
     calculated: dict[str, set[str]],
+    cross_site_pairs: AbstractSet[tuple[str, str]],
 ) -> dict[str, str]:
     """`{entity: column a lookup into it displays}` for every lookup target.
 
@@ -57,9 +79,12 @@ def lookup_display_columns(
     carry an index, so returning it would have callers count or deploy one that
     cannot exist. `analysis.checks._structure` warns about those separately —
     silence here is not silence overall.
+
+    Also excludes an entity reached only by a cross-site reference — see
+    `lookup_target_entities`.
     """
     displayed: dict[str, str] = {}
-    for name in sorted(lookup_target_entities(schema)):
+    for name in sorted(lookup_target_entities(schema, cross_site_pairs)):
         entity = entities.get(name)
         if entity is None:
             # A ref at a table with no mapping entry. Other checks report that;

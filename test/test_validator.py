@@ -3690,6 +3690,102 @@ def test_a_lookup_targets_display_column_counts_as_an_index(tmp_path: Path) -> N
     assert vc.effective_indexes("FollowUp") == set()
 
 
+def _cross_site_only_target(tmp_path: Path, *, calculated: bool) -> tuple[Schema, MappingBundle]:
+    """FlowRunLog is pointed at by exactly one ref, and that ref is cross-site."""
+    display = "  Label calculated_text\n" if calculated else "  Label nvarchar\n"
+    formulas = (
+        "calculated_formulas:\n  FlowRunLog:\n    Label: \"=[Title]\"\n"
+        if calculated else ""
+    )
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table FlowRunLog {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        + display +
+        "}\n"
+        "Table Request {\n"
+        "  Id int [pk, increment]\n"
+        "  Origin int [ref: > FlowRunLog.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  FlowRunLog: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Label }\n"
+        "  Request: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Request, column: Origin }\n"
+        + formulas,
+        encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_cross_site_only_target_spends_no_index(tmp_path: Path) -> None:
+    """A cross-site ref becomes a Choice + URL pair on the SOURCE list. Nothing
+    enumerates FlowRunLog, so it has no picker — charging it an index would spend
+    one of its twenty on a query that never happens."""
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    schema, bundle = _cross_site_only_target(tmp_path, calculated=False)
+    vc = ValidationContext.build(schema, bundle)
+    assert vc.effective_indexes("FlowRunLog") == set()
+
+
+def test_a_cross_site_only_target_is_not_told_its_picker_breaks(
+    tmp_path: Path,
+) -> None:
+    """The warning claims 'this list's lookup picker stops working'. Said about a
+    list with no picker it is simply false, and the author's only way to silence
+    it is to accept a consequence that cannot occur."""
+    schema, bundle = _cross_site_only_target(tmp_path, calculated=True)
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if "display_column" in f.message and "FlowRunLog" in f.message
+    ], [f.message for f in validate_against_mapping(schema, bundle)]
+
+
+def test_a_target_of_both_ref_kinds_keeps_its_index(tmp_path: Path) -> None:
+    """Per-pair, not per-entity. Excluding every entity NAMED in
+    cross_site_reference_columns would strip the index off a list whose picker is
+    real, which is the same defect pointing the other way."""
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table FlowRunLog {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Request {\n"
+        "  Id int [pk, increment]\n"
+        "  Origin int [ref: > FlowRunLog.Id]\n"
+        "}\n"
+        "Table Alert {\n"
+        "  Id int [pk, increment]\n"
+        "  Source int [ref: > FlowRunLog.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  FlowRunLog: { kind: List, base_template: 100, site_role: default }\n"
+        "  Request: { kind: List, base_template: 100, site_role: default }\n"
+        "  Alert: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Request, column: Origin }\n",
+        encoding="utf-8",
+    )
+    vc = ValidationContext.build(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert vc.effective_indexes("FlowRunLog") == {"Title"}
+
+
 def test_a_calculated_display_column_does_not_count_as_an_index(tmp_path: Path) -> None:
     """It cannot be indexed, so counting it would push a schema over the ceiling
     for an index that cannot exist — the failure mode in the other direction."""

@@ -81,8 +81,9 @@ def check(vc: ValidationContext) -> list[Finding]:
     # Shared with `lookup_display_columns`, which decides which lists get the
     # picker's index. A second copy of this comprehension is how the warning
     # below comes to fire for a list the deployer never indexes, or stay silent
-    # for one it does.
-    lookup_targets = lookup_target_entities(schema)
+    # for one it does — and it did: a list reached only by a CROSS-SITE ref has
+    # no picker at all, so it was told its picker would stop working.
+    lookup_targets = lookup_target_entities(schema, vc.cross_site_pairs)
 
     # `kind: DocumentLibrary` is REFUSED, and refused here so that it fails
     # at build rather than part-way through a paste.
