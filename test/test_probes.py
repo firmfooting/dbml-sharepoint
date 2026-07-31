@@ -8,12 +8,17 @@ that actually went wrong in this repository.
 """
 
 import importlib.util
+import json
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
+REPO_ROOT = Path(__file__).parent.parent
 MANUAL = Path(__file__).parent / "manual"
 TEMPLATES = MANUAL / "templates"
 
@@ -76,6 +81,60 @@ def test_probes_carry_no_tenant_url() -> None:
         if not PLACEHOLDER_HOSTS.match(host)
     ]
     assert not offenders, f"Tenant URL in probe(s): {offenders}"
+
+
+# A probe's OUTPUT is as sensitive as its source. test_probes_carry_no_tenant_url
+# globs *.js and templates/*.js.j2, so a transcript committed beside them is
+# invisible to it — and a transcript carries the tenant host, the operator's UPN
+# and real item ids. A tenant URL has leaked out of this repo twice.
+#
+# .gitignore covers the filenames; this catches a force-add, a rename, or console
+# output pasted into any other tracked file in that directory.
+#
+# TRACKED files, not files on disk: a transcript sitting locally is the normal
+# and intended state — the operator has to keep it to quote findings from. Only
+# committing one is the failure. Scoped to test/manual/ because that is where
+# probes run and where their output lands; it is not a repo-wide secret scan.
+EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+PLACEHOLDER_EMAIL = re.compile(
+    r"@(example|contoso|tenant|yourtenant)\.", re.IGNORECASE,
+)
+
+
+def _tracked_manual_files() -> list[Path]:
+    """Every file under test/manual that git is actually tracking."""
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--", "test/manual"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
+        # Skipping is honest; returning [] would make the test vacuously pass
+        # and it would stay green forever without checking anything.
+        pytest.skip(f"git ls-files unavailable: {result.stderr.strip()!r}")
+    return [REPO_ROOT / name for name in result.stdout.split("\0") if name]
+
+
+def test_no_tracked_file_under_manual_names_a_tenant() -> None:
+    """No committed file in test/manual may carry a real tenant host or a
+    real address — which is what a probe transcript is made of."""
+    offenders = []
+    for path in _tracked_manual_files():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        offenders += [
+            f"{path.name}: {host}"
+            for host in re.findall(r"https://[a-z0-9-]+\.sharepoint\.com", text)
+            if not PLACEHOLDER_HOSTS.match(host)
+        ]
+        offenders += [
+            f"{path.name}: {address}"
+            for address in EMAIL.findall(text)
+            if not PLACEHOLDER_EMAIL.search(address)
+        ]
+    assert not offenders, (
+        f"Tenant host or address in tracked probe file(s): {offenders}. Probe "
+        f"transcripts must stay untracked — quote findings into code comments "
+        f"instead of committing the raw console output."
+    )
 
 
 WRITE_CALL = re.compile(r"""method:\s*['"](POST|MERGE|DELETE|PUT)['"]""")
@@ -251,6 +310,56 @@ def test_every_selectivity_matched_population_divides_every_checkpoint() -> None
         for offset in (rows._Z_OFFSET, rows._NULL_OFFSET,
                        rows._OWNER_OFFSET, rows._PARENT_OFFSET):
             assert 0 < offset < per_hundred, f"offset {offset} is outside 1..{per_hundred - 1}"
+
+
+def test_the_js_and_python_row_generators_agree() -> None:
+    """One row composition, two implementations, and drift between them is
+    invisible.
+
+    The probe can now build its own fixture in the browser, so the rows exist
+    in JavaScript as well as in make_threshold_rows.py. Every expected match
+    count in the probe is computed from these offsets — so a divergence does
+    not fail loudly, it reports NOT ESTABLISHED across the whole table and
+    reads like a SharePoint finding.
+
+    Executes the partial under node over all 6,000 rows and compares field by
+    field. Not a spot check: an offset that drifts by one still produces 60
+    matches, so only whole-row identity catches it.
+    """
+    render = _load_renderer()
+    rows = _threshold_rows()
+    partial = (TEMPLATES / "_threshold_rows.js.j2").read_text(encoding="utf-8")
+    # Render it alone, wrapped in a driver. The partial is written to be valid
+    # on its own for exactly this — a fragment buried in the probe's async IIFE
+    # could not be executed without the whole tenant-facing script around it.
+    driver = (
+        f"{render._env().from_string(partial).render()}\n"
+        "const out = [];\n"
+        f"for (let r = 1; r <= {rows.TOTAL}; r += 1) "
+        "out.push(thresholdRow(r, 11, 1));\n"
+        "process.stdout.write(JSON.stringify(out));\n"
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "rows.js"
+        script.write_text(driver, encoding="utf-8")
+        result = subprocess.run(
+            ["node", str(script)], capture_output=True, text=True, check=False,
+        )
+    assert result.returncode == 0, f"the JS generator did not run:\n{result.stderr}"
+    from_js = json.loads(result.stdout)
+    from_py = rows.as_json_rows(
+        rows.build_rows(owner_id="11", parent_id="1"),
+    )
+    assert len(from_js) == len(from_py) == rows.TOTAL
+    mismatches = [
+        f"row {i + 1}: js={js!r} py={py!r}"
+        for i, (js, py) in enumerate(zip(from_js, from_py, strict=True))
+        if js != py
+    ]
+    assert not mismatches, (
+        f"{len(mismatches)} row(s) differ between _threshold_rows.js.j2 and "
+        f"make_threshold_rows.py. First three: {mismatches[:3]}"
+    )
 
 
 def test_a_probe_sending_metadata_uses_verbose_odata() -> None:
