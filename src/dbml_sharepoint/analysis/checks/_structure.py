@@ -220,12 +220,12 @@ def check(vc: ValidationContext) -> list[Finding]:
             display_column = declared_names.get(display)
             if (
                 display_column is not None
-                and display_column.type in _UNSUPPORTED_INDEX_TYPES
+                and display_column.type in UNSUPPORTED_INDEX_TYPES
             ):
                 findings.append(Finding(
                     "error",
                     f"{entity_name}.display_column: {display!r} is a "
-                    f"{_UNSUPPORTED_INDEX_TYPES[display_column.type]} column, "
+                    f"{UNSUPPORTED_INDEX_TYPES[display_column.type]} column, "
                     f"which SharePoint cannot index. A lookup target's display "
                     f"column is indexed automatically so its picker keeps "
                     f"working past 5,000 items, and the deploy sets "
