@@ -41,6 +41,7 @@ entities:
 | `singleton` | Optional; a one-row configuration list (enables extension seed rows) |
 | `display_column` | Optional; which column a lookup INTO this entity displays. Defaults to `Title`. **When a real Lookup points at this entity, the column is indexed automatically on this list** — a picker cannot enumerate an unindexed column past 5,000 items — so it also spends one of the list's 20 indexes. Nothing is indexed if no `ref` points here, if the only refs pointing here are `cross_site_reference_columns` (those expand to a Choice + URL pair, so no picker ever enumerates this list), or if the column is calculated (see below). The column must be indexable: a Note or Hyperlink `display_column` on a lookup target fails the build |
 | `accept_unindexable_display_column` | Optional; accept that a **calculated** `display_column` cannot be indexed, and that this list's lookup picker will therefore stop working past ~5,000 items. Silences the warning |
+| `hide_from_all_items` | Optional; a list of columns the generated `All Items` view must not render. The **only** accepted reason is the list view lookup threshold — see below. Every named column must be join-bearing and rendered; naming anything else fails the build. Declared views are unaffected |
 
 :::warning A lookup into a large list breaks the FORM, not the views
 
@@ -68,6 +69,66 @@ A `cross_site_reference_columns` entry is **not** a Lookup and none of this
 applies to it. It is expanded into a Choice + URL pair on the source list, so
 nothing enumerates the target: a list reached only that way keeps all twenty of
 its indexes and is never warned about a picker it does not have.
+:::
+
+:::warning A view can only perform 12 joins, at any list size
+
+This is a **different** limit from the 5,000-item list view threshold above, and
+it does not care how big the list is: a view over 13 join-bearing columns is
+blank on a list holding ten rows. Indexing does not help.
+
+One join per **rendered** column of these kinds:
+
+| Column | Costs a join |
+|---|---|
+| a DBML `ref` (a real Lookup) | yes — even when it holds no data |
+| a `person` column | yes |
+| `Author` (Created By) | yes |
+| `Editor` (Modified By) | yes |
+| `Created`, `Modified` | no — they are dates |
+| a `cross_site_reference_columns` entry | no — it expands to a Choice + URL pair, so no Lookup exists |
+| a lookup's additional-field projections | no — measured free, twice |
+
+Measured 2026-07-31 at 6,000 items (`test/manual/threshold-index-probe.js`), with
+the filter held constant so the join count was the only variable: **12 render, 13
+is refused** with `SPQueryThrottledException` code `-2147024749` — a different
+code from the item-count threshold's `-2147024860`, so the two are
+distinguishable in a transcript.
+
+The build is silent at 8 or fewer, **warns** from 9 to 12, and **fails** at 13.
+The warning band is deliberate: 12 held on the tenant measured, but 8 was a real
+limit on some SharePoint farms and the SharePoint Online citation is thin — the
+strongest first-party statement is in the Power Query connector documentation.
+(8 itself comes from `MaxQueryLookupFields`, a farm property that does not exist
+in SharePoint Online at all.)
+
+**`All Items` is the surface that bites.** It is generated with every rendered
+column and it appends `Author` and `Editor` without being asked, so **every
+`All Items` starts at 2** and an entity's real budget for its own lookup and
+person columns is **10**, not 12. You cannot declare `All Items` yourself — the
+build refuses that — so an entity over the ceiling breaks a view with no
+declaration anywhere to edit. That is what `hide_from_all_items` is for:
+
+```yaml
+entities:
+  Engagement:
+    kind: List
+    base_template: 100
+    site_role: default
+    hide_from_all_items: [Author, Editor, PrimaryContact]
+```
+
+`Author` and `Editor` are the expected answer: the generator appends both, so
+they are two joins you never asked for and the two whose removal costs the
+recovery view least.
+
+What it costs: `All Items` is the **recovery view** — the one you fall back to
+when a working view misbehaves — and every hidden column is one you can no longer
+see there. Declared views keep every field they declare. The build therefore
+refuses a `hide_from_all_items` entry naming a column `All Items` would not
+render (a typo must not silently do nothing), one that costs no join (this is not
+a general hide-this feature), or a cross-site reference (it costs no join, so
+hiding it buys nothing), and warns when the entity was under the ceiling anyway.
 :::
 
 :::danger SharePoint cannot filter a lookup
