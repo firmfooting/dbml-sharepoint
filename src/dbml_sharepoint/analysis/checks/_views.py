@@ -10,7 +10,10 @@ from dbml_sharepoint.analysis.conditions import (
     leaves,
     validate_condition,
 )
-from dbml_sharepoint.analysis.typemap import NUMERIC_ONLY_TOTALS
+from dbml_sharepoint.analysis.typemap import (
+    NUMERIC_ONLY_TOTALS,
+    UNSUPPORTED_INDEX_TYPES,
+)
 from dbml_sharepoint.analysis.validator import (
     SYSTEM_COLUMNS,
     Finding,
@@ -196,11 +199,23 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # run, has not answered it: the test needs a list past the threshold, and the
 # site it ran on topped out at 21 items. Still open.
 #
-# test/manual/threshold-index-probe.js builds the list that run lacked. It puts
-# a CAML <IsNull> and a CAML comparison on the SAME indexed column, matching the
-# same number of rows, so the pair differs only in the operator — and it asks
+# test/manual/threshold-index-probe.js builds the list that run lacked. It asks
 # CAML rather than only OData, because a view renders CAML and `eq null` is not
 # in Microsoft's documented operator list for the REST service at all.
+#
+# ONE CAVEAT ON THE PAIRING, stated because an earlier version of this comment
+# overclaimed it: CMPCAM compares an indexed TEXT column and NULCAM tests an
+# indexed DATETIME one, so the two differ in field type as well as in operator.
+# Both match the same 60 of 6,000, so selectivity is held constant, but a
+# divergence between them alone could not distinguish IsNull behaviour from
+# field-type behaviour.
+#
+# It does not have to. The conclusion below rests on NNIDX and NNUNI, which are
+# two DateTime columns holding identical values on the same rows and differing
+# ONLY in the index — and on NULIDX, the same presence test over the same
+# column on the OData path. Making CMPCAM and NULCAM a true one-variable pair
+# needs an equality population on the DateTime column, which is a generator
+# change rather than a probe one.
 #
 # ANSWERED 2026-07-31, revision 1799a1e8, at 6,000 items on one site: YES, a
 # CAML <IsNull> on an INDEXED DateTime column IS served past the threshold.
@@ -500,16 +515,38 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{_FALLBACK_ROW_COUNT:,} items, or none, rather than "
                         f"reporting an error"
                     )
+                    # An index is only a remedy for a column that can carry one.
+                    # SharePoint refuses one on a Note or Hyperlink field and
+                    # cannot put one on a Calculated column at all, and
+                    # _structure.py errors on exactly those — so recommending an
+                    # index there prescribes a change that fails the build. A
+                    # CAML null test over such a column is otherwise legal, so
+                    # the exposure is real and only the remedy has to change.
+                    indexable = {
+                        name for name in filtered
+                        if types_by_col.get(name) not in UNSUPPORTED_INDEX_TYPES
+                        and name not in vc.calculated_by_entity.get(entity_name, set())
+                    }
                     if not indexed_filters:
                         remedy = (
-                            "Add a bare DBML index to the tested column. "
-                            "Measured on a matched pair at 6,000 items, the "
-                            "indexed column returned all 60 expected rows and "
-                            "the unindexed one returned 50 of 60 with HTTP 200 "
-                            "and no error — the view does not break, it "
-                            "quietly shows the wrong rows. Selectivity still "
-                            "matters: a blank that most rows share is not a "
-                            "selective filter."
+                            (
+                                "Add a bare DBML index to the tested column. "
+                                "Measured on a matched pair at 6,000 items, the "
+                                "indexed column returned all 60 expected rows and "
+                                "the unindexed one returned 50 of 60 with HTTP 200 "
+                                "and no error — the view does not break, it "
+                                "quietly shows the wrong rows. Selectivity still "
+                                "matters: a blank that most rows share is not a "
+                                "selective filter."
+                                if indexable else
+                                "No index is possible here: SharePoint cannot "
+                                "index a Multiple lines of text, Hyperlink or "
+                                "Calculated column, so the only remedies are a "
+                                "different filter column or a list that will "
+                                "stay small. Measured on a matched pair at 6,000 "
+                                "items, an unindexed presence test returned 50 of "
+                                "60 rows with HTTP 200 and no error."
+                            )
                             if null_only else
                             "Add a bare DBML index to a selective filter column, "
                             "or accept the risk for a list that will stay small. "

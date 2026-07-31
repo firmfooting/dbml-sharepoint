@@ -962,10 +962,16 @@
   // checkpoint would read as a threshold refusal.
   const classify = (r) => {
     const body = r.body ? JSON.stringify(r.body) : '';
+    // TRANSIENT FIRST, before the body is inspected. A 429 or 408 whose body
+    // happens to mention the threshold would otherwise be recorded as a
+    // threshold REFUSAL — turning a throttle, which is about the moment, into
+    // an answered verdict about the platform. That is a wrong finding, not a
+    // missing one, and it would be indistinguishable from a real refusal in
+    // the transcript.
+    if (r.status === 429 || r.status === 408) return 'NOT ESTABLISHED (throttled)';
     if (/exceeds the list view threshold|SPQueryThrottledException/i.test(body)) {
       return 'REFUSED (threshold)';
     }
-    if (r.status === 429 || r.status === 408) return 'NOT ESTABLISHED (throttled)';
     if (isRefusal(r.status)) return 'REFUSED (request rejected — check the body)';
     return 'NOT ESTABLISHED';
   };

@@ -495,7 +495,16 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    const open = RESULTS.filter((r) => r.outcome === 'NOT ESTABLISHED').length;
+    // PREFIX match, not equality. Outcomes carry their reason —
+    // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
+    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // one of those as ANSWERED. A results block would then read "47 answered,
+    // 0 NOT established" with unresolved rows visible one screen above it,
+    // which is the summary lying by omission: the exact failure expect() was
+    // added to prevent, reintroduced at the other end of the same function.
+    const open = RESULTS.filter(
+      (r) => r.outcome.startsWith('NOT ESTABLISHED') || r.outcome.startsWith('SHORT'),
+    ).length;
     console.log(`${RESULTS.length} question(s); ${RESULTS.length - open} answered, ${open} NOT established.`);
     if (open) {
       console.log('A question with no observation is NOT a pass. Report it as open.');
@@ -508,7 +517,7 @@
   // identical transcripts otherwise — this has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision 7d6b7a5b — quote this when reporting results.');
+  log('INFO', 'probe revision fbba58b7 — quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
@@ -1224,10 +1233,16 @@
   // checkpoint would read as a threshold refusal.
   const classify = (r) => {
     const body = r.body ? JSON.stringify(r.body) : '';
+    // TRANSIENT FIRST, before the body is inspected. A 429 or 408 whose body
+    // happens to mention the threshold would otherwise be recorded as a
+    // threshold REFUSAL — turning a throttle, which is about the moment, into
+    // an answered verdict about the platform. That is a wrong finding, not a
+    // missing one, and it would be indistinguishable from a real refusal in
+    // the transcript.
+    if (r.status === 429 || r.status === 408) return 'NOT ESTABLISHED (throttled)';
     if (/exceeds the list view threshold|SPQueryThrottledException/i.test(body)) {
       return 'REFUSED (threshold)';
     }
-    if (r.status === 429 || r.status === 408) return 'NOT ESTABLISHED (throttled)';
     if (isRefusal(r.status)) return 'REFUSED (request rejected — check the body)';
     return 'NOT ESTABLISHED';
   };
