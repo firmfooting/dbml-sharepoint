@@ -13,6 +13,7 @@ tested one at a time.
 
 from dataclasses import dataclass, field
 
+from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, supports_unique
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import EnumDef, Schema, Table
@@ -81,6 +82,22 @@ class ValidationContext:
             }
             for table in schema.tables
         }
+        calculated_by_entity = {
+            table.name: {
+                col.name for col in table.columns
+                if col.type in CALCULATED_TYPES
+            }
+            for table in schema.tables
+        }
+        # A lookup's picker enumerates its target list, and past the 5,000-item
+        # threshold that enumeration is refused unless the displayed column is
+        # indexed — so this index is not optional and it spends a real slot.
+        # Folded in HERE rather than checked separately so the existing
+        # 20-index ceiling counts it: a schema declaring twenty and needing a
+        # twenty-first fails at validate time, before anything is deployed.
+        display_columns = lookup_display_columns(
+            schema, bundle.mapping.entities, calculated_by_entity,
+        )
         return cls(
             schema=schema,
             bundle=bundle,
@@ -88,19 +105,15 @@ class ValidationContext:
             tables_by_name={t.name: t for t in schema.tables},
             enum_by_name={e.name: e for e in schema.enums},
             cross_site_by_entity=cross_site_by_entity,
-            calculated_by_entity={
-                table.name: {
-                    col.name for col in table.columns
-                    if col.type in CALCULATED_TYPES
-                }
-                for table in schema.tables
-            },
+            calculated_by_entity=calculated_by_entity,
             explicit_indexes_by_entity=explicit_indexes_by_entity,
             unique_indexes_by_entity=unique_indexes_by_entity,
             effective_indexes_by_entity={
                 table.name: (
                     explicit_indexes_by_entity[table.name]
                     | unique_indexes_by_entity[table.name]
+                    | ({display_columns[table.name]}
+                       if table.name in display_columns else set())
                 )
                 for table in schema.tables
             },
