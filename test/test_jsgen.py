@@ -63,6 +63,43 @@ def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
     assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
 
 
+def test_a_lookup_targets_display_column_is_deployed_as_an_index(
+    tmp_path: Path,
+) -> None:
+    """The validator counts this index against the ceiling; the deployer has to
+    actually create it, or the picker breaks on the first large list."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  EventRef nvarchar\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: EventRef }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    output = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    assert {"list": "APP_Event", "field": "EventRef"} in output["indexed_columns"]
+    # Once, not twice, when it is also declared in indexes { }.
+    assert output["indexed_columns"].count(
+        {"list": "APP_Event", "field": "EventRef"},
+    ) == 1
+
+
 def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> None:
     """Single-value Choice and Lookup fields support SharePoint uniqueness."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
