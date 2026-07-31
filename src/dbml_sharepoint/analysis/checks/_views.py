@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.conditions import (
     condition_fields,
     effective_column_types,
     leaves,
+    normalise,
     validate_condition,
 )
 from dbml_sharepoint.analysis.typemap import (
@@ -20,6 +21,7 @@ from dbml_sharepoint.analysis.validator import (
     _rendered_columns,
     formatter_field_refs,
 )
+from dbml_sharepoint.model.conditions import Condition, Leaf
 from dbml_sharepoint.model.mapping_loader import view_url_slug
 
 # What SharePoint can add up. A calculated_number is included deliberately:
@@ -257,6 +259,30 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 _NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
+def _index_covered(node: Condition, indexed: frozenset[str] | set[str]) -> bool:
+    """Whether an index can narrow this filter before SharePoint scans.
+
+    The shape matters, and one rule per operator is the whole point:
+
+    `all_of` — ONE indexed condition is enough, wherever it sits. Measured at
+    6,000 items: an unindexed comparison that is refused on its own is served
+    when ANDed with an indexed one, in either order, so SharePoint picks the
+    index rather than taking the first column and stopping.
+
+    `any_of` — EVERY branch must be narrowable, and this is deliberately
+    conservative rather than measured. An OR cannot narrow to one index: a row
+    matching only the unindexed branch is still a row SharePoint has to find,
+    so an indexed branch beside an unindexed one buys nothing the unindexed
+    scan does not still have to pay for. Treating an OR like an AND would score
+    exactly that view as safe.
+    """
+    if isinstance(node, Leaf):
+        return node.field in indexed
+    if node.kind == "all_of":
+        return any(_index_covered(child, indexed) for child in node.children)
+    return all(_index_covered(child, indexed) for child in node.children)
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
@@ -492,7 +518,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # dependency set without pretending to understand AND/OR
                 # selectivity in this first pass.
                 if filtered and filtered <= view_rendered:
-                    indexed_filters = filtered & vc.effective_indexes(entity_name)
+                    # Whether an index can narrow this filter, judged on the
+                    # condition SHAPE rather than on "is any filtered column
+                    # indexed" — that question ignores how the conditions
+                    # combine, and scored an OR with one indexed branch and one
+                    # unindexed one as safe. See _index_covered.
+                    covered = _index_covered(
+                        normalise(view.where), vc.effective_indexes(entity_name),
+                    )
                     # An index on a Lookup or Person column counts here, same
                     # as any other: measured at 6,000 items with the column
                     # projected and the join verified, the query is served. See
@@ -527,7 +560,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         if types_by_col.get(name) not in UNSUPPORTED_INDEX_TYPES
                         and name not in vc.calculated_by_entity.get(entity_name, set())
                     }
-                    if not indexed_filters:
+                    if not covered:
                         remedy = (
                             (
                                 "Add a bare DBML index to the tested column. "
