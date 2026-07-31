@@ -8,9 +8,9 @@ never going to exist. A generator must not import from `analysis/checks/`, which
 is the other half of why this is a module and not a helper in `_views.py`.
 
 WHY IT MATTERS. This threshold is a property of a view's SHAPE, not of its size:
-a view over 13 join-bearing columns is blank on a list holding ten rows. No
-amount of indexing helps and no deployment is small enough to avoid it. It is a
-DIFFERENT limit from the 5,000-item list view threshold `_views.py` also warns
+a view with 13 or more join-bearing columns is blank on a list holding ten rows.
+No amount of indexing helps and no deployment is small enough to avoid it. It is
+a DIFFERENT limit from the 5,000-item list view threshold `_views.py` also warns
 about, and the two are distinguishable in a transcript: this one refuses with
 `SPQueryThrottledException` code `-2147024749`, the item-count one with
 `-2147024860`.

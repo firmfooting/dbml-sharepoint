@@ -312,7 +312,8 @@ def _join_finding(subject: str, columns: list[str], remedy: str) -> Finding:
     # clean. The two Finding(...) groups DO interpolate and keep their prefixes.
     shared = (
         "Every Lookup and Person column costs one join, including Created By "
-        "(Author) and Modified By (Editor); Created and Modified cost nothing, "
+        "(Author) and Modified By (Editor); Created and Modified are inferred "
+        "to cost nothing, from their datetime type rather than a measurement, "
         "and a cross-site reference costs nothing because it expands to a "
         "Choice + URL pair."
     )
@@ -419,6 +420,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
         # The built-in Title always exists on a provisioned list, declared or not.
+        # This is the DECLARED view's rendered set, not `joins.all_items_rendered`
+        # (the generated All Items one) — same shape, different subject, kept
+        # separate on purpose; do not fold this into that helper.
         view_rendered = _rendered_columns(view_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         # The type map must cover everything view_rendered admits, or a
         # column that IS filterable reports "no declared type" and aborts the
@@ -768,7 +772,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     for entity_name, entity in bundle.mapping.entities.items():
         table = tables_by_name.get(entity_name)
         hide_ctx = f"entities[{entity_name}].hide_from_all_items"
-        # The kind guard mirrors generators/jsgen.py:596, which builds All Items
+        # The kind guard mirrors generators/jsgen.py:597, which builds All Items
         # for everything except a DocumentLibrary. Counting one here would
         # refuse a schema over a view the generator never creates. An entity
         # with no table is already reported by _structure; a second message
