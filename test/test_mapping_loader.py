@@ -2168,3 +2168,21 @@ def test_totals_must_be_a_mapping(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="must be a mapping"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_accept_unindexable_display_column_defaults_false_and_parses(
+    tmp_path: Path,
+) -> None:
+    """The author's deliberate acceptance that a calculated display column will
+    break this list's picker past 5,000 items. Off unless written down."""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Plain: { kind: List, base_template: 100, site_role: default }\n"
+        "  Accepted: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Label, accept_unindexable_display_column: true }\n",
+        encoding="utf-8",
+    )
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+    assert mapping.entities["Plain"].accept_unindexable_display_column is False
+    assert mapping.entities["Accepted"].accept_unindexable_display_column is True

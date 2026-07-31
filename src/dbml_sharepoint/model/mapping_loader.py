@@ -129,6 +129,7 @@ KNOWN_SECTIONS = frozenset({
 
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
+    "accept_unindexable_display_column",
 })
 _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
@@ -187,6 +188,9 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             site_role=spec["site_role"],
             singleton=_optional_bool(spec, "singleton", f"entities.{name}"),
             display_column=spec.get("display_column"),
+            accept_unindexable_display_column=_optional_bool(
+                spec, "accept_unindexable_display_column", f"entities.{name}",
+            ),
         )
 
     cross_site = []
