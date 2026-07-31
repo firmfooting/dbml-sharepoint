@@ -4470,6 +4470,7 @@ def test_hide_from_all_items_does_not_lift_the_join_ceiling(
     assert found[0].severity == "error"
     assert "14 join-bearing columns" in found[0].message
     assert "Author" not in _named(found[0].message)
+    assert "Editor" not in _named(found[0].message)
     assert "hide_from_all_items" in found[0].message
 
 
@@ -4522,6 +4523,52 @@ def test_a_document_library_gets_no_all_items_join_finding(
     assert len(found) == 1
     assert found[0].severity == "error"
     assert "15 join-bearing columns" in found[0].message
+
+
+def test_hide_from_all_items_on_a_document_library_is_refused(
+    tmp_path: Path,
+) -> None:
+    """The refusal above the loop's `continue`, exercised for the first time in
+    this file. No other test in this section supplies `hide_from_all_items` on
+    an entity the loop skips, so without this the branch that answers it has
+    no red/green cycle anywhere in the suite — the `_join_findings` filter
+    would not even see it, since this message never says "join-bearing
+    columns" or "join operations": it belongs to a different subject entirely.
+
+    Task 5's own covering test for this branch is already green at its
+    fail-first gate, by design, because Task 4 answers this key before Task 5
+    exists — that is documented there, not a gap here."""
+    library = (
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Person: { kind: List, base_template: 100, site_role: default }\n"
+        "  Project:\n"
+        "    kind: DocumentLibrary\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_items: [Author]\n"
+    )
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Person {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(library, encoding="utf-8")
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    found = [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.message.startswith("entities[Project].hide_from_all_items")
+    ]
+    assert len(found) == 1
+    assert found[0].severity == "error"
 
 
 def test_a_cross_site_ref_costs_no_join_on_all_items(tmp_path: Path) -> None:

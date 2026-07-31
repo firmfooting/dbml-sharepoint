@@ -69,6 +69,7 @@ from collections.abc import Set as AbstractSet
 
 from dbml_sharepoint.analysis.conditions import SYSTEM_COLUMN_TYPES
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
+from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
 from dbml_sharepoint.model.mapping_loader import EntityMapping
 from dbml_sharepoint.model.parser import Table
 
@@ -138,3 +139,29 @@ def all_items_hidden(entity: EntityMapping) -> frozenset[str]:
     declare, and nothing here is consulted for them.
     """
     return frozenset(entity.hide_from_all_items)
+
+
+def all_items_joining_fields(
+    table: Table, entity: EntityMapping, cross_site_cols: AbstractSet[str],
+) -> list[str]:
+    """The join-bearing fields the GENERATED `All Items` view renders.
+
+    The single place this arithmetic is written down: `_rendered_columns` plus
+    `Title` and the five `SYSTEM_COLUMNS`, minus whatever `hide_from_all_items`
+    hides, narrowed to what `join_bearing_columns` counts. `_views.py`'s entity
+    loop and `test_template_standard.py`'s shipped-template survey both call
+    this rather than each carrying their own copy — a survey test that
+    re-typed the formula by hand would be pinning its OWN arithmetic, not what
+    the validator computes, and would keep passing even if the validator's
+    copy silently dropped a term.
+
+    NOT the same code the generator runs — read this honestly. jsgen builds
+    All Items from `emitted_fields` (phase-1 titles plus the phase-2 lookup
+    titles), which is a different code path that happens to produce the same
+    set. `test/test_jsgen.py` carries ONE equivalence test pinning the two
+    together; if that test goes, so does the guarantee.
+    """
+    rendered = _rendered_columns(table, set(cross_site_cols)) | {"Title"} | SYSTEM_COLUMNS
+    bearing = join_bearing_columns(table, cross_site_cols)
+    hidden = all_items_hidden(entity)
+    return joining_fields(rendered - hidden, bearing)
