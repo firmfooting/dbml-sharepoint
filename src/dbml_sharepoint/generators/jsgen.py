@@ -346,8 +346,11 @@ def build_schema_json(
     # The picker's index. Deployed here so it actually exists; counted against
     # the 20-index ceiling in analysis.checks._context, from this same
     # derivation, so the validator and the deployer cannot disagree about it.
+    # cross_site_keys goes in because those columns are Choice + URL pairs, not
+    # Lookups: nothing enumerates the far list, so an Indexed=true MERGE on it
+    # would be a write to a customer tenant that buys nothing.
     display_columns = lookup_display_columns(
-        schema, bundle.mapping.entities, calculated_by_entity,
+        schema, bundle.mapping.entities, calculated_by_entity, cross_site_keys,
     )
 
     lists: list[dict[str, Any]] = []

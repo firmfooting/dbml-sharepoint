@@ -35,6 +35,10 @@ class ValidationContext:
     # Columns expanded to a Choice+URL pair rather than deployed as declared,
     # so a check asking "is this column rendered?" must consult this too.
     cross_site_by_entity: dict[str, set[str]] = field(default_factory=dict)
+    # The same declarations keyed as (entity, column). Checks that ask "is THIS
+    # column cross-site?" need the pair: a cross-site ref and a real lookup can
+    # both point out of the same entity, and only the first is exempt.
+    cross_site_pairs: set[tuple[str, str]] = field(default_factory=set)
     # {entity: calculated column names}. Derived once here rather than in
     # each check, so no two of them can disagree about what "calculated"
     # means — which is the whole point of this object.
@@ -50,8 +54,10 @@ class ValidationContext:
     @classmethod
     def build(cls, schema: Schema, bundle: MappingBundle) -> "ValidationContext":
         cross_site_by_entity: dict[str, set[str]] = {}
+        cross_site_pairs: set[tuple[str, str]] = set()
         for xref in bundle.mapping.cross_site_reference_columns:
             cross_site_by_entity.setdefault(xref.entity, set()).add(xref.column)
+            cross_site_pairs.add((xref.entity, xref.column))
         enum_names = {e.name for e in schema.enums}
         explicit_indexes_by_entity = {
             table.name: {
@@ -95,8 +101,10 @@ class ValidationContext:
         # Folded in HERE rather than checked separately so the existing
         # 20-index ceiling counts it: a schema declaring twenty and needing a
         # twenty-first fails at validate time, before anything is deployed.
+        # A cross-site ref is excluded: it is a Choice + URL pair, so no far-side
+        # list is enumerated and there is no picker to buy an index for.
         display_columns = lookup_display_columns(
-            schema, bundle.mapping.entities, calculated_by_entity,
+            schema, bundle.mapping.entities, calculated_by_entity, cross_site_pairs,
         )
         return cls(
             schema=schema,
@@ -105,6 +113,7 @@ class ValidationContext:
             tables_by_name={t.name: t for t in schema.tables},
             enum_by_name={e.name: e for e in schema.enums},
             cross_site_by_entity=cross_site_by_entity,
+            cross_site_pairs=cross_site_pairs,
             calculated_by_entity=calculated_by_entity,
             explicit_indexes_by_entity=explicit_indexes_by_entity,
             unique_indexes_by_entity=unique_indexes_by_entity,
