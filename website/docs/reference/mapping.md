@@ -51,7 +51,8 @@ displays it carries on normally. The failure looks like a form bug and arrives
 late, on the busiest list.
 
 Measured at 6,500 items against `GetLookupFieldChoices`, the call the form itself
-makes (`test/manual/threshold-index-probe.js`, 2026-07-31):
+makes (`test/manual/threshold-index-probe.js`, 2026-07-31). The column varied is
+SharePoint's `ShowField`, which is what `display_column` sets:
 
 | ShowField | Result |
 |---|---|
@@ -80,9 +81,10 @@ apparent levers were measured on a live tenant and all three are closed:
   offered rows outside it.
 
 If you need a filtered picker, the options are outside a list schema: an SPFx
-form customizer, whose `ListItemPicker` takes a real OData filter, or a smaller
-curated target list. Neither is expressible in `mapping.yaml`, and this tool will
-not pretend otherwise.
+form customizer built on `@pnp/spfx-controls-react`'s `ListItemPicker` — PnP's
+own documentation, not a measurement made here, says it takes a real OData
+filter — or a smaller curated target list. Neither is expressible in
+`mapping.yaml`, and this tool will not pretend otherwise.
 :::
 
 :::danger `kind: DocumentLibrary` is refused at build time
