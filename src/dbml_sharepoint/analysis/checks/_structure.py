@@ -162,12 +162,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"accept_unindexable_display_column: true on the entity.",
                 ))
         elif entity.accept_unindexable_display_column:
+            # Reaching here means NOT (target AND calculated), which is three
+            # combinations, not one. The message used to assert "the display
+            # column is not calculated" in all three — false for a calculated
+            # display column on an entity nothing looks up, which is precisely
+            # the case an author is most likely to have set the key for. State
+            # only what is true of the branch actually taken.
+            reasons = []
+            if entity_name not in lookup_targets:
+                reasons.append("nothing looks this entity up")
+            if not is_calculated:
+                reasons.append(f"the display column {display!r} is not calculated")
             findings.append(Finding(
                 "warning",
                 f"{entity_name}: accept_unindexable_display_column is set, but "
-                f"the display column {display!r} is not calculated"
-                + ("" if entity_name in lookup_targets
-                   else " and nothing looks this entity up")
+                + " and ".join(reasons)
                 + ". Remove it — there is nothing to accept.",
             ))
 
@@ -348,11 +357,35 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
         effective_indexes = vc.effective_indexes(entity_name)
         if len(effective_indexes) > 20:
+            # Name the implicit contributors. The old message said only
+            # "(including unique columns)", which on the case this rule exists
+            # for — twenty declared indexes on a lookup target, no unique
+            # columns anywhere — is both unhelpful and false: the author counts
+            # twenty and is told the twenty-first comes from something that is
+            # not there.
+            declared = vc.explicit_indexes_by_entity.get(entity_name, set())
+            extra: list[str] = []
+            implicit_unique = sorted(unique_indexes - declared)
+            if implicit_unique:
+                extra.append(
+                    ", ".join(repr(name) for name in implicit_unique)
+                    + (" from a [unique] column" if len(implicit_unique) == 1
+                       else " from [unique] columns"),
+                )
+            display_index = vc.display_index_by_entity.get(entity_name)
+            if display_index is not None and display_index not in declared | unique_indexes:
+                extra.append(
+                    f"{display_index!r}, indexed automatically because this "
+                    f"list is a lookup target — a picker cannot enumerate an "
+                    f"unindexed column past 5,000 items",
+                )
             findings.append(Finding(
                 "error",
                 f"{entity_name}.indexes: {len(effective_indexes)} "
-                f"effective indexes exceed SharePoint's limit of 20 "
-                f"(including unique columns).",
+                f"effective indexes exceed SharePoint's limit of 20. "
+                f"{len(declared)} declared in indexes {{ }}"
+                + "".join(f", plus {item}" for item in extra)
+                + ".",
             ))
         elif len(effective_indexes) >= 18:
             # The count is a floor, not a total. SharePoint creates indexes on

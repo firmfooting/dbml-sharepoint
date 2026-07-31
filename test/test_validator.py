@@ -627,6 +627,81 @@ def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> N
     assert len(warnings) == 0
 
 
+def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst(
+    tmp_path: Path,
+) -> None:
+    """The case this whole rule exists for. The author declared twenty, has no
+    unique columns, and the only hint used to be "(including unique columns)" —
+    which is false here. The error must name the display column as the index
+    they cannot see."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 21))
+    indexes = " ".join(f"C{i}" for i in range(1, 21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Event {{\n  Id int [pk, increment]\n  Title nvarchar\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    errors = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "21 " in errors[0]
+    assert "20 declared in indexes" in errors[0]
+    assert "'Title'" in errors[0]
+    assert "lookup target" in errors[0]
+    # The old parenthetical claimed unique columns were in the count. There are
+    # none on this list, so it must not say so.
+    assert "unique" not in errors[0]
+
+
+def test_the_over_budget_error_names_unique_columns_when_there_are_some(
+    tmp_path: Path,
+) -> None:
+    """The other implicit contributor. Naming one and not the other would send
+    an author looking in the wrong place."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 21))
+    indexes = " ".join(f"C{i}" for i in range(1, 21))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n  Code nvarchar [unique]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    errors = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "'Code' from a [unique] column" in errors[0]
+    # Nothing looks Big up, so there is no display-column index to blame.
+    assert "lookup target" not in errors[0]
+
+
 def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
@@ -1510,6 +1585,47 @@ def test_a_pointless_acceptance_warns(tmp_path: Path) -> None:
     ]
     assert len(warnings) == 1
     assert "is not calculated" in warnings[0]
+
+
+def test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth(
+    tmp_path: Path,
+) -> None:
+    """Not a lookup target, display column IS calculated, key set. The verdict
+    (remove it) is right, but the message used to say "the display column
+    'Label' is not calculated" about a column that is. The combination had no
+    test, which is why the false message shipped."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Label calculated_text\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Label, accept_unindexable_display_column: true }\n"
+        "calculated_formulas:\n"
+        "  Event:\n"
+        '    Label: "=[Title]"\n',
+        encoding="utf-8",
+    )
+    warnings = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "warning"
+        and "accept_unindexable_display_column" in f.message
+    ]
+    assert len(warnings) == 1
+    assert "nothing looks this entity up" in warnings[0]
+    # 'Label' IS calculated. Saying otherwise is simply untrue.
+    assert "is not calculated" not in warnings[0]
+    assert "Remove it" in warnings[0]
 
 
 # --- Declared views ---------------------------------------------------------
