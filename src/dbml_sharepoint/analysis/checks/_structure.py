@@ -138,12 +138,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
 
         # A lookup's picker enumerates its target list. A calculated display
-        # column cannot be indexed — CALCIDX sets Indexed=true, the MERGE is
-        # ACCEPTED, and the flag reads back false — so the enumeration is
-        # refused once the target passes the threshold and the column becomes
-        # unsettable. Measured against GetLookupFieldChoices at 6,500 items:
-        # an indexed ShowField served, both calculated ones returned
-        # SPQueryThrottledException.
+        # column cannot be indexed, so the enumeration is refused once the
+        # target passes the threshold and the column becomes unsettable.
+        # MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2:
+        # at 6,500 items in the target, GetLookupFieldChoices served an indexed
+        # ShowField (2,000 choices) and refused both calculated ones with
+        # SPQueryThrottledException; and CALCIDX set Indexed=true on a
+        # calculated column, the MERGE was ACCEPTED, and the flag read back
+        # false.
         #
         # A warning rather than an error because a list that stays small has no
         # problem, and that is a common, legitimate case.

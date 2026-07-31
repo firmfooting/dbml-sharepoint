@@ -11,8 +11,8 @@ WHY THE INDEX MATTERS. A Lookup's picker enumerates the target list. Past the
 stops working, while views that merely display the column carry on — so the
 failure surfaces late, on the busiest list, looking like a form bug.
 
-Measured at 6,500 items in the target against `GetLookupFieldChoices`, the call
-the form itself makes (`test/manual/threshold-index-probe.js`):
+MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2: at 6,500
+items in the target, against `GetLookupFieldChoices` — the call the form makes:
 
     Title, INDEXED           SERVED, 2,000 choices
     PickLabel, Calculated    REFUSED, SPQueryThrottledException
