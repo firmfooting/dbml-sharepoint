@@ -22,7 +22,7 @@ the form itself makes (`test/manual/threshold-index-probe.js`):
 indexing it flipped two other target queries from refused to served.
 """
 
-from dbml_sharepoint.model._mapping_types import EntityMapping
+from dbml_sharepoint.model.mapping_loader import EntityMapping
 from dbml_sharepoint.model.parser import Schema
 
 # A SharePoint list's built-in primary field, and the LookupField a lookup
