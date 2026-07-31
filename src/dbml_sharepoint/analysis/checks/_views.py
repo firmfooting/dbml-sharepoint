@@ -14,7 +14,7 @@ from dbml_sharepoint.analysis.conditions import (
 from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,
     JOIN_WARN_AT,
-    all_items_hidden,
+    all_items_joining_fields,
     join_bearing_columns,
     joining_fields,
 )
@@ -777,29 +777,20 @@ def check(vc: ValidationContext) -> list[Finding]:
         # be refused, or the loop silently accepts a key that can never do
         # anything — which is the opposite of the "a typo must not silently do
         # nothing" rule the key's own validation exists to enforce. So the key
-        # is answered here, BEFORE the continue. `rendered` and `bearing` do not
-        # exist yet and cannot: there is no All Items to be rendered by.
+        # is answered here, BEFORE the continue: there is no generated view yet
+        # for `all_items_joining_fields` to measure, so nothing downstream
+        # could ever tell the key was honoured.
         if table is None or entity.kind == "DocumentLibrary":
             for col_name in entity.hide_from_all_items:
                 findings.append(Finding(
                     "error",
-                    f"{hide_ctx}: {col_name!r} is not a column the generated "
-                    f"'All Items' view renders on {entity_name} — no "
-                    f"'All Items' view is generated for this entity at all, so "
-                    f"hiding anything on it would silently do nothing.",
+                    f"{hide_ctx}: {col_name!r} cannot be hidden — no 'All "
+                    f"Items' view is generated for {entity_name} at all, so "
+                    "this key would silently do nothing.",
                 ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        # NOT the same code the generator runs — read this honestly. jsgen
-        # builds All Items from `emitted_fields` (phase-1 titles plus the
-        # phase-2 lookup titles), which is a different code path that happens to
-        # produce the same set. `test/test_jsgen.py` carries ONE equivalence
-        # test pinning the two together; if that test goes, so does the
-        # guarantee.
-        rendered = _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
-        bearing = join_bearing_columns(table, xcols)
-        hidden = all_items_hidden(entity)
-        shown_joins = joining_fields(rendered - hidden, bearing)
+        shown_joins = all_items_joining_fields(table, entity, xcols)
         if len(shown_joins) >= JOIN_WARN_AT:
             findings.append(_join_finding(
                 f"entities[{entity_name}]: the generated 'All Items' view",

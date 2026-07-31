@@ -1325,21 +1325,29 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
     only fires at 9, so a template could climb from 5 to 8 unnoticed and the
     warning band would be one column away with nothing having said so.
 
+    Calls `all_items_joining_fields` — the same derivation `_views.py`'s
+    entity loop calls — rather than re-typing the formula here. A copy would
+    let this test and the validator drift: `assert worst == 5` could keep
+    passing against its OWN arithmetic even if the validator's copy silently
+    dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
+
     Measured 2026-07-31 across 30 templates / 53 entities: the distribution is
     2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1, and the 5 is
     opportunities-register/Opportunity (DecisionMaker, OpportunityOwner,
     ProjectContact, plus Author and Editor). If this fails at 6, that is a
     template growing a join column — update the number here DELIBERATELY, and
     check the spec's survey paragraph with it."""
-    from dbml_sharepoint.analysis.joins import (
-        all_items_hidden,
-        join_bearing_columns,
-        joining_fields,
-    )
-    from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
+    from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
+    templates = _all_templates()
+    assert len(templates) == 30, (
+        f"{len(templates)} templates discovered, not the 30 this survey was "
+        f"measured against. A template appeared or disappeared from the "
+        f"roster — re-measure the distribution and the worst count below "
+        f"before trusting either."
+    )
     worst = 0
-    for template in _all_templates():
+    for template in templates:
         root = TEMPLATES / template
         schema = parse_dbml(root / "10-design" / "schema.dbml")
         bundle = load_mapping(root / "20-configure" / "mapping.yaml")
@@ -1352,7 +1360,13 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
             if table is None or entity.kind == "DocumentLibrary":
                 continue
             xcols = by_entity.get(name, set())
-            rendered = _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
-            shown = rendered - all_items_hidden(entity)
-            worst = max(worst, len(joining_fields(shown, join_bearing_columns(table, xcols))))
-    assert worst == 5
+            worst = max(worst, len(all_items_joining_fields(table, entity, xcols)))
+    assert worst == 5, (
+        f"worst generated 'All Items' is now {worst} of 12, not the pinned 5. "
+        f"If this ROSE, a template grew a join-bearing column on its worst "
+        f"entity — update the number here DELIBERATELY, and check the spec's "
+        f"survey paragraph with it. If it FELL, a formula term (SYSTEM_COLUMNS "
+        f"or hide_from_all_items) may have been dropped from "
+        f"all_items_joining_fields — check that before assuming the templates "
+        f"improved."
+    )
