@@ -4659,27 +4659,59 @@ def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo(
     that plainly exists.
 
     NOTE on what this test can and cannot pin, recorded here because it is
-    not obvious from the assertions alone — see task-6-report.md, 'Fix round
-    2', for the full investigation. `_join_inputs` declares `Title` as a
-    real DBML column on `Project`, so `_rendered_columns` alone already puts
-    'Title' in `rendered` — the explicit `| {"Title"}` union that exists for
-    entities that do NOT declare their own Title (SharePoint's base-template
-    Title exists regardless) is redundant for THIS fixture. That union lives
-    in two places with identical text: `analysis/joins.py:165`, inside
-    `all_items_joining_fields`, and `analysis/checks/_views.py:801`, an
-    independent literal copy the escape-hatch checks below actually read.
-    Dropping the union from `joins.py:165` changes nothing observable here —
-    confirmed by running this exact test with that line edited — because
-    `_views.py:801` is untouched by it. Dropping it from `_views.py:801`
-    alone DOES flip the message to the typo branch, but only on a fixture
-    with no declared Title column, which `_join_inputs` does not build and
-    no helper in this file currently does. This test still pins real,
-    correct, non-vacuous behaviour (the branch choice for hiding Title
-    today); it does not yet prove the union in either file is load-bearing.
+    not obvious from the assertions alone. `_join_inputs` declares `Title`
+    as a real DBML column on `Project`, so `_rendered_columns` alone already
+    puts 'Title' in `rendered` — the explicit `| {"Title"}` union inside
+    `analysis/joins.py::all_items_rendered` is redundant for THIS fixture
+    and this test cannot observe it being dropped. That is by design, not
+    an oversight: this test pins the branch choice for an entity that DOES
+    declare its own Title (a real, common case), and
+    `test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch`
+    immediately below pins the case that actually exercises the union — see
+    task-6-report.md, 'Fix round 2' and 'Fix round 3', for the investigation
+    that separated the two.
     """
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [Title]\n",
     )
+    msgs = _hide_errors(schema, bundle)
+    assert len(msgs) == 1
+    assert "costs no join operation" in msgs[0]
+    assert "Check the spelling" not in msgs[0]
+
+
+def test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch(
+    tmp_path: Path,
+) -> None:
+    """The fixture `_join_inputs` builds cannot pin this — see the NOTE on
+    `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` above.
+    This entity's DBML declares NO `Title` column at all, which is legal:
+    SharePoint's base-template `Title` exists on every provisioned list
+    regardless of whether the schema names it. So 'Title' reaches
+    `all_items_rendered`'s result ONLY through its `| {"Title"}` union —
+    `_rendered_columns` alone has nothing to contribute for a column that
+    is not in `table.columns`. `hide_from_all_items: [Title]` must still be
+    refused for costing no join, not reported as an unrecognised column."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Project {\n"
+        "  Id int [pk, increment]\n"
+        "  Notes nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Project:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_items: [Title]\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
     msgs = _hide_errors(schema, bundle)
     assert len(msgs) == 1
     assert "costs no join operation" in msgs[0]

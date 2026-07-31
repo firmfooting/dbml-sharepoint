@@ -15,6 +15,7 @@ from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,
     JOIN_WARN_AT,
     all_items_joining_fields,
+    all_items_rendered,
     join_bearing_columns,
     joining_fields,
 )
@@ -794,11 +795,18 @@ def check(vc: ValidationContext) -> list[Finding]:
         # `all_items_joining_fields` composes internally; bound here as well
         # because the validations below need the UNDIMINISHED sets — whether a
         # name renders at all, and whether it costs a join — not the
-        # post-suppression result `shown_joins` carries. Sharing this pair
-        # rather than re-deriving `all_items_joining_fields`'s own arithmetic
-        # (rendered minus hidden) is what keeps this file and joins.py from
-        # drifting; see analysis/joins.py's module docstring.
-        rendered = _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        # post-suppression result `shown_joins` carries. Both are genuine
+        # calls into analysis/joins.py, not re-typed copies of its formulas.
+        # `rendered` used to be its own
+        # `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS` written out a
+        # second time in this file — textually identical to the one inside
+        # `all_items_joining_fields`, but a separate expression the escape-hatch
+        # checks below actually read. Dropping a term from either copy alone
+        # left the other's callers unaffected, which is how that drift went
+        # undetected; see `all_items_rendered`'s docstring in joins.py and
+        # `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` in
+        # test/test_validator.py.
+        rendered = all_items_rendered(table, xcols)
         bearing = join_bearing_columns(table, xcols)
         shown_joins = all_items_joining_fields(table, entity, xcols)
         if len(shown_joins) >= JOIN_WARN_AT:

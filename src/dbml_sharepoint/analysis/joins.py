@@ -141,19 +141,46 @@ def all_items_hidden(entity: EntityMapping) -> frozenset[str]:
     return frozenset(entity.hide_from_all_items)
 
 
+def all_items_rendered(table: Table, cross_site_cols: AbstractSet[str]) -> set[str]:
+    """Every column the generated `All Items` view renders, before hiding.
+
+    `_rendered_columns` plus `Title` plus the five `SYSTEM_COLUMNS`. The
+    `{"Title"}` union is not redundant padding: a DBML table need not declare
+    its own `Title` column at all — SharePoint's base-template `Title` exists
+    on every list regardless, and `jsgen.py` writes it into `All Items`
+    literally (see that file's `title_patch` branch), never through
+    `_rendered_columns`, which only sees columns `table.columns` actually
+    lists. An entity that DOES declare `Title` masks this: `_rendered_columns`
+    already contains it with no union applied, which is exactly what let this
+    union go silently unread by one of its two former call sites — see
+    `test/test_validator.py::test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo`
+    for the fixture shaped to catch that.
+
+    ONE place this set is written down, on purpose: `all_items_joining_fields`
+    below and `_views.py`'s entity loop both call this rather than each
+    carrying their own copy of the same three-term union. Two copies of an
+    identical-looking expression is how a dropped term goes unnoticed —
+    the two used to be `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS`
+    written out twice, and dropping the term from either one alone left the
+    other's callers unaffected, which is what the test above exists to catch
+    now that there is only one copy for it to catch a drift in.
+    """
+    return _rendered_columns(table, set(cross_site_cols)) | {"Title"} | SYSTEM_COLUMNS
+
+
 def all_items_joining_fields(
     table: Table, entity: EntityMapping, cross_site_cols: AbstractSet[str],
 ) -> list[str]:
     """The join-bearing fields the GENERATED `All Items` view renders.
 
-    The single place this arithmetic is written down: `_rendered_columns` plus
-    `Title` and the five `SYSTEM_COLUMNS`, minus whatever `hide_from_all_items`
-    hides, narrowed to what `join_bearing_columns` counts. `_views.py`'s entity
-    loop and `test_template_standard.py`'s shipped-template survey both call
-    this rather than each carrying their own copy — a survey test that
-    re-typed the formula by hand would be pinning its OWN arithmetic, not what
-    the validator computes, and would keep passing even if the validator's
-    copy silently dropped a term.
+    The single place this arithmetic is written down: `all_items_rendered`
+    minus whatever `hide_from_all_items` hides, narrowed to what
+    `join_bearing_columns` counts. `_views.py`'s entity loop and
+    `test_template_standard.py`'s shipped-template survey both call this
+    rather than each carrying their own copy — a survey test that re-typed
+    the formula by hand would be pinning its OWN arithmetic, not what the
+    validator computes, and would keep passing even if the validator's copy
+    silently dropped a term.
 
     NOT the same code the generator runs — read this honestly. jsgen builds
     All Items from `emitted_fields` (phase-1 titles plus the phase-2 lookup
@@ -162,7 +189,7 @@ def all_items_joining_fields(
     carries ONE equivalence test pinning the two together; if that test goes,
     so does the guarantee.
     """
-    rendered = _rendered_columns(table, set(cross_site_cols)) | {"Title"} | SYSTEM_COLUMNS
+    rendered = all_items_rendered(table, cross_site_cols)
     bearing = join_bearing_columns(table, cross_site_cols)
     hidden = all_items_hidden(entity)
     return joining_fields(rendered - hidden, bearing)
