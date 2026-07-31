@@ -1420,6 +1420,76 @@ def test_indexed_lookup_filter_does_not_warn(tmp_path: Path) -> None:
     assert warnings == []
 
 
+@pytest.mark.parametrize(
+    "display_column",
+    [None, "Label"],
+    ids=["default_title", "declared_display_column"],
+)
+def test_view_filtered_on_lookup_targets_display_column_does_not_warn(
+    tmp_path: Path, display_column: str | None,
+) -> None:
+    """Locks in what Task 2 exists to produce: a lookup target's display
+    column carries an implicit index (a picker past the 5,000-item threshold
+    needs it — see analysis/lookups.py), so THIS check — which only ever
+    reads `vc.effective_indexes` — must score a view on the TARGET entity
+    that filters on that column as safe, even with no explicit `indexes {}`
+    entry naming it. Parameterised over the default display column (Title,
+    when the mapping declares nothing) and an explicit `display_column`,
+    because Task 2 folds both in the same way.
+
+    Filtering on a different, non-display, unindexed column on the same
+    entity must still warn — proving the check still fires at all, so a bug
+    that silenced it completely could not pass the first half vacuously.
+    """
+    filtered_column = display_column or "Title"
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Label nvarchar\n"
+        "  Status nvarchar\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    display_clause = f", display_column: {display_column}" if display_column else ""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        f"  Event: {{ kind: List, base_template: 100, site_role: default"
+        f"{display_clause} }}\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
+        "views:\n"
+        "  Event:\n"
+        "    - title: Filtered by display\n"
+        "      fields: [Title, Label, Status]\n"
+        f"      where: [{{ field: {filtered_column}, op: eq, value: X }}]\n"
+        "    - title: Filtered by other\n"
+        "      fields: [Title, Label, Status]\n"
+        "      where: [{ field: Status, op: eq, value: Y }]\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    threshold_warnings = [
+        f.message for f in findings
+        if f.severity == "warning" and "list view threshold" in f.message
+    ]
+    display_warnings = [
+        m for m in threshold_warnings if "views[Event].Filtered by display" in m
+    ]
+    other_warnings = [
+        m for m in threshold_warnings if "views[Event].Filtered by other" in m
+    ]
+    assert display_warnings == [], display_warnings
+    assert other_warnings != [], "the check must still warn on a real gap"
+
+
 def test_indexed_person_filter_does_not_warn(tmp_path: Path) -> None:
     """An indexed Person column counts as a useful index.
 
