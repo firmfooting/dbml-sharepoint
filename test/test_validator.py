@@ -3390,3 +3390,68 @@ def test_names_that_differ_only_in_case_are_refused(tmp_path: Path) -> None:
         assert any(
             f.message.startswith(what) and "case" in f.message for f in errors
         ), (what, [f.message for f in errors])
+
+
+def test_a_lookup_targets_display_column_counts_as_an_index(tmp_path: Path) -> None:
+    """The picker's index is real and spends a real slot, so the ceiling must
+    see it. Declaring 20 and needing a 21st has to fail at validate time, not at
+    deploy time on someone's tenant."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Status nvarchar\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    vc = ValidationContext.build(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert "Title" in vc.effective_indexes("Event")
+    # The child is not a target of anything.
+    assert vc.effective_indexes("FollowUp") == set()
+
+
+def test_a_calculated_display_column_does_not_count_as_an_index(tmp_path: Path) -> None:
+    """It cannot be indexed, so counting it would push a schema over the ceiling
+    for an index that cannot exist — the failure mode in the other direction."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Ref nvarchar\n"
+        "  Label calculated_text\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Label }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    from dbml_sharepoint.analysis.checks._context import ValidationContext
+
+    vc = ValidationContext.build(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    assert "Label" not in vc.effective_indexes("Event")
