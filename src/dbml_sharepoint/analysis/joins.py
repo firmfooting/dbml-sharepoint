@@ -158,8 +158,9 @@ def all_items_joining_fields(
     NOT the same code the generator runs — read this honestly. jsgen builds
     All Items from `emitted_fields` (phase-1 titles plus the phase-2 lookup
     titles), which is a different code path that happens to produce the same
-    set. `test/test_jsgen.py` carries ONE equivalence test pinning the two
-    together; if that test goes, so does the guarantee.
+    set. `test/test_jsgen.py::test_the_validator_and_the_generator_agree_on_what_all_items_renders`
+    carries ONE equivalence test pinning the two together; if that test goes,
+    so does the guarantee.
     """
     rendered = _rendered_columns(table, set(cross_site_cols)) | {"Title"} | SYSTEM_COLUMNS
     bearing = join_bearing_columns(table, cross_site_cols)

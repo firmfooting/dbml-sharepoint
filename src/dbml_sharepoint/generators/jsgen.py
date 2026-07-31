@@ -609,9 +609,12 @@ def build_schema_json(
             # asked for and are the usual answer.
             #
             # The validator counts this same view, but from its OWN derivation
-            # in analysis/checks/_views.py — NOT this code. Only
-            # hide_from_all_items is genuinely shared, via analysis/joins.py.
-            # The two field lists are held equal by ONE test:
+            # — analysis/joins.py::all_items_joining_fields, called from the
+            # entity loop at analysis/checks/_views.py:803 — NOT this code.
+            # join_bearing_columns, joining_fields, SYSTEM_JOIN_COLUMNS and
+            # hide_from_all_items are all genuinely shared via
+            # analysis/joins.py; the actual FIELD LIST this block builds is
+            # not. The two field lists are held equal by ONE test:
             # test_the_validator_and_the_generator_agree_on_what_all_items_renders
             # in test/test_jsgen.py. If you change what this list renders,
             # that test is what tells you the validator disagrees.
