@@ -1360,6 +1360,123 @@ def test_accepting_it_silences_the_warning_completely(tmp_path: Path) -> None:
     ]
 
 
+def _display_type_inputs(
+    tmp_path: Path, column_type: str, *, looked_up: bool,
+) -> tuple[Schema, MappingBundle]:
+    follow_up = (
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n"
+        if looked_up else ""
+    )
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        f"  Notes {column_type}\n"
+        "}\n" + follow_up,
+        encoding="utf-8",
+    )
+    entities = (
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Notes }\n"
+    )
+    if looked_up:
+        entities += "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\nentities:\n' + entities, encoding="utf-8",
+    )
+    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
+
+@pytest.mark.parametrize(
+    ("column_type", "described_as"),
+    [
+        ("longtext", "Multiple lines of text (Note)"),
+        ("richtext", "Multiple lines of text (Note)"),
+        ("hyperlink", "Hyperlink"),
+    ],
+)
+def test_an_unindexable_display_column_type_is_an_error(
+    tmp_path: Path, column_type: str, described_as: str,
+) -> None:
+    """The display column's index is appended by jsgen AFTER validation, so it
+    never met the type guard every declared `indexes { }` entry passes. It is a
+    deploy abort: _field_reconcile.js.j2 MERGEs Indexed=true, reads it back and
+    throws part-way through a run. An ERROR, not a warning — no acceptance can
+    make a Note column indexable."""
+    schema, bundle = _display_type_inputs(tmp_path, column_type, looked_up=True)
+    errors = [
+        f.message
+        for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error" and "display_column" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "Notes" in errors[0]
+    assert described_as in errors[0]
+    assert "cannot index" in errors[0]
+
+
+def test_an_unindexable_display_column_is_fine_when_nothing_looks_it_up(
+    tmp_path: Path,
+) -> None:
+    """No lookup into it means no implicit index, so there is nothing to refuse.
+    Erroring here would ban a perfectly good Note column from being the label a
+    report happens to print."""
+    schema, bundle = _display_type_inputs(tmp_path, "longtext", looked_up=False)
+    assert not [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error" and "display_column" in f.message
+    ]
+
+
+def test_a_display_column_that_is_never_rendered_is_an_error(tmp_path: Path) -> None:
+    """A cross-site logical column is declared in the DBML but replaced at deploy
+    time by generated Abbreviation and SiteUrl fields, so it never exists on the
+    list. _naming.py cannot see this — the name IS a declared column — and the
+    implicit index would be created on a field that is not there."""
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Region {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "}\n"
+        "Table Event {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar\n"
+        "  Region int [ref: > Region.Id]\n"
+        "}\n"
+        "Table FollowUp {\n"
+        "  Id int [pk, increment]\n"
+        "  Event int [ref: > Event.Id]\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Region: { kind: List, base_template: 100, site_role: default }\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: Region }\n"
+        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Event, column: Region }\n",
+        encoding="utf-8",
+    )
+    errors = [
+        f.message
+        for f in validate_against_mapping(
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        )
+        if f.severity == "error" and "display_column" in f.message
+    ]
+    assert len(errors) == 1, errors
+    assert "not a rendered column" in errors[0]
+    assert "Abbreviation" in errors[0]
+
+
 def test_a_pointless_acceptance_warns(tmp_path: Path) -> None:
     """Set where the display column is perfectly indexable, it signals a
     misunderstanding rather than a decision."""
