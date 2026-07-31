@@ -592,6 +592,41 @@ def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
     assert warnings == []
 
 
+def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> None:
+    """The error firing at > 20 means the warning is unreachable at that threshold.
+    This test pins the mutual exclusion: at 21 the author needs the error, and a
+    headroom warning beside it would be noise about a list that is already over."""
+    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 22))
+    indexes = " ".join(f"C{i}" for i in range(1, 22))
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
+        f"  indexes {{ {indexes} }}\n}}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Big: { kind: List, base_template: 100, site_role: default }\n",
+        encoding="utf-8",
+    )
+    findings = validate_against_mapping(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+    )
+    errors = [
+        f.message
+        for f in findings
+        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
+    ]
+    warnings = [
+        f.message
+        for f in findings
+        if f.severity == "warning" and "18 of the 20" in f.message
+    ]
+    assert len(errors) == 1
+    assert len(warnings) == 0
+
+
 def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"

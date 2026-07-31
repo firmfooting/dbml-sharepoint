@@ -302,6 +302,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             # the only place it exists is the "You have created N of maximum 20
             # indices on this list" line on IndexedColumns.aspx. So a schema
             # that validates at exactly 20 can still hit 21 in production.
+            # MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2:
+            # opening a modern view sorted on an unindexed column at 3,000 items
+            # created an index marked "(Automatically created)" on IndexedColumns.aspx,
+            # consuming one of the twenty.
             findings.append(Finding(
                 "warning",
                 f"{entity_name}.indexes: {len(effective_indexes)} of the 20 "
