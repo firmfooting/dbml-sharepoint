@@ -621,7 +621,7 @@ def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> N
     warnings = [
         f.message
         for f in findings
-        if f.severity == "warning" and "18 of the 20" in f.message
+        if f.severity == "warning" and "available indexes are already spoken for" in f.message
     ]
     assert len(errors) == 1
     assert len(warnings) == 0
