@@ -508,7 +508,7 @@
   // identical transcripts otherwise — this has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision f663165e — quote this when reporting results.');
+  log('INFO', 'probe revision 7d6b7a5b — quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
