@@ -19,6 +19,54 @@ def test_help_lists_build_command() -> None:
     assert "build" in result.stdout
 
 
+def test_help_still_renders_as_rich_panels() -> None:
+    """The CLI's help screen is its user surface, and nothing else asserts it.
+
+    `test_help_lists_build_command` above only looks for the substring "build",
+    which survives rich rendering collapsing entirely -- to plain text, to a
+    stack trace fragment, to anything containing those five letters. A rich or
+    typer major that broke the panel layout would pass the whole suite.
+
+    That is not hypothetical: the rich 13 -> 15 bump in #48 was green on 1292
+    tests, and the only way to know the help screen still rendered was to run it
+    by hand and diff the output. This test is that check, automated, so a
+    dependency bump can be merged on CI alone.
+
+    Asserted here are structural invariants, not exact output -- box-drawing
+    characters prove rich is still drawing panels rather than falling back to
+    plain text, and the section headings prove typer still groups them. Exact
+    spacing and wrapping are deliberately not asserted; those change legitimately
+    between versions and pinning them would make this test noise.
+    """
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    out = result.stdout
+
+    # Rich is still drawing boxes, not emitting a plain-text fallback.
+    #
+    # The CORNERS are platform-dependent and must not be pinned. Rich's panel
+    # box is ROUNDED ('╭'), but Box.substitute swaps in SQUARE ('┌') when the
+    # console reports legacy_windows. So this assertion sees '╭' on the Linux
+    # runner and '┌' on a Windows one. An earlier version of this test pinned
+    # the square set, passed locally, and failed both CI runners.
+    assert "─" in out and "│" in out, (
+        "help output has no box edges: rich is not rendering panels"
+    )
+    assert any(c in out for c in "┌┐└┘╭╮╰╯"), (
+        "help output has no box corners: rich is not rendering panels"
+    )
+
+    # Typer is still grouping into its two named panels.
+    assert "Usage:" in out
+    for heading in ("Options", "Commands"):
+        assert heading in out, f"help output lost the {heading!r} panel heading"
+
+    # Every registered command is listed. A command silently dropped from the
+    # help screen is invisible to anyone who has not read the source.
+    for command in ("build", "report", "version"):
+        assert command in out, f"{command!r} is missing from the help screen"
+
+
 def test_version_command_available_on_direct_module_run() -> None:
     """Regression: the `version` command must be registered *before* the
     ``if __name__ == "__main__"`` guard. When the module is run directly
