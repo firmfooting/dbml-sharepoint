@@ -2017,3 +2017,44 @@ def test_a_misspelt_entity_key_is_still_refused(tmp_path: Path) -> None:
     """)
     with pytest.raises(ValueError, match=r"entities\.Wide: unknown key\(s\)"):
         load_mapping(tmp_path / "m.yaml")
+
+
+def test_reconcile_rejects_a_value_that_is_neither_mode(tmp_path: Path) -> None:
+    """`reconcile:` has exactly two modes and the default DELETES.
+
+    A typo silently falling back to `exact` would delete every declaration the
+    mapping did not list — the behaviour the `reconcile:` docs open with a
+    danger admonition about. So an unrecognised value has to be refused, not
+    coerced.
+
+    Covered only incidentally before, through validator tests that happened to
+    load a mapping. Those are moving to build objects directly, so this needs
+    a loader test of its own.
+    """
+    path = write_mapping(tmp_path, blocks(entities("Risk"), """
+        form_visibility:
+          Risk:
+            reconcile: bogus
+            columns: {}
+    """))
+    with pytest.raises(ValueError, match=r"reconcile.*exact.*declared"):
+        load_mapping(path)
+
+
+def test_a_validation_rule_without_a_message_is_refused(tmp_path: Path) -> None:
+    """A rule with no message fails the save with SharePoint's generic text.
+
+    Which tells the author nothing, so the build refuses it rather than
+    deploying a rule whose failure is unattributable. Same reasoning as the
+    `reconcile` case above, and the same reason it needs a loader test: its
+    only previous coverage was a side effect of validator tests loading YAML.
+    """
+    path = write_mapping(tmp_path, blocks(entities("Risk"), """
+        column_validation:
+          Risk:
+            columns:
+              Title:
+                when: { field: Title, op: is_not_null }
+    """))
+    with pytest.raises(ValueError, match="'message' is required"):
+        load_mapping(path)
