@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, pack, write_mapping
 from _paths import FIXTURES
 from _validator_helpers import _schema
 
@@ -38,27 +40,23 @@ from dbml_sharepoint.model.parser import (
 def test_style_map_keys_must_be_enum_members(tmp_path: Path) -> None:
     """A severity/pill map naming a choice the column's enum does not
     contain is a declaration bug — same ethos as [$Field] checking."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Risk {\n  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n  Status status\n}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            """,
+            table("Risk", ID_PK, TITLE, "Status status"),
+        ),
+        mapping=blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Status: { style: severity, map: { Open: low, Bogus: good } }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Status: { style: severity, map: { Open: low, Bogus: good } }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     findings = validate_against_mapping(schema, bundle)
     assert any(
         "Bogus" in f.message and "column_formatting[Risk].Status" in f.message
@@ -70,28 +68,24 @@ def test_data_bar_color_by_map_keys_must_be_enum_members(tmp_path: Path) -> None
     map key the SOURCE column's enum cannot produce is a declaration bug
     (the bar would silently fall back to neutral for a value that never
     occurs while the intended value goes unmapped)."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum rating {\n"
-        '  "Low"\n'
-        '  "High"\n'
-        "}\n"
-        "Table Risk {\n  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n  Rating rating\n  Score int\n}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum rating {
+              "Low"
+              "High"
+            }
+            """,
+            table("Risk", ID_PK, TITLE, "Rating rating", "Score int"),
+        ),
+        mapping=blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Score: { style: data-bar, max: 25,
+                         color_by: { field: Rating, map: { Low: good, Bogus: blocked } } }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Score: { style: data-bar, max: 25,\n"
-        "             color_by: { field: Rating, map: { Low: good, Bogus: blocked } } }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     findings = validate_against_mapping(schema, bundle)
     assert any(
         "Bogus" in f.message and "column_formatting[Risk].Score" in f.message
@@ -101,32 +95,21 @@ def test_data_bar_color_by_map_keys_must_be_enum_members(tmp_path: Path) -> None
     assert not any("'Low'" in f.message for f in findings if f.severity == "error")
 
 def test_calculated_number_and_date_styles_require_decoding(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Score calculated_number\n"
-        "  Due calculated_date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, "Score calculated_number", "Due calculated_date"),
+        mapping=blocks(entities("Risk"), """
+            calculated_formulas:
+              Risk:
+                Score: '=1'
+                Due: '=DATE(2026,1,1)'
+            column_formatting:
+              Risk:
+                Score: { style: data-bar, max: 25 }
+                Due: { style: overdue-date }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "    Due: '=DATE(2026,1,1)'\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Score: { style: data-bar, max: 25 }\n"
-        "    Due: { style: overdue-date }\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     errors = [f.message for f in findings if f.severity == "error"]
     assert any("Score" in message and "calculated: true" in message for message in errors)
     assert any("Due" in message and "calculated: true" in message for message in errors)
@@ -135,39 +118,31 @@ def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
     """[$Created]/[$Modified]/[$ID]/[$Author]/[$Editor] always exist on a
     list; formatter references to them must not be rejected, while a
     genuinely unknown reference still errors."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n  Gap int\n}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "Gap int"),
+        mapping=blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Gap:
+                  elmType: div
+                  txtContent: "=toLocaleDateString([$Created] + 1)"
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Gap:\n"
-        "      elmType: div\n"
-        '      txtContent: "=toLocaleDateString([$Created] + 1)"\n',
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     findings = validate_against_mapping(schema, bundle)
     assert not any("Created" in f.message for f in findings if f.severity == "error")
-    (tmp_path / "m2.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Gap:\n"
-        "      elmType: div\n"
-        '      txtContent: "=[$Nope]"\n',
-        encoding="utf-8",
+    unknown_ref = write_mapping(
+        tmp_path,
+        blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Gap:
+                  elmType: div
+                  txtContent: "=[$Nope]"
+        """),
+        name="m2.yaml",
     )
-    findings2 = validate_against_mapping(schema, load_mapping(tmp_path / "m2.yaml"))
+    findings2 = validate_against_mapping(schema, load_mapping(unknown_ref))
     assert any("Nope" in f.message for f in findings2 if f.severity == "error")
 
 def test_unknown_ref_target_is_error() -> None:
@@ -339,31 +314,18 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
 def test_indexed_column_cross_site_logical_name_is_error(tmp_path: Path) -> None:
     """A cross-site column's logical DBML field is expanded and never exists
     in SharePoint, so its otherwise-valid DBML index must be rejected."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "}\n"
-        "Table Task {\n"
-        "  Id int [pk, increment]\n"
-        "  Project int [ref: > Project.Id]\n"
-        "  indexes { Project }\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Project", ID_PK, "Title nvarchar"),
+            table("Task", ID_PK, "Project int [ref: > Project.Id]", "indexes { Project }"),
+        ),
+        mapping=blocks(entities("Project", "Task"), """
+            cross_site_reference_columns:
+              - { entity: Task, column: Project }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n"
-        "  Task: { kind: List, base_template: 100, site_role: default }\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Task, column: Project }\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     assert any(
         f.severity == "error"
         and "Project" in f.message
@@ -372,28 +334,22 @@ def test_indexed_column_cross_site_logical_name_is_error(tmp_path: Path) -> None
     )
 
 def test_dbml_indexes_reject_unsupported_field_types(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Task {\n"
-        "  Id int [pk, increment]\n"
-        "  Notes longtext\n"
-        "  Url hyperlink\n"
-        "  indexes {\n"
-        "    Notes\n"
-        "    Url\n"
-        "  }\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Task {
+              Id int [pk, increment]
+              Notes longtext
+              Url hyperlink
+              indexes {
+                Notes
+                Url
+              }
+            }
+        """,
+        mapping=entities("Task"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Task: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     assert any(
         f.severity == "error" and "Notes" in f.message and "Note" in f.message
         for f in findings
@@ -412,14 +368,9 @@ def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> 
         f"  indexes {{\n{indexes}  }}\n}}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Wide: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Wide"))
     findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
     )
     assert any(
         f.severity == "error" and "Col0" in f.message and "duplicate" in f.message
@@ -437,14 +388,9 @@ def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path:
         f"Table Wide {{\n  Id int [pk, increment]\n{columns}}}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Wide: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Wide"))
     findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
     )
     assert any(
         f.severity == "error" and "21" in f.message and "20" in f.message
@@ -452,24 +398,12 @@ def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path:
     )
 
 def test_dbml_index_must_not_repeat_a_unique_column(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Asset {\n"
-        "  Id int [pk, increment]\n"
-        "  AssetTag nvarchar [unique]\n"
-        "  indexes { AssetTag }\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Asset", ID_PK, "AssetTag nvarchar [unique]", "indexes { AssetTag }"),
+        mapping=entities("Asset"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Asset: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     assert any(
         finding.severity == "error"
         and "AssetTag" in finding.message
@@ -492,16 +426,11 @@ def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
         f"  indexes {{ {indexes} }}\n}}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Big: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Big"))
     warnings = [
         f.message
         for f in validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
         )
         if f.severity == "warning" and "18 of the 20" in f.message
     ]
@@ -522,16 +451,11 @@ def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
         f"  indexes {{ {indexes} }}\n}}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Big: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Big"))
     warnings = [
         f.message
         for f in validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
         )
         if f.severity == "warning" and "18 of the 20" in f.message
     ]
@@ -549,14 +473,9 @@ def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> N
         f"  indexes {{ {indexes} }}\n}}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Big: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Big"))
     findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
     )
     errors = [
         f.message
@@ -590,17 +509,11 @@ def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst(
         "}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Event: { kind: List, base_template: 100, site_role: default }\n"
-        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Event", "FollowUp"))
     errors = [
         f.message
         for f in validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
         )
         if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
     ]
@@ -626,16 +539,11 @@ def test_the_over_budget_error_names_unique_columns_when_there_are_some(
         f"  indexes {{ {indexes} }}\n}}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Big: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Big"))
     errors = [
         f.message
         for f in validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
+            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
         )
         if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
     ]
@@ -645,57 +553,39 @@ def test_the_over_budget_error_names_unique_columns_when_there_are_some(
     assert "lookup target" not in errors[0]
 
 def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Status nvarchar\n"
-        "  Category nvarchar\n"
-        "  indexes {\n"
-        "    (Status, Category)\n"
-        "    Status [name: 'status_index']\n"
-        "  }\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Risk {
+              Id int [pk, increment]
+              Status nvarchar
+              Category nvarchar
+              indexes {
+                (Status, Category)
+                Status [name: 'status_index']
+              }
+            }
+        """,
+        mapping=entities("Risk"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     errors = [f.message for f in findings if f.severity == "error"]
     assert any("composite" in message for message in errors)
     assert any("name" in message and "status_index" in message for message in errors)
 
 def test_cross_site_reference_cannot_declare_unique_constraint(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "}\n"
-        "Table Task {\n"
-        "  Id int [pk, increment]\n"
-        "  Project int [unique, ref: > Project.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Project", ID_PK, "Title nvarchar"),
+            table("Task", ID_PK, "Project int [unique, ref: > Project.Id]"),
+        ),
+        mapping=blocks(entities("Project", "Task"), """
+            cross_site_reference_columns:
+              - { entity: Task, column: Project }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n"
-        "  Task: { kind: List, base_template: 100, site_role: default }\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Task, column: Project }\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     assert any(
         finding.severity == "error"
         and "Task.Project" in finding.message
