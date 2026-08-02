@@ -56,6 +56,15 @@ has no row or a row has no code.
 | `formatter_field_not_displayed` | error | A view formatter references a real column the view does not display; a view formatter can only read columns in its own `fields`, so the format would never fire. |
 | `formatter_field_not_rendered` | error | A view formatter references a column the entity does not render. |
 | `formula_target_not_calculated` | error | A `calculated_formulas:` entry names a column that is not `calculated_text` or `calculated_number`. |
+| `calculated_formula_cycle` | error | Calculated columns on one entity depend on each other in a cycle, so no creation order can satisfy them. |
+| `color_by_map_key_not_in_enum` | error | A `data-bar` `color_by` map names a choice the source column's enum does not contain. |
+| `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column the entity does not render. |
+| `formatter_field_not_rendered` | error | A formatter references a `[$Field]` the entity does not render. One rule across column formatters, form parts and view formatters — the `location` says which. |
+| `formatter_missing_elmtype` | error | A column formatter's JSON has no root `elmType`, so it is not a SharePoint column-formatting object. |
+| `form_columns_in_no_section` | warning | Columns are referenced by no form body section. SharePoint appends them to the last section, so the form still renders — but the declared arrangement stops being the deployed one. |
+| `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |
+| `form_section_entirely_hidden` | error | Every column in a form body section is declared `new: false` and `existing: false`, so the section renders as a bare heading. Not asserted of the last section, which is SharePoint's documented catch-all. |
+| `form_section_field_not_rendered` | error | A form body section names a field the entity does not render. |
 | `hide_is_unnecessary` | warning | `hide_from_all_items` is set on an entity whose `All Items` view is already within the join ceiling with nothing hidden. |
 | `hide_of_cross_site_reference` | error | `hide_from_all_items` names a cross-site reference, which expands to a Choice + URL pair and costs no join operation. |
 | `hide_of_non_join_bearing_column` | error | `hide_from_all_items` names a column that costs no join operation; only a join-bearing column may be hidden. |
@@ -68,12 +77,16 @@ has no row or a row has no code.
 | `index_limit_exceeded` | error | A list's effective indexes exceed SharePoint's limit of 20. The message names the implicit contributors, which are the ones an author cannot count. |
 | `index_on_calculated_column` | error | An `indexes { }` entry names a calculated column. SharePoint accepts the flag and reads it back false. |
 | `index_settings_unsupported` | error | A DBML index carries `name`, `unique`, `type`, `pk` or `note`. SharePoint exposes none of them, so declare a bare column index. |
+| `invalid_condition` | error | The condition grammar rejected a declared `when:`. `conditions.py` has 28 distinct reasons behind this and reports them as prose. |
 | `join_threshold_approached` | warning | A view renders join-bearing columns at that ceiling, which held on the tenant measured but may not travel. |
 | `join_threshold_exceeded` | error | A view renders more join-bearing columns than the measured ceiling of 12 join operations, and SharePoint returns the view blank at any list size. Reached from a declared view and from the generated `All Items` view. |
+| `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1024 characters once display names are substituted. |
+| `list_validation_message_too_long` | error | A `list_validation:` message is longer than 1024 characters. |
 | `lookup_crosses_site_role` | error | A lookup's source and target entities map to different `site_role`s; a SharePoint lookup cannot span webs. |
 | `lookup_display_column_unknown` | error | A lookup target declares a `display_column` that is not one of its columns, so the deploy would emit an unresolvable `LookupField`. |
 | `lookup_would_render_blank` | error | A lookup target has no `Title` column and declares no `display_column`, so every lookup into it renders blank. |
 | `multiple_default_views` | error | More than one view on an entity is marked default; a SharePoint list has exactly one. |
+| `overdue_guard_field_not_rendered` | error | An `overdue-date` style's `guard.field` names a column the entity does not render. |
 | `polymorphic_column_not_rendered` | error | A `polymorphic_patterns:` entry's `field` or `discriminator` names a column the deploy never creates. |
 | `previous_title_claimed_twice` | error | Two views claim the same previous title. |
 | `previous_title_is_a_current_title` | error | A `renamed_from` entry is another declared view's current title. |
@@ -82,10 +95,16 @@ has no row or a row has no code.
 | `redundant_display_column_acceptance` | warning | `accept_unindexable_display_column` is set on an entity with nothing to accept: nothing looks it up, or its display column is not calculated. |
 | `retired_column_in_field_set` | warning | A field set names a retired column; retirement strips it from every view that expands the set, and the build continues. |
 | `row_limit_out_of_range` | error | A view's `row_limit` is outside 1-5000. |
+| `style_calculated_type_mismatch` | error | `calculated: true` is set on a style whose column is not the `calculated_*` type that style expects. |
+| `style_map_key_not_in_enum` | error | A `severity` or `pill` map names a choice the column's enum does not contain. |
+| `style_on_boolean_matches_nothing` | error | A `severity` or `pill` style sits on a Yes/No column. Both compare `@currentField` against quoted strings, so every branch is false and the cell renders unstyled — silently. |
+| `style_requires_calculated` | error | A `severity`, `data-bar` or `overdue-date` style sits on the matching `calculated_*` column but does not set `calculated: true`, so SharePoint's typed formatter value is never decoded. |
 | `total_column_not_displayed` | error | A `totals` entry names a column that is not one of the view's fields, so SharePoint has no column to put the figure under. |
 | `total_needs_numeric_column` | error | A numeric-only total is declared on a non-numeric column. |
 | `total_on_lookup_column` | error | A total other than `count` is declared on a lookup column, whose stored value is a row id rather than a quantity. |
 | `total_on_non_arithmetic_column` | error | A total other than `count` is declared on a person, rich-text, long-text or hyperlink column. |
+| `trend_against_not_rendered` | error | A `trend` style's `against` names a column the entity does not render. |
+| `undeployable_column_declaration` | error | A per-column declaration targets `Title` or a SharePoint system column. The deploy never writes those properties, so the declaration would validate clean and do nothing. |
 | `unindexed_filter_columns` | warning | A view's `where` filters on columns with no effective index, so past the list view threshold SharePoint may silently return a truncated answer. |
 | `unknown_entity` | error | A mapping section names an entity the schema does not declare, or the mapping does not list. Reached from `views`, `field_sets`, `display_names`, `retention`, `watched_lists`, `polymorphic_patterns`, `versioning.overrides`, `cross_site_reference_columns`, `column_formatting`, `form_formatting`, `list_validation` and `demo_items` — the `location` says which. |
 | `unknown_field_set_reference` | error | A view's `fields` references `@name`, but the entity declares no field set of that name. |

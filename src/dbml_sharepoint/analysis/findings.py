@@ -184,6 +184,33 @@ class FindingCode(StrEnum):
     WIDTH_COLUMN_NOT_DISPLAYED = "width_column_not_displayed"
     WIDTH_OUT_OF_RANGE = "width_out_of_range"
 
+    # --- checks/_formatting.py: column formatting, style specs, form
+    # formatting, list validation
+    UNDEPLOYABLE_COLUMN_DECLARATION = "undeployable_column_declaration"
+    FORMATTER_COLUMN_NOT_RENDERED = "formatter_column_not_rendered"
+    FORMATTER_MISSING_ELMTYPE = "formatter_missing_elmtype"
+    # One rule, three sections: a formatter naming a [$Field] the entity does
+    # not render. `location.section` says whether it was a column formatter, a
+    # form part or a view formatter.
+    FORMATTER_FIELD_NOT_RENDERED = "formatter_field_not_rendered"
+    STYLE_REQUIRES_CALCULATED = "style_requires_calculated"
+    STYLE_CALCULATED_TYPE_MISMATCH = "style_calculated_type_mismatch"
+    STYLE_ON_BOOLEAN_MATCHES_NOTHING = "style_on_boolean_matches_nothing"
+    STYLE_MAP_KEY_NOT_IN_ENUM = "style_map_key_not_in_enum"
+    COLOR_BY_MAP_KEY_NOT_IN_ENUM = "color_by_map_key_not_in_enum"
+    TREND_AGAINST_NOT_RENDERED = "trend_against_not_rendered"
+    OVERDUE_GUARD_FIELD_NOT_RENDERED = "overdue_guard_field_not_rendered"
+    FORM_PART_REFERENCES_CALCULATED_COLUMN = "form_part_references_calculated_column"
+    FORM_SECTION_FIELD_NOT_RENDERED = "form_section_field_not_rendered"
+    FORM_SECTION_ENTIRELY_HIDDEN = "form_section_entirely_hidden"
+    FORM_COLUMNS_IN_NO_SECTION = "form_columns_in_no_section"
+    LIST_VALIDATION_MESSAGE_TOO_LONG = "list_validation_message_too_long"
+    LIST_VALIDATION_FORMULA_TOO_LONG = "list_validation_formula_too_long"
+    # The condition grammar rejected the expression. `conditions.py` has 28
+    # distinct reasons behind this and hands them back as prose; splitting
+    # them into codes is that module's classification, not this one's.
+    INVALID_CONDITION = "invalid_condition"
+
 
 @dataclass(frozen=True, slots=True)
 class Finding:
