@@ -62,6 +62,9 @@ dev = [
   "mypy>=1.10.0",
   "types-PyYAML>=6.0.12",
   "j2lint>=1.2.0",
+  # The git-hook runner. Pinned here for the same reason as every other gate:
+  # `uv run prek` cannot drift from the version a contributor happens to have.
+  "prek>=0.4.11",
 ]
 
 [tool.uv]

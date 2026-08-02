@@ -39,8 +39,8 @@ Corollaries:
 
 ## Gates
 
-Every change must leave all of these green. They are the same commands the
-pre-commit hooks run, so a hook can never disagree with CI.
+Every change must leave all of these green. They are the same commands the git
+hooks run, so a hook can never disagree with CI.
 
 ```bash
 uv run pytest
@@ -49,23 +49,37 @@ uv run mypy
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 ```
 
-Install the hooks once with `prek install` (or `pre-commit install`).
+Install the git hooks once with `uv run prek install`. Hooks are run by
+[prek](https://prek.j178.dev/), pinned in the `dev` group; classic `pre-commit`
+is not used here. Run everything by hand with `uv run prek run --all-files`.
 
-## Commits
+## Commits and merging
 
-**Conventional commits are load-bearing, not cosmetic.** `release-please` cuts
-the changelog by parsing commit messages on `main`, so a non-conventional commit
-contributes *nothing* to the release notes — silently. The release still
-happens, the code still ships, and only the notes are wrong.
+**The PR title is load-bearing, not cosmetic.** This repository squash-merges and
+the PR title becomes the commit subject on `main`. `release-please` cuts the
+changelog by parsing those subjects, so a non-conventional title contributes
+*nothing* to the release notes — silently. The release still happens, the code
+still ships, and only the notes are wrong.
 
-This has already bitten: PRs #41, #42, #45 and #51 all merged with prose commit
+This has already bitten: PRs #41, #42, #45 and #51 all merged with prose
 subjects, and 0.4.0 initially credited the join-ceiling release with a single
 documentation tweak. It had to be back-filled with empty commits (#57).
 
-Use `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `style:`, `refactor:`. One
-concern per commit, tests included. Note the changelog has no Tests section, so a
-`test:` commit is invisible in release notes — judge the type by what the change
-actually does, not by which directory it touches.
+So: **give the pull request a conventional title** — `feat:`, `fix:`, `docs:`,
+`chore:`, `test:`, `style:`, `refactor:`, `perf:`, `build:`, `ci:`, `revert:`,
+with an optional `(scope)` and a `!` for breaking changes.
+`.github/workflows/pr-title.yml` enforces it.
+
+Commits *within* a branch are not linted — they are squashed away, though their
+messages survive in the squashed commit's body. Keep one concern per commit
+anyway; that is what makes a branch reviewable.
+
+The changelog has no Tests section, so a `test:` title is invisible in release
+notes. Pick the type from what the change does, not from which directory it
+touches — #42 looked like a pure test-fixture PR but also changed `_views.py`.
+
+Merge commits are disabled. For a change too large to review in one pass, stack
+it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 
 ## Things that will waste your time
 
