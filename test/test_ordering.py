@@ -1,10 +1,10 @@
 # test/test_ordering.py
-from pathlib import Path
+
+
+from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.model.parser import parse_dbml
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_simple_orders_lookups_after_targets() -> None:

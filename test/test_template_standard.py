@@ -28,10 +28,10 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 from functools import cache
-from pathlib import Path
 from typing import Any
 
 import pytest
+from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
@@ -40,7 +40,22 @@ from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
-TEMPLATES = Path(__file__).resolve().parents[1] / "templates"
+# This module is the family-standard conformance sweep: 22 rules, thirteen of
+# them parametrised across the whole template library, so 30 templates become
+# 399 of the suite's 1293 cases.
+#
+# The marker is for FOCUS, not speed. Measured: the full suite is 4.66s and
+# `-m "not conformance"` is 4.65s -- skipping a third of the cases saves
+# nothing, because `-n auto` already spreads them across workers and they are
+# not the critical path. What it buys is a quieter run while iterating on
+# something else.
+#
+# It is deliberately NOT used to trim CI, and there would be no point: every
+# check runs on every change. These rules catch a template drifting out of the
+# family, and a template drifts precisely when someone changes something they
+# believed was unrelated.
+pytestmark = pytest.mark.conformance
+
 
 # The templates exempt from the standard. EMPTY, which is the whole point:
 # every template in the library is held to every assertion in this file.
@@ -487,7 +502,7 @@ _TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
 
 def _all_templates() -> list[str]:
     """Discovered, never listed — a hardcoded roster fails open."""
-    return sorted(p.parent.parent.name for p in TEMPLATES.glob("*/10-design/schema.dbml"))
+    return sorted(p.parent.parent.name for p in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml"))
 
 
 def _uplifted() -> list[str]:
@@ -521,7 +536,7 @@ class Loaded:
 
 @cache
 def _load(template: str) -> Loaded:
-    root = TEMPLATES / template
+    root = SOLUTION_TEMPLATES / template
     return Loaded(
         name=template,
         schema=parse_dbml(root / "10-design" / "schema.dbml"),
@@ -1241,7 +1256,7 @@ def _threshold_exposed_views(template: str) -> dict[str, str]:
     """{"views[Entity].<title>": message} for one template's threshold warnings."""
     from dbml_sharepoint.analysis.validator import validate_against_mapping
 
-    root = TEMPLATES / template
+    root = SOLUTION_TEMPLATES / template
     findings = validate_against_mapping(
         parse_dbml(root / "10-design" / "schema.dbml"),
         load_mapping(root / "20-configure" / "mapping.yaml"),
@@ -1296,7 +1311,7 @@ def _join_findings_for(template: str) -> list[str]:
     failure here too. Nothing shipped is meant to reach 9."""
     from dbml_sharepoint.analysis.validator import validate_against_mapping
 
-    root = TEMPLATES / template
+    root = SOLUTION_TEMPLATES / template
     findings = validate_against_mapping(
         parse_dbml(root / "10-design" / "schema.dbml"),
         load_mapping(root / "20-configure" / "mapping.yaml"),
@@ -1348,7 +1363,7 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
     )
     worst = 0
     for template in templates:
-        root = TEMPLATES / template
+        root = SOLUTION_TEMPLATES / template
         schema = parse_dbml(root / "10-design" / "schema.dbml")
         bundle = load_mapping(root / "20-configure" / "mapping.yaml")
         tables = {t.name: t for t in schema.tables}

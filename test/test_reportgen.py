@@ -2,6 +2,7 @@
 from pathlib import Path
 
 import pytest
+from _paths import FIXTURES
 
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
@@ -14,8 +15,6 @@ from dbml_sharepoint.generators.reportgen import (
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _simple() -> tuple[Schema, MappingBundle]:
