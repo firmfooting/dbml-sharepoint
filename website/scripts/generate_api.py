@@ -417,9 +417,9 @@ def generate_conditions_page() -> None:
         ":::", "",
         docstring_block(model), "",
         "## Operators", "",
-        "`views[].where` renders to CAML, `form_visibility.when` to a"
+        ("`views[].where` renders to CAML, `form_visibility.when` to a"
         " list-formatting expression, and `column_validation.when` /"
-        " `list_validation.when` to a classic validation formula.", "",
+        " `list_validation.when` to a classic validation formula."), "",
         "| Declared | " + " | ".join(label for label, _ in renderers) + " |",
         "|---|---|---|---|",
     ]
