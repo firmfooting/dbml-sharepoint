@@ -54,3 +54,29 @@ def test_every_code_is_screaming_snake_case() -> None:
     for code in FindingCode:
         assert code.name == code.name.upper()
         assert code.value == code.name.lower()
+
+
+def test_validator_still_exports_finding_and_severity() -> None:
+    """`extension.py` documents `Finding` as the reporting type and
+    `manifestgen` consumes it. Extension authors import it from `validator`.
+    """
+    from dbml_sharepoint.analysis import findings, validator
+
+    assert validator.Finding is findings.Finding
+    assert validator.Severity is findings.Severity
+
+
+def test_severity_is_declared_exactly_once() -> None:
+    """It was declared twice, in validator.py and forms.py, with identical
+    bodies. Two spellings of one type is how they drift."""
+    import ast
+
+    from _paths import PACKAGE
+
+    declared = []
+    for path in PACKAGE.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.TypeAlias) and node.name.id == "Severity":
+                declared.append(path.name)
+    assert declared == ["findings.py"], declared

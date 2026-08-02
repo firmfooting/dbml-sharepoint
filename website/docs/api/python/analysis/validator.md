@@ -1,6 +1,6 @@
 ---
 title: validator
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 # `dbml_sharepoint.analysis.validator`
@@ -78,21 +78,10 @@ MAX_CALCULATED_FORMULA = 1024
 MAX_INTERNAL_NAME = 32
 ```
 
-### `Finding`
-
-```python
-@dataclass(frozen=True)
-class Finding:
-    severity: Severity
-    message: str
-```
-
-Finding(severity: Severity, message: str)
-
 ### `validate`
 
 ```python
-def validate(schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoint.analysis.validator.Finding]
+def validate(schema: dbml_sharepoint.model.parser.Schema) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 Core schema rules, judged without reference to any mapping.
@@ -112,7 +101,7 @@ an `== []` against it passes on a schema the build would reject.
 ### `validate_against_mapping`
 
 ```python
-def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle) -> list[dbml_sharepoint.analysis.validator.Finding]
+def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 Cross-check the mapping against the schema.
@@ -124,7 +113,7 @@ Order is part of the contract — see that package's docstring.
 ### `validate_all`
 
 ```python
-def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.validator.Finding]
+def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 Run every validation stage: core schema rules, mapping cross-checks,

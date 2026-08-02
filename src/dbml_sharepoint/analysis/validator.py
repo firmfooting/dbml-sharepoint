@@ -2,15 +2,36 @@
 """Validation rules for the parsed schema."""
 
 import re
-from dataclasses import dataclass
-from typing import Literal
 
 from dbml_sharepoint.analysis import typemap
+
+# Re-exported, not merely used. `extension.py` documents `Finding` as the
+# reporting type and `generators/manifestgen.py` consumes it, so extension
+# authors import it from here; the names have to keep resolving at this path.
+# They are DEFINED in `findings.py` so that `checks/*` can name a finding
+# without importing this orchestrator. The `__all__` below is what makes the
+# re-export explicit — mypy --strict does not re-export an imported name
+# otherwise — and is the same idiom `model/mapping_loader.py` uses.
+from dbml_sharepoint.analysis.findings import (
+    Finding,
+    FindingCode,
+    Location,
+    Section,
+    Severity,
+)
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
 
-type Severity = Literal["error", "warning"]
+#: The finding vocabulary, re-exported for extension authors. Names DEFINED
+#: in this module are exported regardless; only these five need declaring.
+__all__ = [
+    "Finding",
+    "FindingCode",
+    "Location",
+    "Section",
+    "Severity",
+]
 
 # Hard-error reserved names. Note: 'Title' is special-cased (PATCH existing
 # system column); 'Id' annotated pk+increment is special-cased (skip).
@@ -184,12 +205,6 @@ _ASSOCIATED_GROUP_ALIASES = {
 }
 
 
-@dataclass(frozen=True)
-class Finding:
-    severity: Severity
-    message: str
-
-
 def validate(schema: Schema) -> list[Finding]:
     """Core schema rules, judged without reference to any mapping.
 
@@ -212,14 +227,22 @@ def validate(schema: Schema) -> list[Finding]:
     seen_tables: set[str] = set()
     for table in schema.tables:
         if table.name in seen_tables:
-            findings.append(Finding("error", f"Duplicate table name: {table.name}"))
+            findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
+                "error",
+                f"Duplicate table name: {table.name}",
+            ))
             continue
         seen_tables.add(table.name)
 
         seen_columns: set[str] = set()
         for col in table.columns:
             if col.name in seen_columns:
-                findings.append(Finding("error", f"{table.name}: duplicate column {col.name}"))
+                findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
+                    "error",
+                    f"{table.name}: duplicate column {col.name}",
+                ))
                 continue
             seen_columns.add(col.name)
 
@@ -229,12 +252,21 @@ def validate(schema: Schema) -> list[Finding]:
     referenced_enums = _collect_referenced_enums(schema)
     for enum in schema.enums:
         if enum.name in seen_enums:
-            findings.append(Finding("error", f"Duplicate enum name: {enum.name}"))
+            findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
+                "error",
+                f"Duplicate enum name: {enum.name}",
+            ))
         seen_enums.add(enum.name)
         if not enum.members:
-            findings.append(Finding("warning", f"Enum {enum.name} has zero members."))
+            findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
+                "warning",
+                f"Enum {enum.name} has zero members.",
+            ))
         if enum.name not in referenced_enums:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "warning", f"Enum {enum.name} is orphan (defined but unreferenced).",
             ))
 
@@ -250,7 +282,11 @@ def _check_column(
     is_title = name == "Title"
 
     if name in RESERVED_NAMES and not is_pk_id:
-        findings.append(Finding("error", f"{table}.{name}: reserved column name."))
+        findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
+            "error",
+            f"{table}.{name}: reserved column name.",
+        ))
 
     # The identity column must be called Id. typemap skips ANY
     # `int [pk, increment]` column, while jsgen and _rendered_columns
@@ -269,6 +305,7 @@ def _check_column(
     # same silent-drop class this rejection exists to close.
     if col.is_pk and col.is_auto_increment and not is_pk_id:
         findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
             "error",
             f"{table}.{name}: an auto-increment primary key must be named "
             f"'Id' — it maps to SharePoint's built-in ID column, which is "
@@ -278,15 +315,21 @@ def _check_column(
         ))
 
     if any(c in name for c in " !@#$%^&*()+={}[]|\\:;\"'<>,?/~`"):
-        findings.append(Finding("error", f"{table}.{name}: contains illegal character."))
+        findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
+            "error",
+            f"{table}.{name}: contains illegal character.",
+        ))
 
     if len(name) > MAX_INTERNAL_NAME:
         findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
             "error", f"{table}.{name}: name exceeds {MAX_INTERNAL_NAME} chars.",
         ))
 
     if col.type == "choice":
         findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
             "error",
             f"{table}.{name}: legacy 'choice' type — migrate to a named DBML enum.",
         ))
@@ -296,13 +339,18 @@ def _check_column(
         and col.type not in enums
         and not is_pk_id
     ):
-        findings.append(Finding("error", f"{table}.{name}: unknown type {col.type!r}."))
+        findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
+            "error",
+            f"{table}.{name}: unknown type {col.type!r}.",
+        ))
 
     if col.type in enums and col.default is not None:
         members = enums[col.type]
         declared = str(col.default).strip("\"'")
         if declared not in members:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"{table}.{name}: default {col.default!r} is not a member of "
                 f"enum {col.type!r} ({members}).",
@@ -310,12 +358,14 @@ def _check_column(
 
     if col.ref is not None and col.ref.target_table not in tables:
         findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
             "error",
             f"{table}.{name}: ref target {col.ref.target_table} not defined.",
         ))
 
     if col.unique and not typemap.supports_unique(col, set(enums)):
         findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
             "error",
             f"{table}.{name}: [unique] is not supported for SharePoint "
             f"{col.type!r} columns.",
@@ -323,6 +373,7 @@ def _check_column(
 
     if col.unique and not col.required and not is_title:
         findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
             "warning",
             f"{table}.{name}: unique without not_null — "
             "uniqueness enforced only on populated values.",
@@ -377,6 +428,7 @@ def _validate_cross_site_expansion(
             continue
         if extension.expand_column(table, col, bundle) is None:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"cross_site_reference_columns requires an extension that "
                 f"handles expand_column ({xref.entity}.{xref.column}); the "

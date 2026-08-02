@@ -4,6 +4,7 @@
 import datetime as dt
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.validator import (
     _DATE_TYPES,
     _DEMO_ISO_DATE,
@@ -26,6 +27,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     for entity_name, demo_rows in bundle.mapping.demo_items.items():
         if entity_name not in tables_by_name or entity_name not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"demo_items[{entity_name}]: unknown entity.",
             ))
             continue
@@ -42,6 +44,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # has.
         if bundle.mapping.entities[entity_name].kind == "DocumentLibrary":
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"demo_items[{entity_name}]: {entity_name} is a DocumentLibrary, and a "
                 f"library's items are files. Seeding posts to /items, which SharePoint "
@@ -54,6 +57,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for row in demo_rows:
             if row.key in demo_keys:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"demo_items[{entity_name}].{row.key}: duplicate demo "
                     f"key (also declared under {demo_keys[row.key]}).",
@@ -74,6 +78,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             demo_title = row.values.get("Title")
             if not isinstance(demo_title, str) or not demo_title.startswith("[DEMO] "):
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: Title must start with '[DEMO] ' — the marker "
                     f"the teardown trusts to tell demo rows from real "
@@ -83,6 +88,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 col_type = demo_types.get(col_name)
                 if col_name not in demo_writable or col_name == "Id":
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: values references {col_name!r}, which is "
                         f"not a writable column of {entity_name}.",
@@ -90,6 +96,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     continue
                 if isinstance(col_type, str) and col_type.startswith("calculated"):
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: {col_name} is a calculated column; demo "
                         f"rows cannot write it (set its inputs instead).",
@@ -107,6 +114,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         unknown = set(value) - {"url", "description"}
                         if unknown or "url" not in value:
                             findings.append(Finding(
+                                FindingCode.UNCLASSIFIED,
                                 "error",
                                 f"{ctx}: {col_name} is a hyperlink; an object value "
                                 f"must be {{url: <address>, description: <label>}} "
@@ -123,6 +131,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # word None.
                     if not (isinstance(address, str) and address.strip()):
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "error",
                             f"{ctx}: {col_name} is a hyperlink; its address must be "
                             f"a non-empty string, got {address!r}.",
@@ -131,12 +140,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                 if isinstance(value, dict):
                     if set(value) != {"demo_ref"}:
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "error",
                             f"{ctx}: {col_name} object value must be exactly "
                             f"{{demo_ref: <key>}}.",
                         ))
                     elif value["demo_ref"] not in demo_keys:
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "error",
                             f"{ctx}: {col_name} demo_ref "
                             f"{value['demo_ref']!r} is not a declared demo "
@@ -147,11 +158,13 @@ def check(vc: ValidationContext) -> list[Finding]:
                         target_entity = demo_keys[value["demo_ref"]]
                         if column is None or column.ref is None:
                             findings.append(Finding(
+                                FindingCode.UNCLASSIFIED,
                                 "error",
                                 f"{ctx}: {col_name} uses demo_ref but is not a lookup column.",
                             ))
                         elif column.ref.target_table != target_entity:
                             findings.append(Finding(
+                                FindingCode.UNCLASSIFIED,
                                 "error",
                                 f"{ctx}: {col_name} targets {column.ref.target_table}, but "
                                 f"demo_ref {value['demo_ref']!r} belongs to {target_entity}.",
@@ -161,6 +174,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                             and row_positions.get(value["demo_ref"], position) >= position
                         ):
                             findings.append(Finding(
+                                FindingCode.UNCLASSIFIED,
                                 "error",
                                 f"{ctx}: {col_name} demo_ref {value['demo_ref']!r} must be "
                                 f"declared before the row that uses it.",
@@ -169,6 +183,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 if col_type == "person":
                     if value != "@me":
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "error",
                             f"{ctx}: person column {col_name} accepts only "
                             f"\"@me\" (the deploying operator).",
@@ -186,6 +201,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                             pass
                     if not valid_date:
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "error",
                             f"{ctx}: date column {col_name} accepts "
                             f"'today+N'/'today-N' or a real ISO calendar date "
@@ -195,6 +211,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 demo_enum = enum_by_name.get(col_type or "")
                 if demo_enum is not None and value not in demo_enum.members:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: {col_name} value {value!r} is not a member "
                         f"of enum {col_type}.",

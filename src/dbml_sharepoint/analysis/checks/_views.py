@@ -11,6 +11,7 @@ from dbml_sharepoint.analysis.conditions import (
     normalise,
     validate_condition,
 )
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,
     JOIN_WARN_AT,
@@ -319,6 +320,7 @@ def _join_finding(subject: str, columns: list[str], remedy: str) -> Finding:
     )
     if count > JOIN_LIMIT:
         return Finding(
+            FindingCode.UNCLASSIFIED,
             "error",
             f"{subject} renders {count} join-bearing columns ({names}). "
             f"SharePoint Online refuses a view query with more than "
@@ -328,6 +330,7 @@ def _join_finding(subject: str, columns: list[str], remedy: str) -> Finding:
             f"raised SPQueryThrottledException (-2147024749). {shared} {remedy}",
         )
     return Finding(
+        FindingCode.UNCLASSIFIED,
         "warning",
         f"{subject} renders {count} join-bearing columns ({names}), against a "
         f"measured ceiling of {JOIN_LIMIT} join operations per view. That "
@@ -352,6 +355,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         set_table = tables_by_name.get(entity_name)
         if set_table is None or entity_name not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"field_sets[{entity_name}]: unknown entity.",
             ))
             continue
@@ -373,12 +377,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             ctx = f"field_sets[{entity_name}].{set_name}"
             if "@" in set_name:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: a field set name cannot contain '@' — that is "
                     f"the marker a view's fields uses to reference a set.",
                 ))
             if not set_columns:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: field set is empty; declare at least one column "
                     f"or remove the set.",
@@ -386,6 +392,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             for col_name in set_columns:
                 if col_name not in set_rendered:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: references {col_name!r}, which is not a "
                         f"rendered column of {entity_name}.",
@@ -396,6 +403,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # view whose fields no longer mention the column, and
                     # the set is where the author fixes it.
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "warning",
                         f"{ctx}: {col_name!r} is retired; retirement stripped "
                         f"it from every view that expands this set, and the "
@@ -403,6 +411,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
             if set_name not in referenced_sets:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "warning",
                     f"{ctx}: declared but no {entity_name} view references "
                     f"'@{set_name}'.",
@@ -415,6 +424,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         view_table = tables_by_name.get(entity_name)
         if view_table is None or entity_name not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"views[{entity_name}]: unknown entity.",
             ))
             continue
@@ -444,6 +454,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         titles = [v.title for v in views]
         if "All Items" in titles:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"views[{entity_name}]: 'All Items' is generated with every "
                 f"rendered column and no filter; remove the declaration "
@@ -460,6 +471,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 continue
             distinct = sorted(set(variants))
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"views[{entity_name}]: duplicate view title {distinct[0]!r}."
                 + (f" {distinct[1]!r} differs only in case, and SharePoint "
@@ -471,22 +483,26 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ctx = f"views[{entity_name}].{view.title}.renamed_from"
                 if not previous.strip():
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error", f"{ctx}: previous titles cannot be empty.",
                     ))
                 if previous == view.title:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: {previous!r} is the view's own title, not a "
                         f"previous title.",
                     ))
                 if previous == "All Items":
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: 'All Items' is reserved for the generated "
                         f"recovery view and cannot be adopted.",
                     ))
                 if previous in titles and previous != view.title:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: {previous!r} is another declared view's "
                         f"current title.",
@@ -495,6 +511,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for previous, claimants in previous_claims.items():
             if len(claimants) > 1:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"views[{entity_name}]: previous title {previous!r} is "
                     f"claimed by more than one view ({', '.join(claimants)}).",
@@ -502,6 +519,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         defaults = [v.title for v in views if v.default]
         if len(defaults) > 1:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"views[{entity_name}]: more than one default view "
                 f"({', '.join(defaults)}); SharePoint lists have exactly one.",
@@ -514,12 +532,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             slug = view_url_slug(view.title)
             if not slug:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"views[{entity_name}].{view.title}: title yields an "
                     f"empty URL slug; include at least one letter or digit.",
                 ))
             elif slug.casefold() in slugs_seen:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"views[{entity_name}]: titles {slugs_seen[slug.casefold()]!r} and "
                     f"{view.title!r} share the URL slug {slug}.aspx; retitle "
@@ -534,6 +554,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             # than as a column that does not exist.
             findings.extend(
                 Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: fields references field set {name!r}, but "
                     f"{entity_name} declares no field set named {name[1:]!r}.",
@@ -552,6 +573,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             for part, name in referenced:
                 if name not in view_rendered:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: {part} references {name!r}, which is not a "
                         f"rendered column of {entity_name}.",
@@ -570,7 +592,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # is how the two would drift.
                 lookup_cols = entity_lookups
                 findings.extend(
-                    Finding("error", message)
+                    Finding(FindingCode.UNCLASSIFIED, "error", message)
                     for message in validate_condition(
                         view.where,
                         target=CAML,
@@ -660,6 +682,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                             "the query."
                         )
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "warning",
                             f"{ctx}.where: filtered columns ({names}) have no "
                             f"effective index. {exposure}. {remedy}",
@@ -674,12 +697,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             # setting to a list-size threshold they have no reason to track.
             if view.row_limit is not None and not 1 <= view.row_limit <= 5000:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error", f"{ctx}: row_limit must be between 1 and 5000.",
                 ))
             if view.formatting is not None:
                 refs = formatter_field_refs(view.formatting)
                 for ref in sorted(refs - view_rendered):
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: formatting references [${ref}], which is "
                         f"not a rendered column of {entity_name}.",
@@ -694,6 +719,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 shown = set(view.fields)
                 for ref in sorted((refs & view_rendered) - shown):
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: formatting references [${ref}], which this "
                         f"view does not display — a view formatter can only "
@@ -707,12 +733,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             for width_col, width_px in view.widths.items():
                 if width_col not in view.fields:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: widths references {width_col!r}, which is "
                         f"not one of this view's fields.",
                     ))
                 if not 16 <= width_px <= 2000:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: widths[{width_col}] must be between 16 and "
                         f"2000 pixels (got {width_px}).",
@@ -723,6 +751,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             for total_col, func in view.totals.items():
                 if total_col not in view.fields:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: totals references {total_col!r}, which is not one "
                         f"of this view's fields — SharePoint has no column to put "
@@ -742,6 +771,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # offers only Count on one; a Sum FieldRef round-trips
                     # and renders nothing.
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: totals[{total_col}] = {func!r} on a lookup column. "
                         f"SharePoint can only count a lookup — its stored value is a "
@@ -749,12 +779,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
                 elif func != "count" and col_type in _NON_ARITHMETIC:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: totals[{total_col}] = {func!r} cannot be computed on "
                         f"a {col_type} column. Use 'count', which counts rows.",
                     ))
                 elif func in NUMERIC_ONLY_TOTALS and col_type not in _NUMERIC_FOR_TOTALS:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: totals[{total_col}] = {func!r} needs a numeric "
                         f"column; {total_col!r} is {col_type or 'of unknown type'}. "
@@ -788,6 +820,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         if table is None or entity.kind == "DocumentLibrary":
             for col_name in entity.hide_from_all_items:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{hide_ctx}: {col_name!r} cannot be hidden — no 'All "
                     f"Items' view is generated for {entity_name} at all, so "
@@ -833,6 +866,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for col_name in entity.hide_from_all_items:
             if col_name in xcols:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{hide_ctx}: {col_name!r} is a cross-site reference. It "
                     f"expands to a Choice + URL pair, so no Lookup exists and "
@@ -841,6 +875,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             elif col_name not in rendered:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{hide_ctx}: {col_name!r} is not a column the generated "
                     f"'All Items' view renders on {entity_name}, so hiding it "
@@ -848,6 +883,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             elif col_name not in bearing:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{hide_ctx}: {col_name!r} costs no join operation, and "
                     f"only a join-bearing column may be hidden. 'All Items' "
@@ -862,6 +898,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             unsuppressed = joining_fields(rendered, bearing)
             if len(unsuppressed) <= JOIN_LIMIT:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "warning",
                     f"entities[{entity_name}]: hide_from_all_items is set, but "
                     f"'All Items' renders {len(unsuppressed)} join-bearing "
