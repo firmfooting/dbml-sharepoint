@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, entity, pack, write_dbml, write_mapping
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
@@ -21,6 +23,17 @@ _FIXED_ARGS: dict[str, Any] = dict(
     source_mtime="2026-05-04T00:00:00Z",
     generated_at="2026-05-04T00:00:00Z",
 )
+
+
+def _entity_block(*lines: str) -> str:
+    """The `entities:` key plus pre-rendered `entity()` lines.
+
+    `_packs.entities()` only renders default entities, and `blocks()` cannot be
+    used to append one: it dedents each part against its own margin, so a lone
+    `entity()` line -- uniformly indented by two spaces -- loses exactly the
+    indentation the YAML needs, silently.
+    """
+    return "entities:\n" + "".join(f"{line}\n" for line in lines)
 
 
 def _generate_simple_js() -> str:
@@ -43,24 +56,12 @@ def test_generated_deploy_js_contains_lifecycle_markers() -> None:
 def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Status nvarchar\n"
-        "  indexes { Status }\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, "Status nvarchar", "indexes { Status }"),
+        mapping=entities("Risk"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    output = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
-    )
+    output = build_schema_json(schema, bundle, "default")
     assert output["indexed_columns"] == [{"list": "APP_Risk", "field": "Status"}]
 
 
@@ -71,30 +72,18 @@ def test_a_lookup_targets_display_column_is_deployed_as_an_index(
     actually create it, or the picker breaks on the first large list."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Event {\n"
-        "  Id int [pk, increment]\n"
-        "  EventRef nvarchar\n"
-        "  indexes { EventRef }\n"
-        "}\n"
-        "Table FollowUp {\n"
-        "  Id int [pk, increment]\n"
-        "  Event int [ref: > Event.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Event", ID_PK, "EventRef nvarchar", "indexes { EventRef }"),
+            table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
+        ),
+        mapping=_entity_block(
+            entity("Event", display_column="EventRef"),
+            entity("FollowUp"),
+        ),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Event: { kind: List, base_template: 100, site_role: default, "
-        "display_column: EventRef }\n"
-        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    output = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
-    )
+    output = build_schema_json(schema, bundle, "default")
     assert {"list": "APP_Event", "field": "EventRef"} in output["indexed_columns"]
     # Once, not twice, when it is also declared in indexes { }.
     assert output["indexed_columns"].count(
@@ -138,32 +127,19 @@ def test_a_cross_site_ref_does_not_index_the_far_list(tmp_path: Path) -> None:
     customer tenant that buys nothing."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table FlowRunLog {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "}\n"
-        "Table Request {\n"
-        "  Id int [pk, increment]\n"
-        "  Origin int [ref: > FlowRunLog.Id]\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  FlowRunLog: { kind: List, base_template: 100, site_role: default }\n"
-        "  Request: { kind: List, base_template: 100, site_role: default }\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Request, column: Origin }\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("FlowRunLog", ID_PK, "Title nvarchar"),
+            table("Request", ID_PK, "Origin int [ref: > FlowRunLog.Id]"),
+        ),
+        mapping=blocks(entities("FlowRunLog", "Request"), """
+            cross_site_reference_columns:
+              - { entity: Request, column: Origin }
+        """),
     )
     output = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"),
-        load_mapping(tmp_path / "m.yaml"),
-        "default",
-        extension=_CrossSiteExpansion(),
+        schema, bundle, "default", extension=_CrossSiteExpansion(),
     )
     assert output["indexed_columns"] == []
 
@@ -173,37 +149,20 @@ def test_a_target_of_both_ref_kinds_still_gets_its_index(tmp_path: Path) -> None
     real lookup, so its picker exists and its display column must stay indexed."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table FlowRunLog {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "}\n"
-        "Table Request {\n"
-        "  Id int [pk, increment]\n"
-        "  Origin int [ref: > FlowRunLog.Id]\n"
-        "}\n"
-        "Table Alert {\n"
-        "  Id int [pk, increment]\n"
-        "  Source int [ref: > FlowRunLog.Id]\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  FlowRunLog: { kind: List, base_template: 100, site_role: default }\n"
-        "  Request: { kind: List, base_template: 100, site_role: default }\n"
-        "  Alert: { kind: List, base_template: 100, site_role: default }\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Request, column: Origin }\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("FlowRunLog", ID_PK, "Title nvarchar"),
+            table("Request", ID_PK, "Origin int [ref: > FlowRunLog.Id]"),
+            table("Alert", ID_PK, "Source int [ref: > FlowRunLog.Id]"),
+        ),
+        mapping=blocks(entities("FlowRunLog", "Request", "Alert"), """
+            cross_site_reference_columns:
+              - { entity: Request, column: Origin }
+        """),
     )
     output = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"),
-        load_mapping(tmp_path / "m.yaml"),
-        "default",
-        extension=_CrossSiteExpansion(),
+        schema, bundle, "default", extension=_CrossSiteExpansion(),
     )
     assert output["indexed_columns"] == [{"list": "APP_FlowRunLog", "field": "Title"}]
 
@@ -212,34 +171,27 @@ def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> No
     """Single-value Choice and Lookup fields support SharePoint uniqueness."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        "  Open\n"
-        "  Closed\n"
-        "}\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n"
-        "Table Task {\n"
-        "  Id int [pk, increment]\n"
-        "  Status status [not null, unique]\n"
-        "  Project int [not null, unique, ref: > Project.Id]\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n"
-        "  Task: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum status {
+              Open
+              Closed
+            }
+            """,
+            table("Project", ID_PK, TITLE),
+            table(
+                "Task",
+                ID_PK,
+                "Status status [not null, unique]",
+                "Project int [not null, unique, ref: > Project.Id]",
+            ),
+        ),
+        mapping=entities("Project", "Task"),
     )
 
-    output = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
-    )
+    output = build_schema_json(schema, bundle, "default")
     task = next(item for item in output["lists"] if item["title"] == "APP_Task")
     fields = {field["title"]: field for field in task["fields_phase1"]}
 
@@ -543,13 +495,7 @@ def test_deferred_circular_lookup_uses_addfield_creation_information(
     """A circular dependency deferred to the deferred-lookups phase uses the same AddField API."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "mapping.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  A: { kind: List, base_template: 100, site_role: default }\n"
-        "  B: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, entities("A", "B"), name="mapping.yaml")
     schema = parse_dbml(FIXTURES / "circular.dbml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
@@ -589,12 +535,7 @@ def test_self_lookup_is_deferred_with_addfield_parameters(tmp_path: Path) -> Non
     """A self-reference remains deferred and carries a complete lookup spec."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "mapping.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Node: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, entities("Node"), name="mapping.yaml")
     schema = parse_dbml(FIXTURES / "self-ref.dbml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     release = load_release(FIXTURES / "release.yaml")
@@ -671,25 +612,14 @@ def test_tojson_escapes_injection_chars(tmp_path: Path) -> None:
     tojson htmlsafe escaping, so <, >, & and </script> are unicode-escaped and
     cannot break out of the generated JS. Locks the invariant against a future
     refactor reintroducing a raw interpolation."""
-    from dbml_sharepoint.model.mapping_loader import load_mapping
-
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Widget {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Field1 nvarchar [note: 'Bad </script><tag> and & value']\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Widget", ID_PK, TITLE,
+            "Field1 nvarchar [note: 'Bad </script><tag> and & value']",
+        ),
+        mapping=entities("Widget"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Widget: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     release = load_release(FIXTURES / "release.yaml")
     js = generate_deploy_js(
         schema=schema, bundle=bundle, release=release,
@@ -896,24 +826,12 @@ def test_no_title_list_gets_required_false_title_patch(tmp_path: Path) -> None:
     """A4: a list with no DBML Title column gets its built-in Title patched
     Required:false so programmatic inserts / manual entry aren't blocked."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
-    from dbml_sharepoint.model.mapping_loader import load_mapping
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Attendance {\n"
-        "  Id int [pk, increment]\n"
-        "  Notes nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Attendance", ID_PK, "Notes nvarchar"),
+        mapping=entities("Attendance"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Attendance: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     sj = build_schema_json(schema, bundle, "default")
     att = next(lst for lst in sj["lists"] if lst["title"] == "APP_Attendance")
     assert att["title_patch"] is not None
@@ -1264,48 +1182,36 @@ def test_generated_condition_fields_are_typed_in_schema_output(tmp_path: Path) -
                 },
             ]
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Unit {\n"
-        "  Id int [pk, increment]\n"
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Unit int [ref: > Unit.Id]\n"
-        "  Note nvarchar\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Unit: { kind: List, base_template: 100, site_role: default }\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Risk, column: Unit }\n"
-        "form_visibility:\n"
-        "  Risk:\n"
-        "    columns:\n"
-        "      Note:\n"
-        "        when:\n"
-        "          any_of:\n"
-        "            - { field: Title, op: eq, value: Named }\n"
-        "            - { field: UnitAbbreviation, op: eq, value: A }\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: A unit\n"
-        "      fields: [UnitAbbreviation, Note]\n"
-        "      where: [{ field: UnitAbbreviation, op: eq, value: A }]\n"
-        "list_validation:\n"
-        "  Risk:\n"
-        "    when: [{ field: Title, op: is_not_null }]\n"
-        "    message: A title is required.\n",
-        encoding="utf-8",
-    )
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Unit", ID_PK),
+            table("Risk", ID_PK, "Unit int [ref: > Unit.Id]", "Note nvarchar"),
+        ),
+        mapping=blocks(entities("Unit", "Risk"), """
+            cross_site_reference_columns:
+              - { entity: Risk, column: Unit }
+            form_visibility:
+              Risk:
+                columns:
+                  Note:
+                    when:
+                      any_of:
+                        - { field: Title, op: eq, value: Named }
+                        - { field: UnitAbbreviation, op: eq, value: A }
+            views:
+              Risk:
+                - title: A unit
+                  fields: [UnitAbbreviation, Note]
+                  where: [{ field: UnitAbbreviation, op: eq, value: A }]
+            list_validation:
+              Risk:
+                when: [{ field: Title, op: is_not_null }]
+                message: A title is required.
+        """),
+    )
     assert not [
         f for f in validate_all(schema, bundle, Expansion()) if f.severity == "error"
     ]
@@ -1354,36 +1260,32 @@ def test_calculated_fields_are_created_after_referenced_columns(
     topologically ordered among themselves for calc-on-calc chains."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum severity {\n"
-        '  "Low"\n'
-        '  "High"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Severity severity\n"
-        "  Score calculated_number\n"
-        "  Rating calculated_text\n"
-        "  MatrixVersion nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    # Score depends on Rating (calc-on-calc) although declared first;
+    # Rating depends on the plain columns declared AFTER both.
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum severity {
+              "Low"
+              "High"
+            }
+            """,
+            table(
+                "Risk", ID_PK, TITLE,
+                "Severity severity",
+                "Score calculated_number",
+                "Rating calculated_text",
+                "MatrixVersion nvarchar",
+            ),
+        ),
+        mapping=blocks(entities("Risk"), """
+            calculated_formulas:
+              Risk:
+                Score: '=IF([Rating]="High",10,1)'
+                Rating: '=IF([MatrixVersion]="13.0",[Severity],"")'
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        # Score depends on Rating (calc-on-calc) although declared first;
-        # Rating depends on the plain columns declared AFTER both.
-        "    Score: '=IF([Rating]=\"High\",10,1)'\n"
-        "    Rating: '=IF([MatrixVersion]=\"13.0\",[Severity],\"\")'\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     risk = next(
         lst for lst in build_schema_json(schema, bundle, "default")["lists"]
         if lst["title"] == "APP_Risk"
@@ -1681,39 +1583,31 @@ def test_view_caml_escapes_values_and_maps_boolean() -> None:
 def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Status status\n"
-        "  DueDate date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            """,
+            table("Risk", ID_PK, TITLE, "Status status", "DueDate date"),
+        ),
+        mapping=blocks(entities("Risk"), """
+            views:
+              Risk:
+                - title: Open risks
+                  renamed_from: [Active risks]
+                  default: true
+                  fields: [Title, Status, DueDate]
+                  where:
+                    - { field: Status, op: neq, value: Closed }
+                  sort:
+                    - { field: DueDate, direction: asc }
+                  row_limit: 100
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: Open risks\n"
-        "      renamed_from: [Active risks]\n"
-        "      default: true\n"
-        "      fields: [Title, Status, DueDate]\n"
-        "      where:\n"
-        "        - { field: Status, op: neq, value: Closed }\n"
-        "      sort:\n"
-        "        - { field: DueDate, direction: asc }\n"
-        "      row_limit: 100\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     assert [view["title"] for view in schema_json["views"]] == [
         "Open risks", "All Items",
@@ -1752,32 +1646,21 @@ def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
     calculated formulas and form bodies use."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  DueDate date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "DueDate date"),
+        mapping=blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+            views:
+              Risk:
+                - title: Sized
+                  fields: [Title, DueDate]
+                  widths:
+                    Title: 240
+                    DueDate: 150
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "display_names:\n"
-        "  mode: auto\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: Sized\n"
-        "      fields: [Title, DueDate]\n"
-        "      widths:\n"
-        "        Title: 240\n"
-        "        DueDate: 150\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     sized = next(view for view in schema_json["views"] if view["title"] == "Sized")
     assert sized["widths"] == {"Title": 240, "Due Date": 150}
@@ -1808,38 +1691,32 @@ def test_schema_json_adds_unfiltered_all_items_with_every_supported_column() -> 
 
 
 def _generate_views_js(tmp_path: Path) -> str:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Status status\n"
-        "  DueDate date\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: Open risks\n"
-        "      default: true\n"
-        "      fields: [Title, Status, DueDate]\n"
-        "      where:\n"
-        "        - { field: Status, op: neq, value: Closed }\n"
-        "      sort:\n"
-        "        - { field: DueDate, direction: asc }\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            """,
+            table("Risk", ID_PK, TITLE, "Status status", "DueDate date"),
+        ),
+        mapping=blocks(entities("Risk"), """
+            views:
+              Risk:
+                - title: Open risks
+                  default: true
+                  fields: [Title, Status, DueDate]
+                  where:
+                    - { field: Status, op: neq, value: Closed }
+                  sort:
+                    - { field: DueDate, direction: asc }
+        """),
     )
     return generate_deploy_js(
-        schema=parse_dbml(tmp_path / "s.dbml"),
-        bundle=load_mapping(tmp_path / "m.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default",
@@ -1925,36 +1802,35 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
 
 
 def _display_names_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum matrix_version {\n"
-        '  "13.0"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  MatrixVersion matrix_version\n"
-        "  RiskManReference nvarchar\n"
-        "  RiskScore calculated_number\n"
-        "}\n",
-        encoding="utf-8",
+    # The mapping block sits at an eight-space margin, not the usual twelve:
+    # the RiskScore formula is ONE YAML line (splitting it would change the
+    # value) and four more columns of indent would push it past E501.
+    return pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum matrix_version {
+              "13.0"
+            }
+            """,
+            table(
+                "Risk", ID_PK, TITLE,
+                "MatrixVersion matrix_version",
+                "RiskManReference nvarchar",
+                "RiskScore calculated_number",
+            ),
+        ),
+        mapping=blocks(entities("Risk"), """
+        display_names:
+          mode: auto
+          overrides:
+            Risk:
+              RiskManReference: "RiskMan Reference"
+        calculated_formulas:
+          Risk:
+            RiskScore: '=IF([MatrixVersion]="13.0",1,IF([RiskManReference]="[MatrixVersion]",2,3))'
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "display_names:\n"
-        "  mode: auto\n"
-        "  overrides:\n"
-        "    Risk:\n"
-        '      RiskManReference: "RiskMan Reference"\n'
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    RiskScore: '=IF([MatrixVersion]=\"13.0\",1,"
-        "IF([RiskManReference]=\"[MatrixVersion]\",2,3))'\n",
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 
 def test_fields_carry_display_titles_and_create_with_internal_name(
@@ -2032,29 +1908,23 @@ def test_template_reconciles_title_to_display_title(tmp_path: Path) -> None:
 
 
 def _formatting_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Status status\n"
-        "}\n",
-        encoding="utf-8",
+    return pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            """,
+            table("Risk", ID_PK, TITLE, "Status status"),
+        ),
+        mapping=blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Status: { elmType: div, txtContent: '@currentField' }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Status: { elmType: div, txtContent: '@currentField' }\n",
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 
 def test_fields_carry_compact_custom_formatter(tmp_path: Path) -> None:
@@ -2109,15 +1979,11 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
     readback; views without a declaration are never touched."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Score int\n"
-        "}\n",
-        encoding="utf-8",
-    )
+    write_dbml(tmp_path, table("Risk", ID_PK, TITLE, "Score int"))
+    # The mapping keeps its hand-rolled fragments deliberately. The two glued
+    # literals below are ONE YAML line -- splitting them would change the
+    # declared formatter -- and joined it is 101 characters even flush against
+    # the left margin, so no triple-quoted block can hold it within E501.
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
         "entities:\n"
@@ -2172,27 +2038,17 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
 
 
 def _form_formatting_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  ReviewDate date\n"
-        "}\n",
-        encoding="utf-8",
+    return pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "ReviewDate date"),
+        mapping=blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+            form_formatting:
+              Risk:
+                body: { sections: [ { displayname: Core, fields: [Title, ReviewDate] } ] }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "display_names:\n"
-        "  mode: auto\n"
-        "form_formatting:\n"
-        "  Risk:\n"
-        "    body: { sections: [ { displayname: Core, fields: [Title, ReviewDate] } ] }\n",
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 
 def test_required_date_default_and_validation_reach_the_field(tmp_path: Path) -> None:
@@ -2201,28 +2057,22 @@ def test_required_date_default_and_validation_reach_the_field(tmp_path: Path) ->
     clearing, start at today, and refuse a future date."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  LastReviewedDate date [not null, default: '[today]']\n}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Risk", ID_PK, TITLE,
+            "LastReviewedDate date [not null, default: '[today]']",
+        ),
+        mapping=blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                columns:
+                  LastReviewedDate:
+                    when:
+                      - { field: LastReviewedDate, op: leq, value: today }
+                    message: Review date cannot be in the future.
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_validation:\n"
-        "  Risk:\n"
-        "    columns:\n"
-        "      LastReviewedDate:\n"
-        "        when:\n"
-        "          - { field: LastReviewedDate, op: leq, value: today }\n"
-        "        message: Review date cannot be in the future.\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     out = build_schema_json(schema, bundle, "default")
     defaults = {
         (d["list"], d["field"]): d["default_value"] for d in out["field_defaults"]
@@ -2244,37 +2094,29 @@ def test_exact_column_validation_skips_unsupported_field_types(tmp_path: Path) -
     Lookup fields fails the whole field MERGE with HTTP 500."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Summary nvarchar\n"
-        "  ReviewDate date\n"
-        "  Detail richtext\n"
-        "  Notes longtext\n"
-        "  Owner person\n"
-        "  Parent int [ref: > Risk.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Risk", ID_PK, TITLE,
+            "Summary nvarchar",
+            "ReviewDate date",
+            "Detail richtext",
+            "Notes longtext",
+            "Owner person",
+            "Parent int [ref: > Risk.Id]",
+        ),
+        mapping=blocks(entities("Risk"), """
+            column_validation:
+              Risk:
+                reconcile: exact
+                columns:
+                  Summary:
+                    when:
+                      - { field: Summary, op: neq, value: forbidden }
+                    message: Use a different summary.
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_validation:\n"
-        "  Risk:\n"
-        "    reconcile: exact\n"
-        "    columns:\n"
-        "      Summary:\n"
-        "        when:\n"
-        "          - { field: Summary, op: neq, value: forbidden }\n"
-        "        message: Use a different summary.\n",
-        encoding="utf-8",
-    )
-    out = build_schema_json(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
-    )
+    out = build_schema_json(schema, bundle, "default")
     fields = {
         field["title"]: field
         for field in out["lists"][0]["fields_phase1"]
@@ -2365,38 +2207,30 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
     and reconciled by the existing narrow list MERGE."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  ClosureNote nvarchar\n"
-        "  Status status\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            """,
+            table("Risk", ID_PK, TITLE, "ClosureNote nvarchar", "Status status"),
+        ),
+        mapping=blocks(entities("Risk"), """
+            display_names:
+              mode: auto
+            list_validation:
+              Risk:
+                when:
+                  any_of:
+                    - none_of:
+                        - { field: Status, op: eq, value: Closed }
+                    - { field: ClosureNote, op: is_not_null }
+                message: Closing needs a closure note.
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "display_names:\n"
-        "  mode: auto\n"
-        "list_validation:\n"
-        "  Risk:\n"
-        "    when:\n"
-        "      any_of:\n"
-        "        - none_of:\n"
-        "            - { field: Status, op: eq, value: Closed }\n"
-        "        - { field: ClosureNote, op: is_not_null }\n"
-        "    message: Closing needs a closure note.\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     risk = next(
         lst for lst in build_schema_json(schema, bundle, "default")["lists"]
         if lst["title"] == "APP_Risk"
@@ -2467,24 +2301,14 @@ def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
 
 
 def _hardening_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Detail nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    return pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "Detail nvarchar"),
+        mapping=blocks(entities("Risk"), """
+            seal_columns: true
+            prevent_list_deletion: true
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "seal_columns: true\n"
-        "prevent_list_deletion: true\n",
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 
 def test_hardening_flags_flow_to_schema(tmp_path: Path) -> None:
@@ -2752,33 +2576,25 @@ def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
     leaked past the loader."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  BoardDate date\n"
-        "  OperationsStatus nvarchar\n"
-        "  WorkforceStatus nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Board", ID_PK, TITLE,
+            "BoardDate date",
+            "OperationsStatus nvarchar",
+            "WorkforceStatus nvarchar",
+        ),
+        mapping=blocks(entities("Board"), """
+            field_sets:
+              Board:
+                header:   [Title, BoardDate]
+                statuses: [OperationsStatus, WorkforceStatus]
+            views:
+              Board:
+                - title: Heat grid
+                  fields: ["@header", "@statuses", BoardDate]
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "field_sets:\n"
-        "  Board:\n"
-        "    header:   [Title, BoardDate]\n"
-        "    statuses: [OperationsStatus, WorkforceStatus]\n"
-        "views:\n"
-        "  Board:\n"
-        "    - title: Heat grid\n"
-        '      fields: ["@header", "@statuses", BoardDate]\n',
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     view_fields = next(
         view for view in schema_json["views"] if view["title"] == "Heat grid"
@@ -2887,40 +2703,28 @@ def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None
     column stops a deploy that has nothing else wrong with it. The
     generator must mark those columns unmanaged rather than emit a clear.
     """
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Thing {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Link hyperlink\n"
-        "  Note nvarchar\n"
-        "  Comment nvarchar\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Thing: { kind: List, base_template: 100, site_role: default }\n"
-        "column_validation:\n"
-        "  Thing:\n"
-        "    reconcile: exact\n"
-        "    columns:\n"
-        "      Note:\n"
-        "        when:\n"
-        '          - { field: Note, op: is_not_null }\n'
-        '        message: "Needed."\n',
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Thing", ID_PK, TITLE,
+            "Link hyperlink",
+            "Note nvarchar",
+            "Comment nvarchar",
+        ),
+        mapping=blocks(entities("Thing"), """
+            column_validation:
+              Thing:
+                reconcile: exact
+                columns:
+                  Note:
+                    when:
+                      - { field: Note, op: is_not_null }
+                    message: "Needed."
+        """),
     )
     from dbml_sharepoint.generators.jsgen import UNMANAGED, build_schema_json
-    from dbml_sharepoint.model.mapping_loader import load_mapping
-    from dbml_sharepoint.model.parser import parse_dbml
 
-    schema_json = build_schema_json(
-        schema=parse_dbml(tmp_path / "s.dbml"),
-        bundle=load_mapping(tmp_path / "m.yaml"),
-        site_role="default",
-    )
+    schema_json = build_schema_json(schema=schema, bundle=bundle, site_role="default")
     fields = {
         f["title"]: f
         for lst in schema_json["lists"]
@@ -2996,16 +2800,9 @@ def test_a_created_group_enters_the_enumeration_snapshot() -> None:
 
 
 def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Task {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Owner person\n"
-        "  Reviewer person\n"
-        "}\n",
-        encoding="utf-8",
-    )
+    write_dbml(tmp_path, table("Task", ID_PK, TITLE, "Owner person", "Reviewer person"))
+    # The mapping stays hand-rolled: `hide_line` is spliced in mid-document and
+    # is a single uniformly-indented line, which `blocks()` would dedent flat.
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
         "entities:\n"
@@ -3114,42 +2911,34 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Person {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Manager int [ref: > Person.Id]\n"
-        "}\n"
-        "Table Task {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Owner person\n"
-        "  Assignee int [ref: > Person.Id]\n"
-        "  Elsewhere int [ref: > Person.Id]\n"
-        "  Parent int [ref: > Task.Id]\n"
-        "  Notes nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Person", ID_PK, TITLE, "Manager int [ref: > Person.Id]"),
+            table(
+                "Task", ID_PK, TITLE,
+                "Owner person",
+                "Assignee int [ref: > Person.Id]",
+                "Elsewhere int [ref: > Person.Id]",
+                "Parent int [ref: > Task.Id]",
+                "Notes nvarchar",
+            ),
+        ),
+        mapping="""
+            entities:
+              Person: { kind: List, base_template: 100, site_role: default }
+              Task:
+                kind: List
+                base_template: 100
+                site_role: default
+                hide_from_all_items: [Owner]
+            cross_site_reference_columns:
+              - { entity: Task, column: Elsewhere }
+        """,
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Person: { kind: List, base_template: 100, site_role: default }\n"
-        "  Task:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        "    hide_from_all_items: [Owner]\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Task, column: Elsewhere }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     # A cross-site column needs an extension that expands it, or
     # build_schema_json raises (jsgen.py:387-392). _CrossSiteExpansion is
-    # already defined at test/test_jsgen.py:104.
+    # already defined at test/test_jsgen.py:94.
     schema_json = build_schema_json(
         schema, bundle, "default", extension=_CrossSiteExpansion(),
     )
@@ -3158,21 +2947,24 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         if v["title"] == "All Items" and v["list"] == "APP_Task"
     )["view_fields"]
 
-    table = next(t for t in schema.tables if t.name == "Task")
-    entity = bundle.mapping.entities["Task"]
+    # Not `table` / `entity`: those names are the input builders imported at
+    # the top of this module, and shadowing them here is an UnboundLocalError
+    # in the `dbml=` argument above.
+    task = next(t for t in schema.tables if t.name == "Task")
+    task_entity = bundle.mapping.entities["Task"]
     xcols = {"Elsewhere"}
 
     derived = (
-        _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
-    ) - all_items_hidden(entity)
+        _rendered_columns(task, xcols) | {"Title"} | SYSTEM_COLUMNS
+    ) - all_items_hidden(task_entity)
     assert set(generated) == derived
 
     # Calls the validator's REAL function rather than re-typing its formula.
     # This is what actually goes red if `joins.py`'s composition drifts from
     # what jsgen renders — see the docstring above.
     assert (
-        joining_fields(generated, join_bearing_columns(table, xcols))
-        == all_items_joining_fields(table, entity, xcols)
+        joining_fields(generated, join_bearing_columns(task, xcols))
+        == all_items_joining_fields(task, task_entity, xcols)
     )
 
 
