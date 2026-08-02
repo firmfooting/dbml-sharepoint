@@ -66,6 +66,7 @@ dev = [
   # The git-hook runner. Pinned here for the same reason as every other gate:
   # `uv run prek` cannot drift from the version a contributor happens to have.
   "prek>=0.4.11",
+  "hypothesis>=6.100",
 ]
 
 [tool.uv]
