@@ -127,14 +127,14 @@ def derive_requirements(
 # Tier-3: items research confirmed are NOT assessable from operator site
 # context. Shared verbatim by assess.js and assess-manifest.md.
 NOT_ASSESSABLE: tuple[str, ...] = (
-    "Power Automate / Power Apps inventory (lives in Power Platform APIs, "
-    "no SharePoint REST surface from site context)",
+    ("Power Automate / Power Apps inventory (lives in Power Platform APIs, "
+     "no SharePoint REST surface from site context)"),
     "Audit settings (SSOM-only; not exposed via CSOM/REST)",
     "Information-barrier segments and mode (tenant-admin only)",
-    "Authoritative tenant sharing capability and storage quota ceilings "
-    "(tenant-admin SiteProperties)",
-    "Retention POLICY coverage of the site (only inferable via the "
-    "Preservation Hold Library signal)",
+    ("Authoritative tenant sharing capability and storage quota ceilings "
+     "(tenant-admin SiteProperties)"),
+    ("Retention POLICY coverage of the site (only inferable via the "
+     "Preservation Hold Library signal)"),
     "Webhook subscription enumeration (bound to the creating app identity)",
     "Edit-form column-description suppression (SharePoint platform behaviour)",
     "[$Created] view-field resolution in formatters (tenant/locale dependent)",

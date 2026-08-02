@@ -99,14 +99,14 @@ def validate_form_visibility(
     if is_calculated:
         problems.append((
             "error",
-            f"{context}: {column!r} is a calculated column — calculated columns never "
-            f"appear on entry forms, so declaring their visibility is a mistake",
+            (f"{context}: {column!r} is a calculated column — calculated columns never "
+             f"appear on entry forms, so declaring their visibility is a mistake"),
         ))
     if not new and not existing and when is not None:
         problems.append((
             "error",
-            f"{context}: {column!r} is hidden on every form, so 'when' can never be "
-            f"reached — drop one or the other",
+            (f"{context}: {column!r} is hidden on every form, so 'when' can never be "
+             f"reached — drop one or the other"),
         ))
     if not new and required and not has_default:
         # Statically provable: the gate is false on the New form whatever
@@ -115,17 +115,17 @@ def validate_form_visibility(
         # an error because the build can prove it.
         problems.append((
             "error",
-            f"{context}: {column!r} is required with no default and hidden from the New "
-            f"form, so every save would fail",
+            (f"{context}: {column!r} is required with no default and hidden from the New "
+             f"form, so every save would fail"),
         ))
     elif when is not None and required and not has_default:
         # NOT provable: whether the predicate holds on the New form depends
         # on what the person types. A warning, per the spec.
         problems.append((
             "warning",
-            f"{context}: {column!r} is required with no default and 'when' may hide it "
-            f"at creation, which would fail the save — this cannot be decided at "
-            f"build time",
+            (f"{context}: {column!r} is required with no default and 'when' may hide it "
+             f"at creation, which would fail the save — this cannot be decided at "
+             f"build time"),
         ))
     if when is not None:
         problems.extend(
