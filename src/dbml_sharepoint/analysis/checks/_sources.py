@@ -2,7 +2,7 @@
 """Retention policies and enum sources."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
-from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import Finding
 
 
@@ -30,18 +30,25 @@ def check(vc: ValidationContext) -> list[Finding]:
             )
             if bare not in table_names:
                 findings.append(Finding(
-                    FindingCode.UNCLASSIFIED,
+                    FindingCode.UNKNOWN_ENTITY,
                     "error",
                     f"retention list_defaults references unknown entity: {entity_name}",
+                    # Prose, not a dotted path: these two messages were written
+                    # before there was a convention, so `location.path`
+                    # ("retention[X]") is not the prefix. The location is the
+                    # structured truth; the message is what has to change, and
+                    # it cannot until nothing matches on the prose.
+                    location=Location(Section.RETENTION, entity=entity_name),
                 ))
 
         # Every list_defaults policy must be a known retention policy.
         for entity_name, policy in bundle.retention_list_defaults.items():
             if policy not in bundle.retention_policies:
                 findings.append(Finding(
-                    FindingCode.UNCLASSIFIED,
+                    FindingCode.UNKNOWN_RETENTION_POLICY,
                     "error",
                     f"retention list_defaults[{entity_name}] = {policy} not in policies",
+                    location=Location(Section.RETENTION, entity=entity_name),
                 ))
 
     # For every configured enum_sources entry, cross-check its choices
@@ -53,20 +60,28 @@ def check(vc: ValidationContext) -> list[Finding]:
     # consumers.
     for enum_name, choices in bundle.enum_choices.items():
         dbml_enum = enum_by_name.get(enum_name)
+        # Neither message's prefix is `location.path` either: the first quotes
+        # the enum name inside the brackets (`enum_sources['Status']`) and the
+        # second opens with the DBML enum rather than with the section. The
+        # location says where the finding is; the messages say it differently
+        # and cannot be reworded yet.
+        at_enum = Location(Section.ENUM_SOURCES, entity=enum_name)
         if dbml_enum is None:
             findings.append(Finding(
-                FindingCode.UNCLASSIFIED,
+                FindingCode.ENUM_SOURCE_HAS_NO_DBML_ENUM,
                 "warning",
                 f"enum_sources[{enum_name!r}] has no matching DBML enum "
                 f"{enum_name!r} in the schema.",
+                location=at_enum,
             ))
         elif dbml_enum.members != choices:
             findings.append(Finding(
-                FindingCode.UNCLASSIFIED,
+                FindingCode.ENUM_MEMBERS_DIFFER,
                 "error",
                 f"DBML enum {enum_name!r} members differ from configured "
                 f"enum_sources[{enum_name!r}] — "
                 f"DBML: {dbml_enum.members!r}; YAML: {choices!r}",
+                location=at_enum,
             ))
 
     return findings
