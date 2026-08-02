@@ -1,41 +1,118 @@
 """Validator: field sets, and the refusals a deploy cannot see."""
 import ast
 from pathlib import Path
+from typing import Any, Unpack
 
-from _builders import ID_PK, TITLE, table
 from _findings import by_severity, none_of, only
-from _packs import pack, write_dbml
+from _model import MappingSections
+from _model import bundle as make_bundle
+from _model import column as make_column
+from _model import enum as make_enum
+from _model import schema as make_schema
+from _model import table as make_table
 from _paths import PACKAGE
 from _validator_helpers import _calculated_form_inputs, _view_errors, _view_inputs
 
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
 from dbml_sharepoint.model.mapping_loader import (
-    load_mapping,
+    DemoItem,
+    EntityKind,
+    EntityMapping,
+    EntitySection,
+    FormFormatting,
+    FormVisibility,
+    MappingBundle,
+    ViewDef,
+    ViewGroupBy,
 )
-from dbml_sharepoint.model.parser import (
-    parse_dbml,
-)
+from dbml_sharepoint.model.parser import Schema
+
+# The `Project` fixture as objects. `_view_inputs` / `_calculated_form_inputs`
+# in `_validator_helpers` build the same two shapes through the loader and are
+# still used below by the tests that need a LOAD-TIME transform -- field-set
+# expansion into a view's `fields`, and the retirement fold. Everything else
+# builds them here.
+
+
+def _project(**sections: Unpack[MappingSections]) -> tuple[Schema, MappingBundle]:
+    """`_view_inputs`' fixture, without the round trip through YAML."""
+    schema = make_schema(
+        make_table(
+            "Project",
+            make_column("Title", required=True),
+            make_column("Status", "status"),
+            make_column("SortOrder", "int"),
+            make_column("DueDate", "date"),
+        ),
+        enums=[make_enum("status", "Open", "Closed")],
+    )
+    return schema, make_bundle(entities=["Project"], **sections)
+
+
+def _project_errors(**sections: Unpack[MappingSections]) -> list[Finding]:
+    schema, bundle = _project(**sections)
+    return by_severity(validate_against_mapping(schema, bundle), "error")
+
+
+def _view(title: str, *fields: str, **extra: Any) -> dict[str, list[ViewDef]]:
+    """A one-view `views:` section on `Project`."""
+    return {"Project": [ViewDef(title=title, fields=list(fields), **extra)]}
+
+
+def _calculated_project(
+    **sections: Unpack[MappingSections],
+) -> tuple[Schema, MappingBundle]:
+    """`_calculated_form_inputs`' fixture: `Band` calculated from `Score`."""
+    schema = make_schema(make_table(
+        "Project",
+        make_column("Title", required=True),
+        make_column("Score", "int"),
+        make_column("Band", "calculated_text"),
+    ))
+    # Written into `sections` rather than passed beside it: a caller declaring
+    # its own `calculated_formulas` would otherwise be two values for one
+    # keyword, and silently overriding the fixture's Band formula would make
+    # `Band` an un-paired calculated column and change what every one of these
+    # tests reaches.
+    declared: MappingSections = {
+        "calculated_formulas": {"Project": {"Band": '=IF([Score]>5,"High","Low")'}},
+    }
+    declared.update(sections)
+    return schema, make_bundle(entities=["Project"], **declared)
+
+
+def _hidden(*columns: str) -> dict[str, EntitySection[FormVisibility]]:
+    """A `form_visibility:` section hiding each column from both forms."""
+    return {"Project": EntitySection(columns={
+        name: FormVisibility(new=False, existing=False) for name in columns
+    })}
+
+
+def _body(*sections: dict[str, Any]) -> dict[str, FormFormatting]:
+    """A `form_formatting:` section declaring only a body."""
+    return {"Project": FormFormatting(body={"sections": list(sections)})}
+
 
 # --- Field sets -------------------------------------------------------------
 
 
-def test_field_set_on_unknown_entity_is_error(tmp_path: Path) -> None:
-    errors = _view_errors(
-        tmp_path,
-        """
-        field_sets:
-          Widget:
-            header: [Title]
-        """,
-    )
+def test_field_set_on_unknown_entity_is_error() -> None:
+    errors = _project_errors(field_sets={"Widget": {"header": ["Title"]}})
     f = only(errors, FindingCode.UNKNOWN_ENTITY)
     assert f.location == Location(Section.FIELD_SETS, entity="Widget")
 
 def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
-    """The declaration message is the one that says where to fix it."""
+    """The declaration message is the one that says where to fix it.
+
+    Stays on the filesystem: `@header` in a view's `fields` is resolved by
+    `_expand_field_sets` at LOAD time, so what the validator sees is the
+    already-expanded list. Building the views by hand would mean writing that
+    expansion out in the test, which is the loader's job -- see the other
+    three expansion-dependent tests below.
+    """
     errors = _view_errors(
         tmp_path,
         """
@@ -59,49 +136,32 @@ def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
     # something that is not broken.
     assert not any("'Title'" in f.message for f in errors)
 
-def test_view_referencing_an_undeclared_field_set_is_error(tmp_path: Path) -> None:
-    errors = _view_errors(
-        tmp_path,
-        """
-        field_sets:
-          Project:
-            header: [Title]
-        views:
-          Project:
-            - title: V
-              fields: ["@headr"]
-        """,
+def test_view_referencing_an_undeclared_field_set_is_error() -> None:
+    """An unmatched `@name` is the one reference `_expand_field_sets` leaves
+    alone -- "left in place untouched, so nothing is silently dropped" -- so
+    the view built here is exactly what the loader would have produced."""
+    errors = _project_errors(
+        field_sets={"Project": {"header": ["Title"]}},
+        views=_view("V", "@headr"),
     )
     f = only(errors, FindingCode.UNKNOWN_FIELD_SET_REFERENCE)
     assert "@headr" in f.message
     # One precise error, not that plus a confusing "not a rendered column".
     none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
 
-def test_field_set_name_cannot_contain_the_reference_marker(tmp_path: Path) -> None:
-    errors = _view_errors(
-        tmp_path,
-        """
-        field_sets:
-          Project:
-            "hea@der": [Title]
-        """,
-    )
+def test_field_set_name_cannot_contain_the_reference_marker() -> None:
+    errors = _project_errors(field_sets={"Project": {"hea@der": ["Title"]}})
     f = only(errors, FindingCode.FIELD_SET_NAME_HAS_MARKER)
     assert f.location == Location(Section.FIELD_SETS, entity="Project", sub="hea@der")
 
-def test_empty_field_set_is_error(tmp_path: Path) -> None:
-    errors = _view_errors(
-        tmp_path,
-        """
-        field_sets:
-          Project:
-            header: []
-        """,
-    )
+def test_empty_field_set_is_error() -> None:
+    errors = _project_errors(field_sets={"Project": {"header": []}})
     f = only(errors, FindingCode.FIELD_SET_EMPTY)
     assert f.location == Location(Section.FIELD_SETS, entity="Project", sub="header")
 
 def test_valid_field_set_produces_no_errors(tmp_path: Path) -> None:
+    """Stays on the filesystem: the whole assertion is that the expansion
+    resolved, which only the loader does."""
     errors = _view_errors(
         tmp_path,
         """
@@ -119,7 +179,10 @@ def test_valid_field_set_produces_no_errors(tmp_path: Path) -> None:
 def test_unreferenced_field_set_is_a_warning(tmp_path: Path) -> None:
     """Dead config wastes nothing but the reader's time, so it warns rather
     than failing the build — the fail-closed line is drawn at declarations
-    that would break the list."""
+    that would break the list.
+
+    Stays on the filesystem: "referenced" means present in a view's
+    `expanded_sets`, which `_expand_field_sets` populates at load time."""
     schema, bundle = _view_inputs(
         tmp_path,
         """
@@ -146,7 +209,10 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
     pulls the set in and the strip is recorded against the VIEW. The set
     itself is where the author fixes it, so it gets its own warning naming
     the set — otherwise the only report points at a view that no longer
-    mentions the column."""
+    mentions the column.
+
+    Stays on the filesystem: it asserts on the stripped view, and both the
+    expansion and the retirement fold that produced it run in the loader."""
     schema, bundle = _view_inputs(
         tmp_path,
         """
@@ -171,7 +237,7 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
     assert "'Status'" in f.message
     assert not by_severity(findings, "error")
 
-def test_view_formatting_may_only_read_columns_the_view_displays(tmp_path: Path) -> None:
+def test_view_formatting_may_only_read_columns_the_view_displays() -> None:
     """SharePoint resolves a view formatter's [$Field] against the columns
     that view renders, not the list's columns — "reference to other fields
     will work only if they are included in the same view". A reference to a
@@ -179,62 +245,26 @@ def test_view_formatting_may_only_read_columns_the_view_displays(tmp_path: Path)
     silently never fires, the build exits 0, and the only symptom is a row
     wash nobody sees. Catching it needs the VIEW's field list, which is why
     checking against the table's columns was not enough."""
-    errors = _view_errors(
-        tmp_path,
-        """
-        views:
-          Project:
-            - title: V
-              fields: [Title]
-              formatting: { additionalRowClass: "=if([$Status] == 'Open', 'x', '')" }
-        """,
-    )
+    row_class = {"additionalRowClass": "=if([$Status] == 'Open', 'x', '')"}
+    errors = _project_errors(views=_view("V", "Title", formatting=row_class))
     f = only(errors, FindingCode.FORMATTER_FIELD_NOT_DISPLAYED)
     assert f.location == Location(Section.VIEWS, entity="Project", view="V")
     assert "Status" in f.message
 
     # The same reference is fine once the view actually shows the column.
-    ok = _view_errors(
-        tmp_path,
-        """
-        views:
-          Project:
-            - title: V
-              fields: [Title, Status]
-              formatting: { additionalRowClass: "=if([$Status] == 'Open', 'x', '')" }
-        """,
-    )
+    ok = _project_errors(views=_view("V", "Title", "Status", formatting=row_class))
     assert ok == [], ok
 
-def test_view_formatting_may_only_read_system_columns_the_view_displays(
-    tmp_path: Path,
-) -> None:
-    errors = _view_errors(
-        tmp_path,
-        """
-        views:
-          Project:
-            - title: V
-              fields: [Title]
-              formatting: { additionalRowClass: "=if([$Created] != '', 'x', '')" }
-        """,
-    )
+def test_view_formatting_may_only_read_system_columns_the_view_displays() -> None:
+    row_class = {"additionalRowClass": "=if([$Created] != '', 'x', '')"}
+    errors = _project_errors(views=_view("V", "Title", formatting=row_class))
     f = only(errors, FindingCode.FORMATTER_FIELD_NOT_DISPLAYED)
     assert "Created" in f.message
 
-    ok = _view_errors(
-        tmp_path,
-        """
-        views:
-          Project:
-            - title: V
-              fields: [Title, Created]
-              formatting: { additionalRowClass: "=if([$Created] != '', 'x', '')" }
-        """,
-    )
+    ok = _project_errors(views=_view("V", "Title", "Created", formatting=row_class))
     assert ok == [], ok
 
-def test_a_form_header_may_not_read_a_calculated_column(tmp_path: Path) -> None:
+def test_a_form_header_may_not_read_a_calculated_column() -> None:
     """A calculated column resolves to an empty string in a form header or
     footer — verified on a live tenant against a saved item that had a
     value. Nothing errors: the header renders, that one value is blank. The
@@ -244,32 +274,22 @@ def test_a_form_header_may_not_read_a_calculated_column(tmp_path: Path) -> None:
     Body sections are exempt: they list field NAMES rather than reading
     values, and a calculated column placed in one renders on the Display
     form exactly as intended."""
-    schema, bundle = _calculated_form_inputs(
-        tmp_path,
-        """
-        form_formatting:
-          Project:
-            header: { elmType: div, txtContent: '=[$Band]' }
-        """,
-    )
-    errors = [
-        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
-    ]
+    schema, bundle = _calculated_project(form_formatting={
+        "Project": FormFormatting(header={"elmType": "div", "txtContent": "=[$Band]"}),
+    })
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
     f = only(errors, FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN)
     assert "Band" in f.message
 
     # A non-calculated reference is fine, and so is the same calculated
     # column named in a body section.
-    schema, bundle = _calculated_form_inputs(
-        tmp_path,
-        """
-        form_formatting:
-          Project:
-            header: { elmType: div, txtContent: '=[$Title]' }
-            body: { sections: [ { displayname: X, fields: [Title, Band] } ] }
-        """,
-    )
-    ok = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    schema, bundle = _calculated_project(form_formatting={
+        "Project": FormFormatting(
+            header={"elmType": "div", "txtContent": "=[$Title]"},
+            body={"sections": [{"displayname": "X", "fields": ["Title", "Band"]}]},
+        ),
+    })
+    ok = by_severity(validate_against_mapping(schema, bundle), "error")
     assert ok == [], ok
 
 def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> None:
@@ -324,112 +344,70 @@ def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> 
 # field the view does not display already exists above.
 
 
-def test_group_by_need_not_be_one_of_the_views_own_fields(tmp_path: Path) -> None:
+def test_group_by_need_not_be_one_of_the_views_own_fields() -> None:
     """SharePoint renders the grouped value in the group HEADER, from the
     GroupBy FieldRef itself, so grouping by a column the view does not also
     list is a normal way to avoid repeating one value in every row.
 
     Only the weaker rule holds: the column must exist on the entity.
     """
-    errors = _view_errors(
-        tmp_path,
-        """
-        views:
-          Project:
-            - title: By status
-              fields: [Title]
-              group_by: { field: Status }
-        """,
+    errors = _project_errors(
+        views=_view("By status", "Title", group_by=ViewGroupBy(fields=["Status"])),
     )
     none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
 
-def test_group_by_on_an_unknown_column_is_still_refused(tmp_path: Path) -> None:
-    errors = _view_errors(
-        tmp_path,
-        """
-        views:
-          Project:
-            - title: By ghost
-              fields: [Title]
-              group_by: { field: Ghost }
-        """,
+def test_group_by_on_an_unknown_column_is_still_refused() -> None:
+    errors = _project_errors(
+        views=_view("By ghost", "Title", group_by=ViewGroupBy(fields=["Ghost"])),
     )
     f = only(errors, FindingCode.COLUMN_NOT_RENDERED)
     assert "Ghost" in f.message
 
-def test_group_by_in_the_views_fields_is_accepted(tmp_path: Path) -> None:
-    errors = _view_errors(
-        tmp_path,
-        """
-        views:
-          Project:
-            - title: By status
-              fields: [Title, Status]
-              group_by: { field: Status }
-        """,
+def test_group_by_in_the_views_fields_is_accepted() -> None:
+    errors = _project_errors(
+        views=_view(
+            "By status", "Title", "Status", group_by=ViewGroupBy(fields=["Status"]),
+        ),
     )
     none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
 
-def test_a_body_section_hidden_from_every_form_is_refused(tmp_path: Path) -> None:
+def test_a_body_section_hidden_from_every_form_is_refused() -> None:
     """The section renders as a heading with nothing under it. Asserted of a
     NON-LAST section: Learn documents that unreferenced columns are appended
     to the last one, so only an earlier section can be provably empty."""
-    schema, bundle = _calculated_form_inputs(
-        tmp_path,
-        """
-        form_visibility:
-          Project:
-            columns:
-              Score: { new: false, existing: false }
-        form_formatting:
-          Project:
-            body:
-              sections:
-                - { displayname: Hidden, fields: [Score] }
-                - { displayname: Everything else, fields: [Title, Band] }
-        """,
+    schema, bundle = _calculated_project(
+        form_visibility=_hidden("Score"),
+        form_formatting=_body(
+            {"displayname": "Hidden", "fields": ["Score"]},
+            {"displayname": "Everything else", "fields": ["Title", "Band"]},
+        ),
     )
-    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
     f = only(errors, FindingCode.FORM_SECTION_ENTIRELY_HIDDEN)
     assert "Hidden" in f.message
 
-def test_the_last_section_may_be_empty_because_it_is_the_catch_all(tmp_path: Path) -> None:
+def test_the_last_section_may_be_empty_because_it_is_the_catch_all() -> None:
     """Learn: "A column not referenced in any of the sections will be
     automatically referenced in the last section." risk-register's System
     section is exactly this shape and its DEPLOY.md documents the bare
     heading on the New form as cosmetic and expected."""
-    schema, bundle = _calculated_form_inputs(
-        tmp_path,
-        """
-        form_visibility:
-          Project:
-            columns:
-              Score: { new: false, existing: false }
-        form_formatting:
-          Project:
-            body:
-              sections:
-                - { displayname: Everything else, fields: [Title, Band] }
-                - { displayname: System, fields: [Score] }
-        """,
+    schema, bundle = _calculated_project(
+        form_visibility=_hidden("Score"),
+        form_formatting=_body(
+            {"displayname": "Everything else", "fields": ["Title", "Band"]},
+            {"displayname": "System", "fields": ["Score"]},
+        ),
     )
-    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
     none_of(errors, FindingCode.FORM_SECTION_ENTIRELY_HIDDEN)
 
-def test_a_column_in_no_section_warns_rather_than_failing(tmp_path: Path) -> None:
+def test_a_column_in_no_section_warns_rather_than_failing() -> None:
     """It is drift, not breakage: SharePoint appends the column to the last
     section, so the form renders it. What is lost is the guarantee that the
     declared arrangement is the deployed one — and every column added later
     lands in that same section."""
-    schema, bundle = _calculated_form_inputs(
-        tmp_path,
-        """
-        form_formatting:
-          Project:
-            body:
-              sections:
-                - { displayname: Main, fields: [Title] }
-        """,
+    schema, bundle = _calculated_project(
+        form_formatting=_body({"displayname": "Main", "fields": ["Title"]}),
     )
     findings = validate_against_mapping(schema, bundle)
     assert not by_severity(findings, "error"), findings
@@ -442,7 +420,12 @@ def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
     """Retirement STRIPS a column from body sections on purpose, and warns
     separately about the declarations it rewrote. Warning again here would
     ask the author to re-add exactly what the fold just removed — which is
-    what the first version of the rule did to tiered-huddle."""
+    what the first version of the rule did to tiered-huddle.
+
+    Stays on the filesystem: `_apply_retirement` runs in the loader and is
+    the whole subject. It synthesises a form_visibility entry, appends the
+    RETIRED display-name override and strips the column from body sections;
+    a bundle built straight from objects would skip all three."""
     schema, bundle = _calculated_form_inputs(
         tmp_path,
         """
@@ -460,7 +443,25 @@ def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
         validate_against_mapping(schema, bundle), FindingCode.FORM_COLUMNS_IN_NO_SECTION,
     )
 
-def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
+def _library(
+    kind: EntityKind = "DocumentLibrary", base_template: int = 101,
+) -> EntityMapping:
+    """The `Docs` entity declaration the four refusals below vary."""
+    return EntityMapping(
+        name="Docs", kind=kind, base_template=base_template, site_role="default",
+    )
+
+
+def _docs_errors(
+    entity: EntityMapping, **sections: Unpack[MappingSections],
+) -> list[Finding]:
+    """Errors for a one-table `Docs` schema under the given declaration."""
+    schema = make_schema(make_table("Docs", make_column("Title", required=True)))
+    bundle = make_bundle(entities={"Docs": entity}, **sections)
+    return by_severity(validate_against_mapping(schema, bundle), "error")
+
+
+def test_demo_items_on_a_document_library_are_refused() -> None:
     """A library's items ARE files. demo-data.js posts to /items, which asks
     SharePoint to create a library row with nothing behind it.
 
@@ -469,25 +470,15 @@ def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
     was being shown the demo — which is the audience this tool's fail-closed
     posture exists to protect.
     """
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Docs", ID_PK, TITLE),
-        mapping="""
-            entities:
-              Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }
-            demo_items:
-              Docs:
-                - key: d1
-                  values:
-                    Title: "[DEMO] A document"
-        """,
+    errors = _docs_errors(
+        _library(),
+        demo_items={"Docs": [DemoItem(key="d1", values={"Title": "[DEMO] A document"})]},
     )
-    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
     f = only(errors, FindingCode.DEMO_ROWS_ON_DOCUMENT_LIBRARY)
     # SharePoint's own words, quoted so the operator can search for them.
     assert "SPFileCollection.Add()" in f.message
 
-def test_a_document_library_entity_is_refused_outright(tmp_path: Path) -> None:
+def test_a_document_library_entity_is_refused_outright() -> None:
     """`kind: DocumentLibrary` fails the build, with or without demo rows.
 
     A library's items are files and this tool writes list rows. Probed on a
@@ -502,20 +493,11 @@ def test_a_document_library_entity_is_refused_outright(tmp_path: Path) -> None:
     must offer the way round, because an adopter hitting this needs to know
     a List plus a hyperlink column is the supported shape.
     """
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Docs", ID_PK, TITLE),
-        mapping="""
-            entities:
-              Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }
-        """,
-    )
-    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    f = only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
+    f = only(_docs_errors(_library()), FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
     assert f.location == Location(Section.ENTITIES, entity="Docs")
     assert "List" in f.message, "the message must name the supported shape"
 
-def test_a_list_declaring_a_non_generic_base_template_is_refused(tmp_path: Path) -> None:
+def test_a_list_declaring_a_non_generic_base_template_is_refused() -> None:
     """The refusal above says "model the metadata as a 'List'". An author who
     changes only `kind` and leaves `base_template: 101` behind got a GREEN
     build that provisioned a real document library: the create body sends
@@ -528,35 +510,16 @@ def test_a_list_declaring_a_non_generic_base_template_is_refused(tmp_path: Path)
     same defect. This states what the tool builds, which needs no claim about
     SharePoint: every declaration in the repo is 100.
     """
-    write_dbml(tmp_path, table("Docs", ID_PK, TITLE))
     for template in (101, 109, 119):
-        (tmp_path / "m.yaml").write_text(
-            'prefix: "APP_"\n'
-            "entities:\n"
-            f"  Docs: {{ kind: List, base_template: {template}, site_role: default }}\n",
-            encoding="utf-8",
-        )
-        schema = parse_dbml(tmp_path / "s.dbml")
-        bundle = load_mapping(tmp_path / "m.yaml")
-        errors = [
-            f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
-        ]
+        errors = _docs_errors(_library(kind="List", base_template=template))
         f = only(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
         assert f.location == Location(Section.ENTITIES, entity="Docs")
         assert str(template) in f.message, f"the refused number must be named: {f.message}"
 
-def test_a_document_library_reports_the_kind_not_the_base_template(tmp_path: Path) -> None:
+def test_a_document_library_reports_the_kind_not_the_base_template() -> None:
     """The two checks are one `elif`, so `kind: DocumentLibrary` with its
     matching 101 gets the message that explains the actual problem rather
     than a second one about the integer it was always going to carry."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Docs", ID_PK, TITLE),
-        mapping="""
-            entities:
-              Docs: { kind: DocumentLibrary, base_template: 101, site_role: default }
-        """,
-    )
-    errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+    errors = _docs_errors(_library())
     only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
     none_of(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
