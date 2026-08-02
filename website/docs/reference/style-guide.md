@@ -99,7 +99,7 @@ costs a silently-not-firing format either way:
 So `calculated: true` is required in `column_formatting` and an exact
 comparison there silently never matches — but a **view** row formatter
 compares directly, and `"=if([$Rating] == 'Extreme', …)"` is correct as
-written. `templates/risk-register` relies on this for its Extreme row
+written. `solutions/risk-register` relies on this for its Extreme row
 wash, confirmed rendering on a real list.
 
 Do not add contains-matching to a view formatter "to be safe": it works,

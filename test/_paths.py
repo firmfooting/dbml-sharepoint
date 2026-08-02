@@ -44,5 +44,10 @@ PACKAGE = REPO_ROOT / "src" / "dbml_sharepoint"
 JINJA_TEMPLATES = PACKAGE / "templates"
 
 #: The shipped solution templates -- one directory per list family. NOT the
-#: Jinja templates above; these are schema + mapping pairs under ``templates/``.
-SOLUTION_TEMPLATES = REPO_ROOT / "templates"
+#: Jinja templates above; these are schema + mapping + release triples.
+#:
+#: Inside the package, not at the repository root, because the wizard offers
+#: them to somebody who ran ``uvx dbml-sharepoint`` and has no checkout. Only
+#: files under the package directory reach the wheel, so a solution template
+#: outside it exists for contributors and for nobody else.
+SOLUTION_TEMPLATES = PACKAGE / "solutions"

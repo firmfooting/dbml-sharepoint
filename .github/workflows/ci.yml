@@ -48,18 +48,24 @@ jobs:
         # template is simply never built, and CI stays green saying so.
         run: |
           set -euo pipefail
+          # The solution templates live inside the package so the wizard can
+          # offer them to somebody who never cloned this repository.
+          sol=src/dbml_sharepoint/solutions
           found=0
-          for schema in templates/*/10-design/schema.dbml; do
+          for schema in "$sol"/*/10-design/schema.dbml; do
             t="$(basename "$(dirname "$(dirname "$schema")")")"
             found=$((found + 1))
             echo "::group::$t"
+            # Build OUTSIDE the package. In-place output would write into the
+            # installable tree, where a stray build/ directory can be picked
+            # up by the wheel.
             uv run dbml-sharepoint build \
               --schema "$schema" \
-              --mapping "templates/$t/20-configure/mapping.yaml" \
-              --release "templates/$t/20-configure/release.yaml" \
+              --mapping "$sol/$t/20-configure/mapping.yaml" \
+              --release "$sol/$t/20-configure/release.yaml" \
               --site-url https://example.sharepoint.com/sites/ci \
               --site-role default \
-              --out "templates/$t/build"
+              --out "build/$t"
             echo "::endgroup::"
           done
           echo "Built $found template(s)."
@@ -74,20 +80,21 @@ jobs:
           # The library's own size, counted the same way the build step
           # above counts it, so neither side of the assertion below is a
           # number somebody has to remember to update.
+          sol=src/dbml_sharepoint/solutions
           expected=0
-          for schema in templates/*/10-design/schema.dbml; do
+          for schema in "$sol"/*/10-design/schema.dbml; do
             expected=$((expected + 1))
           done
           found=0
-          for mapping in templates/*/20-configure/mapping.yaml; do
+          for mapping in "$sol"/*/20-configure/mapping.yaml; do
             grep -q '^demo_items:' "$mapping" || continue
             t="$(basename "$(dirname "$(dirname "$mapping")")")"
             found=$((found + 1))
             echo "::group::$t"
             uv run dbml-sharepoint build \
-              --schema "templates/$t/10-design/schema.dbml" \
+              --schema "$sol/$t/10-design/schema.dbml" \
               --mapping "$mapping" \
-              --release "templates/$t/20-configure/release.yaml" \
+              --release "$sol/$t/20-configure/release.yaml" \
               --site-url https://example.sharepoint.com/sites/ci \
               --site-role default \
               --seed \

@@ -11,7 +11,7 @@ branch removes its own templates in the same commit that uplifts them, so
 the sweep proves the claim rather than the commit message asserting it. It
 must be EMPTY when the last theme branch lands. Nothing else here is
 hardcoded: the roster of templates is discovered by globbing
-`templates/*/10-design/schema.dbml`, because a hardcoded roster fails open
+`solutions/*/10-design/schema.dbml`, because a hardcoded roster fails open
 and this repository has already had to fix one that did (in the CI template
 sweep). `test_the_roster_names_only_real_templates` is the check that keeps
 the one hardcoded list honest.
