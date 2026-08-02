@@ -3002,3 +3002,184 @@ def test_a_created_group_enters_the_enumeration_snapshot() -> None:
     reading as absent would try to create a name that now exists."""
     js = _generate_simple_js()
     assert "knownGroupNames.add(nameKey(grp.name))" in js
+
+
+def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Owner person\n"
+        "  Reviewer person\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Task:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        + hide_line
+        + "views:\n"
+        "  Task:\n"
+        "    - title: Mine\n"
+        "      fields: [Title, Owner, Reviewer]\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _all_items_fields(tmp_path: Path) -> list[str]:
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema_json = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    view = next(v for v in schema_json["views"] if v["title"] == "All Items")
+    fields: list[str] = view["view_fields"]
+    return fields
+
+
+def test_all_items_renders_everything_without_the_key(tmp_path: Path) -> None:
+    """The control. If this list ever changes for an unrelated reason, fix the
+    expectation in BOTH tests — the pair is what proves the omission."""
+    _hide_fixture(tmp_path, "")
+    assert _all_items_fields(tmp_path) == [
+        "ID", "Title", "Owner", "Reviewer", "Created", "Modified", "Author", "Editor",
+    ]
+
+
+def test_all_items_omits_hidden_columns_and_nothing_else(tmp_path: Path) -> None:
+    _hide_fixture(tmp_path, "    hide_from_all_items: [Author, Editor, Owner]\n")
+    assert _all_items_fields(tmp_path) == [
+        "ID", "Title", "Reviewer", "Created", "Modified",
+    ]
+
+
+def test_a_declared_view_keeps_a_hidden_column(tmp_path: Path) -> None:
+    """hide_from_all_items affects ONLY the generated view."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    _hide_fixture(tmp_path, "    hide_from_all_items: [Author, Editor, Owner]\n")
+    schema_json = build_schema_json(
+        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"), "default",
+    )
+    mine = next(v for v in schema_json["views"] if v["title"] == "Mine")
+    assert mine["view_fields"] == ["Title", "Owner", "Reviewer"]
+
+
+def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
+    tmp_path: Path,
+) -> None:
+    """The guard on the shared-module claim in this plan's Architecture section.
+
+    If this test is deleted or weakened, the validator and the generator CAN
+    drift about which fields `All Items` renders — and the drift shows up as a
+    build that passes a view the deploy then creates over the ceiling, or one
+    refused that was never going to exist. Nothing else in the suite catches it.
+
+    The fixture carries every shape that could pull the two apart:
+
+    - `Assignee`, a real `ref` resolved in PHASE 1 (Person precedes Task in
+      creation order, so nothing defers it).
+    - `Parent`, a self-ref on Task — `ordering.py` always defers a self-ref,
+      so this one is a genuine phase-2 Lookup on Task's OWN list.
+    - `Manager`, a self-ref on Person — a phase-2 Lookup belonging to a
+      DIFFERENT list, so `jsgen.py`'s `lookup["list"] == list_title` filter
+      has to actually discriminate rather than pass every phase-2 entry
+      through unfiltered.
+    - `Elsewhere`, a CROSS-SITE ref, which exists only as
+      <col>Abbreviation / <col>SiteUrl and never under its own name.
+    - `Owner`, a `person` column, also named in `hide_from_all_items` — so
+      the hidden-set subtraction is load-bearing on both sides, not just
+      exercised by the generator's own tests above.
+    - `Notes`, a plain `nvarchar`.
+    - The auto-increment `Id`, which the validator drops at
+      validator.py:136-144 while SharePoint supplies `ID`.
+
+    TWO assertions, not one, because a single hand-recomputed expectation
+    re-types the validator's arithmetic instead of calling it — the exact
+    anti-pattern `analysis/joins.py`'s own docstring warns about for the
+    survey test. The first assertion pins the FIELD LIST jsgen renders
+    against an expression written by hand in this test; deleting a term
+    from `all_items_joining_fields`'s own composition in `joins.py` would
+    NOT turn it red, because it does not call that function. The second
+    assertion does call it — `all_items_joining_fields`, the validator's
+    actual shared derivation — so THAT one goes red if `| SYSTEM_COLUMNS`,
+    `| {"Title"}`, or the `hide_from_all_items` subtraction is ever dropped
+    from `joins.py`. Dropping each term by hand, one at a time, left the
+    first assertion green and turned only the second red — confirming the
+    two assertions catch different failures, not the same one twice.
+    """
+    from dbml_sharepoint.analysis.joins import (
+        all_items_hidden,
+        all_items_joining_fields,
+        join_bearing_columns,
+        joining_fields,
+    )
+    from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    (tmp_path / "s.dbml").write_text(
+        "Project t { database_type: 'SharePoint Online' }\n"
+        "Table Person {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Manager int [ref: > Person.Id]\n"
+        "}\n"
+        "Table Task {\n"
+        "  Id int [pk, increment]\n"
+        "  Title nvarchar [not null]\n"
+        "  Owner person\n"
+        "  Assignee int [ref: > Person.Id]\n"
+        "  Elsewhere int [ref: > Person.Id]\n"
+        "  Parent int [ref: > Task.Id]\n"
+        "  Notes nvarchar\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Person: { kind: List, base_template: 100, site_role: default }\n"
+        "  Task:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_items: [Owner]\n"
+        "cross_site_reference_columns:\n"
+        "  - { entity: Task, column: Elsewhere }\n",
+        encoding="utf-8",
+    )
+    schema = parse_dbml(tmp_path / "s.dbml")
+    bundle = load_mapping(tmp_path / "m.yaml")
+    # A cross-site column needs an extension that expands it, or
+    # build_schema_json raises (jsgen.py:387-392). _CrossSiteExpansion is
+    # already defined at test/test_jsgen.py:104.
+    schema_json = build_schema_json(
+        schema, bundle, "default", extension=_CrossSiteExpansion(),
+    )
+    generated = next(
+        v for v in schema_json["views"]
+        if v["title"] == "All Items" and v["list"] == "APP_Task"
+    )["view_fields"]
+
+    table = next(t for t in schema.tables if t.name == "Task")
+    entity = bundle.mapping.entities["Task"]
+    xcols = {"Elsewhere"}
+
+    derived = (
+        _rendered_columns(table, xcols) | {"Title"} | SYSTEM_COLUMNS
+    ) - all_items_hidden(entity)
+    assert set(generated) == derived
+
+    # Calls the validator's REAL function rather than re-typing its formula.
+    # This is what actually goes red if `joins.py`'s composition drifts from
+    # what jsgen renders — see the docstring above.
+    assert (
+        joining_fields(generated, join_bearing_columns(table, xcols))
+        == all_items_joining_fields(table, entity, xcols)
+    )

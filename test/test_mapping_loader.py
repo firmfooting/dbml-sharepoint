@@ -2186,3 +2186,72 @@ def test_accept_unindexable_display_column_defaults_false_and_parses(
     mapping = load_mapping(tmp_path / "m.yaml").mapping
     assert mapping.entities["Plain"].accept_unindexable_display_column is False
     assert mapping.entities["Accepted"].accept_unindexable_display_column is True
+
+
+def test_hide_from_all_items_defaults_empty_and_parses(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Plain: { kind: List, base_template: 100, site_role: default }\n"
+        "  Wide:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_items: [Author, Editor]\n",
+        encoding="utf-8",
+    )
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+    assert mapping.entities["Plain"].hide_from_all_items == ()
+    assert mapping.entities["Wide"].hide_from_all_items == ("Author", "Editor")
+
+
+def test_hide_from_all_items_refuses_a_bare_string(tmp_path: Path) -> None:
+    """A bare string iterates CHARACTER BY CHARACTER. Passed through, 'Author'
+    becomes six columns that do not exist and six confusing errors."""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Wide:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_items: Author\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match=r"entities\.Wide\.hide_from_all_items must be a list of strings",
+    ):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_hide_from_all_items_refuses_a_non_string_member(tmp_path: Path) -> None:
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Wide:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_items: [Author, 7]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"must be a list of strings, got 7"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_a_misspelt_entity_key_is_still_refused(tmp_path: Path) -> None:
+    """The allowlist guard, exercised on the near-miss singular. Widening
+    _ENTITY_KEYS must not open the block to anything else."""
+    (tmp_path / "m.yaml").write_text(
+        'prefix: "APP_"\n'
+        "entities:\n"
+        "  Wide:\n"
+        "    kind: List\n"
+        "    base_template: 100\n"
+        "    site_role: default\n"
+        "    hide_from_all_item: [Author]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match=r"entities\.Wide: unknown key\(s\)"):
+        load_mapping(tmp_path / "m.yaml")

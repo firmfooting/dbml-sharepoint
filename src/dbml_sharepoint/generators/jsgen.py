@@ -13,6 +13,7 @@ from dbml_sharepoint.analysis.conditions import (
     to_validation,
 )
 from dbml_sharepoint.analysis.forms import compose_visibility
+from dbml_sharepoint.analysis.joins import all_items_hidden
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import base_permissions_to_high_low
@@ -601,11 +602,37 @@ def build_schema_json(
                 if lookup["list"] == list_title
             )
             system_fields = list(SYSTEM_COLUMN_TYPES)
+            # The list view LOOKUP threshold. All Items renders every column,
+            # which past 12 join-bearing ones is a view SharePoint returns
+            # blank at ANY list size — so an entity may name the columns it
+            # cannot afford. Author and Editor are appended here without being
+            # asked for and are the usual answer.
+            #
+            # The validator counts this same view, but from its OWN derivation
+            # — analysis/joins.py::all_items_joining_fields, called from the
+            # entity loop at analysis/checks/_views.py:815 — NOT this code.
+            # join_bearing_columns, joining_fields, SYSTEM_JOIN_COLUMNS and
+            # hide_from_all_items are all genuinely shared via
+            # analysis/joins.py; the actual FIELD LIST this block builds is
+            # not. The two field lists are held equal by ONE test:
+            # test_the_validator_and_the_generator_agree_on_what_all_items_renders
+            # in test/test_jsgen.py. If you change what this list renders,
+            # that test is what tells you the validator disagrees.
+            #
+            # DECLARED views are untouched: they keep every field they declare.
+            hidden_here = all_items_hidden(entity)
             all_items = ViewDef(
                 title="All Items",
                 fields=[
-                    "ID", "Title", *emitted_fields,
-                    *(name for name in system_fields if name != "ID"),
+                    name
+                    for name in (
+                        "ID", "Title", *emitted_fields,
+                        *(
+                            sys_name for sys_name in system_fields
+                            if sys_name != "ID"
+                        ),
+                    )
+                    if name not in hidden_here
                 ],
                 default=not any(view.default for view in declared_views),
             )

@@ -260,3 +260,13 @@ UNSUPPORTED_INDEX_TYPES = {
     "richtext": "Multiple lines of text (Note)",
     "hyperlink": "Hyperlink",
 }
+
+# One join operation per RENDERED column of these types, against the list view
+# LOOKUP threshold. Kept here beside UNSUPPORTED_INDEX_TYPES because it is a
+# property of the TYPE, and read from analysis/joins.py, which both the
+# validator and the generator import.
+#
+# A DBML `ref` costs one too and is deliberately NOT listed: a lookup's DBML
+# type is `int`, so it is invisible to a type test, and joins.py collects refs
+# separately. `Created` and `Modified` are `datetime` and cost nothing.
+JOIN_BEARING_TYPES = frozenset({"person"})
