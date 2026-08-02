@@ -399,6 +399,8 @@ def test_retirement_replacing_a_form_visibility_declaration_warns(
         FindingCode.RETIREMENT_STRIPPED_A_DECLARATION,
     )
     assert f.severity == "warning"
-    # One code covers every stripped declaration, so which one was rewritten
-    # is only in the message.
-    assert "form_visibility[Board].columns" in f.message
+    # NOT this finding's own location, which is retired_columns[Board]: it is
+    # the OTHER declaration retirement rewrote. One code covers every strip,
+    # so which one it was reaches the reader only through the message.
+    rewritten = "form_visibility[Board].columns"
+    assert rewritten in f.message
