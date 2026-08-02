@@ -1,8 +1,12 @@
 # test/test_manifestgen.py
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Unpack
 
 from _builders import ID_PK, TITLE, table
+from _model import MappingSections, column, enum, ref
+from _model import bundle as make_bundle
+from _model import schema as make_schema
+from _model import table as make_table
 from _packs import blocks, entities, entity, pack, write_mapping
 from _paths import FIXTURES
 
@@ -11,7 +15,18 @@ from dbml_sharepoint.analysis.validator import validate, validate_against_mappin
 from dbml_sharepoint.extension import BaseExtension, ManifestExtras, SiteContext
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
-from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.conditions import Group, Leaf
+from dbml_sharepoint.model.mapping_loader import (
+    ColumnValidation,
+    EntityMapping,
+    EntitySection,
+    FormFormatting,
+    FormVisibility,
+    ListValidation,
+    ViewDef,
+    ViewSort,
+    load_mapping,
+)
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
 
@@ -145,6 +160,9 @@ def test_manifest_carries_operator_run_instructions() -> None:
 
 
 def test_manifest_describes_operator_self_enrolment(tmp_path: Path) -> None:
+    # Stays on the filesystem: the input is a FIXTURE with one block appended,
+    # so the text on disk is the thing being varied.
+    #
     # `prefix=None`: the fixture carries its own. The old form prepended "\n"
     # to guard against the fixture not ending in one; `blocks` normalises every
     # part to exactly one trailing newline, so that guard is now structural.
@@ -185,29 +203,30 @@ def test_manifest_describes_operator_self_enrolment(tmp_path: Path) -> None:
     assert "removed automatically at the end of the run" in md
 
 
-def test_manifest_lists_declared_views(tmp_path: Path) -> None:
+def test_manifest_lists_declared_views() -> None:
     """Declared views are review material like fields and ACLs: the manifest
     must show, per view, its list, curated columns, filter/sort/group shape
     and which view takes the default slot, plus a Summary count."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=blocks("""
-            Enum status {
-              "Open"
-              "Closed"
-            }
-        """, table("Risk", ID_PK, TITLE, "Status status", "DueDate date")),
-        mapping=blocks(entities("Risk"), """
-            views:
-              Risk:
-                - title: Open risks
-                  default: true
-                  fields: [Title, Status, DueDate]
-                  where:
-                    - { field: Status, op: neq, value: Closed }
-                  sort:
-                    - { field: DueDate, direction: asc }
-        """),
+    schema = make_schema(
+        make_table(
+            "Risk",
+            column("Title", required=True),
+            column("Status", "status"),
+            column("DueDate", "date"),
+        ),
+        enums=[enum("status", "Open", "Closed")],
+    )
+    bundle = make_bundle(
+        entities=["Risk"],
+        views={"Risk": [
+            ViewDef(
+                title="Open risks",
+                fields=["Title", "Status", "DueDate"],
+                default=True,
+                where=Group("all_of", (Leaf(field="Status", op="neq", value="Closed"),)),
+                sort=[ViewSort(field="DueDate", direction="asc")],
+            ),
+        ]},
     )
     release = load_release(FIXTURES / "release.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
@@ -230,20 +249,18 @@ def test_manifest_lists_declared_views(tmp_path: Path) -> None:
     assert "other views are" in md and "never modified" in md
 
 
-def test_manifest_view_bullets_render_one_per_line(tmp_path: Path) -> None:
+def test_manifest_view_bullets_render_one_per_line() -> None:
     """trim_blocks eats the newline after a line-terminal {% endif %}, which
     concatenated every view bullet into one run-on line."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE, "DueDate date"),
-        mapping=blocks(entities("Risk"), """
-            views:
-              Risk:
-                - title: First
-                  fields: [Title]
-                - title: Second
-                  fields: [DueDate]
-        """),
+    schema = make_schema(
+        make_table("Risk", column("Title", required=True), column("DueDate", "date")),
+    )
+    bundle = make_bundle(
+        entities=["Risk"],
+        views={"Risk": [
+            ViewDef(title="First", fields=["Title"]),
+            ViewDef(title="Second", fields=["DueDate"]),
+        ]},
     )
     release = load_release(FIXTURES / "release.yaml")
     md = generate_manifest(
@@ -261,15 +278,13 @@ def test_manifest_view_bullets_render_one_per_line(tmp_path: Path) -> None:
     assert "\n- **Second** on APP_Risk: DueDate\n" in md
 
 
-def test_manifest_lists_column_formatting(tmp_path: Path) -> None:
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE, "Score int"),
-        mapping=blocks(entities("Risk"), """
-            column_formatting:
-              Risk:
-                Score: { elmType: div }
-        """),
+def test_manifest_lists_column_formatting() -> None:
+    schema = make_schema(
+        make_table("Risk", column("Title", required=True), column("Score", "int")),
+    )
+    bundle = make_bundle(
+        entities=["Risk"],
+        column_formatting={"Risk": {"Score": {"elmType": "div"}}},
     )
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
@@ -287,16 +302,14 @@ def test_manifest_lists_column_formatting(tmp_path: Path) -> None:
     assert "- Formatted columns: 1" in md
 
 
-def test_manifest_lists_form_formatting(tmp_path: Path) -> None:
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE),
-        mapping=blocks(entities("Risk"), """
-            form_formatting:
-              Risk:
-                header: { elmType: div }
-                body: { sections: [ { displayname: X, fields: [Title] } ] }
-        """),
+def test_manifest_lists_form_formatting() -> None:
+    schema = make_schema(make_table("Risk", column("Title", required=True)))
+    bundle = make_bundle(
+        entities=["Risk"],
+        form_formatting={"Risk": FormFormatting(
+            header={"elmType": "div"},
+            body={"sections": [{"displayname": "X", "fields": ["Title"]}]},
+        )},
     )
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
@@ -346,20 +359,22 @@ def test_manifest_run_order_puts_assessment_first() -> None:
 # --- The manifest's three blind spots ---------------------------------------
 
 
-def _manifest_for(tmp_path: Path, section: str) -> str:
-    """The standard Escalation entity, plus whatever mapping block the test adds.
+def _manifest_for(**sections: Unpack[MappingSections]) -> str:
+    """The standard Escalation entity, plus whatever mapping sections the test
+    declares.
 
-    `section` is dedented, so a caller may pass a triple-quoted block indented
-    to match its surrounding code.
+    `**sections` goes straight through to the mapping builder, so a misspelled
+    section name is a type error rather than a block the loader would once
+    have rejected at run time.
     """
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table(
-            "Escalation", ID_PK, TITLE,
-            "Note nvarchar", "Status nvarchar", "Parent int [ref: > Escalation.Id]",
-        ),
-        mapping=blocks(entities("Escalation"), section),
-    )
+    schema = make_schema(make_table(
+        "Escalation",
+        column("Title", required=True),
+        column("Note"),
+        column("Status"),
+        ref("Parent", "Escalation.Id"),
+    ))
+    bundle = make_bundle(entities=["Escalation"], **sections)
     return generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -373,48 +388,46 @@ def _manifest_for(tmp_path: Path, section: str) -> str:
     )
 
 
-def test_manifest_reports_a_declaration_on_a_deferred_lookup(tmp_path: Path) -> None:
+def test_manifest_reports_a_declaration_on_a_deferred_lookup() -> None:
     """The sections iterated fields_phase1 only, while jsgen puts the same
     keys on phase2_lookups and deploy.js writes them. So a declaration on a
     self-referencing lookup deployed and the review artefact denied it —
     the inverse of the silent-drop bug, and just as misleading."""
-    md = _manifest_for(tmp_path, """
-        form_visibility:
-          Escalation:
-            reconcile: declared
-            columns:
-              Parent: hidden
-    """)
+    md = _manifest_for(form_visibility={
+        "Escalation": EntitySection(
+            reconcile="declared",
+            # `Parent: hidden` is the loader's shorthand for both flags off.
+            columns={"Parent": FormVisibility(new=False, existing=False)},
+        ),
+    })
     assert "APP_Escalation.Parent" in md
 
 
-def test_manifest_reports_the_column_validation_reconcile_mode(tmp_path: Path) -> None:
+def test_manifest_reports_the_column_validation_reconcile_mode() -> None:
     """reconcile was reported for form_visibility only, so a
     column_validation block running the default `exact` cleared every
     undeclared column's rule with no mode shown anywhere."""
-    md = _manifest_for(tmp_path, """
-        column_validation:
-          Escalation:
-            columns:
-              Note:
-                when:
-                  - { field: Note, op: is_not_null }
-                message: Say something.
-    """)
+    md = _manifest_for(column_validation={
+        "Escalation": EntitySection(columns={
+            "Note": ColumnValidation(
+                when=Group("all_of", (Leaf(field="Note", op="is_not_null"),)),
+                message="Say something.",
+            ),
+        }),
+    })
     section = md.split("## Column validation")[1].split("##")[0]
     assert "exact" in section, section
 
 
-def test_manifest_has_a_list_validation_section(tmp_path: Path) -> None:
+def test_manifest_has_a_list_validation_section() -> None:
     """Both siblings had a section; the cross-column one had none, so a
     save rule governing the whole list was deployed unannounced."""
-    md = _manifest_for(tmp_path, """
-        list_validation:
-          Escalation:
-            when:
-              - { field: Status, op: is_not_null }
-            message: A status is required.
-    """)
+    md = _manifest_for(list_validation={
+        "Escalation": ListValidation(
+            when=Group("all_of", (Leaf(field="Status", op="is_not_null"),)),
+            message="A status is required.",
+        ),
+    })
     assert "## List validation" in md
     assert "A status is required." in md
     assert "Status is_not_null" in md
@@ -434,6 +447,13 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> Non
     # Escalation carries a declaration in the two reconcile-bearing sections
     # so those sections RENDER: their "Reconcile:" line is emitted only when
     # the section has entries, which would otherwise hide the same leak.
+    #
+    # Stays on the filesystem: `retired_columns` is FOLDED by the loader
+    # (`_apply_retirement`) into `form_visibility` and
+    # `display_name_overrides`, and those derived entries are extra places
+    # "Ledger" could leak. Building the mapping as objects would skip the
+    # fold, quietly shrinking what this test covers. See `_model.mapping`,
+    # which has no way to run it.
     schema, bundle = pack(
         tmp_path,
         dbml=blocks(
@@ -504,39 +524,34 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> Non
     assert not leaked, f"the manifest describes lists this role does not deploy: {leaked}"
 
 
-def test_manifest_retention_table_covers_only_this_role(tmp_path: Path) -> None:
+def test_manifest_retention_table_covers_only_this_role() -> None:
     """The retention table is the same leak, one section further down, and
     its keys are the awkward case: `list_defaults` is authored loosely, so
     some name the entity and some the prefixed list title. Both forms must
     resolve — and a key naming no declared entity at all must SURVIVE the
     filter, because that is a typo the operator needs to see rather than a
     role leak to hide."""
-    # The three `list_defaults` keys below are, in order: this role under its
-    # bare entity name, the other role under its prefixed list title, and a
-    # key naming nothing declared at all.
-    write_mapping(tmp_path, """
-        policies:
-          Standard7Y:
-            description: "Seven years."
-            sp_label: "GH-Standard-7Y"
-            retain_years: 7
-        list_defaults:
-          Escalation: Standard7Y
-          APP_Ledger: Standard7Y
-          Ghost: Standard7Y
-    """, prefix=None, name="r.yaml")
-    schema, bundle = pack(
-        tmp_path,
-        dbml=blocks(
-            table("Escalation", ID_PK, TITLE),
-            table("Ledger", ID_PK, TITLE),
-        ),
-        mapping="\n".join([
-            "retention_policies_source: r.yaml",
-            "entities:",
-            entity("Escalation"),
-            entity("Ledger", site_role="finance"),
-        ]),
+    schema = make_schema(
+        make_table("Escalation", column("Title", required=True)),
+        make_table("Ledger", column("Title", required=True)),
+    )
+    bundle = make_bundle(
+        entities={
+            "Escalation": EntityMapping(
+                name="Escalation", kind="List", base_template=100, site_role="default",
+            ),
+            "Ledger": EntityMapping(
+                name="Ledger", kind="List", base_template=100, site_role="finance",
+            ),
+        },
+        # The three keys are, in order: this role under its bare entity name,
+        # the other role under its prefixed list title, and a key naming
+        # nothing declared at all.
+        retention_list_defaults={
+            "Escalation": "Standard7Y",
+            "APP_Ledger": "Standard7Y",
+            "Ghost": "Standard7Y",
+        },
     )
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
@@ -558,7 +573,13 @@ def test_manifest_retention_table_covers_only_this_role(tmp_path: Path) -> None:
 def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
     """The operator must be able to see, from the manifest alone, which
     columns are retired and why — retirement is a silent mutation of the
-    author's own declarations."""
+    author's own declarations.
+
+    Stays on the filesystem: the " (retired)" display title asserted below is
+    not declared anywhere, it is DERIVED by the loader's `_apply_retirement`
+    fold. Handing the builders a display_name_overrides entry spelling it out
+    would make the test assert its own input.
+    """
     schema, bundle = pack(
         tmp_path,
         dbml=blocks("""
@@ -623,7 +644,13 @@ def test_manifest_omits_retired_section_when_nothing_is_retired() -> None:
 def test_manifest_prints_resolved_view_fields_with_set_footnote(tmp_path: Path) -> None:
     """A view declared with "@setname" must still show its RESOLVED columns
     in the manifest, plus which sets produced them — the operator reviews the
-    manifest, not the mapping, and nothing may hide behind an indirection."""
+    manifest, not the mapping, and nothing may hide behind an indirection.
+
+    Stays on the filesystem: "@setname" is resolved by the LOADER into a flat
+    field list plus `expanded_sets`. A `ViewDef` built already-resolved would
+    make `assert "@header" not in md` vacuous, which is the exact failure the
+    test exists to catch.
+    """
     schema, bundle = pack(
         tmp_path,
         dbml=table(

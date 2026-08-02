@@ -1,15 +1,21 @@
 # test/test_assessgen.py
-from pathlib import Path
-
-from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, pack
+from _model import bundle as make_bundle
+from _model import column
+from _model import schema as make_schema
+from _model import table as make_table
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
 )
-from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.mapping_loader import (
+    MappingBundle,
+    PermissionsConfig,
+    SiteGroup,
+    Versioning,
+    load_mapping,
+)
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 
@@ -34,12 +40,9 @@ def test_base_template_requirements_from_entities() -> None:
     assert "list_template_100" in keys
 
 
-def test_conditional_requirements_absent_on_bare_mapping(tmp_path: Path) -> None:
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE),
-        mapping=entities("Risk"),
-    )
+def test_conditional_requirements_absent_on_bare_mapping() -> None:
+    schema = make_schema(make_table("Risk", column("Title", required=True)))
+    bundle = make_bundle(entities=["Risk"])
     keys = {r.key for r in derive_requirements(schema, bundle, "default")}
     assert "manage_permissions_bit" not in keys
     assert "process_query" not in keys
@@ -50,32 +53,40 @@ def test_conditional_requirements_absent_on_bare_mapping(tmp_path: Path) -> None
     assert t["declares_groups"] is False
 
 
-def test_styled_pack_requirements(tmp_path: Path) -> None:
-    # `versioning` is spelled block-style rather than as the one flow mapping
-    # the fragments glued together, purely to fit in 100 columns; it parses
-    # to the same document.
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE),
-        mapping=blocks(entities("Risk"), """
-            seal_columns: true
-            prevent_list_deletion: true
-            versioning:
-              default:
-                enable_versioning: true
-                major_version_limit: 500
-                enable_minor_versions: false
-            column_formatting:
-              Risk: { Title: { style: severity, map: { a: good } } }
-            groups:
-              - name: G
-                description: d
-                owner_group: 'Site Owners'
-                allow_members_edit_membership: false
-                allow_request_to_join_leave: false
-                auto_accept_request_to_join_leave: false
-                only_allow_members_view_membership: false
-        """),
+def test_styled_pack_requirements() -> None:
+    # `versioning_default` is spelled out even though it repeats the loader's
+    # own default: this test is about what a mapping DECLARES, and a silent
+    # default would make `version_trim_mode` below look derived from nothing.
+    #
+    # `column_formatting` carries an inline formatter rather than the
+    # `{style: severity}` shorthand the YAML form used. `derive_requirements`
+    # reads only `bool(mapping.column_formatting)`, and the shorthand's whole
+    # effect is the expansion the loader performs into exactly that field.
+    schema = make_schema(make_table("Risk", column("Title", required=True)))
+    bundle = make_bundle(
+        entities=["Risk"],
+        seal_columns=True,
+        prevent_list_deletion=True,
+        versioning_default=Versioning(
+            enable_versioning=True, major_version_limit=500, enable_minor_versions=False,
+        ),
+        column_formatting={"Risk": {"Title": {"elmType": "div"}}},
+        permissions=PermissionsConfig(
+            levels=[],
+            groups=[
+                SiteGroup(
+                    name="G",
+                    description="d",
+                    owner_group="Site Owners",
+                    allow_members_edit_membership=False,
+                    allow_request_to_join_leave=False,
+                    auto_accept_request_to_join_leave=False,
+                    only_allow_members_view_membership=False,
+                ),
+            ],
+            default_policy=None,
+            overrides={},
+        ),
     )
     reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
     assert reqs["manage_permissions_bit"].level_on_fail == "BLOCKED"
