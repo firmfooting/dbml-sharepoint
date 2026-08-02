@@ -39,23 +39,28 @@ def test_formatter_field_refs_walks_nested_structures() -> None:
 def test_column_formatting_validation(tmp_path: Path) -> None:
     errors = _view_errors(
         tmp_path,
-        "column_formatting:\n"
-        "  Widget:\n"
-        "    Anything: { elmType: div }\n"
-        "  Project:\n"
-        "    Nope: { elmType: div }\n"
-        "    Status: { txtContent: x }\n"                     # no elmType
-        "    SortOrder: { elmType: div, txtContent: '[$Missing]' }\n",
+        """
+        column_formatting:
+          Widget:
+            Anything: { elmType: div }
+          Project:
+            Nope: { elmType: div }
+            Status: { txtContent: x }
+            SortOrder: { elmType: div, txtContent: '[$Missing]' }
+        """,
     )
     assert any("Widget" in f.message and "column_formatting" in f.message for f in errors)
     assert any("Nope" in f.message for f in errors)
+    # Status declares no elmType.
     assert any("elmType" in f.message and "Status" in f.message for f in errors)
     assert any("Missing" in f.message and "SortOrder" in f.message for f in errors)
     ok = _view_errors(
         tmp_path,
-        "column_formatting:\n"
-        "  Project:\n"
-        "    Status: { elmType: div, txtContent: '[$SortOrder]' }\n",
+        """
+        column_formatting:
+          Project:
+            Status: { elmType: div, txtContent: '[$SortOrder]' }
+        """,
     )
     assert ok == []
 
