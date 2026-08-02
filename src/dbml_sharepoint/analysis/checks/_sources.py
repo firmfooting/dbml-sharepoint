@@ -2,6 +2,7 @@
 """Retention policies and enum sources."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.validator import Finding
 
 
@@ -29,6 +30,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             )
             if bare not in table_names:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"retention list_defaults references unknown entity: {entity_name}",
                 ))
@@ -37,6 +39,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for entity_name, policy in bundle.retention_list_defaults.items():
             if policy not in bundle.retention_policies:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"retention list_defaults[{entity_name}] = {policy} not in policies",
                 ))
@@ -52,12 +55,14 @@ def check(vc: ValidationContext) -> list[Finding]:
         dbml_enum = enum_by_name.get(enum_name)
         if dbml_enum is None:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "warning",
                 f"enum_sources[{enum_name!r}] has no matching DBML enum "
                 f"{enum_name!r} in the schema.",
             ))
         elif dbml_enum.members != choices:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"DBML enum {enum_name!r} members differ from configured "
                 f"enum_sources[{enum_name!r}] — "
