@@ -124,6 +124,34 @@ def test_write_checksums_sorted_sha256sum_lines_omitting_itself(
     assert not any("checksums.txt" in line for line in lines)
 
 
+def test_checksums_is_written_lf_even_on_windows(tmp_path: Path) -> None:
+    """`sha256sum -c` takes a trailing CR as part of the FILENAME.
+
+    `write_checksums` promises "plain sha256sum format ... keeps
+    `sha256sum -c` clean". Written in text mode on Windows every line gained
+    a CR, so sha256sum looked for a file named "a.js.txt\\r" and reported
+    "FAILED open or read" for every entry -- the format claim was false for
+    any bundle built on Windows.
+
+    This pins the FILE being well-formed, not the bundle being
+    sha256sum-verifiable: the digests are of LF-normalised bytes, so a
+    Windows-built bundle still will not match bare `-c`. INDEX.md documents
+    that and advertises an LF-normalising Python one-liner instead.
+
+    Asserted on BYTES deliberately. Every other checksum test here reads the
+    file with `read_text`, which normalises CRLF to \\n on the way in --
+    which is exactly why none of them ever saw this.
+    """
+    out = tmp_path / "build"
+    out.mkdir()
+    (out / "a.js.txt").write_text("ay\n", encoding="utf-8")
+
+    write_checksums(out, ["a.js.txt"])
+
+    raw = (out / "checksums.txt").read_bytes()
+    assert b"\r" not in raw, raw
+
+
 def test_write_checksums_round_trip_validates(tmp_path: Path) -> None:
     out = tmp_path / "build"
     out.mkdir()
