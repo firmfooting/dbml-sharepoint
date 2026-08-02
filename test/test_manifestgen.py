@@ -145,20 +145,26 @@ def test_manifest_carries_operator_run_instructions() -> None:
 
 
 def test_manifest_describes_operator_self_enrolment(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        (FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8")
-        + (
-            "\ngroups:\n"
-            "  - name: GH List Administrators\n"
-            "    description: Test admin group\n"
-            "    owner_group: Site Owners\n"
-            "    allow_members_edit_membership: false\n"
-            "    allow_request_to_join_leave: false\n"
-            "    auto_accept_request_to_join_leave: false\n"
-            "    only_allow_members_view_membership: false\n"
-            "    enroll_operator_during_deploy: true\n"
+    # `prefix=None`: the fixture carries its own. The old form prepended "\n"
+    # to guard against the fixture not ending in one; `blocks` normalises every
+    # part to exactly one trailing newline, so that guard is now structural.
+    write_mapping(
+        tmp_path,
+        blocks(
+            (FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8"),
+            """
+            groups:
+              - name: GH List Administrators
+                description: Test admin group
+                owner_group: Site Owners
+                allow_members_edit_membership: false
+                allow_request_to_join_leave: false
+                auto_accept_request_to_join_leave: false
+                only_allow_members_view_membership: false
+                enroll_operator_during_deploy: true
+            """,
         ),
-        encoding="utf-8",
+        prefix=None,
     )
     schema = parse_dbml(FIXTURES / "calculated.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")

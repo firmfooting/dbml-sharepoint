@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from _builders import ID_PK, table
-from _packs import blocks, entities, replaced, write_dbml, write_mapping
+from _packs import blocks, entities, replaced, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES
 from typer.testing import CliRunner
 
@@ -347,13 +347,14 @@ def _cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _bad_mapping(tmp_path: Path, section: str) -> Path:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n" + section,
-        encoding="utf-8",
-    )
-    return tmp_path / "m.yaml"
+    """The standard Project entity plus a deliberately broken section.
+
+    `with_tail`, not `blocks`: callers pass a top-level section here today, but
+    the parameter is a raw fragment and dedenting it would silently reparent
+    anything indented. Keeping the caller's text verbatim means the helper does
+    what its name says regardless of what is passed.
+    """
+    return write_mapping(tmp_path, with_tail(entities("Project"), section))
 
 
 def test_a_wrong_mapping_key_is_a_message_not_a_traceback(tmp_path: Path) -> None:
