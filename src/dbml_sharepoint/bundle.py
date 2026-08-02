@@ -46,31 +46,31 @@ _INDEX_ROWS: tuple[tuple[str, str], ...] = (
     ("deploy-manifest.md",
      "Build report and the numbered run sequence — read first."),
     ("assess.js",
-     "Read-only site capability probe; paste in the target site's console "
-     "before deploying."),
+     ("Read-only site capability probe; paste in the target site's console "
+      "before deploying.")),
     ("assess-manifest.md",
-     "What assess.js checks and how to read its COMPATIBLE / DEGRADED / "
-     "BLOCKED verdict."),
+     ("What assess.js checks and how to read its COMPATIBLE / DEGRADED / "
+      "BLOCKED verdict.")),
     ("deploy.js",
-     "The provisioning script; paste only after the assess verdict and "
-     "manifest review."),
+     ("The provisioning script; paste only after the assess verdict and "
+      "manifest review.")),
     ("rollback.js",
-     "Deletes this pack's lists; ONLY for a failed first provision on an "
-     "empty site."),
+     ("Deletes this pack's lists; ONLY for a failed first provision on an "
+      "empty site.")),
     ("checksums.txt",
      "SHA-256 integrity hashes for every bundle file (see below)."),
 )
 
 _REPORTING_ROW: tuple[str, str] = (
     "reporting/",
-    "Power Query M, SQL views, REPORTING.md and the data dictionary for "
-    "reporting onboarding.",
+    ("Power Query M, SQL views, REPORTING.md and the data dictionary for "
+     "reporting onboarding."),
 )
 
 _DEMO_ROW: tuple[str, str] = (
     "demo-data.js",
-    "Optional demo rows (built with --seed): paste AFTER deploy.js. Every "
-    "row is '[DEMO] '-marked; delete before active use.",
+    ("Optional demo rows (built with --seed): paste AFTER deploy.js. Every "
+     "row is '[DEMO] '-marked; delete before active use."),
 )
 
 
@@ -122,17 +122,17 @@ def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> No
         "|---|---|",
         *(f"| `{name}` | {purpose} |" for name, purpose in rows),
         "",
-        "Run order: follow **How to run this deployment** in "
-        "`deploy-manifest.md`.",
+        ("Run order: follow **How to run this deployment** in "
+         "`deploy-manifest.md`."),
         "",
         "Integrity: `checksums.txt` lists the SHA-256 of each file's",
         "LF-normalised UTF-8 bytes (stable across Windows/POSIX line",
         "endings). Verify a file with:",
         "",
         "```bash",
-        'python -c "import hashlib,sys;'
-        "print(hashlib.sha256(open(sys.argv[1],'rb').read()"
-        ".replace(b'\\r\\n',b'\\n')).hexdigest())\" <file>",
+        ('python -c "import hashlib,sys;'
+         "print(hashlib.sha256(open(sys.argv[1],'rb').read()"
+         ".replace(b'\\r\\n',b'\\n')).hexdigest())\" <file>"),
         "```",
     ]
     (out / "INDEX.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

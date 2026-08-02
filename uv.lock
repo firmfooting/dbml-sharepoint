@@ -148,7 +148,7 @@ requires-dist = [
     { name = "pydbml", specifier = ">=1.1.0,<2.0" },
     { name = "pyparsing", specifier = ">=3.0.0,<3.3" },
     { name = "pyyaml", specifier = ">=6.0.1" },
-    { name = "rich", specifier = ">=13.7.0" },
+    { name = "rich", specifier = ">=15.0.0" },
     { name = "typer", specifier = ">=0.12.0" },
 ]
 
@@ -173,15 +173,15 @@ wheels = [
 
 [[package]]
 name = "j2lint"
-version = "1.2.0"
+version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jinja2" },
     { name = "rich" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/41/b8/c3a194c6ec14d51104ac9070564b42c0335ba131d7d27e3e137d227c2a1d/j2lint-1.2.0.tar.gz", hash = "sha256:3bb9d2a3e3eb1647fe6c469bfbd2c2a9a8597378cda8590ed9eb7df7f3334639", size = 32451, upload-time = "2025-04-04T07:51:17.58Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/9d/b92e24a651013e8862ca6d3571d4f63bc98b870d40c965434735ff04eb35/j2lint-1.3.0.tar.gz", hash = "sha256:d6dd95fd4045efc71b1586a321163ae5988b6b0724ca51a1e2e7eeefa8cc9638", size = 34334, upload-time = "2026-07-30T12:24:01.445Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/7c/f24df7f5fca454036ed4d87847c81390793d120c3c89629cef8d79ecc3fc/j2lint-1.2.0-py3-none-any.whl", hash = "sha256:cda7fab7af742f25dcb4925168de785721dcf66c7add2063d8e3643241e19e4e", size = 34880, upload-time = "2025-04-04T07:51:15.536Z" },
+    { url = "https://files.pythonhosted.org/packages/bc/be/4532ef928bf8df39813e38395598d24a1b0d276750156819d719a2e972e1/j2lint-1.3.0-py3-none-any.whl", hash = "sha256:fe552eb1184083f28acc72cf070c57caa7db67029f4869b4e096a9f4e253649f", size = 35721, upload-time = "2026-07-30T12:24:00.106Z" },
 ]
 
 [[package]]
@@ -490,15 +490,15 @@ wheels = [
 
 [[package]]
 name = "rich"
-version = "14.3.4"
+version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown-it-py" },
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e9/67/cae617f1351490c25a4b8ac3b8b63a4dda609295d8222bad12242dfdc629/rich-14.3.4.tar.gz", hash = "sha256:817e02727f2b25b40ef56f5aa2217f400c8489f79ca8f46ea2b70dd5e14558a9", size = 230524, upload-time = "2026-04-11T02:57:45.419Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b3/76/6d163cfac87b632216f71879e6b2cf17163f773ff59c00b5ff4900a80fa3/rich-14.3.4-py3-none-any.whl", hash = "sha256:07e7adb4690f68864777b1450859253bed81a99a31ac321ac1817b2313558952", size = 310480, upload-time = "2026-04-11T02:57:47.484Z" },
+    { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
 ]
 
 [[package]]

@@ -441,8 +441,8 @@ def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
     refusals = {
         "bad-type.dbml": ("  Status blob\n", "blob"),
         "composite.dbml": (
-            "  Status nvarchar\n  Category nvarchar\n"
-            "  indexes { (Status, Category) }\n",
+            ("  Status nvarchar\n  Category nvarchar\n"
+             "  indexes { (Status, Category) }\n"),
             "composite",
         ),
     }

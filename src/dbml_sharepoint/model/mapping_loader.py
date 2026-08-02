@@ -129,7 +129,7 @@ KNOWN_SECTIONS = frozenset({
 
 _ENTITY_KEYS = frozenset({
     "kind", "base_template", "site_role", "singleton", "display_column",
-    "accept_unindexable_display_column",
+    "accept_unindexable_display_column", "hide_from_all_items",
 })
 _VERSIONING_KEYS = frozenset({
     "enable_versioning", "major_version_limit", "enable_minor_versions",
@@ -192,6 +192,9 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             ),
             accept_unindexable_display_column=_optional_bool(
                 spec, "accept_unindexable_display_column", f"entities.{name}",
+            ),
+            hide_from_all_items=_optional_str_list(
+                spec, "hide_from_all_items", f"entities.{name}",
             ),
         )
 
@@ -906,6 +909,28 @@ def _optional_str(raw: dict[str, Any], key: str, context: str) -> str | None:
     if value is not None and not isinstance(value, str):
         raise ValueError(f"{context}.{key} must be a string, got {value!r}")
     return value
+
+
+def _optional_str_list(raw: dict[str, Any], key: str, context: str) -> tuple[str, ...]:
+    """Read an optional list of strings, refusing the shapes YAML also accepts.
+
+    `hide_from_all_items: Author` is the plausible typo, and YAML hands it back
+    as a `str` — which iterates CHARACTER BY CHARACTER, so the column names
+    silently become 'A', 'u', 't', 'h'... and every one reports as a column that
+    does not exist. Refuse the shape here, where the context string can name the
+    key. `_optional_str` is the mirror of this and deliberately rejects a list.
+    """
+    value = raw.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ValueError(f"{context}.{key} must be a list of strings, got {value!r}")
+    for item in value:
+        if not isinstance(item, str):
+            raise ValueError(
+                f"{context}.{key} must be a list of strings, got {item!r}",
+            )
+    return tuple(value)
 
 
 def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:

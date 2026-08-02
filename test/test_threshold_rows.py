@@ -126,10 +126,10 @@ def test_sort_bait_is_identical_in_a_separate_interpreter() -> None:
     m = _load()
     result = subprocess.run(  # noqa: S603
         [sys.executable, "-c",
-         f"import importlib.util as u; "
+         (f"import importlib.util as u; "
          f"s = u.spec_from_file_location('g', r'{GENERATOR}'); "
          f"g = u.module_from_spec(s); s.loader.exec_module(g); "
-         f"print(g.sort_bait_for(1), g.sort_bait_for(6000))"],
+         f"print(g.sort_bait_for(1), g.sort_bait_for(6000))")],
         capture_output=True, text=True, check=True,
     )
     assert result.stdout.split() == [m.sort_bait_for(1), m.sort_bait_for(6000)]
