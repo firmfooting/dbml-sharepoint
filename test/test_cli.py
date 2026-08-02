@@ -43,10 +43,18 @@ def test_help_still_renders_as_rich_panels() -> None:
     out = result.stdout
 
     # Rich is still drawing boxes, not emitting a plain-text fallback.
-    for corner in ("┌", "─", "│", "└"):
-        assert corner in out, (
-            f"help output lost the {corner!r} border: rich is not rendering panels"
-        )
+    #
+    # The CORNERS are platform-dependent and must not be pinned. Rich's panel
+    # box is ROUNDED ('╭'), but Box.substitute swaps in SQUARE ('┌') when the
+    # console reports legacy_windows. So this assertion sees '╭' on the Linux
+    # runner and '┌' on a Windows one. An earlier version of this test pinned
+    # the square set, passed locally, and failed both CI runners.
+    assert "─" in out and "│" in out, (
+        "help output has no box edges: rich is not rendering panels"
+    )
+    assert any(c in out for c in "┌┐└┘╭╮╰╯"), (
+        "help output has no box corners: rich is not rendering panels"
+    )
 
     # Typer is still grouping into its two named panels.
     assert "Usage:" in out
