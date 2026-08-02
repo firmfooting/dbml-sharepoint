@@ -4,11 +4,12 @@ from typing import Any, ClassVar
 
 import pytest
 from _builders import ID_PK, TITLE, table
+from _findings import by_severity, messages, none_of, only
 from _packs import blocks, entities, pack, write_dbml, write_mapping
 from _paths import FIXTURES
 from _validator_helpers import _schema
 
-from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate,
@@ -58,11 +59,14 @@ def test_style_map_keys_must_be_enum_members(tmp_path: Path) -> None:
                 Status: { style: severity, map: { Open: low, Bogus: good } }
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        "Bogus" in f.message and "column_formatting[Risk].Status" in f.message
-        for f in findings if f.severity == "error"
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.STYLE_MAP_KEY_NOT_IN_ENUM,
     )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="Status",
+    )
+    assert "Bogus" in finding.message
 
 def test_data_bar_color_by_map_keys_must_be_enum_members(tmp_path: Path) -> None:
     """The data-bar colour translation is checked like severity maps: a
@@ -87,13 +91,17 @@ def test_data_bar_color_by_map_keys_must_be_enum_members(tmp_path: Path) -> None
                          color_by: { field: Rating, map: { Low: good, Bogus: blocked } } }
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        "Bogus" in f.message and "column_formatting[Risk].Score" in f.message
-        for f in findings if f.severity == "error"
+    # `only` carries the second half of this test as well: the valid key 'Low'
+    # must not raise a finding of its own, and a second one would fail here.
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.COLOR_BY_MAP_KEY_NOT_IN_ENUM,
     )
-    # The valid key raises nothing.
-    assert not any("'Low'" in f.message for f in findings if f.severity == "error")
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="Score",
+    )
+    assert "Bogus" in finding.message
 
 def test_calculated_number_and_date_styles_require_decoding(tmp_path: Path) -> None:
     schema, bundle = pack(
@@ -110,10 +118,14 @@ def test_calculated_number_and_date_styles_require_decoding(tmp_path: Path) -> N
                 Due: { style: overdue-date }
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    errors = [f.message for f in findings if f.severity == "error"]
-    assert any("Score" in message and "calculated: true" in message for message in errors)
-    assert any("Due" in message and "calculated: true" in message for message in errors)
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
+    raised = [f for f in errors if f.code == FindingCode.STYLE_REQUIRES_CALCULATED]
+    assert {f.location for f in raised} == {
+        Location(Section.COLUMN_FORMATTING, entity="Risk", column="Score"),
+        Location(Section.COLUMN_FORMATTING, entity="Risk", column="Due"),
+    }
+    # The remedy has to reach the reader; the columns are in the locations.
+    assert all("calculated: true" in f.message for f in raised)
 
 def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
     """[$Created]/[$Modified]/[$ID]/[$Author]/[$Editor] always exist on a
@@ -130,8 +142,10 @@ def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
                   txtContent: "=toLocaleDateString([$Created] + 1)"
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert not any("Created" in f.message for f in findings if f.severity == "error")
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.FORMATTER_FIELD_NOT_RENDERED,
+    )
     unknown_ref = write_mapping(
         tmp_path,
         blocks(entities("Risk"), """
@@ -143,40 +157,49 @@ def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
         """),
         name="m2.yaml",
     )
-    findings2 = validate_against_mapping(schema, load_mapping(unknown_ref))
-    assert any("Nope" in f.message for f in findings2 if f.severity == "error")
+    finding = only(
+        validate_against_mapping(schema, load_mapping(unknown_ref)),
+        FindingCode.FORMATTER_FIELD_NOT_RENDERED,
+    )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Risk", column="Gap",
+    )
+    assert "Nope" in finding.message
 
 def test_unknown_ref_target_is_error() -> None:
     table = Table(name="Task", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
         Column(name="Project", type="int", ref=Reference("Missing", "Id")),
     ])
-    findings = validate(_schema(table))
-    assert any(f.severity == "error" and "Missing" in f.message for f in findings)
+    finding = only(validate(_schema(table)), FindingCode.UNKNOWN_REF_TARGET)
+    assert finding.severity == "error"
+    assert "Missing" in finding.message
 
 def test_legacy_choice_type_is_error() -> None:
     table = Table(name="Task", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
         Column(name="Status", type="choice"),
     ])
-    findings = validate(_schema(table))
-    assert any(f.severity == "error" and "legacy" in f.message.lower() for f in findings)
+    assert only(validate(_schema(table)), FindingCode.LEGACY_CHOICE_TYPE).severity == "error"
 
 def test_unknown_type_is_error() -> None:
     table = Table(name="Task", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
         Column(name="Bad", type="frobnicate"),
     ])
-    findings = validate(_schema(table))
-    assert any(f.severity == "error" and "frobnicate" in f.message for f in findings)
+    finding = only(validate(_schema(table)), FindingCode.UNKNOWN_COLUMN_TYPE)
+    assert finding.severity == "error"
+    assert "frobnicate" in finding.message
 
 def test_reserved_author_is_error() -> None:
     table = Table(name="PaperRegister", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
         Column(name="Author", type="person"),
     ])
-    findings = validate(_schema(table))
-    assert any(f.severity == "error" and "Author" in f.message for f in findings)
+    finding = only(validate(_schema(table)), FindingCode.RESERVED_COLUMN_NAME)
+    assert finding.severity == "error"
+    assert "Author" in finding.message
 
 @pytest.mark.parametrize(
     "column_type",
@@ -198,22 +221,18 @@ def test_unique_is_rejected_for_unsupported_sharepoint_types(
         Column(name="Value", type=column_type, unique=True),
     ])
 
-    findings = validate(_schema(table))
+    finding = only(validate(_schema(table)), FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE)
 
-    assert any(
-        finding.severity == "error"
-        and "Value" in finding.message
-        and "unique" in finding.message
-        and "not supported" in finding.message
-        for finding in findings
-    )
+    assert finding.severity == "error"
+    # The type is the parameter under test and the thing the author must change.
+    assert column_type in finding.message
 
 def test_orphan_enum_is_warning() -> None:
     table = Table(name="Task", columns=[
         Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
     ])
     findings = validate(_schema(table, enums=[EnumDef(name="status", members=["a"])]))
-    assert any(f.severity == "warning" and "orphan" in f.message.lower() for f in findings)
+    assert only(findings, FindingCode.ORPHAN_ENUM).severity == "warning"
 
 def test_enum_default_not_in_members_is_error() -> None:
     """An enum-typed column whose default is not one of the enum's declared
@@ -226,10 +245,9 @@ def test_enum_default_not_in_members_is_error() -> None:
     findings = validate(_schema(
         table, enums=[EnumDef(name="status", members=["Open", "Closed"])],
     ))
-    assert any(
-        f.severity == "error" and "Status" in f.message and "Nope" in f.message
-        for f in findings
-    )
+    finding = only(findings, FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER)
+    assert finding.severity == "error"
+    assert "Nope" in finding.message
 
 def test_enum_default_in_members_is_ok() -> None:
     """A valid enum default must not produce a default-related error."""
@@ -240,10 +258,7 @@ def test_enum_default_in_members_is_ok() -> None:
     findings = validate(_schema(
         table, enums=[EnumDef(name="status", members=["Open", "Closed"])],
     ))
-    assert not any(
-        f.severity == "error" and "Status" in f.message and "default" in f.message.lower()
-        for f in findings
-    )
+    none_of(findings, FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER)
 
 def test_enum_source_with_no_matching_dbml_enum_is_warning() -> None:
     """An enum_sources entry with no
@@ -253,12 +268,11 @@ def test_enum_source_with_no_matching_dbml_enum_is_warning() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "warning" and "topic" in f.message.lower() for f in findings
-    )
-    assert not any(
-        f.severity == "error" and "topic" in f.message.lower() for f in findings
-    )
+    finding = only(findings, FindingCode.ENUM_SOURCE_HAS_NO_DBML_ENUM)
+    assert finding.severity == "warning"
+    assert finding.location == Location(Section.ENUM_SOURCES, entity="topic")
+    # The error half: no DBML enum means nothing to disagree with.
+    none_of(findings, FindingCode.ENUM_MEMBERS_DIFFER)
 
 def test_enum_source_mismatch_is_error_listing_both_sides() -> None:
     """A DBML enum whose members differ from the configured enum_sources
@@ -268,14 +282,14 @@ def test_enum_source_mismatch_is_error_listing_both_sides() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     schema.enums.append(EnumDef(name="topic", members=["OnlyOne"]))
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error"
-        and "OnlyOne" in f.message
-        and "Strategy" in f.message
-        and "Other" in f.message
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.ENUM_MEMBERS_DIFFER,
     )
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.ENUM_SOURCES, entity="topic")
+    # Both sides, which is the whole point of this rule's wording.
+    assert "OnlyOne" in finding.message
+    assert "Strategy" in finding.message and "Other" in finding.message
 
 def test_enum_source_check_is_generic_not_hardcoded_to_topic() -> None:
     """Regression: Task 7 replaces the 'topic'-only special-case with a loop
@@ -285,18 +299,21 @@ def test_enum_source_check_is_generic_not_hardcoded_to_topic() -> None:
     schema.enums.append(EnumDef(name="priority", members=["Low", "High"]))
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.enum_choices["priority"] = ["Low", "Medium", "High"]
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "priority" in f.message and "High" in f.message
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.ENUM_MEMBERS_DIFFER,
     )
+    assert finding.severity == "error"
+    # The location naming 'priority' IS the regression: the check used to be
+    # hardcoded to 'topic', which is also configured on this fixture.
+    assert finding.location == Location(Section.ENUM_SOURCES, entity="priority")
 
 def test_mapping_references_unknown_entity_is_error(tmp_path: object) -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     # simple.dbml has Project + Task; mapping fixture also has Project + Task. OK.
     findings = validate_against_mapping(schema, bundle)
-    assert all(f.severity != "error" or "unknown" not in f.message.lower() for f in findings)
+    none_of(findings, FindingCode.UNKNOWN_ENTITY)
+    none_of(findings, FindingCode.UNMAPPED_SCHEMA_TABLE)
 
 def test_schema_table_missing_from_mapping_is_error() -> None:
     """Regression: a DBML table with no mapping entry must fail the build.
@@ -306,11 +323,11 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     del bundle.mapping.entities["Task"]
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "Task" in f.message and "mapping" in f.message.lower()
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.UNMAPPED_SCHEMA_TABLE,
     )
+    assert finding.severity == "error"
+    assert "Task" in finding.message
 
 def test_indexed_column_cross_site_logical_name_is_error(tmp_path: Path) -> None:
     """A cross-site column's logical DBML field is expanded and never exists
@@ -326,13 +343,11 @@ def test_indexed_column_cross_site_logical_name_is_error(tmp_path: Path) -> None
               - { entity: Task, column: Project }
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error"
-        and "Project" in f.message
-        and "indexes" in f.message
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.INDEX_COLUMN_NOT_RENDERED,
     )
+    assert finding.severity == "error"
+    assert "Project" in finding.message
 
 def test_dbml_indexes_reject_unsupported_field_types(tmp_path: Path) -> None:
     schema, bundle = pack(
@@ -350,15 +365,14 @@ def test_dbml_indexes_reject_unsupported_field_types(tmp_path: Path) -> None:
         """,
         mapping=entities("Task"),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "Notes" in f.message and "Note" in f.message
-        for f in findings
-    )
-    assert any(
-        f.severity == "error" and "Url" in f.message and "Hyperlink" in f.message
-        for f in findings
-    )
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
+    # The SharePoint type name is the value: it is what tells the author why
+    # this column cannot carry an index. ("Note" was previously asserted
+    # alongside "Notes", which contains it — the check could not fail.)
+    refused = messages(errors, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
+    assert len(refused) == 2, refused
+    assert any("Notes" in m and "Multiple lines of text" in m for m in refused)
+    assert any("Url" in m and "Hyperlink" in m for m in refused)
 
 def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> None:
     # Col0 is listed twice on purpose -- that is the duplicate this asserts.
@@ -373,14 +387,12 @@ def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> 
     findings = validate_against_mapping(
         parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
     )
-    assert any(
-        f.severity == "error" and "Col0" in f.message and "duplicate" in f.message
-        for f in findings
-    )
-    assert any(
-        f.severity == "error" and "21" in f.message and "20" in f.message
-        for f in findings
-    )
+    duplicate = only(findings, FindingCode.DUPLICATE_INDEX_TARGET)
+    assert duplicate.severity == "error"
+    assert "Col0" in duplicate.message
+    over_budget = only(findings, FindingCode.INDEX_LIMIT_EXCEEDED)
+    assert over_budget.severity == "error"
+    assert "21 effective indexes exceed SharePoint's limit of 20" in over_budget.message
 
 def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path: Path) -> None:
     write_dbml(tmp_path, table(
@@ -390,10 +402,9 @@ def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path:
     findings = validate_against_mapping(
         parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
     )
-    assert any(
-        f.severity == "error" and "21" in f.message and "20" in f.message
-        for f in findings
-    )
+    finding = only(findings, FindingCode.INDEX_LIMIT_EXCEEDED)
+    assert finding.severity == "error"
+    assert "21 effective indexes exceed SharePoint's limit of 20" in finding.message
 
 def test_dbml_index_must_not_repeat_a_unique_column(tmp_path: Path) -> None:
     schema, bundle = pack(
@@ -401,14 +412,12 @@ def test_dbml_index_must_not_repeat_a_unique_column(tmp_path: Path) -> None:
         dbml=table("Asset", ID_PK, "AssetTag nvarchar [unique]", "indexes { AssetTag }"),
         mapping=entities("Asset"),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        finding.severity == "error"
-        and "AssetTag" in finding.message
-        and "unique" in finding.message
-        and "indexes" in finding.message
-        for finding in findings
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.INDEX_DUPLICATES_UNIQUE_COLUMN,
     )
+    assert finding.severity == "error"
+    assert "AssetTag" in finding.message
 
 def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
     """The budget cannot be counted exactly: SharePoint creates indexes itself.
@@ -424,15 +433,17 @@ def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
         "indexes { " + " ".join(indexed) + " }",
     ))
     mapping = write_mapping(tmp_path, entities("Big"))
-    warnings = [
-        f.message
-        for f in validate_against_mapping(
+    finding = only(
+        validate_against_mapping(
             parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-        )
-        if f.severity == "warning" and "18 of the 20" in f.message
-    ]
-    assert len(warnings) == 1
-    assert "sorted view" in warnings[0]
+        ),
+        FindingCode.INDEX_LIMIT_APPROACHING,
+    )
+    assert finding.severity == "warning"
+    # The count and the reason SharePoint's own indexes are invisible: both are
+    # what makes this warning actionable rather than noise.
+    assert "18 of the 20" in finding.message
+    assert "sorted view" in finding.message
 
 def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
     """The budget cannot be counted exactly: SharePoint creates indexes itself.
@@ -448,14 +459,12 @@ def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
         "indexes { " + " ".join(indexed) + " }",
     ))
     mapping = write_mapping(tmp_path, entities("Big"))
-    warnings = [
-        f.message
-        for f in validate_against_mapping(
+    none_of(
+        validate_against_mapping(
             parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-        )
-        if f.severity == "warning" and "18 of the 20" in f.message
-    ]
-    assert warnings == []
+        ),
+        FindingCode.INDEX_LIMIT_APPROACHING,
+    )
 
 def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> None:
     """The error firing at > 20 means the warning is unreachable at that threshold.
@@ -472,18 +481,8 @@ def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> N
     findings = validate_against_mapping(
         parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
     )
-    errors = [
-        f.message
-        for f in findings
-        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
-    ]
-    warnings = [
-        f.message
-        for f in findings
-        if f.severity == "warning" and "available indexes are already spoken for" in f.message
-    ]
-    assert len(errors) == 1
-    assert len(warnings) == 0
+    assert only(findings, FindingCode.INDEX_LIMIT_EXCEEDED).severity == "error"
+    none_of(findings, FindingCode.INDEX_LIMIT_APPROACHING)
 
 def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst(
     tmp_path: Path,
@@ -505,21 +504,22 @@ def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst(
         encoding="utf-8",
     )
     mapping = write_mapping(tmp_path, entities("Event", "FollowUp"))
-    errors = [
-        f.message
-        for f in validate_against_mapping(
+    finding = only(
+        validate_against_mapping(
             parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-        )
-        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
-    ]
-    assert len(errors) == 1, errors
-    assert "21 " in errors[0]
-    assert "20 declared in indexes" in errors[0]
-    assert "'Title'" in errors[0]
-    assert "lookup target" in errors[0]
+        ),
+        FindingCode.INDEX_LIMIT_EXCEEDED,
+    )
+    assert finding.severity == "error"
+    # Every one of these is a value the author needs to find the invisible
+    # twenty-first index; this test is ABOUT the arithmetic in the prose.
+    assert "21 " in finding.message
+    assert "20 declared in indexes" in finding.message
+    assert "'Title'" in finding.message
+    assert "lookup target" in finding.message
     # The old parenthetical claimed unique columns were in the count. There are
     # none on this list, so it must not say so.
-    assert "unique" not in errors[0]
+    assert "unique" not in finding.message
 
 def test_the_over_budget_error_names_unique_columns_when_there_are_some(
     tmp_path: Path,
@@ -535,17 +535,16 @@ def test_the_over_budget_error_names_unique_columns_when_there_are_some(
         "indexes { " + " ".join(indexed) + " }",
     ))
     mapping = write_mapping(tmp_path, entities("Big"))
-    errors = [
-        f.message
-        for f in validate_against_mapping(
+    finding = only(
+        validate_against_mapping(
             parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-        )
-        if f.severity == "error" and "exceed SharePoint's limit of 20" in f.message
-    ]
-    assert len(errors) == 1, errors
-    assert "'Code' from a [unique] column" in errors[0]
+        ),
+        FindingCode.INDEX_LIMIT_EXCEEDED,
+    )
+    assert finding.severity == "error"
+    assert "'Code' from a [unique] column" in finding.message
     # Nothing looks Big up, so there is no display-column index to blame.
-    assert "lookup target" not in errors[0]
+    assert "lookup target" not in finding.message
 
 def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
     schema, bundle = pack(
@@ -564,9 +563,10 @@ def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> N
         mapping=entities("Risk"),
     )
     findings = validate_against_mapping(schema, bundle)
-    errors = [f.message for f in findings if f.severity == "error"]
-    assert any("composite" in message for message in errors)
-    assert any("name" in message and "status_index" in message for message in errors)
+    assert only(findings, FindingCode.COMPOSITE_INDEX_UNSUPPORTED).severity == "error"
+    settings = only(findings, FindingCode.INDEX_SETTINGS_UNSUPPORTED)
+    assert settings.severity == "error"
+    assert "status_index" in settings.message
 
 def test_cross_site_reference_cannot_declare_unique_constraint(tmp_path: Path) -> None:
     schema, bundle = pack(
@@ -580,14 +580,12 @@ def test_cross_site_reference_cannot_declare_unique_constraint(tmp_path: Path) -
               - { entity: Task, column: Project }
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        finding.severity == "error"
-        and "Task.Project" in finding.message
-        and "unique" in finding.message
-        and "cross-site" in finding.message
-        for finding in findings
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CROSS_SITE_COLUMN_CANNOT_BE_UNIQUE,
     )
+    assert finding.severity == "error"
+    assert "Task.Project" in finding.message
 
 def test_default_policy_site_role_must_be_known() -> None:
     """list_permissions.default.site_role, when set, must be a known role."""
@@ -595,10 +593,14 @@ def test_default_policy_site_role_must_be_known() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     assert bundle.mapping.permissions is not None
     bundle.mapping.permissions.default_policy_site_role = "comittee"
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "comittee" in f.message for f in findings
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.UNKNOWN_SITE_ROLE,
     )
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.LIST_PERMISSIONS, sub="default.site_role",
+    )
+    assert "comittee" in finding.message
 
 def test_unknown_base_permission_in_custom_level_is_error() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
@@ -614,11 +616,12 @@ def test_unknown_base_permission_in_custom_level_is_error() -> None:
         default_policy=None,
         overrides={},
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "NotARealPermission" in f.message
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.UNKNOWN_BASE_PERMISSION,
     )
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.PERMISSION_LEVELS)
+    assert "NotARealPermission" in finding.message
 
 def test_assignment_referencing_undeclared_level_is_error() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
@@ -637,11 +640,12 @@ def test_assignment_referencing_undeclared_level_is_error() -> None:
         ),
         overrides={},
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "NonExistentLevel" in f.message
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, bundle), FindingCode.UNKNOWN_PERMISSION_LEVEL,
     )
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="default")
+    assert "NonExistentLevel" in finding.message
 
 def test_principal_group_using_associated_alias_is_error() -> None:
     """Regression: `principal: {kind: group, name: "Site Owners"}` passed
@@ -672,13 +676,14 @@ def test_principal_group_using_associated_alias_is_error() -> None:
             ),
             overrides={},
         )
-        findings = validate_against_mapping(schema, bundle)
-        assert any(
-            f.severity == "error"
-            and alias in f.message
-            and suggested_kind in f.message
-            for f in findings
-        ), f"expected alias rejection for {alias!r}"
+        finding = only(
+            validate_against_mapping(schema, bundle),
+            FindingCode.UNRESOLVABLE_ASSOCIATED_GROUP_ALIAS,
+        )
+        assert finding.severity == "error"
+        # The principal kind to switch to is the remedy, and it differs per
+        # alias — the one value this message must carry.
+        assert suggested_kind in finding.message, f"for alias {alias!r}"
 
 def test_principal_custom_group_name_still_passes() -> None:
     """Legitimate custom group principals (declared in `groups`) must not be
@@ -687,7 +692,8 @@ def test_principal_custom_group_name_still_passes() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     findings = validate_against_mapping(schema, bundle)
-    assert not any("List Maintainer" in f.message for f in findings)
+    none_of(findings, FindingCode.UNRESOLVABLE_ASSOCIATED_GROUP_ALIAS)
+    none_of(findings, FindingCode.UNKNOWN_PRINCIPAL_GROUP)
 
 def test_override_key_referencing_missing_entity_is_error() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
@@ -708,11 +714,10 @@ def test_override_key_referencing_missing_entity_is_error() -> None:
             ),
         },
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "DoesNotExist" in f.message
-        for f in findings
-    )
+    finding = only(validate_against_mapping(schema, bundle), FindingCode.UNKNOWN_TABLE)
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
+    assert "DoesNotExist" in finding.message
 
 def test_lookup_target_without_title_or_display_column_is_error() -> None:
     """A1: a lookup into a target list that has no Title column and no
@@ -751,16 +756,17 @@ def test_lookup_target_without_title_or_display_column_is_error() -> None:
         ]),
     )
 
-    findings = validate_against_mapping(schema, _bundle(None))
-    assert any(
-        f.severity == "error" and "Chair" in f.message
-        and "Membership" in f.message and "display_column" in f.message
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, _bundle(None)),
+        FindingCode.LOOKUP_WOULD_RENDER_BLANK,
     )
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.SCHEMA, entity="Meeting", column="Chair")
+    # The remedy names the target list, which is not the list the finding is on.
+    assert "display_column to the Membership entity" in finding.message
     ok = validate_against_mapping(schema, _bundle("DisplayName"))
-    assert not any(
-        f.severity == "error" and "display_column" in f.message for f in ok
-    )
+    none_of(ok, FindingCode.LOOKUP_WOULD_RENDER_BLANK)
+    none_of(ok, FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN)
 
 def test_lookup_display_column_must_name_a_real_target_column() -> None:
     """PR #43 review: a mapping may set display_column, but if the named column
@@ -802,14 +808,16 @@ def test_lookup_display_column_must_name_a_real_target_column() -> None:
         Table(name="Membership", columns=membership_cols),
     )
 
-    bad = validate_against_mapping(schema, _bundle("DisplayNam"))  # typo
-    assert any(
-        f.severity == "error" and "DisplayNam" in f.message
-        and "display_column" in f.message
-        for f in bad
+    bad = only(
+        validate_against_mapping(schema, _bundle("DisplayNam")),  # typo
+        FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN,
     )
+    assert bad.severity == "error"
+    assert bad.location == Location(Section.SCHEMA, entity="Meeting", column="Chair")
+    assert "'DisplayNam'" in bad.message
     ok = validate_against_mapping(schema, _bundle("DisplayName"))
-    assert not any(f.severity == "error" and "display_column" in f.message for f in ok)
+    none_of(ok, FindingCode.LOOKUP_DISPLAY_COLUMN_UNKNOWN)
+    none_of(ok, FindingCode.LOOKUP_WOULD_RENDER_BLANK)
 
 def test_cross_site_role_lookup_is_error() -> None:
     """A7: a plain lookup whose source and target map to different site_roles
@@ -847,18 +855,34 @@ def test_cross_site_role_lookup_is_error() -> None:
             Column(name="Title", type="nvarchar", required=True),
         ]),
     )
-    findings = validate_against_mapping(schema, _bundle([]))
-    assert any(
-        f.severity == "error" and "Log" in f.message and "site_role" in f.message
-        and "cross_site" in f.message
-        for f in findings
+    finding = only(
+        validate_against_mapping(schema, _bundle([])),
+        FindingCode.LOOKUP_CROSSES_SITE_ROLE,
     )
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.SCHEMA, entity="Meeting", column="Log")
+    # The two roles are the diagnosis and the section to declare is the remedy.
+    assert "(default -> admin)" in finding.message
+    assert "cross_site_reference_columns" in finding.message
     ok = validate_against_mapping(
         schema, _bundle([CrossSiteRef(entity="Meeting", column="Log")]),
     )
-    assert not any(f.severity == "error" and "site_role" in f.message for f in ok)
+    none_of(ok, FindingCode.LOOKUP_CROSSES_SITE_ROLE)
 
 # === Retention cross-checks gated on bundle.retention_policies (Task 7) ===
+
+def _retention_findings(findings: list[Finding]) -> list[Finding]:
+    """Everything the retention cross-checks produced.
+
+    Both of them (an unknown entity and an unknown policy) predate the message
+    convention and are written as prose, so `location.section` is the only
+    thing that identifies them as retention's — searching for the word
+    "retention" in the prose is what these two tests used to do.
+    """
+    return [
+        f for f in findings
+        if f.location is not None and f.location.section == Section.RETENTION
+    ]
 
 def test_no_retention_config_no_retention_findings() -> None:
     """When no retention_policies_source is configured, mapping_loader loads
@@ -868,8 +892,7 @@ def test_no_retention_config_no_retention_findings() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.retention_policies = {}
     bundle.retention_list_defaults = {}
-    findings = validate_against_mapping(schema, bundle)
-    assert not any("retention" in f.message.lower() for f in findings)
+    assert _retention_findings(validate_against_mapping(schema, bundle)) == []
 
 def test_retention_cross_checks_gated_on_policies_not_list_defaults() -> None:
     """Regression: the retention cross-checks must key off
@@ -881,8 +904,7 @@ def test_retention_cross_checks_gated_on_policies_not_list_defaults() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     assert bundle.retention_list_defaults  # fixture loads non-empty defaults
     bundle.retention_policies = {}
-    findings = validate_against_mapping(schema, bundle)
-    assert not any("retention" in f.message.lower() for f in findings)
+    assert _retention_findings(validate_against_mapping(schema, bundle)) == []
 
 # === validate_all + extension hook (Task 7) ===
 
@@ -899,7 +921,7 @@ def test_validate_all_includes_extension_findings() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     findings = validate_all(schema, bundle, _StubExtension())
-    assert any(f.message == "stub extension finding" for f in findings)
+    assert only(findings, FindingCode.EXTENSION_REPORTED).message == "stub extension finding"
 
 def test_validate_all_is_the_sum_of_its_parts() -> None:
     """validate_all(schema, bundle, extension) == validate(schema) +
