@@ -1,51 +1,58 @@
 # test/test_demogen.py
 """demo-data.js generation (--seed): plan typing and script contract."""
 
-from pathlib import Path
-
-from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, pack
+from _model import bundle as make_bundle
+from _model import column, enum, person, ref
+from _model import schema as make_schema
+from _model import table as make_table
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.demogen import generate_demo_js
-from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.mapping_loader import DemoItem, MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import load_release
 
 
-def _demo_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    return pack(
-        tmp_path,
-        dbml=blocks(
-            """
-            Enum status {
-              "Open"
-              "Closed"
-            }
-            """,
-            table("Risk", ID_PK, TITLE, "Status status", "Owner person", "ReviewDate date"),
-            table("Issue", ID_PK, TITLE, "RelatedRisk int [ref: > Risk.Id]"),
+def _demo_inputs() -> tuple[Schema, MappingBundle]:
+    schema = make_schema(
+        make_table(
+            "Risk",
+            column("Title", required=True),
+            column("Status", "status"),
+            person("Owner"),
+            column("ReviewDate", "date"),
         ),
-        mapping=blocks(entities("Risk", "Issue"), """
-            demo_items:
-              Risk:
-                - key: r1
-                  values:
-                    Title: "[DEMO] Sample risk"
-                    Status: "Open"
-                    Owner: "@me"
-                    ReviewDate: "today-40"
-              Issue:
-                - key: i1
-                  values:
-                    Title: "[DEMO] Sample issue"
-                    RelatedRisk: { demo_ref: r1 }
-        """),
+        make_table(
+            "Issue",
+            column("Title", required=True),
+            ref("RelatedRisk", "Risk.Id"),
+        ),
+        enums=[enum("status", "Open", "Closed")],
     )
+    bundle = make_bundle(
+        entities=["Risk", "Issue"],
+        demo_items={
+            "Risk": [
+                DemoItem(key="r1", values={
+                    "Title": "[DEMO] Sample risk",
+                    "Status": "Open",
+                    "Owner": "@me",
+                    "ReviewDate": "today-40",
+                }),
+            ],
+            "Issue": [
+                DemoItem(key="i1", values={
+                    "Title": "[DEMO] Sample issue",
+                    "RelatedRisk": {"demo_ref": "r1"},
+                }),
+            ],
+        },
+    )
+    return schema, bundle
 
 
-def _generate(tmp_path: Path) -> str:
-    schema, bundle = _demo_inputs(tmp_path)
+def _generate() -> str:
+    schema, bundle = _demo_inputs()
     return generate_demo_js(
         schema=schema,
         bundle=bundle,
@@ -57,12 +64,12 @@ def _generate(tmp_path: Path) -> str:
     )
 
 
-def test_demo_plan_types_fields_at_generation(tmp_path: Path) -> None:
+def test_demo_plan_types_fields_at_generation() -> None:
     """The script must not guess column semantics at run time: person
     columns become kind 'me' (written as <Name>Id from the operator),
     lookups kind 'ref' (resolved from created demo Ids), today±N on date
     columns kind 'date_offset' (resolved on demo day), all else literal."""
-    js = _generate(tmp_path)
+    js = _generate()
     assert '"kind": "me"' in js
     assert '"kind": "ref"' in js
     assert '"value": "r1"' in js
@@ -73,23 +80,22 @@ def test_demo_plan_types_fields_at_generation(tmp_path: Path) -> None:
     assert js.index('"APP_Risk"') < js.index('"APP_Issue"')
 
 
-def test_bare_today_is_offset_zero(tmp_path: Path) -> None:
+def test_bare_today_is_offset_zero() -> None:
     """The validator accepts a bare `today` on demo date values (it shares
     the view-condition sentinel, where bare `today` is correct). Generation
     must accept it too and mean offset 0 — otherwise a demo row declaring
     `today` passes the build with zero findings and emits the literal
     string "today" into demo-data.js."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Board", ID_PK, TITLE, "BoardDate date"),
-        mapping=blocks(entities("Board"), """
-            demo_items:
-              Board:
-                - key: b1
-                  values:
-                    Title: "[DEMO] Today"
-                    BoardDate: "today"
-        """),
+    schema = make_schema(
+        make_table("Board", column("Title", required=True), column("BoardDate", "date")),
+    )
+    bundle = make_bundle(
+        entities=["Board"],
+        demo_items={
+            "Board": [
+                DemoItem(key="b1", values={"Title": "[DEMO] Today", "BoardDate": "today"}),
+            ],
+        },
     )
     js = generate_demo_js(
         schema=schema,
@@ -105,8 +111,8 @@ def test_bare_today_is_offset_zero(tmp_path: Path) -> None:
     assert '"value": "today"' not in js
 
 
-def test_demo_script_contract(tmp_path: Path) -> None:
-    js = _generate(tmp_path)
+def test_demo_script_contract() -> None:
+    js = _generate()
     # Site guard + operator identity, like every pasteable script.
     assert "_spPageContextInfo" in js
     assert "Site mismatch" in js

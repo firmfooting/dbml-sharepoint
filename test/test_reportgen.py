@@ -2,8 +2,10 @@
 from pathlib import Path
 
 import pytest
-from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, pack
+from _model import bundle as make_bundle
+from _model import column
+from _model import schema as make_schema
+from _model import table as make_table
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.reportgen import (
@@ -14,7 +16,14 @@ from dbml_sharepoint.generators.reportgen import (
     generate_reporting_md,
     generate_sql_views,
 )
-from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.conditions import Group, Leaf
+from dbml_sharepoint.model.mapping_loader import (
+    ColumnValidation,
+    EntitySection,
+    FormVisibility,
+    MappingBundle,
+    load_mapping,
+)
 from dbml_sharepoint.model.parser import Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
@@ -300,12 +309,11 @@ def test_dictionary_choice_members_carry_ordinals() -> None:
     assert "Choice: 1. Open, 2. Closed" in md
 
 
-def test_dictionary_flags_rich_text_as_html(tmp_path: Path) -> None:
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE, "Detail richtext"),
-        mapping=entities("Risk"),
+def test_dictionary_flags_rich_text_as_html() -> None:
+    schema = make_schema(
+        make_table("Risk", column("Title", required=True), column("Detail", "richtext")),
     )
+    bundle = make_bundle(entities=["Risk"])
     md = generate_data_dictionary(schema, bundle, "default")
     assert "HTML over OData" in md
     assert "strip markup" in md
@@ -399,17 +407,19 @@ def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> No
     assert on_disk == set(relpaths)
 
 
-def test_calculated_date_reports_as_date(tmp_path: Path) -> None:
+def test_calculated_date_reports_as_date() -> None:
     """A calculated date column must land as a date in both reporting
     surfaces — M `type date` and SQL `DATE` — not the text fallback."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE, "NextReviewDue calculated_date"),
-        mapping=blocks(entities("Risk"), """
-            calculated_formulas:
-              Risk:
-                NextReviewDue: '=DATE(2026,1,1)'
-        """),
+    schema = make_schema(
+        make_table(
+            "Risk",
+            column("Title", required=True),
+            column("NextReviewDue", "calculated_date"),
+        ),
+    )
+    bundle = make_bundle(
+        entities=["Risk"],
+        calculated_formulas={"Risk": {"NextReviewDue": "=DATE(2026,1,1)"}},
     )
     pq = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
     assert "NextReviewDue" in pq
@@ -430,35 +440,46 @@ def test_calculated_date_reports_as_date(tmp_path: Path) -> None:
 # to everyone who consumes the data.
 
 
-def _declared(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    return pack(
-        tmp_path,
-        dbml=table(
-            "Escalation", ID_PK, TITLE, "Route nvarchar", "Resolution nvarchar",
-            "Status nvarchar",
+def _declared() -> tuple[Schema, MappingBundle]:
+    schema = make_schema(
+        make_table(
+            "Escalation",
+            column("Title", required=True),
+            column("Route"),
+            column("Resolution"),
+            column("Status"),
         ),
-        mapping=blocks(entities("Escalation"), """
-            form_visibility:
-              Escalation:
-                columns:
-                  Route: hidden
-                  Resolution:
-                    new: false
-                    when:
-                      - { field: Status, op: eq, value: Resolved }
-            column_validation:
-              Escalation:
-                columns:
-                  Resolution:
-                    when:
-                      - { field: Resolution, measure: length, op: gt, value: 10 }
-                    message: Give at least a sentence.
-        """),
     )
+    bundle = make_bundle(
+        entities=["Escalation"],
+        form_visibility={
+            "Escalation": EntitySection(columns={
+                # `Route: hidden` is the loader's shorthand for both flags off.
+                "Route": FormVisibility(new=False, existing=False),
+                "Resolution": FormVisibility(
+                    new=False,
+                    when=Group("all_of", (
+                        Leaf(field="Status", op="eq", value="Resolved"),
+                    )),
+                ),
+            }),
+        },
+        column_validation={
+            "Escalation": EntitySection(columns={
+                "Resolution": ColumnValidation(
+                    when=Group("all_of", (
+                        Leaf(field="Resolution", op="gt", value=10, measure="length"),
+                    )),
+                    message="Give at least a sentence.",
+                ),
+            }),
+        },
+    )
+    return schema, bundle
 
 
-def test_data_dictionary_reports_form_visibility_and_save_rules(tmp_path: Path) -> None:
-    schema, bundle = _declared(tmp_path)
+def test_data_dictionary_reports_form_visibility_and_save_rules() -> None:
+    schema, bundle = _declared()
     doc = generate_data_dictionary(schema, bundle, "default")
     assert "Populated when" in doc
     assert "Save rule" in doc
@@ -471,10 +492,10 @@ def test_data_dictionary_reports_form_visibility_and_save_rules(tmp_path: Path) 
     assert "length(Resolution) gt 10" in doc
 
 
-def test_dictionary_powerquery_and_sql_carry_the_same_two_columns(tmp_path: Path) -> None:
+def test_dictionary_powerquery_and_sql_carry_the_same_two_columns() -> None:
     """The analyst consuming the bundle sees what the form does, not just
     what the column is."""
-    schema, bundle = _declared(tmp_path)
+    schema, bundle = _declared()
     pq = generate_dictionary_powerquery(schema, bundle, "default")["_DataDictionary.pq"]
     assert "PopulatedWhen = text" in pq
     assert "SaveRule = text" in pq
@@ -484,22 +505,22 @@ def test_dictionary_powerquery_and_sql_carry_the_same_two_columns(tmp_path: Path
     assert "SaveRule" in sql
 
 
-def test_user_added_columns_selects_the_deployed_formula_properties(tmp_path: Path) -> None:
+def test_user_added_columns_selects_the_deployed_formula_properties() -> None:
     """_UserAddedColumns is the only LIVE query in the bundle and already
     calls /fields on every refresh. Selecting the two formula properties
     turns it into a refresh-time check that the deployed contract still
     matches the dictionary — for free."""
-    schema, bundle = _declared(tmp_path)
+    schema, bundle = _declared()
     pq = generate_dictionary_powerquery(schema, bundle, "default")["_UserAddedColumns.pq"]
     assert "ClientValidationFormula" in pq
     assert "ValidationFormula" in pq
 
 
-def test_undeclared_columns_read_as_dashes_not_blanks(tmp_path: Path) -> None:
+def test_undeclared_columns_read_as_dashes_not_blanks() -> None:
     """Absence must be legible. An empty cell reads as missing data — the
     analyst cannot tell "no rule declared" from "the generator did not
     know", which is the same ambiguity this whole change exists to remove."""
-    schema, bundle = _declared(tmp_path)
+    schema, bundle = _declared()
     doc = generate_data_dictionary(schema, bundle, "default")
 
     def cells(column: str) -> list[str]:
