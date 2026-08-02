@@ -1,0 +1,114 @@
+# AGENTS.md
+
+Instructions for coding agents working in this repository. Humans should read
+[CONTRIBUTING.md](CONTRIBUTING.md) and the engineering doctrine it links:
+[Philosophy](website/docs/development/philosophy.md) and
+[Workflow](website/docs/development/workflow.md). This file is the short version
+plus the things that are easy to get wrong.
+
+`dbml-sharepoint` turns a DBML schema plus a `mapping.yaml` into a browser-paste
+`deploy.js` that provisions SharePoint Online lists. The generated scripts run
+against other people's production sites.
+
+## The one rule that matters most
+
+**Never assert how SharePoint behaves from plausibility.** Check Microsoft Learn,
+or write a probe under `test/manual/` and have the user paste it into a live
+site.
+
+The failure class this project exists to close is a formatter or rule that saves,
+reads back byte-identical, passes every deploy phase, and does nothing on the
+rendered page. Nothing in the build or the deploy can see it, so a wrong
+assumption ships silently and stays.
+
+This is not hypothetical. Three "obviously correct" assumptions made in one
+session were all wrong: five of thirty-five Fluent icon names did not exist, a
+validator rule was backwards against what Learn documents, and a width scale
+written from memory omitted five values the reference template actually uses.
+
+Corollaries:
+
+- An enforced rule must never be stronger than what the reference implementation
+  actually satisfies.
+- When writing a probe, separate the values a measurement **depends on** from the
+  values it **observes**. Asserting over the second kind makes the experiment
+  kill itself the moment it starts working, and that looks identical to a real
+  failure.
+- If a live run teaches you something, encode it: a dated comment, a pinned test,
+  a design-doc revision.
+
+## Gates
+
+Every change must leave all of these green. They are the same commands the
+pre-commit hooks run, so a hook can never disagree with CI.
+
+```bash
+uv run pytest
+uv run ruff check src test website/scripts
+uv run mypy
+uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
+```
+
+Install the hooks once with `prek install` (or `pre-commit install`).
+
+## Commits
+
+**Conventional commits are load-bearing, not cosmetic.** `release-please` cuts
+the changelog by parsing commit messages on `main`, so a non-conventional commit
+contributes *nothing* to the release notes — silently. The release still
+happens, the code still ships, and only the notes are wrong.
+
+This has already bitten: PRs #41, #42, #45 and #51 all merged with prose commit
+subjects, and 0.4.0 initially credited the join-ceiling release with a single
+documentation tweak. It had to be back-filled with empty commits (#57).
+
+Use `feat:`, `fix:`, `docs:`, `chore:`, `test:`, `style:`, `refactor:`. One
+concern per commit, tests included. Note the changelog has no Tests section, so a
+`test:` commit is invisible in release notes — judge the type by what the change
+actually does, not by which directory it touches.
+
+## Things that will waste your time
+
+- **Generated files are committed, and the generator writes CRLF on Windows.**
+  `website/scripts/generate_api.py` and `test/manual/render_probes.py` rewrite
+  every file they touch with CRLF line endings, so `git status` shows drift that
+  is not real. Check with `git diff --ignore-cr-at-eol` before believing it, and
+  `git checkout --` the files if that comes back empty.
+- **The deploy.js golden.** Template changes fail
+  `test_simple_deploy_js_matches_golden` until the fixture under
+  `test/fixtures/expected/` is deliberately regenerated. Review the fixture diff
+  like code — it is.
+- **Regenerate the API reference** when Python signatures, docstrings or template
+  contract comments change: `uv run python website/scripts/generate_api.py`, then
+  commit the real diff.
+- **Emitted JS.** For template changes, build an example and `node --check` the
+  emitted scripts.
+- **`uv run pytest` runs with `filterwarnings = ["error"]`.** A new dependency
+  that emits a DeprecationWarning at import time will abort collection across
+  every test module, which looks like a catastrophic failure rather than a
+  warning. `pyparsing` is capped `<3.3` for exactly this reason — see the comment
+  in `pyproject.toml` and the matching rule in `renovate.json`. Lift both
+  together or neither.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `src/dbml_sharepoint/analysis/` | Validation. `checks/` holds the individual rules |
+| `src/dbml_sharepoint/generators/` | Emit deploy.js, rollback.js, assess.js, reporting |
+| `src/dbml_sharepoint/templates/` | Jinja templates for the emitted JS |
+| `src/dbml_sharepoint/model/` | Mapping parsing and types |
+| `templates/` | The 30 shipped list templates (schema + mapping per family) |
+| `test/manual/` | Live-site probes. Transcripts are gitignored and a test enforces that no tracked file under these names references a tenant |
+| `website/` | Docusaurus docs. `docs/api/` is generated and committed |
+
+A generator must never import from `analysis/checks/`. Where both sides need the
+same fact, it lives in a shared module — `analysis/joins.py` is the worked
+example.
+
+## Safety
+
+Anything that writes must read back and verify. Anything uncertain must fail
+closed with a named error. Undocumented SharePoint surfaces need live proof and
+the strictest guards in the codebase. A pull request that weakens a guard has to
+argue for it explicitly.
