@@ -3,10 +3,12 @@ import ast
 from pathlib import Path
 
 from _builders import ID_PK, TITLE, table
+from _findings import by_severity, none_of, only
 from _packs import pack, write_dbml
 from _paths import PACKAGE
 from _validator_helpers import _calculated_form_inputs, _view_errors, _view_inputs
 
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
@@ -29,12 +31,8 @@ def test_field_set_on_unknown_entity_is_error(tmp_path: Path) -> None:
             header: [Title]
         """,
     )
-    assert any(
-        "field_sets" in f.message
-        and "Widget" in f.message
-        and "unknown entity" in f.message
-        for f in errors
-    )
+    f = only(errors, FindingCode.UNKNOWN_ENTITY)
+    assert f.location == Location(Section.FIELD_SETS, entity="Widget")
 
 def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
     """The declaration message is the one that says where to fix it."""
@@ -50,10 +48,15 @@ def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
               fields: ["@header"]
         """,
     )
-    assert any(
-        "field_sets[Project].header" in f.message and "Nope" in f.message
-        for f in errors
+    # The view that expanded the set reports the same code against ITS own
+    # location, so the declaration is picked out by where it is.
+    at_set = Location(Section.FIELD_SETS, entity="Project", sub="header")
+    declared = only(
+        [f for f in errors if f.location == at_set], FindingCode.COLUMN_NOT_RENDERED,
     )
+    assert "Nope" in declared.message
+    # 'Title' is a real column; naming it here would send the author to fix
+    # something that is not broken.
     assert not any("'Title'" in f.message for f in errors)
 
 def test_view_referencing_an_undeclared_field_set_is_error(tmp_path: Path) -> None:
@@ -69,11 +72,10 @@ def test_view_referencing_an_undeclared_field_set_is_error(tmp_path: Path) -> No
               fields: ["@headr"]
         """,
     )
-    assert any("@headr" in f.message and "field set" in f.message for f in errors)
+    f = only(errors, FindingCode.UNKNOWN_FIELD_SET_REFERENCE)
+    assert "@headr" in f.message
     # One precise error, not that plus a confusing "not a rendered column".
-    assert not any(
-        "rendered column" in f.message and "headr" in f.message for f in errors
-    )
+    none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
 
 def test_field_set_name_cannot_contain_the_reference_marker(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -84,10 +86,8 @@ def test_field_set_name_cannot_contain_the_reference_marker(tmp_path: Path) -> N
             "hea@der": [Title]
         """,
     )
-    assert any(
-        "field_sets[Project].hea@der" in f.message and "'@'" in f.message
-        for f in errors
-    )
+    f = only(errors, FindingCode.FIELD_SET_NAME_HAS_MARKER)
+    assert f.location == Location(Section.FIELD_SETS, entity="Project", sub="hea@der")
 
 def test_empty_field_set_is_error(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -98,10 +98,8 @@ def test_empty_field_set_is_error(tmp_path: Path) -> None:
             header: []
         """,
     )
-    assert any(
-        "field_sets[Project].header" in f.message and "empty" in f.message
-        for f in errors
-    )
+    f = only(errors, FindingCode.FIELD_SET_EMPTY)
+    assert f.location == Location(Section.FIELD_SETS, entity="Project", sub="header")
 
 def test_valid_field_set_produces_no_errors(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -136,13 +134,12 @@ def test_unreferenced_field_set_is_a_warning(tmp_path: Path) -> None:
         """,
     )
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "warning"
-        and "field_sets[Project].orphan" in f.message
-        and "@orphan" in f.message
-        for f in findings
-    )
-    assert not any("field_sets[Project].header" in f.message for f in findings)
+    # Exactly one: `header` IS referenced, so only `orphan` is reported.
+    f = only(findings, FindingCode.FIELD_SET_UNREFERENCED)
+    assert f.severity == "warning"
+    assert f.location == Location(Section.FIELD_SETS, entity="Project", sub="orphan")
+    # The '@' token the author would have had to type, not the bare set name.
+    assert "@orphan" in f.message
 
 def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
     """Expansion runs first, so the column is stripped from every view that
@@ -168,14 +165,11 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
     )
     findings = validate_against_mapping(schema, bundle)
     assert bundle.mapping.views["Project"][0].fields == ["Title"]
-    assert any(
-        f.severity == "warning"
-        and "field_sets[Project].header" in f.message
-        and "'Status'" in f.message
-        and "retired" in f.message
-        for f in findings
-    )
-    assert not [f for f in findings if f.severity == "error"]
+    f = only(findings, FindingCode.RETIRED_COLUMN_IN_FIELD_SET)
+    assert f.severity == "warning"
+    assert f.location == Location(Section.FIELD_SETS, entity="Project", sub="header")
+    assert "'Status'" in f.message
+    assert not by_severity(findings, "error")
 
 def test_view_formatting_may_only_read_columns_the_view_displays(tmp_path: Path) -> None:
     """SharePoint resolves a view formatter's [$Field] against the columns
@@ -195,9 +189,9 @@ def test_view_formatting_may_only_read_columns_the_view_displays(tmp_path: Path)
               formatting: { additionalRowClass: "=if([$Status] == 'Open', 'x', '')" }
         """,
     )
-    assert any(
-        "Status" in f.message and "V" in f.message for f in errors
-    ), f"a formatter reading a column the view does not show must be refused: {errors}"
+    f = only(errors, FindingCode.FORMATTER_FIELD_NOT_DISPLAYED)
+    assert f.location == Location(Section.VIEWS, entity="Project", view="V")
+    assert "Status" in f.message
 
     # The same reference is fine once the view actually shows the column.
     ok = _view_errors(
@@ -225,9 +219,8 @@ def test_view_formatting_may_only_read_system_columns_the_view_displays(
               formatting: { additionalRowClass: "=if([$Created] != '', 'x', '')" }
         """,
     )
-    assert any("Created" in f.message and "does not display" in f.message for f in errors), (
-        f"a formatter cannot read an omitted system column: {errors}"
-    )
+    f = only(errors, FindingCode.FORMATTER_FIELD_NOT_DISPLAYED)
+    assert "Created" in f.message
 
     ok = _view_errors(
         tmp_path,
@@ -262,9 +255,8 @@ def test_a_form_header_may_not_read_a_calculated_column(tmp_path: Path) -> None:
     errors = [
         f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
     ]
-    assert any(
-        "Band" in f.message and "calculated" in f.message.lower() for f in errors
-    ), f"a header reading a calculated column must be refused: {errors}"
+    f = only(errors, FindingCode.FORM_PART_REFERENCES_CALCULATED_COLUMN)
+    assert "Band" in f.message
 
     # A non-calculated reference is fine, and so is the same calculated
     # column named in a body section.
@@ -349,7 +341,7 @@ def test_group_by_need_not_be_one_of_the_views_own_fields(tmp_path: Path) -> Non
               group_by: { field: Status }
         """,
     )
-    assert not [f for f in errors if "group_by" in f.message], errors
+    none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
 
 def test_group_by_on_an_unknown_column_is_still_refused(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -362,7 +354,8 @@ def test_group_by_on_an_unknown_column_is_still_refused(tmp_path: Path) -> None:
               group_by: { field: Ghost }
         """,
     )
-    assert any("Ghost" in f.message for f in errors), errors
+    f = only(errors, FindingCode.COLUMN_NOT_RENDERED)
+    assert "Ghost" in f.message
 
 def test_group_by_in_the_views_fields_is_accepted(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -375,7 +368,7 @@ def test_group_by_in_the_views_fields_is_accepted(tmp_path: Path) -> None:
               group_by: { field: Status }
         """,
     )
-    assert not [f for f in errors if "group_by" in f.message], errors
+    none_of(errors, FindingCode.COLUMN_NOT_RENDERED)
 
 def test_a_body_section_hidden_from_every_form_is_refused(tmp_path: Path) -> None:
     """The section renders as a heading with nothing under it. Asserted of a
@@ -397,9 +390,8 @@ def test_a_body_section_hidden_from_every_form_is_refused(tmp_path: Path) -> Non
         """,
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    assert any(
-        "Hidden" in f.message and "bare heading" in f.message for f in errors
-    ), errors
+    f = only(errors, FindingCode.FORM_SECTION_ENTIRELY_HIDDEN)
+    assert "Hidden" in f.message
 
 def test_the_last_section_may_be_empty_because_it_is_the_catch_all(tmp_path: Path) -> None:
     """Learn: "A column not referenced in any of the sections will be
@@ -422,7 +414,7 @@ def test_the_last_section_may_be_empty_because_it_is_the_catch_all(tmp_path: Pat
         """,
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    assert not [f for f in errors if "bare heading" in f.message], errors
+    none_of(errors, FindingCode.FORM_SECTION_ENTIRELY_HIDDEN)
 
 def test_a_column_in_no_section_warns_rather_than_failing(tmp_path: Path) -> None:
     """It is drift, not breakage: SharePoint appends the column to the last
@@ -440,9 +432,11 @@ def test_a_column_in_no_section_warns_rather_than_failing(tmp_path: Path) -> Non
         """,
     )
     findings = validate_against_mapping(schema, bundle)
-    assert not [f for f in findings if f.severity == "error"], findings
-    warnings = [f for f in findings if f.severity == "warning"]
-    assert any("Score" in f.message and "Band" in f.message for f in warnings), warnings
+    assert not by_severity(findings, "error"), findings
+    f = only(findings, FindingCode.FORM_COLUMNS_IN_NO_SECTION)
+    assert f.severity == "warning"
+    # Both unplaced columns must be named: the author has to know which.
+    assert "Score" in f.message and "Band" in f.message
 
 def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
     """Retirement STRIPS a column from body sections on purpose, and warns
@@ -462,10 +456,9 @@ def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
                 - { displayname: Main, fields: [Title, Band] }
         """,
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert not [
-        f for f in findings if f.severity == "warning" and "in no section" in f.message
-    ], findings
+    none_of(
+        validate_against_mapping(schema, bundle), FindingCode.FORM_COLUMNS_IN_NO_SECTION,
+    )
 
 def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
     """A library's items ARE files. demo-data.js posts to /items, which asks
@@ -490,10 +483,9 @@ def test_demo_items_on_a_document_library_are_refused(tmp_path: Path) -> None:
         """,
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    assert any(
-        "DocumentLibrary" in f.message and "SPFileCollection.Add()" in f.message
-        for f in errors
-    ), errors
+    f = only(errors, FindingCode.DEMO_ROWS_ON_DOCUMENT_LIBRARY)
+    # SharePoint's own words, quoted so the operator can search for them.
+    assert "SPFileCollection.Add()" in f.message
 
 def test_a_document_library_entity_is_refused_outright(tmp_path: Path) -> None:
     """`kind: DocumentLibrary` fails the build, with or without demo rows.
@@ -519,10 +511,9 @@ def test_a_document_library_entity_is_refused_outright(tmp_path: Path) -> None:
         """,
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    offending = [f for f in errors if "not supported" in f.message]
-    assert offending, errors
-    assert "entities[Docs]" in offending[0].message
-    assert "List" in offending[0].message, "the message must name the supported shape"
+    f = only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
+    assert f.location == Location(Section.ENTITIES, entity="Docs")
+    assert "List" in f.message, "the message must name the supported shape"
 
 def test_a_list_declaring_a_non_generic_base_template_is_refused(tmp_path: Path) -> None:
     """The refusal above says "model the metadata as a 'List'". An author who
@@ -550,9 +541,9 @@ def test_a_list_declaring_a_non_generic_base_template_is_refused(tmp_path: Path)
         errors = [
             f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
         ]
-        assert any(
-            "entities[Docs]" in f.message and str(template) in f.message for f in errors
-        ), f"base_template {template} was accepted: {errors}"
+        f = only(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
+        assert f.location == Location(Section.ENTITIES, entity="Docs")
+        assert str(template) in f.message, f"the refused number must be named: {f.message}"
 
 def test_a_document_library_reports_the_kind_not_the_base_template(tmp_path: Path) -> None:
     """The two checks are one `elif`, so `kind: DocumentLibrary` with its
@@ -567,6 +558,5 @@ def test_a_document_library_reports_the_kind_not_the_base_template(tmp_path: Pat
         """,
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    about_entity = [f for f in errors if "entities[Docs]" in f.message]
-    assert len(about_entity) == 1, about_entity
-    assert "DocumentLibrary" in about_entity[0].message
+    only(errors, FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED)
+    none_of(errors, FindingCode.UNSUPPORTED_BASE_TEMPLATE)
