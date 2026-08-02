@@ -507,10 +507,12 @@ operands already are.
   view. Keep aliases declared so sites that skip releases can still upgrade.
 - Every deployed list also gets a managed **All Items** recovery view. It
   has no filter and contains every rendered schema column plus `ID`,
-  `Created`, `Modified`, `Author` and `Editor`. It is the default view only
-  when no authored view declares `default: true`; otherwise it is hidden from
-  the modern view bar. The title is reserved and cannot be overridden in
-  `views:`.
+  `Created`, `Modified`, `Author` and `Editor`, less anything the entity
+  names in [`hide_from_all_items`](#entities) — the escape hatch for an
+  entity that carries more join-bearing columns than one view may
+  render. It is the default view only when no authored view declares
+  `default: true`; otherwise it is hidden from the modern view bar. The
+  title is reserved and cannot be overridden in `views:`.
 - Other undeclared views are user content and are never touched.
 
 ## `display_names`
