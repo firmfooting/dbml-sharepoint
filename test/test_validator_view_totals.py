@@ -2,21 +2,15 @@
 from pathlib import Path
 
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, pack, write_dbml
+from _packs import blocks, entities, entity, pack, with_tail
 from _validator_helpers import _calculated_form_inputs, _view_errors
 
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate_against_mapping,
 )
-from dbml_sharepoint.model.mapping_loader import (
-    MappingBundle,
-    load_mapping,
-)
-from dbml_sharepoint.model.parser import (
-    Schema,
-    parse_dbml,
-)
+from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.parser import Schema
 
 # --- Declared view totals ---------------------------------------------------
 
@@ -102,21 +96,18 @@ def _hyperlink_demo(tmp_path: Path, value: str) -> list[Finding]:
     demo planner and the demo VALIDATOR are separate readers of the same
     authored value, and a form one accepts and the other refuses never
     reaches generation."""
-    write_dbml(tmp_path, table("Doc", ID_PK, TITLE, "Link hyperlink"))
-    # The mapping stays hand-rolled: `value` is interpolated into it.
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Doc: { kind: List, base_template: 100, site_role: default }\n"
-        "demo_items:\n"
-        "  Doc:\n"
-        "    - key: d1\n"
-        "      values:\n"
-        '        Title: "[DEMO] A row"\n'
-        f"        Link: {value}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Doc", ID_PK, TITLE, "Link hyperlink"),
+        mapping=blocks(entities("Doc"), f"""
+            demo_items:
+              Doc:
+                - key: d1
+                  values:
+                    Title: "[DEMO] A row"
+                    Link: {value}
+        """),
     )
-    schema, bundle = parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
     return [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
 
 def test_a_hyperlink_demo_value_may_be_a_bare_url(tmp_path: Path) -> None:
@@ -213,36 +204,31 @@ def test_a_lookup_targets_display_column_counts_as_an_index(tmp_path: Path) -> N
 
 def _cross_site_only_target(tmp_path: Path, *, calculated: bool) -> tuple[Schema, MappingBundle]:
     """FlowRunLog is pointed at by exactly one ref, and that ref is cross-site."""
-    display = "  Label calculated_text\n" if calculated else "  Label nvarchar\n"
+    label = "Label calculated_text" if calculated else "Label nvarchar"
     formulas = (
-        "calculated_formulas:\n  FlowRunLog:\n    Label: \"=[Title]\"\n"
-        if calculated else ""
+        """
+        calculated_formulas:
+          FlowRunLog:
+            Label: "=[Title]"
+        """
+        if calculated
+        else ""
     )
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table FlowRunLog {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        + display +
-        "}\n"
-        "Table Request {\n"
-        "  Id int [pk, increment]\n"
-        "  Origin int [ref: > FlowRunLog.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    return pack(
+        tmp_path,
+        dbml=blocks(
+            table("FlowRunLog", ID_PK, "Title nvarchar", label),
+            table("Request", ID_PK, "Origin int [ref: > FlowRunLog.Id]"),
+        ),
+        mapping=blocks(
+            entities(entity("FlowRunLog", display_column="Label"), "Request"),
+            """
+            cross_site_reference_columns:
+              - { entity: Request, column: Origin }
+            """,
+            formulas,
+        ),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  FlowRunLog: { kind: List, base_template: 100, site_role: default, "
-        "display_column: Label }\n"
-        "  Request: { kind: List, base_template: 100, site_role: default }\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Request, column: Origin }\n"
-        + formulas,
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 def test_a_cross_site_only_target_spends_no_index(tmp_path: Path) -> None:
     """A cross-site ref becomes a Choice + URL pair on the SOURCE list. Nothing
@@ -312,18 +298,25 @@ _SHAPE_SCHEMA = table(
 )
 
 def _shape_warnings(tmp_path: Path, where: str) -> list[str]:
-    # `where` arrives already indented to sit under the view entry, so it is
-    # appended to the block rather than passed to `blocks`, which would dedent
-    # it flush and reparent it.
+    """The list-view-threshold warnings for one `where` clause on view `V`.
+
+    `where` arrives already indented six spaces to sit under the view entry, so
+    it goes through `with_tail`, which appends it VERBATIM. `blocks` would dedent
+    it against its own margin and reparent `where:` to the top level of the
+    mapping — still valid YAML, silently a different document, and the view would
+    have no filter at all. That is why each caller spells its fragment flush
+    against the left margin with the six spaces written out: what you read is
+    what the file gets.
+    """
     schema, bundle = pack(
         tmp_path,
         dbml=_SHAPE_SCHEMA,
-        mapping=blocks(entities("Job"), """
+        mapping=entities("Job") + with_tail("""
             views:
               Job:
                 - title: V
                   fields: [Title, Status, DueDate]
-        """) + where,
+        """, where),
     )
     return [
         f.message
@@ -336,23 +329,25 @@ def test_an_or_needs_every_branch_indexed(tmp_path: Path) -> None:
     branch is still a row SharePoint has to find, so an indexed branch beside
     an unindexed one buys nothing — and scoring it safe because SOME filtered
     column is indexed is how a scanning view passes validation."""
-    assert len(_shape_warnings(
-        tmp_path,
-        "      where:\n"
-        "        any_of:\n"
-        "          - { field: Status, op: eq, value: Open }\n"
-        "          - { field: DueDate, op: leq, value: today }\n",
-    )) == 1
+    # Flush against the left margin on purpose: the six spaces are load-bearing
+    # and `_shape_warnings` appends this verbatim. See its docstring.
+    where = """\
+      where:
+        any_of:
+          - { field: Status, op: eq, value: Open }
+          - { field: DueDate, op: leq, value: today }
+"""
+    assert len(_shape_warnings(tmp_path, where)) == 1
 
 def test_an_or_with_every_branch_indexed_is_quiet(tmp_path: Path) -> None:
     """Both branches narrow, so neither forces a scan."""
-    assert _shape_warnings(
-        tmp_path,
-        "      where:\n"
-        "        any_of:\n"
-        "          - { field: Status, op: eq, value: Open }\n"
-        "          - { field: Status, op: eq, value: Held }\n",
-    ) == []
+    where = """\
+      where:
+        any_of:
+          - { field: Status, op: eq, value: Open }
+          - { field: Status, op: eq, value: Held }
+"""
+    assert _shape_warnings(tmp_path, where) == []
 
 def test_an_and_needs_only_one_branch_indexed(tmp_path: Path) -> None:
     """Measured at 6,000 items: an unindexed comparison refused on its own is
@@ -360,9 +355,9 @@ def test_an_and_needs_only_one_branch_indexed(tmp_path: Path) -> None:
     the index rather than taking the first column and stopping. So an AND is
     covered by one indexed condition wherever it sits, and this test is what
     stops the OR rule above being applied to both."""
-    assert _shape_warnings(
-        tmp_path,
-        "      where:\n"
-        "        - { field: Status, op: eq, value: Open }\n"
-        "        - { field: DueDate, op: leq, value: today }\n",
-    ) == []
+    where = """\
+      where:
+        - { field: Status, op: eq, value: Open }
+        - { field: DueDate, op: leq, value: today }
+"""
+    assert _shape_warnings(tmp_path, where) == []
