@@ -7,6 +7,8 @@ place that data exists.
 """
 
 import pytest
+from _findings import none_of, only
+from _paths import PACKAGE
 
 from dbml_sharepoint.analysis.findings import (
     Finding,
@@ -80,3 +82,56 @@ def test_severity_is_declared_exactly_once() -> None:
             if isinstance(node, ast.TypeAlias) and node.name.id == "Severity":
                 declared.append(path.name)
     assert declared == ["findings.py"], declared
+
+
+# --- The assertion helpers, and the catalogue guard --------------------------
+
+
+def test_only_returns_the_single_finding_with_that_code() -> None:
+    f = Finding(FindingCode.UNKNOWN_ENTITY, "error", "x")
+    assert only([f], FindingCode.UNKNOWN_ENTITY) is f
+
+
+def test_only_names_what_it_found_when_the_code_is_absent() -> None:
+    """A bare `assert len(x) == 1` reports a count. The count is never the
+    interesting part -- which rule fired instead is."""
+    with pytest.raises(AssertionError, match="unknown_entity"):
+        only(
+            [Finding(FindingCode.UNKNOWN_ENTITY, "error", "x")],
+            FindingCode.EXTENSION_REPORTED,
+        )
+
+
+def test_none_of_names_the_offender() -> None:
+    with pytest.raises(AssertionError, match="expected no unknown_entity"):
+        none_of([Finding(FindingCode.UNKNOWN_ENTITY, "error", "boom")],
+                FindingCode.UNKNOWN_ENTITY)
+
+
+def test_every_code_is_documented() -> None:
+    """The enum is the rule catalogue, so the catalogue has to be readable.
+
+    A code with no row is a rule nobody can look up. A row with no code is a
+    rule that no longer exists and will mislead the next reader. Four agents
+    classified 194 rules across disjoint modules and every one of them
+    maintained this file by hand; nothing until now checked that they agreed.
+    """
+    import re
+
+    doc = PACKAGE.parent.parent / "website" / "docs" / "reference" / "findings.md"
+    rows = {
+        m.group(1)
+        for m in re.finditer(
+            r"^\| `([a-z0-9_]+)` \|", doc.read_text(encoding="utf-8"), re.MULTILINE,
+        )
+    }
+    declared = {str(c) for c in FindingCode}
+    assert declared - rows == set(), f"undocumented: {sorted(declared - rows)}"
+    assert rows - declared == set(), f"stale rows: {sorted(rows - declared)}"
+
+
+def test_no_finding_is_unclassified() -> None:
+    """UNCLASSIFIED was migration scaffolding. Its absence is the proof the
+    migration finished, and its re-appearance would mean a new rule shipped
+    without a name."""
+    assert "UNCLASSIFIED" not in FindingCode.__members__
