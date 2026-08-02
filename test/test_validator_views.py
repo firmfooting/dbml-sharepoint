@@ -3,14 +3,11 @@ from pathlib import Path
 
 import pytest
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, pack, write_dbml
+from _packs import blocks, entities, entity, pack, write_dbml
 from _validator_helpers import _view_errors, _view_inputs
 
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
-)
-from dbml_sharepoint.model.mapping_loader import (
-    load_mapping,
 )
 from dbml_sharepoint.model.parser import (
     TableIndex,
@@ -227,40 +224,25 @@ def test_view_filtered_on_lookup_targets_display_column_does_not_warn(
     that silenced it completely could not pass the first half vacuously.
     """
     filtered_column = display_column or "Title"
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Event {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Label nvarchar\n"
-        "  Status nvarchar\n"
-        "}\n"
-        "Table FollowUp {\n"
-        "  Id int [pk, increment]\n"
-        "  Event int [ref: > Event.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    event = entity("Event", display_column=display_column) if display_column else "Event"
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Event", ID_PK, TITLE, "Label nvarchar", "Status nvarchar"),
+            table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
+        ),
+        mapping=blocks(entities(event, "FollowUp"), f"""
+            views:
+              Event:
+                - title: Filtered by display
+                  fields: [Title, Label, Status]
+                  where: [{{ field: {filtered_column}, op: eq, value: X }}]
+                - title: Filtered by other
+                  fields: [Title, Label, Status]
+                  where: [{{ field: Status, op: eq, value: Y }}]
+        """),
     )
-    display_clause = f", display_column: {display_column}" if display_column else ""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        f"  Event: {{ kind: List, base_template: 100, site_role: default"
-        f"{display_clause} }}\n"
-        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
-        "views:\n"
-        "  Event:\n"
-        "    - title: Filtered by display\n"
-        "      fields: [Title, Label, Status]\n"
-        f"      where: [{{ field: {filtered_column}, op: eq, value: X }}]\n"
-        "    - title: Filtered by other\n"
-        "      fields: [Title, Label, Status]\n"
-        "      where: [{ field: Status, op: eq, value: Y }]\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     threshold_warnings = [
         f.message for f in findings
         if f.severity == "warning" and "list view threshold" in f.message
@@ -481,10 +463,12 @@ def test_authored_views_cannot_take_the_generated_all_items_url(
 ) -> None:
     errors = _view_errors(
         tmp_path,
-        "views:\n"
-        "  Project:\n"
-        f"    - title: {title}\n"
-        "      fields: [Title]\n",
+        f"""
+        views:
+          Project:
+            - title: {title}
+              fields: [Title]
+        """,
     )
     assert any("AllItems.aspx" in f.message for f in errors)
 
@@ -557,16 +541,18 @@ def test_rendered_validation_formula_length_is_checked(tmp_path: Path) -> None:
     values = ", ".join(f"'value-{i}-{'x' * 40}'" for i in range(24))
     errors = _view_errors(
         tmp_path,
-        "list_validation:\n"
-        "  Project:\n"
-        f"    when: [{{ field: Status, op: in, value: [{values}] }}]\n"
-        "    message: Too long.\n"
-        "column_validation:\n"
-        "  Project:\n"
-        "    columns:\n"
-        "      Status:\n"
-        f"        when: [{{ field: Status, op: in, value: [{values}] }}]\n"
-        "        message: Too long.\n",
+        f"""
+        list_validation:
+          Project:
+            when: [{{ field: Status, op: in, value: [{values}] }}]
+            message: Too long.
+        column_validation:
+          Project:
+            columns:
+              Status:
+                when: [{{ field: Status, op: in, value: [{values}] }}]
+                message: Too long.
+        """,
     )
     overlong = [f.message for f in errors if "1024" in f.message]
     assert any("list_validation" in message for message in overlong)
