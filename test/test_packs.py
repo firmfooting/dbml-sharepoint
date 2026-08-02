@@ -10,7 +10,16 @@ from pathlib import Path
 
 import pytest
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, entity, pack, replaced, write_dbml, write_mapping
+from _packs import (
+    blocks,
+    entities,
+    entity,
+    pack,
+    replaced,
+    with_tail,
+    write_dbml,
+    write_mapping,
+)
 
 
 def test_entity_emits_one_indented_line() -> None:
@@ -77,6 +86,36 @@ def test_entities_accepts_a_prebuilt_line_alongside_bare_names() -> None:
         "  Event: { kind: List, base_template: 100, site_role: default, "
         "display_column: EventRef }\n"
     )
+
+
+def test_with_tail_leaves_the_tail_indentation_alone() -> None:
+    """The tail's indentation says where it goes, so it must survive verbatim.
+
+    This is the case `blocks()` gets wrong: it would dedent the four-space tail
+    flush and reparent `views:` from under `Project` to the top level of the
+    document — still valid YAML, silently a different mapping.
+    """
+    assert with_tail("""
+        entities:
+          Project:
+            kind: List
+    """, "    views: []\n") == (
+        "entities:\n  Project:\n    kind: List\n    views: []\n"
+    )
+
+
+def test_with_tail_matches_blocks_when_the_tail_is_flush() -> None:
+    """Where the tail is a top-level section, the two agree — the difference
+    only shows up for a tail whose indent is load-bearing."""
+    body = """
+        entities:
+          Project: {}
+    """
+    assert with_tail(body, "views: []\n") == blocks(body, "views: []\n")
+
+
+def test_with_tail_accepts_an_absent_tail() -> None:
+    assert with_tail("a: 1\n") == "a: 1\n"
 
 
 def test_blocks_refuses_a_bare_entity_line() -> None:
