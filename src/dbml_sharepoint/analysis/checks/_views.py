@@ -11,6 +11,14 @@ from dbml_sharepoint.analysis.conditions import (
     normalise,
     validate_condition,
 )
+from dbml_sharepoint.analysis.joins import (
+    JOIN_LIMIT,
+    JOIN_WARN_AT,
+    all_items_joining_fields,
+    all_items_rendered,
+    join_bearing_columns,
+    joining_fields,
+)
 from dbml_sharepoint.analysis.typemap import (
     NUMERIC_ONLY_TOTALS,
     UNSUPPORTED_INDEX_TYPES,
@@ -283,6 +291,52 @@ def _index_covered(node: Condition, indexed: frozenset[str] | set[str]) -> bool:
     return all(_index_covered(child, indexed) for child in node.children)
 
 
+def _join_finding(subject: str, columns: list[str], remedy: str) -> Finding:
+    """One finding about the list view LOOKUP threshold.
+
+    `subject` carries its own punctuation so a declared view reads
+    "views[X].Y: renders ..." while the generated view reads
+    "entities[X]: the generated 'All Items' view renders ...".
+
+    The columns are always named, in the FIRST parenthesised list in the
+    message. Author and Editor are the two nobody expects, and on All Items there
+    is no declaration to read them off. Tests assert against that list, never
+    against the whole message, because `shared` below mentions all four system
+    columns by name unconditionally.
+    """
+    count = len(columns)
+    names = ", ".join(columns)
+    # NOT f-strings: `shared` interpolates nothing, and ruff selects "F", so an
+    # `f` prefix on each of these four parts is 4 x F541
+    # ("f-string without any placeholders") and the lint step below is not
+    # clean. The two Finding(...) groups DO interpolate and keep their prefixes.
+    shared = (
+        "Every Lookup and Person column costs one join, including Created By "
+        "(Author) and Modified By (Editor); Created and Modified are inferred "
+        "to cost nothing, from their datetime type rather than a measurement, "
+        "and a cross-site reference costs nothing because it expands to a "
+        "Choice + URL pair."
+    )
+    if count > JOIN_LIMIT:
+        return Finding(
+            "error",
+            f"{subject} renders {count} join-bearing columns ({names}). "
+            f"SharePoint Online refuses a view query with more than "
+            f"{JOIN_LIMIT} join operations and returns the view BLANK, at any "
+            f"list size — indexing does not help and a small list does not "
+            f"escape it. Measured 2026-07-31 at 6,000 items: 12 rendered, 13 "
+            f"raised SPQueryThrottledException (-2147024749). {shared} {remedy}",
+        )
+    return Finding(
+        "warning",
+        f"{subject} renders {count} join-bearing columns ({names}), against a "
+        f"measured ceiling of {JOIN_LIMIT} join operations per view. That "
+        f"ceiling held on the tenant measured 2026-07-31 at 6,000 items, but 8 "
+        f"was a real limit on some SharePoint farms and the SharePoint Online "
+        f"citation is thin, so this view may not travel. {shared} {remedy}",
+    )
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     bundle = vc.bundle
     tables_by_name = vc.tables_by_name
@@ -366,6 +420,9 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
         # The built-in Title always exists on a provisioned list, declared or not.
+        # This is the DECLARED view's rendered set, not `joins.all_items_rendered`
+        # (the generated All Items one) — same shape, different subject, kept
+        # separate on purpose; do not fold this into that helper.
         view_rendered = _rendered_columns(view_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         # The type map must cover everything view_rendered admits, or a
         # column that IS filterable reports "no declared type" and aborts the
@@ -378,6 +435,12 @@ def check(vc: ValidationContext) -> list[Finding]:
         # Entity-level: the totals check needs it too, and a lookup's DBML
         # type is `int`, so nothing downstream can infer it from the type.
         entity_lookups = {c.name for c in view_table.columns if c.ref is not None}
+        # The list view LOOKUP threshold: one join per rendered Lookup or
+        # Person column, refused above 12 at ANY list size. Derived once per
+        # entity because the per-view count and the All Items count below both
+        # need it. A different limit from the 5,000-item threshold checked
+        # further down; see analysis/joins.py.
+        entity_join_bearing = join_bearing_columns(view_table, xcols)
         titles = [v.title for v in views]
         if "All Items" in titles:
             findings.append(Finding(
@@ -493,6 +556,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{ctx}: {part} references {name!r}, which is not a "
                         f"rendered column of {entity_name}.",
                     ))
+            # Counted on view.fields, which the loader has already expanded, so
+            # a view whose authored fields is ["@core"] is counted on what the
+            # set resolves to rather than as zero.
+            view_joins = joining_fields(view.fields, entity_join_bearing)
+            if len(view_joins) >= JOIN_WARN_AT:
+                findings.append(_join_finding(
+                    f"{ctx}:", view_joins, "Remove fields from this view.",
+                ))
             if view.where is not None:
                 # The shared grammar owns operator, operand and capability
                 # rules for every conditional surface; duplicating them here
@@ -689,5 +760,114 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"column; {total_col!r} is {col_type or 'of unknown type'}. "
                         f"Use 'count', which counts rows rather than adding values.",
                     ))
+
+    # The GENERATED `All Items` view. It is not declared anywhere — jsgen builds
+    # it from every rendered column and appends the system fields — so an entity
+    # crossing the join ceiling breaks a view with no declaration to point at,
+    # and authors are forbidden from declaring one (see the 'All Items' error
+    # above). It is also the RECOVERY view: the one you fall back to when a
+    # working view misbehaves. Author and Editor are appended unconditionally,
+    # so every All Items starts at 2 and an entity's real budget for its own
+    # columns is 10, not 12.
+    for entity_name, entity in bundle.mapping.entities.items():
+        table = tables_by_name.get(entity_name)
+        hide_ctx = f"entities[{entity_name}].hide_from_all_items"
+        # The kind guard mirrors generators/jsgen.py:597, which builds All Items
+        # for everything except a DocumentLibrary. Counting one here would
+        # refuse a schema over a view the generator never creates. An entity
+        # with no table is already reported by _structure; a second message
+        # would not help.
+        #
+        # But a hide_from_all_items key on an entity this loop SKIPS must still
+        # be refused, or the loop silently accepts a key that can never do
+        # anything — which is the opposite of the "a typo must not silently do
+        # nothing" rule the key's own validation exists to enforce. So the key
+        # is answered here, BEFORE the continue: there is no generated view yet
+        # for `all_items_joining_fields` to measure, so nothing downstream
+        # could ever tell the key was honoured.
+        if table is None or entity.kind == "DocumentLibrary":
+            for col_name in entity.hide_from_all_items:
+                findings.append(Finding(
+                    "error",
+                    f"{hide_ctx}: {col_name!r} cannot be hidden — no 'All "
+                    f"Items' view is generated for {entity_name} at all, so "
+                    "this key would silently do nothing.",
+                ))
+            continue
+        xcols = cross_site_by_entity.get(entity_name, set())
+        # `rendered` and `bearing` are the same two building blocks
+        # `all_items_joining_fields` composes internally; bound here as well
+        # because the validations below need the UNDIMINISHED sets — whether a
+        # name renders at all, and whether it costs a join — not the
+        # post-suppression result `shown_joins` carries. Both are genuine
+        # calls into analysis/joins.py, not re-typed copies of its formulas.
+        # `rendered` used to be its own
+        # `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS` written out a
+        # second time in this file — textually identical to the one inside
+        # `all_items_joining_fields`, but a separate expression the escape-hatch
+        # checks below actually read. Dropping a term from either copy alone
+        # left the other's callers unaffected, which is how that drift went
+        # undetected; see `all_items_rendered`'s docstring in joins.py and
+        # `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` in
+        # test/test_validator.py.
+        rendered = all_items_rendered(table, xcols)
+        bearing = join_bearing_columns(table, xcols)
+        shown_joins = all_items_joining_fields(table, entity, xcols)
+        if len(shown_joins) >= JOIN_WARN_AT:
+            findings.append(_join_finding(
+                f"entities[{entity_name}]: the generated 'All Items' view",
+                shown_joins,
+                f"'All Items' is generated from every rendered column, so there "
+                f"is no declaration to edit: drop join-bearing columns from "
+                f"{entity_name}, or name them in hide_from_all_items on "
+                f"entities[{entity_name}].",
+            ))
+        # The escape hatch's own rules. Order matters: a cross-site ref is not
+        # in `rendered` under its own name either (it expands to
+        # <col>Abbreviation / <col>SiteUrl), so without this branch first it
+        # would report as a typo and the author would go looking for one.
+        #
+        # `hide_ctx` is ALREADY BOUND at the top of this loop, above the
+        # `continue` that skips a DocumentLibrary or a table-less entity — the
+        # skipped case refuses the key there. Do not re-assign it here.
+        for col_name in entity.hide_from_all_items:
+            if col_name in xcols:
+                findings.append(Finding(
+                    "error",
+                    f"{hide_ctx}: {col_name!r} is a cross-site reference. It "
+                    f"expands to a Choice + URL pair, so no Lookup exists and "
+                    f"it costs no join operation — hiding it removes columns "
+                    f"from the recovery view and buys nothing.",
+                ))
+            elif col_name not in rendered:
+                findings.append(Finding(
+                    "error",
+                    f"{hide_ctx}: {col_name!r} is not a column the generated "
+                    f"'All Items' view renders on {entity_name}, so hiding it "
+                    f"would silently do nothing. Check the spelling.",
+                ))
+            elif col_name not in bearing:
+                findings.append(Finding(
+                    "error",
+                    f"{hide_ctx}: {col_name!r} costs no join operation, and "
+                    f"only a join-bearing column may be hidden. 'All Items' "
+                    f"renders every column for a reason; the list view lookup "
+                    f"threshold is the one exception this key exists for, not "
+                    f"a general hide-this facility.",
+                ))
+        if entity.hide_from_all_items:
+            # Judged on the UNSUPPRESSED count, because the question is whether
+            # the entity needed the key at all. Mirrors the pointless
+            # accept_unindexable_display_column warning in _structure.py.
+            unsuppressed = joining_fields(rendered, bearing)
+            if len(unsuppressed) <= JOIN_LIMIT:
+                findings.append(Finding(
+                    "warning",
+                    f"entities[{entity_name}]: hide_from_all_items is set, but "
+                    f"'All Items' renders {len(unsuppressed)} join-bearing "
+                    f"columns with nothing hidden, within the measured ceiling "
+                    f"of {JOIN_LIMIT}. Remove it — it degrades the recovery "
+                    f"view for nothing.",
+                ))
 
     return findings
