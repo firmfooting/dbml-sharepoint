@@ -2,20 +2,14 @@
 from pathlib import Path
 
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, pack, with_tail, write_mapping
+from _packs import blocks, entities, entity, pack, with_tail
 
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate_against_mapping,
 )
-from dbml_sharepoint.model.mapping_loader import (
-    MappingBundle,
-    load_mapping,
-)
-from dbml_sharepoint.model.parser import (
-    Schema,
-    parse_dbml,
-)
+from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.parser import Schema
 
 # --- View join threshold (the list view LOOKUP threshold, not the item count) ---
 
@@ -100,12 +94,16 @@ def _named(message: str) -> list[str]:
     return message.split("(", 1)[1].split(")", 1)[0].split(", ")
 
 def _view_block(title: str, fields: list[str]) -> str:
-    return (
-        "views:\n"
-        "  Project:\n"
-        f"    - title: {title}\n"
-        f"      fields: [{', '.join(fields)}]\n"
-    )
+    """One declared view on Project, as a flush top-level `views:` section.
+
+    Flush, so it is safe to hand to `blocks()` or to use as a `_join_inputs`
+    mapping tail that opens a new top-level section."""
+    return blocks(f"""
+        views:
+          Project:
+            - title: {title}
+              fields: [{', '.join(fields)}]
+    """)
 
 def test_a_view_with_eight_join_columns_is_silent(tmp_path: Path) -> None:
     """Under every figure ever documented, anywhere. The subject filter matters:
@@ -207,12 +205,16 @@ def test_a_cross_site_ref_costs_no_join_in_a_view(tmp_path: Path) -> None:
     schema, bundle = _join_inputs(
         tmp_path,
         _persons(12) + "  Elsewhere int [ref: > Person.Id]\n",
-        _view_block(
-            "Wide",
-            ["Title", *twelve, "ElsewhereAbbreviation", "ElsewhereSiteUrl"],
-        )
-        + "cross_site_reference_columns:\n"
-        "  - { entity: Project, column: Elsewhere }\n",
+        blocks(
+            _view_block(
+                "Wide",
+                ["Title", *twelve, "ElsewhereAbbreviation", "ElsewhereSiteUrl"],
+            ),
+            """
+            cross_site_reference_columns:
+              - { entity: Project, column: Elsewhere }
+            """,
+        ),
     )
     found = _join_findings(schema, bundle, "views[Project].Wide")
     assert len(found) == 1
@@ -234,13 +236,14 @@ def test_a_view_declaring_a_field_set_counts_the_join_columns_it_expands_to(
     schema, bundle = _join_inputs(
         tmp_path,
         _persons(13),
-        "field_sets:\n"
-        "  Project:\n"
-        f"    wide: [{thirteen}]\n"
-        "views:\n"
-        "  Project:\n"
-        "    - title: Wide\n"
-        '      fields: [Title, "@wide"]\n',
+        blocks(
+            f"""
+            field_sets:
+              Project:
+                wide: [{thirteen}]
+            """,
+            _view_block("Wide", ["Title", '"@wide"']),
+        ),
     )
     found = _join_findings(schema, bundle, "views[Project].Wide")
     assert len(found) == 1
@@ -372,30 +375,24 @@ def test_a_document_library_gets_no_all_items_join_finding(
     `kind: DocumentLibrary` is separately an ERROR from `_structure.py:101-111`,
     so this build is already red for another reason. That is not a licence to
     skip the guard — it is why the guard is easy to delete unnoticed."""
-    library = """
-        entities:
-          Person: { kind: List, base_template: 100, site_role: default }
-          Project:
-            kind: DocumentLibrary
-            base_template: 100
-            site_role: default
-    """
-    # The schema stays hand-rolled: `_persons` is interpolated into it.
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Person {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        f"{_persons(13)}"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        # `_persons` arrives already indented to sit inside the Project block,
+        # so it is appended verbatim rather than dedented — as in `_join_inputs`.
+        dbml=with_tail(
+            """
+            Table Person {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+            Table Project {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            """,
+            _persons(13) + "}\n",
+        ),
+        mapping=entities("Person", entity("Project", kind="DocumentLibrary")),
     )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(write_mapping(tmp_path, library))
     assert _join_findings(schema, bundle, "entities[Project]") == []
 
     # The pair. The identical schema declared `kind: List` DOES error, so the
@@ -449,8 +446,10 @@ def test_a_cross_site_ref_costs_no_join_on_all_items(tmp_path: Path) -> None:
     schema, bundle = _join_inputs(
         tmp_path,
         _persons(10) + "  Elsewhere int [ref: > Person.Id]\n",
-        "cross_site_reference_columns:\n"
-        "  - { entity: Project, column: Elsewhere }\n",
+        blocks("""
+            cross_site_reference_columns:
+              - { entity: Project, column: Elsewhere }
+        """),
     )
     found = _join_findings(schema, bundle, "entities[Project]")
     assert len(found) == 1
@@ -581,9 +580,13 @@ def test_hiding_a_cross_site_ref_errors(tmp_path: Path) -> None:
     schema, bundle = _join_inputs(
         tmp_path,
         columns,
+        # The first line is indented four spaces to land inside the Project
+        # entity; the section after it is top-level and dedents flush.
         "    hide_from_all_items: [Elsewhere]\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Project, column: Elsewhere }\n",
+        + blocks("""
+            cross_site_reference_columns:
+              - { entity: Project, column: Elsewhere }
+        """),
     )
     msgs = _hide_errors(schema, bundle)
     assert len(msgs) == 1
