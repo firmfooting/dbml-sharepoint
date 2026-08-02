@@ -427,7 +427,32 @@ def _reject(target: str, reason: str, context: str) -> ValueError:
     return ValueError(f"{context}: {reason} (target: {target})")
 
 
+#: Characters XML 1.0 forbids outright. Tab, LF and CR are legal and omitted.
+#: Same expression as `test_probes.CONTROL_CHARS`, which guards probe SOURCES;
+#: this guards a value arriving from a mapping and reaching a rendered formula.
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
 def _check(leaf: Leaf, target: str, context: str) -> None:
+    if isinstance(leaf.value, str) and (bad := _CONTROL_CHARS.search(leaf.value)):
+        # XML 1.0 forbids these, so a CAML <Value> containing one is not a
+        # formula SharePoint can parse -- and `_xml_escape` handles &, < and >
+        # only, so nothing downstream removes it. Found by the property suite
+        # (test_conditions_properties), which generated \x1f into a filter
+        # value and got malformed XML back.
+        #
+        # This repository has already paid for this exact class once: a NUL
+        # byte reached generated deploy.js and was invisible to ruff, mypy,
+        # j2lint, the golden comparison and the whole suite -- only git saw it,
+        # as "Bin N -> M bytes". Refusing here is the fails-closed answer;
+        # stripping silently would change the author's declared filter.
+        raise _reject(
+            target,
+            f"value for {leaf.field!r} contains control character "
+            f"{hex(ord(bad.group()))}, which XML forbids and no escaping can "
+            f"carry; remove it from the declared value",
+            context,
+        )
     if leaf.op in DISABLED_PENDING_PROBE.get(target, frozenset()):
         raise _reject(
             target,
