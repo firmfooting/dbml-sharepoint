@@ -7,11 +7,8 @@ import pytest
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, pack, write_mapping
 
-from dbml_sharepoint.analysis.forms import (
-    Severity,
-    compose_visibility,
-    validate_form_visibility,
-)
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.forms import compose_visibility, validate_form_visibility
 from dbml_sharepoint.model.conditions import Condition, parse_condition
 
 TYPES = {"Status": "nvarchar", "Count": "number", "Note": "nvarchar"}
@@ -74,35 +71,65 @@ def test_condition_is_parenthesised_inside_the_gate() -> None:
     )
 
 
-def _findings(**kwargs: object) -> list[tuple[Severity, str]]:
-    base = dict(
-        column="Note", new=True, existing=True, when=None, required=False,
-        has_default=False, is_calculated=False, rendered={"Status", "Count", "Note"},
-        types=TYPES, lookups=set(), context="form_visibility[X]",
+#: Where the declaration under test lives. `form_visibility[X]` is what the
+#: helper used to pass as a bare context string; the path is now derived.
+AT = Location(Section.FORM_VISIBILITY, entity="X")
+
+
+def _findings(
+    *,
+    column: str = "Note",
+    new: bool = True,
+    existing: bool = True,
+    when: Condition | None = None,
+    required: bool = False,
+    has_default: bool = False,
+    is_calculated: bool = False,
+) -> list[Finding]:
+    """One column's declaration, defaulted to the harmless case.
+
+    Spelled out rather than `**kwargs: object` so mypy checks the call — the
+    old helper needed a `type: ignore[arg-type]` to hand a `dict[str, object]`
+    to a keyword-only signature, which is exactly the untyped boundary the
+    surrounding work exists to close.
+    """
+    return validate_form_visibility(
+        column=column,
+        new=new,
+        existing=existing,
+        when=when,
+        required=required,
+        has_default=has_default,
+        is_calculated=is_calculated,
+        rendered={"Status", "Count", "Note"},
+        types=TYPES,
+        lookups=set(),
+        at=AT,
     )
-    return validate_form_visibility(**{**base, **kwargs})  # type: ignore[arg-type]
-
-
-def _problems(**kwargs: object) -> list[str]:
-    return [message for _, message in _findings(**kwargs)]
 
 
 def test_required_and_hidden_from_new_is_an_error() -> None:
     """Statically provable: the gate is false on the New form whatever the
     condition says, so every create would fail its required check."""
-    assert "every save would fail" in _problems(new=False, required=True)[0]
+    found = _findings(new=False, required=True)[0]
+    assert found.code is FindingCode.REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM
+    assert "every save would fail" in found.message
 
 
 def test_required_with_a_default_hidden_from_new_is_fine() -> None:
-    assert _problems(new=False, required=True, has_default=True) == []
+    assert _findings(new=False, required=True, has_default=True) == []
 
 
 def test_hidden_everywhere_with_a_condition_is_an_error() -> None:
-    assert "can never be reached" in _problems(new=False, existing=False, when=WHEN)[0]
+    found = _findings(new=False, existing=False, when=WHEN)[0]
+    assert found.code is FindingCode.FORM_VISIBILITY_CONDITION_UNREACHABLE
+    assert "can never be reached" in found.message
 
 
 def test_calculated_columns_cannot_declare_visibility() -> None:
-    assert "calculated" in _problems(is_calculated=True)[0]
+    found = _findings(is_calculated=True)[0]
+    assert found.code is FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN
+    assert "calculated" in found.message
 
 
 def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> None:
@@ -111,25 +138,51 @@ def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> Non
     "warning" buried in the prose — so the one genuinely conditional case
     the feature exists to express failed the build."""
     findings = _findings(when=WHEN, required=True)
-    assert [severity for severity, _ in findings] == ["warning"]
+    assert [f.severity for f in findings] == ["warning"]
+    assert findings[0].code is FindingCode.REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION
     # And the severity is carried structurally, not spelled out in the text.
-    assert "warning" not in findings[0][1]
+    assert "warning" not in findings[0].message
 
 
 def test_statically_provable_cases_stay_errors() -> None:
-    for kwargs in (
-        {"new": False, "required": True},
-        {"new": False, "existing": False, "when": WHEN},
-        {"is_calculated": True},
+    for findings in (
+        _findings(new=False, required=True),
+        _findings(new=False, existing=False, when=WHEN),
+        _findings(is_calculated=True),
     ):
-        findings = _findings(**kwargs)
-        assert findings, kwargs
-        assert all(severity == "error" for severity, _ in findings), kwargs
+        assert findings
+        assert all(f.severity == "error" for f in findings), findings
+
+
+def test_each_rule_here_has_its_own_code() -> None:
+    """The reason this function returns Findings rather than
+    (severity, message) pairs. The caller cannot know which of the five
+    rules fired, so one code assigned there would collapse all of them —
+    and a rule with no code of its own can never be asserted on, or
+    suppressed, or looked up in the catalogue.
+    """
+    codes = [
+        _findings(is_calculated=True)[0].code,
+        _findings(new=False, existing=False, when=WHEN)[0].code,
+        _findings(new=False, required=True)[0].code,
+        _findings(when=WHEN, required=True)[0].code,
+        _findings(when=parse_condition(
+            [{"field": "Nope", "op": "eq", "value": 1}], "w",
+        ))[0].code,
+    ]
+    assert len(set(codes)) == len(codes), codes
 
 
 def test_condition_problems_are_reported_through_the_shared_validator() -> None:
     bad = parse_condition([{"field": "Nope", "op": "eq", "value": 1}], "w")
-    assert any("not a rendered column" in p for p in _problems(when=bad))
+    findings = _findings(when=bad)
+    assert any("not a rendered column" in f.message for f in findings)
+    # The condition grammar classifies its own problems, so the leaf's fault
+    # keeps its identity instead of arriving as "the when is bad".
+    assert findings[0].code is FindingCode.CONDITION_FIELD_NOT_RENDERED
+    assert findings[0].location == Location(
+        Section.FORM_VISIBILITY, entity="X", column="Note", sub="when.Nope",
+    )
 
 
 # === Loader ================================================================

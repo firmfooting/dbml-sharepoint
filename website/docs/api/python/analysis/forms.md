@@ -38,17 +38,27 @@ cannot change what the author declared.
 ### `validate_form_visibility`
 
 ```python
-def validate_form_visibility(*, column: str, new: bool, existing: bool, when: Condition | None, required: bool, has_default: bool, is_calculated: bool, rendered: set[str], types: dict[str, str], lookups: set[str], context: str) -> list[tuple[Severity, str]]
+def validate_form_visibility(*, column: str, new: bool, existing: bool, when: Condition | None, required: bool, has_default: bool, is_calculated: bool, rendered: set[str], types: dict[str, str], lookups: set[str], at: dbml_sharepoint.analysis.findings.Location) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
-Semantic problems with one column's declaration, as
-(severity, message) pairs.
+Semantic problems with one column's declaration, as Findings.
 
-The severity is carried structurally rather than described in the
-prose. Every message used to be returned as a bare string and wrapped
-by the caller as an error, including the one case the spec makes a
-WARNING — a required column that a `when` predicate *may* hide at
-creation. Its text said "(warning: …)" while it failed the build, so
-the one genuinely conditional declaration the feature exists to
-express could not be deployed at all.
+Five distinct rules live here, and each has its own code. The severity
+is carried structurally rather than described in the prose: every
+message used to be returned as a bare string and wrapped by the caller
+as an error, including the one case the spec makes a WARNING — a
+required column that a `when` predicate *may* hide at creation. Its
+text said "(warning: …)" while it failed the build, so the one
+genuinely conditional declaration the feature exists to express could
+not be deployed at all.
+
+Returning Findings rather than (severity, message) pairs is what keeps
+those five apart. The caller cannot supply the code, because it does
+not know which rule fired — one code at the call site would collapse
+all five into one.
+
+`at` locates the DECLARATION, which is `retired_columns[E]` when the
+retirement fold synthesised it and `form_visibility[E]` otherwise. The
+column is named in the prose rather than in the path, because that is
+where these messages have always put it.
 
