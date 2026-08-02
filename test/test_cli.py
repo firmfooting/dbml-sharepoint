@@ -2,7 +2,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _packs import replaced
+from _builders import ID_PK, table
+from _packs import blocks, entities, replaced, write_dbml, write_mapping
 from _paths import FIXTURES
 from typer.testing import CliRunner
 
@@ -432,8 +433,16 @@ def test_a_missing_mapping_file_is_a_message_not_a_traceback(tmp_path: Path) -> 
 
 
 def test_malformed_dbml_is_a_message_not_a_traceback(tmp_path: Path) -> None:
-    schema = tmp_path / "bad.dbml"
-    schema.write_text("Table Broken {\n  invalid !!!\n}\n", encoding="utf-8")
+    schema = write_dbml(
+        tmp_path,
+        """
+            Table Broken {
+              invalid !!!
+            }
+        """,
+        preamble=False,
+        name="bad.dbml",
+    )
     result = _cli(
         "build",
         "--schema", str(schema),
@@ -449,13 +458,16 @@ def test_malformed_dbml_is_a_message_not_a_traceback(tmp_path: Path) -> None:
 
 
 def test_unknown_dbml_index_column_is_a_message_not_a_traceback(tmp_path: Path) -> None:
-    schema = tmp_path / "bad-index.dbml"
-    schema.write_text(
-        "Table Risk {\n"
-        "  Status nvarchar\n"
-        "  indexes { Staus }\n"
-        "}\n",
-        encoding="utf-8",
+    schema = write_dbml(
+        tmp_path,
+        """
+            Table Risk {
+              Status nvarchar
+              indexes { Staus }
+            }
+        """,
+        preamble=False,
+        name="bad-index.dbml",
     )
     result = _cli(
         "build",
@@ -484,13 +496,7 @@ def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
     covered: an unmapped column type (typemap) and a composite DBML index
     (the deploy projection).
     """
-    mapping = tmp_path / "m.yaml"
-    mapping.write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Risk"))
     refusals = {
         "bad-type.dbml": ("  Status blob\n", "blob"),
         "composite.dbml": (
@@ -525,21 +531,8 @@ def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
 def test_report_replaces_owned_outputs_and_preserves_operator_files(
     tmp_path: Path,
 ) -> None:
-    mapping = tmp_path / "m.yaml"
-    mapping.write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "  Legacy: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    schema = tmp_path / "s.dbml"
-    schema.write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n}\n"
-        "Table Legacy {\n  Id int [pk, increment]\n}\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Risk", "Legacy"))
+    schema = write_dbml(tmp_path, blocks(table("Risk", ID_PK), table("Legacy", ID_PK)))
     out = tmp_path / "reports"
     first = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping),
@@ -549,11 +542,7 @@ def test_report_replaces_owned_outputs_and_preserves_operator_files(
     assert (out / "powerquery" / "APP_Legacy.pq").exists()
     (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
 
-    schema.write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n}\n",
-        encoding="utf-8",
-    )
+    schema = write_dbml(tmp_path, table("Risk", ID_PK))
     second = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
@@ -566,19 +555,8 @@ def test_report_replaces_owned_outputs_and_preserves_operator_files(
 
 
 def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> None:
-    mapping = tmp_path / "m.yaml"
-    mapping.write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    schema = tmp_path / "s.dbml"
-    schema.write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n  Status nvarchar\n}\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Risk"))
+    schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status nvarchar"))
     out = tmp_path / "reports"
     first = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping),
@@ -587,11 +565,7 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
     assert first.returncode == 0, first.stderr
     (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
 
-    schema.write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n  Status blob\n}\n",
-        encoding="utf-8",
-    )
+    schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status blob"))
     failed = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping),
         "--out", str(out),
@@ -614,13 +588,7 @@ def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -
     unknown --site-role, which exits 2 for "usage error, before the
     pipeline runs" — deleted both trees whole before reading anything.
     """
-    mapping = tmp_path / "m.yaml"
-    mapping.write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Risk"))
     out = tmp_path / "shared"
     (out / "sql").mkdir(parents=True)
     (out / "powerquery").mkdir(parents=True)
@@ -651,19 +619,8 @@ def test_report_clearing_spares_operator_files_inside_owned_directories(
     tmp_path: Path,
 ) -> None:
     """Only the generated names go; a neighbour in sql/ is not ours to delete."""
-    mapping = tmp_path / "m.yaml"
-    mapping.write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    schema = tmp_path / "s.dbml"
-    schema.write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n  Status nvarchar\n}\n",
-        encoding="utf-8",
-    )
+    mapping = write_mapping(tmp_path, entities("Risk"))
+    schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status nvarchar"))
     out = tmp_path / "shared"
     first = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
@@ -673,11 +630,7 @@ def test_report_clearing_spares_operator_files_inside_owned_directories(
     (out / "powerquery" / "notes.md").write_text("mine", encoding="utf-8")
 
     # A refusal clears what this command wrote — and stops there.
-    schema.write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n  Status blob\n}\n",
-        encoding="utf-8",
-    )
+    schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status blob"))
     refused = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
     )
