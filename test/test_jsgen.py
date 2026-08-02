@@ -263,28 +263,18 @@ def test_simple_deploy_js_matches_golden() -> None:
     """Golden-file regression: deploy.js from simple.dbml must match
     test/fixtures/expected/simple-deploy.js byte-for-byte.
 
-    To regenerate the golden file after a legitimate template change run::
+    To regenerate the golden after a legitimate template change::
 
-        # from the repository root
-        python -c "
-        from pathlib import Path
-        from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
-        from dbml_sharepoint.model.mapping_loader import load_mapping
-        from dbml_sharepoint.model.parser import parse_dbml
-        from dbml_sharepoint.model.release import load_release
-        FIXTURES = Path('test/fixtures')
-        js = generate_deploy_js(
-            schema=parse_dbml(FIXTURES / 'simple.dbml'),
-            bundle=load_mapping(FIXTURES / 'sharepoint-mapping.yaml'),
-            release=load_release(FIXTURES / 'release.yaml'),
-            site_url='https://example.sharepoint.com/sites/test',
-            site_role='default',
-            source_dbml='simple.dbml',
-            source_mtime='2026-05-04T00:00:00Z',
-            generated_at='2026-05-04T00:00:00Z',
-        )
-        Path('test/fixtures/expected/simple-deploy.js').write_text(js, encoding='utf-8')
-        "
+        uv run python test/test_jsgen.py
+
+    That runs the same `_generate_simple_js()` this test does. The recipe used
+    to be a copy-pasted `python -c` block restating the generator call and all
+    five of `_FIXED_ARGS` inline, which meant changing either left the
+    documented fix quietly generating something the test would still reject.
+
+    Review the resulting diff like code — it is. Regeneration is deliberately a
+    separate, explicit act rather than a `--snapshot-update` flag on the test
+    run; the friction is the point.
     """
     golden_path = EXPECTED / "simple-deploy.js"
     assert golden_path.exists(), f"Golden file missing: {golden_path}"
@@ -3184,3 +3174,15 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         joining_fields(generated, join_bearing_columns(table, xcols))
         == all_items_joining_fields(table, entity, xcols)
     )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    # Regenerate the golden. Deliberately not a pytest flag: see
+    # test_simple_deploy_js_matches_golden. Uses the SAME generator the test
+    # does, so the two cannot drift.
+    _target = EXPECTED / "simple-deploy.js"
+    # The newline argument is explicit because the default translates to CRLF
+    # on Windows, which .gitattributes then normalises away on commit -- so the
+    # file would read as modified locally while producing an empty diff.
+    _target.write_text(_generate_simple_js(), encoding="utf-8", newline="\n")
+    print(f"wrote {_target}")  # noqa: T201
