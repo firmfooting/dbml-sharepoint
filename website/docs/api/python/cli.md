@@ -63,7 +63,7 @@ Generate deploy.js + manifest from the DBML schema and mapping.
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = WindowsPath('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None) -> None
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None) -> None
 ```
 
 The `build` pipeline, callable without going through typer.

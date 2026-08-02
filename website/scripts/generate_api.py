@@ -29,7 +29,7 @@ import inspect
 import re
 import shutil
 import sys
-from pathlib import Path
+from pathlib import Path, PurePath
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src"
@@ -131,18 +131,47 @@ class _Elided:
 _ELIDED = _Elided()
 
 
-def clean_signature(obj: object) -> str:
-    """str(signature), with address-bearing default reprs elided.
+class _Literal:
+    """Stands in for a default that must render the same on every OS."""
 
-    Instance defaults (e.g. typer OptionInfo) repr as
-    '<... object at 0x...>' — machine-specific, so they would defeat
-    the deterministic-output contract."""
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def __repr__(self) -> str:
+        return self._text
+
+
+def _portable_default(value: object) -> object:
+    """Replace a default whose repr is platform- or machine-specific.
+
+    Two kinds, both of which have already broken the deterministic-output
+    contract:
+
+    - Instance defaults such as typer's OptionInfo repr as
+      '<... object at 0x...>', which is machine-specific.
+    - `pathlib` defaults repr as their CONCRETE class, so
+      `Path("./build")` is `WindowsPath('build')` on Windows and
+      `PosixPath('build')` on Linux. That one is worse than noise: the
+      page generates cleanly on the author's machine and fails
+      `test_generated_api_docs_are_current` on the other OS in CI, which
+      reads as a broken test rather than as a portability bug.
+    """
+    if isinstance(value, PurePath):
+        return _Literal(f"Path({value.as_posix()!r})")
+    if " object at 0x" in repr(value):
+        return _ELIDED
+    return value
+
+
+def clean_signature(obj: object) -> str:
+    """str(signature), with non-portable default reprs normalised.
+
+    See `_portable_default` for what gets replaced and why.
+    """
     sig = inspect.signature(obj)  # type: ignore[arg-type]
     params = [
-        p.replace(default=_ELIDED)
-        if p.default is not inspect.Parameter.empty
-        and " object at 0x" in repr(p.default)
-        else p
+        p if p.default is inspect.Parameter.empty
+        else p.replace(default=_portable_default(p.default))
         for p in sig.parameters.values()
     ]
     return str(sig.replace(parameters=params))
@@ -222,13 +251,21 @@ def stable_repr(obj: object) -> str:
 
 
 def render_constant(name: str, obj: object) -> str:
-    if isinstance(obj, Path):
-        # Machine-absolute paths are noise (and leak the build machine's
-        # layout); render package-relative.
-        try:
-            value = f'Path("{obj.relative_to(SRC).as_posix()}")'
-        except ValueError:
-            value = f'Path("{obj.name}")'
+    if isinstance(obj, PurePath):
+        if not obj.is_absolute():
+            # Already portable and already the whole value. The absolute
+            # handling below used to catch these too, and its .name
+            # fallback silently published a DIFFERENT path: a relative
+            # `10-design/schema.dbml` rendered as `schema.dbml`, which a
+            # reader building a path from the docs would get wrong.
+            value = f'Path("{obj.as_posix()}")'
+        else:
+            # Machine-absolute paths are noise (and leak the build
+            # machine's layout); render package-relative.
+            try:
+                value = f'Path("{obj.relative_to(SRC).as_posix()}")'
+            except ValueError:
+                value = f'Path("{obj.name}")'
     else:
         value = stable_repr(obj)
     if len(value) > 200:

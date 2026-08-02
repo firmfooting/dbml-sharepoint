@@ -31,19 +31,19 @@ SOLUTIONS_DIR = Path("dbml_sharepoint/solutions")
 ### `SCHEMA_RELPATH`
 
 ```python
-SCHEMA_RELPATH = Path("schema.dbml")
+SCHEMA_RELPATH = Path("10-design/schema.dbml")
 ```
 
 ### `MAPPING_RELPATH`
 
 ```python
-MAPPING_RELPATH = Path("mapping.yaml")
+MAPPING_RELPATH = Path("20-configure/mapping.yaml")
 ```
 
 ### `RELEASE_RELPATH`
 
 ```python
-RELEASE_RELPATH = Path("release.yaml")
+RELEASE_RELPATH = Path("20-configure/release.yaml")
 ```
 
 ### `UnknownSolutionError`
