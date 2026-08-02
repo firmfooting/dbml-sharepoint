@@ -21,16 +21,24 @@ properties alone could not catch a dropped null arm.
 """
 
 from typing import Any
+from xml.etree import ElementTree
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
 from dbml_sharepoint.analysis.conditions import (
+    CAML,
+    EXPRESSION,
     MAX_DEPTH,
     NEGATION,
+    VALIDATION,
     condition_fields,
     measure_tree,
     normalise,
+    to_caml,
+    to_expression,
+    to_validation,
 )
 from dbml_sharepoint.model.conditions import GROUP_KINDS, Condition, Group, Leaf
 
@@ -292,3 +300,206 @@ def test_the_strategy_covers_every_negatable_operator() -> None:
 def test_the_bounds_are_still_what_the_properties_assume() -> None:
     """MAX_DEPTH pins the shape the generator is allowed to stay under."""
     assert MAX_DEPTH == 4
+
+
+# --- The renderers ------------------------------------------------------------
+#
+# Everything above tests `normalise`. Coverage of analysis/conditions.py from
+# this file alone was 26%: the three renderers -- the larger half of the module,
+# and the half that emits what SharePoint actually executes -- had none.
+#
+# The first attempt here asserted "operator is in CAPABILITIES[target], so it
+# renders". Hypothesis refuted that in seconds, and was right to: the renderer
+# also rejects `begins_with` on an int column, an empty needle, a person
+# sub-property under CAML, and `measure` where the target has no LEN. The
+# capability table is necessary, not sufficient.
+#
+# So the property below is the contract the module actually states, in the
+# CAPABILITIES comment: "A miss is a build error naming the target -- never a
+# formula emitted in hope." Either a formula comes back, or a ValueError naming
+# the target does. Never a bare KeyError, never an empty string.
+
+
+TARGETS = (CAML, EXPRESSION, VALIDATION)
+_RENDER = {CAML: to_caml, EXPRESSION: to_expression, VALIDATION: to_validation}
+
+#: Declared types for every field the strategies can emit. The renderer picks
+#: its literal spelling from these.
+COLUMN_TYPES = {
+    "Title": "text",
+    "Status": "text",
+    "Score": "int",
+    "Owner": "person",
+    "DueDate": "datetime",
+}
+
+#: CAML has no <Not>, so it cannot spell either negative substring test. A
+#: platform limit cited from Microsoft's <Where> child list, not a gap here.
+CAML_CANNOT = ("not_contains", "not_begins_with")
+
+_TEXT_ONLY = ("contains", "begins_with", "not_contains", "not_begins_with")
+_ORDERED = ("lt", "leq", "gt", "geq")
+
+
+def _all_leaves(node: Condition) -> list[Leaf]:
+    if isinstance(node, Leaf):
+        return [node]
+    return [leaf for child in node.children for leaf in _all_leaves(child)]
+
+
+@st.composite
+def renderable_leaves(draw: st.DrawFn) -> Leaf:
+    """A leaf every target can actually render.
+
+    Type-valid by construction: substring tests only on text with a non-empty
+    needle, ordering only on numbers, and no `property` or `measure` -- CAML
+    supports neither. Narrow on purpose. The permissive `leaves()` above is for
+    the fails-closed property; this one is for the properties that need a
+    formula to come back.
+    """
+    field, op_pool = draw(
+        st.sampled_from([
+            ("Title", ("eq", "neq", "contains", "begins_with", "is_null", "is_not_null")),
+            ("Score", ("eq", "neq", *_ORDERED, "is_null", "is_not_null")),
+        ]),
+    )
+    op = draw(st.sampled_from(op_pool))
+    if op in ("is_null", "is_not_null"):
+        value: Any = None
+    elif field == "Score":
+        value = draw(st.integers(min_value=-500, max_value=500))
+    else:
+        # Printable only. Control characters are refused by design -- see
+        # test_a_control_character_in_a_value_is_refused -- so generating
+        # them here would only re-test the refusal path.
+        value = draw(st.text(alphabet=st.characters(min_codepoint=32,
+                                                    max_codepoint=126),
+                             min_size=1, max_size=6))
+    return Leaf(field=field, op=op, value=value)
+
+
+def renderable_conditions() -> st.SearchStrategy[Condition]:
+    return st.recursive(
+        renderable_leaves(),
+        lambda children: st.builds(
+            Group,
+            kind=st.sampled_from(("all_of", "any_of")),
+            children=st.lists(children, min_size=1, max_size=3).map(tuple),
+        ),
+        max_leaves=3,
+    )
+
+
+@given(target=st.sampled_from(TARGETS), condition=conditions(max_leaves=3))
+def test_rendering_either_returns_a_formula_or_fails_closed(
+    target: str, condition: Condition,
+) -> None:
+    """No third outcome. This is the property the capability table promises.
+
+    The dangerous outcome is not an exception -- it is a plausible-looking
+    formula for something the target cannot express, which saves, reads back
+    byte-identical and filters wrongly on the rendered page. Almost as bad is a
+    bare KeyError or AttributeError: a stack trace instead of a build error is
+    what `_push`'s unknown-operator branch exists to prevent, and nothing was
+    holding the renderers to the same standard.
+    """
+    try:
+        rendered = _RENDER[target](condition, COLUMN_TYPES)
+    except ValueError as err:
+        assert target in str(err), f"refusal must name the target: {err}"
+        return
+    assert isinstance(rendered, str)
+    assert rendered.strip() != ""
+
+
+@given(
+    op=st.sampled_from(CAML_CANNOT),
+    # Printable: a control character is refused first, by a different rule, and
+    # this test is about the operator refusal.
+    value=st.text(
+        alphabet=st.characters(min_codepoint=32, max_codepoint=126),
+        min_size=1,
+        max_size=6,
+    ),
+)
+def test_caml_refuses_what_it_cannot_spell(op: str, value: str) -> None:
+    """The two operators CAML has no tag for must raise, naming the operator."""
+    with pytest.raises(ValueError, match=op):
+        to_caml(Leaf(field="Title", op=op, value=value), COLUMN_TYPES)
+
+
+@given(target=st.sampled_from(TARGETS), condition=renderable_conditions())
+def test_a_renderable_tree_renders(target: str, condition: Condition) -> None:
+    """The converse of failing closed: it must also say yes when it can.
+
+    A refusal-only contract is satisfiable by refusing everything.
+    """
+    assert _RENDER[target](condition, COLUMN_TYPES).strip() != ""
+
+
+@given(condition=renderable_conditions())
+def test_caml_renders_well_formed_xml(condition: Condition) -> None:
+    """`_combine` folds `<And>`/`<Or>` by hand, so the nesting is worth checking.
+
+    A mismatched tag pair passes every substring assertion in the hand-written
+    tests and is rejected by SharePoint.
+    """
+    # S314: the input is CAML this repository just generated from a closed
+    # strategy, not untrusted data. defusedxml would be a dependency added to
+    # parse our own output.
+    ElementTree.fromstring(  # noqa: S314
+        f"<Where>{to_caml(condition, COLUMN_TYPES)}</Where>",
+    )
+
+
+@given(target=st.sampled_from(TARGETS), condition=renderable_conditions())
+def test_rendering_is_deterministic(target: str, condition: Condition) -> None:
+    """Same tree, same formula. Iterating a set somewhere would break this."""
+    render = _RENDER[target]
+    assert render(condition, COLUMN_TYPES) == render(condition, COLUMN_TYPES)
+
+
+@given(target=st.sampled_from(TARGETS), leaf=renderable_leaves())
+def test_a_single_child_group_adds_no_wrapper(target: str, leaf: Leaf) -> None:
+    """`_combine` returns a lone part unchanged, for every target.
+
+    CAML's `<And>` is strictly binary, so a one-child And is not merely untidy,
+    it is invalid CAML.
+    """
+    render = _RENDER[target]
+    assert render(Group("all_of", (leaf,)), COLUMN_TYPES) == render(leaf, COLUMN_TYPES)
+    assert render(Group("any_of", (leaf,)), COLUMN_TYPES) == render(leaf, COLUMN_TYPES)
+
+
+@given(
+    target=st.sampled_from(TARGETS),
+    control=st.sampled_from(["\x00", "\x07", "\x1f", "\x0b"]),
+)
+def test_a_control_character_in_a_value_is_refused(target: str, control: str) -> None:
+    """XML forbids these and `_xml_escape` handles only `&`, `<` and `>`.
+
+    Found by the fails-closed property above, which generated \x1f into a
+    filter value and got malformed CAML back rather than an error. The repo had
+    already paid for this class once -- a NUL byte reached generated deploy.js
+    and was invisible to every gate, visible only to git as "Bin N -> M bytes"
+    (see test_probes.test_probes_carry_no_control_characters, which guards
+    probe sources but not a value arriving from a mapping).
+
+    Refusal rather than stripping: silently removing a character changes the
+    filter the author declared.
+    """
+    leaf = Leaf(field="Title", op="eq", value=f"a{control}b")
+    with pytest.raises(ValueError, match="control character"):
+        _RENDER[target](leaf, COLUMN_TYPES)
+
+
+def test_caml_cannot_matches_the_capability_table() -> None:
+    """`CAML_CANNOT` is hand-written, so it must be checked against the source.
+
+    If CAML ever gained a rendering for one of these, or lost one it has, the
+    refusal property above would keep asserting a refusal that no longer
+    happens -- passing, while testing nothing.
+    """
+    from dbml_sharepoint.analysis.conditions import CAPABILITIES
+
+    assert set(CAML_CANNOT) == set(NEGATION) - CAPABILITIES[CAML]
