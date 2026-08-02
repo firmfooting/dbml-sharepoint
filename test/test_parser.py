@@ -1,6 +1,7 @@
 # test/test_parser.py
 from pathlib import Path
 
+import pytest
 from _packs import write_dbml
 from _paths import FIXTURES
 
@@ -59,3 +60,26 @@ def test_table_indexes_are_preserved_from_dbml(tmp_path: Path) -> None:
     )
     risk = parse_dbml(schema_path).tables[0]
     assert [index.columns for index in risk.indexes] == [("Status",), ("Category",)]
+
+
+def test_a_ref_to_a_missing_table_is_a_message_not_a_traceback(tmp_path: Path) -> None:
+    """pydbml raises `TableNotFoundError`, which is not a `ValueError`.
+
+    The CLI's config-error handling keys on `ValueError`, so without the
+    translation in `parse_dbml` a schema typo prints a traceback at the person
+    least able to read one — a SharePoint admin editing DBML. This is the same
+    contract `test_cli.test_malformed_dbml_is_a_message_not_a_traceback`
+    asserts end to end; here it is pinned at the boundary that does the work.
+
+    Covered only incidentally before, by validator tests that happened to
+    parse a broken schema. Those are being migrated to build objects directly,
+    so this path needs a test of its own or it loses its coverage silently.
+    """
+    path = write_dbml(tmp_path, """
+        Table Risk {
+          Id int [pk, increment]
+          Owner int [ref: > Ghost.Id]
+        }
+    """)
+    with pytest.raises(ValueError, match="Ghost"):
+        parse_dbml(path)
