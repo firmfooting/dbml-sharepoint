@@ -9,6 +9,34 @@ sidebar_position: 23
 
 Command-line interface for dbml-sharepoint.
 
+### `main`
+
+```python
+def main(ctx: typer.models.Context) -> None
+```
+
+Run the interactive wizard when invoked with no subcommand.
+
+Every documented flag still works exactly as before: `build`, `report`
+and `version` are untouched, and this callback returns immediately when
+one of them was named.
+
+A bare invocation only prompts when stdin AND stdout are both a
+terminal. In CI, a cron job, a Dockerfile or a pipe it prints help and
+exits 0, which is what a bare invocation did before the wizard existed
+-- so nothing that scripted `dbml-sharepoint` changes behaviour.
+
+### `new`
+
+```python
+def new() -> None
+```
+
+Interactively copy a solution template into a new project.
+
+The same wizard a bare `dbml-sharepoint` runs, named so it can be asked
+for explicitly and so it appears in `--help`.
+
 ### `validate_site_url`
 
 ```python
@@ -31,6 +59,23 @@ def build(schema: pathlib.Path = ..., mapping: pathlib.Path = ..., release: path
 ```
 
 Generate deploy.js + manifest from the DBML schema and mapping.
+
+### `execute_build`
+
+```python
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None) -> None
+```
+
+The `build` pipeline, callable without going through typer.
+
+Extracted so the wizard can run exactly the same build the documented
+flags run, rather than growing a second implementation that drifts. The
+wizard is a different front end onto this, not a different builder.
+
+Still raises `typer.Exit` on refusal: the exit codes are the documented
+contract (2 for misuse, 1 for a refused build), and re-mapping them to
+an exception of its own here would give the wizard a second vocabulary
+for the same failures. The wizard catches it.
 
 ### `report`
 
