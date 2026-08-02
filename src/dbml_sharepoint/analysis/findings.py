@@ -37,6 +37,9 @@ class Section(StrEnum):
     FORM_FORMATTING = "form_formatting"
     FORM_VISIBILITY = "form_visibility"
     GROUPS = "groups"
+    # Not a per-entity mapping section like the rest: its paths are
+    # `list_permissions.default...` and `list_permissions.overrides[...]`.
+    LIST_PERMISSIONS = "list_permissions"
     LIST_VALIDATION = "list_validation"
     PERMISSION_LEVELS = "permission_levels"
     POLYMORPHIC_PATTERNS = "polymorphic_patterns"
@@ -226,6 +229,42 @@ class FindingCode(StrEnum):
     DEMO_PERSON_VALUE_UNSUPPORTED = "demo_person_value_unsupported"
     DEMO_DATE_VALUE_INVALID = "demo_date_value_invalid"
     DEMO_ENUM_VALUE_UNKNOWN = "demo_enum_value_unknown"
+
+    # --- retirement and the sections it folds into (checks/_retirement.py) --
+    CALCULATED_FORMULA_REFERENCES_A_RETIRED_COLUMN = (
+        "calculated_formula_references_a_retired_column"
+    )
+    COLUMN_VALIDATION_ON_A_RETIRED_COLUMN = "column_validation_on_a_retired_column"
+    COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS = "column_validation_references_other_columns"
+    LIST_VALIDATION_REFERENCES_A_RETIRED_COLUMN = (
+        "list_validation_references_a_retired_column"
+    )
+    RETIRED_COLUMN_NOT_RENDERED = "retired_column_not_rendered"
+    RETIRED_COLUMN_REQUIRED_WITH_A_DEFAULT = "retired_column_required_with_a_default"
+    RETIRED_COLUMN_STILL_INDEXED = "retired_column_still_indexed"
+    RETIRED_DATE_NOT_ISO = "retired_date_not_iso"
+    RETIREMENT_STRIPPED_A_DECLARATION = "retirement_stripped_a_declaration"
+    RETIREMENT_WITHOUT_DISPLAY_NAMES = "retirement_without_display_names"
+    SUPERSEDED_BY_IS_ITSELF_RETIRED = "superseded_by_is_itself_retired"
+    SUPERSEDED_BY_NAMES_THE_RETIRED_COLUMN = "superseded_by_names_the_retired_column"
+    SUPERSEDED_BY_NOT_RENDERED = "superseded_by_not_rendered"
+    UNDEPLOYABLE_DECLARATION_COLUMN = "undeployable_declaration_column"
+    VALIDATION_FORMULA_TOO_LONG = "validation_formula_too_long"
+    VALIDATION_MESSAGE_TOO_LONG = "validation_message_too_long"
+    VIEW_EMPTIED_BY_RETIREMENT = "view_emptied_by_retirement"
+
+    # --- permission levels, groups and policies (checks/_permissions.py) ----
+    DUPLICATE_GROUP_NAME = "duplicate_group_name"
+    DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name"
+    UNKNOWN_BASE_PERMISSION = "unknown_base_permission"
+    UNKNOWN_OWNER_GROUP = "unknown_owner_group"
+    UNKNOWN_PERMISSION_LEVEL = "unknown_permission_level"
+    UNKNOWN_PRINCIPAL_GROUP = "unknown_principal_group"
+    UNKNOWN_SITE_ROLE = "unknown_site_role"
+    #: The DBML does not declare this table. Distinct from UNKNOWN_ENTITY,
+    #: which is a name the MAPPING does not declare.
+    UNKNOWN_TABLE = "unknown_table"
+    UNRESOLVABLE_ASSOCIATED_GROUP_ALIAS = "unresolvable_associated_group_alias"
 
     # --- form visibility (analysis/forms.py) --------------------------------
     FORM_VISIBILITY_CONDITION_UNREACHABLE = "form_visibility_condition_unreachable"
