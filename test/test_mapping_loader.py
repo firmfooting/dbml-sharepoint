@@ -4,6 +4,7 @@ import inspect
 from pathlib import Path
 
 import pytest
+from _packs import blocks, entities, entity, write_mapping
 from _paths import FIXTURES
 
 from dbml_sharepoint.model import _mapping_types, mapping_loader
@@ -20,12 +21,10 @@ def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
     admission gate. A typo'd kind must fail the build here — before this
     gate existed it flowed into schema_json and silently missed
     downstream comparisons like kind == "DocumentLibrary"."""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Policy: { kind: DocLibrary, base_template: 101, site_role: default }\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, """
+        entities:
+          Policy: { kind: DocLibrary, base_template: 101, site_role: default }
+    """)
     with pytest.raises(ValueError) as err:
         load_mapping(tmp_path / "m.yaml")
     assert "entities.Policy.kind" in str(err.value)
@@ -33,28 +32,20 @@ def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
 
 
 def test_mapping_indexes_are_a_removed_section(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "indexed_columns:\n"
-        "  Risk: [Status]\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        indexed_columns:
+          Risk: [Status]
+    """))
     with pytest.raises(ValueError, match=r"indexed_columns.*DBML.*indexes"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_column_formatting_style_specs_expand_to_formatters(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Status: { style: severity, map: { Open: low, Closed: good } }\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        column_formatting:
+          Risk:
+            Status: { style: severity, map: { Open: low, Closed: good } }
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     expanded = bundle.mapping.column_formatting["Risk"]["Status"]
     assert expanded["elmType"] == "div"
@@ -63,42 +54,30 @@ def test_column_formatting_style_specs_expand_to_formatters(tmp_path: Path) -> N
 
 
 def test_style_theme_applies_and_rejects_unknown_tokens(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "style_theme:\n"
-        "  good: { classes: [brand-good] }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Status: { style: severity, map: { Closed: good } }\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        style_theme:
+          good: { classes: [brand-good] }
+        column_formatting:
+          Risk:
+            Status: { style: severity, map: { Closed: good } }
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     expanded = bundle.mapping.column_formatting["Risk"]["Status"]
     assert "brand-good" in expanded["attributes"]["class"]
-    (tmp_path / "bad.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "style_theme:\n"
-        "  shiny: { classes: [x] }\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        style_theme:
+          shiny: { classes: [x] }
+    """), name="bad.yaml")
     with pytest.raises(ValueError, match="style_theme"):
         load_mapping(tmp_path / "bad.yaml")
 
 
 def test_invalid_style_spec_is_a_load_error(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Status: { style: severity }\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        column_formatting:
+          Risk:
+            Status: { style: severity }
+    """))
     with pytest.raises(ValueError, match=r"column_formatting\.Risk\.Status"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -142,16 +121,10 @@ def test_permissions_section_loaded() -> None:
 
 
 def test_site_group_empty_gate_defaults_to_false(tmp_path: Path) -> None:
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "APP_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-groups:
-  - name: "Existing members allowed"
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "Existing members allowed"
+    """), name="mapping.yaml")
 
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.permissions is not None
@@ -159,53 +132,35 @@ groups:
 
 
 def test_site_group_empty_gate_requires_boolean(tmp_path: Path) -> None:
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "APP_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-groups:
-  - name: "Ambiguous gate"
-    require_empty_at_deploy: "false"
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "Ambiguous gate"
+            require_empty_at_deploy: "false"
+    """), name="mapping.yaml")
 
     with pytest.raises(ValueError, match="require_empty_at_deploy must be a boolean"):
         load_mapping(tmp_path / "mapping.yaml")
 
 
 def test_invalid_permission_reconcile_mode_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "APP_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-list_permissions:
-  default:
-    reconcile: best-effort
-    assignments: []
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        list_permissions:
+          default:
+            reconcile: best-effort
+            assignments: []
+    """), name="mapping.yaml")
     with pytest.raises(ValueError, match="reconcile must be"):
         load_mapping(tmp_path / "mapping.yaml")
 
 
 def test_exact_reconcile_requires_broken_inheritance(tmp_path: Path) -> None:
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "APP_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-list_permissions:
-  default:
-    break_inheritance: false
-    reconcile: exact
-    assignments: []
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        list_permissions:
+          default:
+            break_inheritance: false
+            reconcile: exact
+            assignments: []
+    """), name="mapping.yaml")
     with pytest.raises(ValueError, match="requires break_inheritance: true"):
         load_mapping(tmp_path / "mapping.yaml")
 
@@ -282,13 +237,8 @@ def test_minimal_mapping_loads_with_empty_extras(tmp_path: Path) -> None:
     declared) must load cleanly with every optional section defaulting to
     empty — the generic core has no required config beyond the mapping
     itself."""
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-""",
-        encoding="utf-8",
+    write_mapping(
+        tmp_path, entities("Project"), prefix='prefix: "MIN_"', name="mapping.yaml",
     )
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.prefix == "MIN_"
@@ -305,20 +255,15 @@ entities:
 def test_enum_sources_loads_choices_with_explicit_fragment(tmp_path: Path) -> None:
     """enum_sources values are `path#fragment`; the fragment names the
     top-level key to read from the target YAML."""
-    (tmp_path / "topics.yaml").write_text(
-        'topics:\n  - "Strategy"\n  - "Other"\n',
-        encoding="utf-8",
-    )
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-enum_sources:
-  topic: "topics.yaml#topics"
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, """
+        topics:
+          - "Strategy"
+          - "Other"
+    """, prefix=None, name="topics.yaml")
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        enum_sources:
+          topic: "topics.yaml#topics"
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.enum_choices["topic"] == ["Strategy", "Other"]
     assert bundle.mapping.enum_sources["topic"] == (tmp_path / "topics.yaml").resolve()
@@ -326,20 +271,15 @@ enum_sources:
 
 def test_enum_sources_fragmentless_value_defaults_to_choices_key(tmp_path: Path) -> None:
     """A fragmentless enum_sources value reads the 'choices' top-level key."""
-    (tmp_path / "statuses.yaml").write_text(
-        'choices:\n  - "Open"\n  - "Closed"\n',
-        encoding="utf-8",
-    )
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-enum_sources:
-  status: "statuses.yaml"
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, """
+        choices:
+          - "Open"
+          - "Closed"
+    """, prefix=None, name="statuses.yaml")
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        enum_sources:
+          status: "statuses.yaml"
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.enum_choices["status"] == ["Open", "Closed"]
 
@@ -347,21 +287,15 @@ enum_sources:
 def test_extension_config_for_selects_block_by_name(tmp_path: Path) -> None:
     """extension_config_for(name) returns exactly the named extension's block —
     another extension's block must not leak into it."""
-    (tmp_path / "reg.yaml").write_text("units: []\n", encoding="utf-8")
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-extension: my_org
-extensions:
-  my_org:
-    org_register_source: "reg.yaml"
-  other_ext:
-    some_key: "ignored"
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, "units: []", prefix=None, name="reg.yaml")
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        extension: my_org
+        extensions:
+          my_org:
+            org_register_source: "reg.yaml"
+          other_ext:
+            some_key: "ignored"
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.extension == "my_org"
     assert bundle.extension_configs == {
@@ -380,17 +314,11 @@ def test_extension_config_for_honors_cli_override_when_mapping_key_absent(
     extension name, not mapping.extension. A core-CLI run with
     `--extension my_org` against a mapping WITHOUT an `extension:` key must
     still see the extensions.my_org block."""
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-extensions:
-  my_org:
-    org_register_source: "reg.yaml"
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        extensions:
+          my_org:
+            org_register_source: "reg.yaml"
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.extension is None
     assert bundle.extension_config_for("my_org") == {"org_register_source": "reg.yaml"}
@@ -402,20 +330,14 @@ def test_extension_config_for_override_wins_over_other_selected_extension(
     """Regression: a mapping selecting `extension: other_ext`
     overridden at the CLI with `--extension my_org` must yield my_org's
     block for the resolved extension, not other_ext's."""
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-extension: other_ext
-extensions:
-  my_org:
-    org_register_source: "reg.yaml"
-  other_ext:
-    some_key: "other"
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        extension: other_ext
+        extensions:
+          my_org:
+            org_register_source: "reg.yaml"
+          other_ext:
+            some_key: "other"
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.extension == "other_ext"
     assert bundle.extension_config_for("my_org") == {"org_register_source": "reg.yaml"}
@@ -424,14 +346,14 @@ extensions:
 def test_entity_display_column_parsed(tmp_path: Path) -> None:
     """A1: a target entity may declare display_column; lookups into it render
     that field instead of the built-in Title. Absent, it defaults to None."""
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Membership: { kind: List, base_template: 100, site_role: default, display_column: DisplayName }
-  Meeting:    { kind: List, base_template: 100, site_role: default }
-""",
-        encoding="utf-8",
+    write_mapping(
+        tmp_path,
+        "entities:\n" + "\n".join([
+            entity("Membership", display_column="DisplayName"),
+            entity("Meeting"),
+        ]) + "\n",
+        prefix='prefix: "MIN_"',
+        name="mapping.yaml",
     )
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.entity("Membership").display_column == "DisplayName"
@@ -444,17 +366,11 @@ def test_polymorphic_patterns_parsed(tmp_path: Path) -> None:
     objects (replaces manifestgen's hardcoded gov-hub list)."""
     from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
 
-    (tmp_path / "mapping.yaml").write_text(
-        """
-prefix: "MIN_"
-entities:
-  Project: { kind: List, base_template: 100, site_role: default }
-polymorphic_patterns:
-  - { list: StatusChange, field: EntityId, discriminator: EntityType }
-  - { list: Escalation,   field: SourceId, discriminator: SourceType }
-""",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        polymorphic_patterns:
+          - { list: StatusChange, field: EntityId, discriminator: EntityType }
+          - { list: Escalation,   field: SourceId, discriminator: SourceType }
+    """), prefix='prefix: "MIN_"', name="mapping.yaml")
     bundle = load_mapping(tmp_path / "mapping.yaml")
     assert bundle.mapping.polymorphic_patterns == [
         PolymorphicPattern(list="StatusChange", field="EntityId", discriminator="EntityType"),
@@ -475,6 +391,8 @@ def test_calculated_formulas_default_empty_when_absent() -> None:
 
 
 def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: Path) -> None:
+    # Left as fragments: the payload is a fixture's text with a block appended,
+    # and the leading newline is load-bearing against however the fixture ends.
     (tmp_path / "m.yaml").write_text(
         (FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8")
         + (
@@ -509,35 +427,33 @@ def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: 
 
 
 def _views_yaml(views_block: str) -> str:
-    return (
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n"
-        + views_block
-    )
+    """The standard Project entity, plus whatever mapping block the test adds.
+
+    `views_block` is dedented, so a caller may pass a triple-quoted block
+    indented to match its surrounding code. The `prefix:` line is supplied by
+    `write_mapping`, not here.
+    """
+    return blocks(entities("Project"), views_block)
 
 
 def test_views_section_parsed(tmp_path: Path) -> None:
     from dbml_sharepoint.model.conditions import Group, Leaf
     from dbml_sharepoint.model.mapping_loader import ViewGroupBy, ViewSort
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open projects\n"
-            "      renamed_from: [Active projects, Current projects]\n"
-            "      default: true\n"
-            "      fields: [Title, Status]\n"
-            "      where:\n"
-            "        - { field: Status, op: neq, value: Closed }\n"
-            "      sort:\n"
-            "        - { field: SortOrder, direction: asc }\n"
-            "      group_by: { field: Status, collapsed: true }\n"
-            "      row_limit: 100\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open projects
+              renamed_from: [Active projects, Current projects]
+              default: true
+              fields: [Title, Status]
+              where:
+                - { field: Status, op: neq, value: Closed }
+              sort:
+                - { field: SortOrder, direction: asc }
+              group_by: { field: Status, collapsed: true }
+              row_limit: 100
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     views = bundle.mapping.views["Project"]
     assert len(views) == 1
@@ -553,15 +469,12 @@ def test_views_section_parsed(tmp_path: Path) -> None:
 
 
 def test_views_optional_parts_default(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Everything\n"
-            "      fields: [Title]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Everything
+              fields: [Title]
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     view = bundle.mapping.views["Project"][0]
     assert view.default is False
@@ -575,16 +488,13 @@ def test_views_optional_parts_default(tmp_path: Path) -> None:
 def test_view_renamed_from_must_be_a_string_list(tmp_path: Path) -> None:
     import pytest
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      renamed_from: Active projects\n"
-            "      fields: [Title]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open
+              renamed_from: Active projects
+              fields: [Title]
+    """))
     with pytest.raises(ValueError, match=r"renamed_from.*list"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -597,16 +507,18 @@ def test_views_absent_defaults_empty() -> None:
 def test_view_requires_title_and_fields(tmp_path: Path) -> None:
     import pytest
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("views:\n  Project:\n    - fields: [Title]\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - fields: [Title]
+    """))
     with pytest.raises(ValueError, match="title"):
         load_mapping(tmp_path / "m.yaml")
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml("views:\n  Project:\n    - title: No fields\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: No fields
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="fields"):
         load_mapping(tmp_path / "m2.yaml")
 
@@ -614,48 +526,39 @@ def test_view_requires_title_and_fields(tmp_path: Path) -> None:
 def test_view_sort_direction_must_be_asc_or_desc(tmp_path: Path) -> None:
     import pytest
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Bad sort\n"
-            "      fields: [Title]\n"
-            "      sort:\n"
-            "        - { field: Title, direction: down }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Bad sort
+              fields: [Title]
+              sort:
+                - { field: Title, direction: down }
+    """))
     with pytest.raises(ValueError, match=r"'asc' or 'desc'"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_view_widths_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Sized\n"
-            "      fields: [Title, Status]\n"
-            "      widths:\n"
-            "        Title: 240\n"
-            "        Status: 110\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Sized
+              fields: [Title, Status]
+              widths:
+                Title: 240
+                Status: 110
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.views["Project"][0].widths == {"Title": 240, "Status": 110}
 
 
 def test_view_widths_default_empty(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Unsized\n"
-            "      fields: [Title]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Unsized
+              fields: [Title]
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.views["Project"][0].widths == {}
 
@@ -663,45 +566,36 @@ def test_view_widths_default_empty(tmp_path: Path) -> None:
 def test_view_widths_values_must_be_integer_pixels(tmp_path: Path) -> None:
     import pytest
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Bad width\n"
-            "      fields: [Title]\n"
-            "      widths:\n"
-            "        Title: wide\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Bad width
+              fields: [Title]
+              widths:
+                Title: wide
+    """))
     with pytest.raises(ValueError, match="integer pixel"):
         load_mapping(tmp_path / "m.yaml")
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Bad shape\n"
-            "      fields: [Title]\n"
-            "      widths: [Title]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Bad shape
+              fields: [Title]
+              widths: [Title]
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="mapping of column name"):
         load_mapping(tmp_path / "m2.yaml")
 
 
 def test_demo_items_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "demo_items:\n"
-            "  Project:\n"
-            "    - key: p1\n"
-            "      values:\n"
-            '        Title: "[DEMO] Sample"\n'
-            "        SortOrder: 3\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        demo_items:
+          Project:
+            - key: p1
+              values:
+                Title: "[DEMO] Sample"
+                SortOrder: 3
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     items = bundle.mapping.demo_items["Project"]
     assert items[0].key == "p1"
@@ -711,24 +605,18 @@ def test_demo_items_parsed(tmp_path: Path) -> None:
 def test_demo_items_require_key_and_values(tmp_path: Path) -> None:
     import pytest
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "demo_items:\n"
-            "  Project:\n"
-            "    - values: { Title: x }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        demo_items:
+          Project:
+            - values: { Title: x }
+    """))
     with pytest.raises(ValueError, match="'key' is required"):
         load_mapping(tmp_path / "m.yaml")
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml(
-            "demo_items:\n"
-            "  Project:\n"
-            "    - key: p1\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        demo_items:
+          Project:
+            - key: p1
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="non-empty mapping"):
         load_mapping(tmp_path / "m2.yaml")
 
@@ -751,16 +639,13 @@ def test_view_url_slug_derivation() -> None:
 
 
 def test_display_names_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "display_names:\n"
-            "  mode: auto\n"
-            "  overrides:\n"
-            "    Project:\n"
-            '      RiskManReference: "RiskMan Reference"\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        display_names:
+          mode: auto
+          overrides:
+            Project:
+              RiskManReference: "RiskMan Reference"
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.display_name_mode == "auto"
     assert bundle.mapping.display_name_overrides == {
@@ -777,10 +662,10 @@ def test_display_names_absent_defaults_off() -> None:
 def test_display_names_unknown_mode_rejected(tmp_path: Path) -> None:
     import pytest
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("display_names:\n  mode: fancy\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        display_names:
+          mode: fancy
+    """))
     with pytest.raises(ValueError, match="auto"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -807,15 +692,12 @@ def test_column_formatting_inline_and_path(tmp_path: Path) -> None:
     (tmp_path / "pill.json").write_text(
         '{"elmType": "div", "txtContent": "@currentField"}', encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "column_formatting:\n"
-            "  Project:\n"
-            "    Status: pill.json\n"
-            "    SortOrder: { elmType: span }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        column_formatting:
+          Project:
+            Status: pill.json
+            SortOrder: { elmType: span }
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     formatting = bundle.mapping.column_formatting["Project"]
     assert formatting["Status"] == {"elmType": "div", "txtContent": "@currentField"}
@@ -830,46 +712,46 @@ def test_column_formatting_absent_defaults_empty() -> None:
 def test_column_formatting_bad_path_and_bad_json(tmp_path: Path) -> None:
     import pytest
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("column_formatting:\n  Project:\n    Status: missing.json\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        column_formatting:
+          Project:
+            Status: missing.json
+    """))
     with pytest.raises(ValueError, match=r"missing\.json"):
         load_mapping(tmp_path / "m.yaml")
 
     (tmp_path / "bad.json").write_text("{not json", encoding="utf-8")
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml("column_formatting:\n  Project:\n    Status: bad.json\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        column_formatting:
+          Project:
+            Status: bad.json
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match=r"bad\.json"):
         load_mapping(tmp_path / "m2.yaml")
 
-    (tmp_path / "m3.yaml").write_text(
-        _views_yaml("column_formatting:\n  Project:\n    Status: 42\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        column_formatting:
+          Project:
+            Status: 42
+    """), name="m3.yaml")
     with pytest.raises(ValueError, match="Status"):
         load_mapping(tmp_path / "m3.yaml")
 
 
 def test_view_formatting_parsed_inline_and_path(tmp_path: Path) -> None:
     (tmp_path / "row.json").write_text('{"additionalRowClass": "x"}', encoding="utf-8")
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: A\n"
-            "      fields: [Title]\n"
-            "      formatting: row.json\n"
-            "    - title: B\n"
-            "      fields: [Title]\n"
-            "      formatting: { additionalRowClass: y }\n"
-            "    - title: C\n"
-            "      fields: [Title]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: A
+              fields: [Title]
+              formatting: row.json
+            - title: B
+              fields: [Title]
+              formatting: { additionalRowClass: y }
+            - title: C
+              fields: [Title]
+    """))
     views = load_mapping(tmp_path / "m.yaml").mapping.views["Project"]
     assert views[0].formatting == {"additionalRowClass": "x"}
     assert views[1].formatting == {"additionalRowClass": "y"}
@@ -881,24 +763,21 @@ def test_form_formatting_parsed_and_requires_a_part(tmp_path: Path) -> None:
         '{"sections": [{"displayname": "Core", "fields": ["Title"]}]}',
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "form_formatting:\n"
-            "  Project:\n"
-            "    body: body.json\n"
-            "    header: { elmType: div }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        form_formatting:
+          Project:
+            body: body.json
+            header: { elmType: div }
+    """))
     form = load_mapping(tmp_path / "m.yaml").mapping.form_formatting["Project"]
     assert form.body == {"sections": [{"displayname": "Core", "fields": ["Title"]}]}
     assert form.header == {"elmType": "div"}
     assert form.footer is None
 
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml("form_formatting:\n  Project: {}\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        form_formatting:
+          Project: {}
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="at least one"):
         load_mapping(tmp_path / "m2.yaml")
 
@@ -908,14 +787,11 @@ def test_a_declared_footer_reaches_the_parsed_form(tmp_path: Path) -> None:
     FormFormatting constructor. The declaration validated clean, reported no
     findings and deployed nothing, and a footer-only declaration passed the
     "at least one part" check above and then emitted an empty formatter."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "form_formatting:\n"
-            "  Project:\n"
-            "    footer: { elmType: div, txtContent: signed }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        form_formatting:
+          Project:
+            footer: { elmType: div, txtContent: signed }
+    """))
     form = load_mapping(tmp_path / "m.yaml").mapping.form_formatting["Project"]
     assert form.footer == {"elmType": "div", "txtContent": "signed"}
     assert form.header is None
@@ -928,30 +804,26 @@ def test_form_formatting_absent_defaults_empty() -> None:
 
 
 def test_list_validation_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "list_validation:\n"
-            "  Project:\n"
-            "    when:\n"
-            "      any_of:\n"
-            "        - none_of:\n"
-            "            - { field: Status, op: eq, value: Closed }\n"
-            "        - { field: Title, op: is_not_null }\n"
-            "    message: Closing needs a title.\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_validation:
+          Project:
+            when:
+              any_of:
+                - none_of:
+                    - { field: Status, op: eq, value: Closed }
+                - { field: Title, op: is_not_null }
+            message: Closing needs a title.
+    """))
     rule = load_mapping(tmp_path / "m.yaml").mapping.list_validation["Project"]
     assert rule.when is not None
     assert rule.message == "Closing needs a title."
 
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml(
-            "list_validation:\n  Project:\n"
-            "    when:\n      - { field: Title, op: is_not_null }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_validation:
+          Project:
+            when:
+              - { field: Title, op: is_not_null }
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="message"):
         load_mapping(tmp_path / "m2.yaml")
 
@@ -969,12 +841,10 @@ def test_entity_sub_keys_are_checked(tmp_path: Path) -> None:
     LookupField: "Title", so every lookup into that list renders blank. The
     validator has a dedicated guard for exactly that, and it never fired
     because the key was never seen."""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Membership: { kind: List, base_template: 100, site_role: default, "
-        "display_colum: DisplayName }\n",
-        encoding="utf-8",
+    # `display_colum` is the typo under test — one logical YAML line, built
+    # through `entity()` because spelled out it exceeds the line limit.
+    write_mapping(
+        tmp_path, "entities:\n" + entity("Membership", display_colum="DisplayName") + "\n",
     )
     with pytest.raises(ValueError, match=r"entities\.Membership") as err:
         load_mapping(tmp_path / "m.yaml")
@@ -984,27 +854,29 @@ def test_entity_sub_keys_are_checked(tmp_path: Path) -> None:
 def test_versioning_sub_keys_are_checked(tmp_path: Path) -> None:
     """A typo'd `enable_versioning: false` deploys versioning ON — the
     opposite of the declaration, on a list the author meant to keep flat."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("versioning:\n  default:\n    enable_versionin: false\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        versioning:
+          default:
+            enable_versionin: false
+    """))
     with pytest.raises(ValueError, match=r"versioning\.default") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "enable_versionin" in str(err.value)
 
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml("versioning:\n  overides:\n    Project: {}\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        versioning:
+          overides:
+            Project: {}
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="overides"):
         load_mapping(tmp_path / "m2.yaml")
 
-    (tmp_path / "m3.yaml").write_text(
-        _views_yaml(
-            "versioning:\n  overrides:\n    Project:\n      enable_versionin: false\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        versioning:
+          overrides:
+            Project:
+              enable_versionin: false
+    """), name="m3.yaml")
     with pytest.raises(ValueError, match=r"versioning\.overrides\.Project"):
         load_mapping(tmp_path / "m3.yaml")
 
@@ -1012,57 +884,45 @@ def test_versioning_sub_keys_are_checked(tmp_path: Path) -> None:
 def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
     """`deafult` never becomes the default view; a filter under `wheres:`
     deploys an UNFILTERED view, which is the one that leaks rows."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      fields: [Title]\n"
-            "      deafult: true\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open
+              fields: [Title]
+              deafult: true
+    """))
     with pytest.raises(ValueError, match="deafult"):
         load_mapping(tmp_path / "m.yaml")
 
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      fields: [Title]\n"
-            "      wheres:\n"
-            "        - { field: Status, op: neq, value: Closed }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open
+              fields: [Title]
+              wheres:
+                - { field: Status, op: neq, value: Closed }
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="wheres"):
         load_mapping(tmp_path / "m2.yaml")
 
-    (tmp_path / "m3.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      fields: [Title]\n"
-            "      sort:\n"
-            "        - { field: Title, dirction: desc }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open
+              fields: [Title]
+              sort:
+                - { field: Title, dirction: desc }
+    """), name="m3.yaml")
     with pytest.raises(ValueError, match="dirction"):
         load_mapping(tmp_path / "m3.yaml")
 
-    (tmp_path / "m4.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      fields: [Title]\n"
-            "      group_by: { field: Status, colapsed: true }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open
+              fields: [Title]
+              group_by: { field: Status, colapsed: true }
+    """), name="m4.yaml")
     with pytest.raises(ValueError, match="colapsed"):
         load_mapping(tmp_path / "m4.yaml")
 
@@ -1071,14 +931,11 @@ def test_group_sub_keys_are_checked(tmp_path: Path) -> None:
     """A misspelled `require_empty_at_deploy` disables the clean-provision
     gate — the check that proves a reconciled group has no members before
     list creation."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "groups:\n"
-            "  - name: Register Editors\n"
-            "    require_empty_at_deployy: true\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        groups:
+          - name: Register Editors
+            require_empty_at_deployy: true
+    """))
     with pytest.raises(ValueError, match=r"groups\[0\]") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "require_empty_at_deployy" in str(err.value)
@@ -1087,14 +944,11 @@ def test_group_sub_keys_are_checked(tmp_path: Path) -> None:
 def test_permission_level_sub_keys_are_checked(tmp_path: Path) -> None:
     """A misspelled `base_permissions` yields a custom level with NO bits —
     created, granted, and permitting nothing."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "permission_levels:\n"
-            "  - name: Contribute No Delete\n"
-            "    base_permission: [ViewListItems]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        permission_levels:
+          - name: Contribute No Delete
+            base_permission: [ViewListItems]
+    """))
     with pytest.raises(ValueError, match="base_permission"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -1102,70 +956,55 @@ def test_permission_level_sub_keys_are_checked(tmp_path: Path) -> None:
 def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
     """A typo in a policy degrades the list to inherited permissions with
     an empty allowlist — the fail-open direction on the security surface."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "list_permissions:\n"
-            "  default:\n"
-            "    break_inheritence: true\n"
-            "    assignments: []\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_permissions:
+          default:
+            break_inheritence: true
+            assignments: []
+    """))
     with pytest.raises(ValueError, match="break_inheritence"):
         load_mapping(tmp_path / "m.yaml")
 
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml(
-            "list_permissions:\n"
-            "  defualt:\n"
-            "    break_inheritance: true\n"
-            "    assignments: []\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_permissions:
+          defualt:
+            break_inheritance: true
+            assignments: []
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match="defualt"):
         load_mapping(tmp_path / "m2.yaml")
 
-    (tmp_path / "m3.yaml").write_text(
-        _views_yaml(
-            "list_permissions:\n"
-            "  default:\n"
-            "    break_inheritance: true\n"
-            "    assignments:\n"
-            "      - principal: { kind: group, nmae: Register Editors }\n"
-            "        level: Contribute\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_permissions:
+          default:
+            break_inheritance: true
+            assignments:
+              - principal: { kind: group, nmae: Register Editors }
+                level: Contribute
+    """), name="m3.yaml")
     with pytest.raises(ValueError, match="nmae"):
         load_mapping(tmp_path / "m3.yaml")
 
-    (tmp_path / "m4.yaml").write_text(
-        _views_yaml(
-            "list_permissions:\n"
-            "  default:\n"
-            "    break_inheritance: true\n"
-            "    assignments:\n"
-            "      - principal: { kind: associated_owner_group }\n"
-            "        levl: Contribute\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_permissions:
+          default:
+            break_inheritance: true
+            assignments:
+              - principal: { kind: associated_owner_group }
+                levl: Contribute
+    """), name="m4.yaml")
     with pytest.raises(ValueError, match="levl"):
         load_mapping(tmp_path / "m4.yaml")
 
 
 def test_demo_item_sub_keys_are_checked(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "demo_items:\n"
-            "  Project:\n"
-            "    - key: p1\n"
-            "      values: { Title: '[DEMO] x' }\n"
-            "      colums: [Title]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        demo_items:
+          Project:
+            - key: p1
+              values: { Title: '[DEMO] x' }
+              colums: [Title]
+    """))
     with pytest.raises(ValueError, match=r"demo_items\.Project\[0\]") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "colums" in str(err.value)
@@ -1175,38 +1014,35 @@ def test_watched_lists_and_polymorphic_patterns_are_checked(tmp_path: Path) -> N
     """Neither section is validated anywhere downstream, so a typo'd key
     was simply dropped. (The entity and column NAMES are checked against
     the schema in the validator, alongside every other section's.)"""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("watched_lists:\n  - { entity: Project, colum: Status }\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        watched_lists:
+          - { entity: Project, colum: Status }
+    """))
     with pytest.raises(ValueError, match="colum"):
         load_mapping(tmp_path / "m.yaml")
 
-    (tmp_path / "m3.yaml").write_text(
-        _views_yaml(
-            "polymorphic_patterns:\n"
-            "  - { list: Project, field: EntityId, discriminater: EntityType }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        polymorphic_patterns:
+          - { list: Project, field: EntityId, discriminater: EntityType }
+    """), name="m3.yaml")
     with pytest.raises(ValueError, match="discriminater"):
         load_mapping(tmp_path / "m3.yaml")
 
-    (tmp_path / "m4.yaml").write_text(
-        _views_yaml(
-            "cross_site_reference_columns:\n  - { entity: Project, colmn: OrgUnit }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        cross_site_reference_columns:
+          - { entity: Project, colmn: OrgUnit }
+    """), name="m4.yaml")
     with pytest.raises(ValueError, match="colmn"):
         load_mapping(tmp_path / "m4.yaml")
 
 
 def test_display_names_sub_keys_are_checked(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("display_names:\n  mode: auto\n  overides:\n    Project: {}\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        display_names:
+          mode: auto
+          overides:
+            Project: {}
+    """))
     with pytest.raises(ValueError, match="overides"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -1218,10 +1054,11 @@ def test_unknown_top_level_section_is_a_load_error(tmp_path: Path) -> None:
     """The guard itself had no test. A misspelled section used to be
     ignored outright: `form_visibilty:` built clean, the manifest reported
     "(none declared)" and nothing deployed."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("form_visibilty:\n  Project:\n    columns: {}\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        form_visibilty:
+          Project:
+            columns: {}
+    """))
     with pytest.raises(ValueError, match="unknown mapping section") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "form_visibilty" in str(err.value)
@@ -1233,21 +1070,18 @@ def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) ->
     all: no group, no level, no broken inheritance, no allowlist
     reconciliation — and a green build. The reader lives at the top level,
     under permission_levels / groups / list_permissions."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "permissions:\n"
-            "  levels:\n"
-            '    - name: "Contribute No Delete"\n'
-            "      base_permissions: [ViewListItems, AddListItems]\n"
-            "  groups:\n"
-            '    - name: "Register Editors"\n'
-            "  default_policy:\n"
-            "    break_inheritance: true\n"
-            "    reconcile: exact\n"
-            "    assignments: []\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        permissions:
+          levels:
+            - name: "Contribute No Delete"
+              base_permissions: [ViewListItems, AddListItems]
+          groups:
+            - name: "Register Editors"
+          default_policy:
+            break_inheritance: true
+            reconcile: exact
+            assignments: []
+    """))
     with pytest.raises(ValueError, match="unknown mapping section") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "permissions" in str(err.value)
@@ -1256,15 +1090,12 @@ def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) ->
 def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: Path) -> None:
     """Same shape as `permissions:` — allow-listed, never read. Policies are
     loaded from the file named by `retention_policies_source`."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "retention_policies:\n"
-            "  Standard7Y:\n"
-            "    sp_label: Standard 7 Year\n"
-            "    retain_years: 7\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        retention_policies:
+          Standard7Y:
+            sp_label: Standard 7 Year
+            retain_years: 7
+    """))
     with pytest.raises(ValueError, match="unknown mapping section") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "retention_policies" in str(err.value)
@@ -1338,10 +1169,10 @@ def test_every_allow_listed_section_has_a_reader() -> None:
 
 
 def test_hardening_flags_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("seal_columns: true\nprevent_list_deletion: true\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        seal_columns: true
+        prevent_list_deletion: true
+    """))
     mapping = load_mapping(tmp_path / "m.yaml").mapping
     assert mapping.seal_columns is True
     assert mapping.prevent_list_deletion is True
@@ -1367,16 +1198,13 @@ def test_quoted_break_inheritance_is_rejected_not_inverted(tmp_path: Path) -> No
     inherited grant, and exact reconciliation removed every non-declared
     role binding. The author declared the opposite of what deployed, and
     the build reported no findings."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "list_permissions:\n"
-            "  default:\n"
-            '    break_inheritance: "false"\n'
-            "    reconcile: exact\n"
-            "    assignments: []\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_permissions:
+          default:
+            break_inheritance: "false"
+            reconcile: exact
+            assignments: []
+    """))
     with pytest.raises(ValueError, match="break_inheritance"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -1390,10 +1218,8 @@ def test_quoted_group_flags_are_rejected(tmp_path: Path) -> None:
         "auto_accept_request_to_join_leave",
         "only_allow_members_view_membership",
     ):
-        (tmp_path / "m.yaml").write_text(
-            _views_yaml(f'groups:\n  - name: Editors\n    {flag}: "false"\n'),
-            encoding="utf-8",
-        )
+        # Left as a fragment: the payload is an f-string built inside a loop.
+        write_mapping(tmp_path, _views_yaml(f'groups:\n  - name: Editors\n    {flag}: "false"\n'))
         with pytest.raises(ValueError, match=flag):
             load_mapping(tmp_path / "m.yaml")
 
@@ -1401,26 +1227,29 @@ def test_quoted_group_flags_are_rejected(tmp_path: Path) -> None:
 def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
     """A quoted "false" deploys versioning ON — and the override path
     reaches jsgen as a raw dict, so nothing checked it at all."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml('versioning:\n  default:\n    enable_versioning: "false"\n'),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        versioning:
+          default:
+            enable_versioning: "false"
+    """))
     with pytest.raises(ValueError, match="enable_versioning"):
         load_mapping(tmp_path / "m.yaml")
 
-    (tmp_path / "m2.yaml").write_text(
-        _views_yaml(
-            'versioning:\n  overrides:\n    Project:\n      enable_versioning: "false"\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        versioning:
+          overrides:
+            Project:
+              enable_versioning: "false"
+    """), name="m2.yaml")
     with pytest.raises(ValueError, match=r"versioning\.overrides\.Project"):
         load_mapping(tmp_path / "m2.yaml")
 
-    (tmp_path / "m3.yaml").write_text(
-        _views_yaml("versioning:\n  overrides:\n    Project:\n      major_version_limit: many\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        versioning:
+          overrides:
+            Project:
+              major_version_limit: many
+    """), name="m3.yaml")
     with pytest.raises(ValueError, match="major_version_limit"):
         load_mapping(tmp_path / "m3.yaml")
 
@@ -1428,48 +1257,38 @@ def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
 def test_quoted_view_default_is_rejected(tmp_path: Path) -> None:
     """`default: "false"` coerced to True and stole the list's default
     view — the one every link into the list lands on."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      fields: [Title]\n"
-            '      default: "false"\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open
+              fields: [Title]
+              default: "false"
+    """))
     with pytest.raises(ValueError, match="default"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_quoted_group_by_collapsed_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      fields: [Title]\n"
-            '      group_by: { field: Status, collapsed: "false" }\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Open
+              fields: [Title]
+              group_by: { field: Status, collapsed: "false" }
+    """))
     with pytest.raises(ValueError, match="collapsed"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_quoted_singleton_is_rejected(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        '  Project: { kind: List, base_template: 100, site_role: default, singleton: "false" }\n',
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, "entities:\n" + entity("Project", singleton='"false"') + "\n")
     with pytest.raises(ValueError, match="singleton"):
         load_mapping(tmp_path / "m.yaml")
 
 
 @pytest.mark.parametrize("section", ["form_visibility", "column_validation"])
 def test_formula_sections_reject_non_mapping_columns(tmp_path: Path, section: str) -> None:
+    # Left as fragments: the section name is an f-string over the parameter.
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
         "entities:\n"
@@ -1485,16 +1304,14 @@ def test_formula_sections_reject_non_mapping_columns(tmp_path: Path, section: st
 
 @pytest.mark.parametrize("empty_filter", ["[]", "{}"])
 def test_views_reject_explicit_empty_filters(tmp_path: Path, empty_filter: str) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Open\n"
-            "      fields: [Title]\n"
-            f"      where: {empty_filter}\n",
-        ),
-        encoding="utf-8",
-    )
+    # Left as fragments: the last line is an f-string over the parameter.
+    write_mapping(tmp_path, _views_yaml(
+        "views:\n"
+        "  Project:\n"
+        "    - title: Open\n"
+        "      fields: [Title]\n"
+        f"      where: {empty_filter}\n",
+    ))
     with pytest.raises(ValueError, match=r"where.*(empty|expected)|empty group"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -1517,16 +1334,16 @@ def test_removed_section_message_offers_an_example_that_loads(
     parses. The `hidden_on_forms` message offered `Column: hidden` without
     the mandatory `columns:` level, so an author who followed it verbatim
     hit a second error."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(f"{removed}:\n  Project: [Status]\n"), encoding="utf-8",
-    )
+    # Left as a fragment: the section name is an f-string over the parameter.
+    write_mapping(tmp_path, _views_yaml(f"{removed}:\n  Project: [Status]\n"))
     with pytest.raises(ValueError) as err:
         load_mapping(tmp_path / "m.yaml")
     example = _example_from(str(err.value))
     assert "columns:" in example
-    (tmp_path / "fixed.yaml").write_text(
+    write_mapping(
+        tmp_path,
         _views_yaml(example.replace("<Entity>", "Project").replace("<Column>", "Status")),
-        encoding="utf-8",
+        name="fixed.yaml",
     )
     mapping = load_mapping(tmp_path / "fixed.yaml").mapping
     assert mapping.form_visibility["Project"].columns["Status"].new is False
@@ -1535,21 +1352,19 @@ def test_removed_section_message_offers_an_example_that_loads(
 def test_list_validation_formula_message_offers_an_example_that_loads(
     tmp_path: Path,
 ) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "list_validation:\n"
-            "  Project:\n"
-            '    formula: \'=[Status]<>""\'\n'
-            "    message: Needs a status.\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_validation:
+          Project:
+            formula: '=[Status]<>""'
+            message: Needs a status.
+    """))
     with pytest.raises(ValueError) as err:
         load_mapping(tmp_path / "m.yaml")
     example = _example_from(str(err.value))
-    (tmp_path / "fixed.yaml").write_text(
+    write_mapping(
+        tmp_path,
         _views_yaml(example.replace("<Entity>", "Project").replace("<Column>", "Status")),
-        encoding="utf-8",
+        name="fixed.yaml",
     )
     rule = load_mapping(tmp_path / "fixed.yaml").mapping.list_validation["Project"]
     assert rule.message
@@ -1566,33 +1381,27 @@ def test_site_role_on_a_permission_override_is_rejected(tmp_path: Path) -> None:
     Rejected rather than implemented: an override is already per-entity, so
     a site-role scope on one is either redundant or contradicts the entity
     it is keyed by."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "list_permissions:\n"
-            "  overrides:\n"
-            "    Project:\n"
-            "      break_inheritance: true\n"
-            "      site_role: default\n"
-            "      assignments: []\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_permissions:
+          overrides:
+            Project:
+              break_inheritance: true
+              site_role: default
+              assignments: []
+    """))
     with pytest.raises(ValueError, match="site_role") as err:
         load_mapping(tmp_path / "m.yaml")
     assert "list_permissions.overrides.Project" in str(err.value)
 
 
 def test_site_role_on_the_default_policy_is_still_accepted(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "list_permissions:\n"
-            "  default:\n"
-            "    break_inheritance: true\n"
-            "    site_role: default\n"
-            "    assignments: []\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        list_permissions:
+          default:
+            break_inheritance: true
+            site_role: default
+            assignments: []
+    """))
     perms = load_mapping(tmp_path / "m.yaml").mapping.permissions
     assert perms is not None
     assert perms.default_policy_site_role == "default"
@@ -1602,33 +1411,28 @@ def test_site_role_on_the_default_policy_is_still_accepted(tmp_path: Path) -> No
 
 
 def _board_yaml(block: str) -> str:
-    return (
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        + block
-    )
+    """The standard Board entity, plus whatever mapping block the test adds.
+
+    As with `_views_yaml`, the block is dedented and the `prefix:` line comes
+    from `write_mapping`.
+    """
+    return blocks(entities("Board"), block)
 
 
 def test_retired_columns_parse_both_declaration_forms(tmp_path: Path) -> None:
     """The full mapping form carries the lifecycle facts; the bare list is
     the minimal case. An unquoted YAML date scalar must normalise to ISO
     text, not leak a datetime.date into the mapping."""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
-        "retired_columns:\n"
-        "  Board:\n"
-        "    OperationsStatus:\n"
-        "      retired: 2026-09-01\n"
-        "      superseded_by: SiteServicesStatus\n"
-        '      reason: "Merged into Site Services at the September review"\n'
-        "      hide_existing: true\n"
-        "  Escalation: [LegacyRoute]\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, blocks(entities("Board", "Escalation"), """
+        retired_columns:
+          Board:
+            OperationsStatus:
+              retired: 2026-09-01
+              superseded_by: SiteServicesStatus
+              reason: "Merged into Site Services at the September review"
+              hide_existing: true
+          Escalation: [LegacyRoute]
+    """))
 
     mapping = load_mapping(tmp_path / "m.yaml").mapping
 
@@ -1649,31 +1453,39 @@ def test_retired_columns_parse_both_declaration_forms(tmp_path: Path) -> None:
 def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
     """Structural mistakes fail at load with a message naming the exact
     declaration — the same fail-closed contract as every other section."""
-    header = _board_yaml("retired_columns:\n  Board:\n")
-    (tmp_path / "no-date.yaml").write_text(
-        header + '    OperationsStatus:\n      reason: "gone"\n', encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        retired_columns:
+          Board:
+            OperationsStatus:
+              reason: "gone"
+    """), name="no-date.yaml")
     with pytest.raises(ValueError, match=r"retired_columns\.Board\.OperationsStatus"):
         load_mapping(tmp_path / "no-date.yaml")
 
-    (tmp_path / "unknown-key.yaml").write_text(
-        header + "    OperationsStatus:\n      retired: 2026-09-01\n      when: soon\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        retired_columns:
+          Board:
+            OperationsStatus:
+              retired: 2026-09-01
+              when: soon
+    """), name="unknown-key.yaml")
     with pytest.raises(ValueError, match="unknown key"):
         load_mapping(tmp_path / "unknown-key.yaml")
 
-    (tmp_path / "bad-bool.yaml").write_text(
-        header
-        + "    OperationsStatus:\n      retired: 2026-09-01\n      hide_existing: yep\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        retired_columns:
+          Board:
+            OperationsStatus:
+              retired: 2026-09-01
+              hide_existing: yep
+    """), name="bad-bool.yaml")
     with pytest.raises(ValueError, match="hide_existing must be a boolean"):
         load_mapping(tmp_path / "bad-bool.yaml")
 
-    (tmp_path / "bad-list.yaml").write_text(
-        _board_yaml("retired_columns:\n  Board: [123]\n"), encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        retired_columns:
+          Board: [123]
+    """), name="bad-list.yaml")
     with pytest.raises(ValueError, match="bare-list entries must be column names"):
         load_mapping(tmp_path / "bad-list.yaml")
 
@@ -1683,34 +1495,31 @@ def test_apply_retirement_folds_into_every_target_structure(tmp_path: Path) -> N
     structures deploy.js already implements. The calculated column (Route)
     is the carve-out — it must NEVER reach form_visibility, which the
     validator rejects for calculated columns."""
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "display_names:\n"
-            "  mode: auto\n"
-            "  overrides:\n"
-            "    Board:\n"
-            '      OperationsNote: "Ops commentary"\n'
-            "calculated_formulas:\n"
-            "  Board:\n"
-            "    Route: '=[BoardDate]'\n"
-            "views:\n"
-            "  Board:\n"
-            '    - title: "Last 14 days"\n'
-            "      fields: [BoardDate, OperationsStatus, SiteServicesStatus]\n"
-            "      widths: { OperationsStatus: 120, BoardDate: 140 }\n"
-            "retired_columns:\n"
-            "  Board:\n"
-            "    OperationsStatus:\n"
-            "      retired: 2026-09-01\n"
-            "      superseded_by: SiteServicesStatus\n"
-            "    OperationsNote:\n"
-            "      retired: 2026-09-01\n"
-            "      hide_existing: true\n"
-            "    Route:\n"
-            "      retired: 2026-09-01\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        display_names:
+          mode: auto
+          overrides:
+            Board:
+              OperationsNote: "Ops commentary"
+        calculated_formulas:
+          Board:
+            Route: '=[BoardDate]'
+        views:
+          Board:
+            - title: "Last 14 days"
+              fields: [BoardDate, OperationsStatus, SiteServicesStatus]
+              widths: { OperationsStatus: 120, BoardDate: 140 }
+        retired_columns:
+          Board:
+            OperationsStatus:
+              retired: 2026-09-01
+              superseded_by: SiteServicesStatus
+            OperationsNote:
+              retired: 2026-09-01
+              hide_existing: true
+            Route:
+              retired: 2026-09-01
+    """))
 
     mapping = load_mapping(tmp_path / "m.yaml").mapping
 
@@ -1755,25 +1564,22 @@ def test_apply_retirement_replaces_a_declared_form_visibility_entry(
     would leave the author's `existing: true` fighting hide_existing. The
     replacement is recorded so the validator can say so.
     """
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "form_visibility:\n"
-            "  Board:\n"
-            "    reconcile: exact\n"
-            "    columns:\n"
-            "      OperationsStatus:\n"
-            "        new: true\n"
-            "        existing: true\n"
-            "        when:\n"
-            "          - { field: BoardDate, op: is_not_null }\n"
-            "      Chair: hidden\n"
-            "retired_columns:\n"
-            "  Board:\n"
-            "    OperationsStatus:\n"
-            "      retired: 2026-09-01\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        form_visibility:
+          Board:
+            reconcile: exact
+            columns:
+              OperationsStatus:
+                new: true
+                existing: true
+                when:
+                  - { field: BoardDate, op: is_not_null }
+              Chair: hidden
+        retired_columns:
+          Board:
+            OperationsStatus:
+              retired: 2026-09-01
+    """))
 
     mapping = load_mapping(tmp_path / "m.yaml").mapping
 
@@ -1803,25 +1609,22 @@ def test_apply_retirement_strips_retired_fields_from_form_sections(
     empty fields list is KEPT — an empty section is the author's layout to
     clean up, and dropping it would be a second-order rewrite of their JSON.
     """
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "form_formatting:\n"
-            "  Board:\n"
-            "    body:\n"
-            "      sections:\n"
-            '        - displayname: "Header"\n'
-            "          fields: [BoardDate, OperationsStatus]\n"
-            '        - displayname: "Streams"\n'
-            "          fields: [OperationsStatus]\n"
-            "      unrelatedKey:\n"
-            '        nested: "left exactly as authored"\n'
-            "retired_columns:\n"
-            "  Board:\n"
-            "    OperationsStatus:\n"
-            "      retired: 2026-09-01\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        form_formatting:
+          Board:
+            body:
+              sections:
+                - displayname: "Header"
+                  fields: [BoardDate, OperationsStatus]
+                - displayname: "Streams"
+                  fields: [OperationsStatus]
+              unrelatedKey:
+                nested: "left exactly as authored"
+        retired_columns:
+          Board:
+            OperationsStatus:
+              retired: 2026-09-01
+    """))
 
     mapping = load_mapping(tmp_path / "m.yaml").mapping
 
@@ -1841,15 +1644,12 @@ def test_apply_retirement_strips_retired_fields_from_form_sections(
 
 
 def test_field_sets_section_parsed(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "field_sets:\n"
-            "  Board:\n"
-            "    header:   [BoardDate, Chair]\n"
-            "    statuses: [OperationsStatus, WorkforceStatus]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            header:   [BoardDate, Chair]
+            statuses: [OperationsStatus, WorkforceStatus]
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.field_sets == {
         "Board": {
@@ -1860,42 +1660,40 @@ def test_field_sets_section_parsed(tmp_path: Path) -> None:
 
 
 def test_field_sets_absent_defaults_empty(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(_board_yaml(""), encoding="utf-8")
+    write_mapping(tmp_path, _board_yaml(""))
     assert load_mapping(tmp_path / "m.yaml").mapping.field_sets == {}
 
 
 def test_field_sets_entity_block_must_be_a_mapping(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml("field_sets:\n  Board: [BoardDate, Chair]\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board: [BoardDate, Chair]
+    """))
     with pytest.raises(ValueError, match=r"field_sets\.Board"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_field_set_must_be_a_list_of_column_names(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml("field_sets:\n  Board:\n    header: BoardDate\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            header: BoardDate
+    """))
     with pytest.raises(ValueError, match=r"field_sets\.Board\.header"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_view_fields_expand_field_sets_in_declaration_order(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "field_sets:\n"
-            "  Board:\n"
-            "    header:   [BoardDate, Chair]\n"
-            "    statuses: [OperationsStatus, WorkforceStatus]\n"
-            "views:\n"
-            "  Board:\n"
-            "    - title: Heat grid\n"
-            '      fields: ["@header", "@statuses"]\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            header:   [BoardDate, Chair]
+            statuses: [OperationsStatus, WorkforceStatus]
+        views:
+          Board:
+            - title: Heat grid
+              fields: ["@header", "@statuses"]
+    """))
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == [
         "BoardDate", "Chair", "OperationsStatus", "WorkforceStatus",
@@ -1907,19 +1705,16 @@ def test_field_set_expansion_dedupes_keeping_first_position(tmp_path: Path) -> N
     """["@header", BoardDate] is a no-op, not an error: the spec removes
     duplicates keeping FIRST position, so BoardDate stays where the set put
     it rather than moving to the end."""
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "field_sets:\n"
-            "  Board:\n"
-            "    header: [BoardDate, Chair]\n"
-            "    audit:  [Chair, OverallStatus]\n"
-            "views:\n"
-            "  Board:\n"
-            "    - title: Today\n"
-            '      fields: ["@header", BoardDate, "@audit", "@header"]\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            header: [BoardDate, Chair]
+            audit:  [Chair, OverallStatus]
+        views:
+          Board:
+            - title: Today
+              fields: ["@header", BoardDate, "@audit", "@header"]
+    """))
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == ["BoardDate", "Chair", "OverallStatus"]
     assert view.expanded_sets == ["header", "audit"]
@@ -1928,19 +1723,16 @@ def test_field_set_expansion_dedupes_keeping_first_position(tmp_path: Path) -> N
 def test_field_sets_do_not_nest(tmp_path: Path) -> None:
     """One level only, deliberately: a member that looks like a reference is
     left literal, which the validator then reports as an unresolved set."""
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "field_sets:\n"
-            "  Board:\n"
-            '    outer: ["@inner", BoardDate]\n'
-            "    inner: [Chair]\n"
-            "views:\n"
-            "  Board:\n"
-            "    - title: Nested\n"
-            '      fields: ["@outer"]\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            outer: ["@inner", BoardDate]
+            inner: [Chair]
+        views:
+          Board:
+            - title: Nested
+              fields: ["@outer"]
+    """))
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == ["@inner", "BoardDate"]
     assert view.expanded_sets == ["outer"]
@@ -1949,18 +1741,15 @@ def test_field_sets_do_not_nest(tmp_path: Path) -> None:
 def test_unresolved_field_set_reference_is_left_in_place(tmp_path: Path) -> None:
     """Nothing is silently dropped: the validator names the bad reference and
     cli.py aborts before jsgen is ever reached."""
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "field_sets:\n"
-            "  Board:\n"
-            "    header: [BoardDate]\n"
-            "views:\n"
-            "  Board:\n"
-            "    - title: Typo\n"
-            '      fields: ["@headr", Chair]\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            header: [BoardDate]
+        views:
+          Board:
+            - title: Typo
+              fields: ["@headr", Chair]
+    """))
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == ["@headr", "Chair"]
     assert view.expanded_sets == []
@@ -1969,25 +1758,22 @@ def test_unresolved_field_set_reference_is_left_in_place(tmp_path: Path) -> None
 def test_field_set_expansion_applies_to_fields_only(tmp_path: Path) -> None:
     """widths, sort, group_by and where name columns directly; a set has no
     meaningful expansion there, so an '@' entry stays literal."""
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "field_sets:\n"
-            "  Board:\n"
-            "    header: [BoardDate, Chair]\n"
-            "views:\n"
-            "  Board:\n"
-            "    - title: Literal elsewhere\n"
-            '      fields: ["@header"]\n'
-            "      sort:\n"
-            '        - { field: "@header", direction: asc }\n'
-            '      group_by: { field: "@header" }\n'
-            "      where:\n"
-            '        - { field: "@header", op: is_null }\n'
-            "      widths:\n"
-            '        "@header": 120\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            header: [BoardDate, Chair]
+        views:
+          Board:
+            - title: Literal elsewhere
+              fields: ["@header"]
+              sort:
+                - { field: "@header", direction: asc }
+              group_by: { field: "@header" }
+              where:
+                - { field: "@header", op: is_null }
+              widths:
+                "@header": 120
+    """))
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == ["BoardDate", "Chair"]
     assert view.sort[0].field == "@header"
@@ -1997,15 +1783,12 @@ def test_field_set_expansion_applies_to_fields_only(tmp_path: Path) -> None:
 
 
 def test_views_without_field_sets_are_unchanged(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "views:\n"
-            "  Board:\n"
-            "    - title: Plain\n"
-            "      fields: [BoardDate, Chair]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        views:
+          Board:
+            - title: Plain
+              fields: [BoardDate, Chair]
+    """))
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == ["BoardDate", "Chair"]
     assert view.expanded_sets == []
@@ -2015,22 +1798,19 @@ def test_field_sets_expand_before_retirement_filters_them(tmp_path: Path) -> Non
     """Expansion must run BEFORE _apply_retirement, so retirement filters the
     already-expanded list. If the order inverted, "@statuses" would survive
     retirement untouched and WorkforceStatus would still be a view field."""
-    (tmp_path / "m.yaml").write_text(
-        _board_yaml(
-            "field_sets:\n"
-            "  Board:\n"
-            "    statuses: [OperationsStatus, WorkforceStatus]\n"
-            "retired_columns:\n"
-            "  Board:\n"
-            "    WorkforceStatus:\n"
-            '      retired: "2026-09-01"\n'
-            "views:\n"
-            "  Board:\n"
-            "    - title: Heat grid\n"
-            '      fields: ["@statuses"]\n',
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _board_yaml("""
+        field_sets:
+          Board:
+            statuses: [OperationsStatus, WorkforceStatus]
+        retired_columns:
+          Board:
+            WorkforceStatus:
+              retired: "2026-09-01"
+        views:
+          Board:
+            - title: Heat grid
+              fields: ["@statuses"]
+    """))
     view = load_mapping(tmp_path / "m.yaml").mapping.views["Board"][0]
     assert view.fields == ["OperationsStatus"]
     assert view.expanded_sets == ["statuses"]
@@ -2045,16 +1825,13 @@ def test_group_by_accepts_two_levels(tmp_path: Path) -> None:
     taken two FieldRefs inside one GroupBy; the mapping could say one."""
     from dbml_sharepoint.model.mapping_loader import ViewGroupBy
 
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: By source\n"
-            "      fields: [Title, SourceType, SourceInstrument]\n"
-            "      group_by: { fields: [SourceType, SourceInstrument], collapsed: true }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: By source
+              fields: [Title, SourceType, SourceInstrument]
+              group_by: { fields: [SourceType, SourceInstrument], collapsed: true }
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.views["Project"][0].group_by == ViewGroupBy(
         fields=["SourceType", "SourceInstrument"], collapsed=True,
@@ -2064,47 +1841,38 @@ def test_group_by_accepts_two_levels(tmp_path: Path) -> None:
 def test_group_by_refuses_three_levels(tmp_path: Path) -> None:
     """SharePoint's own ceiling. Silently dropping the third would answer a
     declared grouping with a different one."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Too deep\n"
-            "      fields: [Title, A, B, C]\n"
-            "      group_by: { fields: [A, B, C] }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Too deep
+              fields: [Title, A, B, C]
+              group_by: { fields: [A, B, C] }
+    """))
     with pytest.raises(ValueError, match="two levels"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_group_by_refuses_both_spellings_at_once(tmp_path: Path) -> None:
     """Accepting both would need a precedence rule nobody would remember."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Both\n"
-            "      fields: [Title, A, B]\n"
-            "      group_by: { field: A, fields: [B] }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Both
+              fields: [Title, A, B]
+              group_by: { field: A, fields: [B] }
+    """))
     with pytest.raises(ValueError, match="exactly one of 'field'"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_group_by_refuses_an_empty_fields_list(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Empty\n"
-            "      fields: [Title]\n"
-            "      group_by: { fields: [] }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Empty
+              fields: [Title]
+              group_by: { fields: [] }
+    """))
     with pytest.raises(ValueError, match="non-empty"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -2113,16 +1881,13 @@ def test_group_by_refuses_an_empty_fields_list(tmp_path: Path) -> None:
 
 
 def test_totals_parse(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Totals\n"
-            "      fields: [Title, SortOrder]\n"
-            "      totals: { SortOrder: sum }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Totals
+              fields: [Title, SortOrder]
+              totals: { SortOrder: sum }
+    """))
     bundle = load_mapping(tmp_path / "m.yaml")
     assert bundle.mapping.views["Project"][0].totals == {"SortOrder": "sum"}
 
@@ -2131,41 +1896,37 @@ def test_totals_default_to_empty(tmp_path: Path) -> None:
     """Empty means the live Aggregations property is never touched, so the
     default has to be an empty mapping rather than None — the deploy reads
     it as "nothing declared", not as "declare nothing"."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml("views:\n  Project:\n    - title: V\n      fields: [Title]\n"),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: V
+              fields: [Title]
+    """))
     assert load_mapping(tmp_path / "m.yaml").mapping.views["Project"][0].totals == {}
 
 
 def test_totals_refuse_an_unknown_function(tmp_path: Path) -> None:
     """SharePoint has no median. Unchecked, it would be written into the
     Aggregations property as a string and quietly produce nothing."""
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Bad\n"
-            "      fields: [Title, SortOrder]\n"
-            "      totals: { SortOrder: median }\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Bad
+              fields: [Title, SortOrder]
+              totals: { SortOrder: median }
+    """))
     with pytest.raises(ValueError, match="median"):
         load_mapping(tmp_path / "m.yaml")
 
 
 def test_totals_must_be_a_mapping(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        _views_yaml(
-            "views:\n"
-            "  Project:\n"
-            "    - title: Bad\n"
-            "      fields: [Title, SortOrder]\n"
-            "      totals: [SortOrder]\n",
-        ),
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Bad
+              fields: [Title, SortOrder]
+              totals: [SortOrder]
+    """))
     with pytest.raises(ValueError, match="must be a mapping"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -2175,13 +1936,18 @@ def test_accept_unindexable_display_column_defaults_false_and_parses(
 ) -> None:
     """The author's deliberate acceptance that a calculated display column will
     break this list's picker past 5,000 items. Off unless written down."""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Plain: { kind: List, base_template: 100, site_role: default }\n"
-        "  Accepted: { kind: List, base_template: 100, site_role: default, "
-        "display_column: Label, accept_unindexable_display_column: true }\n",
-        encoding="utf-8",
+    # `Accepted` is one logical YAML line; spelled out it exceeds the line
+    # limit, so `entity()` builds it.
+    write_mapping(
+        tmp_path,
+        "entities:\n" + "\n".join([
+            entity("Plain"),
+            entity(
+                "Accepted",
+                display_column="Label",
+                accept_unindexable_display_column="true",
+            ),
+        ]) + "\n",
     )
     mapping = load_mapping(tmp_path / "m.yaml").mapping
     assert mapping.entities["Plain"].accept_unindexable_display_column is False
@@ -2189,17 +1955,15 @@ def test_accept_unindexable_display_column_defaults_false_and_parses(
 
 
 def test_hide_from_all_items_defaults_empty_and_parses(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Plain: { kind: List, base_template: 100, site_role: default }\n"
-        "  Wide:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        "    hide_from_all_items: [Author, Editor]\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, """
+        entities:
+          Plain: { kind: List, base_template: 100, site_role: default }
+          Wide:
+            kind: List
+            base_template: 100
+            site_role: default
+            hide_from_all_items: [Author, Editor]
+    """)
     mapping = load_mapping(tmp_path / "m.yaml").mapping
     assert mapping.entities["Plain"].hide_from_all_items == ()
     assert mapping.entities["Wide"].hide_from_all_items == ("Author", "Editor")
@@ -2208,16 +1972,14 @@ def test_hide_from_all_items_defaults_empty_and_parses(tmp_path: Path) -> None:
 def test_hide_from_all_items_refuses_a_bare_string(tmp_path: Path) -> None:
     """A bare string iterates CHARACTER BY CHARACTER. Passed through, 'Author'
     becomes six columns that do not exist and six confusing errors."""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Wide:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        "    hide_from_all_items: Author\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, """
+        entities:
+          Wide:
+            kind: List
+            base_template: 100
+            site_role: default
+            hide_from_all_items: Author
+    """)
     with pytest.raises(
         ValueError,
         match=r"entities\.Wide\.hide_from_all_items must be a list of strings",
@@ -2226,16 +1988,14 @@ def test_hide_from_all_items_refuses_a_bare_string(tmp_path: Path) -> None:
 
 
 def test_hide_from_all_items_refuses_a_non_string_member(tmp_path: Path) -> None:
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Wide:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        "    hide_from_all_items: [Author, 7]\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, """
+        entities:
+          Wide:
+            kind: List
+            base_template: 100
+            site_role: default
+            hide_from_all_items: [Author, 7]
+    """)
     with pytest.raises(ValueError, match=r"must be a list of strings, got 7"):
         load_mapping(tmp_path / "m.yaml")
 
@@ -2243,15 +2003,13 @@ def test_hide_from_all_items_refuses_a_non_string_member(tmp_path: Path) -> None
 def test_a_misspelt_entity_key_is_still_refused(tmp_path: Path) -> None:
     """The allowlist guard, exercised on the near-miss singular. Widening
     _ENTITY_KEYS must not open the block to anything else."""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Wide:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        "    hide_from_all_item: [Author]\n",
-        encoding="utf-8",
-    )
+    write_mapping(tmp_path, """
+        entities:
+          Wide:
+            kind: List
+            base_template: 100
+            site_role: default
+            hide_from_all_item: [Author]
+    """)
     with pytest.raises(ValueError, match=r"entities\.Wide: unknown key\(s\)"):
         load_mapping(tmp_path / "m.yaml")
