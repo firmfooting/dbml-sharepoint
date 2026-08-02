@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from _builders import ID_PK, table
-from _packs import blocks, pack, write_dbml
+from _packs import blocks, entities, entity, pack
 from _paths import FIXTURES
 from _validator_helpers import _bundle_with_formulas, _schema
 
@@ -281,24 +281,19 @@ def test_indexed_calculated_column_is_error() -> None:
 def _calculated_display_inputs(
     tmp_path: Path, *, accepted: bool,
 ) -> tuple[Schema, MappingBundle]:
-    write_dbml(
+    event = (
+        entity("Event", display_column="Label", accept_unindexable_display_column="true")
+        if accepted
+        else entity("Event", display_column="Label")
+    )
+    return pack(
         tmp_path,
-        blocks(
+        dbml=blocks(
             table("Event", ID_PK, "Ref nvarchar", "Label calculated_text"),
             table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
         ),
+        mapping=entities(event, "FollowUp"),
     )
-    # The mapping stays hand-rolled: `accept` is glued onto the entity line.
-    accept = ", accept_unindexable_display_column: true" if accepted else ""
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Event: { kind: List, base_template: 100, site_role: default, "
-        f"display_column: Label{accept} }}\n"
-        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 def test_a_calculated_display_column_warns_about_the_form(tmp_path: Path) -> None:
     """A warning, not an error: a target that stays under 5,000 has no problem.
@@ -334,32 +329,15 @@ def test_accepting_it_silences_the_warning_completely(tmp_path: Path) -> None:
 def _display_type_inputs(
     tmp_path: Path, column_type: str, *, looked_up: bool,
 ) -> tuple[Schema, MappingBundle]:
-    follow_up = (
-        "Table FollowUp {\n"
-        "  Id int [pk, increment]\n"
-        "  Event int [ref: > Event.Id]\n"
-        "}\n"
-        if looked_up else ""
+    follow_up = ["FollowUp"] if looked_up else []
+    return pack(
+        tmp_path,
+        dbml=blocks(
+            table("Event", ID_PK, "Title nvarchar", f"Notes {column_type}"),
+            table("FollowUp", ID_PK, "Event int [ref: > Event.Id]") if looked_up else "",
+        ),
+        mapping=entities(entity("Event", display_column="Notes"), *follow_up),
     )
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Event {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        f"  Notes {column_type}\n"
-        "}\n" + follow_up,
-        encoding="utf-8",
-    )
-    entities = (
-        "  Event: { kind: List, base_template: 100, site_role: default, "
-        "display_column: Notes }\n"
-    )
-    if looked_up:
-        entities += "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\nentities:\n' + entities, encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 @pytest.mark.parametrize(
     ("column_type", "described_as"),
