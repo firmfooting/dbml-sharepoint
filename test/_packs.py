@@ -88,6 +88,29 @@ def blocks(*parts: str) -> str:
     return "".join(_body(p) for p in parts if p.strip())
 
 
+def with_tail(body: str, tail: str = "") -> str:
+    """Dedent `body`, then append `tail` **verbatim**.
+
+    For the helpers that take a caller-supplied fragment whose indentation is
+    SEMANTIC — `_join_inputs`' `mapping_tail` documents it plainly: *"indent it
+    four spaces to add an entity key, or start at column zero to open a new
+    top-level section"*. The indent is how the caller says where the fragment
+    goes.
+
+    `blocks()` is exactly wrong for those. It dedents each part against its own
+    margin, so a tail indented four spaces to nest under an entity comes out
+    flush and reparents to the top level of the document — silently, because
+    the result is still valid YAML. One conversion agent hit this on
+    `_shape_warnings`' `where` argument and left it as a fragment rather than
+    risk it.
+
+    So: the literal half gets dedented, the caller's half does not. Since
+    `body` starts at column zero after dedenting, a later `_body` pass over the
+    joined string is a no-op and the tail's indentation survives that too.
+    """
+    return _body(body) + tail
+
+
 def write_dbml(
     tmp_path: Path, body: str, *, preamble: bool = True, name: str = "s.dbml",
 ) -> Path:
