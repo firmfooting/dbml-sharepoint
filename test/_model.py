@@ -27,6 +27,7 @@ TEXT, `_model.table` builds a `Table` OBJECT. Import one or the other under an
 alias when a test needs both, as `test_model_contract.py` does.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, TypedDict, Unpack
 
@@ -123,7 +124,7 @@ def ref(name: str, target: str) -> Column:
 def table(
     name: str,
     *columns: Column | str,
-    indexes: list[str] | None = None,
+    indexes: Sequence[TableIndex | str] | None = None,
     note: str = "",
 ) -> Table:
     """A table with an implicit `Id` primary key.
@@ -132,15 +133,24 @@ def table(
     `table("Risk", "Title")` reads the way the DBML did. Anything else --
     a type, `required=True`, a ref -- is spelled with `column()`.
 
-    `indexes` takes bare column names, which is the only index shape
-    SharePoint accepts and the only one DBML's `indexes { Code }` block
-    produces here.
+    `indexes` takes bare column names for the single-column shape SharePoint
+    accepts, or a full `TableIndex` for the shapes it does NOT: a composite
+    `(Status, Category)`, or one carrying a `name`.
+
+    Being able to build an invalid index is the point, not a hole. DBML's
+    parser produces both, the validator's job is to refuse them, and a
+    builder that could only express valid input would make those refusals
+    untestable at the object level. Same reasoning as accepting `Column`
+    objects alongside bare names above.
     """
     cols = [id_column()] + [column(c) if isinstance(c, str) else c for c in columns]
     return Table(
         name=name,
         columns=cols,
-        indexes=[TableIndex(columns=(c,)) for c in indexes or []],
+        indexes=[
+            TableIndex(columns=(i,)) if isinstance(i, str) else i
+            for i in indexes or []
+        ],
         note=note,
     )
 

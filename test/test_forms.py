@@ -1,16 +1,27 @@
 # test/test_forms.py
 """form_visibility and column_validation: parsing, composition, validation."""
 
-from typing import cast
+from typing import Unpack, cast
 
 import pytest
-from _builders import ID_PK, TITLE, table
 from _findings import only
-from _packs import blocks, entities, pack, write_mapping
+from _model import MappingSections
+from _model import bundle as make_bundle
+from _model import column as make_column
+from _model import schema as make_schema
+from _model import table as make_table
+from _packs import blocks, entities, write_mapping
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.forms import compose_visibility, validate_form_visibility
 from dbml_sharepoint.model.conditions import Condition, parse_condition
+from dbml_sharepoint.model.mapping_loader import (
+    ColumnValidation,
+    EntitySection,
+    FormVisibility,
+    MappingBundle,
+)
+from dbml_sharepoint.model.parser import Schema
 
 TYPES = {"Status": "nvarchar", "Count": "number", "Note": "nvarchar"}
 WHEN = parse_condition([{"field": "Status", "op": "eq", "value": "Resolved"}], "w")
@@ -186,6 +197,11 @@ def test_condition_problems_are_reported_through_the_shared_validator() -> None:
 
 
 # === Loader ================================================================
+#
+# Everything from here to the next banner stays on the filesystem: each of
+# these tests IS about the YAML -- a shorthand string, a defaulted key, or a
+# refusal `load_mapping` raises. There is no object to build; the text is the
+# subject.
 
 def _load(tmp_path: object, section: str) -> object:
     from pathlib import Path
@@ -301,16 +317,31 @@ def test_empty_when_is_an_error_not_an_absence(tmp_path: object) -> None:
 
 # === Deploy-side: the sentinel and reconcile modes ==========================
 
-def _schema_json(tmp_path: object, section: str) -> dict[str, object]:
-    from pathlib import Path
+def _escalation(**sections: Unpack[MappingSections]) -> tuple[Schema, MappingBundle]:
+    """The four-column `Escalation` fixture, plus whatever the test declares."""
+    schema = make_schema(make_table(
+        "Escalation",
+        make_column("Title", required=True),
+        make_column("Note"),
+        make_column("Other"),
+    ))
+    return schema, make_bundle(entities=["Escalation"], **sections)
 
+
+def _visibility(
+    columns: dict[str, FormVisibility], reconcile: str = "exact",
+) -> dict[str, EntitySection[FormVisibility]]:
+    return {"Escalation": EntitySection(reconcile=reconcile, columns=columns)}
+
+
+#: The `hidden` shorthand, which the loader expands to both flags off.
+HIDDEN = FormVisibility(new=False, existing=False)
+
+
+def _schema_json(**sections: Unpack[MappingSections]) -> dict[str, object]:
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    schema, bundle = pack(
-        Path(str(tmp_path)),
-        dbml=table("Escalation", ID_PK, TITLE, "Note nvarchar", "Other nvarchar"),
-        mapping=blocks(entities("Escalation"), section),
-    )
+    schema, bundle = _escalation(**sections)
     return build_schema_json(
         schema, bundle, "default",
         site_url="https://example.sharepoint.com/sites/t",
@@ -323,63 +354,46 @@ def _field(schema: dict[str, object], name: str) -> dict[str, object]:
     return next(f for f in fields if f["title"] == name)
 
 
-def test_undeclared_section_leaves_every_column_unmanaged(tmp_path: object) -> None:
+def test_undeclared_section_leaves_every_column_unmanaged() -> None:
     """No declaration must mean 'do not touch', never 'clear it' — a deploy
     that blanked formulas nobody declared would erase configuration it does
     not own."""
     from dbml_sharepoint.generators.jsgen import UNMANAGED
 
-    schema = _schema_json(tmp_path, "")
+    schema = _schema_json()
     assert _field(schema, "Note")["client_validation_formula"] == UNMANAGED
 
 
-def test_exact_clears_undeclared_columns_but_declared_wins(tmp_path: object) -> None:
+def test_exact_clears_undeclared_columns_but_declared_wins() -> None:
     """Under exact the declaration is authoritative for the whole entity,
     so deleting an entry reverts that column on the next deploy."""
-    schema = _schema_json(tmp_path, """
-        form_visibility:
-          Escalation:
-            columns:
-              Note: hidden
-    """)
+    schema = _schema_json(form_visibility=_visibility({"Note": HIDDEN}))
     assert _field(schema, "Note")["client_validation_formula"] == "=if(false, 'true', 'false')"
     assert _field(schema, "Other")["client_validation_formula"] == ""
 
 
-def test_declared_mode_leaves_undeclared_columns_alone(tmp_path: object) -> None:
+def test_declared_mode_leaves_undeclared_columns_alone() -> None:
     from dbml_sharepoint.generators.jsgen import UNMANAGED
 
-    schema = _schema_json(tmp_path, """
-        form_visibility:
-          Escalation:
-            reconcile: declared
-            columns:
-              Note: hidden
-    """)
+    schema = _schema_json(
+        form_visibility=_visibility({"Note": HIDDEN}, reconcile="declared"),
+    )
     assert _field(schema, "Other")["client_validation_formula"] == UNMANAGED
 
 
-def test_the_sentinel_never_reaches_a_formula_position(tmp_path: object) -> None:
+def test_the_sentinel_never_reaches_a_formula_position() -> None:
     """The highest-risk item in the feature: if the marker leaked, SharePoint
     would receive the literal string as a formula. The deploy script must
     compare against it, never write it."""
     from pathlib import Path
 
     from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
-    from dbml_sharepoint.model.mapping_loader import load_mapping
-    from dbml_sharepoint.model.parser import parse_dbml
     from dbml_sharepoint.model.release import load_release
 
-    base = Path(str(tmp_path))
-    _schema_json(tmp_path, """
-        form_visibility:
-          Escalation:
-            columns:
-              Note: hidden
-    """)
+    schema, bundle = _escalation(form_visibility=_visibility({"Note": HIDDEN}))
     js = generate_deploy_js(
-        schema=parse_dbml(base / "s.dbml"),
-        bundle=load_mapping(base / "m.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(Path("test/fixtures") / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/t",
         site_role="default", source_dbml="s.dbml",
@@ -396,32 +410,30 @@ def test_the_sentinel_never_reaches_a_formula_position(tmp_path: object) -> None
     assert "enforceFormVisibility" not in js
 
 
-def test_manifest_shows_the_composed_formula_and_reconcile_mode(tmp_path: object) -> None:
+def test_manifest_shows_the_composed_formula_and_reconcile_mode() -> None:
     """An operator reading the manifest should see what will be written,
     not have to infer it from a declaration two files away."""
     from pathlib import Path
 
     from dbml_sharepoint.generators.manifestgen import generate_manifest
-    from dbml_sharepoint.model.mapping_loader import load_mapping
     from dbml_sharepoint.model.release import load_release
 
-    base = Path(str(tmp_path))
-    schema_json = _schema_json(tmp_path, """
-        form_visibility:
-          Escalation:
-            columns:
-              Note: { new: false }
-        column_validation:
-          Escalation:
-            columns:
-              Other:
-                when:
-                  - { field: Other, op: is_not_null }
-                message: Say something.
-    """)
+    declared: MappingSections = {
+        "form_visibility": _visibility({"Note": FormVisibility(new=False)}),
+        "column_validation": {"Escalation": EntitySection(columns={
+            "Other": ColumnValidation(
+                when=parse_condition(
+                    [{"field": "Other", "op": "is_not_null"}], "column_validation",
+                ),
+                message="Say something.",
+            ),
+        })},
+    }
+    schema_json = _schema_json(**declared)
+    _, bundle = _escalation(**declared)
     manifest = generate_manifest(
         schema_json=schema_json,
-        bundle=load_mapping(base / "m.yaml"),
+        bundle=bundle,
         release=load_release(Path("test/fixtures") / "release.yaml"),
         findings=[],
         site_url="https://example.sharepoint.com/sites/t",
@@ -443,142 +455,99 @@ def test_manifest_shows_the_composed_formula_and_reconcile_mode(tmp_path: object
 # --- Title and system columns -----------------------------------------------
 
 
-def _forms_inputs(tmp_path: object, section: str) -> tuple[object, object]:
-    """(schema, bundle) for a one-table fixture plus a mapping section."""
-    from pathlib import Path
+def _errors(**sections: Unpack[MappingSections]) -> list[str]:
+    """Error messages for the `Escalation` fixture with a NULLABLE Title.
 
-    # Title is deliberately NOT required here: a required column hidden from
-    # the New form is already an error, which would mask the silent drop
-    # this exercises.
-    return pack(
-        Path(str(tmp_path)),
-        dbml=table(
-            "Escalation", ID_PK, "Title nvarchar", "Note nvarchar", "Other nvarchar",
-        ),
-        mapping=blocks(entities("Escalation"), section),
-    )
-
-
-def _errors(tmp_path: object, section: str) -> list[str]:
+    Title is deliberately not required here: a required column hidden from
+    the New form is already an error, which would mask the silent drop these
+    exercise. `_escalation` makes it required, so this builds its own.
+    """
     from dbml_sharepoint.analysis.validator import validate_against_mapping
 
-    schema, bundle = _forms_inputs(tmp_path, section)
+    schema = make_schema(make_table(
+        "Escalation", make_column("Title"), make_column("Note"), make_column("Other"),
+    ))
+    bundle = make_bundle(entities=["Escalation"], **sections)
     return [
         f.message
-        for f in validate_against_mapping(schema, bundle)  # type: ignore[arg-type]
+        for f in validate_against_mapping(schema, bundle)
         if f.severity == "error"
     ]
 
 
-def test_title_form_visibility_is_rejected_not_silently_dropped(tmp_path: object) -> None:
+def test_title_form_visibility_is_rejected_not_silently_dropped() -> None:
     """jsgen routes Title through `title_patch` and continues before the
     formula keys are attached, so a declaration on it validated clean, the
     manifest reported "(none declared)", and nothing deployed. An asserted,
     validated, silently unenforced data-quality guarantee is the worst
     shape available — fail closed instead."""
-    messages = _errors(
-        tmp_path,
-        """
-        form_visibility:
-          Escalation:
-            columns:
-              Title: hidden
-        """,
-    )
+    messages = _errors(form_visibility=_visibility({"Title": HIDDEN}))
     assert any("Title" in m for m in messages), messages
 
 
-def test_title_column_validation_is_rejected(tmp_path: object) -> None:
-    messages = _errors(
-        tmp_path,
-        """
-        column_validation:
-          Escalation:
-            columns:
-              Title:
-                when:
-                  - { field: Title, measure: length, op: geq, value: 5 }
-                message: Titles must be at least 5 characters.
-        """,
-    )
+def test_title_column_validation_is_rejected() -> None:
+    messages = _errors(column_validation={"Escalation": EntitySection(columns={
+        "Title": ColumnValidation(
+            when=parse_condition(
+                [{"field": "Title", "measure": "length", "op": "geq", "value": 5}],
+                "column_validation",
+            ),
+            message="Titles must be at least 5 characters.",
+        ),
+    })})
     assert any("Title" in m for m in messages), messages
 
 
-def test_title_column_formatting_is_rejected(tmp_path: object) -> None:
+def test_title_column_formatting_is_rejected() -> None:
     """The untouched sibling: the formatter is looked up from the same
     fields_phase1 loop Title never enters, so it validated clean and
     deployed nothing either."""
     messages = _errors(
-        tmp_path,
-        """
-        column_formatting:
-          Escalation:
-            Title: { elmType: div }
-        """,
+        column_formatting={"Escalation": {"Title": {"elmType": "div"}}},
     )
     assert any("Title" in m for m in messages), messages
 
 
-def test_system_column_formatting_is_rejected(tmp_path: object) -> None:
+def test_system_column_formatting_is_rejected() -> None:
     """System columns are not DBML columns, so they never reach
     fields_phase1 either — the validator allow-listed them and the
     generator dropped them."""
     messages = _errors(
-        tmp_path,
-        """
-        column_formatting:
-          Escalation:
-            Created: { elmType: div }
-        """,
+        column_formatting={"Escalation": {"Created": {"elmType": "div"}}},
     )
     assert any("Created" in m for m in messages), messages
 
 
-def test_declarations_on_ordinary_columns_still_validate_clean(tmp_path: object) -> None:
+def test_declarations_on_ordinary_columns_still_validate_clean() -> None:
     """The rejections must be scoped to columns the generator drops."""
     messages = _errors(
-        tmp_path,
-        """
-        form_visibility:
-          Escalation:
-            columns:
-              Note: hidden
-        column_formatting:
-          Escalation:
-            Other: { elmType: div }
-        """,
+        form_visibility=_visibility({"Note": HIDDEN}),
+        column_formatting={"Escalation": {"Other": {"elmType": "div"}}},
     )
     assert messages == []
 
 
-def _calculated_schema_json(tmp_path: object, section: str) -> dict[str, object]:
+def _calculated_schema_json(**sections: Unpack[MappingSections]) -> dict[str, object]:
     """Escalation with a calculated column, plus a mapping section."""
-    from pathlib import Path
-
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    schema, bundle = pack(
-        Path(str(tmp_path)),
-        dbml=table(
-            "Escalation", ID_PK, "Title nvarchar", "Note nvarchar", "Band calculated_text",
-        ),
-        mapping=blocks(
-            entities("Escalation"),
-            """
-            calculated_formulas:
-              Escalation:
-                Band: '=IF([Note]="","low","high")'
-            """,
-            section,
-        ),
-    )
+    schema = make_schema(make_table(
+        "Escalation",
+        make_column("Title"),
+        make_column("Note"),
+        make_column("Band", "calculated_text"),
+    ))
+    declared: MappingSections = {
+        "calculated_formulas": {"Escalation": {"Band": '=IF([Note]="","low","high")'}},
+    }
+    declared.update(sections)
     return build_schema_json(
-        schema, bundle, "default",
+        schema, make_bundle(entities=["Escalation"], **declared), "default",
         site_url="https://example.sharepoint.com/sites/t",
     )
 
 
-def test_exact_reconcile_never_touches_a_calculated_column(tmp_path: object) -> None:
+def test_exact_reconcile_never_touches_a_calculated_column() -> None:
     """Both sections exclude calculated columns — they never reach an entry
     form, and declaring one is a build error. form_visibility carried the
     exclusion and column_validation did not, so `reconcile: exact` cleared
@@ -588,19 +557,17 @@ def test_exact_reconcile_never_touches_a_calculated_column(tmp_path: object) -> 
     happens."""
     from dbml_sharepoint.generators.jsgen import UNMANAGED
 
-    schema = _calculated_schema_json(tmp_path, """
-        form_visibility:
-          Escalation:
-            columns:
-              Note: hidden
-        column_validation:
-          Escalation:
-            columns:
-              Note:
-                when:
-                  - { field: Note, op: is_not_null }
-                message: Say something.
-    """)
+    schema = _calculated_schema_json(
+        form_visibility=_visibility({"Note": HIDDEN}),
+        column_validation={"Escalation": EntitySection(columns={
+            "Note": ColumnValidation(
+                when=parse_condition(
+                    [{"field": "Note", "op": "is_not_null"}], "column_validation",
+                ),
+                message="Say something.",
+            ),
+        })},
+    )
     band = _field(schema, "Band")
     assert band["client_validation_formula"] == UNMANAGED
     assert band["validation_formula"] == UNMANAGED
