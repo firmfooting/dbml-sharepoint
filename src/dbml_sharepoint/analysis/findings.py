@@ -192,7 +192,6 @@ class FindingCode(StrEnum):
     # One rule, three sections: a formatter naming a [$Field] the entity does
     # not render. `location.section` says whether it was a column formatter, a
     # form part or a view formatter.
-    FORMATTER_FIELD_NOT_RENDERED = "formatter_field_not_rendered"
     STYLE_REQUIRES_CALCULATED = "style_requires_calculated"
     STYLE_CALCULATED_TYPE_MISMATCH = "style_calculated_type_mismatch"
     STYLE_ON_BOOLEAN_MATCHES_NOTHING = "style_on_boolean_matches_nothing"
@@ -210,6 +209,23 @@ class FindingCode(StrEnum):
     # distinct reasons behind this and hands them back as prose; splitting
     # them into codes is that module's classification, not this one's.
     INVALID_CONDITION = "invalid_condition"
+
+    # --- checks/_demo.py: rows seeded by `--seed`
+    DEMO_ROWS_ON_DOCUMENT_LIBRARY = "demo_rows_on_document_library"
+    DUPLICATE_DEMO_KEY = "duplicate_demo_key"
+    DEMO_TITLE_MISSING_MARKER = "demo_title_missing_marker"
+    DEMO_COLUMN_NOT_WRITABLE = "demo_column_not_writable"
+    DEMO_VALUE_ON_CALCULATED_COLUMN = "demo_value_on_calculated_column"
+    DEMO_HYPERLINK_OBJECT_INVALID = "demo_hyperlink_object_invalid"
+    DEMO_HYPERLINK_ADDRESS_INVALID = "demo_hyperlink_address_invalid"
+    DEMO_OBJECT_VALUE_INVALID = "demo_object_value_invalid"
+    DEMO_REF_UNKNOWN_KEY = "demo_ref_unknown_key"
+    DEMO_REF_ON_NON_LOOKUP = "demo_ref_on_non_lookup"
+    DEMO_REF_TARGET_MISMATCH = "demo_ref_target_mismatch"
+    DEMO_REF_FORWARD_REFERENCE = "demo_ref_forward_reference"
+    DEMO_PERSON_VALUE_UNSUPPORTED = "demo_person_value_unsupported"
+    DEMO_DATE_VALUE_INVALID = "demo_date_value_invalid"
+    DEMO_ENUM_VALUE_UNKNOWN = "demo_enum_value_unknown"
 
 
 @dataclass(frozen=True, slots=True)

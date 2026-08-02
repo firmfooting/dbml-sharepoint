@@ -56,10 +56,8 @@ has no row or a row has no code.
 | `formatter_field_not_displayed` | error | A view formatter references a real column the view does not display; a view formatter can only read columns in its own `fields`, so the format would never fire. |
 | `formatter_field_not_rendered` | error | A view formatter references a column the entity does not render. |
 | `formula_target_not_calculated` | error | A `calculated_formulas:` entry names a column that is not `calculated_text` or `calculated_number`. |
-| `calculated_formula_cycle` | error | Calculated columns on one entity depend on each other in a cycle, so no creation order can satisfy them. |
 | `color_by_map_key_not_in_enum` | error | A `data-bar` `color_by` map names a choice the source column's enum does not contain. |
 | `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column the entity does not render. |
-| `formatter_field_not_rendered` | error | A formatter references a `[$Field]` the entity does not render. One rule across column formatters, form parts and view formatters — the `location` says which. |
 | `formatter_missing_elmtype` | error | A column formatter's JSON has no root `elmType`, so it is not a SharePoint column-formatting object. |
 | `form_columns_in_no_section` | warning | Columns are referenced by no form body section. SharePoint appends them to the last section, so the form still renders — but the declared arrangement stops being the deployed one. |
 | `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |
@@ -78,6 +76,21 @@ has no row or a row has no code.
 | `index_on_calculated_column` | error | An `indexes { }` entry names a calculated column. SharePoint accepts the flag and reads it back false. |
 | `index_settings_unsupported` | error | A DBML index carries `name`, `unique`, `type`, `pk` or `note`. SharePoint exposes none of them, so declare a bare column index. |
 | `invalid_condition` | error | The condition grammar rejected a declared `when:`. `conditions.py` has 28 distinct reasons behind this and reports them as prose. |
+| `demo_column_not_writable` | error | A demo row writes a column the deploy does not create, or writes `Id`. |
+| `demo_date_value_invalid` | error | A demo row's date value is neither `today+N`/`today-N` nor a real ISO calendar date. |
+| `demo_enum_value_unknown` | error | A demo row's value is not a member of the column's enum. |
+| `demo_hyperlink_address_invalid` | error | A demo row's hyperlink address is not a non-empty string. Checked as a string, not stringified — `str(None)` is `"None"`, which would deploy as a link pointing at the word None. |
+| `demo_hyperlink_object_invalid` | error | A demo row's hyperlink object value is not `{url: <address>, description: <label>}` with `description` optional. |
+| `demo_object_value_invalid` | error | A demo row's object value is not exactly `{demo_ref: <key>}`. |
+| `demo_person_value_unsupported` | error | A demo row writes a person column with something other than `"@me"`, the deploying operator. |
+| `demo_ref_forward_reference` | error | A self-referencing demo row's `demo_ref` names a row declared at or after it, so the target does not exist when the row is written. |
+| `demo_ref_on_non_lookup` | error | A demo row uses `demo_ref` on a column that is not a lookup. |
+| `demo_ref_target_mismatch` | error | A demo row's `demo_ref` resolves to a row of a different entity from the one the lookup targets. |
+| `demo_ref_unknown_key` | error | A demo row's `demo_ref` names a key no demo row declares. |
+| `demo_rows_on_document_library` | error | `demo_items:` seeds a `DocumentLibrary`. A library's items are files and seeding posts to `/items`, which SharePoint refuses outright — so the paste fails in front of whoever was being shown the demo. |
+| `demo_title_missing_marker` | error | A demo row's `Title` does not start with `[DEMO] `, the marker the teardown trusts to tell demo rows from real records. |
+| `demo_value_on_calculated_column` | error | A demo row writes a calculated column. Set its inputs instead. |
+| `duplicate_demo_key` | error | Two demo rows share a key. Keys are global across entities because `demo_ref` resolves against all of them. |
 | `join_threshold_approached` | warning | A view renders join-bearing columns at that ceiling, which held on the tenant measured but may not travel. |
 | `join_threshold_exceeded` | error | A view renders more join-bearing columns than the measured ceiling of 12 join operations, and SharePoint returns the view blank at any list size. Reached from a declared view and from the generated `All Items` view. |
 | `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1024 characters once display names are substituted. |
