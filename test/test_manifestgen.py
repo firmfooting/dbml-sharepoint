@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, entity, pack, write_mapping
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
@@ -181,37 +183,26 @@ def test_manifest_lists_declared_views(tmp_path: Path) -> None:
     """Declared views are review material like fields and ACLs: the manifest
     must show, per view, its list, curated columns, filter/sort/group shape
     and which view takes the default slot, plus a Summary count."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Status status\n"
-        "  DueDate date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks("""
+            Enum status {
+              "Open"
+              "Closed"
+            }
+        """, table("Risk", ID_PK, TITLE, "Status status", "DueDate date")),
+        mapping=blocks(entities("Risk"), """
+            views:
+              Risk:
+                - title: Open risks
+                  default: true
+                  fields: [Title, Status, DueDate]
+                  where:
+                    - { field: Status, op: neq, value: Closed }
+                  sort:
+                    - { field: DueDate, direction: asc }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: Open risks\n"
-        "      default: true\n"
-        "      fields: [Title, Status, DueDate]\n"
-        "      where:\n"
-        "        - { field: Status, op: neq, value: Closed }\n"
-        "      sort:\n"
-        "        - { field: DueDate, direction: asc }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     release = load_release(FIXTURES / "release.yaml")
     schema_json = build_schema_json(schema, bundle, "default")
     md = generate_manifest(
@@ -236,29 +227,18 @@ def test_manifest_lists_declared_views(tmp_path: Path) -> None:
 def test_manifest_view_bullets_render_one_per_line(tmp_path: Path) -> None:
     """trim_blocks eats the newline after a line-terminal {% endif %}, which
     concatenated every view bullet into one run-on line."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  DueDate date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "DueDate date"),
+        mapping=blocks(entities("Risk"), """
+            views:
+              Risk:
+                - title: First
+                  fields: [Title]
+                - title: Second
+                  fields: [DueDate]
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: First\n"
-        "      fields: [Title]\n"
-        "    - title: Second\n"
-        "      fields: [DueDate]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     release = load_release(FIXTURES / "release.yaml")
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
@@ -276,26 +256,15 @@ def test_manifest_view_bullets_render_one_per_line(tmp_path: Path) -> None:
 
 
 def test_manifest_lists_column_formatting(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Score int\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "Score int"),
+        mapping=blocks(entities("Risk"), """
+            column_formatting:
+              Risk:
+                Score: { elmType: div }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "column_formatting:\n"
-        "  Risk:\n"
-        "    Score: { elmType: div }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -313,26 +282,16 @@ def test_manifest_lists_column_formatting(tmp_path: Path) -> None:
 
 
 def test_manifest_lists_form_formatting(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE),
+        mapping=blocks(entities("Risk"), """
+            form_formatting:
+              Risk:
+                header: { elmType: div }
+                body: { sections: [ { displayname: X, fields: [Title] } ] }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "form_formatting:\n"
-        "  Risk:\n"
-        "    header: { elmType: div }\n"
-        "    body: { sections: [ { displayname: X, fields: [Title] } ] }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -382,25 +341,19 @@ def test_manifest_run_order_puts_assessment_first() -> None:
 
 
 def _manifest_for(tmp_path: Path, section: str) -> str:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Escalation {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Note nvarchar\n"
-        "  Status nvarchar\n"
-        "  Parent int [ref: > Escalation.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    """The standard Escalation entity, plus whatever mapping block the test adds.
+
+    `section` is dedented, so a caller may pass a triple-quoted block indented
+    to match its surrounding code.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Escalation", ID_PK, TITLE,
+            "Note nvarchar", "Status nvarchar", "Parent int [ref: > Escalation.Id]",
+        ),
+        mapping=blocks(entities("Escalation"), section),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Escalation: { kind: List, base_template: 100, site_role: default }\n" + section,
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     return generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -419,14 +372,13 @@ def test_manifest_reports_a_declaration_on_a_deferred_lookup(tmp_path: Path) -> 
     keys on phase2_lookups and deploy.js writes them. So a declaration on a
     self-referencing lookup deployed and the review artefact denied it —
     the inverse of the silent-drop bug, and just as misleading."""
-    md = _manifest_for(
-        tmp_path,
-        "form_visibility:\n"
-        "  Escalation:\n"
-        "    reconcile: declared\n"
-        "    columns:\n"
-        "      Parent: hidden\n",
-    )
+    md = _manifest_for(tmp_path, """
+        form_visibility:
+          Escalation:
+            reconcile: declared
+            columns:
+              Parent: hidden
+    """)
     assert "APP_Escalation.Parent" in md
 
 
@@ -434,16 +386,15 @@ def test_manifest_reports_the_column_validation_reconcile_mode(tmp_path: Path) -
     """reconcile was reported for form_visibility only, so a
     column_validation block running the default `exact` cleared every
     undeclared column's rule with no mode shown anywhere."""
-    md = _manifest_for(
-        tmp_path,
-        "column_validation:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Note:\n"
-        "        when:\n"
-        "          - { field: Note, op: is_not_null }\n"
-        "        message: Say something.\n",
-    )
+    md = _manifest_for(tmp_path, """
+        column_validation:
+          Escalation:
+            columns:
+              Note:
+                when:
+                  - { field: Note, op: is_not_null }
+                message: Say something.
+    """)
     section = md.split("## Column validation")[1].split("##")[0]
     assert "exact" in section, section
 
@@ -451,14 +402,13 @@ def test_manifest_reports_the_column_validation_reconcile_mode(tmp_path: Path) -
 def test_manifest_has_a_list_validation_section(tmp_path: Path) -> None:
     """Both siblings had a section; the cross-column one had none, so a
     save rule governing the whole list was deployed unannounced."""
-    md = _manifest_for(
-        tmp_path,
-        "list_validation:\n"
-        "  Escalation:\n"
-        "    when:\n"
-        "      - { field: Status, op: is_not_null }\n"
-        "    message: A status is required.\n",
-    )
+    md = _manifest_for(tmp_path, """
+        list_validation:
+          Escalation:
+            when:
+              - { field: Status, op: is_not_null }
+            message: A status is required.
+    """)
     assert "## List validation" in md
     assert "A status is required." in md
     assert "Status is_not_null" in md
@@ -474,69 +424,62 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> Non
     and polymorphic columns on lists that appear nowhere in its own
     `deploy.js`. Not a deploy defect; the manifest-disagrees-with-behaviour
     one, which is worse in an artefact whose whole job is to be believed."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Escalation {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Note nvarchar\n"
-        "  Status nvarchar\n"
-        "}\n"
-        "Table Ledger {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Note nvarchar\n"
-        "  Status nvarchar\n"
-        "  OldNote nvarchar\n"
-        "}\n",
-        encoding="utf-8",
-    )
     # Ledger lives on the OTHER role, and every section below names it.
     # Escalation carries a declaration in the two reconcile-bearing sections
     # so those sections RENDER: their "Reconcile:" line is emitted only when
     # the section has entries, which would otherwise hide the same leak.
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
-        "  Ledger: { kind: List, base_template: 100, site_role: finance }\n"
-        "display_names:\n"
-        "  mode: auto\n"
-        "form_visibility:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Note: hidden\n"
-        "  Ledger:\n"
-        "    columns:\n"
-        "      Note: hidden\n"
-        "column_validation:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Note:\n"
-        "        when:\n"
-        "          - { field: Note, op: is_not_null }\n"
-        "        message: Say something.\n"
-        "  Ledger:\n"
-        "    columns:\n"
-        "      Note:\n"
-        "        when:\n"
-        "          - { field: Note, op: is_not_null }\n"
-        "        message: Say something.\n"
-        "list_validation:\n"
-        "  Ledger:\n"
-        "    when:\n"
-        "      - { field: Status, op: is_not_null }\n"
-        "    message: A status is required.\n"
-        "retired_columns:\n"
-        "  Ledger:\n"
-        "    OldNote:\n"
-        "      retired: 2026-09-01\n"
-        "polymorphic_patterns:\n"
-        "  - { list: Ledger, field: Note, discriminator: Status }\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Escalation", ID_PK, TITLE, "Note nvarchar", "Status nvarchar"),
+            table(
+                "Ledger", ID_PK, TITLE,
+                "Note nvarchar", "Status nvarchar", "OldNote nvarchar",
+            ),
+        ),
+        mapping=blocks(
+            "\n".join([
+                "entities:",
+                entity("Escalation"),
+                entity("Ledger", site_role="finance"),
+            ]),
+            """
+            display_names:
+              mode: auto
+            form_visibility:
+              Escalation:
+                columns:
+                  Note: hidden
+              Ledger:
+                columns:
+                  Note: hidden
+            column_validation:
+              Escalation:
+                columns:
+                  Note:
+                    when:
+                      - { field: Note, op: is_not_null }
+                    message: Say something.
+              Ledger:
+                columns:
+                  Note:
+                    when:
+                      - { field: Note, op: is_not_null }
+                    message: Say something.
+            list_validation:
+              Ledger:
+                when:
+                  - { field: Status, op: is_not_null }
+                message: A status is required.
+            retired_columns:
+              Ledger:
+                OldNote:
+                  retired: 2026-09-01
+            polymorphic_patterns:
+              - { list: Ledger, field: Note, discriminator: Status }
+            """,
+        ),
     )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -562,40 +505,33 @@ def test_manifest_retention_table_covers_only_this_role(tmp_path: Path) -> None:
     resolve — and a key naming no declared entity at all must SURVIVE the
     filter, because that is a typo the operator needs to see rather than a
     role leak to hide."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Escalation {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n"
-        "Table Ledger {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n",
-        encoding="utf-8",
+    # The three `list_defaults` keys below are, in order: this role under its
+    # bare entity name, the other role under its prefixed list title, and a
+    # key naming nothing declared at all.
+    write_mapping(tmp_path, """
+        policies:
+          Standard7Y:
+            description: "Seven years."
+            sp_label: "GH-Standard-7Y"
+            retain_years: 7
+        list_defaults:
+          Escalation: Standard7Y
+          APP_Ledger: Standard7Y
+          Ghost: Standard7Y
+    """, prefix=None, name="r.yaml")
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Escalation", ID_PK, TITLE),
+            table("Ledger", ID_PK, TITLE),
+        ),
+        mapping="\n".join([
+            "retention_policies_source: r.yaml",
+            "entities:",
+            entity("Escalation"),
+            entity("Ledger", site_role="finance"),
+        ]),
     )
-    (tmp_path / "r.yaml").write_text(
-        "policies:\n"
-        "  Standard7Y:\n"
-        '    description: "Seven years."\n'
-        '    sp_label: "GH-Standard-7Y"\n'
-        "    retain_years: 7\n"
-        "list_defaults:\n"
-        "  Escalation: Standard7Y\n"       # this role, bare entity name
-        "  APP_Ledger: Standard7Y\n"       # other role, prefixed title
-        "  Ghost: Standard7Y\n",           # names nothing declared
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "retention_policies_source: r.yaml\n"
-        "entities:\n"
-        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
-        "  Ledger: { kind: List, base_template: 100, site_role: finance }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -607,47 +543,38 @@ def test_manifest_retention_table_covers_only_this_role(tmp_path: Path) -> None:
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
     )
-    table = md.split("## Retention policy mapping")[1]
-    assert "| Escalation |" in table, table
-    assert "| Ghost |" in table, table
-    assert "Ledger" not in table, table
+    rendered = md.split("## Retention policy mapping")[1]
+    assert "| Escalation |" in rendered, rendered
+    assert "| Ghost |" in rendered, rendered
+    assert "Ledger" not in rendered, rendered
 
 
 def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
     """The operator must be able to see, from the manifest alone, which
     columns are retired and why — retirement is a silent mutation of the
     author's own declarations."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum rag {\n"
-        '  "Green"\n'
-        '  "Amber"\n'
-        "}\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date\n"
-        "  OperationsStatus rag\n"
-        "  SiteServicesStatus rag\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks("""
+            Enum rag {
+              "Green"
+              "Amber"
+            }
+        """, table(
+            "Board", ID_PK, "Title nvarchar",
+            "BoardDate date", "OperationsStatus rag", "SiteServicesStatus rag",
+        )),
+        mapping=blocks(entities("Board"), """
+            display_names:
+              mode: auto
+            retired_columns:
+              Board:
+                OperationsStatus:
+                  retired: 2026-09-01
+                  superseded_by: SiteServicesStatus
+                  reason: "Merged into Site Services"
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "display_names:\n"
-        "  mode: auto\n"
-        "retired_columns:\n"
-        "  Board:\n"
-        "    OperationsStatus:\n"
-        "      retired: 2026-09-01\n"
-        "      superseded_by: SiteServicesStatus\n"
-        '      reason: "Merged into Site Services"\n',
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
@@ -691,35 +618,25 @@ def test_manifest_prints_resolved_view_fields_with_set_footnote(tmp_path: Path) 
     """A view declared with "@setname" must still show its RESOLVED columns
     in the manifest, plus which sets produced them — the operator reviews the
     manifest, not the mapping, and nothing may hide behind an indirection."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  BoardDate date\n"
-        "  OperationsStatus nvarchar\n"
-        "  WorkforceStatus nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table(
+            "Board", ID_PK, TITLE,
+            "BoardDate date", "OperationsStatus nvarchar", "WorkforceStatus nvarchar",
+        ),
+        mapping=blocks(entities("Board"), """
+            field_sets:
+              Board:
+                header:   [Title, BoardDate]
+                statuses: [OperationsStatus, WorkforceStatus]
+            views:
+              Board:
+                - title: Heat grid
+                  fields: ["@header", "@statuses"]
+                - title: Plain
+                  fields: [Title]
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "field_sets:\n"
-        "  Board:\n"
-        "    header:   [Title, BoardDate]\n"
-        "    statuses: [OperationsStatus, WorkforceStatus]\n"
-        "views:\n"
-        "  Board:\n"
-        "    - title: Heat grid\n"
-        '      fields: ["@header", "@statuses"]\n'
-        "    - title: Plain\n"
-        "      fields: [Title]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     md = generate_manifest(
         schema_json=build_schema_json(schema, bundle, "default"),
         findings=[],
