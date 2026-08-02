@@ -2,6 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _packs import replaced
 from _paths import FIXTURES
 from typer.testing import CliRunner
 
@@ -175,9 +176,11 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     (out / "operator-notes.txt").write_text("preserve me", encoding="utf-8")
     bad = tmp_path / "bad.dbml"
     bad.write_text(
-        (FIXTURES / "simple.dbml")
-        .read_text(encoding="utf-8")
-        .replace("Status    status     [not null, default: 'Open']", "Status    choice"),
+        replaced(
+            (FIXTURES / "simple.dbml").read_text(encoding="utf-8"),
+            "Status    status     [not null, default: 'Open']",
+            "Status    choice",
+        ),
         encoding="utf-8",
     )
     result = runner.invoke(app, [
@@ -276,9 +279,11 @@ def test_build_reports_validation_errors_without_crashing(tmp_path: Path) -> Non
     """
     bad = tmp_path / "bad.dbml"
     bad.write_text(
-        (FIXTURES / "simple.dbml")
-        .read_text(encoding="utf-8")
-        .replace("Status    status     [not null, default: 'Open']", "Status    choice"),
+        replaced(
+            (FIXTURES / "simple.dbml").read_text(encoding="utf-8"),
+            "Status    status     [not null, default: 'Open']",
+            "Status    choice",
+        ),
         encoding="utf-8",
     )
     out = tmp_path / "build"
