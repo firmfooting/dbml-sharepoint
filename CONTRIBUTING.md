@@ -11,14 +11,19 @@ and how a change is expected to move from idea to merged.
 
 ```bash
 uv sync
-prek install          # or: pre-commit install — installs the git hooks
+uv run prek install   # installs the git hooks
 ```
 
-The hooks in `.pre-commit-config.yaml` run the same lint/type/template
-checks as CI on every commit (ruff, mypy, j2lint) and the full test
-suite on push. They shell out to the project's own pinned tools via
-`uv run`, so a hook can never disagree with CI. Run them by hand any
-time with `prek run --all-files`.
+Hooks are run by [prek](https://prek.j178.dev/), which is pinned in the
+`dev` dependency group like every other gate — so `uv run prek` cannot
+drift from the version anyone else has. The config keeps the
+`.pre-commit-config.yaml` filename because that is the format prek reads;
+classic `pre-commit` is not used here.
+
+The hooks run the same lint/type/template checks as CI on every commit
+(ruff, mypy, j2lint) and the full test suite on push. They shell out to
+the project's own pinned tools via `uv run`, so a hook can never disagree
+with CI. Run them by hand any time with `uv run prek run --all-files`.
 
 ## The gates
 

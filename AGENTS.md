@@ -39,8 +39,8 @@ Corollaries:
 
 ## Gates
 
-Every change must leave all of these green. They are the same commands the
-pre-commit hooks run, so a hook can never disagree with CI.
+Every change must leave all of these green. They are the same commands the git
+hooks run, so a hook can never disagree with CI.
 
 ```bash
 uv run pytest
@@ -49,7 +49,9 @@ uv run mypy
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
 ```
 
-Install the hooks once with `prek install` (or `pre-commit install`).
+Install the git hooks once with `uv run prek install`. Hooks are run by
+[prek](https://prek.j178.dev/), pinned in the `dev` group; classic `pre-commit`
+is not used here. Run everything by hand with `uv run prek run --all-files`.
 
 ## Commits and merging
 

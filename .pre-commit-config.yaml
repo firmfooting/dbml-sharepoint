@@ -1,6 +1,6 @@
-# Pre-commit hooks. Runs under `prek` (the fast Rust runner) or classic
-# `pre-commit` — same config. Install once with `prek install`; pre-push
-# additionally runs the full test suite.
+# Git hooks, run by `prek`. Install once with `uv run prek install`; the
+# pre-push shim additionally runs the full test suite. The file keeps the
+# `.pre-commit-config.yaml` name because that is the format prek reads.
 #
 # The lint/type/template/test hooks are LOCAL and shell out to the
 # project's own pinned tools via `uv run`, so a hook can never drift from
@@ -11,10 +11,11 @@
 # all non-mutating structure checks.
 minimum_pre_commit_version: "3.0.0"
 
-# Without this, `install` wires up only the pre-commit hook and the pytest
-# hook below — declared `stages: [pre-push]` — is never installed, so the
-# "full suite on push" gate silently does not exist. Verified against
-# pre-commit, whose `install` defaults to `--hook-type pre-commit` alone.
+# Without this, `prek install` writes only the pre-commit shim, and the
+# pytest hook below — declared `stages: [pre-push]` — is never installed, so
+# the "full suite on push" gate silently does not exist. Measured on prek
+# 0.4.11: with the key absent, `install` produced `.git/hooks/pre-commit`
+# alone; with it present, pre-commit and pre-push both.
 #
 # There is no commit-msg entry on purpose: this repository squash-merges, so
 # individual branch commits never reach `main` and only the PR title needs to
