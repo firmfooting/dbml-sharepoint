@@ -7,11 +7,11 @@ from _findings import by_severity, none_of, only
 from _model import MappingSections
 from _model import bundle as make_bundle
 from _model import column as make_column
-from _model import enum as make_enum
 from _model import schema as make_schema
 from _model import table as make_table
+from _packs import blocks, pack
 from _paths import PACKAGE
-from _validator_helpers import _calculated_form_inputs, _view_errors, _view_inputs
+from _validator_helpers import _project_errors
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
@@ -30,31 +30,77 @@ from dbml_sharepoint.model.mapping_loader import (
 )
 from dbml_sharepoint.model.parser import Schema
 
-# The `Project` fixture as objects. `_view_inputs` / `_calculated_form_inputs`
-# in `_validator_helpers` build the same two shapes through the loader and are
-# still used below by the tests that need a LOAD-TIME transform -- field-set
-# expansion into a view's `fields`, and the retirement fold. Everything else
-# builds them here.
+# The `Project` fixture comes from `_validator_helpers` as objects
+# (`_project_inputs` / `_project_errors`). The two text spellings below build
+# the same shapes through the loader, and exist only for the five tests here
+# that need a LOAD-TIME transform -- field-set expansion into a view's
+# `fields`, and the retirement fold. They live beside those tests rather than
+# in `_validator_helpers`, which used to carry both spellings of the object
+# fixture side by side; a shared module offering two ways to build one thing
+# is how half the suite ends up on the slower one for no reason.
 
 
-def _project(**sections: Unpack[MappingSections]) -> tuple[Schema, MappingBundle]:
-    """`_view_inputs`' fixture, without the round trip through YAML."""
-    schema = make_schema(
-        make_table(
-            "Project",
-            make_column("Title", required=True),
-            make_column("Status", "status"),
-            make_column("SortOrder", "int"),
-            make_column("DueDate", "date"),
+def _loaded_project(tmp_path: Path, mapping_block: str) -> tuple[Schema, MappingBundle]:
+    """`_project_inputs`' fixture, written to disk and parsed back.
+
+    `mapping_block` is dedented, so a caller may pass a triple-quoted block
+    indented to match its surrounding code.
+    """
+    return pack(
+        tmp_path,
+        dbml="""
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            Table Project {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Status status
+              SortOrder int
+              DueDate date
+            }
+        """,
+        mapping=blocks(
+            """
+            entities:
+              Project: { kind: List, base_template: 100, site_role: default }
+            """,
+            mapping_block,
         ),
-        enums=[make_enum("status", "Open", "Closed")],
     )
-    return schema, make_bundle(entities=["Project"], **sections)
 
 
-def _project_errors(**sections: Unpack[MappingSections]) -> list[Finding]:
-    schema, bundle = _project(**sections)
+def _loaded_project_errors(tmp_path: Path, mapping_block: str) -> list[Finding]:
+    schema, bundle = _loaded_project(tmp_path, mapping_block)
     return by_severity(validate_against_mapping(schema, bundle), "error")
+
+
+def _loaded_calculated_project(
+    tmp_path: Path, mapping_block: str,
+) -> tuple[Schema, MappingBundle]:
+    """`_calculated_project`'s fixture, written to disk and parsed back."""
+    return pack(
+        tmp_path,
+        dbml="""
+            Table Project {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Score int
+              Band calculated_text
+            }
+        """,
+        mapping=blocks(
+            """
+            entities:
+              Project: { kind: List, base_template: 100, site_role: default }
+            calculated_formulas:
+              Project:
+                Band: '=IF([Score]>5,"High","Low")'
+            """,
+            mapping_block,
+        ),
+    )
 
 
 def _view(title: str, *fields: str, **extra: Any) -> dict[str, list[ViewDef]]:
@@ -65,7 +111,7 @@ def _view(title: str, *fields: str, **extra: Any) -> dict[str, list[ViewDef]]:
 def _calculated_project(
     **sections: Unpack[MappingSections],
 ) -> tuple[Schema, MappingBundle]:
-    """`_calculated_form_inputs`' fixture: `Band` calculated from `Score`."""
+    """A `Band` column calculated from `Score`, as objects."""
     schema = make_schema(make_table(
         "Project",
         make_column("Title", required=True),
@@ -113,7 +159,7 @@ def test_field_set_member_must_be_a_rendered_column(tmp_path: Path) -> None:
     expansion out in the test, which is the loader's job -- see the other
     three expansion-dependent tests below.
     """
-    errors = _view_errors(
+    errors = _loaded_project_errors(
         tmp_path,
         """
         field_sets:
@@ -162,7 +208,7 @@ def test_empty_field_set_is_error() -> None:
 def test_valid_field_set_produces_no_errors(tmp_path: Path) -> None:
     """Stays on the filesystem: the whole assertion is that the expansion
     resolved, which only the loader does."""
-    errors = _view_errors(
+    errors = _loaded_project_errors(
         tmp_path,
         """
         field_sets:
@@ -183,7 +229,7 @@ def test_unreferenced_field_set_is_a_warning(tmp_path: Path) -> None:
 
     Stays on the filesystem: "referenced" means present in a view's
     `expanded_sets`, which `_expand_field_sets` populates at load time."""
-    schema, bundle = _view_inputs(
+    schema, bundle = _loaded_project(
         tmp_path,
         """
         field_sets:
@@ -213,7 +259,7 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
 
     Stays on the filesystem: it asserts on the stripped view, and both the
     expansion and the retirement fold that produced it run in the loader."""
-    schema, bundle = _view_inputs(
+    schema, bundle = _loaded_project(
         tmp_path,
         """
         field_sets:
@@ -426,7 +472,7 @@ def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
     the whole subject. It synthesises a form_visibility entry, appends the
     RETIRED display-name override and strips the column from body sections;
     a bundle built straight from objects would skip all three."""
-    schema, bundle = _calculated_form_inputs(
+    schema, bundle = _loaded_calculated_project(
         tmp_path,
         """
         retired_columns:
