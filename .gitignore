@@ -13,8 +13,8 @@ build/
 # Example / template build output
 examples/**/build/
 examples/**/reports/
-templates/**/build/
-templates/**/reports/
+src/dbml_sharepoint/solutions/**/build/
+src/dbml_sharepoint/solutions/**/reports/
 
 # Generated fixture data for the threshold index probe.
 test/manual/rows/

@@ -22,7 +22,7 @@ The gap is concentrated in one file. `test_template_standard.py` is **22
 functions producing 399 cases**, because thirteen of them are parametrised
 across the whole template library. That is 22 conformance rules applied to 30
 templates, not 399 things anyone maintains — and parametrising is what makes a
-failure say *which* template drifted instead of "something under `templates/`
+failure say *which* template drifted instead of "something under `solutions/`
 is wrong".
 
 Every other file is close to one case per function: `test_jsgen` 112/112,
