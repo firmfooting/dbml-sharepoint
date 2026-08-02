@@ -78,4 +78,4 @@ induction, and the coordinator applies the matrix to the result.
 This register (with onboarding and stakeholder-contacts) is one where
 **deletion is expected**: retention rules above, not keep-everything.
 Export judiciously (exports inherit the same privacy duties); never run
-`rollback.js` against real rows.
+`rollback.js.txt` against real rows.

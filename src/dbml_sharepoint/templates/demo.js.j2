@@ -3,12 +3,12 @@
  * dbml-sharepoint DEMO DATA script (built with --seed).
 {% include "_provenance.js.j2" %}
  *
- * Paste AFTER deploy.js has finished with errors: []. Creates the declared
+ * Paste AFTER deploy.js.txt has finished with errors: []. Creates the declared
  * demo/sample rows. Every Title starts with '[DEMO] ' — visible in every
- * view and form, and the marker rollback.js trusts — and each row's text
+ * view and form, and the marker rollback.js.txt trusts — and each row's text
  * identifies it as demonstration data to delete before active use.
  * Re-pasting is safe: rows that already exist (matched by Title) are
- * skipped, never duplicated. rollback.js deletes lists whose items are ALL
+ * skipped, never duplicated. rollback.js.txt deletes lists whose items are ALL
  * demo rows without the non-empty refusal prompt — deploy, demonstrate,
  * delete.
  */
@@ -103,7 +103,7 @@
   }
 
   log('DONE', `Demo data complete. Created ${summary.created.length}, skipped ${summary.skipped.length} existing, errors ${summary.errors.length}.`);
-  log('INFO', 'Every demo row is marked "[DEMO] ". Delete before active use — rollback.js removes demo-only lists without the non-empty prompt.');
+  log('INFO', 'Every demo row is marked "[DEMO] ". Delete before active use — rollback.js.txt removes demo-only lists without the non-empty prompt.');
   console.log(summary);
   return summary;
 })();

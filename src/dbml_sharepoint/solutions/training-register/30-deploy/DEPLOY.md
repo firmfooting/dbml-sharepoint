@@ -2,8 +2,8 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = training-register`. Run order: **assess** the target site (paste
-`build/assess.js`, read-only) → **review** `build/deploy-manifest.md` (must
-show 0 validation errors) → **paste** `build/deploy.js` from a Site Owner's
+`build/assess.js.txt`, read-only) → **review** `build/deploy-manifest.md` (must
+show 0 validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
 console → **verify** against the checklist below. Template-specific notes
 follow.
 
@@ -37,8 +37,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates five courses
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates five courses
 and six records: a lapse and its refresher recorded as two rows, one
 record inside the sweep window, one already flagged Expiring, and two
 courses that never expire.
@@ -56,7 +56,7 @@ Two things the demo deliberately does not do:
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO] `, they are matched by Title on re-paste (running it twice never
-duplicates), and `rollback.js` treats a list whose rows are *all*
+duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content. Do not seed a site that already holds
 real records.
 

@@ -60,7 +60,7 @@ def test_manifest_includes_phase_headings_and_release() -> None:
     assert "general in-place schema upgrade" in md
     assert "Keep the site" in md and "inactive" in md
     assert "Retention policy mapping (desired state only)" in md
-    assert "No retention labels are applied by `deploy.js`" in md
+    assert "No retention labels are applied by `deploy.js.txt`" in md
     assert "desired-state deployment evidence only" in md
     assert "a tenant administrator" in md
     assert "must prove the approved per-library and per-item mechanism" in md
@@ -135,7 +135,7 @@ def test_manifest_renders_seed_items_and_extension_extras() -> None:
 
 def test_manifest_carries_operator_run_instructions() -> None:
     """The manifest is the operator's document: it must explain where and how
-    to run deploy.js (classic page, console, expected output), not just what
+    to run deploy.js.txt (classic page, console, expected output), not just what
     the deployment contains."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -347,12 +347,12 @@ def test_manifest_run_order_puts_assessment_first() -> None:
     )
     run = md[md.index("## How to run this deployment"): md.index("## Summary")]
     # Assessment gates the deploy paste.
-    assert run.index("assess.js") < run.index("deploy.js")
+    assert run.index("assess.js.txt") < run.index("deploy.js.txt")
     assert "COMPATIBLE" in run
     assert "assess-manifest.md" in run
     # Verification and the rollback scope limit close the sequence.
     assert "verification checklist" in run
-    assert run.index("[SP-DEPLOY]") < run.index("rollback.js")
+    assert run.index("[SP-DEPLOY]") < run.index("rollback.js.txt")
     assert "failed FIRST provision" in run
 
 
@@ -390,7 +390,7 @@ def _manifest_for(**sections: Unpack[MappingSections]) -> str:
 
 def test_manifest_reports_a_declaration_on_a_deferred_lookup() -> None:
     """The sections iterated fields_phase1 only, while jsgen puts the same
-    keys on phase2_lookups and deploy.js writes them. So a declaration on a
+    keys on phase2_lookups and deploy.js.txt writes them. So a declaration on a
     self-referencing lookup deployed and the review artefact denied it —
     the inverse of the silent-drop bug, and just as misleading."""
     md = _manifest_for(form_visibility={
@@ -441,7 +441,7 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> Non
     inventories iterated `bundle.mapping` directly instead — so a build for
     role `default` announced validation rules, retirements, reconcile modes
     and polymorphic columns on lists that appear nowhere in its own
-    `deploy.js`. Not a deploy defect; the manifest-disagrees-with-behaviour
+    `deploy.js.txt`. Not a deploy defect; the manifest-disagrees-with-behaviour
     one, which is worse in an artefact whose whole job is to be believed."""
     # Ledger lives on the OTHER role, and every section below names it.
     # Escalation carries a declaration in the two reconcile-bearing sections

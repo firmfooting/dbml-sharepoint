@@ -210,7 +210,7 @@ relationship. They are likely to be relevant to contract management, audit and
 any dispute, and they should be retained under your records schedule rather
 than tidied up when a theme closes.
 
-`rollback.js` is for empty or demonstration deployments only. Deleting a
+`rollback.js.txt` is for empty or demonstration deployments only. Deleting a
 populated register is a deliberate, authorised act: export it first, and treat
 the deletion protection on the lists as friction rather than as authority.
 

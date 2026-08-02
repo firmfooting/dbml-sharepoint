@@ -1,14 +1,14 @@
 ---
-title: rollback.js
+title: rollback.js.txt
 sidebar_position: 2
 ---
 
-# rollback.js
+# rollback.js.txt
 
 Deletes the lists this schema declared at this site — the escape hatch
 for a failed first provision and the teardown half of
 deploy–demonstrate–delete. It is deliberately harder to run than
-deploy.js.
+deploy.js.txt.
 
 ## Confirmation gates
 

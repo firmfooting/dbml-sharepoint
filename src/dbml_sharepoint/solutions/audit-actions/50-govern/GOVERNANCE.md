@@ -141,5 +141,5 @@ do not look the same to a committee.
 ## Lifecycle
 
 The register is assurance evidence — retain long (align with your audit
-retention schedule). Export before decommission; never run `rollback.js`
+retention schedule). Export before decommission; never run `rollback.js.txt`
 against real rows.

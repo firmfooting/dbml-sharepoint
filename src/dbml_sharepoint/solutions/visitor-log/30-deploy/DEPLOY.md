@@ -2,9 +2,9 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = visitor-log`. Run order: **assess** the target site (paste
-`build/assess.js`, read-only; the verdict must be COMPATIBLE or an accepted
+`build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
 DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js` from a Site Owner's console →
+errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -38,8 +38,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates six visits —
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates six visits —
 three people still on site (one of them signed in yesterday, so *Never
 signed out* has a row), a contractor with an induction ticked, a student
 placement, and completed visits — enough that all four declared views have
@@ -47,7 +47,7 @@ content.
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO] `, so they are obvious in every view, they are matched by Title on
-re-paste (running it twice never duplicates), and `rollback.js` treats a
+re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real visits.
 

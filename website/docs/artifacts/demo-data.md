@@ -1,9 +1,9 @@
 ---
-title: demo-data.js
+title: demo-data.js.txt
 sidebar_position: 4
 ---
 
-# demo-data.js
+# demo-data.js.txt
 
 Emitted only when the build is run with `--seed`. Creates the sample
 rows declared under the mapping's `demo_items`, so a freshly deployed
@@ -19,7 +19,7 @@ whole contract:
   for records.
 - Each row's text identifies it as demonstration data to delete before
   active use.
-- [rollback.js](rollback.md) trusts it: a list whose items are *all*
+- [rollback.js.txt](rollback.md) trusts it: a list whose items are *all*
   marked is demo-only content and is removed without the non-empty
   refusal prompt — deploy, demonstrate, delete.
 
@@ -43,4 +43,4 @@ grammar):
 
 Rows are matched by Title: re-pasting skips existing rows (their Ids
 still resolve for later `demo_ref` links) and never duplicates. Paste
-order is deploy.js first, then demo-data.js, both from the same bundle.
+order is deploy.js.txt first, then demo-data.js.txt, both from the same bundle.

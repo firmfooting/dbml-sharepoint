@@ -4,7 +4,11 @@
 from pathlib import Path
 
 from dbml_sharepoint.bundle import (
+    ASSESS_SCRIPT,
+    DEMO_SCRIPT,
+    DEPLOY_SCRIPT,
     GENERATED_FILES,
+    ROLLBACK_SCRIPT,
     clear_generated,
     sha256_lf,
     write_checksums,
@@ -13,13 +17,41 @@ from dbml_sharepoint.bundle import (
 
 
 def test_generated_files_is_the_full_bundle() -> None:
-    # demo-data.js is in the clear set even though it is emitted only with
-    # --seed: a rebuild WITHOUT --seed must remove a stale demo script.
+    # The demo script is in the clear set even though it is emitted only
+    # with --seed: a rebuild WITHOUT --seed must remove a stale one.
+    #
+    # Spelled out rather than built from the constants: this is the test
+    # that would catch a rename, and asserting `DEPLOY_SCRIPT in
+    # GENERATED_FILES` would pass no matter what either one said.
     assert set(GENERATED_FILES) == {
-        "deploy.js", "rollback.js", "assess.js", "demo-data.js",
+        "deploy.js.txt", "rollback.js.txt", "assess.js.txt",
+        "demo-data.js.txt",
         "deploy-manifest.md", "assess-manifest.md",
         "INDEX.md", "checksums.txt",
     }
+
+
+def test_the_pasteable_scripts_are_not_executable_by_extension() -> None:
+    """`.js` on Windows is bound to Windows Script Host, so double-clicking
+    the deliverable RUNS a provisioning script instead of opening it. These
+    files exist to be opened and copied; the extension has to say so."""
+    for name in (DEPLOY_SCRIPT, ROLLBACK_SCRIPT, ASSESS_SCRIPT, DEMO_SCRIPT):
+        assert name.endswith(".js.txt"), name
+
+
+def test_a_stale_script_from_an_older_build_is_cleared(tmp_path: Path) -> None:
+    """A directory built before the rename still holds a pasteable
+    `deploy.js`. Clearing only the current names would leave it beside the
+    fresh bundle -- the exact "stale script an operator could paste"
+    failure clear_generated exists to prevent."""
+    out = tmp_path / "build"
+    out.mkdir()
+    for legacy in ("deploy.js", "rollback.js", "assess.js", "demo-data.js"):
+        (out / legacy).write_text("// last month's run", encoding="utf-8")
+
+    clear_generated(out)
+
+    assert sorted(p.name for p in out.iterdir()) == []
 
 
 def test_sha256_lf_is_newline_insensitive() -> None:
@@ -110,8 +142,8 @@ def test_write_index_lists_base_artifacts_not_itself(tmp_path: Path) -> None:
     out.mkdir()
     write_index(out)
     md = (out / "INDEX.md").read_text(encoding="utf-8")
-    for name in ("deploy-manifest.md", "assess.js", "assess-manifest.md",
-                 "deploy.js", "rollback.js", "checksums.txt"):
+    for name in ("deploy-manifest.md", ASSESS_SCRIPT, "assess-manifest.md",
+                 DEPLOY_SCRIPT, ROLLBACK_SCRIPT, "checksums.txt"):
         assert f"`{name}`" in md, name
     assert "`INDEX.md`" not in md
     assert "`reporting/`" not in md

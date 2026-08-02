@@ -66,4 +66,4 @@ software has your back:
 
 Records retention follows your HR/records schedule — typically employment
 plus a statutory period. Export before decommissioning; never run
-`rollback.js` against real records.
+`rollback.js.txt` against real records.

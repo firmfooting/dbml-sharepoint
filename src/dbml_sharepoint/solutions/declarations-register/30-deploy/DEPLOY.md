@@ -2,9 +2,9 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = declarations-register`. Run order: **assess** the target site
-(paste `build/assess.js`, read-only; the verdict must be COMPATIBLE or an
+(paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
 accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js` from a Site Owner's
+validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
 console → **verify** against the checklist below. Template-specific notes
 follow.
 
@@ -47,8 +47,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates five interests
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates five interests
 — one per status, including a managed conflict whose review falls inside
 the window — and five offers, one per decision, with the **same offeror
 appearing twice** so that *By offeror* shows the repeat pattern the annual
@@ -56,7 +56,7 @@ report is looking for.
 
 **Delete the demo rows before staff start declaring.** Every demo Title
 begins with `[DEMO] `, so they are obvious in every view, they are matched
-by Title on re-paste (running it twice never duplicates), and `rollback.js`
+by Title on re-paste (running it twice never duplicates), and `rollback.js.txt`
 treats a list whose rows are *all* demo-marked as demo-only content. A demo
 declaration left in a live register is a fabricated record in an evidential
 list, which is worse here than almost anywhere else in the library.

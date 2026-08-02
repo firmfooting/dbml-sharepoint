@@ -42,7 +42,7 @@ dbml-sharepoint build \
 ```
 
 Review `build/deploy-manifest.md`. Continue only with zero errors and zero
-warnings. Run `assess.js` first, then `deploy.js` from an authorised Site
+warnings. Run `assess.js.txt` first, then `deploy.js.txt` from an authorised Site
 Owner console. A successful deployment ends with `[SP-DEPLOY] [DONE]` and
 `errors: []`.
 
@@ -92,7 +92,7 @@ configuration changes.
 
 ## Optional demonstration
 
-Add `--seed` to the build command. `demo-data.js` creates fifteen rows: six
+Add `--seed` to the build command. `demo-data.js.txt` creates fifteen rows: six
 events, five follow-ups and four themes, all prefixed `[DEMO]`. They tell one
 deliberately mundane, sector-neutral story — a recurring access-provisioning
 failure, chased four times, escalated, partly remedied — and are chosen so
@@ -217,7 +217,7 @@ enforces.
 
 ## Rollback boundary
 
-`rollback.js` is for empty or demonstration deployments only. Real rows are
+`rollback.js.txt` is for empty or demonstration deployments only. Real rows are
 organisational records, and a register assembled for a service review is
 exactly the kind of thing whose deletion needs to be a deliberate, authorised
 act: export it and follow your records schedule before any decommission.

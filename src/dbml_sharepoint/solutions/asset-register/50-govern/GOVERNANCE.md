@@ -66,5 +66,5 @@ mapping change and redeploy.
 
 - Financial depreciation lives in the finance system; this register is the
   operational truth that feeds it.
-- Decommissioning: export to Excel first; never run `rollback.js` against a
+- Decommissioning: export to Excel first; never run `rollback.js.txt` against a
   populated register.

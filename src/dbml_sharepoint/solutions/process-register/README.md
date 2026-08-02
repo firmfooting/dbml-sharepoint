@@ -46,7 +46,7 @@ legacy systems by name if that helps honesty — but re-read the
 members); the scoring definitions in governance are the calibration that
 makes scores comparable across teams.
 
-**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes six `[DEMO] `-titled rows across four functions, covering all
 five current states and all six digitisation statuses, with two landing in
 *Key-person risk* — so every view, every colour band and the score bar

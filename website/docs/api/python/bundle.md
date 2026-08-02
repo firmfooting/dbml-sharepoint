@@ -24,10 +24,34 @@ stable — the same discipline as the release.yaml config_snapshot pins.
 
 --seed was requested but the mapping declares no demo_items.
 
+### `DEPLOY_SCRIPT`
+
+```python
+DEPLOY_SCRIPT = 'deploy.js.txt'
+```
+
+### `ROLLBACK_SCRIPT`
+
+```python
+ROLLBACK_SCRIPT = 'rollback.js.txt'
+```
+
+### `ASSESS_SCRIPT`
+
+```python
+ASSESS_SCRIPT = 'assess.js.txt'
+```
+
+### `DEMO_SCRIPT`
+
+```python
+DEMO_SCRIPT = 'demo-data.js.txt'
+```
+
 ### `GENERATED_FILES`
 
 ```python
-GENERATED_FILES = ('deploy.js', 'rollback.js', 'assess.js', 'demo-data.js', 'deploy-manifest.md', 'assess-manifest.md', 'INDEX.md', 'checksums.txt')
+GENERATED_FILES = ('deploy.js.txt', 'rollback.js.txt', 'assess.js.txt', 'demo-data.js.txt', 'deploy-manifest.md', 'assess-manifest.md', 'INDEX.md', 'checksums.txt')
 ```
 
 ### `clear_generated`
@@ -79,8 +103,8 @@ def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'Mapping
 
 Emit the full post-validation bundle; returns the success message.
 
-The one emission sequence — deploy.js, rollback.js, assess.js and its
-manifest, the seed-gated demo-data.js, reporting, INDEX.md and
+The one emission sequence — the deploy, rollback and assess scripts and
+the assess manifest, the seed-gated demo script, reporting, INDEX.md and
 checksums.txt — shared by the core CLI and every extension CLI. Raises
 :class:`SeedRequiresDemoItemsError` before writing anything when
 ``seed`` is set but the mapping declares no demo rows.

@@ -26,13 +26,14 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
+from dbml_sharepoint.bundle import ASSESS_SCRIPT, DEPLOY_SCRIPT
 from dbml_sharepoint.catalogue import Solution, available_solutions
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 #: Copied templates must not carry a previous build. These names are
 #: gitignored in the repository, so they exist only in a contributor's
 #: checkout -- but that is exactly where the wizard gets run during
-#: development, and a stale deploy.js in a new project is worse than none.
+#: development, and a stale deploy script in a new project is worse than none.
 _NEVER_COPY = ("build", "reports", "__pycache__")
 
 #: Weaker than SharePoint's own rules on purpose. The authority is the
@@ -242,7 +243,7 @@ def _run(console: Console) -> int:
     console.print(
         Panel(
             "Copy a shipped list template into a project of your own, then "
-            "build it into a pasteable deploy.js.\n\n"
+            "build it into a pasteable deploy script.\n\n"
             "[dim]Everything here is also available as flags -- run "
             "`dbml-sharepoint build --help`.[/dim]",
             title="dbml-sharepoint",
@@ -321,10 +322,11 @@ def _run(console: Console) -> int:
 
     console.print(
         Panel(
-            f"Paste [bold]{answers.destination / 'build' / 'assess.js'}[/bold] "
-            "into the target site's console first -- it is read-only and "
-            "tells you what is already there.\n\n"
-            f"Then [bold]{answers.destination / 'build' / 'deploy.js'}[/bold].\n\n"
+            f"Paste [bold]{answers.destination / 'build' / ASSESS_SCRIPT}"
+            "[/bold] into the target site's console first -- it is read-only "
+            "and tells you what is already there.\n\n"
+            "Then [bold]"
+            f"{answers.destination / 'build' / DEPLOY_SCRIPT}[/bold].\n\n"
             f"[dim]{answers.destination / '30-deploy' / 'DEPLOY.md'} has the "
             "full procedure for this template.[/dim]",
             title="Next",

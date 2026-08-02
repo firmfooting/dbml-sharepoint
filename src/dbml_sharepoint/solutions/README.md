@@ -128,7 +128,7 @@ generic one.
 resolved to whoever pastes the script. They are chosen so that every
 declared view returns something and every formatted column renders in its
 colours — a view that demonstrates empty teaches the adopter it does not
-work. Build with `--seed` to get them; `rollback.js` removes a list whose
+work. Build with `--seed` to get them; `rollback.js.txt` removes a list whose
 rows are all marked without its usual non-empty prompt, so it is
 deploy, demonstrate, delete.
 
@@ -228,7 +228,7 @@ Build into a copy rather than in place: these templates ship inside the
 installed package, and writing output back into it puts generated files in
 a directory the next upgrade replaces.
 
-1. **On a new site, assess first.** Every build emits `build/assess.js`;
+1. **On a new site, assess first.** Every build emits `build/assess.js.txt`;
    paste it from the target site's console (it is read-only). The
    `[SP-ASSESS] [DONE]` verdict must be **COMPATIBLE** or an accepted
    **DEGRADED**; a **BLOCKED** verdict means fix the site (or the
@@ -238,13 +238,13 @@ a directory the next upgrade replaces.
 3. Open the target site's classic settings page
    (`/_layouts/15/settings.aspx`) signed in as a **Site Owner**, press F12 →
    Console (type `allow pasting` if the browser objects), paste the whole of
-   `build/deploy.js`, Enter.
+   `build/deploy.js.txt`, Enter.
 4. Watch the `[SP-DEPLOY]` lines; success ends with `errors: []`. On any
    error: read it, fix the stated cause, paste the same script again —
    reruns verify-and-skip completed work.
 5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
 6. Optional: to demonstrate the solution with content, rebuild with
-   `--seed` and paste `build/demo-data.js` from the same console. Each
+   `--seed` and paste `build/demo-data.js.txt` from the same console. Each
    template's DEPLOY.md gives the command and says what the rows show.
 
 **Views arrive with the paste.** Every list's views are declared in
@@ -308,7 +308,7 @@ columns are sealed** (SharePoint refuses UI schema edits and deletion of
 sealed columns, even for site admins — the deploy script unseals for its
 own run and re-seals, with verification, in Phase 4.1) and **every list
 carries `AllowDeletion = false`** ("Delete this list" disappears for
-everyone). `rollback.js` stays usable: it clears the deletion block per
+everyone). `rollback.js.txt` stays usable: it clears the deletion block per
 list only after you confirm that list's deletion, and restores the block
 if a delete fails. This is friction + tamper-evidence, not enforcement —
 a site collection admin can flip both back via API, and a redeploy
@@ -334,7 +334,7 @@ them very differently:
   `ContentTypes.GetById(...).FieldLinks.GetById(...).Hidden = false` then
   `ContentType.Update(false)` — was validated end to end on a live tenant
   against an ordinary column, a UI-hidden column and a UI-hidden sealed
-  column, each with a confirming read-back. `deploy.js` already uses CSOM
+  column, each with a confirming read-back. `deploy.js.txt` already uses CSOM
   `ProcessQuery` for site-group ownership, so the mechanism is established.
   It simply is not wired to this property yet.
 

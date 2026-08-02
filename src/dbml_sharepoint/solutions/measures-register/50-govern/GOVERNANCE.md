@@ -82,4 +82,4 @@ Rules 1 and 2 **stay governance checks**, and cannot be otherwise:
 ## Lifecycle
 
 Retired rows are kept permanently (they decode historical reporting).
-Export before decommission; never run `rollback.js` against real rows.
+Export before decommission; never run `rollback.js.txt` against real rows.

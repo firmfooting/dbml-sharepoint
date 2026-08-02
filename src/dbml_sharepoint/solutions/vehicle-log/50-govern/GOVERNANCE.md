@@ -103,5 +103,5 @@ moment a figure leaves this list for a fleet paper or an FBT return:
 Retain trip logs per your tax/records requirements (Australia: five years
 for substantiation, typically). Export by financial year for finance.
 A disposed vehicle stays in `VE_Vehicle` — it drops out of *The fleet*
-view but keeps its trip history readable. Never run `rollback.js` against
+view but keeps its trip history readable. Never run `rollback.js.txt` against
 real rows.

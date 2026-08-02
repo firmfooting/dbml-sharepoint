@@ -95,5 +95,5 @@ built on a misunderstanding:
 ## Lifecycle
 
 Turnaround history is your demand evidence for budget bids — keep at least
-two years. Export before decommission; never run `rollback.js` against
+two years. Export before decommission; never run `rollback.js.txt` against
 real rows.

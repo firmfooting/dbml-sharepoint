@@ -2,9 +2,9 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = audit-actions`. Run order: **assess** the target site (paste
-`build/assess.js`, read-only; the verdict must be COMPATIBLE or an accepted
+`build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an accepted
 DEGRADED) → **review** `build/deploy-manifest.md` (must show 0 validation
-errors) → **paste** `build/deploy.js` from a Site Owner's console →
+errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
 **verify** against the checklist below. Template-specific notes follow.
 
 ## Before you build
@@ -46,8 +46,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates five audits —
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates five audits —
 one per type — and six recommendations covering every status and every
 finding rating, including the row that matters most for testing the
 *Overdue* view: a recommendation whose **original** date has passed and
@@ -56,7 +56,7 @@ overdue.
 
 **Delete the demo rows before loading your backlog.** Every demo Title
 begins with `[DEMO] `, so they are obvious in every view, they are matched
-by Title on re-paste (running it twice never duplicates), and `rollback.js`
+by Title on re-paste (running it twice never duplicates), and `rollback.js.txt`
 treats a list whose rows are *all* demo-marked as demo-only content.
 
 ## After the paste — verification checklist

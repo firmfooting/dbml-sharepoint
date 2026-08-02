@@ -172,6 +172,6 @@ its own run and re-seals afterwards; nobody else should need to.
 
 ## Lifecycle
 
-Export before decommissioning. Never run `rollback.js` against a populated
+Export before decommissioning. Never run `rollback.js.txt` against a populated
 register — it is for a failed first provision on an empty site, and for
 clearing demo data seeded with `--seed`.

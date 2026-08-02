@@ -2,8 +2,8 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = meeting-actions`. Run order: **assess** the target site (paste
-`build/assess.js`, read-only) → **review** `build/deploy-manifest.md` (must
-show 0 validation errors) → **paste** `build/deploy.js` from a Site Owner's
+`build/assess.js.txt`, read-only) → **review** `build/deploy-manifest.md` (must
+show 0 validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
 console → **verify** against the checklist below. Template-specific notes
 follow.
 
@@ -33,8 +33,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates four meetings
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates four meetings
 across four forums (one deliberately older than the rolling ninety days),
 three decisions stated as decisions, and six actions spanning every
 status — including one overdue and still open, which is the row the whole
@@ -47,7 +47,7 @@ Paste one onto a demo meeting by hand to see the column work.
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO] `, they are matched by Title on re-paste (running it twice never
-duplicates), and `rollback.js` treats a list whose rows are *all*
+duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content.
 
 ## After the paste — verification checklist

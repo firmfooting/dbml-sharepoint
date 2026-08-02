@@ -43,7 +43,7 @@ dbml-sharepoint build \
 ```
 
 Review `build/deploy-manifest.md`. Continue only with zero errors and zero
-warnings. Run `assess.js` first, then `deploy.js` from an authorised Site
+warnings. Run `assess.js.txt` first, then `deploy.js.txt` from an authorised Site
 Owner/admin console. A successful deployment ends with
 `[SP-DEPLOY] [DONE]` and `errors: []`.
 
@@ -81,7 +81,7 @@ configuration changes.
 
 ## Optional demonstration
 
-Add `--seed` to the build command. `demo-data.js` creates nine de-identified
+Add `--seed` to the build command. `demo-data.js.txt` creates nine de-identified
 records:
 
 - minimal capture;
@@ -188,7 +188,7 @@ starts `[DEMO]`; delete the rows before go-live.
 
 ## Rollback boundary
 
-`rollback.js` is for empty/demo deployments only. Real rows are organisational
+`rollback.js.txt` is for empty/demo deployments only. Real rows are organisational
 records: export them and follow the health service records schedule before any
 decommission. Deletion protection is UI friction, not authority to destroy
 data.

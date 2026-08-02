@@ -36,7 +36,7 @@ All REST traffic rides a shared transport
   error handling.
 - **Instrumented.** A `DEBUG` flag (default `false`, editable in the
   pasted script — no rebuild) prints per-request timing lines and, for
-  deploy.js, a per-phase seconds table before `DONE`. The `DONE` line
+  deploy.js.txt, a per-phase seconds table before `DONE`. The `DONE` line
   always carries elapsed seconds and total request count.
 - **Read-safe by construction.** The transport partial contains no write
   helper; write headers live in a separate partial included only by the
@@ -49,7 +49,7 @@ roughly one `contextinfo` POST per run.
 
 ## Phases and lanes
 
-deploy.js runs the phase sequence from the
+deploy.js.txt runs the phase sequence from the
 [phases manifest](architecture.md#the-phases-manifest): PREPARE
 (preflight, security principals, enrolment, maintenance unseal),
 STRUCTURE (lists, deferred lookups, indexes, defaults), PRESENTATION
@@ -83,7 +83,7 @@ Rerunning any script must be safe:
   error, but the intended outcome is convergence on the mapping, not
   refusal.
 - **Content is never touched.** Undeclared views, user rows and user
-  columns are user content; deploy.js reconciles only what the mapping
+  columns are user content; deploy.js.txt reconciles only what the mapping
   declares (the one exception is `reconcile: exact` ACL mode, which the
   mapping must opt into).
 

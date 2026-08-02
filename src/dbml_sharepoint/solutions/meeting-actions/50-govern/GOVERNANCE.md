@@ -55,4 +55,4 @@ the difference is worth knowing rather than assuming:
 ## Lifecycle
 
 Keep everything — the register IS the corporate memory and it's tiny data.
-Export before decommissioning; never run `rollback.js` against real rows.
+Export before decommissioning; never run `rollback.js.txt` against real rows.

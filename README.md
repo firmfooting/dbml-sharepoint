@@ -1,7 +1,7 @@
 # dbml-sharepoint
 
 Turn a [DBML](https://dbml.dbdiagram.io/docs/) schema plus a YAML mapping into
-an **idempotent, fail-closed, browser-console `deploy.js`** that provisions
+an **idempotent, fail-closed, browser-console `deploy.js.txt`** that provisions
 SharePoint Online lists, columns, lookups, indexes, permission levels, groups
 and ACLs — with **no tenant admin rights, no premium licence, and nothing
 installed on the target**. If you can open the site and press F12, you can
@@ -13,8 +13,8 @@ schema.dbml + mapping.yaml + release.yaml
         ▼   dbml-sharepoint build
 ┌──────────────────────────────┐
 │ deploy-manifest.md  ← read   │
-│ deploy.js           ← paste  │
-│ rollback.js         ← escape │
+│ deploy.js.txt           ← paste  │
+│ rollback.js.txt         ← escape │
 └──────────────────────────────┘
         │
         ▼   paste into the site's browser console (F12)
@@ -108,8 +108,15 @@ Then:
 2. Open `https://yourtenant.sharepoint.com/sites/your-site/_layouts/15/settings.aspx`
    (a classic page; the script's wrong-site guard needs `_spPageContextInfo`)
    signed in as a Site Owner.
-3. F12 → Console → paste the whole of `build/deploy.js` → Enter.
+3. F12 → Console → paste the whole of `build/deploy.js.txt` → Enter.
 4. Watch the `[SP-DEPLOY]` lines; success ends with a summary and `errors: []`.
+
+> The pasteable scripts end in **`.js.txt`**, not `.js`. They exist to be
+> opened and copied, never executed from disk — and on Windows a `.js` file
+> is bound to Windows Script Host, so double-clicking one runs a
+> provisioning script outside the browser. `.js.txt` opens in a text editor
+> everywhere. Editors that colour by extension will treat them as plain
+> text; rename a copy if you want highlighting while reviewing.
 
 ## The three inputs
 
@@ -141,7 +148,7 @@ Phases are numbered from the phases manifest
 (`src/dbml_sharepoint/analysis/phases.py`) — reference steps by name;
 numbers renumber automatically when the structure changes.
 
-`rollback.js` deletes the declared lists. It exists for one case: a failed
+`rollback.js.txt` deletes the declared lists. It exists for one case: a failed
 **first** provision on a site with no real data. Never run it against real
 records.
 
@@ -149,7 +156,7 @@ Styling: every mapping inherits the fleet style standard — semantic
 severity tokens, icons and shapes on SharePoint's own formatting classes;
 see the [style guide](website/docs/reference/style-guide.md).
 
-Assessment: every build emits a **read-only** `assess.js` (+
+Assessment: every build emits a **read-only** `assess.js.txt` (+
 `assess-manifest.md`) that probes a target site's capabilities across
 three tiers — always-run enumerations (permissions, list templates,
 lock state, retention labels, locale, features), pack-driven
@@ -222,8 +229,8 @@ is Jinja.
 Templates mirror that: `templates/*.js.j2` are the four pasteable scripts;
 `templates/_*.js.j2` are shared partials (provenance header, site guard +
 `apiUrl`/`odataName`, cached digest, read transport, write headers);
-`templates/deploy/_*.js.j2` are deploy.js's phase bodies. Not every
-partial goes into every script — `assess.js` deliberately omits
+`templates/deploy/_*.js.j2` are deploy.js.txt's phase bodies. Not every
+partial goes into every script — `assess.js.txt` deliberately omits
 `_http_write.js.j2`, which is what makes its read-only guarantee
 structural rather than a promise.
 

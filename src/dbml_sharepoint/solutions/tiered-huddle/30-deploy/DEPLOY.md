@@ -83,14 +83,14 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js` first,
-then `demo-data.js`, from the same bundle. It creates a fortnight of Tier 3
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt` first,
+then `demo-data.js.txt`, from the same bundle. It creates a fortnight of Tier 3
 board rows ending today and six escalations — enough that every declared view
 has content.
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO] `, so they are obvious in every view, they are matched by Title on
-re-paste (running it twice never duplicates), and `rollback.js` treats a list
+re-paste (running it twice never duplicates), and `rollback.js.txt` treats a list
 whose rows are *all* marked as demo-only content. Do not seed a site that
 already holds real records.
 
@@ -128,7 +128,7 @@ Worked example — adding **Wellbeing** to the Tier 1 board.
    names, and mind the JSON commas.
 
 5. Bump `schema_version` in `20-configure/release.yaml`, rebuild, re-paste
-   `deploy.js`.
+   `deploy.js.txt`.
 
 Four files, in the same order every time: the schema declares it, the field
 sets project it into every view, `column_formatting` colours it,

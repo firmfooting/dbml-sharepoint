@@ -110,4 +110,4 @@ what changes.
 
 Superseded obligations are retired in Notes (instrument repealed/replaced),
 never deleted — the history shows duty-in-force at any date. Export before
-decommission; never run `rollback.js` against real rows.
+decommission; never run `rollback.js.txt` against real rows.

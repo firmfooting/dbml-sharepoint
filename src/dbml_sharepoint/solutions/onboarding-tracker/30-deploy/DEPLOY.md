@@ -2,8 +2,8 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = onboarding-tracker`. Run order: **assess** the target site (paste
-`build/assess.js`, read-only) → **review** `build/deploy-manifest.md` (must
-show 0 validation errors) → **paste** `build/deploy.js` from a Site Owner's
+`build/assess.js.txt`, read-only) → **review** `build/deploy-manifest.md` (must
+show 0 validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
 console → **verify** against the checklist below. Template-specific notes
 follow.
 
@@ -38,8 +38,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates four starters
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates four starters
 covering every status and six tasks — including one that nobody has picked
 up and which is already past due with the start date still ahead, which is
 the kind of row the *Overdue* view exists to surface.
@@ -51,7 +51,7 @@ the operator, so *My tasks* demonstrates as your own queue.
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO] `, they are matched by Title on re-paste (running it twice never
-duplicates), and `rollback.js` treats a list whose rows are *all*
+duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content.
 
 ## After the paste — verification checklist
