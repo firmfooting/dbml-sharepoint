@@ -53,3 +53,6 @@ docs/superpowers/
 
 # Worktrees created for parallel agent work.
 .claude/worktrees/
+
+# Hypothesis example database (machine-local; not shared).
+.hypothesis/
