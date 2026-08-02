@@ -4,10 +4,20 @@ from typing import Any, ClassVar
 
 import pytest
 from _builders import ID_PK, TITLE, table
+
+# `_builders.table` above composes DBML TEXT; `_model.table` builds a `Table`
+# OBJECT. Both are needed here -- the style-map tests still go through the
+# loader, because `style:` is expanded at load time -- so the object builders
+# are aliased rather than shadowing the text one.
 from _findings import by_severity, messages, none_of, only
-from _packs import blocks, entities, pack, write_dbml, write_mapping
+from _model import bundle as make_bundle
+from _model import column as make_column
+from _model import enum as make_enum
+from _model import ref as make_ref
+from _model import schema as make_schema
+from _model import table as make_table
+from _packs import blocks, entities, pack
 from _paths import FIXTURES
-from _validator_helpers import _schema
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
@@ -22,21 +32,27 @@ from dbml_sharepoint.model.mapping_loader import (
     CustomPermissionLevel,
     EntityMapping,
     ListPermissionPolicy,
-    Mapping,
     MappingBundle,
     PermissionsConfig,
     Principal,
     RoleAssignment,
-    Versioning,
     load_mapping,
 )
 from dbml_sharepoint.model.parser import (
-    Column,
     EnumDef,
-    Reference,
-    Table,
+    Schema,
     parse_dbml,
 )
+
+# --- The three style-map checks, which stay on the filesystem ----------------
+#
+# `column_formatting` carrying a `style:` key is EXPANDED by the loader:
+# load_mapping runs styles.expand_style and keeps the raw declaration in
+# `column_style_specs` beside the expanded formatter. A bundle built straight
+# from objects would have to carry the expansion hand-written, so the test
+# would be asserting against a document no mapping.yaml can produce and would
+# stop covering the expansion it depends on. `_model` cannot express that and
+# should not: it is a loader transform, not a shape.
 
 
 def test_style_map_keys_must_be_enum_members(tmp_path: Path) -> None:
@@ -127,38 +143,30 @@ def test_calculated_number_and_date_styles_require_decoding(tmp_path: Path) -> N
     # The remedy has to reach the reader; the columns are in the locations.
     assert all("calculated: true" in f.message for f in raised)
 
-def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
+def test_formatter_may_reference_system_columns() -> None:
     """[$Created]/[$Modified]/[$ID]/[$Author]/[$Editor] always exist on a
     list; formatter references to them must not be rejected, while a
     genuinely unknown reference still errors."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Risk", ID_PK, TITLE, "Gap int"),
-        mapping=blocks(entities("Risk"), """
-            column_formatting:
-              Risk:
-                Gap:
-                  elmType: div
-                  txtContent: "=toLocaleDateString([$Created] + 1)"
-        """),
+    schema = make_schema(
+        make_table("Risk", make_column("Title", required=True), make_column("Gap", "int")),
     )
     none_of(
-        validate_against_mapping(schema, bundle),
+        validate_against_mapping(schema, make_bundle(
+            entities=["Risk"],
+            column_formatting={"Risk": {"Gap": {
+                "elmType": "div",
+                "txtContent": "=toLocaleDateString([$Created] + 1)",
+            }}},
+        )),
         FindingCode.FORMATTER_FIELD_NOT_RENDERED,
     )
-    unknown_ref = write_mapping(
-        tmp_path,
-        blocks(entities("Risk"), """
-            column_formatting:
-              Risk:
-                Gap:
-                  elmType: div
-                  txtContent: "=[$Nope]"
-        """),
-        name="m2.yaml",
-    )
     finding = only(
-        validate_against_mapping(schema, load_mapping(unknown_ref)),
+        validate_against_mapping(schema, make_bundle(
+            entities=["Risk"],
+            column_formatting={"Risk": {"Gap": {
+                "elmType": "div", "txtContent": "=[$Nope]",
+            }}},
+        )),
         FindingCode.FORMATTER_FIELD_NOT_RENDERED,
     )
     assert finding.severity == "error"
@@ -168,36 +176,24 @@ def test_formatter_may_reference_system_columns(tmp_path: Path) -> None:
     assert "Nope" in finding.message
 
 def test_unknown_ref_target_is_error() -> None:
-    table = Table(name="Task", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Project", type="int", ref=Reference("Missing", "Id")),
-    ])
-    finding = only(validate(_schema(table)), FindingCode.UNKNOWN_REF_TARGET)
+    schema = make_schema(make_table("Task", make_ref("Project", "Missing.Id")))
+    finding = only(validate(schema), FindingCode.UNKNOWN_REF_TARGET)
     assert finding.severity == "error"
     assert "Missing" in finding.message
 
 def test_legacy_choice_type_is_error() -> None:
-    table = Table(name="Task", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Status", type="choice"),
-    ])
-    assert only(validate(_schema(table)), FindingCode.LEGACY_CHOICE_TYPE).severity == "error"
+    schema = make_schema(make_table("Task", make_column("Status", "choice")))
+    assert only(validate(schema), FindingCode.LEGACY_CHOICE_TYPE).severity == "error"
 
 def test_unknown_type_is_error() -> None:
-    table = Table(name="Task", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Bad", type="frobnicate"),
-    ])
-    finding = only(validate(_schema(table)), FindingCode.UNKNOWN_COLUMN_TYPE)
+    schema = make_schema(make_table("Task", make_column("Bad", "frobnicate")))
+    finding = only(validate(schema), FindingCode.UNKNOWN_COLUMN_TYPE)
     assert finding.severity == "error"
     assert "frobnicate" in finding.message
 
 def test_reserved_author_is_error() -> None:
-    table = Table(name="PaperRegister", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Author", type="person"),
-    ])
-    finding = only(validate(_schema(table)), FindingCode.RESERVED_COLUMN_NAME)
+    schema = make_schema(make_table("PaperRegister", make_column("Author", "person")))
+    finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
     assert finding.severity == "error"
     assert "Author" in finding.message
 
@@ -216,34 +212,29 @@ def test_reserved_author_is_error() -> None:
 def test_unique_is_rejected_for_unsupported_sharepoint_types(
     column_type: str,
 ) -> None:
-    table = Table(name="Record", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Value", type=column_type, unique=True),
-    ])
+    schema = make_schema(
+        make_table("Record", make_column("Value", column_type, unique=True)),
+    )
 
-    finding = only(validate(_schema(table)), FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE)
+    finding = only(validate(schema), FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE)
 
     assert finding.severity == "error"
     # The type is the parameter under test and the thing the author must change.
     assert column_type in finding.message
 
 def test_orphan_enum_is_warning() -> None:
-    table = Table(name="Task", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-    ])
-    findings = validate(_schema(table, enums=[EnumDef(name="status", members=["a"])]))
+    findings = validate(
+        make_schema(make_table("Task"), enums=[make_enum("status", "a")]),
+    )
     assert only(findings, FindingCode.ORPHAN_ENUM).severity == "warning"
 
 def test_enum_default_not_in_members_is_error() -> None:
     """An enum-typed column whose default is not one of the enum's declared
     members must be rejected at validate() time, not deferred to a deploy-time
     field-creation failure."""
-    table = Table(name="Task", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Status", type="status", default="Nope"),
-    ])
-    findings = validate(_schema(
-        table, enums=[EnumDef(name="status", members=["Open", "Closed"])],
+    findings = validate(make_schema(
+        make_table("Task", make_column("Status", "status", default="Nope")),
+        enums=[make_enum("status", "Open", "Closed")],
     ))
     finding = only(findings, FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER)
     assert finding.severity == "error"
@@ -251,12 +242,9 @@ def test_enum_default_not_in_members_is_error() -> None:
 
 def test_enum_default_in_members_is_ok() -> None:
     """A valid enum default must not produce a default-related error."""
-    table = Table(name="Task", columns=[
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="Status", type="status", default="Open"),
-    ])
-    findings = validate(_schema(
-        table, enums=[EnumDef(name="status", members=["Open", "Closed"])],
+    findings = validate(make_schema(
+        make_table("Task", make_column("Status", "status", default="Open")),
+        enums=[make_enum("status", "Open", "Closed")],
     ))
     none_of(findings, FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER)
 
@@ -307,7 +295,13 @@ def test_enum_source_check_is_generic_not_hardcoded_to_topic() -> None:
     # hardcoded to 'topic', which is also configured on this fixture.
     assert finding.location == Location(Section.ENUM_SOURCES, entity="priority")
 
-def test_mapping_references_unknown_entity_is_error(tmp_path: object) -> None:
+def test_a_mapping_matching_the_schema_reports_neither_side_as_unknown() -> None:
+    """The negative half of the two entity-set rules, on the shared fixture.
+
+    It was named `test_mapping_references_unknown_entity_is_error`, which is
+    the opposite of what it asserts -- the pair below it is where the error
+    halves live.
+    """
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     # simple.dbml has Project + Task; mapping fixture also has Project + Task. OK.
@@ -329,19 +323,16 @@ def test_schema_table_missing_from_mapping_is_error() -> None:
     assert finding.severity == "error"
     assert "Task" in finding.message
 
-def test_indexed_column_cross_site_logical_name_is_error(tmp_path: Path) -> None:
+def test_indexed_column_cross_site_logical_name_is_error() -> None:
     """A cross-site column's logical DBML field is expanded and never exists
     in SharePoint, so its otherwise-valid DBML index must be rejected."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml=blocks(
-            table("Project", ID_PK, "Title nvarchar"),
-            table("Task", ID_PK, "Project int [ref: > Project.Id]", "indexes { Project }"),
-        ),
-        mapping=blocks(entities("Project", "Task"), """
-            cross_site_reference_columns:
-              - { entity: Task, column: Project }
-        """),
+    schema = make_schema(
+        make_table("Project", make_column("Title")),
+        make_table("Task", make_ref("Project", "Project.Id"), indexes=["Project"]),
+    )
+    bundle = make_bundle(
+        entities=["Project", "Task"],
+        cross_site_reference_columns=[CrossSiteRef(entity="Task", column="Project")],
     )
     finding = only(
         validate_against_mapping(schema, bundle), FindingCode.INDEX_COLUMN_NOT_RENDERED,
@@ -349,23 +340,16 @@ def test_indexed_column_cross_site_logical_name_is_error(tmp_path: Path) -> None
     assert finding.severity == "error"
     assert "Project" in finding.message
 
-def test_dbml_indexes_reject_unsupported_field_types(tmp_path: Path) -> None:
-    schema, bundle = pack(
-        tmp_path,
-        dbml="""
-            Table Task {
-              Id int [pk, increment]
-              Notes longtext
-              Url hyperlink
-              indexes {
-                Notes
-                Url
-              }
-            }
-        """,
-        mapping=entities("Task"),
+def test_dbml_indexes_reject_unsupported_field_types() -> None:
+    schema = make_schema(make_table(
+        "Task",
+        make_column("Notes", "longtext"),
+        make_column("Url", "hyperlink"),
+        indexes=["Notes", "Url"],
+    ))
+    errors = by_severity(
+        validate_against_mapping(schema, make_bundle(entities=["Task"])), "error",
     )
-    errors = by_severity(validate_against_mapping(schema, bundle), "error")
     # The SharePoint type name is the value: it is what tells the author why
     # this column cannot carry an index. ("Note" was previously asserted
     # alongside "Notes", which contains it — the check could not fail.)
@@ -374,19 +358,14 @@ def test_dbml_indexes_reject_unsupported_field_types(tmp_path: Path) -> None:
     assert any("Notes" in m and "Multiple lines of text" in m for m in refused)
     assert any("Url" in m and "Hyperlink" in m for m in refused)
 
-def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> None:
+def test_dbml_indexes_reject_duplicates_and_more_than_twenty() -> None:
     # Col0 is listed twice on purpose -- that is the duplicate this asserts.
-    index_lines = [f"    Col{i}" for i in range(21)] + ["    Col0"]
-    write_dbml(tmp_path, table(
+    schema = make_schema(make_table(
         "Wide",
-        ID_PK,
-        *(f"Col{i} nvarchar" for i in range(21)),
-        "indexes {\n" + "\n".join(index_lines) + "\n  }",
+        *(make_column(f"Col{i}") for i in range(21)),
+        indexes=[f"Col{i}" for i in range(21)] + ["Col0"],
     ))
-    mapping = write_mapping(tmp_path, entities("Wide"))
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-    )
+    findings = validate_against_mapping(schema, make_bundle(entities=["Wide"]))
     duplicate = only(findings, FindingCode.DUPLICATE_INDEX_TARGET)
     assert duplicate.severity == "error"
     assert "Col0" in duplicate.message
@@ -394,49 +373,46 @@ def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> 
     assert over_budget.severity == "error"
     assert "21 effective indexes exceed SharePoint's limit of 20" in over_budget.message
 
-def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path: Path) -> None:
-    write_dbml(tmp_path, table(
-        "Wide", ID_PK, *(f"Col{i} nvarchar [unique]" for i in range(21)),
+def test_unique_columns_count_toward_index_limit_without_mapping_entry() -> None:
+    schema = make_schema(make_table(
+        "Wide", *(make_column(f"Col{i}", unique=True) for i in range(21)),
     ))
-    mapping = write_mapping(tmp_path, entities("Wide"))
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-    )
+    findings = validate_against_mapping(schema, make_bundle(entities=["Wide"]))
     finding = only(findings, FindingCode.INDEX_LIMIT_EXCEEDED)
     assert finding.severity == "error"
     assert "21 effective indexes exceed SharePoint's limit of 20" in finding.message
 
-def test_dbml_index_must_not_repeat_a_unique_column(tmp_path: Path) -> None:
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Asset", ID_PK, "AssetTag nvarchar [unique]", "indexes { AssetTag }"),
-        mapping=entities("Asset"),
-    )
+def test_dbml_index_must_not_repeat_a_unique_column() -> None:
+    schema = make_schema(make_table(
+        "Asset", make_column("AssetTag", unique=True), indexes=["AssetTag"],
+    ))
     finding = only(
-        validate_against_mapping(schema, bundle),
+        validate_against_mapping(schema, make_bundle(entities=["Asset"])),
         FindingCode.INDEX_DUPLICATES_UNIQUE_COLUMN,
     )
     assert finding.severity == "error"
     assert "AssetTag" in finding.message
 
-def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
+def _big_with_indexes(count: int) -> Schema:
+    """`Big` with `count` nvarchar columns, every one of them indexed.
+
+    The three headroom tests differ only in that number -- 17, 18 and 21 sit
+    either side of the warning and the error -- so the number is the argument
+    and nothing else varies between them.
+    """
+    indexed = [f"C{i}" for i in range(1, count + 1)]
+    return make_schema(
+        make_table("Big", *(make_column(c) for c in indexed), indexes=indexed),
+    )
+
+def test_index_headroom_warns_at_eighteen() -> None:
     """The budget cannot be counted exactly: SharePoint creates indexes itself.
     Opening a modern view sorted on an unindexed column produced
     "SortBait (Automatically created)", which consumes a real slot, and nothing
     reachable from script reports the true count. So a schema that validates at
     exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
-    indexed = [f"C{i}" for i in range(1, 19)]
-    write_dbml(tmp_path, table(
-        "Big",
-        ID_PK,
-        *(f"{c} nvarchar" for c in indexed),
-        "indexes { " + " ".join(indexed) + " }",
-    ))
-    mapping = write_mapping(tmp_path, entities("Big"))
     finding = only(
-        validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-        ),
+        validate_against_mapping(_big_with_indexes(18), make_bundle(entities=["Big"])),
         FindingCode.INDEX_LIMIT_APPROACHING,
     )
     assert finding.severity == "warning"
@@ -445,68 +421,45 @@ def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
     assert "18 of the 20" in finding.message
     assert "sorted view" in finding.message
 
-def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
+def test_index_headroom_no_warning_at_seventeen() -> None:
     """The budget cannot be counted exactly: SharePoint creates indexes itself.
     Opening a modern view sorted on an unindexed column produced
     "SortBait (Automatically created)", which consumes a real slot, and nothing
     reachable from script reports the true count. So a schema that validates at
     exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
-    indexed = [f"C{i}" for i in range(1, 18)]
-    write_dbml(tmp_path, table(
-        "Big",
-        ID_PK,
-        *(f"{c} nvarchar" for c in indexed),
-        "indexes { " + " ".join(indexed) + " }",
-    ))
-    mapping = write_mapping(tmp_path, entities("Big"))
     none_of(
-        validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-        ),
+        validate_against_mapping(_big_with_indexes(17), make_bundle(entities=["Big"])),
         FindingCode.INDEX_LIMIT_APPROACHING,
     )
 
-def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> None:
+def test_index_error_at_twentyone_excludes_headroom_warning() -> None:
     """The error firing at > 20 means the warning is unreachable at that threshold.
     This test pins the mutual exclusion: at 21 the author needs the error, and a
     headroom warning beside it would be noise about a list that is already over."""
-    indexed = [f"C{i}" for i in range(1, 22)]
-    write_dbml(tmp_path, table(
-        "Big",
-        ID_PK,
-        *(f"{c} nvarchar" for c in indexed),
-        "indexes { " + " ".join(indexed) + " }",
-    ))
-    mapping = write_mapping(tmp_path, entities("Big"))
     findings = validate_against_mapping(
-        parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
+        _big_with_indexes(21), make_bundle(entities=["Big"]),
     )
     assert only(findings, FindingCode.INDEX_LIMIT_EXCEEDED).severity == "error"
     none_of(findings, FindingCode.INDEX_LIMIT_APPROACHING)
 
-def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst(
-    tmp_path: Path,
-) -> None:
+def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst() -> None:
     """The case this whole rule exists for. The author declared twenty, has no
     unique columns, and the only hint used to be "(including unique columns)" —
     which is false here. The error must name the display column as the index
     they cannot see."""
-    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 21))
-    indexes = " ".join(f"C{i}" for i in range(1, 21))
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Event {{\n  Id int [pk, increment]\n  Title nvarchar\n{columns}\n"
-        f"  indexes {{ {indexes} }}\n}}\n"
-        "Table FollowUp {\n"
-        "  Id int [pk, increment]\n"
-        "  Event int [ref: > Event.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    indexed = [f"C{i}" for i in range(1, 21)]
+    schema = make_schema(
+        make_table(
+            "Event",
+            make_column("Title"),
+            *(make_column(c) for c in indexed),
+            indexes=indexed,
+        ),
+        make_table("FollowUp", make_ref("Event", "Event.Id")),
     )
-    mapping = write_mapping(tmp_path, entities("Event", "FollowUp"))
     finding = only(
         validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
+            schema, make_bundle(entities=["Event", "FollowUp"]),
         ),
         FindingCode.INDEX_LIMIT_EXCEEDED,
     )
@@ -521,24 +474,18 @@ def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst(
     # none on this list, so it must not say so.
     assert "unique" not in finding.message
 
-def test_the_over_budget_error_names_unique_columns_when_there_are_some(
-    tmp_path: Path,
-) -> None:
+def test_the_over_budget_error_names_unique_columns_when_there_are_some() -> None:
     """The other implicit contributor. Naming one and not the other would send
     an author looking in the wrong place."""
     indexed = [f"C{i}" for i in range(1, 21)]
-    write_dbml(tmp_path, table(
+    schema = make_schema(make_table(
         "Big",
-        ID_PK,
-        "Code nvarchar [unique]",
-        *(f"{c} nvarchar" for c in indexed),
-        "indexes { " + " ".join(indexed) + " }",
+        make_column("Code", unique=True),
+        *(make_column(c) for c in indexed),
+        indexes=indexed,
     ))
-    mapping = write_mapping(tmp_path, entities("Big"))
     finding = only(
-        validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
-        ),
+        validate_against_mapping(schema, make_bundle(entities=["Big"])),
         FindingCode.INDEX_LIMIT_EXCEEDED,
     )
     assert finding.severity == "error"
@@ -547,6 +494,12 @@ def test_the_over_budget_error_names_unique_columns_when_there_are_some(
     assert "lookup target" not in finding.message
 
 def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
+    """Stays on the filesystem: `_model.table(indexes=...)` takes bare column
+    names, which is the only index shape SharePoint accepts, and the two
+    shapes under test here are the ones it does NOT -- a composite
+    `(Status, Category)` and a `[name: ...]` setting. Both are `TableIndex`
+    fields the builder has no keyword for, and widening it to accept them
+    would be a design change rather than a migration step."""
     schema, bundle = pack(
         tmp_path,
         dbml="""
@@ -568,17 +521,14 @@ def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> N
     assert settings.severity == "error"
     assert "status_index" in settings.message
 
-def test_cross_site_reference_cannot_declare_unique_constraint(tmp_path: Path) -> None:
-    schema, bundle = pack(
-        tmp_path,
-        dbml=blocks(
-            table("Project", ID_PK, "Title nvarchar"),
-            table("Task", ID_PK, "Project int [unique, ref: > Project.Id]"),
-        ),
-        mapping=blocks(entities("Project", "Task"), """
-            cross_site_reference_columns:
-              - { entity: Task, column: Project }
-        """),
+def test_cross_site_reference_cannot_declare_unique_constraint() -> None:
+    schema = make_schema(
+        make_table("Project", make_column("Title")),
+        make_table("Task", make_column("Project", "int", unique=True, ref="Project.Id")),
+    )
+    bundle = make_bundle(
+        entities=["Project", "Task"],
+        cross_site_reference_columns=[CrossSiteRef(entity="Task", column="Project")],
     )
     finding = only(
         validate_against_mapping(schema, bundle),
@@ -724,7 +674,7 @@ def test_lookup_target_without_title_or_display_column_is_error() -> None:
     display_column would render blank in SP (LookupField defaults to the empty
     Title). The validator must flag it and a declared display_column clears it."""
     def _bundle(display: str | None) -> MappingBundle:
-        entities = {
+        return make_bundle(entities={
             "Membership": EntityMapping(
                 name="Membership", kind="List", base_template=100,
                 site_role="default", display_column=display,
@@ -732,28 +682,15 @@ def test_lookup_target_without_title_or_display_column_is_error() -> None:
             "Meeting": EntityMapping(
                 name="Meeting", kind="List", base_template=100, site_role="default",
             ),
-        }
-        mapping = Mapping(
-            prefix="APP_", prefix_owner="", prefix_registry="", entities=entities,
-            cross_site_reference_columns=[],
-            versioning_default=Versioning(True, 500, False), versioning_overrides={},
-            enum_sources={}, watched_lists=[],
-        )
-        return MappingBundle(
-            mapping=mapping, enum_choices={}, retention_policies={},
-            retention_list_defaults={},
-        )
+        })
 
-    schema = _schema(
-        Table(name="Membership", columns=[
-            Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-            Column(name="DisplayName", type="nvarchar", required=True),
-        ]),
-        Table(name="Meeting", columns=[
-            Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-            Column(name="Title", type="nvarchar", required=True),
-            Column(name="Chair", type="int", ref=Reference("Membership", "Id")),
-        ]),
+    schema = make_schema(
+        make_table("Membership", make_column("DisplayName", required=True)),
+        make_table(
+            "Meeting",
+            make_column("Title", required=True),
+            make_ref("Chair", "Membership.Id"),
+        ),
     )
 
     finding = only(
@@ -774,8 +711,8 @@ def test_lookup_display_column_must_name_a_real_target_column() -> None:
     emits LookupField=<bad name> and the deploy fails at runtime. The validator
     must catch it — including when the target also has a Title column, since
     jsgen prefers display_column over Title."""
-    def _bundle(display: str, *, target_has_title: bool = False) -> MappingBundle:
-        entities = {
+    def _bundle(display: str) -> MappingBundle:
+        return make_bundle(entities={
             "Meeting": EntityMapping(
                 name="Meeting", kind="List", base_template=100, site_role="default",
             ),
@@ -783,29 +720,15 @@ def test_lookup_display_column_must_name_a_real_target_column() -> None:
                 name="Membership", kind="List", base_template=100,
                 site_role="default", display_column=display,
             ),
-        }
-        mapping = Mapping(
-            prefix="APP_", prefix_owner="", prefix_registry="", entities=entities,
-            cross_site_reference_columns=[],
-            versioning_default=Versioning(True, 500, False), versioning_overrides={},
-            enum_sources={}, watched_lists=[],
-        )
-        return MappingBundle(
-            mapping=mapping, enum_choices={}, retention_policies={},
-            retention_list_defaults={},
-        )
+        })
 
-    membership_cols = [
-        Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-        Column(name="DisplayName", type="nvarchar", required=True),
-    ]
-    schema = _schema(
-        Table(name="Meeting", columns=[
-            Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-            Column(name="Title", type="nvarchar", required=True),
-            Column(name="Chair", type="int", ref=Reference("Membership", "Id")),
-        ]),
-        Table(name="Membership", columns=membership_cols),
+    schema = make_schema(
+        make_table(
+            "Meeting",
+            make_column("Title", required=True),
+            make_ref("Chair", "Membership.Id"),
+        ),
+        make_table("Membership", make_column("DisplayName", required=True)),
     )
 
     bad = only(
@@ -825,35 +748,26 @@ def test_cross_site_role_lookup_is_error() -> None:
     webs. It must error unless declared in cross_site_reference_columns (which
     expands it to a Choice+URL pair instead of a lookup)."""
     def _bundle(cross_site: list[CrossSiteRef]) -> MappingBundle:
-        entities = {
-            "Meeting": EntityMapping(
-                name="Meeting", kind="List", base_template=100, site_role="default",
-            ),
-            "FlowRunLog": EntityMapping(
-                name="FlowRunLog", kind="HubOnlyList", base_template=100, site_role="admin",
-            ),
-        }
-        mapping = Mapping(
-            prefix="APP_", prefix_owner="", prefix_registry="", entities=entities,
+        return make_bundle(
+            entities={
+                "Meeting": EntityMapping(
+                    name="Meeting", kind="List", base_template=100, site_role="default",
+                ),
+                "FlowRunLog": EntityMapping(
+                    name="FlowRunLog", kind="HubOnlyList", base_template=100,
+                    site_role="admin",
+                ),
+            },
             cross_site_reference_columns=cross_site,
-            versioning_default=Versioning(True, 500, False), versioning_overrides={},
-            enum_sources={}, watched_lists=[],
-        )
-        return MappingBundle(
-            mapping=mapping, enum_choices={}, retention_policies={},
-            retention_list_defaults={},
         )
 
-    schema = _schema(
-        Table(name="Meeting", columns=[
-            Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-            Column(name="Title", type="nvarchar", required=True),
-            Column(name="Log", type="int", ref=Reference("FlowRunLog", "Id")),
-        ]),
-        Table(name="FlowRunLog", columns=[
-            Column(name="Id", type="int", is_pk=True, is_auto_increment=True),
-            Column(name="Title", type="nvarchar", required=True),
-        ]),
+    schema = make_schema(
+        make_table(
+            "Meeting",
+            make_column("Title", required=True),
+            make_ref("Log", "FlowRunLog.Id"),
+        ),
+        make_table("FlowRunLog", make_column("Title", required=True)),
     )
     finding = only(
         validate_against_mapping(schema, _bundle([])),
