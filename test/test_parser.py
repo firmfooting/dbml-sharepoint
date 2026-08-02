@@ -1,6 +1,7 @@
 # test/test_parser.py
 from pathlib import Path
 
+from _packs import write_dbml
 from _paths import FIXTURES
 
 from dbml_sharepoint.model.parser import parse_dbml
@@ -40,18 +41,21 @@ def test_id_pk_increment_is_marked() -> None:
 
 
 def test_table_indexes_are_preserved_from_dbml(tmp_path: Path) -> None:
-    schema_path = tmp_path / "indexed.dbml"
-    schema_path.write_text(
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Status nvarchar\n"
-        "  Category nvarchar\n"
-        "  indexes {\n"
-        "    Status\n"
-        "    Category\n"
-        "  }\n"
-        "}\n",
-        encoding="utf-8",
+    schema_path = write_dbml(
+        tmp_path,
+        """
+        Table Risk {
+          Id int [pk, increment]
+          Status nvarchar
+          Category nvarchar
+          indexes {
+            Status
+            Category
+          }
+        }
+        """,
+        preamble=False,
+        name="indexed.dbml",
     )
     risk = parse_dbml(schema_path).tables[0]
     assert [index.columns for index in risk.indexes] == [("Status",), ("Category",)]
