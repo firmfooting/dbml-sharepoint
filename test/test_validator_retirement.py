@@ -1,8 +1,45 @@
-"""Validator: retired columns."""
+"""Validator: retired columns.
+
+Almost every fixture here stays on the filesystem, and deliberately.
+Retirement is a LOAD-TIME transform: `_apply_retirement` runs inside
+`load_mapping`, synthesising `form_visibility` entries, appending the
+' (retired)' display-name override, stripping the column out of views,
+widths and form body sections, and recording a `retirement_strips` entry
+for each rewrite. Every assertion below is about what that fold produced,
+and an object-built bundle never meets it.
+
+The tempting fix is a `retired=` option on `_model.mapping` that runs the
+fold. That would NOT be a test asserting its own arithmetic -- the builder
+would call the real `_apply_retirement`, so the fold stays under test. It
+was rejected for two other reasons:
+
+1. It buys nothing measurable. These tests pass and their coverage is
+   identical either way; the migration exists to delete text that was never
+   the subject, and here the load-time fold IS the subject.
+2. It would make `_model` run a production transform, which no other
+   builder does -- `_loader_defaults` copies the loader's defaults by hand
+   precisely so a fixture is always the literal shape it reads as. Once one
+   builder folds, a reader cannot tell whether any given fixture is pre- or
+   post-fold without going and reading the builder.
+
+What these tests actually protect is the VALIDATOR check, not the fold:
+deleting this module takes `analysis/checks/_retirement.py` from 95% to
+79% (7 missing lines to 27), while `model/_retirement.py` does not move --
+its parse half is covered by `test_mapping_loader.py`. So the thing to
+preserve here is coverage of the checks, which is reached through a loaded
+bundle and by nothing else.
+
+The one exception is the pairing guard immediately below, which declares no
+`retired_columns` at all.
+"""
 from pathlib import Path
 
 from _builders import ID_PK, table
 from _findings import by_severity, messages, none_of, only
+from _model import bundle as make_bundle
+from _model import column as make_column
+from _model import schema as make_schema
+from _model import table as make_table
 from _packs import blocks, entities, pack
 
 from dbml_sharepoint.analysis.findings import (
@@ -37,9 +74,7 @@ def _board(*columns: str) -> str:
 # --- Retired columns --------------------------------------------------------
 
 
-def test_calculated_formula_pairing_guards_the_retirement_carve_out(
-    tmp_path: Path,
-) -> None:
+def test_calculated_formula_pairing_guards_the_retirement_carve_out() -> None:
     """GUARD. `_apply_retirement` (model/mapping_loader.py) skips the
     form_visibility fold for calculated columns, and identifies them by
     their `calculated_formulas` keys — the loader has never seen the DBML
@@ -51,17 +86,19 @@ def test_calculated_formula_pairing_guards_the_retirement_carve_out(
     carve-out first: loosening either rule silently lets a calculated
     column reach form_visibility, where the validator rejects it, making
     retiring that column an unfixable build error.
+
+    Built as objects, unlike the rest of this module: it declares no
+    `retired_columns`, so there is no fold for the loader to perform.
     """
     # Direction 1: a calculated column with NO formula must error.
-    schema, bundle = pack(
-        tmp_path,
-        dbml=_board("BoardDate date", "Route calculated_text"),
-        mapping=entities("Board"),
-        dbml_name="no-formula.dbml",
-        mapping_name="no-formula.yaml",
-    )
+    schema = make_schema(make_table(
+        "Board",
+        make_column("Title"),
+        make_column("BoardDate", "date"),
+        make_column("Route", "calculated_text"),
+    ))
     f = only(
-        validate_against_mapping(schema, bundle),
+        validate_against_mapping(schema, make_bundle(entities=["Board"])),
         FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA,
     )
     assert f.severity == "error"
@@ -69,16 +106,11 @@ def test_calculated_formula_pairing_guards_the_retirement_carve_out(
     assert "Board.Route" in f.message
 
     # Direction 2: a formula targeting a NON-calculated column must error.
-    schema, bundle = pack(
-        tmp_path,
-        dbml=_board("BoardDate date"),
-        mapping=blocks(entities("Board"), """
-            calculated_formulas:
-              Board:
-                BoardDate: '=1'
-        """),
-        dbml_name="wrong-target.dbml",
-        mapping_name="wrong-target.yaml",
+    schema = make_schema(make_table(
+        "Board", make_column("Title"), make_column("BoardDate", "date"),
+    ))
+    bundle = make_bundle(
+        entities=["Board"], calculated_formulas={"Board": {"BoardDate": "=1"}},
     )
     f = only(
         validate_against_mapping(schema, bundle),
