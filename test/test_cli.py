@@ -21,6 +21,38 @@ def test_help_lists_build_command() -> None:
     assert "build" in result.stdout
 
 
+def test_a_bare_invocation_prints_help_when_not_a_terminal() -> None:
+    """The wizard is the default, but only for a human at a terminal.
+
+    A bare `dbml-sharepoint` in CI, a cron job or a Dockerfile must not
+    block on a prompt nobody can answer. Printing help and exiting 0 is
+    what a bare invocation did before the wizard existed, so nothing that
+    already scripted this command changes behaviour.
+    """
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "build" in result.stdout
+    assert "report" in result.stdout
+
+
+def test_the_wizard_is_reachable_by_name() -> None:
+    """`new` exists so the wizard can be asked for explicitly, and so it
+    appears in --help rather than being an undocumented default."""
+    result = runner.invoke(app, ["--help"])
+    assert "new" in result.stdout
+
+
+def test_every_documented_command_survived_the_wizard_default() -> None:
+    """Adding a callback with `invoke_without_command=True` is exactly the
+    change that can turn a subcommand into a no-op: the callback runs for
+    every invocation, and an early `raise typer.Exit` in it would swallow
+    them all while `--help` kept listing them."""
+    for command in ("build", "report", "version"):
+        result = runner.invoke(app, [command, "--help"])
+        assert result.exit_code == 0, f"{command} --help failed"
+        assert command in result.stdout
+
+
 def test_help_still_renders_as_rich_panels() -> None:
     """The CLI's help screen is its user surface, and nothing else asserts it.
 

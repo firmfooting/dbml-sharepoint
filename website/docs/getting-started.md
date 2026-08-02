@@ -18,9 +18,10 @@ pip install git+https://github.com/shauneccles/dbml-sharepoint
 Either puts the `dbml-sharepoint` command on your path. Check it with
 `dbml-sharepoint version`.
 
-Working from a clone instead — which you want if you are also using the
-[templates](https://github.com/shauneccles/dbml-sharepoint/tree/main/templates),
-since they ship as files rather than as part of the package:
+The 30 solution templates are part of the package, so an install is all you
+need to use them — no clone required.
+
+Working from a clone instead, if you are contributing:
 
 ```bash
 git clone https://github.com/shauneccles/dbml-sharepoint
@@ -28,6 +29,35 @@ cd dbml-sharepoint
 uv sync
 uv run dbml-sharepoint version
 ```
+
+## The fastest route: the wizard
+
+Run the command with no arguments:
+
+```bash
+dbml-sharepoint
+```
+
+It lists the shipped templates, copies the one you pick into a project
+directory of your own, sets your list-name prefix and site URL, and offers
+to build straight away. You get the whole family — the schema, the mapping,
+and the `DEPLOY.md`, `STAFF-GUIDE.md` and `GOVERNANCE.md` written for that
+template.
+
+The wizard changes **identity only**: the prefix, the site URL, and where
+the files land. It never edits the schema or the structure of the mapping,
+because those are the tested artifacts — every template is built end to end
+in CI. Once the files are yours, edit them freely.
+
+It is a front end onto `dbml-sharepoint build`, not a separate path:
+anything it produces, the flags below could have produced.
+
+:::note Non-interactive use
+The wizard prompts only when both stdin and stdout are a terminal. In CI, a
+cron job, a Dockerfile or a pipe, a bare `dbml-sharepoint` prints help and
+exits 0 — so scripts that already call it are unaffected. Use
+`dbml-sharepoint new` to ask for the wizard explicitly.
+:::
 
 ## The three inputs
 
