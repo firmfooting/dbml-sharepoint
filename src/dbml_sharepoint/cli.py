@@ -26,12 +26,47 @@ from dbml_sharepoint.generators.reportgen import (
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import Release, load_release
+from dbml_sharepoint.wizard import run_wizard, stdin_is_interactive
 
 app = typer.Typer(
     name="dbml-sharepoint",
     help="Generic DBML → SharePoint browser-paste deploy.js generator.",
-    no_args_is_help=True,
+    # Not `no_args_is_help`: a bare invocation runs the wizard. The help
+    # fallback moved into the callback below, which can tell an interactive
+    # terminal from a pipe -- `no_args_is_help` cannot.
+    no_args_is_help=False,
 )
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Run the interactive wizard when invoked with no subcommand.
+
+    Every documented flag still works exactly as before: `build`, `report`
+    and `version` are untouched, and this callback returns immediately when
+    one of them was named.
+
+    A bare invocation only prompts when stdin AND stdout are both a
+    terminal. In CI, a cron job, a Dockerfile or a pipe it prints help and
+    exits 0, which is what a bare invocation did before the wizard existed
+    -- so nothing that scripted `dbml-sharepoint` changes behaviour.
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    if not stdin_is_interactive():
+        typer.echo(ctx.get_help())
+        raise typer.Exit(code=0)
+    raise typer.Exit(code=run_wizard())
+
+
+@app.command()
+def new() -> None:
+    """Interactively copy a solution template into a new project.
+
+    The same wizard a bare `dbml-sharepoint` runs, named so it can be asked
+    for explicitly and so it appears in `--help`.
+    """
+    raise typer.Exit(code=run_wizard())
 
 # Empty schema view used to render a findings-only manifest when validation
 # fails: build_schema_json cannot run safely on an invalid schema.
@@ -169,6 +204,42 @@ def build(
     ),
 ) -> None:
     """Generate deploy.js + manifest from the DBML schema and mapping."""
+    execute_build(
+        schema=schema,
+        mapping=mapping,
+        release=release,
+        site_url=site_url,
+        site_role=site_role,
+        out=out,
+        dry_run=dry_run,
+        seed=seed,
+        extension=extension,
+    )
+
+
+def execute_build(
+    *,
+    schema: Path,
+    mapping: Path,
+    release: Path,
+    site_url: str,
+    site_role: str,
+    out: Path = Path("./build"),
+    dry_run: bool = False,
+    seed: bool = False,
+    extension: str | None = None,
+) -> None:
+    """The `build` pipeline, callable without going through typer.
+
+    Extracted so the wizard can run exactly the same build the documented
+    flags run, rather than growing a second implementation that drifts. The
+    wizard is a different front end onto this, not a different builder.
+
+    Still raises `typer.Exit` on refusal: the exit codes are the documented
+    contract (2 for misuse, 1 for a refused build), and re-mapping them to
+    an exception of its own here would give the wizard a second vocabulary
+    for the same failures. The wizard catches it.
+    """
     clear_generated(out, reporting=True)
     validate_site_url(site_url)
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)

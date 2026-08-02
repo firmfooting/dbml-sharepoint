@@ -66,6 +66,8 @@ MODULES: list[tuple[str, str]] = [
     ("templating", "Packaging — the shared Jinja environment"),
     ("extension", "Packaging — the extension protocol"),
     ("cli", "Packaging — the command-line interface"),
+    ("catalogue", "Packaging — the shipped solution templates, as data"),
+    ("wizard", "Packaging — the interactive template wizard"),
 ]
 
 # Sub-package sidebar categories, in layout order.
