@@ -1,0 +1,43 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "schedule": ["before 9am on monday"],
+  "timezone": "Australia/Sydney",
+  "prConcurrentLimit": 5,
+  "minimumReleaseAge": "7 days",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 9am on the first day of the month"]
+  },
+  "packageRules": [
+    {
+      "description": "Major bumps soak for a month before they are offered.",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "30 days"
+    },
+    {
+      "description": "react and react-dom must move together. Bumping one alone leaves the other's peer range unsatisfiable and fails the docs build - that is why the two split Dependabot PRs (#1, #2) were both permanently red. Docusaurus 3.10 accepts ^18 || ^19, so the pair itself is fine; only the splitting was not.",
+      "matchPackageNames": [
+        "react",
+        "react-dom",
+        "@types/react",
+        "@types/react-dom"
+      ],
+      "groupName": "react"
+    },
+    {
+      "description": "Mirrors the cap in pyproject.toml. PyDBML still calls pyparsing's pre-PEP8 escChar alias, which warns from 3.3 and dies under filterwarnings = [\"error\"], taking out test collection entirely. Lift this and the pyproject cap together once PyDBML ships the snake_case API.",
+      "matchPackageNames": ["pyparsing"],
+      "allowedVersions": "<3.3"
+    },
+    {
+      "description": "Docusaurus packages move as a set; a partial bump leaves the preset and core on different versions.",
+      "matchPackageNames": ["@docusaurus/**"],
+      "groupName": "docusaurus"
+    }
+  ]
+}
