@@ -2,9 +2,9 @@
 """The shared condition grammar: parse, normalise, render."""
 
 import datetime as dt
-from pathlib import Path
 
 import pytest
+from _paths import MANUAL
 
 from dbml_sharepoint.analysis.conditions import (
     CAML,
@@ -456,7 +456,7 @@ def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
     nobody could reproduce — the same failure as a build error naming a
     probe that does not ask the question.
     """
-    probe = Path(__file__).parent / "manual" / "datetime-sentinel-probe.js"
+    probe = MANUAL / "datetime-sentinel-probe.js"
     text = probe.read_text(encoding="utf-8")
     for marker in ("NOW()", "IncludeTimeValue", "C6", "C7", "ViewQuery"):
         assert marker in text, f"the probe of record no longer mentions {marker}"

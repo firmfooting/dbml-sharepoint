@@ -1,15 +1,14 @@
 # test/test_rollbackgen.py
 import re
-from pathlib import Path
 from typing import Any
+
+from _paths import FIXTURES
 
 from dbml_sharepoint.generators.jsgen import generate_deploy_js
 from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import Release, load_release
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 _COMMON_ARGS: dict[str, Any] = dict(
     site_url="https://example.sharepoint.com/sites/test",

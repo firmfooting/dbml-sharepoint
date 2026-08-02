@@ -4,6 +4,7 @@ import inspect
 from pathlib import Path
 
 import pytest
+from _paths import FIXTURES
 
 from dbml_sharepoint.model import _mapping_types, mapping_loader
 from dbml_sharepoint.model.mapping_loader import (
@@ -101,7 +102,6 @@ def test_invalid_style_spec_is_a_load_error(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match=r"column_formatting\.Risk\.Status"):
         load_mapping(tmp_path / "m.yaml")
 
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_load_mapping_resolves_relative_config_paths() -> None:

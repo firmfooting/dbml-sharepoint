@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+from _paths import FIXTURES
+
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
@@ -10,7 +12,6 @@ from dbml_sharepoint.model.mapping_loader import CrossSiteRef, MappingBundle, lo
 from dbml_sharepoint.model.parser import Column, Reference, Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
-FIXTURES = Path(__file__).parent / "fixtures"
 EXPECTED = FIXTURES / "expected"
 
 _FIXED_ARGS: dict[str, Any] = dict(

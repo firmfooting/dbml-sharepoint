@@ -17,9 +17,8 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from _paths import MANUAL, REPO_ROOT
 
-REPO_ROOT = Path(__file__).parent.parent
-MANUAL = Path(__file__).parent / "manual"
 TEMPLATES = MANUAL / "templates"
 
 # Everything except tab, newline and carriage return.

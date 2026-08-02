@@ -2,10 +2,9 @@
 from pathlib import Path
 
 import pytest
+from _paths import FIXTURES
 
 from dbml_sharepoint.model.release import load_release, snapshot_hashes
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_load_release_returns_tag_and_versions() -> None:

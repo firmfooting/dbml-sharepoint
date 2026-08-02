@@ -1,9 +1,9 @@
 # test/test_parser.py
 from pathlib import Path
 
-from dbml_sharepoint.model.parser import parse_dbml
+from _paths import FIXTURES
 
-FIXTURES = Path(__file__).parent / "fixtures"
+from dbml_sharepoint.model.parser import parse_dbml
 
 
 def test_parse_simple_returns_core_tables_and_one_enum() -> None:

@@ -2,6 +2,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from _paths import FIXTURES
 from typer.testing import CliRunner
 
 from dbml_sharepoint import __version__
@@ -10,7 +11,6 @@ from dbml_sharepoint.cli import app
 from dbml_sharepoint.extension import BaseExtension
 
 runner = CliRunner()
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_help_lists_build_command() -> None:
