@@ -2,7 +2,7 @@
 from pathlib import Path
 
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, pack, write_mapping
+from _packs import blocks, pack, with_tail, write_mapping
 
 from dbml_sharepoint.analysis.validator import (
     Finding,
@@ -31,32 +31,38 @@ def _join_inputs(
     put an exact number of join-bearing columns on it. `mapping_tail` is
     appended inside the Project entity block — indent it four spaces to add an
     entity key, or start at column zero to open a new top-level section."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Person {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Notes nvarchar\n"
-        f"{columns}"
-        "}\n",
-        encoding="utf-8",
+    return pack(
+        tmp_path,
+        # `columns` arrives already indented to sit inside the Project block,
+        # so it is appended verbatim rather than dedented with the rest.
+        dbml=with_tail(
+            """
+            Table Person {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+            }
+            Table Project {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Notes nvarchar
+            """,
+            columns + "}\n",
+        ),
+        # Likewise `mapping_tail` — see this function's docstring for what its
+        # indentation means, and `_packs.with_tail` for why `blocks()` would
+        # silently reparent it.
+        mapping=with_tail(
+            """
+            entities:
+              Person: { kind: List, base_template: 100, site_role: default }
+              Project:
+                kind: List
+                base_template: 100
+                site_role: default
+            """,
+            mapping_tail,
+        ),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Person: { kind: List, base_template: 100, site_role: default }\n"
-        "  Project:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        + mapping_tail,
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 def _join_findings(
     schema: Schema, bundle: MappingBundle, subject: str,
