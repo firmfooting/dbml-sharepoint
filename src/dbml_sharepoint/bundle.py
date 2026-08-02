@@ -137,7 +137,23 @@ def write_checksums(out: Path, relpaths: list[str]) -> None:
         f"{sha256_lf((out / relpath).read_text(encoding='utf-8'))}  {relpath}"
         for relpath in sorted(relpaths)
     ]
-    (out / "checksums.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    # newline="\n", not the platform default. This file is machine-readable
+    # input, and the docstring above promises "plain sha256sum format ...
+    # keeps `sha256sum -c` clean". Written in text mode on Windows every
+    # line gains a CR, which sha256sum takes as part of the FILENAME -- it
+    # reports "rollback.js.txt: FAILED open or read" for every entry, so the
+    # format claim was false for any bundle built on Windows.
+    #
+    # Scope, so nobody reads more into this than it does: it makes the file
+    # WELL-FORMED, not the bundle sha256sum-verifiable. The digests are of
+    # LF-normalised bytes (see sha256_lf), so on a Windows-built bundle
+    # whose artifacts sit on disk with CRLF the hashes still will not match
+    # bare `sha256sum -c`. That is deliberate, and INDEX.md documents it by
+    # advertising an LF-normalising Python one-liner rather than sha256sum.
+    # On a POSIX-built bundle the two agree and `-c` works.
+    (out / "checksums.txt").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8", newline="\n",
+    )
 
 
 def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> None:
