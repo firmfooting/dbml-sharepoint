@@ -503,3 +503,23 @@ def test_caml_cannot_matches_the_capability_table() -> None:
     from dbml_sharepoint.analysis.conditions import CAPABILITIES
 
     assert set(CAML_CANNOT) == set(NEGATION) - CAPABILITIES[CAML]
+
+
+@given(target=st.sampled_from(TARGETS))
+def test_a_bool_on_a_numeric_column_is_refused(target: str) -> None:
+    """`True` is an `int` in Python and is not a number on a numeric column.
+
+    Pinned deterministically rather than left to a Hypothesis draw. The
+    permissive `leaves()` strategy includes `st.booleans()`, so this refusal
+    was already being reached — but only on roughly one run in ten, which made
+    the suite's COVERAGE nondeterministic: `conditions.py` reported 11 or 12
+    missing lines depending on whether that draw came up.
+
+    That mattered beyond tidiness. The fragment-conversion plan uses coverage
+    parity as its alarm for "a converted payload is exercising a different code
+    path", and a one-in-ten phantom delta would have sent whoever executed it
+    chasing a change that was not there. It was misdiagnosed as an xdist
+    artefact first; it reproduces serially.
+    """
+    with pytest.raises(ValueError, match="is not a number"):
+        _RENDER[target](Leaf(field="Score", op="gt", value=True), COLUMN_TYPES)
