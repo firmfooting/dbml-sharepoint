@@ -893,7 +893,7 @@ class _StubExtension(BaseExtension):
     name: ClassVar[str] = "stub"
 
     def extra_validators(self, bundle: Any, schema: Any) -> list[Finding]:
-        return [Finding(FindingCode.UNCLASSIFIED, "warning", "stub extension finding")]
+        return [Finding(FindingCode.EXTENSION_REPORTED, "warning", "stub extension finding")]
 
 def test_validate_all_includes_extension_findings() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")

@@ -26,10 +26,11 @@ sections keeps one.
 Codes beginning `condition_` come from the shared condition grammar and can be
 raised from any section that accepts a `when`: `views`, `form_visibility`,
 `column_validation` and `list_validation` alike.
-
-| Code | Severity | What it means |
-|---|---|---|
+sidebar_position: 4
+Every rule this build can report. The `code` is the stable identity;
+the message is prose and may be reworded.
 | `all_items_view_declared` | error | A view named `All Items` is declared; that view is generated with every rendered column and no filter, and cannot be overridden. |
+| `auto_increment_pk_must_be_id` | error | An auto-increment primary key is named something other than `Id`. |
 | `calculated_column_has_no_formula` | error | A `calculated_*` DBML column has no matching entry under `calculated_formulas:`. |
 | `calculated_display_column_unindexable` | warning | A lookup target's display column is calculated, and calculated columns cannot be indexed, so its picker stops working once the list passes roughly 5,000 items. |
 | `calculated_formula_cycle` | error | Calculated columns on one entity depend on each other in a cycle, so no creation order can satisfy them. |
@@ -41,6 +42,7 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `calculated_formula_unknown_column` | error | A calculated formula references a column that is not rendered. SharePoint resolves references when the field is created and rejects the POST on any miss. |
 | `calculated_formula_unsupported_operand` | error | A calculated formula references a Lookup, Person, multi-line-text, rich-text or Hyperlink column. Measured against a live site: SharePoint refuses all five when the field is created. |
 | `color_by_map_key_not_in_enum` | error | A `data-bar` `color_by` map names a choice the source column's enum does not contain. |
+| `column_name_too_long` | error | A column's internal name exceeds SharePoint's length limit. |
 | `column_not_rendered` | error | A `form_visibility` or `column_validation` entry names a column the list does not render. |
 | `column_validation_on_a_retired_column` | error | A save rule sits on a retired column. Retirement hides it from the New form, so the rule cannot be satisfied there and would reject every new item. |
 | `column_validation_references_other_columns` | error | A column validation formula references a column other than its own; SharePoint permits only the column being validated. |
@@ -86,9 +88,11 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `condition_value_not_finite` | error | A numeric operand is an infinity or a NaN. |
 | `cross_site_column_cannot_be_unique` | error | A cross-site reference column is marked `[unique]`. Its logical column is replaced by generated `Abbreviation` and `SiteUrl` fields, so the constraint would never be deployed. |
 | `cross_site_column_has_no_ref` | error | A `cross_site_reference_columns:` entry names a column with no DBML `ref:`. |
+| `cross_site_expansion_unhandled` | error | A cross-site reference column needs an extension that expands it; the active one deferred. |
 | `cross_site_generated_name_collides` | error | A cross-site column's generated companion field has the same name as a column the DBML already declares. |
 | `cross_site_generated_name_too_long` | error | A cross-site column's generated `Abbreviation` or `SiteUrl` field exceeds SharePoint's 32-character internal-name limit. |
 | `cross_site_unknown_column` | error | A `cross_site_reference_columns:` entry names a column the entity's table does not declare. |
+| `default_not_an_enum_member` | error | A column's default is not a member of the enum it is typed as. |
 | `demo_column_not_writable` | error | A demo row writes a column the deploy does not create, or writes `Id`. |
 | `demo_date_value_invalid` | error | A demo row's date value is neither `today+N`/`today-N` nor a real ISO calendar date. |
 | `demo_enum_value_unknown` | error | A demo row's value is not a member of the column's enum. |
@@ -107,14 +111,18 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `display_column_type_unindexable` | error | A lookup target's `display_column` is a type SharePoint cannot index. The deploy sets `Indexed=true`, reads it back and aborts part-way through when it did not stick. |
 | `display_title_too_long` | error | A display title exceeds SharePoint's 255-character bound. |
 | `document_library_unsupported` | error | An entity declares `kind: DocumentLibrary`. A library's items are files and this tool writes list rows, so the kind is refused outright — see issue #14. |
+| `duplicate_column_name` | error | A table declares the same column name twice. |
 | `duplicate_demo_key` | error | Two demo rows share a key. Keys are global across entities because `demo_ref` resolves against all of them. |
 | `duplicate_display_title` | error | Two columns of one entity resolve to the same display title, making them indistinguishable on every form and view. |
+| `duplicate_enum_name` | error | Two enums share a name. |
 | `duplicate_group_name` | error | Two `groups` entries share a name case-insensitively, which SharePoint resolves to one group. |
 | `duplicate_index_target` | error | One table's `indexes { }` names the same column twice. |
 | `duplicate_permission_level_name` | error | Two `permission_levels` entries share a name case-insensitively, which SharePoint resolves to one level. |
+| `duplicate_table_name` | error | Two tables share a name. |
 | `duplicate_view_title` | error | Two views on one entity share a title, or differ only in case — SharePoint treats those as one view. |
 | `duplicate_view_url_slug` | error | Two view titles collapse to the same `.aspx` URL slug, so the two view pages would fight over one page. |
 | `empty_display_title` | error | A display-name override resolves to an empty title. |
+| `empty_enum` | warning | An enum declares no members. |
 | `empty_previous_title` | error | A `renamed_from` entry is blank. |
 | `empty_view_url_slug` | error | A view title yields an empty URL slug; it needs at least one letter or digit. |
 | `entity_not_in_schema` | error | The mapping's `entities:` declares a name the DBML schema has no table for. |
@@ -139,6 +147,7 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `hide_of_non_join_bearing_column` | error | `hide_from_all_items` names a column that costs no join operation; only a join-bearing column may be hidden. |
 | `hide_of_unrendered_column` | error | `hide_from_all_items` names a column the generated `All Items` view does not render — usually a typo. |
 | `hide_without_all_items_view` | error | `hide_from_all_items` names a column on an entity for which no `All Items` view is generated at all, so the key would silently do nothing. |
+| `illegal_column_name_character` | error | A column name contains a character SharePoint rejects. |
 | `index_column_not_rendered` | error | An `indexes { }` entry names a column the deploy never creates. |
 | `index_column_type_unindexable` | error | An `indexes { }` entry names a column of a type SharePoint cannot index. |
 | `index_duplicates_unique_column` | error | An `indexes { }` entry names a column that already carries an implicit index from its `[unique]` setting. |
@@ -149,6 +158,7 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `invalid_condition` | error | The condition grammar rejected a declared `when:`. `conditions.py` has 28 distinct reasons behind this and reports them as prose. |
 | `join_threshold_approached` | warning | A view renders join-bearing columns at that ceiling, which held on the tenant measured but may not travel. |
 | `join_threshold_exceeded` | error | A view renders more join-bearing columns than the measured ceiling of 12 join operations, and SharePoint returns the view blank at any list size. Reached from a declared view and from the generated `All Items` view. |
+| `legacy_choice_type` | error | A column uses the legacy `choice` type instead of a named DBML enum. |
 | `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1024 characters once display names are substituted. |
 | `list_validation_message_too_long` | error | A `list_validation:` message is longer than 1024 characters. |
 | `list_validation_references_a_retired_column` | error | A list validation condition references a column that has been retired. |
@@ -156,6 +166,7 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `lookup_display_column_unknown` | error | A lookup target declares a `display_column` that is not one of its columns, so the deploy would emit an unresolvable `LookupField`. |
 | `lookup_would_render_blank` | error | A lookup target has no `Title` column and declares no `display_column`, so every lookup into it renders blank. |
 | `multiple_default_views` | error | More than one view on an entity is marked default; a SharePoint list has exactly one. |
+| `orphan_enum` | warning | An enum is defined but no column references it. |
 | `overdue_guard_field_not_rendered` | error | An `overdue-date` style's `guard.field` names a column the entity does not render. |
 | `polymorphic_column_not_rendered` | error | A `polymorphic_patterns:` entry's `field` or `discriminator` names a column the deploy never creates. |
 | `previous_title_claimed_twice` | error | Two views claim the same previous title. |
@@ -165,6 +176,7 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `redundant_display_column_acceptance` | warning | `accept_unindexable_display_column` is set on an entity with nothing to accept: nothing looks it up, or its display column is not calculated. |
 | `required_column_hidden_from_the_new_form` | error | A required column with no default is hidden from the New form, so every save would fail. Statically provable, hence an error. |
 | `required_column_may_be_hidden_at_creation` | warning | A required column with no default has a `when` that MAY hide it at creation. Whether it does depends on what the person types, so the build cannot decide it -- a warning by design, per the form_visibility spec. |
+| `reserved_column_name` | error | A column uses a name SharePoint reserves. |
 | `retired_column_in_field_set` | warning | A field set names a retired column; retirement strips it from every view that expands the set, and the build continues. |
 | `retired_column_not_rendered` | error | A `retired_columns` entry names a column the DBML does not declare. Retire the declared column rather than deleting the declaration. |
 | `retired_column_required_with_a_default` | warning | A retired column is required and has a declared default, so every new row is still stamped with that value. |
@@ -185,16 +197,19 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `total_on_lookup_column` | error | A total other than `count` is declared on a lookup column, whose stored value is a row id rather than a quantity. |
 | `total_on_non_arithmetic_column` | error | A total other than `count` is declared on a person, rich-text, long-text or hyperlink column. |
 | `trend_against_not_rendered` | error | A `trend` style's `against` names a column the entity does not render. |
-| `unclassified` | error | **Temporary.** A finding the code migration has not named yet. No rule produces this deliberately; its absence is how the migration is known to be finished. |
 | `undeployable_column_declaration` | error | A per-column declaration targets `Title` or a SharePoint system column. The deploy never writes those properties, so the declaration would validate clean and do nothing. |
 | `undeployable_declaration_column` | error | A per-column declaration sits on Title or a SharePoint system column, which the deploy never writes these properties to. It would validate clean and deploy nothing. |
 | `unindexed_filter_columns` | warning | A view's `where` filters on columns with no effective index, so past the list view threshold SharePoint may silently return a truncated answer. |
+| `unique_unsupported_for_type` | error | `[unique]` is declared on a type SharePoint cannot enforce it for. |
+| `unique_without_not_null` | warning | `[unique]` without `not null`, so uniqueness is enforced only on populated values. |
 | `unknown_base_permission` | error | A `permission_levels` entry names a base permission bit SharePoint does not have. |
+| `unknown_column_type` | error | A column's DBML type is not one the typemap knows. |
 | `unknown_entity` | error | A mapping section names an entity the mapping does not declare. |
 | `unknown_field_set_reference` | error | A view's `fields` references `@name`, but the entity declares no field set of that name. |
 | `unknown_owner_group` | error | A group's `owner_group` is neither a built-in SharePoint group nor a declared custom one. |
 | `unknown_permission_level` | error | An assignment names a permission level that is neither built-in nor declared. |
 | `unknown_principal_group` | error | An assignment names a group that is neither built-in nor declared. |
+| `unknown_ref_target` | error | A `ref` points at a table the schema does not define. |
 | `unknown_retention_policy` | error | A retention `list_defaults` entry names a policy that is not defined. |
 | `unknown_site_role` | error | `list_permissions.default.site_role` names a role no entity declares. |
 | `unknown_table` | error | A `list_permissions.overrides` key is not a DBML table name. Use the unprefixed name. |
@@ -207,3 +222,4 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `watched_column_not_rendered` | error | A `watched_lists:` entry names a column the deploy never creates. |
 | `width_column_not_displayed` | error | A `widths` entry names a column that is not one of the view's fields. |
 | `width_out_of_range` | error | A column width is outside 16-2000 pixels. |
+| `extension_reported` | error | A finding raised by an extension's own validators. |

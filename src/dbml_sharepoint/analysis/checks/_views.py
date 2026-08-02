@@ -6,10 +6,10 @@ from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,
     condition_fields,
+    condition_findings,
     effective_column_types,
     leaves,
     normalise,
-    validate_condition,
 )
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.joins import (
@@ -632,28 +632,25 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # rules for every conditional surface; duplicating them here
                 # is how the two would drift.
                 lookup_cols = entity_lookups
-                # STILL UNCLASSIFIED, deliberately. `validate_condition`
-                # returns MESSAGES, so every one of the condition grammar's
-                # ~28 distinct rejections arrives here indistinguishable from
-                # the rest. Giving them all one code would merge 28 rules
-                # permanently; naming them needs the grammar to return codes,
-                # which is the `conditions.py` task of this same phase. The
-                # location is knowable now, so it is set now.
+                # Shared by the grammar's findings below and the index warning
+                # further down, which reports on the same `where` clause.
                 at_where = Location(
                     Section.VIEWS, entity=entity_name, view=view.title, sub="where",
                 )
+                # `condition_findings` rather than `validate_condition`: the
+                # latter returns MESSAGES, so all ~28 of the grammar's distinct
+                # rejections arrived here indistinguishable and had to share
+                # one code. This one returns them already classified, so a
+                # filter rejected for an unrenderable operator and one rejected
+                # for an unknown column are now different codes.
                 findings.extend(
-                    Finding(
-                        FindingCode.UNCLASSIFIED, "error", message,
-                        location=at_where,
-                    )
-                    for message in validate_condition(
+                    condition_findings(
                         view.where,
                         target=CAML,
                         rendered=view_rendered,
                         types={**SYSTEM_COLUMN_TYPES, **types_by_col},
                         lookups=lookup_cols,
-                        context=f"{ctx}.where",
+                        at=at_where,
                     )
                 )
                 # System columns are dropped before anything is decided. They
