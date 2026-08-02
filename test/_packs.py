@@ -69,26 +69,54 @@ def blocks(*parts: str) -> str:
     an already-flush fragment has no common prefix, so `dedent` becomes a no-op
     and the literal keeps its indentation. Each part has to be dedented against
     its own margin before they meet.
+
+    Blank and whitespace-only parts are dropped rather than contributing an
+    empty line, so `blocks(base, extra)` with an empty `extra` is exactly
+    `blocks(base)`. That is what callers passing an optional fragment want; it
+    does mean a part that is *deliberately* only whitespace cannot be expressed
+    here, which no caller needs and YAML would ignore anyway.
     """
     return "".join(_body(p) for p in parts if p.strip())
 
 
-def write_dbml(tmp_path: Path, body: str, *, preamble: bool = True) -> Path:
-    """Write ``s.dbml`` under `tmp_path`, prepending the Project line."""
+def write_dbml(
+    tmp_path: Path, body: str, *, preamble: bool = True, name: str = "s.dbml",
+) -> Path:
+    """Write a schema under `tmp_path`, prepending the Project line.
+
+    `name` is settable because a handful of tests write more than one schema in
+    the same `tmp_path`, and because several already use their own filenames.
+    """
     text = _body(body)
     if preamble:
         text = f"{DBML_PREAMBLE}\n{text}"
-    path = tmp_path / "s.dbml"
+    path = tmp_path / name
     path.write_text(text, encoding="utf-8")
     return path
 
 
-def write_mapping(tmp_path: Path, body: str, *, prefix: str | None = DEFAULT_PREFIX) -> Path:
-    """Write ``m.yaml`` under `tmp_path`, prepending the prefix declaration."""
+def write_mapping(
+    tmp_path: Path,
+    body: str,
+    *,
+    prefix: str | None = DEFAULT_PREFIX,
+    name: str = "m.yaml",
+) -> Path:
+    """Write a mapping under `tmp_path`, prepending the prefix declaration.
+
+    `name` matters more here than for schemas: tests that compare two mappings
+    write `m.yaml` and `m2.yaml` side by side in one `tmp_path`, so collapsing
+    them onto one filename would silently make the second overwrite the first.
+    Counted across the suite: `m.yaml` 357, `mapping.yaml` 28, `m2.yaml` 22,
+    `m3.yaml` 12, `m4.yaml` 6, `release.yaml` 6, `fixed.yaml` 4.
+
+    `prefix=None` omits the prefix line entirely, for the enum and release
+    side-files that carry no `prefix:` of their own.
+    """
     text = _body(body)
     if prefix is not None:
         text = f"{prefix}\n{text}"
-    path = tmp_path / "m.yaml"
+    path = tmp_path / name
     path.write_text(text, encoding="utf-8")
     return path
 
@@ -100,12 +128,14 @@ def pack(
     *,
     preamble: bool = True,
     prefix: str | None = DEFAULT_PREFIX,
+    dbml_name: str = "s.dbml",
+    mapping_name: str = "m.yaml",
 ) -> tuple[Schema, MappingBundle]:
     """Write both files and return the parsed schema and loaded bundle.
 
     The pair is what 178 ``parse_dbml`` and 302 ``load_mapping`` calls in this
     suite were spelling out one line at a time.
     """
-    schema_path = write_dbml(tmp_path, dbml, preamble=preamble)
-    mapping_path = write_mapping(tmp_path, mapping, prefix=prefix)
+    schema_path = write_dbml(tmp_path, dbml, preamble=preamble, name=dbml_name)
+    mapping_path = write_mapping(tmp_path, mapping, prefix=prefix, name=mapping_name)
     return parse_dbml(schema_path), load_mapping(mapping_path)
