@@ -2,8 +2,15 @@
 from pathlib import Path
 
 from _builders import ID_PK, table
+from _findings import by_severity, messages, none_of, only
 from _packs import blocks, entities, pack
 
+from dbml_sharepoint.analysis.findings import (
+    Finding,
+    FindingCode,
+    Location,
+    Section,
+)
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
@@ -53,11 +60,13 @@ def test_calculated_formula_pairing_guards_the_retirement_carve_out(
         dbml_name="no-formula.dbml",
         mapping_name="no-formula.yaml",
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        "Board.Route" in f.message and "has no" in f.message and "formula" in f.message
-        for f in findings if f.severity == "error"
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA,
     )
+    assert f.severity == "error"
+    # No location on this one, so the column reaches the reader in prose.
+    assert "Board.Route" in f.message
 
     # Direction 2: a formula targeting a NON-calculated column must error.
     schema, bundle = pack(
@@ -71,11 +80,13 @@ def test_calculated_formula_pairing_guards_the_retirement_carve_out(
         dbml_name="wrong-target.dbml",
         mapping_name="wrong-target.yaml",
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        "calculated_formulas[Board]" in f.message and "'BoardDate'" in f.message
-        for f in findings if f.severity == "error"
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.FORMULA_TARGET_NOT_CALCULATED,
     )
+    assert f.severity == "error"
+    assert f.location == Location(Section.CALCULATED_FORMULAS, entity="Board")
+    assert "'BoardDate'" in f.message
 
 def test_retired_columns_errors(tmp_path: Path) -> None:
     """Fail closed where a retirement mistake would break the list. The
@@ -121,31 +132,52 @@ def test_retired_columns_errors(tmp_path: Path) -> None:
                   retired: 2026-09-01
         """),
     )
-    errors = [
-        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
-    ]
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
+    board = Location(Section.RETIRED_COLUMNS, entity="Board")
+    ops = Location(Section.RETIRED_COLUMNS, entity="Board", column="OperationsStatus")
 
-    def has(*needles: str) -> bool:
-        return any(all(n in f.message for n in needles) for f in errors)
+    def at(location: Location, code: FindingCode) -> Finding:
+        """The one error with `code` reported AT `location`.
+
+        Two of these codes are reachable from more than one place in this
+        single fixture — `unknown_entity` fires for both the retirement and
+        the form_visibility section it folds into — so the location is what
+        picks out the report this line is about.
+        """
+        return only([f for f in errors if f.location == location], code)
 
     # Unknown entity, and a column the DBML does not declare.
-    assert has("retired_columns[Widget]", "unknown entity")
-    assert has("retired_columns[Board]", "'Ghost'", "not a rendered column")
+    at(Location(Section.RETIRED_COLUMNS, entity="Widget"), FindingCode.UNKNOWN_ENTITY)
+    assert "'Ghost'" in at(board, FindingCode.RETIRED_COLUMN_NOT_RENDERED).message
     # Unparseable retirement date.
-    assert has("retired_columns[Board].OperationsStatus", "not an ISO date")
+    assert "'not-a-date'" in at(ops, FindingCode.RETIRED_DATE_NOT_ISO).message
     # superseded_by pointing at itself, and at nothing.
-    assert has("retired_columns[Board].OperationsStatus", "the retired column itself")
-    assert has("retired_columns[Board].MustFill", "'Nowhere'", "not a rendered column")
+    at(ops, FindingCode.SUPERSEDED_BY_NAMES_THE_RETIRED_COLUMN)
+    assert "'Nowhere'" in at(
+        Location(Section.RETIRED_COLUMNS, entity="Board", column="MustFill"),
+        FindingCode.SUPERSEDED_BY_NOT_RENDERED,
+    ).message
     # not null with no declared default — the escalation, reported against
     # retirement rather than against a form_visibility section nobody wrote.
-    assert has("retired_columns[Board]", "'MustFill'", "every save would fail")
+    assert "'MustFill'" in at(
+        board, FindingCode.REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM,
+    ).message
     # Live formulas referencing a retired column.
-    assert has("calculated_formulas[Board].Route", "[OperationsStatus]", "retired")
-    assert has("list_validation[Board]", "OperationsStatus", "retired")
+    assert "[OperationsStatus]" in at(
+        Location(Section.CALCULATED_FORMULAS, entity="Board", column="Route"),
+        FindingCode.CALCULATED_FORMULA_REFERENCES_A_RETIRED_COLUMN,
+    ).message
+    at(
+        Location(Section.LIST_VALIDATION, entity="Board"),
+        FindingCode.LIST_VALIDATION_REFERENCES_A_RETIRED_COLUMN,
+    )
     # A save rule ON a retired column: retirement hides it from the new form,
     # so is_not_null there rejects every new item with no field to satisfy
     # it. The list silently stops accepting rows.
-    assert has("column_validation[Board].OperationsStatus", "retired", "every new item")
+    at(
+        Location(Section.COLUMN_VALIDATION, entity="Board", column="OperationsStatus"),
+        FindingCode.COLUMN_VALIDATION_ON_A_RETIRED_COLUMN,
+    )
 
 def test_retired_supersession_may_not_name_another_retirement(tmp_path: Path) -> None:
     """Superseding one dead column with another leaves the operator with no
@@ -163,13 +195,15 @@ def test_retired_supersession_may_not_name_another_retirement(tmp_path: Path) ->
                   retired: 2026-09-01
         """),
     )
-    errors = [
-        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
-    ]
-    assert any(
-        "retired_columns[Board].OldA" in f.message and "itself retired" in f.message
-        for f in errors
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.SUPERSEDED_BY_IS_ITSELF_RETIRED,
     )
+    assert f.severity == "error"
+    assert f.location == Location(
+        Section.RETIRED_COLUMNS, entity="Board", column="OldA",
+    )
+    assert "'OldB'" in f.message
 
 def test_retiring_an_undeployable_column_is_rejected(tmp_path: Path) -> None:
     """Retirement resolves into a per-column declaration, and the built-in
@@ -184,16 +218,15 @@ def test_retiring_an_undeployable_column_is_rejected(tmp_path: Path) -> None:
               Board: [Title]
         """),
     )
-    errors = [
-        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
-    ]
-    assert any(
-        "retired_columns[Board]" in f.message and "'Title'" in f.message
-        for f in errors
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNDEPLOYABLE_DECLARATION_COLUMN,
     )
-    # The message is the one the undeployable-column rule already owns, so
-    # the two cannot drift; only the context says where to fix it.
-    assert any("its own patch" in f.message for f in errors)
+    assert f.severity == "error"
+    # Reported against retirement, which is where the author has to fix it,
+    # even though the sentence belongs to the undeployable-column rule.
+    assert f.location == Location(Section.RETIRED_COLUMNS, entity="Board")
+    assert "'Title'" in f.message
 
 def test_retired_calculated_column_is_not_an_unfixable_build_error(
     tmp_path: Path,
@@ -215,7 +248,8 @@ def test_retired_calculated_column_is_not_an_unfixable_build_error(
         """),
     )
     findings = validate_against_mapping(schema, bundle)
-    assert not [f for f in findings if f.severity == "error"]
+    assert not by_severity(findings, "error")
+    none_of(findings, FindingCode.FORM_VISIBILITY_ON_A_CALCULATED_COLUMN)
     assert "Board" not in bundle.mapping.form_visibility
 
 def test_retired_calculated_column_without_a_formula_reports_only_root_cause(
@@ -238,12 +272,11 @@ def test_retired_calculated_column_without_a_formula_reports_only_root_cause(
     # The loader could not know Route was calculated, so it DID fold it.
     assert "Route" in bundle.mapping.form_visibility["Board"].columns
 
-    errors = [
-        f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
-    ]
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
     assert len(errors) == 1, [f.message for f in errors]
-    assert "Board.Route" in errors[0].message
-    assert "calculated_formulas.Board.Route" in errors[0].message
+    f = only(errors, FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA)
+    # The mapping key the author has to add — the one thing they can act on.
+    assert "calculated_formulas.Board.Route" in f.message
 
 def test_retired_columns_warnings(tmp_path: Path) -> None:
     """Warn where a retirement mistake only wastes something. Retirement
@@ -287,27 +320,39 @@ def test_retired_columns_warnings(tmp_path: Path) -> None:
         """),
     )
     findings = validate_against_mapping(schema, bundle)
-    warnings = [f for f in findings if f.severity == "warning"]
-
-    def warned(*needles: str) -> bool:
-        return any(all(n in f.message for n in needles) for f in warnings)
 
     # not null WITH a default: saves succeed, the default is stamped forever.
-    assert warned("retired_columns[Board]", "'Stamp'", "stamped with")
+    stamped = only(findings, FindingCode.RETIRED_COLUMN_REQUIRED_WITH_A_DEFAULT)
+    assert stamped.severity == "warning"
+    assert "'Stamp'" in stamped.message and "'x'" in stamped.message
     # A dead index is dead weight against a finite per-list budget.
-    assert warned("retired_columns[Board]", "'OperationsStatus'", "indexes block")
+    indexed = only(findings, FindingCode.RETIRED_COLUMN_STILL_INDEXED)
+    assert "'OperationsStatus'" in indexed.message
     # Stripped view field, width and form-section references — reported,
     # never rejected. One generic loop over retirement_strips covers all
-    # three; the context string is what distinguishes them.
-    assert warned("views[Board].Heat grid fields", "stripped it")
-    assert warned("views[Board].Heat grid widths", "stripped it")
-    assert warned("form_formatting[Board].body sections", "stripped it")
+    # three under ONE code, so the declaration each one names is the only
+    # thing that tells them apart and stays a message assertion.
+    stripped = messages(findings, FindingCode.RETIREMENT_STRIPPED_A_DECLARATION)
+    for named in (
+        "views[Board].Heat grid fields",
+        "views[Board].Heat grid widths",
+        "form_formatting[Board].body sections",
+    ):
+        assert any(named in m for m in stripped), (named, stripped)
     # A view left with no fields at all.
-    assert warned("views[Board].Statuses only", "every declared field")
+    emptied = only(findings, FindingCode.VIEW_EMPTIED_BY_RETIREMENT)
+    assert emptied.location == Location(
+        Section.VIEWS, entity="Board", view="Statuses only",
+    )
     # Never an error: retirement must not break a build.
-    assert not [f for f in findings if f.severity == "error"]
-    # column_formatting on a retired column is kept, not flagged.
-    assert not warned("column_formatting")
+    assert not by_severity(findings, "error")
+    # column_formatting on a retired column is kept, not flagged: nothing is
+    # reported about that section at all, and no strip names it.
+    assert not [
+        f for f in findings
+        if f.location is not None and f.location.section is Section.COLUMN_FORMATTING
+    ], findings
+    assert not any("column_formatting" in m for m in stripped), stripped
 
 def test_retirement_without_display_names_warns_the_suffix_is_inert(
     tmp_path: Path,
@@ -322,13 +367,14 @@ def test_retirement_without_display_names_warns_the_suffix_is_inert(
               Board: [OldColumn]
         """),
     )
-    warnings = [
-        f for f in validate_against_mapping(schema, bundle) if f.severity == "warning"
-    ]
-    assert any(
-        "display_names is not enabled" in f.message and "(retired)" in f.message
-        for f in warnings
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.RETIREMENT_WITHOUT_DISPLAY_NAMES,
     )
+    assert f.severity == "warning"
+    # The suffix that never reaches SharePoint, named so the author can see
+    # what they are not getting.
+    assert "(retired)" in f.message
 
 def test_retirement_replacing_a_form_visibility_declaration_warns(
     tmp_path: Path,
@@ -348,10 +394,13 @@ def test_retirement_replacing_a_form_visibility_declaration_warns(
               Board: [OldColumn]
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "warning"
-        and "form_visibility[Board].columns" in f.message
-        and "stripped it" in f.message
-        for f in findings
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.RETIREMENT_STRIPPED_A_DECLARATION,
     )
+    assert f.severity == "warning"
+    # NOT this finding's own location, which is retired_columns[Board]: it is
+    # the OTHER declaration retirement rewrote. One code covers every strip,
+    # so which one it was reaches the reader only through the message.
+    rewritten = "form_visibility[Board].columns"
+    assert rewritten in f.message

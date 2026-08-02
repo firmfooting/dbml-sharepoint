@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from _builders import ID_PK, TITLE, table
+from _findings import by_severity, messages, only
 from _packs import blocks, entities, pack
 from _paths import FIXTURES
 from _validator_helpers import (
@@ -11,6 +12,7 @@ from _validator_helpers import (
     _view_inputs,
 )
 
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
     validate,
     validate_against_mapping,
@@ -51,11 +53,21 @@ def test_column_formatting_validation(tmp_path: Path) -> None:
             SortOrder: { elmType: div, txtContent: '[$Missing]' }
         """,
     )
-    assert any("Widget" in f.message and "column_formatting" in f.message for f in errors)
-    assert any("Nope" in f.message for f in errors)
+    assert only(errors, FindingCode.UNKNOWN_ENTITY).location == Location(
+        Section.COLUMN_FORMATTING, entity="Widget",
+    )
+    assert only(errors, FindingCode.FORMATTER_COLUMN_NOT_RENDERED).location == Location(
+        Section.COLUMN_FORMATTING, entity="Project", column="Nope",
+    )
     # Status declares no elmType.
-    assert any("elmType" in f.message and "Status" in f.message for f in errors)
-    assert any("Missing" in f.message and "SortOrder" in f.message for f in errors)
+    assert only(errors, FindingCode.FORMATTER_MISSING_ELMTYPE).location == Location(
+        Section.COLUMN_FORMATTING, entity="Project", column="Status",
+    )
+    bad_ref = only(errors, FindingCode.FORMATTER_FIELD_NOT_RENDERED)
+    assert bad_ref.location == Location(
+        Section.COLUMN_FORMATTING, entity="Project", column="SortOrder",
+    )
+    assert "Missing" in bad_ref.message
     ok = _view_errors(
         tmp_path,
         """
@@ -77,7 +89,9 @@ def test_view_formatting_field_refs_validated(tmp_path: Path) -> None:
               formatting: { additionalRowClass: "=if([$Ghost] == 1, 'x', '')" }
         """,
     )
-    assert any("Ghost" in f.message and "V" in f.message for f in errors)
+    f = only(errors, FindingCode.FORMATTER_FIELD_NOT_RENDERED)
+    assert f.location == Location(Section.VIEWS, entity="Project", view="V")
+    assert "Ghost" in f.message
 
 def test_form_formatting_validation(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -91,9 +105,16 @@ def test_form_formatting_validation(tmp_path: Path) -> None:
             body: { sections: [ { displayname: X, fields: [Title, Nope] } ] }
         """,
     )
-    assert any("Widget" in f.message and "form_formatting" in f.message for f in errors)
-    assert any("Ghost" in f.message for f in errors)
-    assert any("Nope" in f.message and "sections" in f.message for f in errors)
+    assert only(errors, FindingCode.UNKNOWN_ENTITY).location == Location(
+        Section.FORM_FORMATTING, entity="Widget",
+    )
+    ghost = only(errors, FindingCode.FORMATTER_FIELD_NOT_RENDERED)
+    assert ghost.location == Location(
+        Section.FORM_FORMATTING, entity="Project", sub="header",
+    )
+    assert "Ghost" in ghost.message
+    section_field = only(errors, FindingCode.FORM_SECTION_FIELD_NOT_RENDERED)
+    assert "Nope" in section_field.message
     ok = _view_errors(
         tmp_path,
         """
@@ -120,8 +141,10 @@ def test_list_validation_rules_validated(tmp_path: Path) -> None:
         """,
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    assert any("Widget" in f.message and "list_validation" in f.message for f in errors)
-    assert any("Ghost" in f.message for f in errors)
+    assert only(errors, FindingCode.UNKNOWN_ENTITY).location == Location(
+        Section.LIST_VALIDATION, entity="Widget",
+    )
+    assert "Ghost" in only(errors, FindingCode.INVALID_CONDITION).message
 
 def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> None:
     """SP list validation formulas cannot reference calculated, person,
@@ -142,12 +165,21 @@ def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> Non
         """),
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
-    assert any("Score" in f.message and "calculated" in f.message.lower() for f in errors)
-    assert any("Owner" in f.message and "person" in f.message.lower() for f in errors)
+    # The condition grammar hands its rejections back as prose under one
+    # code, so the type it refused lives only in the message.
+    reasons = messages(errors, FindingCode.INVALID_CONDITION)
+    assert any("Score" in m and "calculated" in m.lower() for m in reasons), reasons
+    assert any("Owner" in m and "person" in m.lower() for m in reasons), reasons
 
 def test_today_offset_valid_on_calculated_date(tmp_path: Path) -> None:
     """A calculated_date column stores DateTime values — 'today' offset view
-    filters must accept it (the NextReviewDue 'Reviews due' case)."""
+    filters must accept it (the NextReviewDue 'Reviews due' case).
+
+    This test used to assert that no message contained "offsets apply only".
+    That sentence is written NOWHERE in `src`, so the assertion could not
+    fail and the test passed while checking nothing. The claim it meant to
+    make is simply that the filter is accepted: no error at all.
+    """
     schema, bundle = pack(
         tmp_path,
         dbml=table("Risk", ID_PK, TITLE, "NextReviewDue calculated_date"),
@@ -164,9 +196,7 @@ def test_today_offset_valid_on_calculated_date(tmp_path: Path) -> None:
         """),
     )
     findings = validate_against_mapping(schema, bundle)
-    assert not any(
-        "offsets apply only" in f.message for f in findings if f.severity == "error"
-    )
+    assert not by_severity(findings, "error"), findings
 
 def test_watched_list_column_must_exist() -> None:
     """watched_lists is validated nowhere: a misspelled column simply
@@ -177,10 +207,10 @@ def test_watched_list_column_must_exist() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.mapping.watched_lists = [WatchedList(entity="Task", column="NoSuchColumn")]
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "NoSuchColumn" in f.message and "watched_lists" in f.message
-        for f in findings
-    )
+    f = only(findings, FindingCode.WATCHED_COLUMN_NOT_RENDERED)
+    assert f.severity == "error"
+    assert f.location == Location(Section.WATCHED_LISTS)
+    assert "NoSuchColumn" in f.message
 
 def test_polymorphic_pattern_columns_must_exist() -> None:
     """The manifest surfaces these so downstream flows validate the logical
@@ -194,9 +224,11 @@ def test_polymorphic_pattern_columns_must_exist() -> None:
         PolymorphicPattern(list="Task", field="NoSuchField", discriminator="NoSuchType"),
     ]
     findings = validate_against_mapping(schema, bundle)
-    messages = [f.message for f in findings if f.severity == "error"]
-    assert any("NoSuchField" in m and "polymorphic_patterns" in m for m in messages)
-    assert any("NoSuchType" in m for m in messages)
+    named = messages(findings, FindingCode.POLYMORPHIC_COLUMN_NOT_RENDERED)
+    # Both roles are reported, and by name — the field and the discriminator
+    # are two different mistakes an author can make independently.
+    assert any("NoSuchField" in m for m in named), named
+    assert any("NoSuchType" in m for m in named), named
 
 def test_watched_list_entity_must_exist() -> None:
     from dbml_sharepoint.model.mapping_loader import WatchedList
@@ -205,10 +237,10 @@ def test_watched_list_entity_must_exist() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.mapping.watched_lists = [WatchedList(entity="Tsak", column="Status")]
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "Tsak" in f.message and "watched_lists" in f.message
-        for f in findings
-    )
+    f = only(findings, FindingCode.UNKNOWN_ENTITY)
+    assert f.severity == "error"
+    assert f.location == Location(Section.WATCHED_LISTS)
+    assert "Tsak" in f.message
 
 def test_polymorphic_pattern_entity_must_exist() -> None:
     from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
@@ -219,10 +251,10 @@ def test_polymorphic_pattern_entity_must_exist() -> None:
         PolymorphicPattern(list="Tsak", field="Status", discriminator="Status"),
     ]
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "Tsak" in f.message and "polymorphic_patterns" in f.message
-        for f in findings
-    )
+    f = only(findings, FindingCode.UNKNOWN_ENTITY)
+    assert f.severity == "error"
+    assert f.location == Location(Section.POLYMORPHIC_PATTERNS)
+    assert "Tsak" in f.message
 
 def test_versioning_override_entity_must_exist() -> None:
     """A misspelled entity under `versioning.overrides` leaves the real
@@ -232,10 +264,10 @@ def test_versioning_override_entity_must_exist() -> None:
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     bundle.mapping.versioning_overrides["Tsak"] = {"enable_versioning": False}
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "Tsak" in f.message and "versioning" in f.message
-        for f in findings
-    )
+    f = only(findings, FindingCode.UNKNOWN_ENTITY)
+    assert f.severity == "error"
+    assert f.location == Location(Section.VERSIONING, sub="overrides")
+    assert "Tsak" in f.message
 
 def test_auto_increment_column_not_named_id_is_rejected() -> None:
     """typemap skips any `int [pk, increment]` column, while jsgen and the
@@ -250,10 +282,9 @@ def test_auto_increment_column_not_named_id_is_rejected() -> None:
         Column(name="Title", type="nvarchar", required=True),
     ])
     findings = validate(_schema(table))
-    assert any(
-        f.severity == "error" and "TicketId" in f.message and "Id" in f.message
-        for f in findings
-    ), findings
+    f = only(findings, FindingCode.AUTO_INCREMENT_PK_MUST_BE_ID)
+    assert f.severity == "error"
+    assert "TicketId" in f.message
 
 def test_auto_increment_column_named_id_is_accepted() -> None:
     table = Table(name="Ticket", columns=[
@@ -271,9 +302,9 @@ def test_column_named_id_that_is_not_the_identity_is_rejected() -> None:
         Column(name="Title", type="nvarchar", required=True),
     ])
     findings = validate(_schema(table))
-    assert any(
-        f.severity == "error" and "Id" in f.message for f in findings
-    ), findings
+    f = only(findings, FindingCode.RESERVED_COLUMN_NAME)
+    assert f.severity == "error"
+    assert "Id" in f.message
 
 def test_calculated_formula_referencing_id_is_rejected() -> None:
     """The reference check compared against the raw DBML column set rather
@@ -289,9 +320,9 @@ def test_calculated_formula_referencing_id_is_rejected() -> None:
     ])
     bundle = _bundle_with_formulas({"Risk": {"Ref": '=CONCATENATE("R-",[Id])'}}, "Risk")
     findings = validate_against_mapping(_schema(table), bundle)
-    assert any(
-        f.severity == "error" and "[Id]" in f.message for f in findings
-    ), findings
+    f = only(findings, FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN)
+    assert f.severity == "error"
+    assert "[Id]" in f.message
 
 def test_calculated_formula_referencing_a_phase_two_lookup_is_rejected() -> None:
     """jsgen orders calculated fields only within fields_phase1 and ignores
@@ -306,10 +337,11 @@ def test_calculated_formula_referencing_a_phase_two_lookup_is_rejected() -> None
     ])
     bundle = _bundle_with_formulas({"Risk": {"Label": '=CONCATENATE([Title],[Parent])'}}, "Risk")
     findings = validate_against_mapping(_schema(table), bundle)
-    assert any(
-        f.severity == "error" and "Parent" in f.message and "Label" in f.message
-        for f in findings
-    ), findings
+    f = only(findings, FindingCode.CALCULATED_FORMULA_DEFERRED_LOOKUP)
+    assert f.severity == "error"
+    # This finding carries no location, so both the offending formula and the
+    # column it names have to reach the reader through the message.
+    assert "Risk.Label" in f.message and "[Parent]" in f.message
 
 def test_calculated_formula_referencing_a_phase_one_column_is_fine() -> None:
     table = Table(name="Risk", columns=[
