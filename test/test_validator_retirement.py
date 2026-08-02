@@ -1,15 +1,31 @@
 """Validator: retired columns."""
 from pathlib import Path
 
+from _builders import ID_PK, table
+from _packs import blocks, entities, pack
+
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
-from dbml_sharepoint.model.mapping_loader import (
-    load_mapping,
-)
-from dbml_sharepoint.model.parser import (
-    parse_dbml,
-)
+
+#: The severity enum these fixtures retire columns from.
+_RAG = """
+Enum rag {
+  "Green"
+  "Amber"
+}
+"""
+
+
+def _board(*columns: str) -> str:
+    """The `Board` table every test in this module retires a column of.
+
+    Deliberately not `_builders.TITLE`: these fixtures declare a nullable
+    `Title`, and the not-null retirement rules are exercised through explicit
+    `MustFill` and `Stamp` columns instead.
+    """
+    return table("Board", ID_PK, "Title nvarchar", *columns)
+
 
 # --- Retired columns --------------------------------------------------------
 
@@ -30,54 +46,32 @@ def test_calculated_formula_pairing_guards_the_retirement_carve_out(
     retiring that column an unfixable build error.
     """
     # Direction 1: a calculated column with NO formula must error.
-    (tmp_path / "no-formula.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date\n"
-        "  Route calculated_text\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("BoardDate date", "Route calculated_text"),
+        mapping=entities("Board"),
+        dbml_name="no-formula.dbml",
+        mapping_name="no-formula.yaml",
     )
-    (tmp_path / "no-formula.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "no-formula.dbml"),
-        load_mapping(tmp_path / "no-formula.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     assert any(
         "Board.Route" in f.message and "has no" in f.message and "formula" in f.message
         for f in findings if f.severity == "error"
     )
 
     # Direction 2: a formula targeting a NON-calculated column must error.
-    (tmp_path / "wrong-target.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("BoardDate date"),
+        mapping=blocks(entities("Board"), """
+            calculated_formulas:
+              Board:
+                BoardDate: '=1'
+        """),
+        dbml_name="wrong-target.dbml",
+        mapping_name="wrong-target.yaml",
     )
-    (tmp_path / "wrong-target.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Board:\n"
-        "    BoardDate: '=1'\n",
-        encoding="utf-8",
-    )
-    findings = validate_against_mapping(
-        parse_dbml(tmp_path / "wrong-target.dbml"),
-        load_mapping(tmp_path / "wrong-target.yaml"),
-    )
+    findings = validate_against_mapping(schema, bundle)
     assert any(
         "calculated_formulas[Board]" in f.message and "'BoardDate'" in f.message
         for f in findings if f.severity == "error"
@@ -87,59 +81,46 @@ def test_retired_columns_errors(tmp_path: Path) -> None:
     """Fail closed where a retirement mistake would break the list. The
     not-null-with-no-default case is the load-bearing one: retirement hides
     the column from the New form, so every subsequent save would fail."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum rag {\n"
-        '  "Green"\n'
-        '  "Amber"\n'
-        "}\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date [not null]\n"
-        "  OperationsStatus rag\n"
-        "  SiteServicesStatus rag\n"
-        "  MustFill nvarchar [not null]\n"
-        "  Route calculated_text\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(_RAG, _board(
+            "BoardDate date [not null]",
+            "OperationsStatus rag",
+            "SiteServicesStatus rag",
+            "MustFill nvarchar [not null]",
+            "Route calculated_text",
+        )),
+        mapping=blocks(entities("Board"), """
+            calculated_formulas:
+              Board:
+                Route: '=[OperationsStatus]'
+            list_validation:
+              Board:
+                when:
+                  - { field: OperationsStatus, op: is_not_null }
+                message: "Give a status."
+            column_validation:
+              Board:
+                reconcile: declared
+                columns:
+                  OperationsStatus:
+                    when: [{ field: OperationsStatus, op: is_not_null }]
+                    message: "Needed."
+            retired_columns:
+              Widget: [Anything]
+              Board:
+                Ghost:
+                  retired: 2026-09-01
+                OperationsStatus:
+                  retired: not-a-date
+                  superseded_by: OperationsStatus
+                MustFill:
+                  retired: 2026-09-01
+                  superseded_by: Nowhere
+                SiteServicesStatus:
+                  retired: 2026-09-01
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Board:\n"
-        "    Route: '=[OperationsStatus]'\n"
-        "list_validation:\n"
-        "  Board:\n"
-        "    when:\n"
-        "      - { field: OperationsStatus, op: is_not_null }\n"
-        '    message: "Give a status."\n'
-        "column_validation:\n"
-        "  Board:\n"
-        "    reconcile: declared\n"
-        "    columns:\n"
-        "      OperationsStatus:\n"
-        "        when: [{ field: OperationsStatus, op: is_not_null }]\n"
-        '        message: "Needed."\n'
-        "retired_columns:\n"
-        "  Widget: [Anything]\n"
-        "  Board:\n"
-        "    Ghost:\n"
-        "      retired: 2026-09-01\n"
-        "    OperationsStatus:\n"
-        "      retired: not-a-date\n"
-        "      superseded_by: OperationsStatus\n"
-        "    MustFill:\n"
-        "      retired: 2026-09-01\n"
-        "      superseded_by: Nowhere\n"
-        "    SiteServicesStatus:\n"
-        "      retired: 2026-09-01\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     errors = [
         f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
     ]
@@ -169,31 +150,19 @@ def test_retired_columns_errors(tmp_path: Path) -> None:
 def test_retired_supersession_may_not_name_another_retirement(tmp_path: Path) -> None:
     """Superseding one dead column with another leaves the operator with no
     live destination for the data."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  OldA nvarchar\n"
-        "  OldB nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("OldA nvarchar", "OldB nvarchar"),
+        mapping=blocks(entities("Board"), """
+            retired_columns:
+              Board:
+                OldA:
+                  retired: 2026-09-01
+                  superseded_by: OldB
+                OldB:
+                  retired: 2026-09-01
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "retired_columns:\n"
-        "  Board:\n"
-        "    OldA:\n"
-        "      retired: 2026-09-01\n"
-        "      superseded_by: OldB\n"
-        "    OldB:\n"
-        "      retired: 2026-09-01\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     errors = [
         f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
     ]
@@ -207,25 +176,14 @@ def test_retiring_an_undeployable_column_is_rejected(tmp_path: Path) -> None:
     Title never receives one — it is provisioned through its own patch. A
     retirement that cannot be carried out must say so rather than validate
     clean and deploy nothing."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("BoardDate date"),
+        mapping=blocks(entities("Board"), """
+            retired_columns:
+              Board: [Title]
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "retired_columns:\n"
-        "  Board: [Title]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     errors = [
         f for f in validate_against_mapping(schema, bundle) if f.severity == "error"
     ]
@@ -243,31 +201,19 @@ def test_retired_calculated_column_is_not_an_unfixable_build_error(
     """Retiring a calculated column must be possible. It is never folded
     into form_visibility, so the validator's "calculated columns never
     appear on entry forms" error must not fire."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date\n"
-        "  Route calculated_text\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("BoardDate date", "Route calculated_text"),
+        mapping=blocks(entities("Board"), """
+            calculated_formulas:
+              Board:
+                Route: '=[BoardDate]'
+            retired_columns:
+              Board:
+                Route:
+                  retired: 2026-09-01
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Board:\n"
-        "    Route: '=[BoardDate]'\n"
-        "retired_columns:\n"
-        "  Board:\n"
-        "    Route:\n"
-        "      retired: 2026-09-01\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     findings = validate_against_mapping(schema, bundle)
     assert not [f for f in findings if f.severity == "error"]
     assert "Board" not in bundle.mapping.form_visibility
@@ -281,26 +227,14 @@ def test_retired_calculated_column_without_a_formula_reports_only_root_cause(
     form_visibility. The build must report the missing formula and NOTHING
     else — blaming the author for a form_visibility entry they never wrote
     buries the error they can actually act on."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date\n"
-        "  Route calculated_text\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("BoardDate date", "Route calculated_text"),
+        mapping=blocks(entities("Board"), """
+            retired_columns:
+              Board: [Route]
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "retired_columns:\n"
-        "  Board: [Route]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     # The loader could not know Route was calculated, so it DID fold it.
     assert "Route" in bundle.mapping.form_visibility["Board"].columns
 
@@ -317,54 +251,41 @@ def test_retired_columns_warnings(tmp_path: Path) -> None:
     and reported, not rejected. A column_formatting entry on a retired
     column is KEPT deliberately — historical values still render with their
     severity colours wherever the column is still shown."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum rag {\n"
-        '  "Green"\n'
-        '  "Amber"\n'
-        "}\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  BoardDate date\n"
-        "  OperationsStatus rag\n"
-        "  Stamp nvarchar [not null, default: 'x']\n"
-        "  indexes { OperationsStatus }\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(_RAG, _board(
+            "BoardDate date",
+            "OperationsStatus rag",
+            "Stamp nvarchar [not null, default: 'x']",
+            "indexes { OperationsStatus }",
+        )),
+        mapping=blocks(entities("Board"), """
+            display_names:
+              mode: auto
+            column_formatting:
+              Board:
+                OperationsStatus: { style: severity, map: { Green: good } }
+            form_formatting:
+              Board:
+                body:
+                  sections:
+                    - displayname: "Header"
+                      fields: [BoardDate, OperationsStatus]
+            views:
+              Board:
+                - title: "Heat grid"
+                  fields: [BoardDate, OperationsStatus]
+                  widths: { OperationsStatus: 120 }
+                - title: "Statuses only"
+                  fields: [OperationsStatus]
+            retired_columns:
+              Board:
+                OperationsStatus:
+                  retired: 2026-09-01
+                Stamp:
+                  retired: 2026-09-01
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "display_names:\n"
-        "  mode: auto\n"
-        "column_formatting:\n"
-        "  Board:\n"
-        "    OperationsStatus: { style: severity, map: { Green: good } }\n"
-        "form_formatting:\n"
-        "  Board:\n"
-        "    body:\n"
-        "      sections:\n"
-        '        - displayname: "Header"\n'
-        "          fields: [BoardDate, OperationsStatus]\n"
-        "views:\n"
-        "  Board:\n"
-        '    - title: "Heat grid"\n'
-        "      fields: [BoardDate, OperationsStatus]\n"
-        "      widths: { OperationsStatus: 120 }\n"
-        '    - title: "Statuses only"\n'
-        "      fields: [OperationsStatus]\n"
-        "retired_columns:\n"
-        "  Board:\n"
-        "    OperationsStatus:\n"
-        "      retired: 2026-09-01\n"
-        "    Stamp:\n"
-        "      retired: 2026-09-01\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     findings = validate_against_mapping(schema, bundle)
     warnings = [f for f in findings if f.severity == "warning"]
 
@@ -393,25 +314,14 @@ def test_retirement_without_display_names_warns_the_suffix_is_inert(
 ) -> None:
     """display_name_for ignores overrides unless mode is auto, so without a
     display_names section the ' (retired)' suffix never reaches SharePoint."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  OldColumn nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("OldColumn nvarchar"),
+        mapping=blocks(entities("Board"), """
+            retired_columns:
+              Board: [OldColumn]
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "retired_columns:\n"
-        "  Board: [OldColumn]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     warnings = [
         f for f in validate_against_mapping(schema, bundle) if f.severity == "warning"
     ]
@@ -426,29 +336,18 @@ def test_retirement_replacing_a_form_visibility_declaration_warns(
     """The fold overwrites a hand-written declaration for a retired column.
     Silent mutation of the author's own YAML is exactly what the strip
     record exists to surface."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  OldColumn nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=_board("OldColumn nvarchar"),
+        mapping=blocks(entities("Board"), """
+            form_visibility:
+              Board:
+                columns:
+                  OldColumn: visible
+            retired_columns:
+              Board: [OldColumn]
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "form_visibility:\n"
-        "  Board:\n"
-        "    columns:\n"
-        "      OldColumn: visible\n"
-        "retired_columns:\n"
-        "  Board: [OldColumn]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     findings = validate_against_mapping(schema, bundle)
     assert any(
         f.severity == "warning"
