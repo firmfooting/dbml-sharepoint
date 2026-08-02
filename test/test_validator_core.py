@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 
 import pytest
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, pack, write_mapping
+from _packs import blocks, entities, pack, write_dbml, write_mapping
 from _paths import FIXTURES
 from _validator_helpers import _schema
 
@@ -360,14 +360,14 @@ def test_dbml_indexes_reject_unsupported_field_types(tmp_path: Path) -> None:
     )
 
 def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> None:
-    columns = "".join(f"  Col{i} nvarchar\n" for i in range(21))
-    indexes = "".join(f"    Col{i}\n" for i in range(21)) + "    Col0\n"
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Wide {{\n  Id int [pk, increment]\n{columns}"
-        f"  indexes {{\n{indexes}  }}\n}}\n",
-        encoding="utf-8",
-    )
+    # Col0 is listed twice on purpose -- that is the duplicate this asserts.
+    index_lines = [f"    Col{i}" for i in range(21)] + ["    Col0"]
+    write_dbml(tmp_path, table(
+        "Wide",
+        ID_PK,
+        *(f"Col{i} nvarchar" for i in range(21)),
+        "indexes {\n" + "\n".join(index_lines) + "\n  }",
+    ))
     mapping = write_mapping(tmp_path, entities("Wide"))
     findings = validate_against_mapping(
         parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
@@ -382,12 +382,9 @@ def test_dbml_indexes_reject_duplicates_and_more_than_twenty(tmp_path: Path) -> 
     )
 
 def test_unique_columns_count_toward_index_limit_without_mapping_entry(tmp_path: Path) -> None:
-    columns = "".join(f"  Col{i} nvarchar [unique]\n" for i in range(21))
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Wide {{\n  Id int [pk, increment]\n{columns}}}\n",
-        encoding="utf-8",
-    )
+    write_dbml(tmp_path, table(
+        "Wide", ID_PK, *(f"Col{i} nvarchar [unique]" for i in range(21)),
+    ))
     mapping = write_mapping(tmp_path, entities("Wide"))
     findings = validate_against_mapping(
         parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
@@ -418,14 +415,13 @@ def test_index_headroom_warns_at_eighteen(tmp_path: Path) -> None:
     "SortBait (Automatically created)", which consumes a real slot, and nothing
     reachable from script reports the true count. So a schema that validates at
     exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
-    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 19))
-    indexes = " ".join(f"C{i}" for i in range(1, 19))
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
-        f"  indexes {{ {indexes} }}\n}}\n",
-        encoding="utf-8",
-    )
+    indexed = [f"C{i}" for i in range(1, 19)]
+    write_dbml(tmp_path, table(
+        "Big",
+        ID_PK,
+        *(f"{c} nvarchar" for c in indexed),
+        "indexes { " + " ".join(indexed) + " }",
+    ))
     mapping = write_mapping(tmp_path, entities("Big"))
     warnings = [
         f.message
@@ -443,14 +439,13 @@ def test_index_headroom_no_warning_at_seventeen(tmp_path: Path) -> None:
     "SortBait (Automatically created)", which consumes a real slot, and nothing
     reachable from script reports the true count. So a schema that validates at
     exactly 20 can still hit 21 on a tenant where a user has sorted a column."""
-    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 18))
-    indexes = " ".join(f"C{i}" for i in range(1, 18))
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
-        f"  indexes {{ {indexes} }}\n}}\n",
-        encoding="utf-8",
-    )
+    indexed = [f"C{i}" for i in range(1, 18)]
+    write_dbml(tmp_path, table(
+        "Big",
+        ID_PK,
+        *(f"{c} nvarchar" for c in indexed),
+        "indexes { " + " ".join(indexed) + " }",
+    ))
     mapping = write_mapping(tmp_path, entities("Big"))
     warnings = [
         f.message
@@ -465,14 +460,13 @@ def test_index_error_at_twentyone_excludes_headroom_warning(tmp_path: Path) -> N
     """The error firing at > 20 means the warning is unreachable at that threshold.
     This test pins the mutual exclusion: at 21 the author needs the error, and a
     headroom warning beside it would be noise about a list that is already over."""
-    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 22))
-    indexes = " ".join(f"C{i}" for i in range(1, 22))
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Big {{\n  Id int [pk, increment]\n{columns}\n"
-        f"  indexes {{ {indexes} }}\n}}\n",
-        encoding="utf-8",
-    )
+    indexed = [f"C{i}" for i in range(1, 22)]
+    write_dbml(tmp_path, table(
+        "Big",
+        ID_PK,
+        *(f"{c} nvarchar" for c in indexed),
+        "indexes { " + " ".join(indexed) + " }",
+    ))
     mapping = write_mapping(tmp_path, entities("Big"))
     findings = validate_against_mapping(
         parse_dbml(tmp_path / "s.dbml"), load_mapping(mapping),
@@ -531,14 +525,14 @@ def test_the_over_budget_error_names_unique_columns_when_there_are_some(
 ) -> None:
     """The other implicit contributor. Naming one and not the other would send
     an author looking in the wrong place."""
-    columns = "\n".join(f"  C{i} nvarchar" for i in range(1, 21))
-    indexes = " ".join(f"C{i}" for i in range(1, 21))
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        f"Table Big {{\n  Id int [pk, increment]\n  Code nvarchar [unique]\n{columns}\n"
-        f"  indexes {{ {indexes} }}\n}}\n",
-        encoding="utf-8",
-    )
+    indexed = [f"C{i}" for i in range(1, 21)]
+    write_dbml(tmp_path, table(
+        "Big",
+        ID_PK,
+        "Code nvarchar [unique]",
+        *(f"{c} nvarchar" for c in indexed),
+        "indexes { " + " ".join(indexed) + " }",
+    ))
     mapping = write_mapping(tmp_path, entities("Big"))
     errors = [
         f.message
