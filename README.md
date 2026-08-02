@@ -60,9 +60,10 @@ uv tool install git+https://github.com/shauneccles/dbml-sharepoint
 # or: pip install git+https://github.com/shauneccles/dbml-sharepoint
 ```
 
-Or work from a clone — which you want if you are also using the
-[templates](templates), since those ship as files rather than as part of
-the package:
+The 30 solution templates are part of the package, so an install is all you
+need to use them — no clone required.
+
+Or work from a clone, if you are contributing:
 
 ```bash
 git clone https://github.com/shauneccles/dbml-sharepoint
@@ -72,6 +73,20 @@ uv run dbml-sharepoint version
 ```
 
 ## Quickstart
+
+Run it with no arguments and pick one of the 30 shipped templates:
+
+```bash
+dbml-sharepoint
+```
+
+The wizard copies the template you choose into a project directory of your
+own, sets your list-name prefix and site URL, and offers to build it. It
+changes identity only — the schema and the mapping structure are the tested
+artifacts and are copied as they ship. Everything it does is also available
+as flags; it prompts only at a terminal, and prints help in CI or a pipe.
+
+### Or drive it with flags
 
 A complete worked example lives in [`examples/project-tracker`](examples/project-tracker):
 
@@ -196,7 +211,13 @@ spine sits at the package root:
 | `model/` | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
 | `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
 | `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
-| root | `bundle` · `templating` · `cli` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI, the extension protocol |
+| root | `bundle` · `templating` · `cli` · `wizard` · `catalogue` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI and its interactive wizard, the extension protocol |
+
+The 30 shipped solution templates live in `src/dbml_sharepoint/solutions/`
+— inside the package, because only files under it reach the wheel and the
+wizard's audience is somebody who ran `uvx dbml-sharepoint` and never
+cloned this repository. Not to be confused with `templates/` below, which
+is Jinja.
 
 Templates mirror that: `templates/*.js.j2` are the four pasteable scripts;
 `templates/_*.js.j2` are shared partials (provenance header, site guard +
