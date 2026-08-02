@@ -5,6 +5,8 @@ them live here; everything else stayed beside its tests.
 """
 from pathlib import Path
 
+from _packs import blocks, pack
+
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate_against_mapping,
@@ -14,13 +16,11 @@ from dbml_sharepoint.model.mapping_loader import (
     Mapping,
     MappingBundle,
     Versioning,
-    load_mapping,
 )
 from dbml_sharepoint.model.parser import (
     EnumDef,
     Schema,
     Table,
-    parse_dbml,
 )
 
 RESERVED_NAMES = {"Created", "Modified", "Editor", "Author", "Attachments", "_UIVersion"}
@@ -53,53 +53,65 @@ def _bundle_with_formulas(
 
 
 def _view_inputs(tmp_path: Path, views_block: str) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Status status\n"
-        "  SortOrder int\n"
-        "  DueDate date\n"
-        "}\n",
-        encoding="utf-8",
+    """The standard Project entity, plus whatever mapping block the test adds.
+
+    `views_block` is dedented, so a caller may pass a triple-quoted block
+    indented to match its surrounding code. A block already flush against the
+    left margin is unaffected.
+    """
+    return pack(
+        tmp_path,
+        dbml="""
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            Table Project {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Status status
+              SortOrder int
+              DueDate date
+            }
+        """,
+        mapping=blocks(
+            """
+            entities:
+              Project: { kind: List, base_template: 100, site_role: default }
+            """,
+            views_block,
+        ),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n"
-        + views_block,
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+
 
 def _view_errors(tmp_path: Path, views_block: str) -> list[Finding]:
     schema, bundle = _view_inputs(tmp_path, views_block)
     return [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
 
+
 def _calculated_form_inputs(tmp_path: Path, block: str) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Score int\n"
-        "  Band calculated_text\n"
-        "}\n",
-        encoding="utf-8",
+    """A calculated `Band` column derived from `Score`, plus the test's block.
+
+    `block` is dedented on the caller's behalf, as in `_view_inputs`.
+    """
+    return pack(
+        tmp_path,
+        dbml="""
+            Table Project {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Score int
+              Band calculated_text
+            }
+        """,
+        mapping=blocks(
+            """
+            entities:
+              Project: { kind: List, base_template: 100, site_role: default }
+            calculated_formulas:
+              Project:
+                Band: '=IF([Score]>5,"High","Low")'
+            """,
+            block,
+        ),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Project:\n"
-        "    Band: '=IF([Score]>5,\"High\",\"Low\")'\n"
-        + block,
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
