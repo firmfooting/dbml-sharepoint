@@ -41,6 +41,7 @@ from dbml_sharepoint.model.mapping_loader import (
 from dbml_sharepoint.model.parser import (
     EnumDef,
     Schema,
+    TableIndex,
     parse_dbml,
 )
 
@@ -493,28 +494,27 @@ def test_the_over_budget_error_names_unique_columns_when_there_are_some() -> Non
     # Nothing looks Big up, so there is no display-column index to blame.
     assert "lookup target" not in finding.message
 
-def test_dbml_composite_and_configured_indexes_are_rejected(tmp_path: Path) -> None:
-    """Stays on the filesystem: `_model.table(indexes=...)` takes bare column
-    names, which is the only index shape SharePoint accepts, and the two
-    shapes under test here are the ones it does NOT -- a composite
-    `(Status, Category)` and a `[name: ...]` setting. Both are `TableIndex`
-    fields the builder has no keyword for, and widening it to accept them
-    would be a design change rather than a migration step."""
-    schema, bundle = pack(
-        tmp_path,
-        dbml="""
-            Table Risk {
-              Id int [pk, increment]
-              Status nvarchar
-              Category nvarchar
-              indexes {
-                (Status, Category)
-                Status [name: 'status_index']
-              }
-            }
-        """,
-        mapping=entities("Risk"),
+def test_dbml_composite_and_configured_indexes_are_rejected() -> None:
+    """The two index shapes SharePoint does not accept.
+
+    `table(indexes=...)` takes a full `TableIndex` as well as a bare name,
+    precisely so these can be built. A builder that could only express valid
+    input would make the refusal of invalid input untestable at the object
+    level -- the parser produces both shapes, and refusing them is the rule
+    under test.
+    """
+    schema = make_schema(
+        make_table(
+            "Risk",
+            "Status",
+            "Category",
+            indexes=[
+                TableIndex(columns=("Status", "Category")),
+                TableIndex(columns=("Status",), name="status_index"),
+            ],
+        ),
     )
+    bundle = make_bundle(entities=["Risk"])
     findings = validate_against_mapping(schema, bundle)
     assert only(findings, FindingCode.COMPOSITE_INDEX_UNSUPPORTED).severity == "error"
     settings = only(findings, FindingCode.INDEX_SETTINGS_UNSUPPORTED)
