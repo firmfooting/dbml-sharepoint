@@ -124,6 +124,8 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |
 | `form_section_entirely_hidden` | error | Every column in a form body section is declared `new: false` and `existing: false`, so the section renders as a bare heading. Not asserted of the last section, which is SharePoint's documented catch-all. |
 | `form_section_field_not_rendered` | error | A form body section names a field the entity does not render. |
+| `form_visibility_condition_unreachable` | error | A column is hidden on every form yet carries a `when`, which can never be reached. |
+| `form_visibility_on_a_calculated_column` | error | A calculated column declares form visibility. Calculated columns never appear on an entry form. |
 | `hide_is_unnecessary` | warning | `hide_from_all_items` is set on an entity whose `All Items` view is already within the join ceiling with nothing hidden. |
 | `hide_of_cross_site_reference` | error | `hide_from_all_items` names a cross-site reference, which expands to a Choice + URL pair and costs no join operation. |
 | `hide_of_non_join_bearing_column` | error | `hide_from_all_items` names a column that costs no join operation; only a join-bearing column may be hidden. |
@@ -152,6 +154,8 @@ raised from any section that accepts a `when`: `views`, `form_visibility`,
 | `previous_title_is_own_title` | error | A `renamed_from` entry repeats the view's own current title. |
 | `previous_title_is_reserved` | error | A `renamed_from` entry claims `All Items`, which is reserved for the generated recovery view. |
 | `redundant_display_column_acceptance` | warning | `accept_unindexable_display_column` is set on an entity with nothing to accept: nothing looks it up, or its display column is not calculated. |
+| `required_column_hidden_from_the_new_form` | error | A required column with no default is hidden from the New form, so every save would fail. Statically provable, hence an error. |
+| `required_column_may_be_hidden_at_creation` | warning | A required column with no default has a `when` that MAY hide it at creation. Whether it does depends on what the person types, so the build cannot decide it -- a warning by design, per the form_visibility spec. |
 | `retired_column_in_field_set` | warning | A field set names a retired column; retirement strips it from every view that expands the set, and the build continues. |
 | `row_limit_out_of_range` | error | A view's `row_limit` is outside 1-5000. |
 | `style_calculated_type_mismatch` | error | `calculated: true` is set on a style whose column is not the `calculated_*` type that style expects. |

@@ -11,7 +11,7 @@ from dbml_sharepoint.analysis.conditions import (
     to_validation,
     validate_condition,
 )
-from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
@@ -223,8 +223,12 @@ def check(vc: ValidationContext) -> list[Finding]:
         # declaration the author actually wrote. Re-labelling rather than
         # restating keeps one copy of each rule.
         retired_here = bundle.mapping.retired_columns.get(fv_entity, {})
+        fv_at = Location(Section.FORM_VISIBILITY, entity=fv_entity)
+        retired_at = Location(Section.RETIRED_COLUMNS, entity=fv_entity)
         for column, fv_declared in fv_section.columns.items():
-            col_ctx = f"retired_columns[{fv_entity}]" if column in retired_here else ctx
+            retired = column in retired_here
+            col_ctx = f"retired_columns[{fv_entity}]" if retired else ctx
+            col_at = retired_at if retired else fv_at
             if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
                 findings.append(Finding(
                     FindingCode.UNCLASSIFIED,
@@ -236,7 +240,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # A retired column that names nothing is already reported
                 # by the retirement block, with the consequence of deleting
                 # the DBML declaration spelled out.
-                if column not in retired_here:
+                if not retired:
                     findings.append(Finding(
                         FindingCode.UNCLASSIFIED,
                         "error",
@@ -244,27 +248,23 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
                 continue
             col = by_name.get(column)
-            findings.extend(
-                # The one site whose severity is COMPUTED rather than
-                # literal, so the bulk rewrite could not reach it:
-                # validate_form_visibility decides per rule and returns
-                # (severity, message) pairs. One code here would therefore
-                # cover several distinct rules -- see the Task 3 note.
-                Finding(FindingCode.UNCLASSIFIED, severity, message)
-                for severity, message in validate_form_visibility(
-                    column=column,
-                    new=fv_declared.new,
-                    existing=fv_declared.existing,
-                    when=fv_declared.when,
-                    required=bool(col is not None and col.required),
-                    has_default=bool(col is not None and col.default is not None),
-                    is_calculated=column in calculated,
-                    rendered=rendered,
-                    types=types,
-                    lookups=lookups,
-                    context=col_ctx,
-                )
-            )
+            # Five distinct rules with a per-rule severity, so
+            # validate_form_visibility names its own codes and hands back
+            # Findings. Wrapping (severity, message) pairs here would have
+            # given all five one code.
+            findings.extend(validate_form_visibility(
+                column=column,
+                new=fv_declared.new,
+                existing=fv_declared.existing,
+                when=fv_declared.when,
+                required=bool(col is not None and col.required),
+                has_default=bool(col is not None and col.default is not None),
+                is_calculated=column in calculated,
+                rendered=rendered,
+                types=types,
+                lookups=lookups,
+                at=col_at,
+            ))
 
     for cv_entity, cv_section in bundle.mapping.column_validation.items():
         section_table = tables_by_name.get(cv_entity)

@@ -227,6 +227,12 @@ class FindingCode(StrEnum):
     DEMO_DATE_VALUE_INVALID = "demo_date_value_invalid"
     DEMO_ENUM_VALUE_UNKNOWN = "demo_enum_value_unknown"
 
+    # --- form visibility (analysis/forms.py) --------------------------------
+    FORM_VISIBILITY_CONDITION_UNREACHABLE = "form_visibility_condition_unreachable"
+    FORM_VISIBILITY_ON_A_CALCULATED_COLUMN = "form_visibility_on_a_calculated_column"
+    REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM = "required_column_hidden_from_the_new_form"
+    REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION = "required_column_may_be_hidden_at_creation"
+
     # --- the shared condition grammar (analysis/conditions.py) --------------
     # The prefix names the SUBJECT, not a section: these are reachable from
     # views, form_visibility, column_validation and list_validation alike,
