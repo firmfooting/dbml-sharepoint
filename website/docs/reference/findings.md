@@ -197,7 +197,6 @@ the message is prose and may be reworded.
 | `total_on_lookup_column` | error | A total other than `count` is declared on a lookup column, whose stored value is a row id rather than a quantity. |
 | `total_on_non_arithmetic_column` | error | A total other than `count` is declared on a person, rich-text, long-text or hyperlink column. |
 | `trend_against_not_rendered` | error | A `trend` style's `against` names a column the entity does not render. |
-| `unclassified` | error | **Temporary.** A finding the code migration has not named yet. No rule produces this deliberately; its absence is how the migration is known to be finished. |
 | `undeployable_column_declaration` | error | A per-column declaration targets `Title` or a SharePoint system column. The deploy never writes those properties, so the declaration would validate clean and do nothing. |
 | `undeployable_declaration_column` | error | A per-column declaration sits on Title or a SharePoint system column, which the deploy never writes these properties to. It would validate clean and deploy nothing. |
 | `unindexed_filter_columns` | warning | A view's `where` filters on columns with no effective index, so past the list view threshold SharePoint may silently return a truncated answer. |
@@ -223,3 +222,4 @@ the message is prose and may be reworded.
 | `watched_column_not_rendered` | error | A `watched_lists:` entry names a column the deploy never creates. |
 | `width_column_not_displayed` | error | A `widths` entry names a column that is not one of the view's fields. |
 | `width_out_of_range` | error | A column width is outside 16-2000 pixels. |
+| `extension_reported` | error | A finding raised by an extension's own validators. |
