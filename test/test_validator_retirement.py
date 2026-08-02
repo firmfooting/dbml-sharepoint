@@ -5,11 +5,29 @@ Retirement is a LOAD-TIME transform: `_apply_retirement` runs inside
 `load_mapping`, synthesising `form_visibility` entries, appending the
 ' (retired)' display-name override, stripping the column out of views,
 widths and form body sections, and recording a `retirement_strips` entry
-for each rewrite. Every assertion below is about what that fold produced.
-An object-built bundle never meets it, so building these inputs directly
-would mean writing the fold's own output into the fixture by hand -- the
-test would then assert its own arithmetic and would keep passing if
-`_apply_retirement` stopped doing any of it.
+for each rewrite. Every assertion below is about what that fold produced,
+and an object-built bundle never meets it.
+
+The tempting fix is a `retired=` option on `_model.mapping` that runs the
+fold. That would NOT be a test asserting its own arithmetic -- the builder
+would call the real `_apply_retirement`, so the fold stays under test. It
+was rejected for two other reasons:
+
+1. It buys nothing measurable. These tests pass and their coverage is
+   identical either way; the migration exists to delete text that was never
+   the subject, and here the load-time fold IS the subject.
+2. It would make `_model` run a production transform, which no other
+   builder does -- `_loader_defaults` copies the loader's defaults by hand
+   precisely so a fixture is always the literal shape it reads as. Once one
+   builder folds, a reader cannot tell whether any given fixture is pre- or
+   post-fold without going and reading the builder.
+
+What these tests actually protect is the VALIDATOR check, not the fold:
+deleting this module takes `analysis/checks/_retirement.py` from 95% to
+79% (7 missing lines to 27), while `model/_retirement.py` does not move --
+its parse half is covered by `test_mapping_loader.py`. So the thing to
+preserve here is coverage of the checks, which is reached through a loaded
+bundle and by nothing else.
 
 The one exception is the pairing guard immediately below, which declares no
 `retired_columns` at all.
