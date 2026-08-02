@@ -15,6 +15,7 @@ from dbml_sharepoint.model.mapping_loader import (
     EntityMapping,
     Mapping,
     MappingBundle,
+    PermissionsConfig,
     Versioning,
 )
 from dbml_sharepoint.model.parser import (
@@ -43,6 +44,12 @@ def _bundle_with_formulas(
         cross_site_reference_columns=[],
         versioning_default=Versioning(True, 500, False), versioning_overrides={},
         enum_sources={}, watched_lists=[], calculated_formulas=formulas,
+        # Matches what load_mapping always produces. Left as the dataclass
+        # default (None) this helper silently skipped checks/_permissions.py
+        # entirely, because that module opens with `if permissions is not None`.
+        permissions=PermissionsConfig(
+            levels=[], groups=[], default_policy=None, overrides={},
+        ),
     )
     return MappingBundle(
         mapping=mapping, enum_choices={}, retention_policies={},
