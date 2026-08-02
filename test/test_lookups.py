@@ -7,7 +7,8 @@ creates. There is one function, and both call it.
 
 from pathlib import Path
 
-from _packs import replaced
+from _builders import ID_PK, table
+from _packs import blocks, replaced, write_dbml
 
 from dbml_sharepoint.analysis.lookups import (
     lookup_display_columns,
@@ -16,27 +17,19 @@ from dbml_sharepoint.analysis.lookups import (
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
-_SCHEMA = (
-    "Project t { database_type: 'SharePoint Online' }\n"
-    "Table Event {\n"
-    "  Id int [pk, increment]\n"
-    "  EventRef nvarchar\n"
-    "}\n"
-    "Table FollowUp {\n"
-    "  Id int [pk, increment]\n"
-    "  Event int [ref: > Event.Id]\n"
-    "}\n"
-    "Table Untouched {\n"
-    "  Id int [pk, increment]\n"
-    "  Note nvarchar\n"
-    "}\n"
+_SCHEMA = blocks(
+    table("Event", ID_PK, "EventRef nvarchar"),
+    table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
+    table("Untouched", ID_PK, "Note nvarchar"),
 )
 
 
 def _inputs(tmp_path: Path, mapping: str) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(_SCHEMA, encoding="utf-8")
+    # The mapping is written raw: `_PLAIN` below carries its own `prefix:`
+    # line, and the `replaced()` needles match it byte for byte.
+    schema_path = write_dbml(tmp_path, _SCHEMA)
     (tmp_path / "m.yaml").write_text(mapping, encoding="utf-8")
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
+    return parse_dbml(schema_path), load_mapping(tmp_path / "m.yaml")
 
 
 _PLAIN = (
@@ -114,16 +107,9 @@ def test_a_ref_target_unmapped_is_absent(tmp_path: Path) -> None:
 
 # --- Cross-site references are not lookups ----------------------------------
 
-_CROSS_SITE_SCHEMA = (
-    "Project t { database_type: 'SharePoint Online' }\n"
-    "Table Event {\n"
-    "  Id int [pk, increment]\n"
-    "  EventRef nvarchar\n"
-    "}\n"
-    "Table FollowUp {\n"
-    "  Id int [pk, increment]\n"
-    "  Elsewhere int [ref: > Event.Id]\n"
-    "}\n"
+_CROSS_SITE_SCHEMA = blocks(
+    table("Event", ID_PK, "EventRef nvarchar"),
+    table("FollowUp", ID_PK, "Elsewhere int [ref: > Event.Id]"),
 )
 
 _CROSS_SITE_MAPPING = (
@@ -139,13 +125,13 @@ _CROSS_SITE_MAPPING = (
 def _cross_site_inputs(
     tmp_path: Path, schema_text: str, mapping_text: str,
 ) -> tuple[Schema, MappingBundle, set[tuple[str, str]]]:
-    (tmp_path / "s.dbml").write_text(schema_text, encoding="utf-8")
+    schema_path = write_dbml(tmp_path, schema_text)
     (tmp_path / "m.yaml").write_text(mapping_text, encoding="utf-8")
     bundle = load_mapping(tmp_path / "m.yaml")
     pairs = {
         (x.entity, x.column) for x in bundle.mapping.cross_site_reference_columns
     }
-    return parse_dbml(tmp_path / "s.dbml"), bundle, pairs
+    return parse_dbml(schema_path), bundle, pairs
 
 
 def test_a_cross_site_only_target_is_not_a_lookup_target(tmp_path: Path) -> None:
@@ -171,12 +157,7 @@ def test_a_target_of_both_kinds_keeps_its_index(tmp_path: Path) -> None:
     off a list that really does have a picker."""
     schema, bundle, pairs = _cross_site_inputs(
         tmp_path,
-        _CROSS_SITE_SCHEMA + (
-            "Table Reminder {\n"
-            "  Id int [pk, increment]\n"
-            "  Event int [ref: > Event.Id]\n"
-            "}\n"
-        ),
+        _CROSS_SITE_SCHEMA + table("Reminder", ID_PK, "Event int [ref: > Event.Id]"),
         replaced(_CROSS_SITE_MAPPING,
             "cross_site_reference_columns:",
             "  Reminder: { kind: List, base_template: 100, site_role: default }\n"

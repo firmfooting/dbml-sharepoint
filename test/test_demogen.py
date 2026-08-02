@@ -3,56 +3,45 @@
 
 from pathlib import Path
 
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.demogen import generate_demo_js
-from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
-from dbml_sharepoint.model.parser import Schema, parse_dbml
+from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import load_release
 
 
 def _demo_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Enum status {\n"
-        '  "Open"\n'
-        '  "Closed"\n'
-        "}\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Status status\n"
-        "  Owner person\n"
-        "  ReviewDate date\n"
-        "}\n"
-        "Table Issue {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  RelatedRisk int [ref: > Risk.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    return pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum status {
+              "Open"
+              "Closed"
+            }
+            """,
+            table("Risk", ID_PK, TITLE, "Status status", "Owner person", "ReviewDate date"),
+            table("Issue", ID_PK, TITLE, "RelatedRisk int [ref: > Risk.Id]"),
+        ),
+        mapping=blocks(entities("Risk", "Issue"), """
+            demo_items:
+              Risk:
+                - key: r1
+                  values:
+                    Title: "[DEMO] Sample risk"
+                    Status: "Open"
+                    Owner: "@me"
+                    ReviewDate: "today-40"
+              Issue:
+                - key: i1
+                  values:
+                    Title: "[DEMO] Sample issue"
+                    RelatedRisk: { demo_ref: r1 }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "  Issue: { kind: List, base_template: 100, site_role: default }\n"
-        "demo_items:\n"
-        "  Risk:\n"
-        "    - key: r1\n"
-        "      values:\n"
-        '        Title: "[DEMO] Sample risk"\n'
-        '        Status: "Open"\n'
-        '        Owner: "@me"\n'
-        '        ReviewDate: "today-40"\n'
-        "  Issue:\n"
-        "    - key: i1\n"
-        "      values:\n"
-        '        Title: "[DEMO] Sample issue"\n'
-        "        RelatedRisk: { demo_ref: r1 }\n",
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 
 def _generate(tmp_path: Path) -> str:
@@ -90,30 +79,21 @@ def test_bare_today_is_offset_zero(tmp_path: Path) -> None:
     must accept it too and mean offset 0 — otherwise a demo row declaring
     `today` passes the build with zero findings and emits the literal
     string "today" into demo-data.js."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Board {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  BoardDate date\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Board: { kind: List, base_template: 100, site_role: default }\n"
-        "demo_items:\n"
-        "  Board:\n"
-        "    - key: b1\n"
-        "      values:\n"
-        '        Title: "[DEMO] Today"\n'
-        '        BoardDate: "today"\n',
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Board", ID_PK, TITLE, "BoardDate date"),
+        mapping=blocks(entities("Board"), """
+            demo_items:
+              Board:
+                - key: b1
+                  values:
+                    Title: "[DEMO] Today"
+                    BoardDate: "today"
+        """),
     )
     js = generate_demo_js(
-        schema=parse_dbml(tmp_path / "s.dbml"),
-        bundle=load_mapping(tmp_path / "m.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default",
