@@ -1,0 +1,64 @@
+# The PR title becomes the commit subject on `main`, because this repository
+# squash-merges and `squash_merge_commit_title` is set to PR_TITLE. release-please
+# builds the changelog by parsing those subjects, so a non-conventional title is
+# silently dropped from the release notes — the release still happens and only the
+# notes are wrong. That failure cost four PRs in 0.4.0 (#41, #42, #45, #51) and had
+# to be back-filled by hand in #57.
+#
+# Enforcing the title is sufficient *only* under squash merging. If merge commits
+# are ever re-enabled, the branch commits reach `main` instead and this check stops
+# covering anything — enforce per-commit then (`cz check --rev-range`).
+name: PR title
+
+on:
+  pull_request:
+    # `edited` matters: a title fixed after the fact must re-run the check.
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  conventional:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check the title is a conventional commit
+        env:
+          # Passed as an environment variable, never interpolated into the script.
+          # `${{ }}` inside a run block is a template-injection sink: a PR title is
+          # attacker-controlled text, and zizmor fails the build on that pattern.
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          types='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
+          pattern="^(${types})(\([a-z0-9._/-]+\))?!?: .+"
+
+          if printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            printf 'OK: %s\n' "$TITLE"
+            exit 0
+          fi
+
+          cat >&2 <<EOF
+          The pull request title is not a conventional commit.
+
+            title: $TITLE
+
+          This repository squash-merges, so the title becomes the commit subject on
+          main, and release-please builds the changelog by parsing it. A title that
+          does not match is dropped from the release notes silently.
+
+          Expected:  type(optional-scope)!: subject
+          Types:     ${types//|/, }
+
+          Examples:
+            feat: refuse a view that performs more joins than SPO serves
+            fix(deploy): a URL column aborted the paste it appeared in
+            docs: cross-reference hide_from_all_items from the views section
+            feat!: refuse any base_template but the generic list
+
+          Note the changelog has no Tests section, so a 'test:' title is invisible in
+          release notes. Pick the type from what the change does, not from which
+          directory it touches.
+          EOF
+          exit 1

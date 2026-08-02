@@ -11,14 +11,19 @@ and how a change is expected to move from idea to merged.
 
 ```bash
 uv sync
-prek install          # or: pre-commit install — installs the git hooks
+uv run prek install   # installs the git hooks
 ```
 
-The hooks in `.pre-commit-config.yaml` run the same lint/type/template
-checks as CI on every commit (ruff, mypy, j2lint) and the full test
-suite on push. They shell out to the project's own pinned tools via
-`uv run`, so a hook can never disagree with CI. Run them by hand any
-time with `prek run --all-files`.
+Hooks are run by [prek](https://prek.j178.dev/), which is pinned in the
+`dev` dependency group like every other gate — so `uv run prek` cannot
+drift from the version anyone else has. The config keeps the
+`.pre-commit-config.yaml` filename because that is the format prek reads;
+classic `pre-commit` is not used here.
+
+The hooks run the same lint/type/template checks as CI on every commit
+(ruff, mypy, j2lint) and the full test suite on push. They shell out to
+the project's own pinned tools via `uv run`, so a hook can never disagree
+with CI. Run them by hand any time with `uv run prek run --all-files`.
 
 ## The gates
 
@@ -43,11 +48,30 @@ Notes that save you a round-trip:
 - **Emitted JS.** For template changes, build an example and
   `node --check` the emitted scripts.
 
-## Commits
+## Commits and merging
 
-Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, ...) — releases
-and the changelog are cut by release-please from commit messages. One
-concern per commit, tests included.
+**Pull requests are squash-merged, and the PR title becomes the commit
+subject on `main`.** So the *title* must be a conventional commit
+(`feat:`, `fix:`, `docs:`, `chore:`, ...) — releases and the changelog are
+cut by release-please from those subjects, and a title that does not match
+is dropped from the release notes silently. `.github/workflows/pr-title.yml`
+checks it.
+
+Commits *within* a branch are not linted. Use whatever granularity helps
+review; they are squashed away, though their messages are preserved in the
+body of the squashed commit. Still keep one concern per commit with tests
+included — that is what makes a branch reviewable.
+
+Merge commits are disabled. They used to be the norm here and cost us
+twice: four PRs (#41, #42, #45, #51) landed with prose commit subjects and
+vanished from the 0.4.0 changelog entirely, and seven entries in that same
+changelog are duplicates of each other, from changes committed on a branch
+and again after a re-merge.
+
+For a change that is too large to review in one pass, stack it: see
+[stacked pull requests](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests).
+Each layer keeps its own conventional title and its own changelog entry,
+and GitHub cascades the rebase as each one merges.
 
 ## Safety expectations
 
