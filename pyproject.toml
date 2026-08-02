@@ -115,3 +115,13 @@ testpaths = ["test"]
 # single test: `uv run pytest -n0 test/test_joins.py`.
 addopts = "-ra -q --strict-markers -n auto --maxprocesses 8"
 filterwarnings = ["error"]
+markers = [
+  # The template family-standard sweep (test_template_standard.py): 22 rules,
+  # thirteen parametrised across the library, 399 of the 1293 cases. Skip it
+  # for a quieter run while iterating on something else:
+  #     uv run pytest -m "not conformance"
+  # For FOCUS, not speed -- measured at 4.65s against 4.66s for the full suite,
+  # because -n auto already spreads those cases and they are not the critical
+  # path. CI never filters: the whole suite runs on every change.
+  "conformance: the template family-standard sweep, parametrised over every template",
+]

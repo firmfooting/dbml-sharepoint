@@ -3,12 +3,12 @@
 
 from pathlib import Path
 
+from _paths import FIXTURES
+
 from dbml_sharepoint.generators.demogen import generate_demo_js
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import load_release
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _demo_inputs(tmp_path: Path) -> tuple[Schema, MappingBundle]:

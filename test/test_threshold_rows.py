@@ -20,8 +20,8 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+from _paths import MANUAL
 
-MANUAL = Path(__file__).parent / "manual"
 GENERATOR = MANUAL / "make_threshold_rows.py"
 
 

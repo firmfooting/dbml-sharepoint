@@ -1,5 +1,6 @@
 # test/test_phases.py
-from pathlib import Path
+
+from _paths import JINJA_TEMPLATES
 
 from dbml_sharepoint.analysis.phases import (
     DEPLOY_GROUPS,
@@ -7,8 +8,6 @@ from dbml_sharepoint.analysis.phases import (
     phase_numbers,
     phases_context,
 )
-
-TEMPLATES = Path(__file__).parent.parent / "src" / "dbml_sharepoint" / "templates"
 
 
 def test_todays_numbering_is_pinned() -> None:
@@ -28,7 +27,7 @@ def test_keys_unique_and_templates_exist() -> None:
     assert len(keys) == len(set(keys))
     for _, steps in DEPLOY_GROUPS:
         for step in steps:
-            assert (TEMPLATES / step.template).exists(), step.template
+            assert (JINJA_TEMPLATES / step.template).exists(), step.template
 
 
 def test_context_shape_for_templates() -> None:

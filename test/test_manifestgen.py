@@ -2,6 +2,8 @@
 from pathlib import Path
 from typing import Any, ClassVar
 
+from _paths import FIXTURES
+
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate, validate_against_mapping
 from dbml_sharepoint.extension import BaseExtension, ManifestExtras, SiteContext
@@ -10,8 +12,6 @@ from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.model.mapping_loader import load_mapping
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def test_manifest_includes_phase_headings_and_release() -> None:

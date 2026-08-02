@@ -22,8 +22,8 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from _paths import FIXTURES
 
-FIXTURES = Path(__file__).parent / "fixtures"
 NODE = shutil.which("node")
 
 

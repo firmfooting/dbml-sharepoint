@@ -1,14 +1,14 @@
 # test/test_assessgen.py
 from pathlib import Path
 
+from _paths import FIXTURES
+
 from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
 )
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
-
-FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _simple() -> tuple[Schema, MappingBundle]:
