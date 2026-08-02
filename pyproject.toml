@@ -58,6 +58,7 @@ packages = ["src/dbml_sharepoint"]
 dev = [
   "pytest>=8.0.0",
   "pytest-cov>=5.0.0",
+  "pytest-xdist>=3.6.0",
   "ruff>=0.16.0",
   "mypy>=1.10.0",
   "types-PyYAML>=6.0.12",
@@ -102,5 +103,15 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
-addopts = "-ra -q --strict-markers"
+# `-n auto` distributes across cores; the suite is ~1300 short tests with no
+# single slow one, which is the shape that parallelises well. Measured on a
+# 24-core machine: 17.4s serial, 4.8s here.
+#
+# --maxprocesses caps it deliberately. Uncapped `auto` was SLOWER than 8 (6.6s
+# vs 4.8s) because 24 workers spend more on startup than they save. The cap is
+# inert on CI runners, which have fewer cores than the cap anyway.
+#
+# Pass `-n0` to disable when you need `--pdb`, readable ordering, or to debug a
+# single test: `uv run pytest -n0 test/test_joins.py`.
+addopts = "-ra -q --strict-markers -n auto --maxprocesses 8"
 filterwarnings = ["error"]
