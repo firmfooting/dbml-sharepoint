@@ -69,6 +69,42 @@ def test_blocks_drops_an_empty_part() -> None:
     assert blocks("a: 1\n", "") == "a: 1\n"
 
 
+def test_entities_accepts_a_prebuilt_line_alongside_bare_names() -> None:
+    """The safe way to mix a default entity with one carrying extras."""
+    assert entities("Risk", entity("Event", display_column="EventRef")) == (
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "  Event: { kind: List, base_template: 100, site_role: default, "
+        "display_column: EventRef }\n"
+    )
+
+
+def test_blocks_refuses_a_bare_entity_line() -> None:
+    """`blocks(entity(...))` would unnest it to the top level of the mapping.
+
+    `blocks` dedents each part against its own margin, and for a lone indented
+    line that margin IS the indentation, so `  Risk: {...}` becomes
+    `Risk: {...}` — outside the `entities:` key. YAML loads that happily and
+    the mapping ends up with no entities at all: a green test asserting
+    nothing. Caught by a conversion agent, not by review.
+    """
+    with pytest.raises(TypeError, match="unnest"):
+        blocks(entity("Risk"))
+
+
+def test_blocks_still_dedents_an_ordinary_source_block() -> None:
+    """The guard must not disturb the normal case it sits next to."""
+    assert blocks(entities("Risk"), """
+        views:
+          Risk: []
+    """) == (
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+        "views:\n"
+        "  Risk: []\n"
+    )
+
+
 def test_pack_round_trips_through_the_real_loaders(tmp_path: Path) -> None:
     """The builders must produce documents the real parser and loader accept.
 
