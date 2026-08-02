@@ -22,6 +22,8 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from _builders import ID_PK, table
+from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 NODE = shutil.which("node")
@@ -433,7 +435,12 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
     unsealed nor leave open one it opened to write."""
     js = _declared_deploy_js(
         tmp_path,
-        "form_visibility:\n  Escalation:\n    columns:\n      Note: hidden\n",
+        """
+        form_visibility:
+          Escalation:
+            columns:
+              Note: hidden
+        """,
     )
     script = _ADOPTED_HARNESS + "\n" + js.replace(
         "})();", "}))().then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
@@ -603,7 +610,12 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     """
     js = _declared_deploy_js(
         tmp_path,
-        "form_visibility:\n  Escalation:\n    columns:\n      Note: hidden\n",
+        """
+        form_visibility:
+          Escalation:
+            columns:
+              Note: hidden
+        """,
     )
     script = _ADOPTED_HARNESS + "\n" + js.replace(
         "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
@@ -646,30 +658,24 @@ def _declared_deploy_js(tmp_path: Path, section: str) -> str:
     before doing anything and cannot be exercised through it. All-Text
     columns keep the run clear of the derived-property probes the mock does
     not answer.
+
+    `section` is whatever extra mapping the test needs. It is dedented, so a
+    caller may pass a triple-quoted block indented to match its surrounding
+    code. `blocks()` rather than `with_tail()` because every caller opens a
+    TOP-LEVEL section here — nothing nests under the entity, so no
+    indentation is load-bearing and the two agree.
     """
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
-    from dbml_sharepoint.model.mapping_loader import load_mapping
-    from dbml_sharepoint.model.parser import parse_dbml
     from dbml_sharepoint.model.release import load_release
 
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Escalation {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  Note nvarchar\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Escalation: { kind: List, base_template: 100, site_role: default }\n" + section,
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Escalation", ID_PK, "Title nvarchar", "Note nvarchar"),
+        mapping=blocks(entities("Escalation"), section),
     )
     return generate_deploy_js(
-        schema=parse_dbml(tmp_path / "s.dbml"),
-        bundle=load_mapping(tmp_path / "m.yaml"),
+        schema=schema,
+        bundle=bundle,
         release=load_release(FIXTURES / "release.yaml"),
         site_url="https://example.sharepoint.com/sites/test",
         site_role="default",
@@ -693,10 +699,12 @@ def test_overwriting_a_declared_formula_logs_the_prior_value(tmp_path: Path) -> 
     )
     js = _declared_deploy_js(
         tmp_path,
-        "form_visibility:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Note: hidden\n",
+        """
+        form_visibility:
+          Escalation:
+            columns:
+              Note: hidden
+        """,
     )
     script = harness + "\n" + js.replace(
         "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
@@ -717,12 +725,14 @@ def test_formula_reconcile_fails_when_sharepoint_drops_validation_message(
     )
     js = _declared_deploy_js(
         tmp_path,
-        "column_validation:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Note:\n"
-        "        when: [{ field: Note, op: is_not_null }]\n"
-        "        message: A note is required.\n",
+        """
+        column_validation:
+          Escalation:
+            columns:
+              Note:
+                when: [{ field: Note, op: is_not_null }]
+                message: A note is required.
+        """,
     )
     script = harness + "\n" + js.replace(
         "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
@@ -739,10 +749,12 @@ def test_formula_reconcile_fails_when_client_message_is_not_cleared(tmp_path: Pa
     )
     js = _declared_deploy_js(
         tmp_path,
-        "form_visibility:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Note: hidden\n",
+        """
+        form_visibility:
+          Escalation:
+            columns:
+              Note: hidden
+        """,
     )
     script = harness + "\n" + js.replace(
         "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",

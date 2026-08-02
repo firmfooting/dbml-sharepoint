@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from _builders import ID_PK, TITLE, table
-from _packs import blocks, entities, entity, pack, write_dbml, write_mapping
+from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
@@ -23,17 +23,6 @@ _FIXED_ARGS: dict[str, Any] = dict(
     source_mtime="2026-05-04T00:00:00Z",
     generated_at="2026-05-04T00:00:00Z",
 )
-
-
-def _entity_block(*lines: str) -> str:
-    """The `entities:` key plus pre-rendered `entity()` lines.
-
-    `_packs.entities()` only renders default entities, and `blocks()` cannot be
-    used to append one: it dedents each part against its own margin, so a lone
-    `entity()` line -- uniformly indented by two spaces -- loses exactly the
-    indentation the YAML needs, silently.
-    """
-    return "entities:\n" + "".join(f"{line}\n" for line in lines)
 
 
 def _generate_simple_js() -> str:
@@ -78,10 +67,7 @@ def test_a_lookup_targets_display_column_is_deployed_as_an_index(
             table("Event", ID_PK, "EventRef nvarchar", "indexes { EventRef }"),
             table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
         ),
-        mapping=_entity_block(
-            entity("Event", display_column="EventRef"),
-            entity("FollowUp"),
-        ),
+        mapping=entities(entity("Event", display_column="EventRef"), "FollowUp"),
     )
     output = build_schema_json(schema, bundle, "default")
     assert {"list": "APP_Event", "field": "EventRef"} in output["indexed_columns"]
@@ -1431,23 +1417,24 @@ def test_group_management_automation_rendered(tmp_path: Path) -> None:
     """The generated script must carry (a) the CSOM ProcessQuery owner-set
     fallback for mismatched group owners and (b) the operator self-enrolment
     machinery keyed by groups[].enroll_operator_during_deploy."""
-    (tmp_path / "m.yaml").write_text(
-        (FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8")
-        + (
-            "\ngroups:\n"
-            "  - name: GH List Administrators\n"
-            "    description: Test admin group\n"
-            "    owner_group: Site Owners\n"
-            "    allow_members_edit_membership: false\n"
-            "    allow_request_to_join_leave: false\n"
-            "    auto_accept_request_to_join_leave: false\n"
-            "    only_allow_members_view_membership: false\n"
-            "    enroll_operator_during_deploy: true\n"
-        ),
-        encoding="utf-8",
+    mapping_path = write_mapping(
+        tmp_path,
+        blocks((FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8"), """
+            groups:
+              - name: GH List Administrators
+                description: Test admin group
+                owner_group: Site Owners
+                allow_members_edit_membership: false
+                allow_request_to_join_leave: false
+                auto_accept_request_to_join_leave: false
+                only_allow_members_view_membership: false
+                enroll_operator_during_deploy: true
+        """),
+        # The fixture already declares its own `prefix:`.
+        prefix=None,
     )
     schema = parse_dbml(FIXTURES / "calculated.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
+    bundle = load_mapping(mapping_path)
     release = load_release(FIXTURES / "release.yaml")
     js = generate_deploy_js(
         schema=schema, bundle=bundle, release=release,
@@ -1980,22 +1967,20 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     write_dbml(tmp_path, table("Risk", ID_PK, TITLE, "Score int"))
-    # The mapping keeps its hand-rolled fragments deliberately. The two glued
-    # literals below are ONE YAML line -- splitting them would change the
-    # declared formatter -- and joined it is 101 characters even flush against
-    # the left margin, so no triple-quoted block can hold it within E501.
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: Hot\n"
-        "      fields: [Title, Score]\n"
-        "      formatting: { additionalRowClass: \"=if([$Score] >= 20, "
-        "'sp-css-backgroundColor-BgCoral', '')\" }\n",
-        encoding="utf-8",
-    )
+    # `formatting` is spelled block-style, unlike the flow mappings the rest of
+    # the suite declares. As a flow mapping it is ONE logical line -- splitting
+    # it would change the declared formatter -- and that line is 101 characters
+    # flush against the left margin, so no triple-quoted block can hold it
+    # within E501. Block style parses to the identical mapping, and the exact
+    # rendered JSON is pinned by the assertion below.
+    write_mapping(tmp_path, blocks(entities("Risk"), """
+        views:
+          Risk:
+            - title: Hot
+              fields: [Title, Score]
+              formatting:
+                additionalRowClass: "=if([$Score] >= 20, 'sp-css-backgroundColor-BgCoral', '')"
+    """))
     schema = parse_dbml(tmp_path / "s.dbml")
     bundle = load_mapping(tmp_path / "m.yaml")
     row = next(
@@ -2800,22 +2785,35 @@ def test_a_created_group_enters_the_enumeration_snapshot() -> None:
 
 
 def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
+    """A Task list with two Person columns, plus one declared view.
+
+    `hide_line` is spliced INSIDE the Task entity block, so its four-space
+    indent is what says where it goes: pass `"    hide_from_all_items: [...]\\n"`
+    or `""`. `with_tail` appends it verbatim for exactly that reason —
+    `blocks()` would dedent the lone indented line flat and reparent it to the
+    top level of the mapping, silently (see `_packs.with_tail`).
+    """
     write_dbml(tmp_path, table("Task", ID_PK, TITLE, "Owner person", "Reviewer person"))
-    # The mapping stays hand-rolled: `hide_line` is spliced in mid-document and
-    # is a single uniformly-indented line, which `blocks()` would dedent flat.
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Task:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        + hide_line
-        + "views:\n"
-        "  Task:\n"
-        "    - title: Mine\n"
-        "      fields: [Title, Owner, Reviewer]\n",
-        encoding="utf-8",
+    write_mapping(
+        tmp_path,
+        # The outer `blocks()` dedent is a no-op on the first part: it already
+        # begins with `entities:` at column zero, so the common prefix is empty
+        # and the tail's indentation survives.
+        blocks(
+            with_tail("""
+                entities:
+                  Task:
+                    kind: List
+                    base_template: 100
+                    site_role: default
+            """, hide_line),
+            """
+            views:
+              Task:
+                - title: Mine
+                  fields: [Title, Owner, Reviewer]
+            """,
+        ),
     )
     return tmp_path
 
