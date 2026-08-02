@@ -22,6 +22,8 @@ from dataclasses import fields
 from pathlib import Path
 
 import pytest
+from _builders import ID_PK
+from _builders import table as dbml_table
 from _model import (
     MappingSections,
     bundle,
@@ -35,6 +37,8 @@ from _model import (
 )
 from _packs import entities as yaml_entities
 from _packs import pack
+from hypothesis import given
+from hypothesis import strategies as st
 
 from dbml_sharepoint.model.mapping_loader import Mapping
 
@@ -182,3 +186,77 @@ def test_the_builders_do_not_share_mutable_state_between_calls() -> None:
     one, two = mapping(), mapping()
     assert one.watched_lists is not two.watched_lists
     assert one.permissions is not two.permissions
+
+
+# --- The same statement, over shapes nobody thought of ----------------------
+
+NAMES = st.sampled_from(["Risk", "Event", "Task", "Board", "Note"])
+TYPES = st.sampled_from(["nvarchar", "int", "person", "date", "text"])
+#: One column as (type, required, unique). The name is positional -- C0, C1...
+#: -- because a generated name would test the parser's identifier rules, which
+#: is `test_parser.py`'s job and not this contract's.
+COLUMNS = st.tuples(TYPES, st.booleans(), st.booleans())
+
+
+def _attributes(*, required: bool, unique: bool) -> str:
+    """The DBML settings list for a generated column, or "" when it has none."""
+    settings = [s for s, on in (("not null", required), ("unique", unique)) if on]
+    return f" [{', '.join(settings)}]" if settings else ""
+
+
+@pytest.fixture(scope="module")
+def workdir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One directory for the whole property test.
+
+    `tmp_path` is function-scoped, and hypothesis rejects a function-scoped
+    fixture under `@given`: the fixture is set up once and then reused for
+    every example, so it would claim to be fresh per example while not being.
+    A module-scoped directory says what is actually happening -- each example
+    overwrites the same two files, which is all this needs.
+    """
+    return tmp_path_factory.mktemp("model_contract")
+
+
+@given(
+    names=st.lists(NAMES, min_size=1, max_size=3, unique=True),
+    kinds=st.lists(COLUMNS, min_size=1, max_size=4),
+)
+def test_any_built_table_survives_the_yaml_round_trip(
+    names: list[str],
+    kinds: list[tuple[str, bool, bool]],
+    workdir: Path,
+) -> None:
+    """One representative document is one shape somebody thought of.
+
+    The builders are about to be used by several hundred tests; a shape they
+    render differently from the loader would silently change what all of those
+    tests exercise.
+
+    `required` and `unique` are generated rather than fixed, because a
+    boolean the builder defaults the other way from the text idiom is the
+    known failure here, not a hypothetical one -- and a strategy that only
+    ever produced nullable columns could not see it.
+    """
+    built_schema = schema(*(
+        table(name, *(
+            column(f"C{i}", kind, required=required, unique=unique)
+            for i, (kind, required, unique) in enumerate(kinds)
+        ))
+        for name in names
+    ))
+    built_bundle = bundle(entities=names)
+
+    parsed_schema, parsed_bundle = pack(
+        workdir,
+        dbml="".join(
+            dbml_table(name, ID_PK, *(
+                f"C{i} {kind}{_attributes(required=required, unique=unique)}"
+                for i, (kind, required, unique) in enumerate(kinds)
+            ))
+            for name in names
+        ),
+        mapping=yaml_entities(*names),
+    )
+
+    assert built_schema == parsed_schema
+    assert built_bundle.mapping == parsed_bundle.mapping
