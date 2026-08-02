@@ -1,6 +1,9 @@
 # test/test_joins.py
 from pathlib import Path
 
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, pack
+
 from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,
     JOIN_WARN_AT,
@@ -10,46 +13,38 @@ from dbml_sharepoint.analysis.joins import (
     joining_fields,
 )
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
-from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
-from dbml_sharepoint.model.parser import Table, parse_dbml
+from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.parser import Table
 
-_SCHEMA = (
-    "Project t { database_type: 'SharePoint Online' }\n"
-    "Table Person {\n"
-    "  Id int [pk, increment]\n"
-    "  Title nvarchar [not null]\n"
-    "}\n"
-    "Table Task {\n"
-    "  Id int [pk, increment]\n"
-    "  Title nvarchar [not null]\n"
-    "  Owner person\n"
-    "  Assignee int [ref: > Person.Id]\n"
-    "  Elsewhere int [ref: > Person.Id]\n"
-    "  Notes nvarchar\n"
-    "  DueDate date\n"
-    "}\n"
+_SCHEMA = blocks(
+    table("Person", ID_PK, TITLE),
+    table(
+        "Task",
+        ID_PK,
+        TITLE,
+        "Owner person",
+        "Assignee int [ref: > Person.Id]",
+        "Elsewhere int [ref: > Person.Id]",
+        "Notes nvarchar",
+        "DueDate date",
+    ),
 )
-_MAPPING = (
-    'prefix: "APP_"\n'
-    "entities:\n"
-    "  Person: { kind: List, base_template: 100, site_role: default }\n"
-    "  Task:\n"
-    "    kind: List\n"
-    "    base_template: 100\n"
-    "    site_role: default\n"
-    "    hide_from_all_items: [Author, Editor]\n"
-    "cross_site_reference_columns:\n"
-    "  - { entity: Task, column: Elsewhere }\n"
-)
+_MAPPING = """
+    entities:
+      Person: { kind: List, base_template: 100, site_role: default }
+      Task:
+        kind: List
+        base_template: 100
+        site_role: default
+        hide_from_all_items: [Author, Editor]
+    cross_site_reference_columns:
+      - { entity: Task, column: Elsewhere }
+"""
 
 
 def _task(tmp_path: Path) -> tuple[Table, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(_SCHEMA, encoding="utf-8")
-    (tmp_path / "m.yaml").write_text(_MAPPING, encoding="utf-8")
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
-    table = next(t for t in schema.tables if t.name == "Task")
-    return table, bundle
+    schema, bundle = pack(tmp_path, dbml=_SCHEMA, mapping=_MAPPING)
+    return next(t for t in schema.tables if t.name == "Task"), bundle
 
 
 def test_the_bands_are_nine_and_twelve() -> None:
