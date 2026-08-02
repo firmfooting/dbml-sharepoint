@@ -1,10 +1,20 @@
 """Helpers shared by more than one test_validator_*.py module.
 
-Only the seven that are genuinely used outside the section that defined
-them live here; everything else stayed beside its tests.
+Only the ones genuinely used outside the section that defined them live
+here; everything else stayed beside its tests.
+
+`_view_inputs`/`_view_errors` and `_project_inputs`/`_project_errors` are
+the same Project fixture spelled two ways -- written to disk and parsed, or
+built as objects. The text pair is still right for a test whose subject IS
+the text; everything else should take the object pair.
 """
 from pathlib import Path
+from typing import Unpack
 
+from _model import MappingSections, column, enum
+from _model import bundle as _object_bundle
+from _model import schema as _object_schema
+from _model import table as _object_table
 from _packs import blocks, pack
 
 from dbml_sharepoint.analysis.validator import (
@@ -93,6 +103,42 @@ def _view_inputs(tmp_path: Path, views_block: str) -> tuple[Schema, MappingBundl
 
 def _view_errors(tmp_path: Path, views_block: str) -> list[Finding]:
     schema, bundle = _view_inputs(tmp_path, views_block)
+    return [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
+
+
+def _project_inputs(
+    **sections: Unpack[MappingSections],
+) -> tuple[Schema, MappingBundle]:
+    """`_view_inputs`, built as objects rather than written to disk and parsed.
+
+    The same Project entity and `status` enum, so a test may move between the
+    two without its fixture changing underneath it — `test_model_contract.py`
+    is what says the two spellings agree. The mapping sections arrive as
+    keyword arguments instead of a YAML block, which is what removes the
+    indentation from the test.
+
+    Both spellings exist because the text one is still right for a test that
+    is ABOUT the text: a parse error, a loader refusal, or a section whose
+    subject is what `load_mapping` does to it on the way through.
+    """
+    return (
+        _object_schema(
+            _object_table(
+                "Project",
+                column("Title", required=True),
+                column("Status", "status"),
+                column("SortOrder", "int"),
+                column("DueDate", "date"),
+            ),
+            enums=[enum("status", "Open", "Closed")],
+        ),
+        _object_bundle(entities=["Project"], **sections),
+    )
+
+
+def _project_errors(**sections: Unpack[MappingSections]) -> list[Finding]:
+    """`_project_inputs`, validated, keeping only the errors."""
+    schema, bundle = _project_inputs(**sections)
     return [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
 
 
