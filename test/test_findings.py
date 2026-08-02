@@ -135,3 +135,39 @@ def test_no_finding_is_unclassified() -> None:
     migration finished, and its re-appearance would mean a new rule shipped
     without a name."""
     assert "UNCLASSIFIED" not in FindingCode.__members__
+
+
+def test_every_code_can_actually_be_produced() -> None:
+    """A code nothing constructs is a lie in the catalogue.
+
+    `findings.md` is published documentation. A row for a rule no code path
+    can reach tells a reader the build checks something it does not, which is
+    worse than an undocumented rule -- they will not go looking for the check
+    that is missing.
+
+    This is a STATIC check: it proves each code appears in a construction site
+    somewhere in `src`, not that any test reaches that site. Runtime
+    reachability is the stronger property and is NOT tested here; the
+    classification pass found roughly seventeen codes whose paths no test
+    exercises, and closing that needs a corpus of deliberately-broken mappings
+    rather than an allowlist. Recorded so the gap is known rather than implied
+    away by this test's name.
+    """
+    import re
+
+    src = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in PACKAGE.rglob("*.py")
+        if p.name != "findings.py"
+    )
+    referenced = set(re.findall(r"FindingCode\.([A-Z][A-Z0-9_]*)", src))
+    declared = {c.name for c in FindingCode}
+
+    # Raised by an extension's own validators, never by the core -- see the
+    # member's comment. `test_validator_core._StubExtension` constructs it.
+    extension_only = {"EXTENSION_REPORTED"}
+
+    unreachable = declared - referenced - extension_only
+    assert not unreachable, (
+        "declared but never constructed: " + ", ".join(sorted(unreachable))
+    )
