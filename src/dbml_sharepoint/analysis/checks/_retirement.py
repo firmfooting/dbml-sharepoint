@@ -11,6 +11,7 @@ from dbml_sharepoint.analysis.conditions import (
     to_validation,
     validate_condition,
 )
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
@@ -40,6 +41,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         retired_table = tables_by_name.get(entity_name)
         if retired_table is None or entity_name not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"retired_columns[{entity_name}]: unknown entity.",
             ))
             continue
@@ -50,6 +52,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for col_name, retired_spec in retired_cols.items():
             if col_name not in rendered:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: {col_name!r} is not a rendered column of "
                     f"{entity_name}. Retire the column the DBML declares — "
@@ -63,6 +66,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     dt.date.fromisoformat(retired_spec.retired)
                 except ValueError:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}.{col_name}: retired {retired_spec.retired!r} is not "
                         f"an ISO date (YYYY-MM-DD).",
@@ -70,6 +74,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             col = cols_by_name.get(col_name)
             if col is not None and col.required and col.default is not None:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "warning",
                     f"{ctx}: {col_name!r} is required with a declared "
                     f"default — saves succeed, but every new row is stamped "
@@ -80,18 +85,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                 continue
             if superseded == col_name:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}.{col_name}: superseded_by names the retired "
                     f"column itself.",
                 ))
             elif superseded not in rendered:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}.{col_name}: superseded_by {superseded!r} is not "
                     f"a rendered column of {entity_name}.",
                 ))
             elif superseded in retired_cols:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}.{col_name}: superseded_by {superseded!r} is "
                     f"itself retired.",
@@ -103,6 +111,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         ):
             if indexed_col in retired_cols:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "warning",
                     f"{ctx}: {indexed_col!r} is still in the DBML indexes block — a "
                     f"list's index budget is finite and this one is now dead "
@@ -113,6 +122,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for retired_view in bundle.mapping.views.get(entity_name, []):
             if not retired_view.fields:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "warning",
                     f"views[{entity_name}].{retired_view.title}: retirement "
                     f"stripped every declared field; the view would be "
@@ -128,6 +138,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 continue
             for ref in sorted(formula_column_refs(formula) & set(retired_cols)):
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"calculated_formulas[{entity_name}].{calc_col}: formula "
                     f"references [{ref}], which is retired.",
@@ -137,6 +148,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             retired_refs = {leaf.field for leaf in leaves(retirement_rule.when)} & set(retired_cols)
             for ref in sorted(retired_refs):
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"list_validation[{entity_name}]: condition references "
                     f"{ref}, which is retired.",
@@ -156,6 +168,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         if validation_section is not None:
             for ruled in sorted(set(validation_section.columns) & set(retired_cols)):
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"column_validation[{entity_name}].{ruled}: {ruled!r} is retired, "
                     f"so it is hidden on the new form — a save rule on it cannot "
@@ -167,6 +180,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     # carry the reference, so the record on the mapping is the only source.
     findings.extend(
         Finding(
+            FindingCode.UNCLASSIFIED,
             "warning",
             f"retired_columns[{strip.entity}]: {strip.column!r} is still "
             f"named in {strip.context}; retirement stripped it and the build "
@@ -176,6 +190,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     )
     if bundle.mapping.retired_columns and bundle.mapping.display_name_mode is None:
         findings.append(Finding(
+            FindingCode.UNCLASSIFIED,
             "warning",
             "retired_columns are declared but display_names is not enabled, "
             "so the ' (retired)' display-title suffix never reaches "
@@ -190,6 +205,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         section_table = tables_by_name.get(fv_entity)
         if section_table is None or fv_entity not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"form_visibility[{fv_entity}]: unknown entity.",
             ))
             continue
@@ -210,7 +226,11 @@ def check(vc: ValidationContext) -> list[Finding]:
         for column, fv_declared in fv_section.columns.items():
             col_ctx = f"retired_columns[{fv_entity}]" if column in retired_here else ctx
             if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
-                findings.append(Finding("error", _undeployable(col_ctx, column)))
+                findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
+                    "error",
+                    _undeployable(col_ctx, column),
+                ))
                 continue
             if column not in rendered:
                 # A retired column that names nothing is already reported
@@ -218,13 +238,19 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # the DBML declaration spelled out.
                 if column not in retired_here:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: {column!r} is not a rendered column of {fv_entity}.",
                     ))
                 continue
             col = by_name.get(column)
             findings.extend(
-                Finding(severity, message)
+                # The one site whose severity is COMPUTED rather than
+                # literal, so the bulk rewrite could not reach it:
+                # validate_form_visibility decides per rule and returns
+                # (severity, message) pairs. One code here would therefore
+                # cover several distinct rules -- see the Task 3 note.
+                Finding(FindingCode.UNCLASSIFIED, severity, message)
                 for severity, message in validate_form_visibility(
                     column=column,
                     new=fv_declared.new,
@@ -244,6 +270,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         section_table = tables_by_name.get(cv_entity)
         if section_table is None or cv_entity not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"column_validation[{cv_entity}]: unknown entity.",
             ))
             continue
@@ -256,15 +283,21 @@ def check(vc: ValidationContext) -> list[Finding]:
         ctx = f"column_validation[{cv_entity}]"
         for column, cv_rule in cv_section.columns.items():
             if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
-                findings.append(Finding("error", _undeployable(ctx, column)))
+                findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
+                    "error",
+                    _undeployable(ctx, column),
+                ))
                 continue
             if column not in rendered:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error", f"{ctx}: {column!r} is not a rendered column of {cv_entity}.",
                 ))
                 continue
             if len(cv_rule.message) > 1024:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error", f"{ctx}.{column}: message must be ≤1024 characters.",
                 ))
             # SharePoint permits a column validation formula to reference
@@ -273,6 +306,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             others = sorted({leaf.field for leaf in leaves(cv_rule.when)} - {column})
             if others:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}.{column}: references {others} — column validation may only "
                     f"reference its own column; use list_validation for a cross-column rule.",
@@ -285,7 +319,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                 lookups=lookups,
                 context=f"{ctx}.{column}.when",
             )
-            findings.extend(Finding("error", message) for message in problems)
+            findings.extend(
+                Finding(FindingCode.UNCLASSIFIED, "error", message)
+                for message in problems
+            )
             if not problems:
                 formula = f"={to_validation(cv_rule.when, types)}"
                 for internal in types:
@@ -293,6 +330,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     formula = formula.replace(f"[{internal}]", f"[{display}]")
                 if len(formula) > 1024:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}.{column}: rendered formula is {len(formula)} characters; "
                         "SharePoint's limit is 1024.",

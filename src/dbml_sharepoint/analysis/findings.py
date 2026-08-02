@@ -73,6 +73,13 @@ class FindingCode(StrEnum):
     enforces the pair.
     """
 
+    # TEMPORARY. Scaffolding for the migration: every one of the 174
+    # construction sites got this in one pass so the tree compiles while the
+    # real codes are named a check module at a time. Task 3 of the
+    # typed-boundaries plan deletes this member, and
+    # `test_no_finding_is_unclassified` is how we will know it is gone.
+    UNCLASSIFIED = "unclassified"
+
     UNKNOWN_ENTITY = "unknown_entity"
 
 

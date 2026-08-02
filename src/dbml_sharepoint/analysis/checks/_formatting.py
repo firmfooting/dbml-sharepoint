@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.conditions import (
     to_validation,
     validate_condition,
 )
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
     SYSTEM_COLUMNS,
@@ -33,6 +34,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         fmt_table = tables_by_name.get(entity_name)
         if fmt_table is None or entity_name not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"column_formatting[{entity_name}]: unknown entity.",
             ))
             continue
@@ -41,21 +43,28 @@ def check(vc: ValidationContext) -> list[Finding]:
         for col_name, formatter in fmt_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             if col_name in _UNDEPLOYABLE_DECLARATION_COLUMNS:
-                findings.append(Finding("error", _undeployable(ctx, col_name)))
+                findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
+                    "error",
+                    _undeployable(ctx, col_name),
+                ))
                 continue
             if col_name not in rendered:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: not a rendered column of {entity_name}.",
                 ))
             if "elmType" not in formatter:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: formatter JSON must be an SP column-formatting "
                     f"object with a root 'elmType'.",
                 ))
             for ref in sorted(formatter_field_refs(formatter) - rendered):
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: formatter references [${ref}], which is not a "
                     f"rendered column of {entity_name}.",
@@ -84,12 +93,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             target_type = types_by_col.get(col_name)
             if target_type == calculated_type_for_style and spec.get("calculated") is not True:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: {style} on {target_type} requires calculated: true "
                     "to decode SharePoint's typed formatter value.",
                 ))
             elif spec.get("calculated") is True and target_type != calculated_type_for_style:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: calculated: true on {style} expects "
                     f"{calculated_type_for_style}, not {target_type}.",
@@ -102,6 +113,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # console. Found by the stakeholder-contacts uplift, which
                 # wanted a chip on IsActive and got nothing.
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: {style} on a Yes/No column matches nothing. The style "
                     f"compares against quoted strings and a boolean is not one, so "
@@ -113,6 +125,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 if members is not None:
                     for unknown in sorted(set(spec.get("map", {})) - members):
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "error",
                             f"{ctx}: map key {unknown!r} is not a member of "
                             f"enum {types_by_col[col_name]!r}.",
@@ -130,6 +143,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         if members is not None:
                             for unknown in sorted(set(color_by.get("map", {})) - members):
                                 findings.append(Finding(
+                                    FindingCode.UNCLASSIFIED,
                                     "error",
                                     f"{ctx}: color_by map key {unknown!r} is not "
                                     f"a member of enum {types_by_col[cfield]!r}.",
@@ -138,6 +152,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 against = spec.get("against")
                 if isinstance(against, str) and against not in rendered:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: trend 'against' references {against!r}, "
                         f"which is not a rendered column of {entity_name}.",
@@ -147,6 +162,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 gfield = guard.get("field") if isinstance(guard, dict) else None
                 if gfield and gfield not in rendered:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: guard field {gfield!r} is not a rendered "
                         f"column of {entity_name}.",
@@ -159,6 +175,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         form_table = tables_by_name.get(entity_name)
         if form_table is None or entity_name not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"form_formatting[{entity_name}]: unknown entity.",
             ))
             continue
@@ -173,6 +190,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             refs = formatter_field_refs(part_json)
             for ref in sorted(refs - rendered):
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: references [${ref}], which is not a rendered "
                     f"column of {entity_name}.",
@@ -190,6 +208,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             if part_name in ("header", "footer"):
                 for ref in sorted(refs & calculated_by_entity.get(entity_name, set())):
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}: references [${ref}], a calculated column. "
                         f"Calculated columns resolve to an empty string in a "
@@ -234,6 +253,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     for name in section_fields:
                         if name not in rendered:
                             findings.append(Finding(
+                                FindingCode.UNCLASSIFIED,
                                 "error",
                                 f"form_formatting[{entity_name}].body: "
                                 f"sections field {name!r} is not a rendered "
@@ -250,6 +270,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     if named and not is_last and all(n in hidden_everywhere for n in named):
                         title = section.get("displayname") or "(untitled)"
                         findings.append(Finding(
+                            FindingCode.UNCLASSIFIED,
                             "error",
                             f"form_formatting[{entity_name}].body: section "
                             f"{title!r} has no column that appears on any form — "
@@ -274,6 +295,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 )
                 if unplaced:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "warning",
                         f"form_formatting[{entity_name}].body: "
                         f"{', '.join(unplaced)} in no section. SharePoint appends "
@@ -288,12 +310,17 @@ def check(vc: ValidationContext) -> list[Finding]:
         rule_table = tables_by_name.get(entity_name)
         if rule_table is None or entity_name not in bundle.mapping.entities:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error", f"list_validation[{entity_name}]: unknown entity.",
             ))
             continue
         ctx = f"list_validation[{entity_name}]"
         if len(rule.message) > 1024:
-            findings.append(Finding("error", f"{ctx}: message must be ≤1024 characters."))
+            findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
+                "error",
+                f"{ctx}: message must be ≤1024 characters.",
+            ))
         xcols = cross_site_by_entity.get(entity_name, set())
         types = effective_column_types(
             {c.name: c.type for c in rule_table.columns}, xcols,
@@ -306,7 +333,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             lookups={c.name for c in rule_table.columns if c.ref is not None},
             context=f"{ctx}.when",
         )
-        findings.extend(Finding("error", message) for message in problems)
+        findings.extend(Finding(FindingCode.UNCLASSIFIED, "error", message) for message in problems)
         if not problems:
             formula = f"={to_validation(rule.when, types)}"
             for internal in types:
@@ -314,6 +341,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 formula = formula.replace(f"[{internal}]", f"[{display}]")
             if len(formula) > 1024:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{ctx}: rendered formula is {len(formula)} characters; "
                     "SharePoint's limit is 1024.",

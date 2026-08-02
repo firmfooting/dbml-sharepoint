@@ -8,6 +8,7 @@ from _packs import blocks, entities, pack, write_dbml, write_mapping
 from _paths import FIXTURES
 from _validator_helpers import _schema
 
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate,
@@ -892,7 +893,7 @@ class _StubExtension(BaseExtension):
     name: ClassVar[str] = "stub"
 
     def extra_validators(self, bundle: Any, schema: Any) -> list[Finding]:
-        return [Finding("warning", "stub extension finding")]
+        return [Finding(FindingCode.UNCLASSIFIED, "warning", "stub extension finding")]
 
 def test_validate_all_includes_extension_findings() -> None:
     schema = parse_dbml(FIXTURES / "simple.dbml")
