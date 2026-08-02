@@ -227,6 +227,54 @@ class FindingCode(StrEnum):
     DEMO_DATE_VALUE_INVALID = "demo_date_value_invalid"
     DEMO_ENUM_VALUE_UNKNOWN = "demo_enum_value_unknown"
 
+    # --- the shared condition grammar (analysis/conditions.py) --------------
+    # The prefix names the SUBJECT, not a section: these are reachable from
+    # views, form_visibility, column_validation and list_validation alike,
+    # and the section is in the location.
+    CONDITION_COLUMN_TYPE_UNKNOWN = "condition_column_type_unknown"
+    CONDITION_DATE_IS_AN_UNQUOTED_YAML_DATETIME = "condition_date_is_an_unquoted_yaml_datetime"
+    CONDITION_DATE_UNPARSEABLE = "condition_date_unparseable"
+    CONDITION_DATE_WEARS_WHITESPACE = "condition_date_wears_whitespace"
+    CONDITION_FIELD_NOT_RENDERED = "condition_field_not_rendered"
+    CONDITION_LOOKUP_UNSUPPORTED_BY_TARGET = "condition_lookup_unsupported_by_target"
+    CONDITION_ME_OPERATOR_MEANINGLESS = "condition_me_operator_meaningless"
+    CONDITION_ME_TAKES_NO_PROPERTY = "condition_me_takes_no_property"
+    CONDITION_ME_UNSUPPORTED_BY_TARGET = "condition_me_unsupported_by_target"
+    CONDITION_MEASURE_NOT_APPLICABLE = "condition_measure_not_applicable"
+    CONDITION_MEASURE_UNKNOWN = "condition_measure_unknown"
+    CONDITION_MEASURE_UNRENDERABLE = "condition_measure_unrenderable"
+    CONDITION_NEEDLE_EMPTY = "condition_needle_empty"
+    CONDITION_NEGATION_UNRENDERABLE = "condition_negation_unrenderable"
+    CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE = (
+        "condition_negative_text_operator_unrenderable"
+    )
+    CONDITION_NOW_ON_A_DATE_COLUMN = "condition_now_on_a_date_column"
+    CONDITION_NOW_UNSUPPORTED_BY_TARGET = "condition_now_unsupported_by_target"
+    CONDITION_OPERAND_TYPE_UNSUPPORTED = "condition_operand_type_unsupported"
+    CONDITION_OPERATOR_NOT_NEGATABLE = "condition_operator_not_negatable"
+    CONDITION_OPERATOR_UNKNOWN = "condition_operator_unknown"
+    CONDITION_OPERATOR_UNRENDERABLE = "condition_operator_unrenderable"
+    CONDITION_OPERATOR_UNVERIFIED = "condition_operator_unverified"
+    CONDITION_PROPERTY_NOT_APPLICABLE = "condition_property_not_applicable"
+    CONDITION_PROPERTY_REQUIRED = "condition_property_required"
+    CONDITION_PROPERTY_UNKNOWN = "condition_property_unknown"
+    CONDITION_PROPERTY_UNRENDERABLE = "condition_property_unrenderable"
+    CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR = "condition_sentinel_with_a_substring_operator"
+    CONDITION_SET_EMPTY = "condition_set_empty"
+    CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN = (
+        "condition_substring_test_on_a_non_text_column"
+    )
+    CONDITION_TODAY_UNSUPPORTED_BY_TARGET = "condition_today_unsupported_by_target"
+    CONDITION_TOO_DEEP = "condition_too_deep"
+    CONDITION_TOO_MANY_LEAVES = "condition_too_many_leaves"
+    CONDITION_VALUE_HAS_A_CONTROL_CHARACTER = "condition_value_has_a_control_character"
+    CONDITION_VALUE_MISSING = "condition_value_missing"
+    CONDITION_VALUE_NOT_A_BOOLEAN = "condition_value_not_a_boolean"
+    CONDITION_VALUE_NOT_A_LIST = "condition_value_not_a_list"
+    CONDITION_VALUE_NOT_A_NUMBER = "condition_value_not_a_number"
+    CONDITION_VALUE_NOT_ALLOWED = "condition_value_not_allowed"
+    CONDITION_VALUE_NOT_FINITE = "condition_value_not_finite"
+
 
 @dataclass(frozen=True, slots=True)
 class Finding:

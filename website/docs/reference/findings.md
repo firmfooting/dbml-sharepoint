@@ -4,21 +4,28 @@ sidebar_position: 6
 ---
 
 # Finding reference
-
 Every message the validator produces carries a `FindingCode`. The code is the
 finding's identity: it is stable, it is what tests and tooling key off, and it
 is what to search for here. The wording of a message is prose for a human and
 may be reworded at any time.
-
 A finding also carries a `location` — the section, entity, view, column and
 sub-key it is about — which is normally the dotted path the message opens with.
-
 One row per code, and `test_every_code_is_documented` fails the build if a code
 has no row or a row has no code.
-
 | Code | Severity | What it means |
 |---|---|---|
-| `unclassified` | error | **Temporary.** A finding the code migration has not named yet. No rule produces this deliberately; its absence is how the migration is known to be finished. |
+# Finding catalogue
+Every rule this tool can report, by code. The **code** is the identity: it is
+stable, it is what a test asserts on, and it is what `--explain` will key off.
+The message beside a finding is prose for a human and may be reworded in any
+release, so nothing should match on it.
+A code names **what is wrong**, not where -- the section, entity and column are
+carried on the finding's `location`. Two rules that produce the same sentence
+for different reasons therefore get two codes, and one rule reachable from two
+sections keeps one.
+Codes beginning `condition_` come from the shared condition grammar and can be
+raised from any section that accepts a `when`: `views`, `form_visibility`,
+`column_validation` and `list_validation` alike.
 | `all_items_view_declared` | error | A view named `All Items` is declared; that view is generated with every rendered column and no filter, and cannot be overridden. |
 | `calculated_column_has_no_formula` | error | A `calculated_*` DBML column has no matching entry under `calculated_formulas:`. |
 | `calculated_display_column_unindexable` | warning | A lookup target's display column is calculated, and calculated columns cannot be indexed, so its picker stops working once the list passes roughly 5,000 items. |
@@ -29,17 +36,72 @@ has no row or a row has no code.
 | `calculated_formula_too_long` | error | A calculated formula is longer than SharePoint's limit. |
 | `calculated_formula_unknown_column` | error | A calculated formula references a column that is not rendered. SharePoint resolves references when the field is created and rejects the POST on any miss. |
 | `calculated_formula_unsupported_operand` | error | A calculated formula references a Lookup, Person, multi-line-text, rich-text or Hyperlink column. Measured against a live site: SharePoint refuses all five when the field is created. |
+| `color_by_map_key_not_in_enum` | error | A `data-bar` `color_by` map names a choice the source column's enum does not contain. |
 | `column_not_rendered` | error | A name in the mapping is not a rendered column of the entity. Reached from a field set's members, a view's `fields`/`sort`/`group_by`, and a display-name override. |
 | `composite_index_unsupported` | error | A DBML `indexes { }` entry names more than one column; the deployer can represent only a one-column index. |
+| `condition_column_type_unknown` | error | A leaf names a column with no declared type, so the literal cannot be typed. |
+| `condition_date_is_an_unquoted_yaml_datetime` | error | An unquoted YAML datetime reaches the renderers with a SPACE separating date from time, a spelling no probe has run. Quote it. |
+| `condition_date_unparseable` | error | A date column's literal is neither a date nor a `today`/`now` sentinel. |
+| `condition_date_wears_whitespace` | error | A date literal carries surrounding whitespace, which every renderer would emit unchanged. |
+| `condition_field_not_rendered` | error | A leaf names a column the list does not render. |
+| `condition_lookup_unsupported_by_target` | error | A validation formula cannot read a lookup column. |
+| `condition_measure_not_applicable` | error | `measure: length` was applied to a column that is not text. |
+| `condition_measure_unknown` | error | A `measure` other than `length` was declared. |
+| `condition_measure_unrenderable` | error | The target cannot express a measure at all. CAML has no LEN, and list formatting's `length()` does not measure a string. |
+| `condition_me_operator_meaningless` | error | `me` is an identity, so only `eq`/`neq` mean anything against it. |
+| `condition_me_takes_no_property` | error | `me` compares the person column's user id, so it takes no accessor. |
+| `condition_me_unsupported_by_target` | error | The `me` sentinel has no verified client-side equivalent for show/hide. |
+| `condition_needle_empty` | error | A substring operator was given an empty needle, which cannot discriminate. |
+| `condition_negation_unrenderable` | error | Negating the rule, as `none_of` does, produces an operator the target cannot express. |
+| `condition_negative_text_operator_unrenderable` | error | CAML has no `<Not>`, `<NotContains>` or `<NotBeginsWith>`, so a view filter cannot say "does not contain". |
+| `condition_now_on_a_date_column` | error | The `now` sentinel needs a datetime column; a date column has no time of day. |
+| `condition_now_unsupported_by_target` | error | The `now` sentinel has no verified client-side equivalent for show/hide. |
+| `condition_operand_type_unsupported` | error | The target refuses this operand type outright: a person, multi-line, hyperlink or calculated column. |
+| `condition_operator_not_negatable` | error | `none_of` met an operator with no declared inverse, so it cannot be pushed down to the leaves. |
+| `condition_operator_unknown` | error | The declared operator is not in the grammar. |
+| `condition_operator_unrenderable` | error | The operator is in the grammar but the target has no spelling for it. |
+| `condition_operator_unverified` | error | The operator is plausible from the documented syntax but has not been watched on a live tenant for this target. |
+| `condition_property_not_applicable` | error | An accessor was declared on a column that is neither a person nor a lookup. |
+| `condition_property_required` | error | A person or lookup column needs an accessor; there is no defensible default between a name, an email and an id. |
+| `condition_property_unknown` | error | The accessor is not one this column kind offers. |
+| `condition_property_unrenderable` | error | The target cannot reach person or lookup sub-properties at all. |
+| `condition_sentinel_with_a_substring_operator` | error | A `today`/`now` sentinel was combined with a substring test, which would search for the sentinel's own spelling. |
+| `condition_set_empty` | error | `in`/`not_in` was given an empty list, which is a constant rather than a condition. |
+| `condition_substring_test_on_a_non_text_column` | error | A substring operator was applied to a boolean, number, date or person column. |
+| `condition_today_unsupported_by_target` | error | The `today` sentinel has no verified client-side equivalent for show/hide. |
+| `condition_too_deep` | error | The condition nests more groups than the depth cap allows. |
+| `condition_too_many_leaves` | error | The condition expands past the leaf cap once `in` lists are counted out. |
+| `condition_value_has_a_control_character` | error | The value contains a character XML forbids, which no escaping can carry. |
+| `condition_value_missing` | error | The operator needs a `value` and none was declared. |
+| `condition_value_not_allowed` | error | `is_null`/`is_not_null` take no `value`. |
+| `condition_value_not_a_boolean` | error | A boolean column's operand is neither truthy nor falsy under the two-sided coercion. |
+| `condition_value_not_a_list` | error | `in`/`not_in` needs a list. |
+| `condition_value_not_a_number` | error | A numeric column's operand is not a number. |
+| `condition_value_not_finite` | error | A numeric operand is an infinity or a NaN. |
 | `cross_site_column_cannot_be_unique` | error | A cross-site reference column is marked `[unique]`. Its logical column is replaced by generated `Abbreviation` and `SiteUrl` fields, so the constraint would never be deployed. |
 | `cross_site_column_has_no_ref` | error | A `cross_site_reference_columns:` entry names a column with no DBML `ref:`. |
 | `cross_site_generated_name_collides` | error | A cross-site column's generated companion field has the same name as a column the DBML already declares. |
 | `cross_site_generated_name_too_long` | error | A cross-site column's generated `Abbreviation` or `SiteUrl` field exceeds SharePoint's 32-character internal-name limit. |
 | `cross_site_unknown_column` | error | A `cross_site_reference_columns:` entry names a column the entity's table does not declare. |
+| `demo_column_not_writable` | error | A demo row writes a column the deploy does not create, or writes `Id`. |
+| `demo_date_value_invalid` | error | A demo row's date value is neither `today+N`/`today-N` nor a real ISO calendar date. |
+| `demo_enum_value_unknown` | error | A demo row's value is not a member of the column's enum. |
+| `demo_hyperlink_address_invalid` | error | A demo row's hyperlink address is not a non-empty string. Checked as a string, not stringified — `str(None)` is `"None"`, which would deploy as a link pointing at the word None. |
+| `demo_hyperlink_object_invalid` | error | A demo row's hyperlink object value is not `{url: <address>, description: <label>}` with `description` optional. |
+| `demo_object_value_invalid` | error | A demo row's object value is not exactly `{demo_ref: <key>}`. |
+| `demo_person_value_unsupported` | error | A demo row writes a person column with something other than `"@me"`, the deploying operator. |
+| `demo_ref_forward_reference` | error | A self-referencing demo row's `demo_ref` names a row declared at or after it, so the target does not exist when the row is written. |
+| `demo_ref_on_non_lookup` | error | A demo row uses `demo_ref` on a column that is not a lookup. |
+| `demo_ref_target_mismatch` | error | A demo row's `demo_ref` resolves to a row of a different entity from the one the lookup targets. |
+| `demo_ref_unknown_key` | error | A demo row's `demo_ref` names a key no demo row declares. |
+| `demo_rows_on_document_library` | error | `demo_items:` seeds a `DocumentLibrary`. A library's items are files and seeding posts to `/items`, which SharePoint refuses outright — so the paste fails in front of whoever was being shown the demo. |
+| `demo_title_missing_marker` | error | A demo row's `Title` does not start with `[DEMO] `, the marker the teardown trusts to tell demo rows from real records. |
+| `demo_value_on_calculated_column` | error | A demo row writes a calculated column. Set its inputs instead. |
 | `display_column_not_rendered` | error | A lookup target's `display_column` names a column the deploy never creates, so the automatic index would be created on a field that does not exist. |
 | `display_column_type_unindexable` | error | A lookup target's `display_column` is a type SharePoint cannot index. The deploy sets `Indexed=true`, reads it back and aborts part-way through when it did not stick. |
 | `display_title_too_long` | error | A display title exceeds SharePoint's 255-character bound. |
 | `document_library_unsupported` | error | An entity declares `kind: DocumentLibrary`. A library's items are files and this tool writes list rows, so the kind is refused outright — see issue #14. |
+| `duplicate_demo_key` | error | Two demo rows share a key. Keys are global across entities because `demo_ref` resolves against all of them. |
 | `duplicate_display_title` | error | Two columns of one entity resolve to the same display title, making them indistinguishable on every form and view. |
 | `duplicate_index_target` | error | One table's `indexes { }` names the same column twice. |
 | `duplicate_view_title` | error | Two views on one entity share a title, or differ only in case — SharePoint treats those as one view. |
@@ -53,12 +115,11 @@ has no row or a row has no code.
 | `field_set_empty` | error | A field set declares no columns. |
 | `field_set_name_has_marker` | error | A field set's name contains `@`, which is the marker a view's `fields` uses to reference a set. |
 | `field_set_unreferenced` | warning | A field set is declared but no view on that entity expands it. |
+| `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column the entity does not render. |
 | `formatter_field_not_displayed` | error | A view formatter references a real column the view does not display; a view formatter can only read columns in its own `fields`, so the format would never fire. |
 | `formatter_field_not_rendered` | error | A view formatter references a column the entity does not render. |
-| `formula_target_not_calculated` | error | A `calculated_formulas:` entry names a column that is not `calculated_text` or `calculated_number`. |
-| `color_by_map_key_not_in_enum` | error | A `data-bar` `color_by` map names a choice the source column's enum does not contain. |
-| `formatter_column_not_rendered` | error | A `column_formatting:` entry targets a column the entity does not render. |
 | `formatter_missing_elmtype` | error | A column formatter's JSON has no root `elmType`, so it is not a SharePoint column-formatting object. |
+| `formula_target_not_calculated` | error | A `calculated_formulas:` entry names a column that is not `calculated_text` or `calculated_number`. |
 | `form_columns_in_no_section` | warning | Columns are referenced by no form body section. SharePoint appends them to the last section, so the form still renders — but the declared arrangement stops being the deployed one. |
 | `form_part_references_calculated_column` | error | A form header or footer references a calculated column. Calculated columns resolve to an empty string there, so the part renders blank with no error anywhere. |
 | `form_section_entirely_hidden` | error | Every column in a form body section is declared `new: false` and `existing: false`, so the section renders as a bare heading. Not asserted of the last section, which is SharePoint's documented catch-all. |
@@ -76,21 +137,6 @@ has no row or a row has no code.
 | `index_on_calculated_column` | error | An `indexes { }` entry names a calculated column. SharePoint accepts the flag and reads it back false. |
 | `index_settings_unsupported` | error | A DBML index carries `name`, `unique`, `type`, `pk` or `note`. SharePoint exposes none of them, so declare a bare column index. |
 | `invalid_condition` | error | The condition grammar rejected a declared `when:`. `conditions.py` has 28 distinct reasons behind this and reports them as prose. |
-| `demo_column_not_writable` | error | A demo row writes a column the deploy does not create, or writes `Id`. |
-| `demo_date_value_invalid` | error | A demo row's date value is neither `today+N`/`today-N` nor a real ISO calendar date. |
-| `demo_enum_value_unknown` | error | A demo row's value is not a member of the column's enum. |
-| `demo_hyperlink_address_invalid` | error | A demo row's hyperlink address is not a non-empty string. Checked as a string, not stringified — `str(None)` is `"None"`, which would deploy as a link pointing at the word None. |
-| `demo_hyperlink_object_invalid` | error | A demo row's hyperlink object value is not `{url: <address>, description: <label>}` with `description` optional. |
-| `demo_object_value_invalid` | error | A demo row's object value is not exactly `{demo_ref: <key>}`. |
-| `demo_person_value_unsupported` | error | A demo row writes a person column with something other than `"@me"`, the deploying operator. |
-| `demo_ref_forward_reference` | error | A self-referencing demo row's `demo_ref` names a row declared at or after it, so the target does not exist when the row is written. |
-| `demo_ref_on_non_lookup` | error | A demo row uses `demo_ref` on a column that is not a lookup. |
-| `demo_ref_target_mismatch` | error | A demo row's `demo_ref` resolves to a row of a different entity from the one the lookup targets. |
-| `demo_ref_unknown_key` | error | A demo row's `demo_ref` names a key no demo row declares. |
-| `demo_rows_on_document_library` | error | `demo_items:` seeds a `DocumentLibrary`. A library's items are files and seeding posts to `/items`, which SharePoint refuses outright — so the paste fails in front of whoever was being shown the demo. |
-| `demo_title_missing_marker` | error | A demo row's `Title` does not start with `[DEMO] `, the marker the teardown trusts to tell demo rows from real records. |
-| `demo_value_on_calculated_column` | error | A demo row writes a calculated column. Set its inputs instead. |
-| `duplicate_demo_key` | error | Two demo rows share a key. Keys are global across entities because `demo_ref` resolves against all of them. |
 | `join_threshold_approached` | warning | A view renders join-bearing columns at that ceiling, which held on the tenant measured but may not travel. |
 | `join_threshold_exceeded` | error | A view renders more join-bearing columns than the measured ceiling of 12 join operations, and SharePoint returns the view blank at any list size. Reached from a declared view and from the generated `All Items` view. |
 | `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1024 characters once display names are substituted. |
@@ -117,6 +163,7 @@ has no row or a row has no code.
 | `total_on_lookup_column` | error | A total other than `count` is declared on a lookup column, whose stored value is a row id rather than a quantity. |
 | `total_on_non_arithmetic_column` | error | A total other than `count` is declared on a person, rich-text, long-text or hyperlink column. |
 | `trend_against_not_rendered` | error | A `trend` style's `against` names a column the entity does not render. |
+| `unclassified` | error | **Temporary.** A finding the code migration has not named yet. No rule produces this deliberately; its absence is how the migration is known to be finished. |
 | `undeployable_column_declaration` | error | A per-column declaration targets `Title` or a SharePoint system column. The deploy never writes those properties, so the declaration would validate clean and do nothing. |
 | `unindexed_filter_columns` | warning | A view's `where` filters on columns with no effective index, so past the list view threshold SharePoint may silently return a truncated answer. |
 | `unknown_entity` | error | A mapping section names an entity the schema does not declare, or the mapping does not list. Reached from `views`, `field_sets`, `display_names`, `retention`, `watched_lists`, `polymorphic_patterns`, `versioning.overrides`, `cross_site_reference_columns`, `column_formatting`, `form_formatting`, `list_validation` and `demo_items` — the `location` says which. |
