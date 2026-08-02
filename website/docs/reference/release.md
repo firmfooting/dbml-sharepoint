@@ -39,8 +39,8 @@ differ so the file reads as a release description rather than as a struct.
 ## Where the values go
 
 `release`, `schema_version` and `deployer_version` are stamped into every
-generated artifact's provenance header — deploy.js, rollback.js, assess.js,
-demo-data.js, both manifests, and the reporting outputs. deploy.js also
+generated artifact's provenance header — deploy.js.txt, rollback.js.txt, assess.js.txt,
+demo-data.js.txt, both manifests, and the reporting outputs. deploy.js.txt also
 carries `release` and `schema_version` into its run summary, so a pasted
 console transcript records exactly which release produced the site's
 current shape. `date` and `deployer_version` additionally appear in the
@@ -52,7 +52,7 @@ Nothing is written to the target site, so nothing about the tag changes
 what a deploy does. The tag is provenance in the artifacts and in the
 console transcript, and that is its whole job.
 
-In particular, re-running deploy.js with a **new** release tag does not
+In particular, re-running deploy.js.txt with a **new** release tag does not
 re-verify anything a re-run of the **same** tag would have skipped. Every
 skip decision is made by reading the live site and comparing it against the
 declaration in front of it — the tag is never part of that comparison, and

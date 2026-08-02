@@ -256,6 +256,6 @@ validation formulas, and technology cannot manufacture authority or capacity.
 ## Records and decommissioning
 
 Apply the health service records schedule to decision and routing records.
-Export before decommissioning and never use `rollback.js` against real rows.
+Export before decommissioning and never use `rollback.js.txt` against real rows.
 Sealing and deletion protection prevent casual UI mistakes; they do not replace
 authorised records-management decisions.

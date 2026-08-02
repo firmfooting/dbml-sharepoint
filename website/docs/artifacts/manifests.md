@@ -14,11 +14,11 @@ The operator-facing run book: supported deployment mode, step-by-step
 run instructions, the validator's findings (**must show 0 errors**), and
 the full inventory — list creation order, deferred lookups, indexes,
 views, formatting and permissions — with phase numbers taken from the
-same phases manifest deploy.js uses.
+same phases manifest deploy.js.txt uses.
 
 ## assess-manifest.md
 
-The companion to [assess.js](assess.md): what each tier probes and how
+The companion to [assess.js.txt](assess.md): what each tier probes and how
 to read the `COMPATIBLE / DEGRADED / BLOCKED` verdict.
 
 ## INDEX.md and checksums.txt
@@ -31,8 +31,8 @@ verification.
 
 ## Provenance headers
 
-Every generated **script** — deploy.js, rollback.js, assess.js,
-demo-data.js — opens with the same provenance block: source schema (and
+Every generated **script** — deploy.js.txt, rollback.js.txt, assess.js.txt,
+demo-data.js.txt — opens with the same provenance block: source schema (and
 its modification time), target site, site role, release tag, schema
 version and generation timestamp. A pasted console transcript therefore
 records exactly which release produced it. Interpolated values are
@@ -43,12 +43,12 @@ the header comment.
 **`assess-manifest.md` does not** — it opens with the target site and
 nothing else: no source schema, no release tag, no schema version, no
 generation timestamp. If you are filing an assessment as evidence, take
-the provenance from the `assess.js` header beside it, which carries the
+the provenance from the `assess.js.txt` header beside it, which carries the
 full block.
 
 ## Stale clearing
 
 `emit_bundle` deletes every file it owns before writing — a bundle never
 contains a stale artifact from a previous build with different flags
-(for example, a `demo-data.js` left behind after a build without
+(for example, a `demo-data.js.txt` left behind after a build without
 `--seed`).

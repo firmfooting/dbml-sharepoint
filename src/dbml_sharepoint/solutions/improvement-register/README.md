@@ -48,7 +48,7 @@ incident-management and audit-actions); and the `max:` on the
 `DaysIdeaToOutcome` bar, which ships at 180 days because two quarters from
 idea to outcome is a cycle that stopped being a test somewhere.
 
-**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes six `[DEMO] `-titled rows — one per stage, from five different
 sources, with two adoptions (one inside the rolling window and one outside
 it) and an abandoned test whose lesson is written down. See

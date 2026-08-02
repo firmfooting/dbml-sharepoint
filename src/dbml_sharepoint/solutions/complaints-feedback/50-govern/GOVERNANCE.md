@@ -114,5 +114,5 @@ the moment a figure leaves this list for a board pack:
 
 ## Lifecycle
 
-Never run `rollback.js` against real rows; export before decommission,
+Never run `rollback.js.txt` against real rows; export before decommission,
 then dispose per retention rules.

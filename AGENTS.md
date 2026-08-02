@@ -7,7 +7,7 @@ Instructions for coding agents working in this repository. Humans should read
 plus the things that are easy to get wrong.
 
 `dbml-sharepoint` turns a DBML schema plus a `mapping.yaml` into a browser-paste
-`deploy.js` that provisions SharePoint Online lists. The generated scripts run
+`deploy.js.txt` that provisions SharePoint Online lists. The generated scripts run
 against other people's production sites.
 
 ## The one rule that matters most
@@ -92,7 +92,7 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
   every file they touch with CRLF line endings, so `git status` shows drift that
   is not real. Check with `git diff --ignore-cr-at-eol` before believing it, and
   `git checkout --` the files if that comes back empty.
-- **The deploy.js golden.** Template changes fail
+- **The deploy.js.txt golden.** Template changes fail
   `test_simple_deploy_js_matches_golden` until the fixture under
   `test/fixtures/expected/` is deliberately regenerated. Review the fixture diff
   like code — it is.
@@ -113,7 +113,7 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 | Path | What |
 |---|---|
 | `src/dbml_sharepoint/analysis/` | Validation. `checks/` holds the individual rules |
-| `src/dbml_sharepoint/generators/` | Emit deploy.js, rollback.js, assess.js, reporting |
+| `src/dbml_sharepoint/generators/` | Emit deploy.js.txt, rollback.js.txt, assess.js.txt, reporting |
 | `src/dbml_sharepoint/templates/` | Jinja templates for the emitted JS |
 | `src/dbml_sharepoint/model/` | Mapping parsing and types |
 | `src/dbml_sharepoint/solutions/` | The 30 shipped list templates (schema + mapping + release per family). Inside the package so the wizard can offer them to somebody who never cloned this repository — only files under the package reach the wheel. Do **not** confuse with `templates/` above, which is Jinja |

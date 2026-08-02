@@ -28,15 +28,47 @@ if TYPE_CHECKING:
 class SeedRequiresDemoItemsError(ValueError):
     """--seed was requested but the mapping declares no demo_items."""
 
+# The pasteable scripts carry a `.js.txt` double extension, not `.js`.
+#
+# These files exist to be OPENED and COPIED, never executed from disk. On
+# Windows a `.js` file is associated with Windows Script Host, so
+# double-clicking the deliverable runs it outside the browser instead of
+# opening it — the one thing an operator must not do with a provisioning
+# script. `.js.txt` opens in the default text editor everywhere, and the
+# inner `.js` keeps the artifact self-describing.
+#
+# Named constants rather than literals at each write site: the name appears
+# in the emission, the INDEX row, the checksum manifest and the operator
+# instructions, and those four drifting apart is how a manifest comes to
+# tell somebody to paste a file the build did not write.
+DEPLOY_SCRIPT = "deploy.js.txt"
+ROLLBACK_SCRIPT = "rollback.js.txt"
+ASSESS_SCRIPT = "assess.js.txt"
+DEMO_SCRIPT = "demo-data.js.txt"
+
 GENERATED_FILES: tuple[str, ...] = (
-    "deploy.js",
-    "rollback.js",
-    "assess.js",
-    "demo-data.js",
+    DEPLOY_SCRIPT,
+    ROLLBACK_SCRIPT,
+    ASSESS_SCRIPT,
+    DEMO_SCRIPT,
     "deploy-manifest.md",
     "assess-manifest.md",
     "INDEX.md",
     "checksums.txt",
+)
+
+# What the scripts were called before the `.js.txt` change. Cleared by
+# `clear_generated` alongside the current names, because a directory built
+# by an earlier version still holds a pasteable `deploy.js` — and clearing
+# only the new names would leave the stale one sitting beside the fresh
+# bundle, which is exactly the "stale script an operator could paste"
+# failure `clear_generated` exists to prevent. Cheap to keep; the cost of
+# dropping it is paid by somebody pasting last month's provisioning run.
+_LEGACY_SCRIPTS: tuple[str, ...] = (
+    "deploy.js",
+    "rollback.js",
+    "assess.js",
+    "demo-data.js",
 )
 
 # INDEX rows: what each artifact IS. The manifest stays authoritative for
@@ -45,16 +77,16 @@ GENERATED_FILES: tuple[str, ...] = (
 _INDEX_ROWS: tuple[tuple[str, str], ...] = (
     ("deploy-manifest.md",
      "Build report and the numbered run sequence — read first."),
-    ("assess.js",
+    (ASSESS_SCRIPT,
      ("Read-only site capability probe; paste in the target site's console "
       "before deploying.")),
     ("assess-manifest.md",
-     ("What assess.js checks and how to read its COMPATIBLE / DEGRADED / "
-      "BLOCKED verdict.")),
-    ("deploy.js",
+     (f"What {ASSESS_SCRIPT} checks and how to read its COMPATIBLE / "
+      "DEGRADED / BLOCKED verdict.")),
+    (DEPLOY_SCRIPT,
      ("The provisioning script; paste only after the assess verdict and "
       "manifest review.")),
-    ("rollback.js",
+    (ROLLBACK_SCRIPT,
      ("Deletes this pack's lists; ONLY for a failed first provision on an "
       "empty site.")),
     ("checksums.txt",
@@ -68,9 +100,9 @@ _REPORTING_ROW: tuple[str, str] = (
 )
 
 _DEMO_ROW: tuple[str, str] = (
-    "demo-data.js",
-    ("Optional demo rows (built with --seed): paste AFTER deploy.js. Every "
-     "row is '[DEMO] '-marked; delete before active use."),
+    DEMO_SCRIPT,
+    (f"Optional demo rows (built with --seed): paste AFTER {DEPLOY_SCRIPT}. "
+     "Every row is '[DEMO] '-marked; delete before active use."),
 )
 
 
@@ -83,7 +115,7 @@ def clear_generated(out: Path, *, reporting: bool = False) -> None:
     Unrelated operator files in the directory are deliberately untouched.
     """
     out.mkdir(parents=True, exist_ok=True)
-    for filename in GENERATED_FILES:
+    for filename in (*GENERATED_FILES, *_LEGACY_SCRIPTS):
         (out / filename).unlink(missing_ok=True)
     if reporting:
         shutil.rmtree(out / "reporting", ignore_errors=True)
@@ -156,8 +188,8 @@ def emit_bundle(
 ) -> str:
     """Emit the full post-validation bundle; returns the success message.
 
-    The one emission sequence — deploy.js, rollback.js, assess.js and its
-    manifest, the seed-gated demo-data.js, reporting, INDEX.md and
+    The one emission sequence — the deploy, rollback and assess scripts and
+    the assess manifest, the seed-gated demo script, reporting, INDEX.md and
     checksums.txt — shared by the core CLI and every extension CLI. Raises
     :class:`SeedRequiresDemoItemsError` before writing anything when
     ``seed`` is set but the mapping declares no demo rows.
@@ -176,7 +208,7 @@ def emit_bundle(
             "--seed requested but the mapping declares no demo_items.",
         )
 
-    (out / "deploy.js").write_text(
+    (out / DEPLOY_SCRIPT).write_text(
         generate_deploy_js(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
@@ -186,7 +218,7 @@ def emit_bundle(
         ),
         encoding="utf-8",
     )
-    (out / "rollback.js").write_text(
+    (out / ROLLBACK_SCRIPT).write_text(
         generate_rollback_js(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
@@ -194,7 +226,7 @@ def emit_bundle(
         ),
         encoding="utf-8",
     )
-    (out / "assess.js").write_text(
+    (out / ASSESS_SCRIPT).write_text(
         generate_assess_js(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
@@ -211,11 +243,11 @@ def emit_bundle(
     )
 
     relpaths = [
-        "deploy-manifest.md", "deploy.js", "rollback.js",
-        "assess.js", "assess-manifest.md",
+        "deploy-manifest.md", DEPLOY_SCRIPT, ROLLBACK_SCRIPT,
+        ASSESS_SCRIPT, "assess-manifest.md",
     ]
     if seed:
-        (out / "demo-data.js").write_text(
+        (out / DEMO_SCRIPT).write_text(
             generate_demo_js(
                 schema=schema, bundle=mapping_bundle, release=release,
                 site_url=site_url, site_role=site_role,
@@ -223,7 +255,7 @@ def emit_bundle(
             ),
             encoding="utf-8",
         )
-        relpaths.append("demo-data.js")
+        relpaths.append(DEMO_SCRIPT)
     relpaths += emit_reporting(
         out, schema, mapping_bundle, site_role,
         release=release, generated_at=generated_at,
@@ -234,7 +266,7 @@ def emit_bundle(
     write_checksums(out, relpaths)
 
     return (
-        f"Generated deployment bundle (deploy.js, rollback.js, assess.js, "
-        f"{'demo-data.js, ' if seed else ''}manifests, reporting, INDEX.md, "
-        f"checksums.txt) in {out}."
+        f"Generated deployment bundle ({DEPLOY_SCRIPT}, {ROLLBACK_SCRIPT}, "
+        f"{ASSESS_SCRIPT}, {f'{DEMO_SCRIPT}, ' if seed else ''}manifests, "
+        f"reporting, INDEX.md, checksums.txt) in {out}."
     )

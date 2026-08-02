@@ -87,4 +87,4 @@ breach into a nine-month one or a same-day approval into a negative number.
 ## Lifecycle
 
 The decision log is audit evidence: retain per your records schedule,
-export before decommissioning, never run `rollback.js` against real rows.
+export before decommissioning, never run `rollback.js.txt` against real rows.

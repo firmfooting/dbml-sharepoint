@@ -85,4 +85,4 @@ site's audience.
   not the record); the signed document's retention follows your records
   schedule in its own system.
 - **Decommissioning**: export to Excel first (list → Export); never run the
-  generated `rollback.js` against a register containing real rows.
+  generated `rollback.js.txt` against a register containing real rows.

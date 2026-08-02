@@ -97,4 +97,4 @@ acceptance; green is *Accepted by funder* and nothing else.
 
 Grant records outlive projects (funders audit years later): retain per
 your financial-records schedule. Export before decommission; never run
-`rollback.js` against real rows.
+`rollback.js.txt` against real rows.

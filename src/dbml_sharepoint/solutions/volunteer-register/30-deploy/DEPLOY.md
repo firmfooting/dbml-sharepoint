@@ -2,8 +2,8 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = volunteer-register`. Run order: **assess** the target site (paste
-`build/assess.js`, read-only) → **review** `build/deploy-manifest.md` (must
-show 0 validation errors) → **paste** `build/deploy.js` from a Site Owner's
+`build/assess.js.txt`, read-only) → **review** `build/deploy-manifest.md` (must
+show 0 validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
 console → **verify** against the checklist below. Template-specific notes
 follow.
 
@@ -46,8 +46,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates six
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates six
 volunteers — three active (one fully checked, one inside the 90-day expiry
 window, one with a police check that was never recorded), an applicant in
 the pipeline, one on extended leave and one exited and trimmed — so every
@@ -59,7 +59,7 @@ reflex on the first screen anyone sees.
 
 **Delete the demo rows before active use.** Every demo Title begins with
 `[DEMO] `, they are matched by Title on re-paste (running it twice never
-duplicates), and `rollback.js` treats a list whose rows are *all*
+duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content. Do not seed a site that already holds
 real volunteers.
 

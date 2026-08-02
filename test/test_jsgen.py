@@ -198,7 +198,7 @@ def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> No
 
 
 def test_simple_deploy_js_matches_golden() -> None:
-    """Golden-file regression: deploy.js from simple.dbml must match
+    """Golden-file regression: the deploy script from simple.dbml must match
     test/fixtures/expected/simple-deploy.js byte-for-byte.
 
     To regenerate the golden after a legitimate template change::
@@ -219,7 +219,7 @@ def test_simple_deploy_js_matches_golden() -> None:
     golden = golden_path.read_text(encoding="utf-8")
     actual = _generate_simple_js()
     assert actual == golden, (
-        "deploy.js output has changed. "
+        "the deploy script output has changed. "
         "If the change is intentional, regenerate the golden file "
         "(see docstring above for the command)."
     )

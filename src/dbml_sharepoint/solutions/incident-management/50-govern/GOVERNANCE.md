@@ -104,4 +104,4 @@ that's an item-level setting, not a level. Your options:
 ## Lifecycle
 
 Incident records are evidence: retain per your incident/records policy;
-export before any decommission; never run `rollback.js` against real data.
+export before any decommission; never run `rollback.js.txt` against real data.

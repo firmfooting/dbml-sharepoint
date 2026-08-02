@@ -11,8 +11,8 @@ dbml-sharepoint COMMAND [OPTIONS]
 
 ## `build`
 
-Generate the full deployment bundle (deploy.js, rollback.js, assess.js,
-manifests, reporting, INDEX.md, checksums.txt — plus demo-data.js with
+Generate the full deployment bundle (deploy.js.txt, rollback.js.txt, assess.js.txt,
+manifests, reporting, INDEX.md, checksums.txt — plus demo-data.js.txt with
 `--seed`).
 
 | Option | Default | Meaning |
@@ -24,7 +24,7 @@ manifests, reporting, INDEX.md, checksums.txt — plus demo-data.js with
 | `--site-role ROLE` | `default` | Which entities deploy here; must match a `site_role` declared by the mapping's entities |
 | `--out PATH` | `./build` | Output directory |
 | `--dry-run` | off | Validate only; no JS output |
-| `--seed` | off | Also emit demo-data.js from the mapping's `demo_items` |
+| `--seed` | off | Also emit demo-data.js.txt from the mapping's `demo_items` |
 | `--extension NAME` | mapping's `extension:` | Extension to apply; resolved via entry points |
 
 Behaviour worth knowing:

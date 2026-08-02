@@ -1,9 +1,9 @@
 ---
-title: deploy.js
+title: deploy.js.txt
 sidebar_position: 1
 ---
 
-# deploy.js
+# deploy.js.txt
 
 The deployment script. Paste the whole file into the target site's
 browser console; wait for the `[SP-DEPLOY] [DONE]` line and a summary
@@ -29,7 +29,7 @@ the state of everything else.
 
 ## What a rerun does
 
-deploy.js is a reconciler, not an installer:
+deploy.js.txt is a reconciler, not an installer:
 
 - Objects that exist and verify are **skipped** (counted in the
   summary).

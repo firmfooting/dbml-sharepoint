@@ -24,7 +24,7 @@ works.
 
 ## 2. The declaration is the contract — and only the declaration
 
-deploy.js reconciles exactly what the DBML + mapping declare, and
+deploy.js.txt reconciles exactly what the DBML + mapping declare, and
 touches nothing else. Undeclared views, user rows and user-added columns
 are user property. Destructive scope (ACL `reconcile: exact`) exists
 only where the mapping explicitly opts in. This line is what makes
@@ -82,7 +82,7 @@ transport. Phase and domain logic stays with its phase even when
 fragments look similar, because forcing divergent logic through a shared
 partial couples scripts that must be able to evolve apart. The
 read-only assess script is the proof case: write helpers live in a
-separate partial precisely so assess.js never includes them.
+separate partial precisely so assess.js.txt never includes them.
 
 ## 8. The public-name rule
 
@@ -100,7 +100,7 @@ them is generated from the other — never maintained in parallel.
 
 ## 10. Byte-golden discipline
 
-deploy.js generation is pinned by a byte-exact golden fixture. Any
+deploy.js.txt generation is pinned by a byte-exact golden fixture. Any
 template change fails the golden test until the fixture is regenerated
 *deliberately* — template drift is always a reviewed decision, never an
 accident. Checksums hash LF-normalised content so the discipline holds

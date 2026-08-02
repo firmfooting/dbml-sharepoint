@@ -130,7 +130,7 @@ def test_build_writes_deploy_js_and_manifest(tmp_path: Path) -> None:
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
-    assert (out / "deploy.js").exists()
+    assert (out / "deploy.js.txt").exists()
     assert (out / "deploy-manifest.md").exists()
 
 
@@ -148,14 +148,14 @@ def test_build_writes_full_bundle(tmp_path: Path) -> None:
         "--out", str(out),
     ])
     assert result.exit_code == 0, result.output
-    for name in ("deploy.js", "rollback.js", "assess.js", "deploy-manifest.md",
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "deploy-manifest.md",
                  "assess-manifest.md", "INDEX.md", "checksums.txt"):
         assert (out / name).exists(), name
-    # assess.js stays read-only (no write verbs).
-    assert "X-HTTP-Method" not in (out / "assess.js").read_text(encoding="utf-8")
+    # assess.js.txt stays read-only (no write verbs).
+    assert "X-HTTP-Method" not in (out / "assess.js.txt").read_text(encoding="utf-8")
     # The always-generated scripts carry the provenance timestamp.
-    assert "Generated at:" in (out / "rollback.js").read_text(encoding="utf-8")
-    assert "Generated at:" in (out / "assess.js").read_text(encoding="utf-8")
+    assert "Generated at:" in (out / "rollback.js.txt").read_text(encoding="utf-8")
+    assert "Generated at:" in (out / "assess.js.txt").read_text(encoding="utf-8")
     # Reporting ships with every build.
     assert (out / "reporting" / "REPORTING.md").exists()
     assert (out / "reporting" / "data-dictionary.md").exists()
@@ -182,7 +182,7 @@ def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
         digest, _, relpath = line.partition("  ")
         listed[relpath] = digest
     base = {
-        "deploy.js", "rollback.js", "assess.js",
+        "deploy.js.txt", "rollback.js.txt", "assess.js.txt",
         "deploy-manifest.md", "assess-manifest.md", "INDEX.md",
     }
     assert base <= set(listed)
@@ -201,7 +201,7 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     release."""
     out = tmp_path / "build"
     out.mkdir()
-    for name in ("deploy.js", "rollback.js", "assess.js", "assess-manifest.md",
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
                  "INDEX.md", "checksums.txt"):
         (out / name).write_text("stale", encoding="utf-8")
     (out / "reporting").mkdir()
@@ -226,7 +226,7 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
         "--out", str(out),
     ])
     assert result.exit_code == 1
-    for name in ("deploy.js", "rollback.js", "assess.js", "assess-manifest.md",
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
                  "INDEX.md", "checksums.txt"):
         assert not (out / name).exists(), name
     assert not (out / "reporting").exists()
@@ -248,7 +248,7 @@ def test_build_rejects_invalid_site_role(tmp_path: Path) -> None:
         "--out", str(out),
     ])
     assert result.exit_code != 0
-    assert not (out / "deploy.js").exists()
+    assert not (out / "deploy.js.txt").exists()
 
 
 def test_build_rejects_extension_that_requires_project_cli(
@@ -289,7 +289,7 @@ def test_build_rejects_extension_that_requires_project_cli(
 
 def test_build_rejects_non_https_site_url(tmp_path: Path) -> None:
     """A5: a non-https / malformed --site-url is rejected at parse time (it is
-    interpolated into deploy.js and drives the site-match preflight)."""
+    interpolated into deploy.js.txt and drives the site-match preflight)."""
     out = tmp_path / "build"
     result = runner.invoke(app, [
         "build",
@@ -301,7 +301,7 @@ def test_build_rejects_non_https_site_url(tmp_path: Path) -> None:
         "--out", str(out),
     ])
     assert result.exit_code != 0
-    assert not (out / "deploy.js").exists()
+    assert not (out / "deploy.js.txt").exists()
 
 
 def test_build_reports_validation_errors_without_crashing(tmp_path: Path) -> None:
@@ -334,13 +334,13 @@ def test_build_reports_validation_errors_without_crashing(tmp_path: Path) -> Non
     assert not isinstance(result.exception, ValueError), result.output
     # The findings manifest is still written before aborting.
     assert (out / "deploy-manifest.md").exists()
-    assert not (out / "deploy.js").exists()
+    assert not (out / "deploy.js.txt").exists()
 
 
 def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
     out = tmp_path / "build"
     out.mkdir()
-    for name in ("deploy.js", "rollback.js", "assess.js", "INDEX.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "INDEX.md", "checksums.txt"):
         (out / name).write_text("stale", encoding="utf-8")
     (out / "reporting").mkdir()
     (out / "reporting" / "stale.pq").write_text("stale", encoding="utf-8")
@@ -355,7 +355,7 @@ def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
         "--dry-run",
     ])
     assert result.exit_code == 0, result.output
-    for name in ("deploy.js", "rollback.js", "assess.js", "INDEX.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "INDEX.md", "checksums.txt"):
         assert not (out / name).exists(), name
     assert not (out / "reporting").exists()
     assert (out / "deploy-manifest.md").exists()

@@ -7,7 +7,7 @@ slug: /
 # dbml-sharepoint
 
 Turn a [DBML](https://dbml.dbdiagram.io/docs/) schema plus a YAML mapping
-into an **idempotent, fail-closed, browser-console `deploy.js`** that
+into an **idempotent, fail-closed, browser-console `deploy.js.txt`** that
 provisions SharePoint Online lists, columns, lookups, views, indexes,
 permission levels, groups and ACLs — with **no tenant admin rights, no
 premium licence, and nothing installed on the target**. If you can open
@@ -19,10 +19,10 @@ schema.dbml + mapping.yaml + release.yaml
         ▼   dbml-sharepoint build
 ┌────────────────────────────────────┐
 │ deploy-manifest.md   ← read first  │
-│ assess.js            ← probe       │
-│ deploy.js            ← paste       │
-│ demo-data.js         ← demonstrate │
-│ rollback.js          ← escape      │
+│ assess.js.txt            ← probe       │
+│ deploy.js.txt            ← paste       │
+│ demo-data.js.txt         ← demonstrate │
+│ rollback.js.txt          ← escape      │
 │ reporting/           ← analyse     │
 └────────────────────────────────────┘
         │

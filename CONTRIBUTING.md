@@ -38,7 +38,7 @@ uv run j2lint --ignore jinja-statements-indentation single-statement-per-line --
 
 Notes that save you a round-trip:
 
-- **The deploy.js golden.** Template changes fail
+- **The deploy.js.txt golden.** Template changes fail
   `test_simple_deploy_js_matches_golden` until the fixture under
   `test/fixtures/expected/` is deliberately regenerated. Review the
   fixture diff like code — it is.

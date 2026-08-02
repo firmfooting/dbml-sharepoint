@@ -69,7 +69,7 @@
 
   // Flip to true for per-request timing diagnostics (method, URL, status,
   // ms). Default false keeps the console readable; edit in the pasted
-  // script — no rebuild needed. deploy.js additionally prints a per-phase
+  // script — no rebuild needed. deploy.js.txt additionally prints a per-phase
   // seconds table before DONE when this is on.
   const DEBUG = false;
   const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
@@ -3185,7 +3185,7 @@
 
   for (const seed of SCHEMA.seed_items) {
     // Fresh digest per seed: FormDigestValue expires (~30 min), so a
-    // long run must not reuse one digest across every POST (rollback.js
+    // long run must not reuse one digest across every POST (rollback.js.txt
     // per-operation getDigest pattern).
     const digest5 = await getDigest();
     try {

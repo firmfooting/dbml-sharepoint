@@ -121,4 +121,4 @@ than oversights:
 Code and key records are emergency/security evidence — retain long, per
 your schedule. Message logs contain personal information — retain per your
 records authority, then dispose. Export before decommission; never run
-`rollback.js` against real rows.
+`rollback.js.txt` against real rows.

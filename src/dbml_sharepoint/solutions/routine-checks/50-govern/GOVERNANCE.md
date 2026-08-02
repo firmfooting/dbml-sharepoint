@@ -89,5 +89,5 @@ auditor looks.
 ## Lifecycle
 
 Check histories are compliance evidence (cold chain especially) — retain
-per your schedule. Export before decommission; never run `rollback.js`
+per your schedule. Export before decommission; never run `rollback.js.txt`
 against real rows.

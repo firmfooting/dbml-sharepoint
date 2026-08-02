@@ -94,4 +94,4 @@ audience to write for.
 
 Maintenance history retention follows your safety/records schedule (long —
 it outlives the equipment). Export before decommission; never run
-`rollback.js` against real rows.
+`rollback.js.txt` against real rows.

@@ -61,7 +61,7 @@ placeholder URL is a dead link on every form until somebody remembers to
 replace it, so point at your risk-process document from the column
 descriptions instead.
 
-**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes six `[DEMO] `-titled rows — one per rating band, a Tolerate risk
 inside its tolerance window, and a Closed risk with a closure statement — so
 every view, colour band and score bar renders on a first look. See

@@ -116,6 +116,6 @@ edited several times a day burns versions fast, and old versions of a huddle
 board are worthless) and 100 on `TH_Escalation`, where the edit trail is the
 audit trail.
 
-Export before decommissioning. Never run `rollback.js` against a site holding
+Export before decommissioning. Never run `rollback.js.txt` against a site holding
 real rows — it is for a failed first provision on an empty site, and for
 clearing demo data.

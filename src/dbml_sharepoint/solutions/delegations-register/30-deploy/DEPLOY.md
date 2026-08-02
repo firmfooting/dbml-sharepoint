@@ -2,9 +2,9 @@
 
 Shared procedure: [`templates/README.md`](../../README.md) with
 `<name> = delegations-register`. Run order: **assess** the target site
-(paste `build/assess.js`, read-only; the verdict must be COMPATIBLE or an
+(paste `build/assess.js.txt`, read-only; the verdict must be COMPATIBLE or an
 accepted DEGRADED) → **review** `build/deploy-manifest.md` (must show 0
-validation errors) → **paste** `build/deploy.js` from a Site Owner's
+validation errors) → **paste** `build/deploy.js.txt` from a Site Owner's
 console → **verify** against the checklist below. Template-specific notes
 follow.
 
@@ -54,8 +54,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-That bundle contains an extra file, `demo-data.js`. Paste `deploy.js`
-first, then `demo-data.js`, from the same bundle. It creates five rows —
+That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
+first, then `demo-data.js.txt`, from the same bundle. It creates five rows —
 four current authorities across four areas and four roles, so both grouped
 views have more than one group, two of them inside the ninety-day review
 window, and one superseded row carrying its supersession trail.
@@ -63,7 +63,7 @@ window, and one superseded row carrying its supersession trail.
 **Delete the demo rows before loading from your instrument.** Every demo
 Title begins with `[DEMO] `, so they are obvious in every view, they are
 matched by Title on re-paste (running it twice never duplicates), and
-`rollback.js` treats a list whose rows are *all* demo-marked as demo-only
+`rollback.js.txt` treats a list whose rows are *all* demo-marked as demo-only
 content. A demo delegation left in a live register is an authority nobody
 approved.
 
