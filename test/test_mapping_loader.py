@@ -391,29 +391,36 @@ def test_calculated_formulas_default_empty_when_absent() -> None:
 
 
 def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: Path) -> None:
-    # Left as fragments: the payload is a fixture's text with a block appended,
-    # and the leading newline is load-bearing against however the fixture ends.
-    (tmp_path / "m.yaml").write_text(
-        (FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8")
-        + (
-            "\ngroups:\n"
-            "  - name: GH List Administrators\n"
-            "    description: Test admin group\n"
-            "    owner_group: Site Owners\n"
-            "    allow_members_edit_membership: false\n"
-            "    allow_request_to_join_leave: false\n"
-            "    auto_accept_request_to_join_leave: false\n"
-            "    only_allow_members_view_membership: false\n"
-            "    enroll_operator_during_deploy: true\n"
-            "  - name: GH Automation\n"
-            "    description: Test automation group\n"
-            "    owner_group: Site Owners\n"
-            "    allow_members_edit_membership: false\n"
-            "    allow_request_to_join_leave: false\n"
-            "    auto_accept_request_to_join_leave: false\n"
-            "    only_allow_members_view_membership: true\n"
+    # The old form prepended "\n" to the appended block, with a comment saying
+    # it was load-bearing against however the fixture ends. The fixture does end
+    # with a newline, so it only produced a blank line — and `blocks` gives the
+    # same guarantee unconditionally, since `_body` normalises every part to
+    # exactly one trailing newline. So this is both shorter and more robust than
+    # the defence it replaces. `prefix=None`: the fixture carries its own.
+    write_mapping(
+        tmp_path,
+        blocks(
+            (FIXTURES / "calculated-mapping.yaml").read_text(encoding="utf-8"),
+            """
+            groups:
+              - name: GH List Administrators
+                description: Test admin group
+                owner_group: Site Owners
+                allow_members_edit_membership: false
+                allow_request_to_join_leave: false
+                auto_accept_request_to_join_leave: false
+                only_allow_members_view_membership: false
+                enroll_operator_during_deploy: true
+              - name: GH Automation
+                description: Test automation group
+                owner_group: Site Owners
+                allow_members_edit_membership: false
+                allow_request_to_join_leave: false
+                auto_accept_request_to_join_leave: false
+                only_allow_members_view_membership: true
+            """,
         ),
-        encoding="utf-8",
+        prefix=None,
     )
     bundle = load_mapping(tmp_path / "m.yaml")
     perms = bundle.mapping.permissions
@@ -1288,30 +1295,27 @@ def test_quoted_singleton_is_rejected(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("section", ["form_visibility", "column_validation"])
 def test_formula_sections_reject_non_mapping_columns(tmp_path: Path, section: str) -> None:
-    # Left as fragments: the section name is an f-string over the parameter.
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project: { kind: List, base_template: 100, site_role: default }\n"
-        f"{section}:\n"
-        "  Project:\n"
-        "    columns: []\n",
-        encoding="utf-8",
-    )
+    # The braces live in entities(), so the f-string half needs no escaping.
+    write_mapping(tmp_path, blocks(entities("Project"), f"""
+        {section}:
+          Project:
+            columns: []
+    """))
     with pytest.raises(ValueError, match=r"columns.*mapping"):
         load_mapping(tmp_path / "m.yaml")
 
 
 @pytest.mark.parametrize("empty_filter", ["[]", "{}"])
 def test_views_reject_explicit_empty_filters(tmp_path: Path, empty_filter: str) -> None:
-    # Left as fragments: the last line is an f-string over the parameter.
-    write_mapping(tmp_path, _views_yaml(
-        "views:\n"
-        "  Project:\n"
-        "    - title: Open\n"
-        "      fields: [Title]\n"
-        f"      where: {empty_filter}\n",
-    ))
+    # `empty_filter` is "[]" or "{}" — substituted at runtime, so the braces
+    # never reach the f-string literal and need no escaping.
+    write_mapping(tmp_path, _views_yaml(f"""
+        views:
+          Project:
+            - title: Open
+              fields: [Title]
+              where: {empty_filter}
+    """))
     with pytest.raises(ValueError, match=r"where.*(empty|expected)|empty group"):
         load_mapping(tmp_path / "m.yaml")
 
