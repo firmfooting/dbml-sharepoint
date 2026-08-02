@@ -11,7 +11,12 @@ import yaml
 from pyparsing.exceptions import ParseBaseException
 
 from dbml_sharepoint.analysis.validator import validate_all
-from dbml_sharepoint.bundle import SeedRequiresDemoItemsError, clear_generated, emit_bundle
+from dbml_sharepoint.bundle import (
+    SeedRequiresDemoItemsError,
+    clear_generated,
+    emit_bundle,
+    write_artifact,
+)
 from dbml_sharepoint.extension import SiteContext, resolve_extension
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
@@ -314,7 +319,7 @@ def execute_build(
         generated_at=generated_at,
         manifest_extras=ext.manifest_extras(bundle, parsed_schema),
     )
-    (out / "deploy-manifest.md").write_text(manifest_md, encoding="utf-8")
+    write_artifact(out / "deploy-manifest.md", manifest_md)
 
     if errors:
         typer.echo(f"Validation produced {len(errors)} error(s); aborting JS generation.", err=True)
@@ -440,10 +445,10 @@ def report(
     pq_dir.mkdir(parents=True, exist_ok=True)
     sql_dir.mkdir(parents=True, exist_ok=True)
     for filename, content in queries.items():
-        (pq_dir / filename).write_text(content, encoding="utf-8")
-    (sql_dir / "views.sql").write_text(views_sql, encoding="utf-8")
-    (out / "REPORTING.md").write_text(reporting_md, encoding="utf-8")
-    (out / "DATA-DICTIONARY.md").write_text(dictionary_md, encoding="utf-8")
+        write_artifact(pq_dir / filename, content)
+    write_artifact(sql_dir / "views.sql", views_sql)
+    write_artifact(out / "REPORTING.md", reporting_md)
+    write_artifact(out / "DATA-DICTIONARY.md", dictionary_md)
     typer.echo(
         f"Generated {len(queries)} Power Query file(s), sql/views.sql, "
         f"REPORTING.md and DATA-DICTIONARY.md in {out}.",

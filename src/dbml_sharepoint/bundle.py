@@ -7,10 +7,27 @@ list, stale-artifact clearing (so no failure mode leaves a pasteable
 script from an older build), platform-stable content hashing, and the
 INDEX.md / checksums.txt writers.
 
-Hashing is of LF-normalised UTF-8 content: ``Path.write_text`` emits CRLF
-on Windows and LF elsewhere, so raw-byte hashes would differ by build
-platform. Normalising ``\\r\\n`` to ``\\n`` first makes the digests
-stable — the same discipline as the release.yaml config_snapshot pins.
+**Every artifact is written UTF-8 with LF, on every platform** — through
+``write_artifact``, which is the only writer the emission path may use.
+
+``Path.write_text`` defaults to text mode, so it emits CRLF on Windows and
+LF elsewhere. That gave a bundle whose bytes depended on the machine that
+built it, and two consequences fell out of it:
+
+1. Raw-byte digests would differ by build platform, so ``sha256_lf``
+   hashes LF-normalised content to keep them stable.
+2. On Windows that stable digest then described content that was NOT on
+   disk, so ``sha256sum -c``, ``Get-FileHash`` and ``certutil`` all
+   disagreed with ``checksums.txt``. The bundle could only be verified by
+   a bespoke normalising one-liner.
+
+Writing LF unconditionally removes the discrepancy rather than
+compensating for it: normalised content IS the content on disk, so the
+digests stay platform-stable AND every standard tool validates the bundle.
+
+``sha256_lf`` is deliberately kept. It is a no-op for anything written
+through ``write_artifact``, and that is the point — it is the guard for a
+writer that bypasses it, which is exactly how the CRLF got in.
 """
 
 import hashlib
@@ -121,6 +138,23 @@ def clear_generated(out: Path, *, reporting: bool = False) -> None:
         shutil.rmtree(out / "reporting", ignore_errors=True)
 
 
+def write_artifact(path: Path, text: str) -> None:
+    """Write one bundle artifact: UTF-8, LF, no BOM. The only writer.
+
+    ``newline="\\n"`` is the whole reason this exists. Fourteen call sites
+    each spelled ``write_text(text, encoding="utf-8")`` and silently
+    inherited the platform newline, which is how a Windows build came to
+    produce a bundle no standard checksum tool could verify. A default
+    nobody states at the call site is a default nobody reviews.
+
+    Creates parent directories: reporting writes into ``reporting/sql/``
+    and ``reporting/powerquery/``, and having the writer own that keeps
+    every caller from repeating the mkdir.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
 def sha256_lf(text: str) -> str:
     """SHA-256 hex digest of ``text`` with CRLF normalised to LF (UTF-8)."""
     return hashlib.sha256(text.replace("\r\n", "\n").encode("utf-8")).hexdigest()
@@ -130,30 +164,21 @@ def write_checksums(out: Path, relpaths: list[str]) -> None:
     """Write ``checksums.txt``: one ``<sha256>  <relpath>`` line per artifact.
 
     Plain sha256sum format — no header lines (keeps ``sha256sum -c``
-    clean) — sorted by relpath, POSIX separators. The verify one-liner
-    ships in INDEX.md.
+    clean) — sorted by relpath, POSIX separators.
+
+    That claim is now true on every platform, which it was not before:
+    ``checksums.txt`` itself gained a CR per line on Windows, and sha256sum
+    reads a trailing CR as part of the FILENAME, so it reported "FAILED
+    open or read" for every entry. Both this file and the artifacts it
+    describes go through ``write_artifact`` and are LF everywhere, so the
+    recorded digest matches the bytes on disk and the standard tools agree.
+    ``test_a_windows_built_bundle_verifies_with_raw_byte_hashing`` pins it.
     """
     lines = [
         f"{sha256_lf((out / relpath).read_text(encoding='utf-8'))}  {relpath}"
         for relpath in sorted(relpaths)
     ]
-    # newline="\n", not the platform default. This file is machine-readable
-    # input, and the docstring above promises "plain sha256sum format ...
-    # keeps `sha256sum -c` clean". Written in text mode on Windows every
-    # line gains a CR, which sha256sum takes as part of the FILENAME -- it
-    # reports "rollback.js.txt: FAILED open or read" for every entry, so the
-    # format claim was false for any bundle built on Windows.
-    #
-    # Scope, so nobody reads more into this than it does: it makes the file
-    # WELL-FORMED, not the bundle sha256sum-verifiable. The digests are of
-    # LF-normalised bytes (see sha256_lf), so on a Windows-built bundle
-    # whose artifacts sit on disk with CRLF the hashes still will not match
-    # bare `sha256sum -c`. That is deliberate, and INDEX.md documents it by
-    # advertising an LF-normalising Python one-liner rather than sha256sum.
-    # On a POSIX-built bundle the two agree and `-c` works.
-    (out / "checksums.txt").write_text(
-        "\n".join(lines) + "\n", encoding="utf-8", newline="\n",
-    )
+    write_artifact(out / "checksums.txt", "\n".join(lines) + "\n")
 
 
 def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> None:
@@ -173,17 +198,30 @@ def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> No
         ("Run order: follow **How to run this deployment** in "
          "`deploy-manifest.md`."),
         "",
-        "Integrity: `checksums.txt` lists the SHA-256 of each file's",
-        "LF-normalised UTF-8 bytes (stable across Windows/POSIX line",
-        "endings). Verify a file with:",
+        ("Integrity: `checksums.txt` lists the SHA-256 of every file, in "
+         "plain"),
+        ("`sha256sum` format. Every artifact is written UTF-8 with LF on "
+         "every"),
+        ("platform, so the digests describe the bytes on disk and a bundle "
+         "built"),
+        "on Windows and one built on Linux are identical.",
+        "",
+        "Verify the whole bundle from this directory:",
         "",
         "```bash",
-        ('python -c "import hashlib,sys;'
-         "print(hashlib.sha256(open(sys.argv[1],'rb').read()"
-         ".replace(b'\\r\\n',b'\\n')).hexdigest())\" <file>"),
+        "sha256sum -c checksums.txt",
+        "```",
+        "",
+        "PowerShell, with no extra tools installed:",
+        "",
+        "```powershell",
+        ("Get-Content checksums.txt | ForEach-Object { $h, $f = $_ -split "
+         "'  ', 2"),
+        ("  if ((Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash -ine "
+         "$h) { \"FAILED: $f\" } }"),
         "```",
     ]
-    (out / "INDEX.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_artifact(out / "INDEX.md", "\n".join(lines) + "\n")
 
 
 def emit_bundle(
@@ -224,7 +262,8 @@ def emit_bundle(
             "--seed requested but the mapping declares no demo_items.",
         )
 
-    (out / DEPLOY_SCRIPT).write_text(
+    write_artifact(
+        out / DEPLOY_SCRIPT,
         generate_deploy_js(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
@@ -232,30 +271,29 @@ def emit_bundle(
             generated_at=generated_at,
             extension=extension, site_context=site_context,
         ),
-        encoding="utf-8",
     )
-    (out / ROLLBACK_SCRIPT).write_text(
+    write_artifact(
+        out / ROLLBACK_SCRIPT,
         generate_rollback_js(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
         ),
-        encoding="utf-8",
     )
-    (out / ASSESS_SCRIPT).write_text(
+    write_artifact(
+        out / ASSESS_SCRIPT,
         generate_assess_js(
             schema=schema, bundle=mapping_bundle, release=release,
             site_url=site_url, site_role=site_role,
             source_dbml=schema_name, generated_at=generated_at,
         ),
-        encoding="utf-8",
     )
-    (out / "assess-manifest.md").write_text(
+    write_artifact(
+        out / "assess-manifest.md",
         generate_assess_manifest(
             schema=schema, bundle=mapping_bundle,
             site_url=site_url, site_role=site_role,
         ),
-        encoding="utf-8",
     )
 
     relpaths = [
@@ -263,13 +301,13 @@ def emit_bundle(
         ASSESS_SCRIPT, "assess-manifest.md",
     ]
     if seed:
-        (out / DEMO_SCRIPT).write_text(
+        write_artifact(
+            out / DEMO_SCRIPT,
             generate_demo_js(
                 schema=schema, bundle=mapping_bundle, release=release,
                 site_url=site_url, site_role=site_role,
                 source_dbml=schema_name, generated_at=generated_at,
             ),
-            encoding="utf-8",
         )
         relpaths.append(DEMO_SCRIPT)
     relpaths += emit_reporting(
