@@ -3,9 +3,11 @@ from pathlib import Path
 
 import pytest
 from _builders import ID_PK, TITLE, table
+from _findings import by_severity, codes, messages, none_of, only
 from _packs import blocks, entities, entity, pack, write_dbml
 from _validator_helpers import _view_errors, _view_inputs
 
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
@@ -25,7 +27,8 @@ def test_view_on_unknown_entity_is_error(tmp_path: Path) -> None:
               fields: [Title]
         """,
     )
-    assert any("Widget" in f.message and "views" in f.message for f in errors)
+    finding = only(errors, FindingCode.UNKNOWN_ENTITY)
+    assert finding.location == Location(Section.VIEWS, entity="Widget")
 
 def test_view_previous_titles_cannot_collide_or_claim_all_items(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -41,10 +44,24 @@ def test_view_previous_titles_cannot_collide_or_claim_all_items(tmp_path: Path) 
               fields: [Title]
         """,
     )
-    assert any("Open" in f.message and "own title" in f.message for f in errors)
-    assert any("All Items" in f.message and "reserved" in f.message for f in errors)
-    assert any("Legacy" in f.message and "more than one" in f.message for f in errors)
-    assert any("Open" in f.message and "current title" in f.message for f in errors)
+    own = only(errors, FindingCode.PREVIOUS_TITLE_IS_OWN_TITLE)
+    assert own.location == Location(
+        Section.VIEWS, entity="Project", view="Open", sub="renamed_from",
+    )
+    reserved = only(errors, FindingCode.PREVIOUS_TITLE_IS_RESERVED)
+    assert "All Items" in reserved.message
+    current = only(errors, FindingCode.PREVIOUS_TITLE_IS_A_CURRENT_TITLE)
+    assert current.location == Location(
+        Section.VIEWS, entity="Project", view="Closed", sub="renamed_from",
+    )
+    # The clashing title lives only in the prose: this finding is located on
+    # the view that claimed it, not on the view that owns it.
+    assert "'Open'" in current.message
+    # 'Open' and 'Legacy' are both claimed twice, and the entity-level finding
+    # carries no view to tell the two apart.
+    claimed = messages(errors, FindingCode.PREVIOUS_TITLE_CLAIMED_TWICE)
+    assert len(claimed) == 2, claimed
+    assert any("'Legacy'" in m for m in claimed)
 
 def test_view_field_references_must_be_rendered_columns(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -61,8 +78,18 @@ def test_view_field_references_must_be_rendered_columns(tmp_path: Path) -> None:
               group_by: { field: GoneToo }
         """,
     )
-    for name in ("Nope", "Missing", "AlsoMissing", "GoneToo"):
-        assert any(name in f.message for f in errors), name
+    # fields, sort and group_by are one rule; the clause and the column it
+    # names survive only in the prose, so the names are the value here.
+    unrendered = messages(errors, FindingCode.COLUMN_NOT_RENDERED)
+    assert len(unrendered) == 3, unrendered
+    for name in ("Nope", "AlsoMissing", "GoneToo"):
+        assert any(name in m for m in unrendered), name
+    # `where` goes through the condition grammar, which puts the column in the
+    # location instead.
+    where = only(errors, FindingCode.CONDITION_FIELD_NOT_RENDERED)
+    assert where.location == Location(
+        Section.VIEWS, entity="Project", view="V", sub="where.Missing",
+    )
 
 def test_view_operator_allowlist(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -76,7 +103,11 @@ def test_view_operator_allowlist(tmp_path: Path) -> None:
                 - { field: Status, op: like, value: x }
         """,
     )
-    assert any("like" in f.message and "op" in f.message.lower() for f in errors)
+    finding = only(errors, FindingCode.CONDITION_OPERATOR_UNKNOWN)
+    assert finding.location == Location(
+        Section.VIEWS, entity="Project", view="V", sub="where.Status",
+    )
+    assert "'like'" in finding.message
 
 def test_view_condition_value_pairing(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -91,8 +122,16 @@ def test_view_condition_value_pairing(tmp_path: Path) -> None:
                 - { field: SortOrder, op: eq }
         """,
     )
-    assert any("is_null" in f.message and "value" in f.message for f in errors)
-    assert any("eq" in f.message and "value" in f.message for f in errors)
+    surplus = only(errors, FindingCode.CONDITION_VALUE_NOT_ALLOWED)
+    assert surplus.location == Location(
+        Section.VIEWS, entity="Project", view="V", sub="where.Status",
+    )
+    assert "'is_null'" in surplus.message
+    absent = only(errors, FindingCode.CONDITION_VALUE_MISSING)
+    assert absent.location == Location(
+        Section.VIEWS, entity="Project", view="V", sub="where.SortOrder",
+    )
+    assert "'eq'" in absent.message
 
 def test_unindexed_view_filter_warns_with_threshold_and_fields(tmp_path: Path) -> None:
     schema, bundle = _view_inputs(
@@ -108,21 +147,24 @@ def test_unindexed_view_filter_warns_with_threshold_and_fields(tmp_path: Path) -
                   - { field: DueDate, op: geq, value: today }
         """,
     )
-    warnings = [
-        finding.message
-        for finding in validate_against_mapping(schema, bundle)
-        if finding.severity == "warning" and "effective index" in finding.message
-    ]
-    assert len(warnings) == 1
-    assert "Due work" in warnings[0]
-    assert "DueDate" in warnings[0] and "Status" in warnings[0]
-    assert "5,000" in warnings[0]
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
+    assert finding.severity == "warning"
+    assert finding.location == Location(
+        Section.VIEWS, entity="Project", view="Due work", sub="where",
+    )
+    # Which columns are exposed and what the threshold is: the two things an
+    # author cannot act on without.
+    assert "DueDate" in finding.message and "Status" in finding.message
+    assert "5,000" in finding.message
     # One indexed condition suffices and its position is irrelevant — measured
     # at 6,000 items, both orderings of a degenerate AND served. Selectivity is
     # the caveat that survives, so the message must still carry one.
-    assert "position in the filter does not matter" in warnings[0]
-    assert "selectivity does" in warnings[0]
-    assert "filter order" not in warnings[0]
+    assert "position in the filter does not matter" in finding.message
+    assert "selectivity does" in finding.message
+    assert "filter order" not in finding.message
 
 def test_explicit_or_unique_filter_index_clears_warning(tmp_path: Path) -> None:
     schema, bundle = _view_inputs(
@@ -141,12 +183,10 @@ def test_explicit_or_unique_filter_index_clears_warning(tmp_path: Path) -> None:
     table = schema.tables[0]
     table.indexes.append(TableIndex(("Status",)))
     next(column for column in table.columns if column.name == "SortOrder").unique = True
-    warnings = [
-        finding.message
-        for finding in validate_against_mapping(schema, bundle)
-        if finding.severity == "warning" and "view threshold" in finding.message
-    ]
-    assert not warnings
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
 
 def test_native_id_filter_and_view_without_filter_do_not_warn(tmp_path: Path) -> None:
     schema, bundle = _view_inputs(
@@ -161,12 +201,10 @@ def test_native_id_filter_and_view_without_filter_do_not_warn(tmp_path: Path) ->
               fields: [Title]
         """,
     )
-    warnings = [
-        finding.message
-        for finding in validate_against_mapping(schema, bundle)
-        if finding.severity == "warning" and "view threshold" in finding.message
-    ]
-    assert not warnings
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
 
 def test_indexed_lookup_filter_does_not_warn(tmp_path: Path) -> None:
     schema, bundle = pack(
@@ -189,18 +227,13 @@ def test_indexed_lookup_filter_does_not_warn(tmp_path: Path) -> None:
                   where: [{ field: Parent, op: eq, value: 1 }]
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
     # No threshold warning at all: the only filter column IS indexed, and an
-    # index on a Lookup counts. Asserted over every threshold finding rather
-    # than the old "indexed filter" phrasing, so a warning reintroduced under
-    # any wording fails here.
-    warnings = [
-        finding.message
-        for finding in findings
-        if finding.severity == "warning"
-        and "list view threshold" in finding.message
-    ]
-    assert warnings == []
+    # index on a Lookup counts. Asserted on the code rather than on any
+    # phrasing, so a warning reintroduced under any wording fails here.
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
 
 @pytest.mark.parametrize(
     "display_column",
@@ -243,18 +276,18 @@ def test_view_filtered_on_lookup_targets_display_column_does_not_warn(
         """),
     )
     findings = validate_against_mapping(schema, bundle)
-    threshold_warnings = [
-        f.message for f in findings
-        if f.severity == "warning" and "list view threshold" in f.message
-    ]
-    display_warnings = [
-        m for m in threshold_warnings if "views[Event].Filtered by display" in m
-    ]
-    other_warnings = [
-        m for m in threshold_warnings if "views[Event].Filtered by other" in m
-    ]
-    assert display_warnings == [], display_warnings
-    assert other_warnings != [], "the check must still warn on a real gap"
+    warned_on = {
+        f.location for f in findings
+        if f.code == FindingCode.UNINDEXED_FILTER_COLUMNS
+    }
+    on_display = Location(
+        Section.VIEWS, entity="Event", view="Filtered by display", sub="where",
+    )
+    on_other = Location(
+        Section.VIEWS, entity="Event", view="Filtered by other", sub="where",
+    )
+    assert on_display not in warned_on, warned_on
+    assert on_other in warned_on, "the check must still warn on a real gap"
 
 def test_indexed_person_filter_does_not_warn(tmp_path: Path) -> None:
     """An indexed Person column counts as a useful index.
@@ -276,17 +309,14 @@ def test_indexed_person_filter_does_not_warn(tmp_path: Path) -> None:
                   where: [{ field: RequestedBy, op: eq, value: me }]
         """),
     )
-    warnings = [
-        finding.message
-        for finding in validate_against_mapping(schema, bundle)
-        if finding.severity == "warning"
-        and "list view threshold" in finding.message
-    ]
     # An indexed Person column is a useful index. Measured at 6,000 items with
     # the person projected into the view and the join verified — see
     # _LOOKUP_FIELD_TYPES. This is the personal-work-queue idiom the template
     # library ships, and it needs no remedy.
-    assert warnings == []
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
 
 def test_system_column_filter_is_not_warned_about(tmp_path: Path) -> None:
     """A warning must name a remedy the author can carry out. `Created` is
@@ -303,12 +333,10 @@ def test_system_column_filter_is_not_warned_about(tmp_path: Path) -> None:
               where: [{ field: Created, op: geq, value: today }]
         """,
     )
-    warnings = [
-        finding.message
-        for finding in validate_against_mapping(schema, bundle)
-        if finding.severity == "warning" and "list view threshold" in finding.message
-    ]
-    assert not warnings, warnings
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
 
     sys_dbml = write_dbml(
         tmp_path,
@@ -337,23 +365,24 @@ def test_null_only_filter_recommends_an_index(tmp_path: Path) -> None:
               where: [{ field: DueDate, op: is_null }]
         """,
     )
-    warnings = [
-        finding.message
-        for finding in validate_against_mapping(schema, bundle)
-        if finding.severity == "warning" and "list view threshold" in finding.message
-    ]
-    assert len(warnings) == 1
-    assert "Still open" in warnings[0]
-    assert "add a bare dbml index" in warnings[0].lower()
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.UNINDEXED_FILTER_COLUMNS,
+    )
+    assert finding.severity == "warning"
+    assert finding.location == Location(
+        Section.VIEWS, entity="Project", view="Still open", sub="where",
+    )
+    assert "add a bare dbml index" in finding.message.lower()
     # The null-test remedy, not the comparison one — they differ, and a
     # null-only filter reaching the comparison branch would recommend indexing
     # "a selective filter column" when the only filter column IS the null test.
-    assert "50 of 6,000" not in warnings[0]  # the pair is 50 of 60, not of 6,000
-    assert "50 of 60" in warnings[0]
-    assert "unverified" not in warnings[0]
+    assert "50 of 6,000" not in finding.message  # the pair is 50 of 60, not of 6,000
+    assert "50 of 60" in finding.message
+    assert "unverified" not in finding.message
     # The failure is silent, and the message has to say so. "May be truncated"
     # reads as a risk an author can wait to see; there is nothing to see.
-    assert "no error" in warnings[0]
+    assert "no error" in finding.message
 
 def test_view_widths_keys_must_be_view_fields(tmp_path: Path) -> None:
     # SortOrder IS a rendered column, but a width on a column the view does
@@ -370,8 +399,11 @@ def test_view_widths_keys_must_be_view_fields(tmp_path: Path) -> None:
                 SortOrder: 120
         """,
     )
-    assert any("widths" in f.message and "SortOrder" in f.message for f in errors)
-    assert not any("widths" in f.message and "'Title'" in f.message for f in errors)
+    # One finding, so the width on Title — a column the view DOES show — did
+    # not produce one.
+    finding = only(errors, FindingCode.WIDTH_COLUMN_NOT_DISPLAYED)
+    assert finding.location == Location(Section.VIEWS, entity="Project", view="V")
+    assert "SortOrder" in finding.message
 
 def test_view_widths_pixel_bounds(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -386,8 +418,12 @@ def test_view_widths_pixel_bounds(tmp_path: Path) -> None:
                 Status: 5000
         """,
     )
-    assert any("widths[Title]" in f.message and "16" in f.message for f in errors)
-    assert any("widths[Status]" in f.message and "2000" in f.message for f in errors)
+    # Both bounds are on one view, so the location cannot tell the two apart:
+    # the width key and the bound it broke are the values in the prose.
+    out_of_range = messages(errors, FindingCode.WIDTH_OUT_OF_RANGE)
+    assert len(out_of_range) == 2, out_of_range
+    assert any("widths[Title]" in m and "16" in m for m in out_of_range)
+    assert any("widths[Status]" in m and "2000" in m for m in out_of_range)
 
 def test_demo_items_validated(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -407,12 +443,17 @@ def test_demo_items_validated(tmp_path: Path) -> None:
                 SortOrder: { demo_ref: ghost }
         """,
     )
-    assert any("[DEMO] " in f.message and "Title" in f.message for f in errors)
-    assert any("Sideways" in f.message and "status" in f.message for f in errors)
-    assert any("Nope" in f.message and "writable" in f.message for f in errors)
-    assert any("DueDate" in f.message and "today" in f.message for f in errors)
-    assert any("duplicate demo key" in f.message for f in errors)
-    assert any("ghost" in f.message for f in errors)
+    # Six deliberate mistakes, six rules, and nothing else fires.
+    assert codes(errors) == {
+        FindingCode.DEMO_TITLE_MISSING_MARKER,
+        FindingCode.DEMO_ENUM_VALUE_UNKNOWN,
+        FindingCode.DEMO_COLUMN_NOT_WRITABLE,
+        FindingCode.DEMO_DATE_VALUE_INVALID,
+        FindingCode.DUPLICATE_DEMO_KEY,
+        FindingCode.DEMO_REF_UNKNOWN_KEY,
+    }
+    # The marker itself, spelled exactly: it is what the teardown matches on.
+    assert "[DEMO] " in only(errors, FindingCode.DEMO_TITLE_MISSING_MARKER).message
 
 def test_demo_items_valid_set_passes(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -428,7 +469,10 @@ def test_demo_items_valid_set_passes(tmp_path: Path) -> None:
                 DueDate: "today+14"
         """,
     )
-    assert not any("demo_items" in f.message for f in errors)
+    assert [
+        f for f in errors
+        if f.location is not None and f.location.section == Section.DEMO_ITEMS
+    ] == []
 
 def test_view_url_slug_collision_is_error(tmp_path: Path) -> None:
     # "A+B" and "A B" both slug to ABApsx — two views cannot share one URL.
@@ -443,7 +487,7 @@ def test_view_url_slug_collision_is_error(tmp_path: Path) -> None:
               fields: [Title]
         """,
     )
-    assert any("slug" in f.message and "AB.aspx" in f.message for f in errors)
+    assert "AB.aspx" in only(errors, FindingCode.DUPLICATE_VIEW_URL_SLUG).message
 
 def test_view_url_slug_must_be_nonempty(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -455,7 +499,8 @@ def test_view_url_slug_must_be_nonempty(tmp_path: Path) -> None:
               fields: [Title]
         """,
     )
-    assert any("slug" in f.message and "empty" in f.message for f in errors)
+    finding = only(errors, FindingCode.EMPTY_VIEW_URL_SLUG)
+    assert finding.location == Location(Section.VIEWS, entity="Project", view="!!!")
 
 @pytest.mark.parametrize("title", ["AllItems", "All-Items", "all items"])
 def test_authored_views_cannot_take_the_generated_all_items_url(
@@ -470,7 +515,9 @@ def test_authored_views_cannot_take_the_generated_all_items_url(
               fields: [Title]
         """,
     )
-    assert any("AllItems.aspx" in f.message for f in errors)
+    # The generated view's own URL is the value: it is what the authored title
+    # would have taken over.
+    assert "AllItems.aspx" in only(errors, FindingCode.DUPLICATE_VIEW_URL_SLUG).message
 
 def test_cross_site_expansion_cannot_collide_with_declared_columns(tmp_path: Path) -> None:
     schema, bundle = pack(
@@ -491,7 +538,10 @@ def test_cross_site_expansion_cannot_collide_with_declared_columns(tmp_path: Pat
         """),
     )
     findings = validate_against_mapping(schema, bundle)
-    collisions = [f.message for f in findings if "collides" in f.message]
+    # One expansion, two generated names, and the finding carries no location:
+    # the generated field name is the only thing that tells them apart.
+    collisions = messages(findings, FindingCode.CROSS_SITE_GENERATED_NAME_COLLIDES)
+    assert len(collisions) == 2, collisions
     assert any("UnitAbbreviation" in message for message in collisions)
     assert any("UnitSiteUrl" in message for message in collisions)
 
@@ -527,15 +577,19 @@ def test_demo_refs_and_calendar_dates_are_validated_before_generation(tmp_path: 
                     Parent: { demo_ref: t1 }
         """),
     )
-    findings = validate_against_mapping(schema, bundle)
-    errors = [f.message for f in findings if f.severity == "error"]
-    assert any("Previous" in message and "before" in message for message in errors)
-    assert any("Note" in message and "lookup" in message for message in errors)
-    assert any(
-        "Parent" in message and "Task" in message and "targets" in message
-        for message in errors
-    )
-    assert any("2026-02-31" in message and "calendar" in message for message in errors)
+    errors = by_severity(validate_against_mapping(schema, bundle), "error")
+    # Each location carries the demo key; the column inside that row is what
+    # only the prose has.
+    forward = only(errors, FindingCode.DEMO_REF_FORWARD_REFERENCE)
+    assert forward.location == Location(Section.DEMO_ITEMS, entity="Task", sub="t1")
+    assert "Previous" in forward.message
+    non_lookup = only(errors, FindingCode.DEMO_REF_ON_NON_LOOKUP)
+    assert "Note" in non_lookup.message
+    mismatch = only(errors, FindingCode.DEMO_REF_TARGET_MISMATCH)
+    assert mismatch.location == Location(Section.DEMO_ITEMS, entity="Task", sub="t2")
+    assert "Parent" in mismatch.message
+    bad_date = only(errors, FindingCode.DEMO_DATE_VALUE_INVALID)
+    assert "2026-02-31" in bad_date.message
 
 def test_rendered_validation_formula_length_is_checked(tmp_path: Path) -> None:
     values = ", ".join(f"'value-{i}-{'x' * 40}'" for i in range(24))
@@ -554,9 +608,14 @@ def test_rendered_validation_formula_length_is_checked(tmp_path: Path) -> None:
                 message: Too long.
         """,
     )
-    overlong = [f.message for f in errors if "1024" in f.message]
-    assert any("list_validation" in message for message in overlong)
-    assert any("column_validation" in message for message in overlong)
+    list_level = only(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
+    assert list_level.location == Location(Section.LIST_VALIDATION, entity="Project")
+    # The limit is the number the author has to write the formula under.
+    assert "1024" in list_level.message
+    column_level = only(errors, FindingCode.VALIDATION_FORMULA_TOO_LONG)
+    assert column_level.location == Location(
+        Section.COLUMN_VALIDATION, entity="Project", column="Status",
+    )
 
 def test_view_today_sentinel_only_on_date_columns(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -570,7 +629,11 @@ def test_view_today_sentinel_only_on_date_columns(tmp_path: Path) -> None:
                 - { field: SortOrder, op: leq, value: today+30 }
         """,
     )
-    assert any("today" in f.message and "SortOrder" in f.message for f in errors)
+    finding = only(errors, FindingCode.CONDITION_VALUE_NOT_A_NUMBER)
+    assert finding.location == Location(
+        Section.VIEWS, entity="Project", view="V", sub="where.SortOrder",
+    )
+    assert "'today+30'" in finding.message
     ok = _view_errors(
         tmp_path,
         """
@@ -582,7 +645,7 @@ def test_view_today_sentinel_only_on_date_columns(tmp_path: Path) -> None:
                 - { field: DueDate, op: leq, value: today+30 }
         """,
     )
-    assert ok == []
+    none_of(ok, FindingCode.CONDITION_VALUE_NOT_A_NUMBER)
 
 def test_view_titles_unique_and_single_default(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -598,8 +661,8 @@ def test_view_titles_unique_and_single_default(tmp_path: Path) -> None:
               fields: [Status]
         """,
     )
-    assert any("duplicate" in f.message.lower() for f in errors)
-    assert any("default" in f.message.lower() for f in errors)
+    assert "'Same'" in only(errors, FindingCode.DUPLICATE_VIEW_TITLE).message
+    only(errors, FindingCode.MULTIPLE_DEFAULT_VIEWS)
 
 def test_all_items_title_is_reserved_for_the_generated_unfiltered_view(
     tmp_path: Path,
@@ -615,10 +678,8 @@ def test_all_items_title_is_reserved_for_the_generated_unfiltered_view(
                 - { field: Status, op: eq, value: Open }
         """,
     )
-    assert any(
-        "All Items" in f.message and "generated" in f.message
-        for f in errors
-    ), errors
+    finding = only(errors, FindingCode.ALL_ITEMS_VIEW_DECLARED)
+    assert finding.location == Location(Section.VIEWS, entity="Project")
 
 def test_view_row_limit_range(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -631,7 +692,8 @@ def test_view_row_limit_range(tmp_path: Path) -> None:
               row_limit: 9000
         """,
     )
-    assert any("row_limit" in f.message for f in errors)
+    finding = only(errors, FindingCode.ROW_LIMIT_OUT_OF_RANGE)
+    assert finding.location == Location(Section.VIEWS, entity="Project", view="V")
 
 # --- Display names ----------------------------------------------------------
 
@@ -649,8 +711,13 @@ def test_display_override_must_target_rendered_column(tmp_path: Path) -> None:
               Nope: "Not A Column"
         """,
     )
-    assert any("Widget" in f.message and "display_names" in f.message for f in errors)
-    assert any("Nope" in f.message and "display_names" in f.message for f in errors)
+    # Both rules are shared with `views:`; the section in the location is what
+    # says these two came from display_names.
+    unknown = only(errors, FindingCode.UNKNOWN_ENTITY)
+    assert unknown.location == Location(Section.DISPLAY_NAMES, entity="Widget")
+    unrendered = only(errors, FindingCode.COLUMN_NOT_RENDERED)
+    assert unrendered.location == Location(Section.DISPLAY_NAMES, entity="Project")
+    assert "Nope" in unrendered.message
 
 def test_display_names_must_be_unique_and_bounded(tmp_path: Path) -> None:
     errors = _view_errors(
@@ -664,5 +731,7 @@ def test_display_names_must_be_unique_and_bounded(tmp_path: Path) -> None:
               DueDate: ""            # empty
         """,
     )
-    assert any("Sort Order" in f.message and "duplicate" in f.message.lower() for f in errors)
-    assert any("DueDate" in f.message and "empty" in f.message.lower() for f in errors)
+    # The colliding title and the column that resolved to nothing: neither is
+    # in the location, which is the whole entity.
+    assert "'Sort Order'" in only(errors, FindingCode.DUPLICATE_DISPLAY_TITLE).message
+    assert "'DueDate'" in only(errors, FindingCode.EMPTY_DISPLAY_TITLE).message
