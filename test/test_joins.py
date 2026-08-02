@@ -1,8 +1,9 @@
 # test/test_joins.py
-from pathlib import Path
-
-from _builders import ID_PK, TITLE, table
-from _packs import blocks, pack
+from _model import bundle as make_bundle
+from _model import column as make_column
+from _model import person as make_person
+from _model import ref as make_ref
+from _model import table as make_table
 
 from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,
@@ -13,38 +14,43 @@ from dbml_sharepoint.analysis.joins import (
     joining_fields,
 )
 from dbml_sharepoint.analysis.typemap import JOIN_BEARING_TYPES
-from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.mapping_loader import (
+    CrossSiteRef,
+    EntityMapping,
+    MappingBundle,
+)
 from dbml_sharepoint.model.parser import Table
 
-_SCHEMA = blocks(
-    table("Person", ID_PK, TITLE),
-    table(
+
+def _task() -> tuple[Table, MappingBundle]:
+    """A `Task` carrying one of every column shape these derivations sort.
+
+    `Notes` and `DueDate` are the free ones, `Owner` and `Assignee` bear
+    joins, and `Elsewhere` is a ref that does NOT because it is declared
+    cross-site. `Title` is nullable: nothing here is about the schema rules.
+    """
+    task = make_table(
         "Task",
-        ID_PK,
-        TITLE,
-        "Owner person",
-        "Assignee int [ref: > Person.Id]",
-        "Elsewhere int [ref: > Person.Id]",
-        "Notes nvarchar",
-        "DueDate date",
-    ),
-)
-_MAPPING = """
-    entities:
-      Person: { kind: List, base_template: 100, site_role: default }
-      Task:
-        kind: List
-        base_template: 100
-        site_role: default
-        hide_from_all_items: [Author, Editor]
-    cross_site_reference_columns:
-      - { entity: Task, column: Elsewhere }
-"""
-
-
-def _task(tmp_path: Path) -> tuple[Table, MappingBundle]:
-    schema, bundle = pack(tmp_path, dbml=_SCHEMA, mapping=_MAPPING)
-    return next(t for t in schema.tables if t.name == "Task"), bundle
+        make_column("Title"),
+        make_person("Owner"),
+        make_ref("Assignee", "Person.Id"),
+        make_ref("Elsewhere", "Person.Id"),
+        make_column("Notes"),
+        make_column("DueDate", "date"),
+    )
+    bundle = make_bundle(
+        entities={
+            "Person": EntityMapping(
+                name="Person", kind="List", base_template=100, site_role="default",
+            ),
+            "Task": EntityMapping(
+                name="Task", kind="List", base_template=100, site_role="default",
+                hide_from_all_items=("Author", "Editor"),
+            ),
+        },
+        cross_site_reference_columns=[CrossSiteRef(entity="Task", column="Elsewhere")],
+    )
+    return task, bundle
 
 
 def test_the_bands_are_nine_and_twelve() -> None:
@@ -64,43 +70,39 @@ def test_the_bands_are_nine_and_twelve() -> None:
     assert sorted(JOIN_BEARING_TYPES) == ["person"]
 
 
-def test_refs_person_columns_and_the_two_system_columns_bear_joins(
-    tmp_path: Path,
-) -> None:
-    table, _ = _task(tmp_path)
+def test_refs_person_columns_and_the_two_system_columns_bear_joins() -> None:
+    table, _ = _task()
     assert join_bearing_columns(table, {"Elsewhere"}) == {
         "Owner", "Assignee", "Author", "Editor",
     }
 
 
-def test_a_cross_site_ref_bears_no_join(tmp_path: Path) -> None:
+def test_a_cross_site_ref_bears_no_join() -> None:
     """It expands to a Choice + URL pair, so no Lookup exists to join through.
     The second assertion is the negative case: without the exclusion the same
     column IS counted, which is exactly the defect."""
-    table, _ = _task(tmp_path)
+    table, _ = _task()
     assert "Elsewhere" not in join_bearing_columns(table, {"Elsewhere"})
     assert "Elsewhere" in join_bearing_columns(table, set())
 
 
-def test_dates_and_text_are_free_but_author_and_editor_are_not(
-    tmp_path: Path,
-) -> None:
-    table, _ = _task(tmp_path)
+def test_dates_and_text_are_free_but_author_and_editor_are_not() -> None:
+    table, _ = _task()
     bearing = join_bearing_columns(table, {"Elsewhere"})
     assert joining_fields(["Created", "Modified", "Notes", "DueDate"], bearing) == []
     assert joining_fields(["Author", "Editor"], bearing) == ["Author", "Editor"]
 
 
-def test_joining_fields_is_sorted_and_deduplicated(tmp_path: Path) -> None:
-    table, _ = _task(tmp_path)
+def test_joining_fields_is_sorted_and_deduplicated() -> None:
+    table, _ = _task()
     bearing = join_bearing_columns(table, {"Elsewhere"})
     assert joining_fields(
         ["Owner", "Assignee", "Owner", "Title", "Notes"], bearing,
     ) == ["Assignee", "Owner"]
 
 
-def test_all_items_hidden_reads_the_entity_key(tmp_path: Path) -> None:
-    _, bundle = _task(tmp_path)
+def test_all_items_hidden_reads_the_entity_key() -> None:
+    _, bundle = _task()
     assert all_items_hidden(bundle.mapping.entities["Task"]) == frozenset(
         {"Author", "Editor"},
     )
