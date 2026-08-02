@@ -75,7 +75,16 @@ def blocks(*parts: str) -> str:
     `blocks(base)`. That is what callers passing an optional fragment want; it
     does mean a part that is *deliberately* only whitespace cannot be expressed
     here, which no caller needs and YAML would ignore anyway.
+
+    Passing `entity()` directly is refused -- see `_EntityLine`.
     """
+    for part in parts:
+        if isinstance(part, _EntityLine):
+            raise TypeError(
+                "blocks() dedents each part, which would unnest this entity line "
+                "to the top level of the mapping. Pass it through entities() "
+                "instead: entities('Risk', entity('Event', display_column='X')).",
+            )
     return "".join(_body(p) for p in parts if p.strip())
 
 
@@ -141,6 +150,21 @@ def pack(
     return parse_dbml(schema_path), load_mapping(mapping_path)
 
 
+class _EntityLine(str):
+    """One indented `entities:` line, whose indentation is SEMANTIC.
+
+    A distinct type because `blocks()` dedents every part against its own
+    margin, and for a lone indented line that margin is the indentation itself
+    -- so `blocks(entity("Risk"))` yields `Risk: {...}` at the TOP LEVEL of the
+    mapping, escaping the `entities:` key. YAML loads it happily and the
+    mapping ends up with no entities at all.
+
+    There is no way to tell that apart structurally from a triple-quoted source
+    block, where dedenting is exactly right. So it is told apart by type, and
+    `blocks()` refuses this one.
+    """
+
+
 def entity(
     name: str,
     *,
@@ -148,7 +172,7 @@ def entity(
     base_template: int = 100,
     site_role: str = "default",
     **extra: object,
-) -> str:
+) -> _EntityLine:
     """One `entities:` line, indented two spaces, with no trailing newline.
 
     41 copies of the `Risk` line alone, 16 `Project`, 15 `Board`. None of the
@@ -156,12 +180,22 @@ def entity(
     """
     parts = [f"kind: {kind}", f"base_template: {base_template}", f"site_role: {site_role}"]
     parts += [f"{k}: {v}" for k, v in extra.items()]
-    return f"  {name}: {{ {', '.join(parts)} }}"
+    return _EntityLine(f"  {name}: {{ {', '.join(parts)} }}")
 
 
-def entities(*names: str) -> str:
-    """The `entities:` key plus one default line per name."""
-    return "entities:\n" + "".join(f"{entity(n)}\n" for n in names)
+def entities(*items: str) -> str:
+    """The `entities:` key plus one line per item.
+
+    An item is either a bare entity name, which gets the default declaration,
+    or an already-built line from `entity()` for one that needs extras:
+
+        entities("Risk", entity("Event", display_column="EventRef"))
+
+    Combining them this way is the only safe route -- see `_EntityLine` for why
+    `blocks(entity(...))` is not.
+    """
+    lines = [item if isinstance(item, _EntityLine) else entity(item) for item in items]
+    return "entities:\n" + "".join(f"{line}\n" for line in lines)
 
 
 def replaced(text: str, needle: str, replacement: str) -> str:
