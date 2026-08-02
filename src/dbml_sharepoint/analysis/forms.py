@@ -15,14 +15,14 @@ the obvious mechanism and are not: saving the designer migrates them into
 undone over REST. See the form_visibility spec.
 """
 
-from typing import Literal
-
 from dbml_sharepoint.analysis.conditions import EXPRESSION, to_expression, validate_condition
-from dbml_sharepoint.model.conditions import Condition
 
-# Mirrors validator.Severity; declared here so the module that decides a
-# severity is the module that types it.
-type Severity = Literal["error", "warning"]
+# `as Severity` is the PEP 484 explicit re-export. This module's public
+# signature is `list[tuple[Severity, str]]`, so a caller reading it has
+# always been able to import the name from here; under mypy --strict a
+# plain import would quietly stop being importable.
+from dbml_sharepoint.analysis.findings import Severity as Severity
+from dbml_sharepoint.model.conditions import Condition
 
 # Empty on the New form, populated on Edit and Display. Verified live.
 _NEW_ONLY = "[$ID] == ''"

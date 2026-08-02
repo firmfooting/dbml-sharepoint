@@ -2,6 +2,7 @@
 """Display-name overrides and the lookup display-column guard."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.validator import Finding, _rendered_columns
 
 
@@ -20,6 +21,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             override_table = tables_by_name.get(entity_name)
             if override_table is None or entity_name not in bundle.mapping.entities:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error", f"display_names.overrides[{entity_name}]: unknown entity.",
                 ))
                 continue
@@ -28,18 +30,21 @@ def check(vc: ValidationContext) -> list[Finding]:
             for col_name, display_title in cols.items():
                 if col_name not in rendered:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"display_names.overrides[{entity_name}]: {col_name!r} "
                         f"is not a rendered column of {entity_name}.",
                     ))
                 if not display_title:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"display_names.overrides[{entity_name}]: {col_name!r} "
                         f"resolves to an empty display title.",
                     ))
                 elif len(display_title) > 255:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"display_names.overrides[{entity_name}]: {col_name!r} "
                         f"display title exceeds 255 characters.",
@@ -56,6 +61,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             for display_title, sources in resolved.items():
                 if len(sources) > 1:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"display_names[{table.name}]: duplicate display title "
                         f"{display_title!r} for columns {', '.join(sources)}.",
@@ -91,6 +97,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 and source_entity.site_role != target_entity.site_role
             ):
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{table.name}.{col.name}: lookup crosses site_role "
                     f"({source_entity.site_role} -> {target_entity.site_role}); "
@@ -111,6 +118,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 #.
                 if not any(c.name == display for c in target_table.columns):
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{table.name}.{col.name}: lookup target "
                         f"{col.ref.target_table} declares display_column "
@@ -122,6 +130,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             elif not any(c.name == "Title" for c in target_table.columns):
                 # No display_column and no Title → the lookup renders blank.
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"{table.name}.{col.name}: lookup target "
                     f"{col.ref.target_table} has no Title column and its mapping "

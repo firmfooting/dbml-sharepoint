@@ -2,6 +2,7 @@
 """Permission levels, groups, and per-list policies."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS, BUILT_IN_LEVELS
 from dbml_sharepoint.analysis.validator import (
     _ASSOCIATED_GROUP_ALIASES,
@@ -27,6 +28,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         known_roles = {e.site_role for e in bundle.mapping.entities.values()} | {"default"}
         if scope is not None and scope not in known_roles:
             findings.append(Finding(
+                FindingCode.UNCLASSIFIED,
                 "error",
                 f"list_permissions.default.site_role: unknown site role "
                 f"{scope!r} (mapping declares: {', '.join(sorted(known_roles))}).",
@@ -42,6 +44,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             key = lvl.name.casefold()
             if key in seen_level_names:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"permission_levels: duplicate name {lvl.name!r}"
                     + (f" (differs from {seen_level_names[key]!r} only in case; "
@@ -55,6 +58,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             for bit in lvl.base_permissions:
                 if bit not in BASE_PERMISSIONS:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"permission_levels[{lvl.name!r}]: unknown base permission {bit!r}",
                     ))
@@ -67,6 +71,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             key = grp.name.casefold()
             if key in seen_group_names:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"groups: duplicate name {grp.name!r}"
                     + (f" (differs from {seen_group_names[key]!r} only in case; "
@@ -83,6 +88,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             )
             if not owner_ok:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"groups[{grp.name!r}]: owner_group {grp.owner_group!r} is not a "
                     f"built-in SP group or a declared custom group",
@@ -98,6 +104,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 lvl = assignment.level
                 if lvl not in all_level_names:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}.assignments[{i}]: level {lvl!r} is not a built-in "
                         f"or declared custom permission level",
@@ -115,6 +122,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # '<SiteTitle> Owners' etc.), so the assignment would fail
                     # at deploy time.
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}.assignments[{i}]: principal group "
                         f"{principal.name!r} is a built-in associated-group "
@@ -124,6 +132,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     ))
                 elif principal.name not in all_group_names:
                     findings.append(Finding(
+                        FindingCode.UNCLASSIFIED,
                         "error",
                         f"{ctx}.assignments[{i}]: principal group {principal.name!r} "
                         f"is not a built-in or declared custom group",
@@ -136,6 +145,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         for entity_name, override_policy in perms.overrides.items():
             if entity_name not in table_names:
                 findings.append(Finding(
+                    FindingCode.UNCLASSIFIED,
                     "error",
                     f"list_permissions.overrides: key {entity_name!r} is not a "
                     "known DBML table name (use unprefixed name, "
