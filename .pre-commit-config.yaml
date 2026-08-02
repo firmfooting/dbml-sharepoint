@@ -11,6 +11,17 @@
 # all non-mutating structure checks.
 minimum_pre_commit_version: "3.0.0"
 
+# Without this, `install` wires up only the pre-commit hook and the pytest
+# hook below — declared `stages: [pre-push]` — is never installed, so the
+# "full suite on push" gate silently does not exist. Verified against
+# pre-commit, whose `install` defaults to `--hook-type pre-commit` alone.
+#
+# There is no commit-msg entry on purpose: this repository squash-merges, so
+# individual branch commits never reach `main` and only the PR title needs to
+# be a conventional commit. That is enforced by .github/workflows/pr-title.yml.
+# Linting branch commits here would block a "wip" commit for no benefit.
+default_install_hook_types: [pre-commit, pre-push]
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

@@ -43,11 +43,30 @@ Notes that save you a round-trip:
 - **Emitted JS.** For template changes, build an example and
   `node --check` the emitted scripts.
 
-## Commits
+## Commits and merging
 
-Conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, ...) — releases
-and the changelog are cut by release-please from commit messages. One
-concern per commit, tests included.
+**Pull requests are squash-merged, and the PR title becomes the commit
+subject on `main`.** So the *title* must be a conventional commit
+(`feat:`, `fix:`, `docs:`, `chore:`, ...) — releases and the changelog are
+cut by release-please from those subjects, and a title that does not match
+is dropped from the release notes silently. `.github/workflows/pr-title.yml`
+checks it.
+
+Commits *within* a branch are not linted. Use whatever granularity helps
+review; they are squashed away, though their messages are preserved in the
+body of the squashed commit. Still keep one concern per commit with tests
+included — that is what makes a branch reviewable.
+
+Merge commits are disabled. They used to be the norm here and cost us
+twice: four PRs (#41, #42, #45, #51) landed with prose commit subjects and
+vanished from the 0.4.0 changelog entirely, and seven entries in that same
+changelog are duplicates of each other, from changes committed on a branch
+and again after a re-merge.
+
+For a change that is too large to review in one pass, stack it: see
+[stacked pull requests](https://docs.github.com/en/pull-requests/how-tos/stacked-pull-requests).
+Each layer keeps its own conventional title and its own changelog entry,
+and GitHub cascades the rebase as each one merges.
 
 ## Safety expectations
 
