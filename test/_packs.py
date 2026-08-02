@@ -139,3 +139,43 @@ def pack(
     schema_path = write_dbml(tmp_path, dbml, preamble=preamble, name=dbml_name)
     mapping_path = write_mapping(tmp_path, mapping, prefix=prefix, name=mapping_name)
     return parse_dbml(schema_path), load_mapping(mapping_path)
+
+
+def entity(
+    name: str,
+    *,
+    kind: str = "List",
+    base_template: int = 100,
+    site_role: str = "default",
+    **extra: object,
+) -> str:
+    """One `entities:` line, indented two spaces, with no trailing newline.
+
+    41 copies of the `Risk` line alone, 16 `Project`, 15 `Board`. None of the
+    tests using them are about the kind or the base template.
+    """
+    parts = [f"kind: {kind}", f"base_template: {base_template}", f"site_role: {site_role}"]
+    parts += [f"{k}: {v}" for k, v in extra.items()]
+    return f"  {name}: {{ {', '.join(parts)} }}"
+
+
+def entities(*names: str) -> str:
+    """The `entities:` key plus one default line per name."""
+    return "entities:\n" + "".join(f"{entity(n)}\n" for n in names)
+
+
+def replaced(text: str, needle: str, replacement: str) -> str:
+    """`str.replace`, but a needle that does not match is an error.
+
+    Five tests build a variant of a schema or mapping by needle-matching a
+    whole line. `str.replace` returns the input unchanged when the needle is
+    absent and raises nothing, so a drifted indent -- or an edit to the fixture
+    the needle was copied from -- leaves the test running against the ORIGINAL
+    document and still passing.
+
+    That is the same silent-corruption class this module's docstring describes,
+    wearing a different hat, and it is the one hazard in the fragment
+    conversion that a green suite cannot rule out.
+    """
+    assert needle in text, f"needle not found; the replacement would be a no-op: {needle!r}"
+    return text.replace(needle, replacement)

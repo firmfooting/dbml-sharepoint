@@ -7,6 +7,8 @@ creates. There is one function, and both call it.
 
 from pathlib import Path
 
+from _packs import replaced
+
 from dbml_sharepoint.analysis.lookups import (
     lookup_display_columns,
     lookup_target_entities,
@@ -74,7 +76,7 @@ def test_an_entity_no_ref_points_at_is_absent(tmp_path: Path) -> None:
 
 
 def test_a_declared_display_column_wins(tmp_path: Path) -> None:
-    schema, bundle = _inputs(tmp_path, _PLAIN.replace(
+    schema, bundle = _inputs(tmp_path, replaced(_PLAIN,
         "  Event: { kind: List, base_template: 100, site_role: default }",
         "  Event: { kind: List, base_template: 100, site_role: default, "
         "display_column: EventRef }",
@@ -88,7 +90,7 @@ def test_a_calculated_display_column_is_excluded(tmp_path: Path) -> None:
     """It cannot carry an index — CALCIDX sets Indexed=true, the MERGE is
     accepted and the flag reads back false. Including it would make the caller
     count an index that cannot exist."""
-    schema, bundle = _inputs(tmp_path, _PLAIN.replace(
+    schema, bundle = _inputs(tmp_path, replaced(_PLAIN,
         "  Event: { kind: List, base_template: 100, site_role: default }",
         "  Event: { kind: List, base_template: 100, site_role: default, "
         "display_column: EventRef }",
@@ -101,7 +103,7 @@ def test_a_calculated_display_column_is_excluded(tmp_path: Path) -> None:
 def test_a_ref_target_unmapped_is_absent(tmp_path: Path) -> None:
     """A ref points at a table with no mapping entry: other checks report that
     error. Inventing an index for it here would be a second, worse message."""
-    schema, bundle = _inputs(tmp_path, _PLAIN.replace(
+    schema, bundle = _inputs(tmp_path, replaced(_PLAIN,
         "  Event: { kind: List, base_template: 100, site_role: default }\n",
         "",
     ))
@@ -175,7 +177,7 @@ def test_a_target_of_both_kinds_keeps_its_index(tmp_path: Path) -> None:
             "  Event int [ref: > Event.Id]\n"
             "}\n"
         ),
-        _CROSS_SITE_MAPPING.replace(
+        replaced(_CROSS_SITE_MAPPING,
             "cross_site_reference_columns:",
             "  Reminder: { kind: List, base_template: 100, site_role: default }\n"
             "cross_site_reference_columns:",
