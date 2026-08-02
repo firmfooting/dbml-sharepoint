@@ -604,7 +604,7 @@ moves, it does not disappear. Two consequences are enforced:
 - **A section whose every column is hidden from every form is an error** —
   it renders as a heading with nothing under it. This is *not* asserted of
   the **last** section, because unreferenced columns land there, so only an
-  earlier section can be provably empty. `templates/risk-register`'s
+  earlier section can be provably empty. `solutions/risk-register`'s
   **System** section is exactly that shape: it is last, it holds only
   `MatrixVersion`, and its DEPLOY.md documents the bare heading on the New
   form as cosmetic and expected.
