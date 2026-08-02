@@ -98,5 +98,18 @@ uv run pytest --cov=src/dbml_sharepoint --cov-report=term -q | grep TOTAL
 ```
 
 Coverage is the alarm that matters: a delta means a converted payload exercises
-a different code path, so the input changed. **Re-run before believing it** —
-under `-n auto` the combine is occasionally off by one. Confirm with `-n0`.
+a different code path, so the input changed.
+
+**The expected figure is `3666 182 95%`, and it is now deterministic.** It was
+not, briefly: `conditions.py:713` — the "not a number" refusal — was reached
+only when the property suite's permissive strategy happened to draw a `bool`,
+about one run in ten. That produced a phantom one-line delta with a 1-in-10
+false-positive rate, exactly where this document tells you to treat a delta as
+a signal.
+
+It was first misdiagnosed as a `-n auto` combine artefact. It reproduced
+serially. Fixed at source by
+`test_conditions_properties.test_a_bool_on_a_numeric_column_is_refused`, which
+pins the line. If you see a one-line delta again, look for another
+Hypothesis-reached line before assuming your conversion caused it — and check
+serially, because parallelism was not the cause last time.
