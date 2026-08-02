@@ -2,6 +2,8 @@
 from pathlib import Path
 
 import pytest
+from _builders import ID_PK, table
+from _packs import blocks, pack, write_dbml
 from _paths import FIXTURES
 from _validator_helpers import _bundle_with_formulas, _schema
 
@@ -279,19 +281,14 @@ def test_indexed_calculated_column_is_error() -> None:
 def _calculated_display_inputs(
     tmp_path: Path, *, accepted: bool,
 ) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Event {\n"
-        "  Id int [pk, increment]\n"
-        "  Ref nvarchar\n"
-        "  Label calculated_text\n"
-        "}\n"
-        "Table FollowUp {\n"
-        "  Id int [pk, increment]\n"
-        "  Event int [ref: > Event.Id]\n"
-        "}\n",
-        encoding="utf-8",
+    write_dbml(
+        tmp_path,
+        blocks(
+            table("Event", ID_PK, "Ref nvarchar", "Label calculated_text"),
+            table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
+        ),
     )
+    # The mapping stays hand-rolled: `accept` is glued onto the entity line.
     accept = ", accept_unindexable_display_column: true" if accepted else ""
     (tmp_path / "m.yaml").write_text(
         'prefix: "APP_"\n'
@@ -408,39 +405,25 @@ def test_a_display_column_that_is_never_rendered_is_an_error(tmp_path: Path) -> 
     time by generated Abbreviation and SiteUrl fields, so it never exists on the
     list. _naming.py cannot see this — the name IS a declared column — and the
     implicit index would be created on a field that is not there."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Region {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "}\n"
-        "Table Event {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  Region int [ref: > Region.Id]\n"
-        "}\n"
-        "Table FollowUp {\n"
-        "  Id int [pk, increment]\n"
-        "  Event int [ref: > Event.Id]\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Region: { kind: List, base_template: 100, site_role: default }\n"
-        "  Event: { kind: List, base_template: 100, site_role: default, "
-        "display_column: Region }\n"
-        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n"
-        "cross_site_reference_columns:\n"
-        "  - { entity: Event, column: Region }\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Region", ID_PK, "Title nvarchar"),
+            table("Event", ID_PK, "Title nvarchar", "Region int [ref: > Region.Id]"),
+            table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
+        ),
+        mapping="""
+            entities:
+              Region: { kind: List, base_template: 100, site_role: default }
+              Event: { kind: List, base_template: 100, site_role: default, display_column: Region }
+              FollowUp: { kind: List, base_template: 100, site_role: default }
+            cross_site_reference_columns:
+              - { entity: Event, column: Region }
+        """,
     )
     errors = [
         f.message
-        for f in validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-        )
+        for f in validate_against_mapping(schema, bundle)
         if f.severity == "error" and "display_column" in f.message
     ]
     assert len(errors) == 1, errors
@@ -450,31 +433,28 @@ def test_a_display_column_that_is_never_rendered_is_an_error(tmp_path: Path) -> 
 def test_a_pointless_acceptance_warns(tmp_path: Path) -> None:
     """Set where the display column is perfectly indexable, it signals a
     misunderstanding rather than a decision."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Event {\n"
-        "  Id int [pk, increment]\n"
-        "  Ref nvarchar\n"
-        "}\n"
-        "Table FollowUp {\n"
-        "  Id int [pk, increment]\n"
-        "  Event int [ref: > Event.Id]\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Event: { kind: List, base_template: 100, site_role: default, "
-        "display_column: Ref, accept_unindexable_display_column: true }\n"
-        "  FollowUp: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
+    # The Event line is spelled block-style purely so it fits in 100 columns;
+    # it parses to exactly the flow mapping every other entity here uses.
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            table("Event", ID_PK, "Ref nvarchar"),
+            table("FollowUp", ID_PK, "Event int [ref: > Event.Id]"),
+        ),
+        mapping="""
+            entities:
+              Event:
+                kind: List
+                base_template: 100
+                site_role: default
+                display_column: Ref
+                accept_unindexable_display_column: true
+              FollowUp: { kind: List, base_template: 100, site_role: default }
+        """,
     )
     warnings = [
         f.message
-        for f in validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-        )
+        for f in validate_against_mapping(schema, bundle)
         if f.severity == "warning"
         and "accept_unindexable_display_column" in f.message
     ]
@@ -488,30 +468,26 @@ def test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth(
     (remove it) is right, but the message used to say "the display column
     'Label' is not calculated" about a column that is. The combination had no
     test, which is why the false message shipped."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Event {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar\n"
-        "  Label calculated_text\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Event: { kind: List, base_template: 100, site_role: default, "
-        "display_column: Label, accept_unindexable_display_column: true }\n"
-        "calculated_formulas:\n"
-        "  Event:\n"
-        '    Label: "=[Title]"\n',
-        encoding="utf-8",
+    # Block style for the entity again, to stay inside 100 columns.
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Event", ID_PK, "Title nvarchar", "Label calculated_text"),
+        mapping="""
+            entities:
+              Event:
+                kind: List
+                base_template: 100
+                site_role: default
+                display_column: Label
+                accept_unindexable_display_column: true
+            calculated_formulas:
+              Event:
+                Label: "=[Title]"
+        """,
     )
     warnings = [
         f.message
-        for f in validate_against_mapping(
-            parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml"),
-        )
+        for f in validate_against_mapping(schema, bundle)
         if f.severity == "warning"
         and "accept_unindexable_display_column" in f.message
     ]

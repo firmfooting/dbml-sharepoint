@@ -1,6 +1,9 @@
 """Validator: the view join threshold (the LOOKUP limit, not the item count)."""
 from pathlib import Path
 
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, pack, write_mapping
+
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate_against_mapping,
@@ -363,15 +366,15 @@ def test_a_document_library_gets_no_all_items_join_finding(
     `kind: DocumentLibrary` is separately an ERROR from `_structure.py:101-111`,
     so this build is already red for another reason. That is not a licence to
     skip the guard — it is why the guard is easy to delete unnoticed."""
-    library = (
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Person: { kind: List, base_template: 100, site_role: default }\n"
-        "  Project:\n"
-        "    kind: DocumentLibrary\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-    )
+    library = """
+        entities:
+          Person: { kind: List, base_template: 100, site_role: default }
+          Project:
+            kind: DocumentLibrary
+            base_template: 100
+            site_role: default
+    """
+    # The schema stays hand-rolled: `_persons` is interpolated into it.
     (tmp_path / "s.dbml").write_text(
         "Project t { database_type: 'SharePoint Online' }\n"
         "Table Person {\n"
@@ -385,9 +388,8 @@ def test_a_document_library_gets_no_all_items_join_finding(
         "}\n",
         encoding="utf-8",
     )
-    (tmp_path / "m.yaml").write_text(library, encoding="utf-8")
     schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
+    bundle = load_mapping(write_mapping(tmp_path, library))
     assert _join_findings(schema, bundle, "entities[Project]") == []
 
     # The pair. The identical schema declared `kind: List` DOES error, so the
@@ -415,31 +417,19 @@ def test_hide_from_all_items_on_a_document_library_is_refused(
     Pairs with `test_a_document_library_gets_no_all_items_join_finding` above:
     that one catches deleting the loop's `continue`, this one catches deleting
     the refusal that runs before it. Neither test alone covers the guard."""
-    library = (
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Person: { kind: List, base_template: 100, site_role: default }\n"
-        "  Project:\n"
-        "    kind: DocumentLibrary\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        "    hide_from_all_items: [Author]\n"
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(table("Person", ID_PK, TITLE), table("Project", ID_PK, TITLE)),
+        mapping="""
+            entities:
+              Person: { kind: List, base_template: 100, site_role: default }
+              Project:
+                kind: DocumentLibrary
+                base_template: 100
+                site_role: default
+                hide_from_all_items: [Author]
+        """,
     )
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Person {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "}\n",
-        encoding="utf-8",
-    )
-    (tmp_path / "m.yaml").write_text(library, encoding="utf-8")
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     found = [
         f for f in validate_against_mapping(schema, bundle)
         if f.message.startswith("entities[Project].hide_from_all_items")
@@ -561,26 +551,18 @@ def test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch(
     `_rendered_columns` alone has nothing to contribute for a column that
     is not in `table.columns`. `hide_from_all_items: [Title]` must still be
     refused for costing no join, not reported as an unrecognised column."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Project {\n"
-        "  Id int [pk, increment]\n"
-        "  Notes nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Project", ID_PK, "Notes nvarchar"),
+        mapping="""
+            entities:
+              Project:
+                kind: List
+                base_template: 100
+                site_role: default
+                hide_from_all_items: [Title]
+        """,
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Project:\n"
-        "    kind: List\n"
-        "    base_template: 100\n"
-        "    site_role: default\n"
-        "    hide_from_all_items: [Title]\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     msgs = _hide_errors(schema, bundle)
     assert len(msgs) == 1
     assert "costs no join operation" in msgs[0]

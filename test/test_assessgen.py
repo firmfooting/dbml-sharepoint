@@ -1,6 +1,8 @@
 # test/test_assessgen.py
 from pathlib import Path
 
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.assessgen import (
@@ -33,19 +35,11 @@ def test_base_template_requirements_from_entities() -> None:
 
 
 def test_conditional_requirements_absent_on_bare_mapping(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n  Title nvarchar [not null]\n}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE),
+        mapping=entities("Risk"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     keys = {r.key for r in derive_requirements(schema, bundle, "default")}
     assert "manage_permissions_bit" not in keys
     assert "process_query" not in keys
@@ -57,30 +51,32 @@ def test_conditional_requirements_absent_on_bare_mapping(tmp_path: Path) -> None
 
 
 def test_styled_pack_requirements(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n  Id int [pk, increment]\n  Title nvarchar [not null]\n}\n",
-        encoding="utf-8",
+    # `versioning` is spelled block-style rather than as the one flow mapping
+    # the fragments glued together, purely to fit in 100 columns; it parses
+    # to the same document.
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE),
+        mapping=blocks(entities("Risk"), """
+            seal_columns: true
+            prevent_list_deletion: true
+            versioning:
+              default:
+                enable_versioning: true
+                major_version_limit: 500
+                enable_minor_versions: false
+            column_formatting:
+              Risk: { Title: { style: severity, map: { a: good } } }
+            groups:
+              - name: G
+                description: d
+                owner_group: 'Site Owners'
+                allow_members_edit_membership: false
+                allow_request_to_join_leave: false
+                auto_accept_request_to_join_leave: false
+                only_allow_members_view_membership: false
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "seal_columns: true\n"
-        "prevent_list_deletion: true\n"
-        "versioning: { default: { enable_versioning: true, major_version_limit: 500, "
-        "enable_minor_versions: false } }\n"
-        "column_formatting:\n"
-        "  Risk: { Title: { style: severity, map: { a: good } } }\n"
-        "groups:\n"
-        "  - name: G\n    description: d\n    owner_group: 'Site Owners'\n"
-        "    allow_members_edit_membership: false\n    allow_request_to_join_leave: false\n"
-        "    auto_accept_request_to_join_leave: false\n"
-        "    only_allow_members_view_membership: false\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
     assert reqs["manage_permissions_bit"].level_on_fail == "BLOCKED"
     assert reqs["process_query"].level_on_fail == "WARN"

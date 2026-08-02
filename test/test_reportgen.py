@@ -2,6 +2,8 @@
 from pathlib import Path
 
 import pytest
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.generators.reportgen import (
@@ -299,23 +301,11 @@ def test_dictionary_choice_members_carry_ordinals() -> None:
 
 
 def test_dictionary_flags_rich_text_as_html(tmp_path: Path) -> None:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Detail richtext\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "Detail richtext"),
+        mapping=entities("Risk"),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     md = generate_data_dictionary(schema, bundle, "default")
     assert "HTML over OData" in md
     assert "strip markup" in md
@@ -412,26 +402,15 @@ def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> No
 def test_calculated_date_reports_as_date(tmp_path: Path) -> None:
     """A calculated date column must land as a date in both reporting
     surfaces — M `type date` and SQL `DATE` — not the text fallback."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  NextReviewDue calculated_date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "NextReviewDue calculated_date"),
+        mapping=blocks(entities("Risk"), """
+            calculated_formulas:
+              Risk:
+                NextReviewDue: '=DATE(2026,1,1)'
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    NextReviewDue: '=DATE(2026,1,1)'\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     pq = generate_powerquery(schema, bundle, "default")["APP_Risk.pq"]
     assert "NextReviewDue" in pq
     assert "type date" in pq
@@ -452,39 +431,30 @@ def test_calculated_date_reports_as_date(tmp_path: Path) -> None:
 
 
 def _declared(tmp_path: Path) -> tuple[Schema, MappingBundle]:
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Escalation {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Route nvarchar\n"
-        "  Resolution nvarchar\n"
-        "  Status nvarchar\n"
-        "}\n",
-        encoding="utf-8",
+    return pack(
+        tmp_path,
+        dbml=table(
+            "Escalation", ID_PK, TITLE, "Route nvarchar", "Resolution nvarchar",
+            "Status nvarchar",
+        ),
+        mapping=blocks(entities("Escalation"), """
+            form_visibility:
+              Escalation:
+                columns:
+                  Route: hidden
+                  Resolution:
+                    new: false
+                    when:
+                      - { field: Status, op: eq, value: Resolved }
+            column_validation:
+              Escalation:
+                columns:
+                  Resolution:
+                    when:
+                      - { field: Resolution, measure: length, op: gt, value: 10 }
+                    message: Give at least a sentence.
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Escalation: { kind: List, base_template: 100, site_role: default }\n"
-        "form_visibility:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Route: hidden\n"
-        "      Resolution:\n"
-        "        new: false\n"
-        "        when:\n"
-        "          - { field: Status, op: eq, value: Resolved }\n"
-        "column_validation:\n"
-        "  Escalation:\n"
-        "    columns:\n"
-        "      Resolution:\n"
-        "        when:\n"
-        "          - { field: Resolution, measure: length, op: gt, value: 10 }\n"
-        "        message: Give at least a sentence.\n",
-        encoding="utf-8",
-    )
-    return parse_dbml(tmp_path / "s.dbml"), load_mapping(tmp_path / "m.yaml")
 
 
 def test_data_dictionary_reports_form_visibility_and_save_rules(tmp_path: Path) -> None:

@@ -1,6 +1,8 @@
 """Validator: column formatting."""
 from pathlib import Path
 
+from _builders import ID_PK, TITLE, table
+from _packs import blocks, entities, pack
 from _paths import FIXTURES
 from _validator_helpers import (
     _bundle_with_formulas,
@@ -67,47 +69,55 @@ def test_column_formatting_validation(tmp_path: Path) -> None:
 def test_view_formatting_field_refs_validated(tmp_path: Path) -> None:
     errors = _view_errors(
         tmp_path,
-        "views:\n"
-        "  Project:\n"
-        "    - title: V\n"
-        "      fields: [Title]\n"
-        "      formatting: { additionalRowClass: \"=if([$Ghost] == 1, 'x', '')\" }\n",
+        """
+        views:
+          Project:
+            - title: V
+              fields: [Title]
+              formatting: { additionalRowClass: "=if([$Ghost] == 1, 'x', '')" }
+        """,
     )
     assert any("Ghost" in f.message and "V" in f.message for f in errors)
 
 def test_form_formatting_validation(tmp_path: Path) -> None:
     errors = _view_errors(
         tmp_path,
-        "form_formatting:\n"
-        "  Widget:\n"
-        "    header: { elmType: div }\n"
-        "  Project:\n"
-        "    header: { elmType: div, txtContent: '[$Ghost]' }\n"
-        "    body: { sections: [ { displayname: X, fields: [Title, Nope] } ] }\n",
+        """
+        form_formatting:
+          Widget:
+            header: { elmType: div }
+          Project:
+            header: { elmType: div, txtContent: '[$Ghost]' }
+            body: { sections: [ { displayname: X, fields: [Title, Nope] } ] }
+        """,
     )
     assert any("Widget" in f.message and "form_formatting" in f.message for f in errors)
     assert any("Ghost" in f.message for f in errors)
     assert any("Nope" in f.message and "sections" in f.message for f in errors)
     ok = _view_errors(
         tmp_path,
-        "form_formatting:\n"
-        "  Project:\n"
-        "    body: { sections: [ { displayname: X, fields: [Title, Status] } ] }\n",
+        """
+        form_formatting:
+          Project:
+            body: { sections: [ { displayname: X, fields: [Title, Status] } ] }
+        """,
     )
     assert ok == []
 
 def test_list_validation_rules_validated(tmp_path: Path) -> None:
     schema, bundle = _view_inputs(
         tmp_path,
-        "list_validation:\n"
-        "  Widget:\n"
-        "    when:\n"
-        "      - { field: Title, op: is_not_null }\n"
-        "    message: x\n"
-        "  Project:\n"
-        "    when:\n"
-        "      - { field: Ghost, op: eq, value: x }\n"
-        "    message: x\n",
+        """
+        list_validation:
+          Widget:
+            when:
+              - { field: Title, op: is_not_null }
+            message: x
+          Project:
+            when:
+              - { field: Ghost, op: eq, value: x }
+            message: x
+        """,
     )
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
     assert any("Widget" in f.message and "list_validation" in f.message for f in errors)
@@ -116,33 +126,21 @@ def test_list_validation_rules_validated(tmp_path: Path) -> None:
 def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> None:
     """SP list validation formulas cannot reference calculated, person,
     lookup or multi-line columns — reject at build, not at paste."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  Score calculated_number\n"
-        "  Owner person\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "Score calculated_number", "Owner person"),
+        mapping=blocks(entities("Risk"), """
+            calculated_formulas:
+              Risk:
+                Score: '=1'
+            list_validation:
+              Risk:
+                when:
+                  - { field: Score, op: gt, value: 0 }
+                  - { field: Owner, op: is_not_null }
+                message: x
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    Score: '=1'\n"
-        "list_validation:\n"
-        "  Risk:\n"
-        "    when:\n"
-        "      - { field: Score, op: gt, value: 0 }\n"
-        "      - { field: Owner, op: is_not_null }\n"
-        "    message: x\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     errors = [f for f in validate_against_mapping(schema, bundle) if f.severity == "error"]
     assert any("Score" in f.message and "calculated" in f.message.lower() for f in errors)
     assert any("Owner" in f.message and "person" in f.message.lower() for f in errors)
@@ -150,32 +148,21 @@ def test_list_validation_rejects_unsupported_column_types(tmp_path: Path) -> Non
 def test_today_offset_valid_on_calculated_date(tmp_path: Path) -> None:
     """A calculated_date column stores DateTime values — 'today' offset view
     filters must accept it (the NextReviewDue 'Reviews due' case)."""
-    (tmp_path / "s.dbml").write_text(
-        "Project t { database_type: 'SharePoint Online' }\n"
-        "Table Risk {\n"
-        "  Id int [pk, increment]\n"
-        "  Title nvarchar [not null]\n"
-        "  NextReviewDue calculated_date\n"
-        "}\n",
-        encoding="utf-8",
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE, "NextReviewDue calculated_date"),
+        mapping=blocks(entities("Risk"), """
+            calculated_formulas:
+              Risk:
+                NextReviewDue: '=DATE(2026,1,1)'
+            views:
+              Risk:
+                - title: Due
+                  fields: [Title, NextReviewDue]
+                  where:
+                    - { field: NextReviewDue, op: leq, value: today+30 }
+        """),
     )
-    (tmp_path / "m.yaml").write_text(
-        'prefix: "APP_"\n'
-        "entities:\n"
-        "  Risk: { kind: List, base_template: 100, site_role: default }\n"
-        "calculated_formulas:\n"
-        "  Risk:\n"
-        "    NextReviewDue: '=DATE(2026,1,1)'\n"
-        "views:\n"
-        "  Risk:\n"
-        "    - title: Due\n"
-        "      fields: [Title, NextReviewDue]\n"
-        "      where:\n"
-        "        - { field: NextReviewDue, op: leq, value: today+30 }\n",
-        encoding="utf-8",
-    )
-    schema = parse_dbml(tmp_path / "s.dbml")
-    bundle = load_mapping(tmp_path / "m.yaml")
     findings = validate_against_mapping(schema, bundle)
     assert not any(
         "offsets apply only" in f.message for f in findings if f.severity == "error"
