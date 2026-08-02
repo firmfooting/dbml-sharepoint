@@ -14,6 +14,10 @@
     "enabled": true,
     "schedule": ["before 9am on the first day of the month"]
   },
+
+  "platformAutomerge": true,
+  "automergeStrategy": "squash",
+
   "packageRules": [
     {
       "description": "Major bumps soak for a month before they are offered.",
@@ -21,7 +25,30 @@
       "minimumReleaseAge": "30 days"
     },
     {
-      "description": "react and react-dom must move together. Bumping one alone leaves the other's peer range unsatisfiable and fails the docs build - that is why the two split Dependabot PRs (#1, #2) were both permanently red. Docusaurus 3.10 accepts ^18 || ^19, so the pair itself is fine; only the splitting was not.",
+      "description": "Anything that is not a major merges itself once CI is green. The gate is real: 1292 tests on two operating systems, a full Docusaurus build, zizmor, and a conventional-title check, all required by branch protection. Combined with the 7-day soak above, this is the maintenance the repository should not need a human for.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "digest",
+        "pin",
+        "pinDigest",
+        "bump",
+        "lockFileMaintenance"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Majors always wait for a person. A major is where an API disappears, a default flips, or a peer range breaks - none of which a green suite reliably catches. React 19 (#62) is the worked example: it builds and server-side renders all 44 pages cleanly, and client-side hydration is still not proven by any check we run.",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
+    {
+      "description": "The docs site is not shipped in the Python package, so its updates are chores, not fixes. Without this Renovate labels npm dependency bumps `fix(deps)` - the React 19 PR arrived titled that way - and release-please files them under Bug Fixes in the changelog.",
+      "matchFileNames": ["website/**"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "react and react-dom must move together: bumping one alone leaves the other's peer range unsatisfiable and fails the docs build. This is why the two split Dependabot PRs (#1, #2) were both permanently red.",
       "matchPackageNames": [
         "react",
         "react-dom",
@@ -31,7 +58,7 @@
       "groupName": "react"
     },
     {
-      "description": "Mirrors the cap in pyproject.toml. PyDBML still calls pyparsing's pre-PEP8 escChar alias, which warns from 3.3 and dies under filterwarnings = [\"error\"], taking out test collection entirely. Lift this and the pyproject cap together once PyDBML ships the snake_case API.",
+      "description": "PyDBML still calls pyparsing's pre-PEP8 escChar alias, which warns from 3.3 and dies under filterwarnings = [\"error\"]. Mirrors the cap in pyproject.toml; lift both together once PyDBML ships the snake_case API.",
       "matchPackageNames": ["pyparsing"],
       "allowedVersions": "<3.3"
     },
