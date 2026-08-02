@@ -5,6 +5,7 @@ from typing import cast
 
 import pytest
 from _builders import ID_PK, TITLE, table
+from _findings import only
 from _packs import blocks, entities, pack, write_mapping
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
@@ -176,11 +177,10 @@ def test_each_rule_here_has_its_own_code() -> None:
 def test_condition_problems_are_reported_through_the_shared_validator() -> None:
     bad = parse_condition([{"field": "Nope", "op": "eq", "value": 1}], "w")
     findings = _findings(when=bad)
-    assert any("not a rendered column" in f.message for f in findings)
     # The condition grammar classifies its own problems, so the leaf's fault
     # keeps its identity instead of arriving as "the when is bad".
-    assert findings[0].code is FindingCode.CONDITION_FIELD_NOT_RENDERED
-    assert findings[0].location == Location(
+    f = only(findings, FindingCode.CONDITION_FIELD_NOT_RENDERED)
+    assert f.location == Location(
         Section.FORM_VISIBILITY, entity="X", column="Note", sub="when.Nope",
     )
 

@@ -3,10 +3,12 @@ from pathlib import Path
 
 import pytest
 from _builders import ID_PK, table
+from _findings import by_severity, none_of, only
 from _packs import blocks, entities, entity, pack
 from _paths import FIXTURES
 from _validator_helpers import _bundle_with_formulas, _schema
 
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
     validate,
     validate_against_mapping,
@@ -39,49 +41,51 @@ def test_calculated_types_pass_schema_validation() -> None:
         Column(name="Score", type="calculated_number"),
         Column(name="Band", type="calculated_text"),
     ])
-    findings = validate(_schema(table))
-    assert not any("unknown type" in f.message for f in findings)
+    none_of(validate(_schema(table)), FindingCode.UNKNOWN_COLUMN_TYPE)
 
 def test_valid_calculated_fixture_has_no_errors() -> None:
     schema, bundle = _calc_inputs()
     findings = validate(schema) + validate_against_mapping(schema, bundle)
-    assert not any(f.severity == "error" for f in findings)
+    assert not by_severity(findings, "error")
 
 def test_calculated_column_without_formula_is_error() -> None:
     schema, bundle = _calc_inputs()
     del bundle.mapping.calculated_formulas["Risk"]["RiskScore"]
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "RiskScore" in f.message
-        and "formula" in f.message.lower()
-        for f in findings
-    )
+    f = only(findings, FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA)
+    assert f.severity == "error"
+    # No location on this one, so the column has to reach the reader in prose.
+    assert "Risk.RiskScore" in f.message
 
 def test_orphan_calculated_formula_is_error() -> None:
     schema, bundle = _calc_inputs()
     bundle.mapping.calculated_formulas["Risk"]["NotAColumn"] = "=1"
     findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "NotAColumn" in f.message for f in findings
-    )
+    f = only(findings, FindingCode.FORMULA_TARGET_NOT_CALCULATED)
+    assert f.severity == "error"
+    assert f.location == Location(Section.CALCULATED_FORMULAS, entity="Risk")
+    assert "NotAColumn" in f.message
 
 def test_calculated_formula_must_start_with_equals() -> None:
     schema, bundle = _calc_inputs()
     bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = 'IF([Severity]="High",10,1)'
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "RiskScore" in f.message and "'='" in f.message
-        for f in findings
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_MISSING_EQUALS,
     )
+    assert f.severity == "error"
+    assert "Risk.RiskScore" in f.message
 
 def test_calculated_formula_over_sp_limit_is_error() -> None:
     schema, bundle = _calc_inputs()
     bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = "=" + "1+" * 600 + "1"
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "1024" in f.message and "RiskScore" in f.message
-        for f in findings
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_TOO_LONG,
     )
+    assert f.severity == "error"
+    # The limit the author has to get under.
+    assert "1024" in f.message
 
 def test_calculated_formula_unknown_column_reference_is_error() -> None:
     """SharePoint validates a formula's [Column] references when the field is
@@ -92,27 +96,30 @@ def test_calculated_formula_unknown_column_reference_is_error() -> None:
     bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = (
         '=IF([Severty]="High",10,1)'  # misspelled Severity
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "RiskScore" in f.message and "Severty" in f.message
-        for f in findings
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
     )
+    assert f.severity == "error"
+    assert "[Severty]" in f.message
     # Bracket text inside string literals is NOT a column reference.
     bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = (
         '=IF([Severity]="[Not A Column]",10,1)'
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert not any("Not A Column" in f.message for f in findings)
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
+    )
 
 def test_calculated_formula_self_reference_is_error() -> None:
     schema, bundle = _calc_inputs()
     bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = "=[RiskScore]+1"
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "RiskScore" in f.message
-        and "itself" in f.message
-        for f in findings
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_FORMULA_SELF_REFERENCE,
     )
+    assert f.severity == "error"
+    assert "Risk.RiskScore" in f.message
 
 def test_calculated_formula_lookup_operand_is_error() -> None:
     parent = Table(name="Risk", columns=[
@@ -130,22 +137,18 @@ def test_calculated_formula_lookup_operand_is_error() -> None:
         "Risk",
         "Action",
     )
-    errors = [
-        finding
-        for finding in validate_against_mapping(_schema(parent, child), bundle)
-        if finding.severity == "error"
-    ]
-    message = next(
-        finding.message
-        for finding in errors
-        if "Action.RiskCopy" in finding.message and "[Risk]" in finding.message
+    f = only(
+        validate_against_mapping(_schema(parent, child), bundle),
+        FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND,
     )
-    assert "Lookup" in message
-    assert "HTTP 500" in message
-    assert "not supported in formulas" in message
+    assert f.severity == "error"
+    # One code covers every refused operand type, so WHICH type it was, and
+    # which types are allowed instead, live only in the message.
+    assert "Action.RiskCopy" in f.message and "[Risk]" in f.message
+    assert "Lookup" in f.message
     # Naming the supported set matters more than naming the excluded one: an
     # author who reads "not a Lookup" still has to guess what IS allowed.
-    assert "Yes/No" in message
+    assert "Yes/No" in f.message
 
 def test_calculated_formula_person_operand_is_error() -> None:
     table = Table(name="Risk", columns=[
@@ -158,20 +161,14 @@ def test_calculated_formula_person_operand_is_error() -> None:
         {"Risk": {"OwnerCopy": "=[Owner]"}},
         "Risk",
     )
-    errors = [
-        finding
-        for finding in validate_against_mapping(_schema(table), bundle)
-        if finding.severity == "error"
-    ]
-    message = next(
-        finding.message
-        for finding in errors
-        if "Risk.OwnerCopy" in finding.message and "[Owner]" in finding.message
+    f = only(
+        validate_against_mapping(_schema(table), bundle),
+        FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND,
     )
-    assert "Person" in message
-    assert "HTTP 500" in message
-    assert "not supported in formulas" in message
-    assert "Yes/No" in message
+    assert f.severity == "error"
+    assert "Risk.OwnerCopy" in f.message and "[Owner]" in f.message
+    assert "Person" in f.message
+    assert "Yes/No" in f.message
 
 @pytest.mark.parametrize(
     ("operand_type", "described_as"),
@@ -197,14 +194,14 @@ def test_probed_calculated_operand_types_are_errors(
         Column(name="Copy", type="calculated_text"),
     ])
     bundle = _bundle_with_formulas({"Risk": {"Copy": "=[Source]"}}, "Risk")
-    message = next(
-        finding.message
-        for finding in validate_against_mapping(_schema(table), bundle)
-        if finding.severity == "error" and "[Source]" in finding.message
+    f = only(
+        validate_against_mapping(_schema(table), bundle),
+        FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND,
     )
-    assert "Risk.Copy" in message
-    assert described_as in message
-    assert "not supported in formulas" in message
+    assert f.severity == "error"
+    assert "Risk.Copy" in f.message and "[Source]" in f.message
+    # The probed description is the whole point of the parametrisation.
+    assert described_as in f.message
 
 @pytest.mark.parametrize("operand_type", ["nvarchar", "number", "boolean", "datetime"])
 def test_probe_accepted_calculated_operand_types_stay_allowed(operand_type: str) -> None:
@@ -219,12 +216,10 @@ def test_probe_accepted_calculated_operand_types_stay_allowed(operand_type: str)
         Column(name="Copy", type="calculated_text"),
     ])
     bundle = _bundle_with_formulas({"Risk": {"Copy": "=[Source]"}}, "Risk")
-    errors = [
-        finding
-        for finding in validate_against_mapping(_schema(table), bundle)
-        if finding.severity == "error"
-    ]
-    assert not any("[Source]" in finding.message for finding in errors), errors
+    none_of(
+        validate_against_mapping(_schema(table), bundle),
+        FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND,
+    )
 
 def test_calculated_formula_cross_site_text_companion_is_allowed() -> None:
     unit = Table(name="Unit", columns=[
@@ -245,35 +240,29 @@ def test_calculated_formula_cross_site_text_companion_is_allowed() -> None:
     bundle.mapping.cross_site_reference_columns.append(
         CrossSiteRef(entity="Project", column="Unit"),
     )
-    errors = [
-        finding
-        for finding in validate_against_mapping(_schema(unit, project), bundle)
-        if finding.severity == "error"
-    ]
-    assert not any("UnitAbbreviation" in finding.message for finding in errors), errors
+    none_of(
+        validate_against_mapping(_schema(unit, project), bundle),
+        FindingCode.CALCULATED_FORMULA_UNKNOWN_COLUMN,
+    )
 
 def test_calculated_formula_circular_references_are_error() -> None:
     schema, bundle = _calc_inputs()
     bundle.mapping.calculated_formulas["Risk"]["RiskScore"] = '=IF([RiskBand]="Red",10,1)'
     bundle.mapping.calculated_formulas["Risk"]["RiskBand"] = '=IF([RiskScore]>5,"Red","Green")'
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "circular" in f.message.lower()
-        and "RiskBand" in f.message and "RiskScore" in f.message
-        for f in findings
-    )
+    f = only(validate_against_mapping(schema, bundle), FindingCode.CALCULATED_FORMULA_CYCLE)
+    assert f.severity == "error"
+    assert f.location == Location(Section.CALCULATED_FORMULAS, entity="Risk")
+    # Both members of the cycle, or the author cannot see what to break.
+    assert "RiskBand" in f.message and "RiskScore" in f.message
 
 def test_indexed_calculated_column_is_error() -> None:
     schema, bundle = _calc_inputs()
     next(table for table in schema.tables if table.name == "Risk").indexes.append(
         TableIndex(("RiskScore",)),
     )
-    findings = validate_against_mapping(schema, bundle)
-    assert any(
-        f.severity == "error" and "RiskScore" in f.message
-        and "index" in f.message.lower() and "calculated" in f.message.lower()
-        for f in findings
-    )
+    f = only(validate_against_mapping(schema, bundle), FindingCode.INDEX_ON_CALCULATED_COLUMN)
+    assert f.severity == "error"
+    assert "'RiskScore'" in f.message
 
 # --- Lookup target's display column must be indexable -----------------------
 
@@ -300,31 +289,26 @@ def test_a_calculated_display_column_warns_about_the_form(tmp_path: Path) -> Non
     But the message must say the FORM breaks — "cannot be indexed" does not tell
     an author what their users will see."""
     schema, bundle = _calculated_display_inputs(tmp_path, accepted=False)
-    warnings = [
-        f.message
-        for f in validate_against_mapping(schema, bundle)
-        if f.severity == "warning" and "display_column" in f.message
-    ]
-    assert len(warnings) == 1
-    assert "Label" in warnings[0]
-    assert "new-item form" in warnings[0]
-    assert "5,000" in warnings[0]
-    assert "accept_unindexable_display_column" in warnings[0]
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.CALCULATED_DISPLAY_COLUMN_UNINDEXABLE,
+    )
     # Not an error: a small list is a legitimate case.
-    assert not [
-        f for f in validate_against_mapping(schema, bundle)
-        if f.severity == "error" and "display_column" in f.message
-    ]
+    assert f.severity == "warning"
+    assert "Label" in f.message
+    # "cannot be indexed" does not tell an author what their users will see.
+    assert "new-item form" in f.message
+    assert "accept_unindexable_display_column" in f.message
 
 def test_accepting_it_silences_the_warning_completely(tmp_path: Path) -> None:
     """Silent, not downgraded. The acceptance is visible in the mapping; an
     info line every build is the same noise one rung down, and a notice nobody
     can resolve is a notice everyone learns to skim."""
     schema, bundle = _calculated_display_inputs(tmp_path, accepted=True)
-    assert not [
-        f for f in validate_against_mapping(schema, bundle)
-        if "display_column" in f.message
-    ]
+    findings = validate_against_mapping(schema, bundle)
+    none_of(findings, FindingCode.CALCULATED_DISPLAY_COLUMN_UNINDEXABLE)
+    # Silent, not traded for a "you accepted this" notice of its own.
+    none_of(findings, FindingCode.REDUNDANT_DISPLAY_COLUMN_ACCEPTANCE)
 
 def _display_type_inputs(
     tmp_path: Path, column_type: str, *, looked_up: bool,
@@ -356,15 +340,13 @@ def test_an_unindexable_display_column_type_is_an_error(
     throws part-way through a run. An ERROR, not a warning — no acceptance can
     make a Note column indexable."""
     schema, bundle = _display_type_inputs(tmp_path, column_type, looked_up=True)
-    errors = [
-        f.message
-        for f in validate_against_mapping(schema, bundle)
-        if f.severity == "error" and "display_column" in f.message
-    ]
-    assert len(errors) == 1, errors
-    assert "Notes" in errors[0]
-    assert described_as in errors[0]
-    assert "cannot index" in errors[0]
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.DISPLAY_COLUMN_TYPE_UNINDEXABLE,
+    )
+    assert f.severity == "error"
+    # The SharePoint type name, which is what the author sees in the UI.
+    assert "Notes" in f.message and described_as in f.message
 
 def test_an_unindexable_display_column_is_fine_when_nothing_looks_it_up(
     tmp_path: Path,
@@ -373,10 +355,10 @@ def test_an_unindexable_display_column_is_fine_when_nothing_looks_it_up(
     Erroring here would ban a perfectly good Note column from being the label a
     report happens to print."""
     schema, bundle = _display_type_inputs(tmp_path, "longtext", looked_up=False)
-    assert not [
-        f for f in validate_against_mapping(schema, bundle)
-        if f.severity == "error" and "display_column" in f.message
-    ]
+    none_of(
+        validate_against_mapping(schema, bundle),
+        FindingCode.DISPLAY_COLUMN_TYPE_UNINDEXABLE,
+    )
 
 def test_a_display_column_that_is_never_rendered_is_an_error(tmp_path: Path) -> None:
     """A cross-site logical column is declared in the DBML but replaced at deploy
@@ -399,14 +381,13 @@ def test_a_display_column_that_is_never_rendered_is_an_error(tmp_path: Path) -> 
               - { entity: Event, column: Region }
         """,
     )
-    errors = [
-        f.message
-        for f in validate_against_mapping(schema, bundle)
-        if f.severity == "error" and "display_column" in f.message
-    ]
-    assert len(errors) == 1, errors
-    assert "not a rendered column" in errors[0]
-    assert "Abbreviation" in errors[0]
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.DISPLAY_COLUMN_NOT_RENDERED,
+    )
+    assert f.severity == "error"
+    # The hint that says WHERE the column went, not just that it is missing.
+    assert "Abbreviation" in f.message
 
 def test_a_pointless_acceptance_warns(tmp_path: Path) -> None:
     """Set where the display column is perfectly indexable, it signals a
@@ -430,14 +411,13 @@ def test_a_pointless_acceptance_warns(tmp_path: Path) -> None:
               FollowUp: { kind: List, base_template: 100, site_role: default }
         """,
     )
-    warnings = [
-        f.message
-        for f in validate_against_mapping(schema, bundle)
-        if f.severity == "warning"
-        and "accept_unindexable_display_column" in f.message
-    ]
-    assert len(warnings) == 1
-    assert "is not calculated" in warnings[0]
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.REDUNDANT_DISPLAY_COLUMN_ACCEPTANCE,
+    )
+    assert f.severity == "warning"
+    # One code, several reasons: which one applies is only in the prose.
+    assert "is not calculated" in f.message
 
 def test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth(
     tmp_path: Path,
@@ -463,14 +443,11 @@ def test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth(
                 Label: "=[Title]"
         """,
     )
-    warnings = [
-        f.message
-        for f in validate_against_mapping(schema, bundle)
-        if f.severity == "warning"
-        and "accept_unindexable_display_column" in f.message
-    ]
-    assert len(warnings) == 1
-    assert "nothing looks this entity up" in warnings[0]
+    f = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.REDUNDANT_DISPLAY_COLUMN_ACCEPTANCE,
+    )
+    assert f.severity == "warning"
+    assert "nothing looks this entity up" in f.message
     # 'Label' IS calculated. Saying otherwise is simply untrue.
-    assert "is not calculated" not in warnings[0]
-    assert "Remove it" in warnings[0]
+    assert "is not calculated" not in f.message

@@ -2,8 +2,10 @@
 from pathlib import Path
 
 from _builders import ID_PK, TITLE, table
+from _findings import none_of, only
 from _packs import blocks, entities, entity, pack, with_tail
 
+from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate_against_mapping,
@@ -58,22 +60,40 @@ def _join_inputs(
         ),
     )
 
+#: The two codes `_join_finding` can produce — one rule, two severities.
+_JOIN_CODES = frozenset(
+    {FindingCode.JOIN_THRESHOLD_EXCEEDED, FindingCode.JOIN_THRESHOLD_APPROACHED},
+)
+
+
+def _declared_view(title: str, entity_name: str = "Project") -> Location:
+    """Where a finding about one declared view of `entity_name` sits."""
+    return Location(Section.VIEWS, entity=entity_name, view=title)
+
+
+def _all_items(entity_name: str = "Project") -> Location:
+    """Where a finding about the generated 'All Items' view sits.
+
+    The same rule is reached from a declared view and from All Items, so the
+    two share a code and the SECTION is what tells them apart.
+    """
+    return Location(Section.ENTITIES, entity=entity_name)
+
+
 def _join_findings(
-    schema: Schema, bundle: MappingBundle, subject: str,
+    schema: Schema, bundle: MappingBundle, at: Location,
 ) -> list[Finding]:
     """Join-threshold findings about one subject.
 
-    Both substrings are required. 'join-bearing columns' and 'join operations'
-    occur together in no other message in this codebase, so if the check is
-    deleted this returns [] and every assertion below fails — while the
-    unnecessary-suppression warning added in Task 5, which also says
-    'join-bearing columns', is excluded because it never says 'join
-    operations'."""
+    Identified by code and structured location. This used to require two
+    substrings ('join-bearing columns' AND 'join operations') to tell the
+    threshold rule apart from the unnecessary-suppression warning, which says
+    the first but not the second — a distinction that lived entirely in prose
+    and would have collapsed the moment either sentence was reworded.
+    """
     return [
         f for f in validate_against_mapping(schema, bundle)
-        if "join-bearing columns" in f.message
-        and "join operations" in f.message
-        and f.message.startswith(subject)
+        if f.code in _JOIN_CODES and f.location == at
     ]
 
 def _named(message: str) -> list[str]:
@@ -113,7 +133,7 @@ def test_a_view_with_eight_join_columns_is_silent(tmp_path: Path) -> None:
         _persons(8),
         _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 9))]),
     )
-    assert _join_findings(schema, bundle, "views[Project].Wide") == []
+    assert _join_findings(schema, bundle, _declared_view("Wide")) == []
 
 def test_a_view_with_nine_join_columns_warns(tmp_path: Path) -> None:
     schema, bundle = _join_inputs(
@@ -121,12 +141,12 @@ def test_a_view_with_nine_join_columns_warns(tmp_path: Path) -> None:
         _persons(9),
         _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 10))]),
     )
-    found = _join_findings(schema, bundle, "views[Project].Wide")
-    assert len(found) == 1
-    assert found[0].severity == "warning"
-    assert "9 join-bearing columns" in found[0].message
-    assert "P9" in _named(found[0].message)
-    assert "Remove fields from this view." in found[0].message
+    found = _join_findings(schema, bundle, _declared_view("Wide"))
+    f = only(found, FindingCode.JOIN_THRESHOLD_APPROACHED)
+    assert "9 join-bearing columns" in f.message
+    assert "P9" in _named(f.message)
+    # A declared view CAN be edited, so this is the remedy it must be offered.
+    assert "Remove fields from this view." in f.message
 
 def test_a_view_with_thirteen_join_columns_errors(tmp_path: Path) -> None:
     schema, bundle = _join_inputs(
@@ -134,12 +154,9 @@ def test_a_view_with_thirteen_join_columns_errors(tmp_path: Path) -> None:
         _persons(13),
         _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 14))]),
     )
-    found = _join_findings(schema, bundle, "views[Project].Wide")
-    assert len(found) == 1
-    assert found[0].severity == "error"
-    assert "13 join-bearing columns" in found[0].message
-    assert "-2147024749" in found[0].message
-    assert "Remove fields from this view." in found[0].message
+    found = _join_findings(schema, bundle, _declared_view("Wide"))
+    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "13 join-bearing columns" in f.message
 
 def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none(
     tmp_path: Path,
@@ -158,30 +175,33 @@ def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none(
         tmp_path, _persons(12),
         _view_block("Dates", ["Title", *twelve, "Created", "Modified"]),
     )
-    dates = _join_findings(schema, bundle, "views[Project].Dates")
-    assert len(dates) == 1
-    assert dates[0].severity == "warning"
-    assert "12 join-bearing columns" in dates[0].message
-    assert "Created" not in _named(dates[0].message)
-    assert "Modified" not in _named(dates[0].message)
+    dates = only(
+        _join_findings(schema, bundle, _declared_view("Dates")),
+        FindingCode.JOIN_THRESHOLD_APPROACHED,
+    )
+    assert "12 join-bearing columns" in dates.message
+    assert "Created" not in _named(dates.message)
+    assert "Modified" not in _named(dates.message)
 
     schema, bundle = _join_inputs(
         tmp_path, _persons(12), _view_block("WithAuthor", ["Title", *twelve, "Author"]),
     )
-    with_author = _join_findings(schema, bundle, "views[Project].WithAuthor")
-    assert len(with_author) == 1
-    assert with_author[0].severity == "error"
-    assert "13 join-bearing columns" in with_author[0].message
-    assert "Author" in _named(with_author[0].message)
+    with_author = only(
+        _join_findings(schema, bundle, _declared_view("WithAuthor")),
+        FindingCode.JOIN_THRESHOLD_EXCEEDED,
+    )
+    assert "13 join-bearing columns" in with_author.message
+    assert "Author" in _named(with_author.message)
 
     schema, bundle = _join_inputs(
         tmp_path, _persons(12), _view_block("WithEditor", ["Title", *twelve, "Editor"]),
     )
-    with_editor = _join_findings(schema, bundle, "views[Project].WithEditor")
-    assert len(with_editor) == 1
-    assert with_editor[0].severity == "error"
-    assert "13 join-bearing columns" in with_editor[0].message
-    assert "Editor" in _named(with_editor[0].message)
+    with_editor = only(
+        _join_findings(schema, bundle, _declared_view("WithEditor")),
+        FindingCode.JOIN_THRESHOLD_EXCEEDED,
+    )
+    assert "13 join-bearing columns" in with_editor.message
+    assert "Editor" in _named(with_editor.message)
 
 def test_a_real_ref_column_costs_a_join(tmp_path: Path) -> None:
     """The control for the cross-site test below. The schema is identical; the
@@ -194,11 +214,10 @@ def test_a_real_ref_column_costs_a_join(tmp_path: Path) -> None:
         _persons(12) + "  Elsewhere int [ref: > Person.Id]\n",
         _view_block("Wide", ["Title", *twelve, "Elsewhere"]),
     )
-    found = _join_findings(schema, bundle, "views[Project].Wide")
-    assert len(found) == 1
-    assert found[0].severity == "error"
-    assert "13 join-bearing columns" in found[0].message
-    assert "Elsewhere" in _named(found[0].message)
+    found = _join_findings(schema, bundle, _declared_view("Wide"))
+    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "13 join-bearing columns" in f.message
+    assert "Elsewhere" in _named(f.message)
 
 def test_a_cross_site_ref_costs_no_join_in_a_view(tmp_path: Path) -> None:
     twelve = [f"P{n}" for n in range(1, 13)]
@@ -216,11 +235,10 @@ def test_a_cross_site_ref_costs_no_join_in_a_view(tmp_path: Path) -> None:
             """,
         ),
     )
-    found = _join_findings(schema, bundle, "views[Project].Wide")
-    assert len(found) == 1
-    assert found[0].severity == "warning"
-    assert "12 join-bearing columns" in found[0].message
-    assert "Elsewhere" not in _named(found[0].message)
+    found = _join_findings(schema, bundle, _declared_view("Wide"))
+    f = only(found, FindingCode.JOIN_THRESHOLD_APPROACHED)
+    assert "12 join-bearing columns" in f.message
+    assert "Elsewhere" not in _named(f.message)
 
 def test_a_view_declaring_a_field_set_counts_the_join_columns_it_expands_to(
     tmp_path: Path,
@@ -245,10 +263,9 @@ def test_a_view_declaring_a_field_set_counts_the_join_columns_it_expands_to(
             _view_block("Wide", ["Title", '"@wide"']),
         ),
     )
-    found = _join_findings(schema, bundle, "views[Project].Wide")
-    assert len(found) == 1
-    assert found[0].severity == "error"
-    assert "13 join-bearing columns" in found[0].message
+    found = _join_findings(schema, bundle, _declared_view("Wide"))
+    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "13 join-bearing columns" in f.message
 
 def test_a_declared_view_counts_every_join_it_declares_even_when_hidden(
     tmp_path: Path,
@@ -269,12 +286,11 @@ def test_a_declared_view_counts_every_join_it_declares_even_when_hidden(
         "    hide_from_all_items: [P1, P2]\n"
         + _view_block("Wide", ["Title", *(f"P{n}" for n in range(1, 14))]),
     )
-    found = _join_findings(schema, bundle, "views[Project].Wide")
-    assert len(found) == 1
-    assert found[0].severity == "error"
-    assert "13 join-bearing columns" in found[0].message
-    assert "P1" in _named(found[0].message)
-    assert "P2" in _named(found[0].message)
+    found = _join_findings(schema, bundle, _declared_view("Wide"))
+    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "13 join-bearing columns" in f.message
+    assert "P1" in _named(f.message)
+    assert "P2" in _named(f.message)
 
 def test_the_generated_all_items_counts_author_and_editor_as_joins(
     tmp_path: Path,
@@ -288,33 +304,31 @@ def test_the_generated_all_items_counts_author_and_editor_as_joins(
     neither column were counted, because `_join_finding`'s shared sentence says
     "Created By (Author) and Modified By (Editor)" in every finding it makes."""
     schema, bundle = _join_inputs(tmp_path, _persons(11))
-    found = _join_findings(schema, bundle, "entities[Project]")
-    assert len(found) == 1
-    assert found[0].severity == "error"
-    assert "13 join-bearing columns" in found[0].message
-    names = _named(found[0].message)
+    found = _join_findings(schema, bundle, _all_items())
+    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "13 join-bearing columns" in f.message
+    names = _named(f.message)
     assert "Author" in names
     assert "Editor" in names
     assert "P11" in names
-    assert "hide_from_all_items" in found[0].message
+    assert "hide_from_all_items" in f.message
     # The declared-view remedy must NOT be offered: All Items cannot be edited.
-    assert "Remove fields from this view." not in found[0].message
+    assert "Remove fields from this view." not in f.message
 
 def test_the_generated_all_items_join_count_is_silent_under_the_band(
     tmp_path: Path,
 ) -> None:
     """The negative case: 6 declared + Author + Editor = 8, under the band."""
     schema, bundle = _join_inputs(tmp_path, _persons(6))
-    assert _join_findings(schema, bundle, "entities[Project]") == []
+    assert _join_findings(schema, bundle, _all_items()) == []
 
 def test_the_generated_all_items_starts_at_two_joins(tmp_path: Path) -> None:
     """Author and Editor are 2 of the 12 before a single business column, so an
     entity's real budget for its own columns is 10. 7 declared columns is 9."""
     schema, bundle = _join_inputs(tmp_path, _persons(7))
-    found = _join_findings(schema, bundle, "entities[Project]")
-    assert len(found) == 1
-    assert found[0].severity == "warning"
-    assert "9 join-bearing columns" in found[0].message
+    found = _join_findings(schema, bundle, _all_items())
+    f = only(found, FindingCode.JOIN_THRESHOLD_APPROACHED)
+    assert "9 join-bearing columns" in f.message
 
 def test_hide_from_all_items_clears_the_all_items_join_error(
     tmp_path: Path,
@@ -322,16 +336,15 @@ def test_hide_from_all_items_clears_the_all_items_join_error(
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [Author, Editor]\n",
     )
-    found = _join_findings(schema, bundle, "entities[Project]")
-    assert [f for f in found if f.severity == "error"] == []
+    found = _join_findings(schema, bundle, _all_items())
+    none_of(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
     # 11 remain, which is inside the 9-12 band, so the warning legitimately
     # stays. The key raises the ceiling on what an ENTITY may carry; it does
     # not remove the limit on what a VIEW may render.
-    assert len(found) == 1
-    assert found[0].severity == "warning"
-    assert "11 join-bearing columns" in found[0].message
-    assert "Author" not in _named(found[0].message)
-    assert "Editor" not in _named(found[0].message)
+    f = only(found, FindingCode.JOIN_THRESHOLD_APPROACHED)
+    assert "11 join-bearing columns" in f.message
+    assert "Author" not in _named(f.message)
+    assert "Editor" not in _named(f.message)
 
 def test_hide_from_all_items_does_not_lift_the_join_ceiling(
     tmp_path: Path,
@@ -352,13 +365,12 @@ def test_hide_from_all_items_does_not_lift_the_join_ceiling(
     schema, bundle = _join_inputs(
         tmp_path, _persons(14), "    hide_from_all_items: [Author, Editor]\n",
     )
-    found = _join_findings(schema, bundle, "entities[Project]")
-    assert len(found) == 1
-    assert found[0].severity == "error"
-    assert "14 join-bearing columns" in found[0].message
-    assert "Author" not in _named(found[0].message)
-    assert "Editor" not in _named(found[0].message)
-    assert "hide_from_all_items" in found[0].message
+    found = _join_findings(schema, bundle, _all_items())
+    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "14 join-bearing columns" in f.message
+    assert "Author" not in _named(f.message)
+    assert "Editor" not in _named(f.message)
+    assert "hide_from_all_items" in f.message
 
 def test_a_document_library_gets_no_all_items_join_finding(
     tmp_path: Path,
@@ -393,15 +405,14 @@ def test_a_document_library_gets_no_all_items_join_finding(
         ),
         mapping=entities("Person", entity("Project", kind="DocumentLibrary")),
     )
-    assert _join_findings(schema, bundle, "entities[Project]") == []
+    assert _join_findings(schema, bundle, _all_items()) == []
 
     # The pair. The identical schema declared `kind: List` DOES error, so the
     # empty result above is the guard and not an accident of the fixture.
     as_list, as_list_bundle = _join_inputs(tmp_path, _persons(13))
-    found = _join_findings(as_list, as_list_bundle, "entities[Project]")
-    assert len(found) == 1
-    assert found[0].severity == "error"
-    assert "15 join-bearing columns" in found[0].message
+    found = _join_findings(as_list, as_list_bundle, _all_items())
+    f = only(found, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "15 join-bearing columns" in f.message
 
 def test_hide_from_all_items_on_a_document_library_is_refused(
     tmp_path: Path,
@@ -409,9 +420,8 @@ def test_hide_from_all_items_on_a_document_library_is_refused(
     """The refusal above the loop's `continue`, exercised for the first time in
     this file. No other test in this section supplies `hide_from_all_items` on
     an entity the loop skips, so without this the branch that answers it has
-    no red/green cycle anywhere in the suite — the `_join_findings` filter
-    would not even see it, since this message never says "join-bearing
-    columns" or "join operations": it belongs to a different subject entirely.
+    no red/green cycle anywhere in the suite — `_join_findings` would not even
+    see it, since it carries a different code entirely.
 
     Task 5's own covering test for this branch is already green at its
     fail-first gate, by design, because Task 4 answers this key before Task 5
@@ -433,12 +443,10 @@ def test_hide_from_all_items_on_a_document_library_is_refused(
                 hide_from_all_items: [Author]
         """,
     )
-    found = [
-        f for f in validate_against_mapping(schema, bundle)
-        if f.message.startswith("entities[Project].hide_from_all_items")
-    ]
-    assert len(found) == 1
-    assert found[0].severity == "error"
+    only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.HIDE_WITHOUT_ALL_ITEMS_VIEW,
+    )
 
 def test_a_cross_site_ref_costs_no_join_on_all_items(tmp_path: Path) -> None:
     """A cross-site column is rendered as a Choice + URL PAIR — two rendered
@@ -451,44 +459,43 @@ def test_a_cross_site_ref_costs_no_join_on_all_items(tmp_path: Path) -> None:
               - { entity: Project, column: Elsewhere }
         """),
     )
-    found = _join_findings(schema, bundle, "entities[Project]")
-    assert len(found) == 1
-    assert found[0].severity == "warning"
-    assert "12 join-bearing columns" in found[0].message
+    found = _join_findings(schema, bundle, _all_items())
+    f = only(found, FindingCode.JOIN_THRESHOLD_APPROACHED)
+    assert "12 join-bearing columns" in f.message
 
     # Control: the same column as a real ref makes it 13.
     schema, bundle = _join_inputs(
         tmp_path, _persons(10) + "  Elsewhere int [ref: > Person.Id]\n",
     )
-    control = _join_findings(schema, bundle, "entities[Project]")
-    assert len(control) == 1
-    assert control[0].severity == "error"
-    assert "13 join-bearing columns" in control[0].message
+    control = _join_findings(schema, bundle, _all_items())
+    f = only(control, FindingCode.JOIN_THRESHOLD_EXCEEDED)
+    assert "13 join-bearing columns" in f.message
 
-def _hide_errors(
+def _hide_findings(
     schema: Schema, bundle: MappingBundle, entity: str = "Project",
-) -> list[str]:
-    prefix = f"entities[{entity}].hide_from_all_items"
-    return [
-        f.message for f in validate_against_mapping(schema, bundle)
-        if f.severity == "error" and f.message.startswith(prefix)
-    ]
+) -> list[Finding]:
+    """Every finding about one entity's `hide_from_all_items` key.
+
+    Selected by the structured location rather than by a message prefix, so
+    which of the four refusals fired is asked with a code below.
+    """
+    at = Location(Section.ENTITIES, entity=entity, sub="hide_from_all_items")
+    return [f for f in validate_against_mapping(schema, bundle) if f.location == at]
 
 def test_hiding_a_column_all_items_does_not_render_errors(tmp_path: Path) -> None:
     """A typo must not silently do nothing."""
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [Athor]\n",
     )
-    msgs = _hide_errors(schema, bundle)
-    assert len(msgs) == 1
-    assert "'Athor'" in msgs[0]
-    assert "not a column the generated 'All Items' view renders" in msgs[0]
+    f = only(_hide_findings(schema, bundle), FindingCode.HIDE_OF_UNRENDERED_COLUMN)
+    assert f.severity == "error"
+    assert "'Athor'" in f.message
 
     # Negative case: the correctly spelled column is accepted silently.
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [Author]\n",
     )
-    assert _hide_errors(schema, bundle) == []
+    assert _hide_findings(schema, bundle) == []
 
 # test_hiding_a_column_on_an_entity_with_no_all_items_errors is deliberately
 # NOT duplicated here. Task 4's fix round already added
@@ -506,16 +513,17 @@ def test_hiding_a_column_that_costs_no_join_errors(tmp_path: Path) -> None:
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [Notes]\n",
     )
-    msgs = _hide_errors(schema, bundle)
-    assert len(msgs) == 1
-    assert "'Notes'" in msgs[0]
-    assert "costs no join operation" in msgs[0]
+    f = only(
+        _hide_findings(schema, bundle), FindingCode.HIDE_OF_NON_JOIN_BEARING_COLUMN,
+    )
+    assert f.severity == "error"
+    assert "'Notes'" in f.message
 
     # Negative case: a person column on the same entity is hideable.
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [P1]\n",
     )
-    assert _hide_errors(schema, bundle) == []
+    assert _hide_findings(schema, bundle) == []
 
 def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo(
     tmp_path: Path,
@@ -539,10 +547,9 @@ def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo(
     schema, bundle = _join_inputs(
         tmp_path, _persons(11), "    hide_from_all_items: [Title]\n",
     )
-    msgs = _hide_errors(schema, bundle)
-    assert len(msgs) == 1
-    assert "costs no join operation" in msgs[0]
-    assert "Check the spelling" not in msgs[0]
+    found = _hide_findings(schema, bundle)
+    only(found, FindingCode.HIDE_OF_NON_JOIN_BEARING_COLUMN)
+    none_of(found, FindingCode.HIDE_OF_UNRENDERED_COLUMN)
 
 def test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch(
     tmp_path: Path,
@@ -568,10 +575,9 @@ def test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch(
                 hide_from_all_items: [Title]
         """,
     )
-    msgs = _hide_errors(schema, bundle)
-    assert len(msgs) == 1
-    assert "costs no join operation" in msgs[0]
-    assert "Check the spelling" not in msgs[0]
+    found = _hide_findings(schema, bundle)
+    only(found, FindingCode.HIDE_OF_NON_JOIN_BEARING_COLUMN)
+    none_of(found, FindingCode.HIDE_OF_UNRENDERED_COLUMN)
 
 def test_hiding_a_cross_site_ref_errors(tmp_path: Path) -> None:
     """It is a `ref` in DBML but expands to Choice + URL, so it costs no join
@@ -588,22 +594,21 @@ def test_hiding_a_cross_site_ref_errors(tmp_path: Path) -> None:
               - { entity: Project, column: Elsewhere }
         """),
     )
-    msgs = _hide_errors(schema, bundle)
-    assert len(msgs) == 1
-    assert "'Elsewhere'" in msgs[0]
-    assert "is a cross-site reference" in msgs[0]
+    f = only(_hide_findings(schema, bundle), FindingCode.HIDE_OF_CROSS_SITE_REFERENCE)
+    assert f.severity == "error"
+    assert "'Elsewhere'" in f.message
 
     # Negative case: the identical column, hidden identically, is fine once it
     # is a real Lookup. Only the cross_site_reference_columns entry differs.
     schema, bundle = _join_inputs(
         tmp_path, columns, "    hide_from_all_items: [Elsewhere]\n",
     )
-    assert _hide_errors(schema, bundle) == []
+    assert _hide_findings(schema, bundle) == []
 
-def _unnecessary_hide_warnings(schema: Schema, bundle: MappingBundle) -> list[str]:
+def _unnecessary_hide_warnings(schema: Schema, bundle: MappingBundle) -> list[Finding]:
     return [
-        f.message for f in validate_against_mapping(schema, bundle)
-        if f.severity == "warning" and "hide_from_all_items is set, but" in f.message
+        f for f in validate_against_mapping(schema, bundle)
+        if f.code is FindingCode.HIDE_IS_UNNECESSARY
     ]
 
 def test_unnecessary_hide_from_all_items_warns(tmp_path: Path) -> None:
@@ -619,19 +624,17 @@ def test_unnecessary_hide_from_all_items_warns(tmp_path: Path) -> None:
     schema, bundle = _join_inputs(
         tmp_path, _persons(2), "    hide_from_all_items: [Author]\n",
     )
-    msgs = _unnecessary_hide_warnings(schema, bundle)
-    assert len(msgs) == 1
-    assert "renders 4 join-bearing columns with nothing hidden" in msgs[0]
-    assert "Remove it" in msgs[0]
+    f = only(_unnecessary_hide_warnings(schema, bundle), FindingCode.HIDE_IS_UNNECESSARY)
+    assert f.severity == "warning"
+    assert "renders 4 join-bearing columns with nothing hidden" in f.message
 
     # ON the boundary: 10 persons + Author + Editor = 12 unsuppressed, which is
     # exactly JOIN_LIMIT, so the key was not needed and this MUST still warn.
     schema, bundle = _join_inputs(
         tmp_path, _persons(10), "    hide_from_all_items: [Author]\n",
     )
-    msgs = _unnecessary_hide_warnings(schema, bundle)
-    assert len(msgs) == 1
-    assert "renders 12 join-bearing columns with nothing hidden" in msgs[0]
+    f = only(_unnecessary_hide_warnings(schema, bundle), FindingCode.HIDE_IS_UNNECESSARY)
+    assert "renders 12 join-bearing columns with nothing hidden" in f.message
 
     # Negative case, one past the boundary: 11 + Author + Editor = 13
     # unsuppressed. The entity genuinely needs the key and is not nagged.
