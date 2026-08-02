@@ -36,10 +36,24 @@ jobs:
           uv run dbml-sharepoint build --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-url https://example.sharepoint.com/sites/ci --site-role default --out examples/project-tracker/build
       - name: Syntax-check the generated scripts
         shell: bash
+        # `node --check <file>` cannot read these: the scripts ship as
+        # `.js.txt` so an operator can open them instead of Windows Script
+        # Host executing them, and node refuses an unknown extension with
+        # ERR_UNKNOWN_FILE_EXTENSION before it ever parses the file. Feed
+        # them on stdin and name the dialect instead -- same parse, same
+        # non-zero exit on a syntax error, no dependence on the filename.
         run: |
-          for f in examples/minimal/build/*.js examples/project-tracker/build/*.js; do
-            node --check "$f"
+          set -euo pipefail
+          found=0
+          for f in examples/minimal/build/*.js.txt \
+                   examples/project-tracker/build/*.js.txt; do
+            node --check --input-type=commonjs < "$f"
+            found=$((found + 1))
           done
+          echo "Syntax-checked $found script(s)."
+          # A glob that matches nothing would otherwise pass silently --
+          # which is precisely how a rename like this ships broken.
+          test "$found" -gt 0
       - name: Generate reporting queries end-to-end
         run: uv run dbml-sharepoint report --schema examples/project-tracker/schema.dbml --mapping examples/project-tracker/mapping.yaml --release examples/project-tracker/release.yaml --site-role default --out examples/project-tracker/reports
       - name: Build every solution template end-to-end
@@ -99,7 +113,7 @@ jobs:
               --site-role default \
               --seed \
               --out "build/$t-seed"
-            node --check "build/$t-seed/demo-data.js"
+            node --check --input-type=commonjs < "build/$t-seed/demo-data.js.txt"
             echo "::endgroup::"
           done
           echo "Seeded $found of $expected template(s)."

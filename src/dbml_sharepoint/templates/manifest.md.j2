@@ -31,7 +31,7 @@ properties. An unsupported or unproven shape aborts for explicit migration.
 
 ## How to run this deployment
 
-1. **Assess the site first** — paste `assess.js` (read-only — it makes no
+1. **Assess the site first** — paste `assess.js.txt` (read-only — it makes no
    changes) into the target site's browser console and read
    `assess-manifest.md`. The final `[SP-ASSESS] [DONE]` verdict must be
    **COMPATIBLE**, or a **DEGRADED** whose warnings you have reviewed and
@@ -44,7 +44,7 @@ properties. An unsupported or unproven shape aborts for explicit migration.
    wrong-site safety check requires; it aborts anywhere but the target site).
 4. **Open the browser console** (F12 → Console). If the browser blocks the
    paste, type `allow pasting` and press Enter first.
-5. **Paste the entire contents of `deploy.js`** and press Enter. (If a run
+5. **Paste the entire contents of `deploy.js.txt`** and press Enter. (If a run
    feels slow, flip `const DEBUG = false` to `true` near the top of the
    pasted script before running: every REST call logs its timing and a
    per-phase seconds table prints before DONE. No rebuild needed.)
@@ -61,7 +61,7 @@ properties. An unsupported or unproven shape aborts for explicit migration.
    are absence checks the script handles.
 8. **Verify** — run the pack's verification checklist (its DEPLOY.md /
    runbook) before handing the site over.
-9. **`rollback.js` is ONLY for abandoning a failed FIRST provision on an
+9. **`rollback.js.txt` is ONLY for abandoning a failed FIRST provision on an
    empty site** — never against a site containing real records (see the
    fail-closed note above).
 
@@ -361,7 +361,7 @@ _(no seed items — the active extension provides none)_
 {% if retention %}
 ## Retention policy mapping (desired state only)
 
-**No retention labels are applied by `deploy.js` or by this browser deployer.**
+**No retention labels are applied by `deploy.js.txt` or by this browser deployer.**
 The policy mapping below is desired-state deployment evidence only; it is not
 evidence that a Microsoft Purview or SharePoint retention label is active.
 

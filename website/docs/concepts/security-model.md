@@ -73,7 +73,7 @@ find exactly two classes of hit, neither of them a request:
 - `http://schemas.microsoft.com/sharepoint/clientquery/2009` in the CSOM
   request body — an XML namespace, not a network destination.
 - documentation links in comments, such as the retention-policy reference in
-  `rollback.js`. They are never fetched; nothing reads a comment.
+  `rollback.js.txt`. They are never fetched; nothing reads a comment.
 
 Every hit that is not one of those two is worth stopping on.
 
@@ -94,9 +94,9 @@ guidance warns about; provenance and review are what change the risk:
 - The generated header names the source schema, target site, release and
   generation time.
 - `deploy-manifest.md` lists the intended objects and writes before execution.
-- `assess.js` runs first. Its business probes are read-only; its only POSTs
+- `assess.js.txt` runs first. Its business probes are read-only; its only POSTs
   obtain a digest or execute a read-only CSOM query.
-- `deploy.js` is deterministic output, with no runtime code download or
+- `deploy.js.txt` is deterministic output, with no runtime code download or
   telemetry path that can substitute different logic after review.
 
 Do not paste a script received through email, chat or an unreviewed download.
@@ -113,7 +113,7 @@ required before such a surface is used.
 
 ## What rollback is allowed to do
 
-`rollback.js` is the most destructive artifact the build emits, so its
+`rollback.js.txt` is the most destructive artifact the build emits, so its
 authority is worth stating rather than summarising. It targets only the lists
 this schema declares at this site, and reaching a delete requires the operator
 to type the site's leaf path at a first prompt. Within that scope it will:
@@ -148,7 +148,7 @@ project asserts.
 4. Search the generated JavaScript for `fetch(`, `http://`, `https://`,
    `eval`, `import(` and `script`. Confirm requests stay under the target
    web's `/_api/` path; distinguish the CSOM XML namespace from a URL call.
-5. Run only `assess.js` first and retain its console transcript. Resolve
+5. Run only `assess.js.txt` first and retain its console transcript. Resolve
    `BLOCKED` and review every `DEGRADED` finding before authorising deploy.
 6. Review the [fail-closed behaviours](safety-model.md#fail-closed-everywhere)
    and confirm existing objects with incompatible shapes abort before writes.

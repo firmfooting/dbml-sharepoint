@@ -30,7 +30,7 @@ dbml-sharepoint build \
 ## Deploy
 
 Open `build/deploy-manifest.md` and follow its "How to run this deployment"
-section: it must show **0 validation errors**, then you paste `build/deploy.js`
+section: it must show **0 validation errors**, then you paste `build/deploy.js.txt`
 into the browser console on a classic page of the target site
 (`/_layouts/15/settings.aspx`), signed in as a Site Owner.
 
@@ -42,5 +42,5 @@ into the browser console on a classic page of the target site
   self-lookup was created in Phase 2.
 - Check Site permissions → Groups: `PT List Administrators` exists, is empty,
   and holds Full Control on the three lists while Members hold Contribute.
-- Paste `deploy.js` a second time: everything verifies and skips —
+- Paste `deploy.js.txt` a second time: everything verifies and skips —
   the script is a reconciler, not a one-shot.

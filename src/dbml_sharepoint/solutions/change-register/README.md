@@ -39,7 +39,7 @@ governance (who may approve what) — the register records authority, it
 doesn't enforce it; and the `max:` on the `DaysToDecision` bar, which ships
 set from the slowest SLA in that table.
 
-**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes six `[DEMO] `-titled rows — two in triage, one under review,
 one approved and stalled past sixty days, one emergency decided in a day
 and one rejected after three weeks — so every view and every colour band

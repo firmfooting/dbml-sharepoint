@@ -99,5 +99,5 @@ report line computed from those two dates and nothing else.
 ## Lifecycle
 
 Keep everything — Adopted is your evidence base, Abandoned your paid-for
-lessons. Export before decommission; never run `rollback.js` against real
+lessons. Export before decommission; never run `rollback.js.txt` against real
 rows.

@@ -1,9 +1,9 @@
 ---
-title: assess.js
+title: assess.js.txt
 sidebar_position: 3
 ---
 
-# assess.js
+# assess.js.txt
 
 A **read-only** site assessment, emitted with every build alongside
 `assess-manifest.md`. Paste it in the target site's console *before* a
@@ -14,7 +14,7 @@ first deploy to learn whether this pack fits this site.
 Every call is a GET except the `contextinfo` digest fetch and one
 read-only CSOM `ProcessQuery`. The guarantee is structural, not just
 promised: the shared HTTP *write* helpers are packaged in a separate
-template partial that assess.js does not include, so the absence of
+template partial that assess.js.txt does not include, so the absence of
 write machinery is auditable from the script text itself.
 
 ## Three tiers

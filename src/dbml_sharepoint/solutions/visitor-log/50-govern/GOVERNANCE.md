@@ -92,4 +92,4 @@ and feed the fixes into the daily tidy-up habit.
 This register expects **routine deletion** per the retention rule above —
 it and the other personal-data registers (onboarding, volunteers,
 stakeholders) are the deliberate exceptions to keep-everything. Never run
-`rollback.js` against real rows.
+`rollback.js.txt` against real rows.

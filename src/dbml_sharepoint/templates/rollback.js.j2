@@ -48,7 +48,7 @@
 
   // One lists enumeration serves every existence + count check: a
   // by-title GET on an absent list answers 404, which the browser paints
-  // red and operators read as a failure (same live finding as deploy.js's
+  // red and operators read as a failure (same live finding as deploy.js.txt's
   // absence probes; seen on this script 2026-07-24). The enumeration is
   // always HTTP 200. Counts are a start-of-run snapshot — classification
   // and recycling read live items anyway.
@@ -70,7 +70,7 @@
     return (name in listCountsByTitle) ? listCountsByTitle[name] : null;
   }
 
-  // Demo-aware non-empty gate: rows seeded by demo-data.js all carry the
+  // Demo-aware non-empty gate: rows seeded by demo-data.js.txt all carry the
   // '[DEMO] ' Title marker. A list whose items are ALL demo rows is
   // demo-only content — deleting the list deletes them, so it proceeds
   // without the DELETE NON-EMPTY prompt (deploy, demonstrate, delete).

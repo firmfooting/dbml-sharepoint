@@ -83,7 +83,7 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-Add `--seed` to also emit [`demo-data.js`](artifacts/demo-data.md) from
+Add `--seed` to also emit [`demo-data.js.txt`](artifacts/demo-data.md) from
 the mapping's `demo_items`. Add `--dry-run` to validate without writing
 any JS.
 
@@ -94,22 +94,34 @@ flag.
 
 ## Deploy
 
+:::info Why `.js.txt`?
+The pasteable scripts end in `.js.txt`, not `.js`. They exist to be opened
+and copied, never executed from disk — and on Windows a `.js` file is bound
+to Windows Script Host, so double-clicking one runs a provisioning script
+outside the browser entirely. `.js.txt` opens in a text editor everywhere,
+and the inner `.js` keeps the artifact self-describing.
+
+The trade is syntax highlighting: an editor that colours by extension shows
+them as plain text. Rename a copy if you want highlighting while reviewing
+one.
+:::
+
 1. **Read `build/deploy-manifest.md`.** It opens with step-by-step run
    instructions and must show **0 validation errors**. `build/INDEX.md`
    lists every artifact with checksums.
 2. *(Optional but recommended on an unfamiliar site)* paste
-   `build/assess.js` in the site's console first — it is
+   `build/assess.js.txt` in the site's console first — it is
    [read-only](artifacts/assess.md) and prints a
    `COMPATIBLE / DEGRADED / BLOCKED` verdict.
 3. Open
    `https://yourtenant.sharepoint.com/sites/your-site/_layouts/15/settings.aspx`
    signed in as a Site Owner. (A classic page: the script's wrong-site
    guard needs `_spPageContextInfo`.)
-4. F12 → Console → paste the whole of `build/deploy.js` → Enter.
+4. F12 → Console → paste the whole of `build/deploy.js.txt` → Enter.
 5. Watch the `[SP-DEPLOY]` lines; success ends with a summary and
    `errors: []`.
 
-Rerunning `deploy.js` is safe: verified work is skipped, drift is
+Rerunning `deploy.js.txt` is safe: verified work is skipped, drift is
 reconciled, and anything that cannot be verified fails closed with a
 named error instead of guessing.
 
@@ -119,9 +131,9 @@ named error instead of guessing.
 dbml-sharepoint build ... --seed
 ```
 
-Paste `demo-data.js` after a successful deploy to create the declared
+Paste `demo-data.js.txt` after a successful deploy to create the declared
 `[DEMO] `-marked sample rows. When the demonstration is over,
-`rollback.js` recognises demo-only content and removes it without
+`rollback.js.txt` recognises demo-only content and removes it without
 ceremony — see [rollback](artifacts/rollback.md) for the exact gates it
 applies to anything that is *not* demo content.
 

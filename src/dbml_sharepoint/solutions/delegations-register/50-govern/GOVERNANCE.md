@@ -103,5 +103,5 @@ people to ignore the colour everywhere else.
 ## Lifecycle
 
 The history IS the value — retain permanently (it decodes every historical
-approval). Export before decommission; never run `rollback.js` against
+approval). Export before decommission; never run `rollback.js.txt` against
 real rows.

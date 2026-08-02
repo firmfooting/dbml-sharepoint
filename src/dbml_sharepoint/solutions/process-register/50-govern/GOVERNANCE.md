@@ -103,4 +103,4 @@ quietly going stale.
 ## Lifecycle
 
 The register is the programme's memory — keep it. Export before
-decommission; never run `rollback.js` against real rows.
+decommission; never run `rollback.js.txt` against real rows.

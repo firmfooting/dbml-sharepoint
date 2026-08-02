@@ -274,8 +274,8 @@ def test_building_now_produces_a_pasteable_bundle(tmp_path: Path) -> None:
     assert wizard.run_wizard(console) == 0
 
     build_dir = destination / "build"
-    assert (build_dir / "deploy.js").is_file()
-    assert (build_dir / "assess.js").is_file()
+    assert (build_dir / "deploy.js.txt").is_file()
+    assert (build_dir / "assess.js.txt").is_file()
     assert (build_dir / "deploy-manifest.md").is_file()
 
 
@@ -291,7 +291,7 @@ def test_the_built_bundle_carries_the_chosen_prefix(tmp_path: Path) -> None:
 
     assert wizard.run_wizard(console) == 0
 
-    deploy_js = (destination / "build" / "deploy.js").read_text(encoding="utf-8")
+    deploy_js = (destination / "build" / "deploy.js.txt").read_text(encoding="utf-8")
     assert "ACME_" in deploy_js
     assert "RR_" not in deploy_js
 

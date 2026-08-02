@@ -122,4 +122,4 @@ red once past, and stops once the interest is *Ceased*.
 ## Lifecycle
 
 Retention follows your integrity framework (typically long). Export before
-decommission; never run `rollback.js` against real declarations.
+decommission; never run `rollback.js.txt` against real declarations.

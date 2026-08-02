@@ -62,4 +62,4 @@ none of them is enforceable even in principle:
 Export before decommissioning; deletion at end-of-life follows the privacy
 retention rules above rather than blanket keep-everything — this register
 is the other one (with onboarding) where deletion is *expected*, not
-forbidden. Never run `rollback.js` against real rows.
+forbidden. Never run `rollback.js.txt` against real rows.

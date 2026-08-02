@@ -496,7 +496,7 @@ operands already are.
 - `widths` sets pixel column widths per view (16–2000, validated against
   the view's fields). Widths are applied through SharePoint's own
   `SetViewXml` mechanism with a guarded read-splice-write — see
-  [deploy.js](../artifacts/deploy.md#views).
+  [deploy.js.txt](../artifacts/deploy.md#views).
 - Views are created under a URL slug derived from the title ("Open by
   score" lives at `OpenByScore.aspx`) and renamed to the declared title,
   so view URLs never contain `%20`.

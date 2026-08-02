@@ -81,4 +81,4 @@ would not have let us" is only an answer for the four rows below.
 ## Lifecycle
 
 Retention per your clinical governance/records schedule (long). Export
-before decommission; never run `rollback.js` against real rows.
+before decommission; never run `rollback.js.txt` against real rows.

@@ -63,10 +63,10 @@ uv run j2lint --ignore jinja-statements-indentation single-statement-per-line --
 
   ```bash
   dbml-sharepoint build ... --seed --out ./build
-  node --check build/deploy.js
-  node --check build/rollback.js
-  node --check build/assess.js
-  node --check build/demo-data.js
+  node --check build/deploy.js.txt
+  node --check build/rollback.js.txt
+  node --check build/assess.js.txt
+  node --check build/demo-data.js.txt
   ```
 
 - **API docs.** If Python signatures, docstrings or template contract

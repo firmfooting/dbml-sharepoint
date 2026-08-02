@@ -52,15 +52,15 @@ paragraph if it matters to you.
 `templates/*.js.j2` are the pasteable entry-point scripts;
 `templates/_*.js.j2` are shared partials (provenance header, site guard,
 HTTP transport, write headers, cached digest); `templates/deploy/_*.js.j2`
-are deploy.js's phase bodies.
+are deploy.js.txt's phase bodies.
 
 **"Shared" means available to every script, not present in every script.**
-`deploy.js`, `rollback.js` and `demo-data.js` include all five top-level
-partials. `assess.js` includes four: it omits `_http_write.js.j2`, so the
+`deploy.js.txt`, `rollback.js.txt` and `demo-data.js.txt` include all five top-level
+partials. `assess.js.txt` includes four: it omits `_http_write.js.j2`, so the
 write-header helper (`spHeaders`) and every mutation path it feeds are
 simply absent from the emitted file. That omission is what makes the
 read-only guarantee structural — you can check it by grepping the artifact
-rather than by trusting the phase logic. (`assess.js` still issues two
+rather than by trusting the phase logic. (`assess.js.txt` still issues two
 POSTs: the `contextinfo` digest fetch, and a CSOM `ProcessQuery`
 availability probe that reads `Web.Title`. Both are reads; POST is just
 how SharePoint spells them.) Each template
@@ -77,7 +77,7 @@ is drawn where it is.
 
 `analysis/phases.py` is the single source of phase truth. Group and step numbers
 derive from position in `DEPLOY_GROUPS`; add or move a step and every
-consumer renumbers automatically — deploy.js banners, `[Phase X.Y]`
+consumer renumbers automatically — deploy.js.txt banners, `[Phase X.Y]`
 error tags, the manifest's phase references, and test expectations.
 Reference steps by name or key, never by number.
 

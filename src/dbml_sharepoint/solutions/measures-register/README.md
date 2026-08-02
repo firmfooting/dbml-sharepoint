@@ -42,7 +42,7 @@ The definition-writing guide in `40-adopt` is the part to socialise. The
 review cadence in `column_validation` is the one number worth agreeing
 before first deploy.
 
-**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js`
+**Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
 that pastes six `[DEMO] `-titled rows — four Active measures across four
 areas and four forums, one Under development with no review date, and one
 Retired — so every view and every status colour renders on a first look.

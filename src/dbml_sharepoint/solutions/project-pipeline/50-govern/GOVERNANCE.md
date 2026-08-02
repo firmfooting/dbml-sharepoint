@@ -93,4 +93,4 @@ wording; time-in-stage is a monthly report line counted from those dates.
 ## Lifecycle
 
 Keep everything; the pipeline's history is your planning memory. Export
-before decommission; never run `rollback.js` against real rows.
+before decommission; never run `rollback.js.txt` against real rows.
