@@ -53,6 +53,10 @@ Install the git hooks once with `uv run prek install`. Hooks are run by
 [prek](https://prek.j178.dev/), pinned in the `dev` group; classic `pre-commit`
 is not used here. Run everything by hand with `uv run prek run --all-files`.
 
+`pytest` runs in parallel by default (`-n auto`, capped at 8). Pass **`-n0`** when
+you need `--pdb`, deterministic ordering, or readable output from one test —
+`uv run pytest -n0 test/test_joins.py`.
+
 ## Commits and merging
 
 **The PR title is load-bearing, not cosmetic.** This repository squash-merges and
