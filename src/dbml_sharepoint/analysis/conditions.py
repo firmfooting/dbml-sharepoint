@@ -22,9 +22,44 @@ grammar as authored and normalised by the rules above.
 import datetime as dt
 import math
 import re
+from dataclasses import replace
 
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, TODAY_SENTINEL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
+
+#: Where a refusal raised by a renderer says it is. The renderers are public
+#: and take no context, so this constant is the root every internal path
+#: hangs off — and `_render_problems` rewrites it to the caller's own path
+#: when a refusal is reported as a finding rather than raised.
+_CONDITIONS_ROOT = Location(Section.CONDITIONS)
+
+
+class _RefusalError(ValueError):
+    """A refusal that knows which rule refused.
+
+    `_render_problems` reuses the renderers as the capability oracle, so a
+    rejection makes the round trip back out as an exception. A bare
+    `ValueError` would arrive carrying prose and nothing else, and the code
+    is the identity — so it travels on the exception.
+
+    Still a `ValueError`: the renderers are public and `to_caml` has always
+    raised one, so every existing caller and every `pytest.raises(ValueError)`
+    keeps working.
+    """
+
+    def __init__(self, code: FindingCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _at(parent: Location, name: str) -> Location:
+    """`parent` with one more dotted element, the way these paths nest.
+
+    Always appended to `sub`, which is the only field that can take a second
+    element without reordering what `Location.path` renders.
+    """
+    return replace(parent, sub=f"{parent.sub}.{name}" if parent.sub else name)
 
 # Every operator's exact inverse. The involution is asserted by a test: an
 # operator added here without one silently breaks `none_of`, because the
@@ -70,7 +105,8 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # Reached before the renderer's capability check, so an unknown
             # operator under none_of would otherwise surface as a bare
             # KeyError rather than a build error naming it.
-            raise ValueError(
+            raise _RefusalError(
+                FindingCode.CONDITION_OPERATOR_NOT_NEGATABLE,
                 f"cannot negate unknown operator {node.op!r} on {node.field!r}; "
                 f"known operators: {', '.join(sorted(NEGATION))}",
             )
@@ -423,8 +459,8 @@ _FALSY = frozenset({0, "0", "false", "False", "FALSE", "no", "No", "NO"})
 _VALUELESS_OPS = frozenset({"is_null", "is_not_null"})
 
 
-def _reject(target: str, reason: str, context: str) -> ValueError:
-    return ValueError(f"{context}: {reason} (target: {target})")
+def _reject(code: FindingCode, target: str, reason: str, at: Location) -> _RefusalError:
+    return _RefusalError(code, f"{at.path}: {reason} (target: {target})")
 
 
 #: Characters XML 1.0 forbids outright. Tab, LF and CR are legal and omitted.
@@ -433,7 +469,7 @@ def _reject(target: str, reason: str, context: str) -> ValueError:
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
-def _check(leaf: Leaf, target: str, context: str) -> None:
+def _check(leaf: Leaf, target: str, at: Location) -> None:
     if isinstance(leaf.value, str) and (bad := _CONTROL_CHARS.search(leaf.value)):
         # XML 1.0 forbids these, so a CAML <Value> containing one is not a
         # formula SharePoint can parse -- and `_xml_escape` handles &, < and >
@@ -447,19 +483,21 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         # as "Bin N -> M bytes". Refusing here is the fails-closed answer;
         # stripping silently would change the author's declared filter.
         raise _reject(
+            FindingCode.CONDITION_VALUE_HAS_A_CONTROL_CHARACTER,
             target,
             f"value for {leaf.field!r} contains control character "
             f"{hex(ord(bad.group()))}, which XML forbids and no escaping can "
             f"carry; remove it from the declared value",
-            context,
+            at,
         )
     if leaf.op in DISABLED_PENDING_PROBE.get(target, frozenset()):
         raise _reject(
+            FindingCode.CONDITION_OPERATOR_UNVERIFIED,
             target,
             f"operator {leaf.op!r} is not yet verified against a live tenant for this "
             f"target; confirm it with test/manual/expression-text-operators-probe.js "
             f"and enable it deliberately",
-            context,
+            at,
         )
     if leaf.op in ("not_contains", "not_begins_with") and target == CAML:
         # The generic message below names an operator the author very
@@ -471,6 +509,7 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         # author to discover.
         positive = NEGATION[leaf.op]
         raise _reject(
+            FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
             target,
             f"a view filter cannot say {leaf.op!r}. CAML has <Contains> and "
             f"<BeginsWith> and no negation of either — its <Where> element has "
@@ -481,22 +520,50 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
             f"condition renders on column_validation/list_validation and on "
             f"form_visibility; for a view, filter the other way round, or "
             f"precompute the test into a column and filter on that",
-            context,
+            at,
         )
     if leaf.op not in CAPABILITIES[target]:
-        raise _reject(target, f"operator {leaf.op!r} has no rendering", context)
+        raise _reject(
+            FindingCode.CONDITION_OPERATOR_UNRENDERABLE,
+            target,
+            f"operator {leaf.op!r} has no rendering",
+            at,
+        )
     if leaf.measure and target in _UNSUPPORTED_MEASURE:
         raise _reject(
-            target, f"'measure' cannot be rendered: {_UNSUPPORTED_MEASURE[target]}", context,
+            FindingCode.CONDITION_MEASURE_UNRENDERABLE,
+            target,
+            f"'measure' cannot be rendered: {_UNSUPPORTED_MEASURE[target]}",
+            at,
         )
     if leaf.property and target in _UNSUPPORTED_PROPERTY:
-        raise _reject(target, _UNSUPPORTED_PROPERTY[target], context)
+        raise _reject(
+            FindingCode.CONDITION_PROPERTY_UNRENDERABLE,
+            target,
+            _UNSUPPORTED_PROPERTY[target],
+            at,
+        )
     if leaf.op not in _VALUELESS_OPS and leaf.value is None:
-        raise _reject(target, f"operator {leaf.op!r} needs a 'value'", context)
+        raise _reject(
+            FindingCode.CONDITION_VALUE_MISSING,
+            target,
+            f"operator {leaf.op!r} needs a 'value'",
+            at,
+        )
     if leaf.op in _VALUELESS_OPS and leaf.value is not None:
-        raise _reject(target, f"operator {leaf.op!r} takes no 'value'", context)
+        raise _reject(
+            FindingCode.CONDITION_VALUE_NOT_ALLOWED,
+            target,
+            f"operator {leaf.op!r} takes no 'value'",
+            at,
+        )
     if leaf.op in ("in", "not_in") and not isinstance(leaf.value, list):
-        raise _reject(target, f"operator {leaf.op!r} needs a list 'value'", context)
+        raise _reject(
+            FindingCode.CONDITION_VALUE_NOT_A_LIST,
+            target,
+            f"operator {leaf.op!r} needs a list 'value'",
+            at,
+        )
     if leaf.op in _TEXT_OPS and leaf.value == "":
         # Meaningless before it is wrong: `contains(x, '')` is true of every
         # possible value and `not_contains(x, '')` false of every one, so no
@@ -510,19 +577,21 @@ def _check(leaf: Leaf, target: str, context: str) -> None:
         # compares an empty needle; special-casing the normaliser would
         # need one.
         raise _reject(
+            FindingCode.CONDITION_NEEDLE_EMPTY,
             target,
             f"operator {leaf.op!r} needs a non-empty 'value' — an empty needle "
             f"matches every value on the positive operators and none on the "
             f"negative ones, so the condition cannot discriminate. Use "
             f"'is_null'/'is_not_null' to test for a blank column",
-            context,
+            at,
         )
     if leaf.op in ("in", "not_in") and not leaf.value:
         raise _reject(
+            FindingCode.CONDITION_SET_EMPTY,
             target,
             f"operator {leaf.op!r} has an empty list, which is a constant — say what "
             f"you mean with a condition rather than an empty set",
-            context,
+            at,
         )
 
 
@@ -600,7 +669,7 @@ def _looks_like_a_date(value: object) -> bool:
 
 
 def _check_date_literal(
-    value: object, column_type: str, target: str, where: str, op: str = "eq",
+    value: object, column_type: str, target: str, where: Location, op: str = "eq",
 ) -> None:
     """A date column's literal, once `today` and `now` have had their turn,
     must be a real date. Nothing downstream checks it, and no probe has
@@ -635,6 +704,7 @@ def _check_date_literal(
         # no probe has ever sent one. Refusing needs no such answer.
         if op in _TEXT_OPS:
             raise _reject(
+                FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
                 target,
                 f"{value!r} is a point in time and {op!r} is a substring test, so "
                 f"the two cannot be combined — the sentinel would reach the formula "
@@ -652,6 +722,7 @@ def _check_date_literal(
     # the author wrote is not a date.
     if isinstance(value, dt.datetime):
         raise _reject(
+            FindingCode.CONDITION_DATE_IS_AN_UNQUOTED_YAML_DATETIME,
             target,
             f"{value!r} is an unquoted YAML datetime; quote it. Unquoted, it "
             f"reaches the renderers as a datetime object whose text form "
@@ -671,6 +742,7 @@ def _check_date_literal(
         and _looks_like_a_date(value.strip())
     ):
         raise _reject(
+            FindingCode.CONDITION_DATE_WEARS_WHITESPACE,
             target,
             f"{value!r} is a date wearing surrounding whitespace. Every "
             f"renderer emits the literal UNCHANGED, so the spaces would go "
@@ -687,6 +759,7 @@ def _check_date_literal(
             "whole-day boundary"
         )
     raise _reject(
+        FindingCode.CONDITION_DATE_UNPARSEABLE,
         target,
         f"{value!r} is not a date, the sentinel 'today'/'today±N', or "
         f"'now'. What SharePoint does with an unparseable date literal has "
@@ -705,53 +778,71 @@ def _is_me(value: object, column_type: str) -> bool:
     return column_type in _PERSON_TYPES and value == _ME
 
 
-def _number(value: object, context: str, target: str) -> str:
+def _number(value: object, at: Location, target: str) -> str:
     """A numeric column's operand is emitted bare. The declared type is
     authoritative: a value that is not a number on a numeric column is a
-    build error, not a silent string comparison where '10' < '5'."""
+    build error, not a silent string comparison where '10' < '5'.
+
+    The two "is not a number" branches share one code deliberately: they are
+    one rule reached by two type tests, and the sentences differ only to say
+    which test refused.
+    """
     if isinstance(value, bool) or not isinstance(value, (int, float, str)):
-        raise _reject(target, f"{value!r} is not a number", context)
+        raise _reject(
+            FindingCode.CONDITION_VALUE_NOT_A_NUMBER, target, f"{value!r} is not a number", at,
+        )
     try:
         numeric = float(value)
     except ValueError:
-        raise _reject(target, f"{value!r} is not a number on a numeric column", context) from None
+        raise _reject(
+            FindingCode.CONDITION_VALUE_NOT_A_NUMBER,
+            target,
+            f"{value!r} is not a number on a numeric column",
+            at,
+        ) from None
     if not math.isfinite(numeric):
-        raise _reject(target, f"{value!r} is not a finite number", context)
+        raise _reject(
+            FindingCode.CONDITION_VALUE_NOT_FINITE, target, f"{value!r} is not a finite number", at,
+        )
     return str(int(numeric)) if numeric.is_integer() else str(numeric)
 
 
-def _boolean(value: object, context: str, target: str) -> bool:
+def _boolean(value: object, at: Location, target: str) -> bool:
     """Coercion is two-sided. A one-sided test silently inverts the
     condition for the author who quotes 'true', which is the cautious
     thing to do and so exactly the author who should not be punished."""
     if not isinstance(value, (bool, int, str)):
-        raise _reject(target, f"{value!r} is not a boolean", context)
+        raise _reject(
+            FindingCode.CONDITION_VALUE_NOT_A_BOOLEAN, target, f"{value!r} is not a boolean", at,
+        )
     if value in _TRUTHY:
         return True
     if value in _FALSY:
         return False
-    raise _reject(target, f"{value!r} is not a boolean", context)
+    raise _reject(
+        FindingCode.CONDITION_VALUE_NOT_A_BOOLEAN, target, f"{value!r} is not a boolean", at,
+    )
 
 
 def to_caml(condition: Condition, column_types: dict[str, str]) -> str:
     """Render to a CAML `<Where>` body."""
-    return _render(normalise(condition), column_types, CAML, "conditions")
+    return _render(normalise(condition), column_types, CAML, _CONDITIONS_ROOT)
 
 
 def to_expression(condition: Condition, column_types: dict[str, str]) -> str:
     """Render to a list-formatting predicate for `ClientValidationFormula`."""
-    return _render(normalise(condition), column_types, EXPRESSION, "conditions")
+    return _render(normalise(condition), column_types, EXPRESSION, _CONDITIONS_ROOT)
 
 
 def to_validation(condition: Condition, column_types: dict[str, str]) -> str:
     """Render to a classic validation predicate for `ValidationFormula`."""
-    return _render(normalise(condition), column_types, VALIDATION, "conditions")
+    return _render(normalise(condition), column_types, VALIDATION, _CONDITIONS_ROOT)
 
 
-def _render(node: Condition, types: dict[str, str], target: str, context: str) -> str:
+def _render(node: Condition, types: dict[str, str], target: str, at: Location) -> str:
     if isinstance(node, Leaf):
-        return _leaf(node, types, target, context)
-    parts = [_render(child, types, target, context) for child in node.children]
+        return _leaf(node, types, target, at)
+    parts = [_render(child, types, target, at) for child in node.children]
     return _combine(parts, conjunction=node.kind == "all_of", target=target)
 
 
@@ -771,19 +862,24 @@ def _combine(parts: list[str], *, conjunction: bool, target: str) -> str:
     return f"{'AND' if conjunction else 'OR'}({','.join(parts)})"
 
 
-def _column_type(field: str, types: dict[str, str], target: str, context: str) -> str:
+def _column_type(field: str, types: dict[str, str], target: str, at: Location) -> str:
     """The declared type drives literal rendering, so an unknown column is
     an error rather than a silent 'nvarchar'. A date column defaulting to
     text renders `<Value Type="Text">today-30</Value>` — the sentinel as a
     literal string, which is not the comparison anybody wrote, whatever
     SharePoint then does with it."""
     if field not in types:
-        raise _reject(target, f"no declared type for column {field!r}", context)
+        raise _reject(
+            FindingCode.CONDITION_COLUMN_TYPE_UNKNOWN,
+            target,
+            f"no declared type for column {field!r}",
+            at,
+        )
     return types[field]
 
 
-def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
-    where = f"{context}.{leaf.field}"
+def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
+    where = _at(at, leaf.field)
     _check(leaf, target, where)
     # Gate on the REAL column type first. Substituting "number" for a
     # measure ahead of this check lets LEN([MultiLine]) past a rule that
@@ -792,6 +888,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     declared_type = _column_type(leaf.field, types, target, where)
     if leaf.op in _TEXT_OPS and declared_type in _NON_TEXT_FOR_SUBSTRING:
         raise _reject(
+            FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
             target,
             f"operator {leaf.op!r} is a substring test and {leaf.field!r} is "
             f"{declared_type!r}, so the needle would be typed as {declared_type!r} "
@@ -801,7 +898,12 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
         )
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
     if declared_type in forbidden:
-        raise _reject(target, f"{leaf.field!r} is {forbidden[declared_type]}", where)
+        raise _reject(
+            FindingCode.CONDITION_OPERAND_TYPE_UNSUPPORTED,
+            target,
+            f"{leaf.field!r} is {forbidden[declared_type]}",
+            where,
+        )
     # Only then: a measure changes what is compared — LEN(x) is a number
     # whatever x is — so the operand must not be quoted as the column would be.
     column_type = "number" if leaf.measure == "length" else declared_type
@@ -829,13 +931,14 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
             return f"<Or><IsNull>{ref}</IsNull>{excluded}</Or>"
         op = "eq" if leaf.op == "in" else "neq"
         parts = [
-            _leaf(Leaf(leaf.field, op, item, leaf.property, leaf.measure), types, target, context)
+            _leaf(Leaf(leaf.field, op, item, leaf.property, leaf.measure), types, target, at)
             for item in leaf.value
         ]
         return _combine(parts, conjunction=leaf.op == "not_in", target=target)
 
     if _is_today(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
+            FindingCode.CONDITION_TODAY_UNSUPPORTED_BY_TARGET,
             target,
             "the 'today' sentinel has no verified client-side equivalent "
             "(@now carries datetime rather than date semantics)",
@@ -852,6 +955,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
         and column_type not in _DATETIME_TYPES
     ):
         raise _reject(
+            FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
             target,
             f"the 'now' sentinel needs a datetime column; {leaf.field!r} is "
             f"{column_type!r}, which has no time of day — use 'today'",
@@ -862,6 +966,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
 
     if _is_now(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
+            FindingCode.CONDITION_NOW_UNSUPPORTED_BY_TARGET,
             target,
             "the 'now' sentinel has no VERIFIED client-side equivalent. @now "
             "stores and reads back intact, but whether a show/hide rule built "
@@ -873,6 +978,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
 
     if _is_me(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
+            FindingCode.CONDITION_ME_UNSUPPORTED_BY_TARGET,
             target,
             "the 'me' sentinel has no verified client-side equivalent — a "
             "show/hide formula is evaluated against the item's field values, "
@@ -921,7 +1027,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, context: str) -> str:
     return _validation_leaf(leaf, column_type, where)
 
 
-def _validation_leaf(leaf: Leaf, column_type: str, where: str) -> str:
+def _validation_leaf(leaf: Leaf, column_type: str, where: Location) -> str:
     ref = f"LEN([{leaf.field}])" if leaf.measure == "length" else f"[{leaf.field}]"
     if leaf.op == "is_null":
         return f"ISBLANK({ref})"
@@ -937,7 +1043,7 @@ def _validation_leaf(leaf: Leaf, column_type: str, where: str) -> str:
     return f"{ref}{_VALIDATION_OPS[leaf.op]}{literal}"
 
 
-def _caml_value(column_type: str, value: object, where: str) -> str:
+def _caml_value(column_type: str, value: object, where: Location) -> str:
     if _is_me(value, column_type):
         # SharePoint's own "[Me]" filter, and the only spelling by which a
         # person column can be compared in CAML at all.
@@ -965,7 +1071,7 @@ def _caml_value(column_type: str, value: object, where: str) -> str:
     return f'<Value Type="Text">{_xml_escape(str(value), {chr(34): "&quot;"})}</Value>'
 
 
-def _expr_literal(column_type: str, value: object, where: str) -> str:
+def _expr_literal(column_type: str, value: object, where: Location) -> str:
     if column_type == "boolean":
         return "true" if _boolean(value, where, EXPRESSION) else "false"
     if column_type in _NUMBER_TYPES:
@@ -974,7 +1080,7 @@ def _expr_literal(column_type: str, value: object, where: str) -> str:
     return "'" + str(value).replace("'", "''") + "'"
 
 
-def _validation_literal(column_type: str, value: object, where: str) -> str:
+def _validation_literal(column_type: str, value: object, where: Location) -> str:
     if _is_now(value, column_type):
         # Microsoft's formula reference says Lists do not support NOW().
         # That holds for calculated columns and not for validation: probed
@@ -1051,6 +1157,12 @@ def leaves(node: Condition) -> list[Leaf]:
     return [leaf for child in node.children for leaf in leaves(child)]
 
 
+#: One problem before it becomes a `Finding`: its code, its prose, and the
+#: leaf field it is about — `None` for the two whole-tree bounds, which are
+#: not about any one leaf.
+type _Problem = tuple[FindingCode, str, str | None]
+
+
 def validate_condition(
     condition: Condition,
     *,
@@ -1063,11 +1175,72 @@ def validate_condition(
     """Semantic problems with a declared condition, as messages.
 
     Returns rather than raises, and keeps going after the first problem, so
-    one build reports every broken leaf instead of one per run. Messages are
-    wrapped into Findings by the caller — this module stays free of a
-    validator import, which would be a cycle.
+    one build reports every broken leaf instead of one per run.
+
+    The message-only view, kept for the callers that still wrap these into
+    Findings themselves. Prefer `condition_findings`, which hands back the
+    code and the location too; this drops both on the floor.
     """
-    problems: list[str] = []
+    return [
+        message
+        for _code, message, _field in _condition_problems(
+            condition,
+            target=target,
+            rendered=rendered,
+            types=types,
+            lookups=lookups,
+            context=context,
+        )
+    ]
+
+
+def condition_findings(
+    condition: Condition,
+    *,
+    target: str,
+    rendered: set[str],
+    types: dict[str, str],
+    lookups: set[str],
+    at: Location,
+) -> list[Finding]:
+    """The same problems as `validate_condition`, as classified Findings.
+
+    Every one is an error: a condition that cannot be rendered has no
+    degraded form to fall back to, so there is nothing to warn about.
+
+    A leaf's finding is located one element below `at`, which is exactly
+    what the message prefix has always spelled by hand.
+    """
+    return [
+        Finding(
+            code,
+            "error",
+            message,
+            location=at if field is None else _at(at, field),
+        )
+        for code, message, field in _condition_problems(
+            condition,
+            target=target,
+            rendered=rendered,
+            types=types,
+            lookups=lookups,
+            context=at.path,
+        )
+    ]
+
+
+def _condition_problems(
+    condition: Condition,
+    *,
+    target: str,
+    rendered: set[str],
+    types: dict[str, str],
+    lookups: set[str],
+    context: str,
+) -> list[_Problem]:
+    """The shared body. `context` renders the message prefixes; the caller
+    supplies `at.path` for it when it wants locations back as well."""
+    problems: list[_Problem] = []
     # Keyed by identity, not by field name: two leaves on one column can
     # fail for different reasons, and reporting only the first costs the
     # author another build.
@@ -1078,23 +1251,35 @@ def validate_condition(
     # Skipped when an operator is unknown, because normalise cannot run.
     depth, leaf_count = measure_tree(condition if unknown_ops else normalise(condition))
     if depth > MAX_DEPTH:
-        problems.append(f"{context}: nested {depth} groups deep; the limit is {MAX_DEPTH}")
+        problems.append((
+            FindingCode.CONDITION_TOO_DEEP,
+            f"{context}: nested {depth} groups deep; the limit is {MAX_DEPTH}",
+            None,
+        ))
     if leaf_count > MAX_LEAVES:
-        problems.append(
-            f"{context}: {leaf_count} conditions after expanding any 'in' lists; "
-            f"the limit is {MAX_LEAVES}",
-        )
+        problems.append((
+            FindingCode.CONDITION_TOO_MANY_LEAVES,
+            (f"{context}: {leaf_count} conditions after expanding any 'in' lists; "
+             f"the limit is {MAX_LEAVES}"),
+            None,
+        ))
 
     for leaf in leaves(condition):
         where = f"{context}.{leaf.field}"
         if leaf.field not in rendered:
-            problems.append(f"{where}: not a rendered column")
+            problems.append((
+                FindingCode.CONDITION_FIELD_NOT_RENDERED,
+                f"{where}: not a rendered column",
+                leaf.field,
+            ))
             continue
         if leaf.op not in NEGATION:
-            problems.append(
-                f"{where}: unknown operator {leaf.op!r}; "
-                f"known operators: {', '.join(sorted(NEGATION))}",
-            )
+            problems.append((
+                FindingCode.CONDITION_OPERATOR_UNKNOWN,
+                (f"{where}: unknown operator {leaf.op!r}; "
+                 f"known operators: {', '.join(sorted(NEGATION))}"),
+                leaf.field,
+            ))
             continue
         operand = _operand_problems(leaf, where, types=types, lookups=lookups)
         lookup_problem = _lookup_problem(leaf, where, target, lookups)
@@ -1104,7 +1289,7 @@ def validate_condition(
             # Rendering a leaf whose operands are already wrong would report
             # the same fault twice in different words — but only THAT leaf is
             # suppressed, so one bad operand cannot mask any other fault.
-            problems.extend(operand)
+            problems.extend((code, message, leaf.field) for code, message in operand)
             suppressed.add(id(leaf))
 
     if unknown_ops:
@@ -1117,7 +1302,10 @@ def validate_condition(
     for leaf in leaves(condition):
         if id(leaf) in suppressed or leaf.field not in rendered:
             continue
-        problems.extend(_render_problems(leaf, target, types, context))
+        problems.extend(
+            (code, message, leaf.field)
+            for code, message in _render_problems(leaf, target, types, context)
+        )
 
     # Second pass, over the tree the RENDERER will actually see. De Morgan
     # normalisation rewrites operators — none_of[contains] becomes
@@ -1133,21 +1321,28 @@ def validate_condition(
     for leaf in leaves(normalise(condition)):
         if leaf.op in authored_ops or leaf.field not in rendered:
             continue
-        for problem in _render_problems(leaf, target, types, context):
-            problems.append(
-                f"{problem} — negating this rule turns it into {leaf.op!r}, "
-                f"which that target cannot express. Rewrite it as a positive "
-                f"filter, or move it to a target that supports the negation.",
-            )
+        for _code, problem in _render_problems(leaf, target, types, context):
+            # Its own code, not the inner one: the author never wrote the
+            # operator being named, and the remedy is different — rewrite the
+            # rule positively rather than fix the operator they chose.
+            problems.append((
+                FindingCode.CONDITION_NEGATION_UNRENDERABLE,
+                (f"{problem} — negating this rule turns it into {leaf.op!r}, "
+                 f"which that target cannot express. Rewrite it as a positive "
+                 f"filter, or move it to a target that supports the negation."),
+                leaf.field,
+            ))
     return _dedupe(problems)
 
 
 def _operand_problems(
     leaf: Leaf, where: str, *, types: dict[str, str], lookups: set[str],
-) -> list[str]:
+) -> list[tuple[FindingCode, str]]:
+    """Every problem here is about one leaf, so the caller supplies the field
+    and these carry only the code and the prose."""
     column_type = types.get(leaf.field, "")
     kind = "lookup" if leaf.field in lookups else column_type
-    problems: list[str] = []
+    problems: list[tuple[FindingCode, str]] = []
     # The `me` sentinel carries its own accessor semantics: <UserID/>
     # compares the person field's user id, so an accessor is neither needed
     # nor meaningful beside it. Handled before the accessor rules rather
@@ -1155,15 +1350,17 @@ def _operand_problems(
     # it a person column cannot be filtered in CAML at all.
     if _is_me(leaf.value, column_type):
         if leaf.property:
-            problems.append(
-                f"{where}: 'me' compares the person column's user id, so it takes no "
-                f"'property' — drop {leaf.property!r}",
-            )
+            problems.append((
+                FindingCode.CONDITION_ME_TAKES_NO_PROPERTY,
+                (f"{where}: 'me' compares the person column's user id, so it takes no "
+                 f"'property' — drop {leaf.property!r}"),
+            ))
         if leaf.op not in _ME_OPS:
-            problems.append(
-                f"{where}: 'me' is an identity, so operator {leaf.op!r} has no meaning "
-                f"against it; use one of {', '.join(sorted(_ME_OPS))}",
-            )
+            problems.append((
+                FindingCode.CONDITION_ME_OPERATOR_MEANINGLESS,
+                (f"{where}: 'me' is an identity, so operator {leaf.op!r} has no meaning "
+                 f"against it; use one of {', '.join(sorted(_ME_OPS))}"),
+            ))
         return problems
     # A null test needs no accessor either, and for the same reason `me`
     # needs none: emptiness is a property of the FIELD, not of a name, an
@@ -1178,48 +1375,76 @@ def _operand_problems(
     if kind in PROPERTY_ACCESSORS:
         allowed = PROPERTY_ACCESSORS[kind]
         if not leaf.property:
-            problems.append(
-                f"{where}: a {kind} column needs 'property' "
-                f"(one of {', '.join(sorted(allowed))})",
-            )
+            problems.append((
+                FindingCode.CONDITION_PROPERTY_REQUIRED,
+                (f"{where}: a {kind} column needs 'property' "
+                 f"(one of {', '.join(sorted(allowed))})"),
+            ))
         elif leaf.property not in allowed:
-            problems.append(
-                f"{where}: {leaf.property!r} is not a {kind} accessor; "
-                f"use one of {', '.join(sorted(allowed))}",
-            )
+            problems.append((
+                FindingCode.CONDITION_PROPERTY_UNKNOWN,
+                (f"{where}: {leaf.property!r} is not a {kind} accessor; "
+                 f"use one of {', '.join(sorted(allowed))}"),
+            ))
     elif leaf.property:
-        problems.append(f"{where}: 'property' applies to person and lookup columns only")
+        problems.append((
+            FindingCode.CONDITION_PROPERTY_NOT_APPLICABLE,
+            f"{where}: 'property' applies to person and lookup columns only",
+        ))
     if leaf.measure and leaf.measure != "length":
-        problems.append(f"{where}: unknown measure {leaf.measure!r}; only 'length' is supported")
+        problems.append((
+            FindingCode.CONDITION_MEASURE_UNKNOWN,
+            f"{where}: unknown measure {leaf.measure!r}; only 'length' is supported",
+        ))
     if leaf.measure and column_type not in _MEASURABLE_TYPES:
-        problems.append(f"{where}: 'measure: length' applies to text columns only")
+        problems.append((
+            FindingCode.CONDITION_MEASURE_NOT_APPLICABLE,
+            f"{where}: 'measure: length' applies to text columns only",
+        ))
     return problems
 
 
-def _lookup_problem(leaf: Leaf, where: str, target: str, lookups: set[str]) -> str | None:
+def _lookup_problem(
+    leaf: Leaf, where: str, target: str, lookups: set[str],
+) -> tuple[FindingCode, str] | None:
     """Lookups are int-typed in DBML, so the type map alone cannot see them."""
     if target == VALIDATION and leaf.field in lookups:
-        return f"{where}: {leaf.field!r} is a lookup column, unsupported in validation formulas"
+        return (
+            FindingCode.CONDITION_LOOKUP_UNSUPPORTED_BY_TARGET,
+            f"{where}: {leaf.field!r} is a lookup column, unsupported in validation formulas",
+        )
     return None
 
 
 def _render_problems(
     leaf: Leaf, target: str, types: dict[str, str], context: str,
-) -> list[str]:
+) -> list[tuple[FindingCode, str]]:
     """Reuse the renderer as the capability oracle, one leaf at a time, so a
-    second copy of the capability rules cannot drift from the first."""
+    second copy of the capability rules cannot drift from the first.
+
+    The renderers take no context — they hang everything off
+    `_CONDITIONS_ROOT` — so the prefix is rewritten to the caller's here. The
+    literal below is that root's rendered path, spelled out because it is a
+    `str.replace` needle rather than a path being built.
+
+    Only `_RefusalError` is caught. Every refusal this module raises is one, so a
+    plain `ValueError` reaching here is a defect rather than a finding, and
+    burying it under a catch-all code would hide it.
+    """
     try:
         _RENDERERS[target](leaf, types)
-    except ValueError as exc:
-        return [str(exc).replace("conditions.", f"{context}.", 1)]
+    except _RefusalError as exc:
+        return [(exc.code, str(exc).replace("conditions.", f"{context}.", 1))]
     return []
 
 
-def _dedupe(messages: list[str]) -> list[str]:
-    seen: list[str] = []
-    for message in messages:
-        if message not in seen:
-            seen.append(message)
+def _dedupe(problems: list[_Problem]) -> list[_Problem]:
+    seen: list[_Problem] = []
+    messages: set[str] = set()
+    for problem in problems:
+        if problem[1] not in messages:
+            messages.add(problem[1])
+            seen.append(problem)
     return seen
 
 

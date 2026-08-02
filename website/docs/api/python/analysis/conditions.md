@@ -170,9 +170,25 @@ def validate_condition(condition: Condition, *, target: str, rendered: set[str],
 Semantic problems with a declared condition, as messages.
 
 Returns rather than raises, and keeps going after the first problem, so
-one build reports every broken leaf instead of one per run. Messages are
-wrapped into Findings by the caller — this module stays free of a
-validator import, which would be a cycle.
+one build reports every broken leaf instead of one per run.
+
+The message-only view, kept for the callers that still wrap these into
+Findings themselves. Prefer `condition_findings`, which hands back the
+code and the location too; this drops both on the floor.
+
+### `condition_findings`
+
+```python
+def condition_findings(condition: Condition, *, target: str, rendered: set[str], types: dict[str, str], lookups: set[str], at: dbml_sharepoint.analysis.findings.Location) -> list[dbml_sharepoint.analysis.findings.Finding]
+```
+
+The same problems as `validate_condition`, as classified Findings.
+
+Every one is an error: a condition that cannot be rendered has no
+degraded form to fall back to, so there is nothing to warn about.
+
+A leaf's finding is located one element below `at`, which is exactly
+what the message prefix has always spelled by hand.
 
 ### `describe`
 

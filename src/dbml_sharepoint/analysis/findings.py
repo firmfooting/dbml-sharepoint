@@ -37,6 +37,9 @@ class Section(StrEnum):
     FORM_FORMATTING = "form_formatting"
     FORM_VISIBILITY = "form_visibility"
     GROUPS = "groups"
+    # Not a per-entity mapping section like the rest: its paths are
+    # `list_permissions.default...` and `list_permissions.overrides[...]`.
+    LIST_PERMISSIONS = "list_permissions"
     LIST_VALIDATION = "list_validation"
     PERMISSION_LEVELS = "permission_levels"
     POLYMORPHIC_PATTERNS = "polymorphic_patterns"
@@ -226,6 +229,96 @@ class FindingCode(StrEnum):
     DEMO_PERSON_VALUE_UNSUPPORTED = "demo_person_value_unsupported"
     DEMO_DATE_VALUE_INVALID = "demo_date_value_invalid"
     DEMO_ENUM_VALUE_UNKNOWN = "demo_enum_value_unknown"
+
+    # --- retirement and the sections it folds into (checks/_retirement.py) --
+    CALCULATED_FORMULA_REFERENCES_A_RETIRED_COLUMN = (
+        "calculated_formula_references_a_retired_column"
+    )
+    COLUMN_VALIDATION_ON_A_RETIRED_COLUMN = "column_validation_on_a_retired_column"
+    COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS = "column_validation_references_other_columns"
+    LIST_VALIDATION_REFERENCES_A_RETIRED_COLUMN = (
+        "list_validation_references_a_retired_column"
+    )
+    RETIRED_COLUMN_NOT_RENDERED = "retired_column_not_rendered"
+    RETIRED_COLUMN_REQUIRED_WITH_A_DEFAULT = "retired_column_required_with_a_default"
+    RETIRED_COLUMN_STILL_INDEXED = "retired_column_still_indexed"
+    RETIRED_DATE_NOT_ISO = "retired_date_not_iso"
+    RETIREMENT_STRIPPED_A_DECLARATION = "retirement_stripped_a_declaration"
+    RETIREMENT_WITHOUT_DISPLAY_NAMES = "retirement_without_display_names"
+    SUPERSEDED_BY_IS_ITSELF_RETIRED = "superseded_by_is_itself_retired"
+    SUPERSEDED_BY_NAMES_THE_RETIRED_COLUMN = "superseded_by_names_the_retired_column"
+    SUPERSEDED_BY_NOT_RENDERED = "superseded_by_not_rendered"
+    UNDEPLOYABLE_DECLARATION_COLUMN = "undeployable_declaration_column"
+    VALIDATION_FORMULA_TOO_LONG = "validation_formula_too_long"
+    VALIDATION_MESSAGE_TOO_LONG = "validation_message_too_long"
+    VIEW_EMPTIED_BY_RETIREMENT = "view_emptied_by_retirement"
+
+    # --- permission levels, groups and policies (checks/_permissions.py) ----
+    DUPLICATE_GROUP_NAME = "duplicate_group_name"
+    DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name"
+    UNKNOWN_BASE_PERMISSION = "unknown_base_permission"
+    UNKNOWN_OWNER_GROUP = "unknown_owner_group"
+    UNKNOWN_PERMISSION_LEVEL = "unknown_permission_level"
+    UNKNOWN_PRINCIPAL_GROUP = "unknown_principal_group"
+    UNKNOWN_SITE_ROLE = "unknown_site_role"
+    #: The DBML does not declare this table. Distinct from UNKNOWN_ENTITY,
+    #: which is a name the MAPPING does not declare.
+    UNKNOWN_TABLE = "unknown_table"
+    UNRESOLVABLE_ASSOCIATED_GROUP_ALIAS = "unresolvable_associated_group_alias"
+
+    # --- form visibility (analysis/forms.py) --------------------------------
+    FORM_VISIBILITY_CONDITION_UNREACHABLE = "form_visibility_condition_unreachable"
+    FORM_VISIBILITY_ON_A_CALCULATED_COLUMN = "form_visibility_on_a_calculated_column"
+    REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM = "required_column_hidden_from_the_new_form"
+    REQUIRED_COLUMN_MAY_BE_HIDDEN_AT_CREATION = "required_column_may_be_hidden_at_creation"
+
+    # --- the shared condition grammar (analysis/conditions.py) --------------
+    # The prefix names the SUBJECT, not a section: these are reachable from
+    # views, form_visibility, column_validation and list_validation alike,
+    # and the section is in the location.
+    CONDITION_COLUMN_TYPE_UNKNOWN = "condition_column_type_unknown"
+    CONDITION_DATE_IS_AN_UNQUOTED_YAML_DATETIME = "condition_date_is_an_unquoted_yaml_datetime"
+    CONDITION_DATE_UNPARSEABLE = "condition_date_unparseable"
+    CONDITION_DATE_WEARS_WHITESPACE = "condition_date_wears_whitespace"
+    CONDITION_FIELD_NOT_RENDERED = "condition_field_not_rendered"
+    CONDITION_LOOKUP_UNSUPPORTED_BY_TARGET = "condition_lookup_unsupported_by_target"
+    CONDITION_ME_OPERATOR_MEANINGLESS = "condition_me_operator_meaningless"
+    CONDITION_ME_TAKES_NO_PROPERTY = "condition_me_takes_no_property"
+    CONDITION_ME_UNSUPPORTED_BY_TARGET = "condition_me_unsupported_by_target"
+    CONDITION_MEASURE_NOT_APPLICABLE = "condition_measure_not_applicable"
+    CONDITION_MEASURE_UNKNOWN = "condition_measure_unknown"
+    CONDITION_MEASURE_UNRENDERABLE = "condition_measure_unrenderable"
+    CONDITION_NEEDLE_EMPTY = "condition_needle_empty"
+    CONDITION_NEGATION_UNRENDERABLE = "condition_negation_unrenderable"
+    CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE = (
+        "condition_negative_text_operator_unrenderable"
+    )
+    CONDITION_NOW_ON_A_DATE_COLUMN = "condition_now_on_a_date_column"
+    CONDITION_NOW_UNSUPPORTED_BY_TARGET = "condition_now_unsupported_by_target"
+    CONDITION_OPERAND_TYPE_UNSUPPORTED = "condition_operand_type_unsupported"
+    CONDITION_OPERATOR_NOT_NEGATABLE = "condition_operator_not_negatable"
+    CONDITION_OPERATOR_UNKNOWN = "condition_operator_unknown"
+    CONDITION_OPERATOR_UNRENDERABLE = "condition_operator_unrenderable"
+    CONDITION_OPERATOR_UNVERIFIED = "condition_operator_unverified"
+    CONDITION_PROPERTY_NOT_APPLICABLE = "condition_property_not_applicable"
+    CONDITION_PROPERTY_REQUIRED = "condition_property_required"
+    CONDITION_PROPERTY_UNKNOWN = "condition_property_unknown"
+    CONDITION_PROPERTY_UNRENDERABLE = "condition_property_unrenderable"
+    CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR = "condition_sentinel_with_a_substring_operator"
+    CONDITION_SET_EMPTY = "condition_set_empty"
+    CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN = (
+        "condition_substring_test_on_a_non_text_column"
+    )
+    CONDITION_TODAY_UNSUPPORTED_BY_TARGET = "condition_today_unsupported_by_target"
+    CONDITION_TOO_DEEP = "condition_too_deep"
+    CONDITION_TOO_MANY_LEAVES = "condition_too_many_leaves"
+    CONDITION_VALUE_HAS_A_CONTROL_CHARACTER = "condition_value_has_a_control_character"
+    CONDITION_VALUE_MISSING = "condition_value_missing"
+    CONDITION_VALUE_NOT_A_BOOLEAN = "condition_value_not_a_boolean"
+    CONDITION_VALUE_NOT_A_LIST = "condition_value_not_a_list"
+    CONDITION_VALUE_NOT_A_NUMBER = "condition_value_not_a_number"
+    CONDITION_VALUE_NOT_ALLOWED = "condition_value_not_allowed"
+    CONDITION_VALUE_NOT_FINITE = "condition_value_not_finite"
 
 
 @dataclass(frozen=True, slots=True)
