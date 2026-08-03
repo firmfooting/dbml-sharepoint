@@ -79,9 +79,19 @@ def clear_generated(out: pathlib.Path, *, reporting: bool = False) -> None
 
 Remove every artifact a previous build may have left in ``out``.
 
-Runs as the first statement of ``build`` so ANY failure mode — usage
-error, parse crash, validation failure, dry run — leaves at most a
-fresh error manifest, never a stale script an operator could paste.
+The guarantee is about *staleness*, not about position: once a build has
+accepted its inputs, every later failure — validation errors, a seed
+refusal, a generator raise, a dry run — leaves at most a fresh error
+manifest, never a stale script an operator could paste beside it.
+
+So ``build`` calls this at the point it commits to writing, not as its
+first statement. It used to be first, on the reasoning that ANY failure
+should clear; but a refusal that happens before a single input file is
+read has not made anything stale, and ``--out`` is routinely the
+directory holding the bundle the operator is part-way through pasting. A
+mistyped ``--site-url`` deleting it was a real loss bought for no
+guarantee. ``report`` never made that trade; ``build`` now matches it.
+
 Unrelated operator files in the directory are deliberately untouched.
 
 ### `write_artifact`

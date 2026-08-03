@@ -301,6 +301,57 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
 
 
+def test_build_never_clears_output_before_it_accepts_its_inputs(tmp_path: Path) -> None:
+    """A usage error must not destroy the last good bundle.
+
+    The twin of `test_report_never_clears_output_before_it_reads_the_schema`,
+    and it exists because `build` used to disagree with `report` about this.
+    Clearing on the way in meant a mistyped `--site-url` — which exits 2 for
+    "usage error, before the pipeline runs at all", having read nothing and
+    learnt nothing — deleted a bundle the operator may have been part-way
+    through pasting.
+
+    The three refusals asserted here are exactly the ones that happen before
+    any input file has been believed: a malformed URL, an unreadable schema
+    path, and a site role the mapping does not declare.
+    """
+    out = tmp_path / "build"
+    good = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert good.exit_code == 0, good.output
+    bundle = sorted(p.name for p in out.iterdir())
+    assert "deploy.js.txt" in bundle
+
+    def rebuild(**overrides: str) -> int:
+        args = {
+            "--schema": str(FIXTURES / "simple.dbml"),
+            "--mapping": str(FIXTURES / "sharepoint-mapping.yaml"),
+            "--release": str(FIXTURES / "release.yaml"),
+            "--site-url": "https://example.sharepoint.com/sites/test",
+            "--site-role": "default",
+            "--out": str(out),
+            **overrides,
+        }
+        flat = [part for pair in args.items() for part in pair]
+        return runner.invoke(app, ["build", *flat]).exit_code
+
+    assert rebuild(**{"--site-url": "http://example.sharepoint.com/sites/test"}) == 2
+    assert sorted(p.name for p in out.iterdir()) == bundle, "a bad --site-url cleared"
+
+    assert rebuild(**{"--schema": str(tmp_path / "nope.dbml")}) == 1
+    assert sorted(p.name for p in out.iterdir()) == bundle, "a bad --schema cleared"
+
+    assert rebuild(**{"--site-role": "nosuchrole"}) == 2
+    assert sorted(p.name for p in out.iterdir()) == bundle, "a bad --site-role cleared"
+
+
 def test_build_rejects_invalid_site_role(tmp_path: Path) -> None:
     """Regression: a misspelled --site-role must fail fast instead of being
     silently filtered to an empty deploy plan that still exits 0."""
@@ -350,8 +401,11 @@ def test_build_rejects_extension_that_requires_project_cli(
     assert result.exit_code == 2
     assert "requires its project-specific CLI" in result.output
     assert "Use the extension's project CLI instead" in result.output
-    # clear_generated ran first (creating out), but nothing was generated.
-    assert not any(out.iterdir())
+    # It does not create `out` at all. This used to read "clear_generated ran
+    # first (creating out), but nothing was generated" -- a weaker property,
+    # and one that came at the cost of emptying a directory the operator may
+    # already have had a good bundle in.
+    assert not out.exists()
 
 
 def test_build_rejects_non_https_site_url(tmp_path: Path) -> None:
