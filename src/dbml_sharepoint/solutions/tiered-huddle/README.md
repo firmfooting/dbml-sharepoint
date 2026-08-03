@@ -36,7 +36,7 @@ down when the work belongs closer to the front line, and back again as
   `schema.dbml`, entries in the matching `field_sets` lists, a
   `column_formatting` entry, and a pair of names in that board's form body
   under `20-configure/formatting/`. All four are worked through in
-  `30-deploy/DEPLOY.md`.
+  `30-deploy/deploy.md`.
 - **The shipped retirement example.** Tier 3 carries an
   `EnvironmentStatus` / `EnvironmentNote` pair marked retired in
   `retired_columns:`, as a worked example of folding one stream into
@@ -44,7 +44,7 @@ down when the work belongs closer to the front line, and back again as
   preserve, so delete the pair from `schema.dbml` and the `retired_columns:`
   block from `mapping.yaml` before your first paste. **After** a deploy,
   deleting a column declaration is the one thing never to do — see
-  `30-deploy/DEPLOY.md`.
+  `30-deploy/deploy.md`.
 - **Number of tiers.** Running two? Delete the third board list from
   `schema.dbml`, from `mapping.yaml`, and its form body from
   `20-configure/formatting/`, before you deploy. The `tier` enum keeps four

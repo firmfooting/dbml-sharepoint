@@ -128,7 +128,7 @@ views:
         StartDate: 160
         Manager: 160
         Status: 110
-    # The privacy surface. GOVERNANCE.md's trim — withdrawn records cut
+    # The privacy surface. governance.md's trim — withdrawn records cut
     # back to name and status, completed ones deleted or anonymised after
     # the retention rule — is worked from here.
     - title: "Complete and withdrawn"
@@ -169,7 +169,7 @@ views:
         DueDate: 160
         Status: 110
     # The per-PERSON queue the sentinel can express, and the reason
-    # 40-adopt/STAFF-GUIDE.md tells people to put themselves in AssignedTo
+    # 40-adopt/staff-guide.md tells people to put themselves in AssignedTo
     # when they pick a task up. AssignedTo is a person column, so this is
     # exactly the case `me` exists for.
     - title: "My tasks"
@@ -284,7 +284,7 @@ column_validation:
 # Each is written as an implication: `if A then B` is `any_of[not A, B]`,
 # which is why each branch starts with the case the rule does not apply to.
 #
-# Together they are the discipline 40-adopt/STAFF-GUIDE.md asks for in
+# Together they are the discipline 40-adopt/staff-guide.md asks for in
 # prose: close a task honestly, or say why it does not apply. A task left
 # Open is visible in three views; a task closed with nothing behind it was
 # invisible everywhere until now.
@@ -309,7 +309,7 @@ list_validation:
 # "@me" is the pasting operator.
 #
 # The titles describe a ROLE rather than naming a person. This tracker
-# holds personal data and 50-govern/GOVERNANCE.md is load-bearing about
+# holds personal data and 50-govern/governance.md is load-bearing about
 # that; four invented names would teach the wrong reflex on the first
 # screen anyone sees.
 #

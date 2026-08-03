@@ -87,7 +87,7 @@ Table Risk {
   Consequence risk_consequence [note: 'The highest reasonable consequence, with current controls in effect']
   // Calculated — the 5x5 matrix formula lives in mapping.yaml so the rating
   // cannot drift from the governance matrix. Matrix cells are under change
-  // control: read 50-govern/GOVERNANCE.md before editing them.
+  // control: read 50-govern/governance.md before editing them.
   ResidualRiskRating calculated_text [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme. Blank until both are set']
   // Calculated — the matrix score 1-25, for prioritisation.
   RiskScore   calculated_number [note: 'Calculated automatically: the matrix score 1-25. Sort the register by this, highest first. Blank until Likelihood and Consequence are set']
@@ -106,7 +106,7 @@ Table Risk {
   //   the decision — SharePoint cannot refuse that, because validation
   //   formulas cannot read person columns at all, so there is no rule that
   //   says "sponsor required once it leaves Provisional". It is a
-  //   governance check, listed as one in 50-govern/GOVERNANCE.md.
+  //   governance check, listed as one in 50-govern/governance.md.
   //
   //   Add [not null]: every risk names a sponsor from the moment it is
   //   raised, including a Provisional draft somebody is still writing.

@@ -52,4 +52,4 @@ idea to outcome is a cycle that stopped being a test somewhere.
 that pastes six `[DEMO] `-titled rows — one per stage, from five different
 sources, with two adoptions (one inside the rolling window and one outside
 it) and an abandoned test whose lesson is written down. See
-`30-deploy/DEPLOY.md`.
+`30-deploy/deploy.md`.

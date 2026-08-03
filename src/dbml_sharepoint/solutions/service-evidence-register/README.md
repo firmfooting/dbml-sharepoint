@@ -101,12 +101,12 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-Then follow [`30-deploy/DEPLOY.md`](30-deploy/DEPLOY.md). The shared
+Then follow [`30-deploy/deploy.md`](30-deploy/deploy.md). The shared
 procedure is in [`templates/README.md`](../README.md).
 
 ## Before you deploy it, read the governance file
 
-[`50-govern/GOVERNANCE.md`](50-govern/GOVERNANCE.md) is not optional reading
+[`50-govern/governance.md`](50-govern/governance.md) is not optional reading
 for this template. A register that characterises another organisation's
 performance fails on governance long before it fails on schema, and the four
 things that sink one are all avoidable: selection bias, naming individuals,

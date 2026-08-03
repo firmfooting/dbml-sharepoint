@@ -21,9 +21,9 @@ same phases manifest deploy.js.txt uses.
 The companion to [assess.js.txt](assess.md): what each tier probes and how
 to read the `COMPATIBLE / DEGRADED / BLOCKED` verdict.
 
-## INDEX.md and checksums.txt
+## index.md and checksums.txt
 
-`INDEX.md` lists every artifact in the bundle with its purpose (including
+`index.md` lists every artifact in the bundle with its purpose (including
 whether demo data was emitted); `checksums.txt` carries SHA-256 hashes
 so a bundle can be verified after transfer. Hashes are computed over
 LF-normalised content, so checking out on Windows does not break

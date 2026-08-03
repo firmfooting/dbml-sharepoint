@@ -41,7 +41,7 @@ dbml-sharepoint
 It lists the shipped templates, copies the one you pick into a project
 directory of your own, sets your list-name prefix and site URL, and offers
 to build straight away. You get the whole family — the schema, the mapping,
-and the `DEPLOY.md`, `STAFF-GUIDE.md` and `GOVERNANCE.md` written for that
+and the `deploy.md`, `staff-guide.md` and `governance.md` written for that
 template.
 
 The wizard changes **identity only**: the prefix, the site URL, and where
@@ -107,7 +107,7 @@ one.
 :::
 
 1. **Read `build/deploy-manifest.md`.** It opens with step-by-step run
-   instructions and must show **0 validation errors**. `build/INDEX.md`
+   instructions and must show **0 validation errors**. `build/index.md`
    lists every artifact with checksums.
 2. *(Optional but recommended on an unfamiliar site)* paste
    `build/assess.js.txt` in the site's console first — it is

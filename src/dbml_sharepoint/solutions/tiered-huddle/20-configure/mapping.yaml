@@ -187,7 +187,7 @@ views:
 # operands are single-select Choice and both are declared BEFORE Route in
 # the DBML. ASCII arrow so the generated formula carries no encoding
 # question. Verify it renders after the first paste — see the checklist in
-# 30-deploy/DEPLOY.md.
+# 30-deploy/deploy.md.
 calculated_formulas:
   Escalation:
     Route: '=[RaisedAtTier]&" -> "&[TargetTier]'
@@ -331,7 +331,7 @@ list_validation:
 # Facilities. One entry per column is the whole edit — the pair leaves every
 # view and the New form, its titles gain " (retired)", and every value ever
 # recorded stays readable and stays in the reporting bundle. The DBML
-# declaration stays put; deleting it is the trap 30-deploy/DEPLOY.md spells
+# declaration stays put; deleting it is the trap 30-deploy/deploy.md spells
 # out.
 # Deploying this template for the first time and you never ran an
 # Environment stream? Then nothing exists to preserve: delete this block and

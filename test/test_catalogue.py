@@ -75,7 +75,7 @@ def test_each_solution_ships_all_three_build_inputs(
 def test_the_collection_readmes_are_not_offered_as_templates() -> None:
     ids = {s.id for s in available_solutions()}
     assert "README.md" not in ids
-    assert "HEALTHCARE.md" not in ids
+    assert "healthcare.md" not in ids
 
 
 def test_a_directory_without_a_schema_is_not_a_solution(

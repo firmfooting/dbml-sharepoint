@@ -32,7 +32,7 @@ and sums `TripKm`, so the per-vehicle figure a fleet review wants is on
 the screen rather than in an export. The window is a rolling thirty days
 rather than a calendar month — CAML has no calendar predicate — so a
 financial-year or true calendar-month figure still needs an export, and
-`50-govern/GOVERNANCE.md` says so where the review is described.
+`50-govern/governance.md` says so where the review is described.
 
 **Work the folders in order:**
 

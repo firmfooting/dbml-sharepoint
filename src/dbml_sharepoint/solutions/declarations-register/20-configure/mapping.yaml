@@ -419,7 +419,7 @@ column_validation:
 # be written: SharePoint validation formulas cannot reference a person
 # column at all, so the build refuses it rather than emitting a formula
 # that would be rejected at save. It stays a governance check; see
-# 50-govern/GOVERNANCE.md.
+# 50-govern/governance.md.
 list_validation:
   Interest:
     when:

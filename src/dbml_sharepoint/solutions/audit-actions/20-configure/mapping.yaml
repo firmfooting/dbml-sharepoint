@@ -248,7 +248,7 @@ column_validation:
 # template.
 #
 # The requirement itself has not been dropped: it is a closure criterion in
-# 50-govern/GOVERNANCE.md and a verification step in 30-deploy/DEPLOY.md,
+# 50-govern/governance.md and a verification step in 30-deploy/deploy.md,
 # and the "Closed, last 90 days" view shows Evidence URL so an empty one is
 # visible to the committee reading it.
 #
@@ -266,7 +266,7 @@ list_validation:
       - any_of:
           - { field: Status, op: not_in, value: ["Closed", "Risk accepted"] }
           - { field: ClosedDate, op: is_not_null }
-    message: "Ending a recommendation needs the Closed Date it was verified or accepted on — for Risk accepted as well as Closed. DaysLate is computed from that date and the closure report filters on it, so without one the row leaves every queue and never reaches the committee. The Evidence URL is also required at closure; that one is a governance check, not a save rule (see 50-govern/GOVERNANCE.md)."
+    message: "Ending a recommendation needs the Closed Date it was verified or accepted on — for Risk accepted as well as Closed. DaysLate is computed from that date and the closure report filters on it, so without one the row leaves every queue and never reaches the committee. The Evidence URL is also required at closure; that one is a governance check, not a save rule (see 50-govern/governance.md)."
 
 # All five Recommendation lenses show the same six identifying columns
 # before their own payload, so the spine is declared once (§1.9). AU_Audit
@@ -383,7 +383,7 @@ views:
     # Moderate, Low, High, Critical — not severity order, and worse than
     # no rating sort at all because it looks like one. The pack ships
     # grouped by audit and sorted by committed date, with FindingRating
-    # carrying the severity colours; 30-deploy/DEPLOY.md says so and
+    # carrying the severity colours; 30-deploy/deploy.md says so and
     # names the workaround for anyone who needs a true rating sort.
     - title: "Committee pack"
       fields: ["@identity", RevisedDue, AgreedAction]
@@ -404,7 +404,7 @@ views:
     # "Closed this quarter" is not buildable: CAML has no calendar-period
     # predicate. This is a ROLLING ninety days, and the two differ on the
     # first day of a quarter — which somebody reconciling a committee pack
-    # will notice, so DEPLOY.md says it too.
+    # will notice, so deploy.md says it too.
     - title: "Closed, last 90 days"
       fields: ["@identity", ClosedDate, DaysLate, EvidenceUrl]
       where:

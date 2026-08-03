@@ -591,7 +591,7 @@ form_visibility:
       #
       # Resolved Date and Outcome for us are deliberately NOT gated on
       # EventNature. A single occurrence can still be resolved - two of the
-      # demo rows are - and 30-deploy/DEPLOY.md walks the deployer through
+      # demo rows are - and 30-deploy/deploy.md walks the deployer through
       # filling one in.
       ResponseDueDate:
         when:
@@ -798,7 +798,7 @@ column_validation:
 # required here even though each is the substance of its stage. Each stage
 # is gated on its DATE instead — you cannot record a response date without
 # having had a response — and the narrative fields are carried by the form
-# notes and the review cadence in 50-govern/GOVERNANCE.md. A message that
+# notes and the review cadence in 50-govern/governance.md. A message that
 # promised more than the formula enforces would be worse than the gap.
 list_validation:
   # Three rules, each earning its friction.

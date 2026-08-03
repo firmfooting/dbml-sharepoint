@@ -5,7 +5,7 @@ A successful build emits a fixed artifact set — the deployment bundle.
 This module owns the cross-cutting concerns: the canonical artifact name
 list, stale-artifact clearing (so no failure mode leaves a pasteable
 script from an older build), platform-stable content hashing, and the
-INDEX.md / checksums.txt writers.
+index.md / checksums.txt writers.
 
 **Every artifact is written UTF-8 with LF, on every platform** — through
 ``write_artifact``, which is the only writer the emission path may use.
@@ -70,22 +70,28 @@ GENERATED_FILES: tuple[str, ...] = (
     DEMO_SCRIPT,
     "deploy-manifest.md",
     "assess-manifest.md",
-    "INDEX.md",
+    "index.md",
     "checksums.txt",
 )
 
-# What the scripts were called before the `.js.txt` change. Cleared by
-# `clear_generated` alongside the current names, because a directory built
-# by an earlier version still holds a pasteable `deploy.js` — and clearing
-# only the new names would leave the stale one sitting beside the fresh
-# bundle, which is exactly the "stale script an operator could paste"
-# failure `clear_generated` exists to prevent. Cheap to keep; the cost of
-# dropping it is paid by somebody pasting last month's provisioning run.
-_LEGACY_SCRIPTS: tuple[str, ...] = (
+# Every name this bundle has ever emitted, cleared alongside the current
+# ones. A directory built by an earlier version still holds a pasteable
+# `deploy.js` and an `INDEX.md` that both describe a build that no longer
+# exists; clearing only the current names leaves them sitting beside the
+# fresh bundle, which is exactly the "stale artifact an operator could
+# read, or paste" failure `clear_generated` exists to prevent.
+#
+# Cheap to keep and additive by nature — a rename adds a row here rather
+# than replacing one, because someone may be rebuilding over a bundle from
+# any earlier version, not only the immediately preceding one.
+_LEGACY_ARTIFACTS: tuple[str, ...] = (
+    # Before the `.js.txt` change.
     "deploy.js",
     "rollback.js",
     "assess.js",
     "demo-data.js",
+    # Before filenames were normalised out of screaming case.
+    "INDEX.md",
 )
 
 # INDEX rows: what each artifact IS. The manifest stays authoritative for
@@ -112,7 +118,7 @@ _INDEX_ROWS: tuple[tuple[str, str], ...] = (
 
 _REPORTING_ROW: tuple[str, str] = (
     "reporting/",
-    ("Power Query M, SQL views, REPORTING.md and the data dictionary for "
+    ("Power Query M, SQL views, reporting.md and the data dictionary for "
      "reporting onboarding."),
 )
 
@@ -132,7 +138,7 @@ def clear_generated(out: Path, *, reporting: bool = False) -> None:
     Unrelated operator files in the directory are deliberately untouched.
     """
     out.mkdir(parents=True, exist_ok=True)
-    for filename in (*GENERATED_FILES, *_LEGACY_SCRIPTS):
+    for filename in (*GENERATED_FILES, *_LEGACY_ARTIFACTS):
         (out / filename).unlink(missing_ok=True)
     if reporting:
         shutil.rmtree(out / "reporting", ignore_errors=True)
@@ -198,7 +204,7 @@ def write_checksums(out: Path, relpaths: list[str]) -> None:
 
 
 def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> None:
-    """Write ``INDEX.md``: what is in the bundle, one row per artifact."""
+    """Write ``index.md``: what is in the bundle, one row per artifact."""
     rows = list(_INDEX_ROWS)
     if demo:
         rows.append(_DEMO_ROW)
@@ -237,7 +243,7 @@ def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> No
          "$h) { \"FAILED: $f\" } }"),
         "```",
     ]
-    write_artifact(out / "INDEX.md", "\n".join(lines) + "\n")
+    write_artifact(out / "index.md", "\n".join(lines) + "\n")
 
 
 def emit_bundle(
@@ -259,7 +265,7 @@ def emit_bundle(
     """Emit the full post-validation bundle; returns the success message.
 
     The one emission sequence — the deploy, rollback and assess scripts and
-    the assess manifest, the seed-gated demo script, reporting, INDEX.md and
+    the assess manifest, the seed-gated demo script, reporting, index.md and
     checksums.txt — shared by the core CLI and every extension CLI. Raises
     :class:`SeedRequiresDemoItemsError` before writing anything when
     ``seed`` is set but the mapping declares no demo rows.
@@ -332,11 +338,11 @@ def emit_bundle(
         source_schema=schema_name, source_mapping=mapping_name,
     )
     write_index(out, reporting=True, demo=seed)
-    relpaths.append("INDEX.md")
+    relpaths.append("index.md")
     write_checksums(out, relpaths)
 
     return (
         f"Generated deployment bundle ({DEPLOY_SCRIPT}, {ROLLBACK_SCRIPT}, "
         f"{ASSESS_SCRIPT}, {f'{DEMO_SCRIPT}, ' if seed else ''}manifests, "
-        f"reporting, INDEX.md, checksums.txt) in {out}."
+        f"reporting, index.md, checksums.txt) in {out}."
     )

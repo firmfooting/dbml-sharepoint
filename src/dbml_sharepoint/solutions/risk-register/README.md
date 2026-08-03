@@ -28,7 +28,7 @@ of Edit and Display forms in the **System** section rather than interrupting
 the assessment inputs. `NextReviewDue` stays in **Governance**, where its
 date is useful during review. `MatrixVersion` is off the New form (it stamps
 itself) but remains editable in **System** on existing rows so the
-matrix-revision procedure in `50-govern/GOVERNANCE.md` can re-stamp them.
+matrix-revision procedure in `50-govern/governance.md` can re-stamp them.
 The form groups all columns into the same sections as the table above.
 
 **Five declared views**, deployed with the paste — nothing to build by
@@ -53,7 +53,7 @@ list-view threshold without redesigning those values as persisted fields.
 | 5 | `50-govern/` | Matrix change control, review cadence, the Status/RiskResponse split |
 
 **Customisation points:** the `Category` enum; the matrix cells in
-`mapping.yaml` (read the change-control section of `50-govern/GOVERNANCE.md`
+`mapping.yaml` (read the change-control section of `50-govern/governance.md`
 first — changing a cell recalculates every existing row); and the strapline
 in `20-configure/formatting/risk-form-header.json`, which tells a risk owner
 the one thing that makes the form work. The header carries no link: a
@@ -65,4 +65,4 @@ descriptions instead.
 that pastes six `[DEMO] `-titled rows — one per rating band, a Tolerate risk
 inside its tolerance window, and a Closed risk with a closure statement — so
 every view, colour band and score bar renders on a first look. See
-`30-deploy/DEPLOY.md`.
+`30-deploy/deploy.md`.

@@ -36,4 +36,4 @@ six demo requests behind `--seed`.
 one value per team that will actually work a queue; don't list services
 nobody staffs. Two of its members are named inside deployed view filters
 and one enum's *alphabetical order* sets queue precedence — read the
-"Before you build" block in `30-deploy/DEPLOY.md` before editing either.
+"Before you build" block in `30-deploy/deploy.md` before editing either.

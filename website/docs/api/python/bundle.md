@@ -13,7 +13,7 @@ A successful build emits a fixed artifact set — the deployment bundle.
 This module owns the cross-cutting concerns: the canonical artifact name
 list, stale-artifact clearing (so no failure mode leaves a pasteable
 script from an older build), platform-stable content hashing, and the
-INDEX.md / checksums.txt writers.
+index.md / checksums.txt writers.
 
 **Every artifact is written UTF-8 with LF, on every platform** — through
 ``write_artifact``, which is the only writer the emission path may use.
@@ -68,7 +68,7 @@ DEMO_SCRIPT = 'demo-data.js.txt'
 ### `GENERATED_FILES`
 
 ```python
-GENERATED_FILES = ('deploy.js.txt', 'rollback.js.txt', 'assess.js.txt', 'demo-data.js.txt', 'deploy-manifest.md', 'assess-manifest.md', 'INDEX.md', 'checksums.txt')
+GENERATED_FILES = ('deploy.js.txt', 'rollback.js.txt', 'assess.js.txt', 'demo-data.js.txt', 'deploy-manifest.md', 'assess-manifest.md', 'index.md', 'checksums.txt')
 ```
 
 ### `clear_generated`
@@ -145,7 +145,7 @@ recorded digest matches the bytes on disk and the standard tools agree.
 def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False) -> None
 ```
 
-Write ``INDEX.md``: what is in the bundle, one row per artifact.
+Write ``index.md``: what is in the bundle, one row per artifact.
 
 ### `emit_bundle`
 
@@ -156,7 +156,7 @@ def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'Mapping
 Emit the full post-validation bundle; returns the success message.
 
 The one emission sequence — the deploy, rollback and assess scripts and
-the assess manifest, the seed-gated demo script, reporting, INDEX.md and
+the assess manifest, the seed-gated demo script, reporting, index.md and
 checksums.txt — shared by the core CLI and every extension CLI. Raises
 :class:`SeedRequiresDemoItemsError` before writing anything when
 ``seed`` is set but the mapping declares no demo rows.

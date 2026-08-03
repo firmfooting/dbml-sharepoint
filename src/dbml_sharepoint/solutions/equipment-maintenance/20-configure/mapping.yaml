@@ -155,7 +155,7 @@ views:
     # THE view. Its target state on a live register is EMPTY, and that is
     # not a contradiction with the demo data: a seeded site ships one
     # genuinely overdue item precisely so an adopter can see the view work
-    # before they trust it. 30-deploy/DEPLOY.md says so at the point where
+    # before they trust it. 30-deploy/deploy.md says so at the point where
     # it matters.
     #
     # Status = In service, not "not Retired", and the difference is the
@@ -219,7 +219,7 @@ views:
     # hard-coding one item into a filter that rots, or one view per item.
     # Per §2.4 of the family standard it ships as ONE view grouped on the
     # Equipment lookup, collapsed — and it is the DEFAULT, because
-    # 50-govern/GOVERNANCE.md names accreditors and insurers as this
+    # 50-govern/governance.md names accreditors and insurers as this
     # view's audience and their first click should not be a view picker.
     - title: "Service history"
       default: true

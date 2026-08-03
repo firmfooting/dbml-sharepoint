@@ -31,7 +31,7 @@ with six demo assets behind `--seed`.
 
 **Customisation points:** `Category` and `Status` enums — note that every
 `Status` member is named inside a deployed view filter, so read the
-"Before you build" block in `30-deploy/DEPLOY.md` before renaming one; and
+"Before you build" block in `30-deploy/deploy.md` before renaming one; and
 whether ordinary Members may edit (default here: yes — assets are
 maintained by many hands; tighten to a custodians group if that's not your
 culture).

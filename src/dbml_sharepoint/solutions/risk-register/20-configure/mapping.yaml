@@ -44,7 +44,7 @@ watched_lists: []
 # that is counted in days.
 #
 # CHANGE CONTROL: SharePoint recalculates every existing row when a formula
-# changes — read 50-govern/GOVERNANCE.md before editing these cells.
+# changes — read 50-govern/governance.md before editing these cells.
 #
 # These formulas are keyed to EXACTLY the five Likelihood and five
 # Consequence members below, in this order: the nested IFs map the first
@@ -278,7 +278,7 @@ views:
 # The auto-stamped matrix version leaves the NEW form only; it stays on the
 # Edit and Display forms (existing: true, the default — `existing:` cannot
 # separate the two, see website/docs/reference/mapping.md). It must remain
-# editable: the matrix-revision procedure in 50-govern/GOVERNANCE.md has a
+# editable: the matrix-revision procedure in 50-govern/governance.md has a
 # risk owner re-stamp MatrixVersion on their own row by hand once a
 # revision blanks their rating, and that only works if the column is still
 # on a form they can save.
@@ -358,7 +358,7 @@ column_validation:
 # A Tolerate response is always for a set period, so it needs its end date.
 # NOTE: ClosureStatement is rich text, which SP validation formulas cannot
 # reference — the closure-statement requirement stays a governance check
-# (see 50-govern/GOVERNANCE.md).
+# (see 50-govern/governance.md).
 list_validation:
   Risk:
     # THREE rules, chained. A list has ONE ValidationFormula, so every

@@ -12,12 +12,12 @@ report on them. This module emits:
   variables for the landing/report schemas): a typed view per list plus an
   ``_Enriched`` view joining each lookup to its display column, for lists
   landed in a warehouse by any extract process;
-- REPORTING.md with usage instructions and the Power BI relationship table
+- reporting.md with usage instructions and the Power BI relationship table
   derived from the DBML refs.
 
 Cross-site reference columns are extension-expanded at deploy time into
 shapes the core cannot know; they are skipped here and listed in
-REPORTING.md. Person columns land differently per extract tool, so the SQL
+reporting.md. Person columns land differently per extract tool, so the SQL
 views carry them as display-name text while the M queries expand both the
 site-user id and display name.
 """
@@ -304,7 +304,7 @@ _SQL_HEADER = """\
 -- and SiteUrl at the site the lists were deployed to (no trailing slash) —
 -- it feeds the ItemURL helper column linking each row back to SharePoint.
 -- Assumes each list lands as a table named after the list, with columns
--- named after the SharePoint internal column names (see REPORTING.md).
+-- named after the SharePoint internal column names (see reporting.md).
 :setvar LandingSchema landing
 :setvar ReportSchema rpt
 :setvar SiteUrl https://yourtenant.sharepoint.com/sites/YourSite
@@ -359,7 +359,7 @@ def generate_sql_views(schema: Schema, bundle: MappingBundle, site_role: str) ->
     return "\n".join(parts)
 
 
-# --------------------------------------------------------------- REPORTING.md
+# --------------------------------------------------------------- reporting.md
 
 
 def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str) -> str:
@@ -426,7 +426,7 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
         ("Both layers add an **ItemURL** helper column — the SharePoint "
          "display-form link for the row, built from the site URL, the list "
          "path and the item id — so any report visual can link straight "
-         "back to the source item. `DATA-DICTIONARY.md` documents every "
+         "back to the source item. `data-dictionary.md` documents every "
          "list and column plus the deployment metadata behind this "
          "generation."),
         "",
@@ -634,7 +634,7 @@ def _metadata_rows(
     source_mapping: str,
 ) -> list[tuple[str, str]]:
     """Deployment/schema model metadata as plain (field, value) rows —
-    shared by the DATA-DICTIONARY.md header and the _ModelInfo report table."""
+    shared by the data-dictionary.md header and the _ModelInfo report table."""
     mapping = bundle.mapping
     rows = [
         ("Generated at", generated_at or "—"),
@@ -1108,7 +1108,7 @@ def emit_reporting(
     Shared by the core and extension CLIs so the shipped reporting
     artifact set cannot drift between them: per-list Power Query (M)
     plus the dictionary/model/audit queries, the SQL views script,
-    REPORTING.md and data-dictionary.md.
+    reporting.md and data-dictionary.md.
     """
     reporting_dir = out / "reporting"
     pq_dir = reporting_dir / "powerquery"
@@ -1136,7 +1136,7 @@ def emit_reporting(
         + generate_dictionary_sql(schema, bundle, site_role, **dictionary_kwargs),
     )
     write_artifact(
-        reporting_dir / "REPORTING.md",
+        reporting_dir / "reporting.md",
         generate_reporting_md(schema, bundle, site_role),
     )
     write_artifact(
@@ -1145,7 +1145,7 @@ def emit_reporting(
     )
     relpaths += [
         "reporting/sql/views.sql",
-        "reporting/REPORTING.md",
+        "reporting/reporting.md",
         "reporting/data-dictionary.md",
     ]
     return relpaths

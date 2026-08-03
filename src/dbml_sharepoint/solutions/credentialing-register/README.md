@@ -28,7 +28,7 @@ credentialing file, four save rules, and eleven demo rows.
 **Boundary:** this register **indexes** credentialing decisions and
 evidence; primary source documents (AHPRA extracts, certificates) live in
 your records system, linked. It holds staff professional data — read the
-privacy posture in `50-govern/GOVERNANCE.md` before widening the site.
+privacy posture in `50-govern/governance.md` before widening the site.
 
 **Work the folders in order:**
 

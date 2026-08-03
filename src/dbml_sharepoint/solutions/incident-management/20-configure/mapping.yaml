@@ -357,7 +357,7 @@ column_validation:
 # column. Both are governance's data-quality rule 2, in the parts a formula
 # can reach.
 #
-# NOT enforceable, and 50-govern/GOVERNANCE.md says so rather than leaving
+# NOT enforceable, and 50-govern/governance.md says so rather than leaving
 # it to be discovered:
 #   - "Every incident past Reported has a Handler" (rule 1). Handler is a
 #     person column, and SharePoint validation formulas cannot reference
@@ -391,7 +391,7 @@ list_validation:
 # template exists to make visible.
 #
 # Nothing here is clinical. This register is for corporate and non-clinical
-# incidents; the healthcare note in 50-govern/GOVERNANCE.md is emphatic
+# incidents; the healthcare note in 50-govern/governance.md is emphatic
 # about that, and demo data that blurred it would undermine the document.
 demo_items:
   Incident:

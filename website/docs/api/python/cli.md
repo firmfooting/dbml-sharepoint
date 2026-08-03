@@ -85,9 +85,9 @@ def report(schema: pathlib.Path = ..., mapping: pathlib.Path = ..., site_role: s
 
 Generate reporting queries (Power Query M + SQL views) from the schema.
 
-Emits one .pq file per list, a SQLCMD views script, REPORTING.md with
+Emits one .pq file per list, a SQLCMD views script, reporting.md with
 usage instructions and the Power BI relationship table, and a
-DATA-DICTIONARY.md companion. Assumes a schema that `build` accepts;
+data-dictionary.md companion. Assumes a schema that `build` accepts;
 run `build --dry-run` first if unsure.
 
 ### `version`

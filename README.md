@@ -103,7 +103,7 @@ dbml-sharepoint build \
 Then:
 
 1. Read `build/deploy-manifest.md` — it opens with step-by-step run
-   instructions and must show **0 validation errors**. (`build/INDEX.md`
+   instructions and must show **0 validation errors**. (`build/index.md`
    lists every artifact, including the `reporting/` queries.)
 2. Open `https://yourtenant.sharepoint.com/sites/your-site/_layouts/15/settings.aspx`
    (a classic page; the script's wrong-site guard needs `_spPageContextInfo`)
@@ -169,11 +169,11 @@ changes; paste it in the site's console before a first deploy.
 Reporting: every build also ships `build/reporting/` — one Power Query
 (M) file per list (plus dictionary, model-info and user-added-column
 audit queries), a SQLCMD views script for warehouse-landed copies,
-`REPORTING.md` with the Power BI relationship table, and
+`reporting.md` with the Power BI relationship table, and
 `data-dictionary.md`. Point the queries' `SiteUrl` parameter at the
 deployed site. `dbml-sharepoint report` emits the same queries without
 needing a site URL (schema-only layout: `powerquery/`, `sql/`,
-`REPORTING.md`, `DATA-DICTIONARY.md`).
+`reporting.md`, `data-dictionary.md`).
 
 ## Extension protocol
 
