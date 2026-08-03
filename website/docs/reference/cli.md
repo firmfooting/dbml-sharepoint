@@ -59,11 +59,11 @@ frames above it are noise, not a crash.
 ## `report`
 
 Emit the reporting pack only (no site URL required): `powerquery/`,
-`sql/views.sql`, `reporting.md`, `data-dictionary.md`.
+`sql/views.sql`, `guide.md`, `data-dictionary.md`.
 
 Each run replaces the previous pack, so a list dropped from the schema does
 not leave its `.pq` file behind. What it removes is exactly what it writes:
-every `*.pq` under `powerquery/`, `sql/views.sql`, `reporting.md` and
+every `*.pq` under `powerquery/`, `sql/views.sql`, `guide.md` and
 `data-dictionary.md` — then `powerquery/` and `sql/` themselves, but only if
 emptying them left nothing. Treat `*.pq` as owned by this command: keep
 hand-written queries somewhere other than `--out`. Anything else survives,

@@ -210,6 +210,17 @@ def _build_plans(
 # ---------------------------------------------------------------- Power Query
 
 
+def _fk_key_column(fk_col: str) -> str:
+    """The site-qualified name for a foreign key column.
+
+    `IncidentId` becomes `Incident Key`, matching the `<Entity> Key` the
+    target table exposes, so the relationship reads as one name on both
+    sides. Spaced to sit alongside the other model-facing names, which are
+    display titles rather than internal ones.
+    """
+    return f"{fk_col.removesuffix('Id')} Key"
+
+
 def _render_m(plan: _ListPlan) -> str:
     query_string = "?$select=" + ",".join(plan.selects)
     lines = [
@@ -252,14 +263,54 @@ def _render_m(plan: _ListPlan) -> str:
         '        Typed, "ItemURL",',
         f'        each SiteUrl & "{plan.item_url_path}" & Number.ToText([Id]),',
         "        type text",
+        "    ),",
+        # Where the row came from. One build covers one site, but a report
+        # routinely appends several deployments of the same template, and
+        # without these two columns there is nothing to slice by.
+        "    WithSiteUrl = Table.AddColumn(",
+        '        WithItemURL, "Site Url", each SiteUrl, type text',
+        "    ),",
+        # Bound once, not resolved per row. Quoted identifier because a
+        # bare `_SiteName` sits next to M's implicit `_` parameter inside
+        # `each`, which is ambiguous to read even where it parses.
+        f'    SiteName = #"{SITE_NAME_QUERY}",',
+        "    WithSiteName = Table.AddColumn(",
+        '        WithSiteUrl, "Site Name", each SiteName, type text',
+        "    ),",
+        # THE reason a multi-site report can be trusted. `Id` is unique
+        # only within one list on one site, so appending three sites puts
+        # three rows with Id = 1 in this table. A relationship on Id then
+        # cannot be many-to-one; Power BI degrades it to many-to-many and
+        # joins a child row to the same-numbered parent on EVERY site. The
+        # report renders and the numbers are wrong.
+        "    WithRowKey = Table.AddColumn(",
+        f'        WithSiteName, "{plan.entity} Key",',
+        '        each SiteUrl & "|" & Number.ToText([Id]),',
+        "        type text",
         "    )",
     ]
+    prev = "WithRowKey"
+    for i, (fk_col, _target_title, _display) in enumerate(plan.joins, start=1):
+        step = f"WithFkKey{i}"
+        lines[-1] += ","
+        lines += [
+            f"    {step} = Table.AddColumn(",
+            f'        {prev}, "{_fk_key_column(fk_col)}",',
+            # Null-guarded: an optional lookup leaves the FK null, and
+            # Number.ToText(null) RAISES rather than returning null, which
+            # would fail the whole refresh on one blank field.
+            f"        each if [{fk_col}] = null then null",
+            f'              else SiteUrl & "|" & Number.ToText([{fk_col}]),',
+            "        type text",
+            "    )",
+        ]
+        prev = step
     if plan.renames:
         lines[-1] += ","
         lines += [
             "    // Model-facing names match the SharePoint display titles.",
             "    RenamedForModel = Table.RenameColumns(",
-            "        WithItemURL,",
+            f"        {prev},",
             "        {",
         ]
         lines += [
@@ -278,20 +329,82 @@ def _render_m(plan: _ListPlan) -> str:
     else:
         lines += [
             "in",
-            "    WithItemURL",
+            f"    {prev}",
             "",
         ]
     return "\n".join(lines)
 
 
+#: Query name holding the deployed site's display title. Referenced by
+#: every list query, so it must be imported and named exactly this.
+SITE_NAME_QUERY = "_SiteName"
+
+
+def _render_site_name_m() -> str:
+    """The site's own display title, read live from the site.
+
+    One deployment of a template covers one site, but a Power BI report
+    routinely combines SEVERAL deployments of the same template — one per
+    region, service or committee. Every table therefore carries the site it
+    came from, and the friendly name is fetched rather than typed: nobody
+    should have to maintain a URL-to-name mapping by hand, and a site
+    renamed in SharePoint should show its new name at the next refresh.
+
+    `GET {site}/_api/web?$select=Title` is the documented endpoint (Microsoft
+    Learn, "Get to know the SharePoint REST service"). Verified against a
+    live tenant 2026-08-03: it answers with an Atom entry whose
+    `<content><m:properties><d:Title>` holds the title, which is precisely
+    the OData shape `OData.Feed` consumes — the same call style
+    `_UserAddedColumns` already uses against `/_api/web/lists`.
+
+    Falls back to the URL rather than failing. The site name is a label on
+    a slicer; the rows are the data. Losing the label degrades a report,
+    whereas an unhandled error stops the refresh and takes every table with
+    it — so this is one of the few places in this codebase that should NOT
+    fail closed.
+    """
+    return "\n".join([
+        (f"// {SITE_NAME_QUERY} — generated by dbml-sharepoint; regenerate "
+         "rather than hand-edit."),
+        "// The deployed site's display title, read from the site itself so a",
+        "// report combining several deployments can be sliced by site without",
+        "// anyone maintaining a URL-to-name list by hand.",
+        "//",
+        "// Requires the same SiteUrl text parameter as the list queries, and",
+        f"// must be named exactly `{SITE_NAME_QUERY}` — every list query",
+        "// references it.",
+        "let",
+        "    // Falls back to the URL rather than failing the refresh: the name",
+        "    // is a slicer label, the rows are the data. An unhandled error",
+        "    // here would take every table in the report down with it.",
+        "    Title =",
+        "        try",
+        "            OData.Feed(",
+        '                SiteUrl & "/_api/web?$select=Title",',
+        "                null,",
+        '                [Implementation = "2.0"]',
+        "            )[Title]",
+        "        otherwise SiteUrl",
+        "in",
+        "    Title",
+    ]) + "\n"
+
+
 def generate_powerquery(
     schema: Schema, bundle: MappingBundle, site_role: str,
 ) -> dict[str, str]:
-    """One M query per list for the site role: {filename: query text}."""
-    return {
+    """One M query per list for the site role, plus the shared site lookup."""
+    queries = {
         f"{plan.list_title}.pq": _render_m(plan)
         for plan in _build_plans(schema, bundle, site_role)
     }
+    # Only alongside something to report on. A site role with no lists must
+    # yield nothing at all -- emitting the helper on its own would turn
+    # "this role deploys nothing here" into a pack of one file, which reads
+    # like a partial success rather than an empty set.
+    if queries:
+        queries[f"{SITE_NAME_QUERY}.pq"] = _render_site_name_m()
+    return queries
 
 
 # ------------------------------------------------------------------ SQL views
@@ -388,6 +501,37 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
         ("Each query returns a typed table with lookup and person columns "
          "already expanded to a join key (`…Id`) plus a display column."),
         "",
+        "## Reporting on several sites at once",
+        "",
+        ("This template is deployed one site at a time, but a report often "
+         "needs all of them together — every region, service or committee "
+         "running the same lists, in one model, sliced by site."),
+        "",
+        ("Every table already carries **`Site Url`** and **`Site Name`** for "
+         f"that. `Site Name` comes from `{SITE_NAME_QUERY}`, which reads the "
+         "site's own title from SharePoint at refresh time, so nothing has "
+         "to be typed in and a site renamed in SharePoint shows its new name "
+         "at the next refresh."),
+        "",
+        "To combine deployments:",
+        "",
+        ("1. Import this pack once per site, giving each `SiteUrl` parameter "
+         "its own value. (Duplicating the queries and editing the parameter "
+         "is enough; the M is identical.)"),
+        ("2. **Append** the same list from each site into one table — "
+         "*Home → Append Queries as New*."),
+        ("3. Build the relationships below on the **Key** columns, not on "
+         "`Id`."),
+        "",
+        (">  **`Id` is unique within one list on one site, and nowhere "
+         "wider.** Append three sites and three different rows all have "
+         "`Id = 1`. A relationship on `Id` cannot then be many-to-one; Power "
+         "BI degrades it to many-to-many and joins each child to the "
+         "same-numbered parent on *every* site. The report still renders — "
+         "the numbers are just wrong. The `… Key` columns are `Site Url` and "
+         "the id together, which is unique across any number of sites, and "
+         "they are why the relationships below are safe to append."),
+        "",
         "## Relationships (Power BI model)",
         "",
         ("After loading the queries, create these many-to-one, "
@@ -398,8 +542,13 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
     ]
     for plan in plans:
         for fk_col, target_title, _display in plan.joins:
+            target_entity = next(
+                (p.entity for p in plans if p.list_title == target_title),
+                target_title,
+            )
             lines.append(
-                f"| {plan.list_title} | {fk_col} | {target_title} | Id |",
+                f"| {plan.list_title} | {_fk_key_column(fk_col)} "
+                f"| {target_title} | {target_entity} Key |",
             )
     lines += [
         "",
