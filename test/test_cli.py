@@ -9,7 +9,6 @@ from _paths import FIXTURES
 from typer.testing import CliRunner
 
 from dbml_sharepoint import __version__
-from dbml_sharepoint.bundle import sha256_lf
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extension import BaseExtension
 
@@ -193,7 +192,9 @@ def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
     assert any(p.startswith("reporting/powerquery/") for p in listed)
     assert not any("\\" in p for p in listed)
     for relpath, digest in listed.items():
-        assert digest == sha256_lf((out / relpath).read_text(encoding="utf-8")), relpath
+        assert digest == hashlib.sha256((out / relpath).read_bytes()).hexdigest(), (
+            relpath
+        )
 
 
 def test_a_windows_built_bundle_verifies_with_raw_byte_hashing(
@@ -203,14 +204,15 @@ def test_a_windows_built_bundle_verifies_with_raw_byte_hashing(
 
     This is the property that makes the bundle verifiable with ordinary
     tools instead of a bespoke one-liner, and it is the one the suite could
-    not see: `test_build_checksums_validate_and_cover_the_bundle` above
-    compares `sha256_lf(read_text(...))` against a digest that was itself
-    computed by `sha256_lf`, so it normalises BOTH sides and passes however
-    the file was written.
+    not see. `write_checksums` used to digest `sha256_lf(read_text(...))`
+    and the coverage test asserted the same expression back -- normalising
+    BOTH sides, so it passed however the file was actually written. The
+    manifest now records the digest of the bytes, and both tests check it
+    the way an external tool would.
 
-    Hashing `read_bytes()` is what an external tool does. On Windows,
-    before every artifact went through `write_artifact`, every one of these
-    differed.
+    Kept as a separate test from the coverage one above because they fail
+    for different reasons: that one catches a MISSING entry, this one
+    catches a WRONG one.
     """
     out = tmp_path / "build"
     result = runner.invoke(app, [
