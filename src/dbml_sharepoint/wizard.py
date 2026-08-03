@@ -17,6 +17,7 @@ the wizard produces, the documented flags could have produced.
 import re
 import shutil
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,8 +27,12 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from dbml_sharepoint.bundle import ASSESS_SCRIPT, DEPLOY_SCRIPT
-from dbml_sharepoint.catalogue import Solution, available_solutions
+from dbml_sharepoint.bundle import ASSESS_SCRIPT, DEPLOY_SCRIPT, write_artifact
+from dbml_sharepoint.catalogue import (
+    PLACEHOLDER_SITE_URL,
+    Solution,
+    available_solutions,
+)
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 #: Copied templates must not carry a previous build. These names are
@@ -207,7 +212,11 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
             f"(found {count}). The template does not match the family "
             f"standard; refusing to guess where the prefix belongs.",
         )
-    mapping_path.write_text(new_text, encoding="utf-8")
+    # `write_artifact`, not `write_text`. The trap AGENTS.md records is
+    # per-call-site: text mode inherits the platform newline, so this wrote
+    # CRLF on Windows and handed the operator a mapping whose line endings
+    # depend on which machine ran the wizard. The templates ship LF.
+    write_artifact(mapping_path, new_text)
 
     bundle = load_mapping(mapping_path)
     if bundle.mapping.prefix != prefix:
@@ -217,36 +226,92 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
         )
 
 
-def _retitle_docs(destination: Path, old_prefix: str, new_prefix: str) -> list[Path]:
-    """Point the copied documentation at the lists the build will create.
+@dataclass(frozen=True)
+class _Substitution:
+    """One placeholder the wizard answers, and what it was answered with.
 
-    Changing the prefix renames every list, and the template's own
-    deploy.md, README.md and governance.md name them literally: choosing
-    `ACME_` for risk-register produces `ACME_Risk` while deploy.md still
-    says to verify `RR_Risk` exists. The wizard sends the operator to those
-    files, so documentation that disagrees with what was built is the
-    failure this project exists to avoid, in miniature.
+    Carries a `label` so the wizard can say which substitutions it made
+    rather than counting files and leaving the operator to guess. When only
+    the site URL changed, "Repointed 1 doc(s) from RR_ to RR_" was both
+    wrong and confusing.
+    """
+
+    label: str
+    old: str
+    new: str
+
+    @property
+    def applies(self) -> bool:
+        """A placeholder that is absent or already correct is not a change."""
+        return bool(self.old) and self.old != self.new
+
+    def describe(self) -> str:
+        return f"{self.label} {self.old} -> {self.new}"
+
+
+def _repoint_docs(
+    destination: Path, substitutions: Sequence[_Substitution],
+) -> tuple[list[Path], list[_Substitution]]:
+    """Point the copied documentation at what the operator actually chose.
+
+    Two things in a shipped family are written as placeholders that the
+    wizard then answers:
+
+    * the **list-name prefix**. Changing it renames every list, and the
+      template's deploy.md, README.md and governance.md name them
+      literally: choosing `ACME_` for risk-register produces `ACME_Risk`
+      while deploy.md still says to verify `RR_Risk` exists.
+    * the **site URL** in the rebuild command. The operator answers with
+      their own site, and without this the copied deploy.md still tells
+      them to build against `yourtenant.sharepoint.com/sites/your-site` --
+      the one instruction in the folder guaranteed not to work, and the one
+      they come back to on every schema change.
+
+    The wizard sends the operator to these files, so documentation that
+    disagrees with what was built is the failure this project exists to
+    avoid, in miniature. That argument never applied only to the prefix; it
+    was just the only substitution that existed.
+
+    Substitutions are LITERAL, never pattern-matched. Not every SharePoint
+    URL in a template is the deploy target -- credentialing-register links a
+    by-laws page on a governance site -- and rewriting anything URL-shaped
+    would invent dead links. `PLACEHOLDER_SITE_URL` is the agreed spelling
+    and a template-standard test keeps the families using it.
 
     Markdown only, and that is checked rather than assumed: nothing else in
-    a shipped family carries the prefix -- the schema declares logical
-    names, the mapping's own `prefix:` is already rewritten, and the
-    formatting JSON refers to columns, not lists.
+    a shipped family carries either value -- the schema declares logical
+    names, the mapping's own `prefix:` is already rewritten, the site URL is
+    a build argument that appears in no config file, and the formatting JSON
+    refers to columns, not lists.
 
-    Returns the files it changed so the caller can report them.
+    Returns the files it changed and the substitutions it applied, so the
+    caller can report both rather than editing the operator's new
+    documentation silently.
     """
-    if old_prefix == new_prefix or not old_prefix:
-        return []
-    changed = []
+    wanted = [s for s in substitutions if s.applies]
+    changed: list[Path] = []
+    applied: list[_Substitution] = []
     for path in sorted(destination.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
-        if old_prefix not in text:
+        rewritten = text
+        for substitution in wanted:
+            if substitution.old not in rewritten:
+                continue
+            rewritten = rewritten.replace(substitution.old, substitution.new)
+            if substitution not in applied:
+                applied.append(substitution)
+        if rewritten == text:
             continue
-        path.write_text(text.replace(old_prefix, new_prefix), encoding="utf-8")
+        # Same reason as the mapping rewrite above, and it matters more here:
+        # the site-URL substitution applies on every run, so `write_text`
+        # would have rewritten a documentation file in every scaffolded
+        # project with CRLF rather than the LF it was copied with.
+        write_artifact(path, rewritten)
         changed.append(path)
-    return changed
+    return changed, applied
 
 
-def _scaffold(answers: Answers) -> list[Path]:
+def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
     shutil.copytree(
         answers.solution.root,
         answers.destination,
@@ -263,8 +328,12 @@ def _scaffold(answers: Answers) -> list[Path]:
         ),
         answers.prefix,
     )
-    return _retitle_docs(
-        answers.destination, answers.solution.prefix, answers.prefix,
+    return _repoint_docs(
+        answers.destination,
+        (
+            _Substitution("prefix", answers.solution.prefix, answers.prefix),
+            _Substitution("site URL", PLACEHOLDER_SITE_URL, answers.site_url),
+        ),
     )
 
 
@@ -322,7 +391,7 @@ def _run(console: Console) -> int:
         return 0
 
     try:
-        retitled = _scaffold(answers)
+        repointed, applied = _scaffold(answers)
     except (WizardError, OSError) as exc:
         console.print(f"[red]Could not scaffold the project:[/red] {exc}")
         return 1
@@ -331,11 +400,15 @@ def _run(console: Console) -> int:
     schema_path = answers.destination / "10-design" / "schema.dbml"
     release_path = answers.destination / "20-configure" / "release.yaml"
     console.print(f"\n[green]Wrote[/green] {answers.destination}")
-    if retitled:
-        # Say so rather than editing the user's new documentation silently.
+    if repointed:
+        # Say so, and say WHICH, rather than editing the user's new
+        # documentation silently. Naming the substitutions matters now that
+        # there is more than one: reporting a file count and a prefix pair
+        # when only the site URL moved read as "Repointed 1 doc(s) from RR_
+        # to RR_", which is worse than saying nothing.
         console.print(
-            f"[dim]Repointed {len(retitled)} doc(s) from "
-            f"{answers.solution.prefix} to {answers.prefix}.[/dim]",
+            f"[dim]Repointed {len(repointed)} doc(s): "
+            f"{', '.join(s.describe() for s in applied)}.[/dim]",
         )
 
     if not Confirm.ask("\nBuild it now?", default=True, console=console):

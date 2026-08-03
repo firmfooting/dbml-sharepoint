@@ -32,6 +32,19 @@ SCHEMA_RELPATH = Path("10-design") / "schema.dbml"
 MAPPING_RELPATH = Path("20-configure") / "mapping.yaml"
 RELEASE_RELPATH = Path("20-configure") / "release.yaml"
 
+#: How every shipped family spells "the site you are deploying to" in its
+#: documentation, so the wizard can repoint it at the site the operator
+#: actually chose.
+#:
+#: A constant, and substituted literally, because not every SharePoint URL in
+#: a template means the deploy target: credentialing-register's deploy.md
+#: links a by-laws page on a governance site, and several mappings carry
+#: example.sharepoint.com document links in their demo rows. Rewriting
+#: anything URL-shaped would repoint those at the deploy target and invent
+#: dead links. `test_every_deploy_doc_spells_the_site_url_placeholder_the_same_way`
+#: pays the matching cost of a literal by keeping the templates uniform.
+PLACEHOLDER_SITE_URL = "https://yourtenant.sharepoint.com/sites/your-site"
+
 #: Files at the top of `solutions/` that document the collection rather than
 #: being one of its members.
 _NOT_A_SOLUTION = {"README.md", "healthcare.md"}

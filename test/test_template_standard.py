@@ -36,6 +36,7 @@ from _paths import SOLUTION_TEMPLATES
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
+from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -1384,4 +1385,36 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
         f"or hide_from_all_items) may have been dropped from "
         f"all_items_joining_fields — check that before assuming the templates "
         f"improved."
+    )
+
+
+def test_every_deploy_doc_spells_the_site_url_placeholder_the_same_way() -> None:
+    """The wizard substitutes one exact string, so the templates must use it.
+
+    `_repoint_docs` replaces `PLACEHOLDER_SITE_URL` literally rather than
+    matching anything URL-shaped, because not every SharePoint URL in a
+    template means "the site you are deploying to" -- credentialing-register's
+    deploy.md links a by-laws page on a governance site, and the demo rows
+    carry example.sharepoint.com document links. A fuzzy rule would repoint
+    those at the deploy target and invent dead links.
+
+    The cost of matching literally is that a template spelling the
+    placeholder its own way is silently missed by the wizard. This is that
+    cost, paid as a test rather than as a stale rebuild command in somebody's
+    new project.
+    """
+    offenders = []
+    for template in _all_templates():
+        deploy_md = SOLUTION_TEMPLATES / template / "30-deploy" / "deploy.md"
+        if not deploy_md.is_file():
+            continue
+        for number, line in enumerate(
+            deploy_md.read_text(encoding="utf-8").splitlines(), start=1,
+        ):
+            if "--site-url" in line and PLACEHOLDER_SITE_URL not in line:
+                offenders.append(f"{template}/30-deploy/deploy.md:{number}: {line.strip()}")
+    assert not offenders, (
+        "a --site-url line does not use PLACEHOLDER_SITE_URL, so the wizard "
+        "will leave it pointing at a site the operator never chose:\n"
+        + "\n".join(offenders)
     )
