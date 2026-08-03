@@ -31,6 +31,7 @@ from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
+from dbml_sharepoint.bundle import write_artifact
 from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
@@ -1126,20 +1127,21 @@ def emit_reporting(
         generate_dictionary_powerquery(schema, bundle, site_role, **dictionary_kwargs),
     )
     for filename, content in queries.items():
-        (pq_dir / filename).write_text(content, encoding="utf-8")
+        write_artifact(pq_dir / filename, content)
         relpaths.append(f"reporting/powerquery/{filename}")
-    (sql_dir / "views.sql").write_text(
+    write_artifact(
+        sql_dir / "views.sql",
         generate_sql_views(schema, bundle, site_role)
         + "\n"
         + generate_dictionary_sql(schema, bundle, site_role, **dictionary_kwargs),
-        encoding="utf-8",
     )
-    (reporting_dir / "REPORTING.md").write_text(
-        generate_reporting_md(schema, bundle, site_role), encoding="utf-8",
+    write_artifact(
+        reporting_dir / "REPORTING.md",
+        generate_reporting_md(schema, bundle, site_role),
     )
-    (reporting_dir / "data-dictionary.md").write_text(
+    write_artifact(
+        reporting_dir / "data-dictionary.md",
         generate_data_dictionary(schema, bundle, site_role, **dictionary_kwargs),
-        encoding="utf-8",
     )
     relpaths += [
         "reporting/sql/views.sql",

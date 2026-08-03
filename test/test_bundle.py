@@ -175,9 +175,13 @@ def test_write_index_lists_base_artifacts_not_itself(tmp_path: Path) -> None:
         assert f"`{name}`" in md, name
     assert "`INDEX.md`" not in md
     assert "`reporting/`" not in md
-    # Pointer to the manifest's run steps, and the LF-normalised verify story.
+    # Pointer to the manifest's run steps, and a verify recipe for each of
+    # the two shells an operator actually has. The bundle is LF everywhere,
+    # so these are the STANDARD tools rather than a bespoke normalising
+    # one-liner -- which is the whole point of the LF policy.
     assert "How to run this deployment" in md
-    assert "LF-normalised" in md
+    assert "sha256sum -c checksums.txt" in md
+    assert "Get-FileHash" in md
 
 
 def test_write_index_reporting_row(tmp_path: Path) -> None:
