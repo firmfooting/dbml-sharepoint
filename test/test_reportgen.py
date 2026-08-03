@@ -226,7 +226,7 @@ def test_cli_report_writes_queries_and_docs(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert (out / "powerquery" / "APP_Task.pq").exists()
     assert (out / "sql" / "views.sql").exists()
-    assert (out / "reporting.md").exists()
+    assert (out / "guide.md").exists()
     dictionary = (out / "data-dictionary.md").read_text(encoding="utf-8")
     assert "0.1.0-test" in dictionary  # release metadata stamped
     # The dictionary is also emitted as report-loadable artefacts.
@@ -393,7 +393,7 @@ def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> No
         source_schema="simple.dbml", source_mapping="sharepoint-mapping.yaml",
     )
 
-    for fixed in ("reporting/sql/views.sql", "reporting/reporting.md",
+    for fixed in ("reporting/sql/views.sql", "reporting/guide.md",
                   "reporting/data-dictionary.md"):
         assert fixed in relpaths
     assert any(p.startswith("reporting/powerquery/") and p.endswith(".pq")
