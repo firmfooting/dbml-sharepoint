@@ -1,5 +1,6 @@
 # test/test_parser.py
 from pathlib import Path
+from textwrap import dedent
 
 import pytest
 from _packs import write_dbml
@@ -83,3 +84,97 @@ def test_a_ref_to_a_missing_table_is_a_message_not_a_traceback(tmp_path: Path) -
     """)
     with pytest.raises(ValueError, match="Ghost"):
         parse_dbml(path)
+
+
+# --- pydbml's vocabulary, translated ----------------------------------------
+
+
+def _write(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "schema.dbml"
+    path.write_text(
+        "Project t { database_type: 'SharePoint Online' }\n" + dedent(body),
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_a_ref_to_a_missing_table_is_reported_in_our_own_words(
+    tmp_path: Path,
+) -> None:
+    """pydbml says `Table public.Nope not present in the database`.
+
+    `public` is a Postgres schema namespace that means nothing here, and
+    `database` is not a word this tool uses -- the target is a SharePoint
+    site. The person reading it hand-edited a .dbml file.
+    """
+    path = _write(tmp_path, """
+        Table Risk {
+          Id int [pk, increment]
+          Owner nvarchar [ref: > Nope.Id]
+        }
+    """)
+
+    with pytest.raises(ValueError) as raised:
+        parse_dbml(path)
+
+    message = str(raised.value)
+    assert "Nope" in message
+    assert "public" not in message
+    assert "database" not in message
+
+
+def test_a_duplicate_table_is_reported_in_our_own_words(tmp_path: Path) -> None:
+    path = _write(tmp_path, """
+        Table Risk {
+          Id int [pk, increment]
+        }
+        Table Risk {
+          Id int [pk]
+        }
+    """)
+
+    with pytest.raises(ValueError) as raised:
+        parse_dbml(path)
+
+    message = str(raised.value)
+    assert "Risk" in message
+    assert "public" not in message
+
+
+def test_a_ref_error_cites_the_line_when_it_can_find_it(tmp_path: Path) -> None:
+    """The message names a table, not a position, and the file was typed by
+    hand -- so the line is the part that makes it actionable."""
+    path = _write(tmp_path, """
+        Table Risk {
+          Id int [pk, increment]
+          Owner nvarchar [ref: > Nope.Id]
+        }
+    """)
+
+    with pytest.raises(ValueError) as raised:
+        parse_dbml(path)
+
+    # Line 5 is the `Owner ... [ref: > Nope.Id]` line: the dedented block
+    # opens with a newline, so the Project line is 1 and the table body
+    # starts at 3.
+    assert "line 5" in str(raised.value)
+    assert path.read_text(encoding="utf-8").splitlines()[4].strip().startswith("Owner")
+
+
+def test_an_unrecognised_parse_error_passes_through_untouched(
+    tmp_path: Path,
+) -> None:
+    """Translating what we recognise is worth doing; guessing at what we do
+    not is worse than the leak. A syntax error already carries its own line
+    and column and says nothing about `public`, so it must arrive intact."""
+    path = _write(tmp_path, """
+        Table Risk {
+          Id int [pk, increment]
+          Title nvarchar [not null
+        }
+    """)
+
+    with pytest.raises(Exception, match="line:6") as raised:
+        parse_dbml(path)
+
+    assert "Expected" in str(raised.value)

@@ -8,7 +8,9 @@ Field type kinds map to SP REST FieldTypeKind values:
 """
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
+from difflib import get_close_matches
 from typing import Any, Literal
 
 from dbml_sharepoint.model.parser import Column
@@ -38,6 +40,48 @@ CALCULATED_OUTPUT_TYPES: dict[str, int] = {
 # test_validator.py asserts these three names appear together in this file
 # and nowhere else in the package.
 CALCULATED_TYPES = frozenset(CALCULATED_OUTPUT_TYPES)
+
+# THE scalar vocabulary, for the same reason CALCULATED_TYPES lives here:
+# `map_column` below is what actually has to recognise a type, so this is the
+# one place a new scalar cannot be forgotten. It was declared in validator.py,
+# which meant the check and the mapper each held their own idea of what is
+# supported and nothing compared them.
+KNOWN_SCALARS = frozenset({
+    "int", "number", "nvarchar", "longtext", "richtext", "person", "date", "datetime",
+    "boolean", "hyperlink",
+})
+
+
+def describe_unknown_type(declared: str, *, enums: Iterable[str]) -> str:
+    """Say what to do about a type this build does not recognise.
+
+    Two callers, deliberately one sentence: `validate_column` reports this as
+    a Finding, and `map_column` raises it -- which is the path `report`
+    takes, because `report` does not validate. The same schema diagnosed two
+    different ways is how somebody comes to believe the two commands
+    disagree about their file.
+
+    Suggesting is arithmetic over data already held. The supported set is a
+    closed frozenset in this module and the enums come from the parsed
+    schema, so nothing here is an assertion about SharePoint -- which is why
+    this can be generous where the rest of the codebase must not be.
+
+    Enums are in the candidate list because the commonest version of this
+    mistake is not `decimal`, it is somebody misspelling the name of an enum
+    they declared themselves twenty lines up.
+
+    When there is no near miss the answer is the whole list. `decimal` is not
+    a typo, it is SQL vocabulary arriving in a DBML file, and only seeing
+    `number` in the supported set teaches that.
+    """
+    candidates = sorted({*KNOWN_SCALARS, *CALCULATED_TYPES, *enums})
+    near = get_close_matches(declared, candidates, n=3, cutoff=0.6)
+    if near:
+        return f"Did you mean {', '.join(repr(c) for c in near)}?"
+    return (
+        f"Supported types: {', '.join(candidates)}. "
+        f"Anything else must be a DBML enum, which becomes a Choice column."
+    )
 
 # Microsoft documents unique constraints for single-value Text, Choice,
 # Number, Date/Time, Lookup and Person columns. The deployer has no multi-value
@@ -137,10 +181,10 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
             description=description, target_list=col.ref.target_table,
         )
 
-    return _scalar(col, description)
+    return _scalar(col, description, enum_names)
 
 
-def _scalar(col: Column, description: str) -> SPField:
+def _scalar(col: Column, description: str, enum_names: set[str]) -> SPField:
     base: dict[str, Any] = dict(
         name=col.name, required=col.required, unique=col.unique,
         default=col.default, description=description,
@@ -173,9 +217,14 @@ def _scalar(col: Column, description: str) -> SPField:
         case "hyperlink":
             return SPField(**base, kind="URL", field_type_kind=11, display_format=0)
         case _:
+            # `enum_names` is what this call was told the schema declares, so
+            # the suggestion can name the user's own enums. It said "Add it
+            # to typemap.py or declare it as an enum" -- half an instruction
+            # to go and edit this repository, printed to a SharePoint admin
+            # editing a .dbml file.
             raise ValueError(
                 f"{col.name}: unknown type {col.type!r}. "
-                "Add it to typemap.py or declare it as an enum.",
+                + describe_unknown_type(col.type, enums=enum_names),
             )
 
 

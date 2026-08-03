@@ -8,12 +8,17 @@ The supported DBML subset is documented in
 docs/design/requirements/dbml-sharepoint-requirements.md §5.
 """
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from pydbml import PyDBML
-from pydbml.exceptions import ColumnNotFoundError, TableNotFoundError
+from pydbml.exceptions import (
+    ColumnNotFoundError,
+    DatabaseValidationError,
+    TableNotFoundError,
+)
 
 
 @dataclass(frozen=True)
@@ -84,11 +89,64 @@ class Schema:
     project_note: str = ""
 
 
+# pydbml reports schema-level problems in its own vocabulary, against its own
+# model of the world: `Table public.Nope not present in the database`.
+#
+# `public` is a Postgres schema namespace that appears nowhere in DBML this
+# tool accepts, in its documentation, or on a SharePoint site. `database` is
+# not a word it uses either -- the target is a site, and the things being
+# declared are lists. The person reading the sentence hand-edited a .dbml file
+# and needs to know which declaration is wrong.
+#
+# Only these two shapes are translated, and only while they match exactly. An
+# unrecognised parse error passes through untouched: pydbml's syntax errors
+# already carry their own line and column and say nothing about `public`, and
+# a message rendered into confident wrong prose is worse than a leaky one. If
+# pydbml rewords these, the match fails and the real message survives.
+_PYDBML_PHRASES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(r"^Table public\.(?P<name>\S+) not present in the database\.?$"),
+        "a ref targets table {name!r}, which this schema does not declare",
+    ),
+    (
+        re.compile(r"^Table public\.(?P<name>\S+) is already in the database\.?$"),
+        "table {name!r} is declared more than once",
+    ),
+)
+
+
+def _translate(detail: str, source: str) -> str:
+    """Re-word a recognised pydbml complaint, and cite a line if it can.
+
+    The line is found by searching, because these messages carry no position
+    at all -- pydbml raises them from its assembled model, after parsing, so
+    there is nothing to hand through. Cited only when exactly one line
+    mentions the name: two candidates and a guess would send somebody to the
+    wrong declaration, which is worse than the honest silence of no line at
+    all.
+    """
+    for pattern, template in _PYDBML_PHRASES:
+        match = pattern.match(detail.strip())
+        if match is None:
+            continue
+        name = match.group("name")
+        reworded = template.format(name=name)
+        hits = [
+            number
+            for number, line in enumerate(source.splitlines(), start=1)
+            if re.search(rf"\b{re.escape(name)}\b", line)
+        ]
+        return f"{reworded} (line {hits[0]})" if len(hits) == 1 else reworded
+    return detail
+
+
 def parse_dbml(path: Path) -> Schema:
     """Parse a DBML file and return our in-memory model."""
     try:
         parsed = PyDBML(path)
-    except (ColumnNotFoundError, TableNotFoundError) as exc:
+    except (
+        ColumnNotFoundError, TableNotFoundError, DatabaseValidationError,
+    ) as exc:
         # These pydbml semantic errors do not inherit from ValueError or its
         # parser exception types, so normal CLI config-error handling would
         # otherwise miss them and print a traceback for a schema typo.
@@ -101,7 +159,9 @@ def parse_dbml(path: Path) -> Schema:
         # the placeholder, this no longer matches and the real (better)
         # message passes through untouched.
         detail = str(exc).replace(' in table "{self.name}".', ".")
-        raise ValueError(detail) from exc
+        raise ValueError(
+            _translate(detail, path.read_text(encoding="utf-8")),
+        ) from exc
     schema = Schema()
 
     if parsed.project and parsed.project.note:
