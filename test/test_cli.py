@@ -61,7 +61,7 @@ def test_every_documented_command_survived_the_wizard_default() -> None:
     change that can turn a subcommand into a no-op: the callback runs for
     every invocation, and an early `raise typer.Exit` in it would swallow
     them all while `--help` kept listing them."""
-    for command in ("build", "report", "version"):
+    for command in ("build", "validate", "report", "version"):
         result = runner.invoke(app, [command, "--help"])
         assert result.exit_code == 0, f"{command} --help failed"
         assert command in result.stdout
@@ -111,7 +111,7 @@ def test_help_still_renders_as_rich_panels() -> None:
 
     # Every registered command is listed. A command silently dropped from the
     # help screen is invisible to anyone who has not read the source.
-    for command in ("build", "report", "version"):
+    for command in ("build", "validate", "report", "version"):
         assert command in out, f"{command!r} is missing from the help screen"
 
 
@@ -1338,3 +1338,86 @@ def test_report_succeeds_in_a_project_with_no_release_file(
 
     assert result.exit_code == 0, result.output
     assert (Path("reports") / "data-dictionary.md").is_file()
+
+
+def test_validate_accepts_a_valid_schema_without_a_site_url(tmp_path: Path) -> None:
+    """The whole point: `validate_all` takes a schema, a mapping bundle and
+    an extension. Not a site URL, not a release. Requiring either to answer
+    "is this correct?" made the tightest loop in the tool -- edit, check,
+    edit -- cost an invented tenant URL."""
+    result = runner.invoke(app, [
+        "validate",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+    ])
+
+    assert result.exit_code == 0, result.output
+
+
+def test_validate_refuses_an_invalid_schema(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.dbml"
+    bad.write_text(
+        replaced(
+            (FIXTURES / "simple.dbml").read_text(encoding="utf-8"),
+            "Status    status     [not null, default: 'Open']",
+            "Status    persson",
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, [
+        "validate",
+        "--schema", str(bad),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+    ])
+
+    assert result.exit_code == 1
+    assert "unknown_column_type" in result.output
+
+
+def test_validate_writes_nothing(tmp_path: Path) -> None:
+    """It answers a question; it does not produce an artifact.
+
+    `build --dry-run` deliberately still writes deploy-manifest.md, which is
+    a run sheet for a named target. This command has no target and must not
+    leave anything behind that looks like one.
+    """
+    monkeypatch_cwd = tmp_path / "empty"
+    monkeypatch_cwd.mkdir()
+
+    result = runner.invoke(app, [
+        "validate",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--out", str(monkeypatch_cwd),
+    ])
+
+    # There is no --out to give: the flag must not exist at all.
+    assert result.exit_code == 2
+    assert list(monkeypatch_cwd.iterdir()) == []
+
+
+def test_validate_needs_no_flags_inside_a_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With #124's path defaults this is the whole command."""
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, ["validate"])
+
+    assert result.exit_code == 0, result.output
+    assert not (Path("build")).exists()
+
+
+def test_validate_rejects_an_unknown_site_role(tmp_path: Path) -> None:
+    """Same data-driven vocabulary `build` and `report` use. A misspelled
+    role would otherwise validate an empty entity set and report success."""
+    result = runner.invoke(app, [
+        "validate",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--site-role", "nosuchrole",
+    ])
+
+    assert result.exit_code == 2
+    assert "nosuchrole" in result.output
