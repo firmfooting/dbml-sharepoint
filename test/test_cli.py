@@ -5,7 +5,7 @@ from pathlib import Path
 
 from _builders import ID_PK, table
 from _packs import blocks, entities, replaced, with_tail, write_dbml, write_mapping
-from _paths import FIXTURES
+from _paths import FIXTURES, PACKAGE
 from typer.testing import CliRunner
 
 from dbml_sharepoint import __version__
@@ -99,6 +99,124 @@ def test_help_still_renders_as_rich_panels() -> None:
     # help screen is invisible to anyone who has not read the source.
     for command in ("build", "report", "version"):
         assert command in out, f"{command!r} is missing from the help screen"
+
+
+def test_help_text_is_ascii() -> None:
+    """Every string the help screen prints must be ASCII.
+
+    `--help` is the first command anybody runs, and a non-ASCII character in
+    a help string turns it into a traceback rather than a help screen:
+
+        UnicodeEncodeError: 'charmap' codec can't encode character
+        '\\u2192' in position 13: character maps to <undefined>
+
+    ASCII, and not "encodable in cp1252". An earlier version of this test
+    used cp1252 on the reasoning that it stated the real constraint rather
+    than a stricter invented one. That was wrong, and measurably so: cp1252
+    is the ANSI code page, but a Windows CONSOLE defaults to an OEM one, and
+    the three disagree about different characters.
+
+        character        cp1252   cp850   cp437
+        U+2192  ->        FAILS   FAILS   FAILS
+        U+2014  --        ok      FAILS   FAILS
+        U+2026  ...       ok      FAILS   FAILS
+        U+2264  <=        FAILS   FAILS   ok
+
+    So no single code page is the constraint, and cp1252 explicitly blessed
+    the em-dash in `--seed`'s help -- which then still crashed
+    `dbml-sharepoint build --help` under `chcp 437`. ASCII is the only rule
+    that holds for all of them, and it is the rule that is easy to keep.
+
+    Deliberately NOT asserted over the *rendered* output: rich substitutes
+    ASCII box-drawing when it detects a legacy console, so the frame is
+    already safe and only the strings we author are at risk. Those are what
+    this walks.
+    """
+    import typer.main
+
+    def texts(command: object, path: str) -> list[tuple[str, str]]:
+        found = [
+            (f"{path} {attr}", value)
+            for attr in ("help", "short_help", "epilog")
+            if isinstance(value := getattr(command, attr, None), str)
+        ]
+        for param in getattr(command, "params", ()):
+            if isinstance(value := getattr(param, "help", None), str):
+                found.append((f"{path} {param.name} help", value))
+        for name, sub in getattr(command, "commands", {}).items():
+            found.extend(texts(sub, f"{path} {name}"))
+        return found
+
+    offenders = [
+        f"{where}: {sorted({c for c in text if ord(c) > 127})} in {text!r}"
+        for where, text in texts(typer.main.get_command(app), "dbml-sharepoint")
+        if not text.isascii()
+    ]
+    assert not offenders, "help text is not ASCII:\n" + "\n".join(offenders)
+
+
+#: Modules whose string literals reach a console rather than a file.
+#:
+#: `analysis/` and `model/` are where finding messages and loader errors are
+#: written; `cli`, `wizard` and `catalogue` are the terminal surface itself.
+#:
+#: Deliberately EXCLUDES the generators and `bundle`. Those write artifacts
+#: through `write_artifact`, which is UTF-8 by contract -- `reportgen` alone
+#: holds 49 non-ASCII literals, and they are correct. The rule is about bytes
+#: that go to a console, not about prose in general; comments and docstrings
+#: are excluded below for the same reason.
+_CONSOLE_BOUND = ("analysis", "model", "cli.py", "wizard.py", "catalogue.py")
+
+
+def _console_bound_modules() -> list[Path]:
+    return [
+        path
+        for path in sorted(PACKAGE.rglob("*.py"))
+        if path.relative_to(PACKAGE).parts[0] in _CONSOLE_BOUND
+    ]
+
+
+def test_messages_bound_for_a_console_are_ascii() -> None:
+    """Finding messages and loader errors must be ASCII too, not just help.
+
+    These reach the terminal through `typer.echo`, which does not raise on an
+    unencodable character -- click falls back and prints the escape, so
+    `unique without not_null -- uniqueness ...` came out as
+    `unique without not_null \\u2014 uniqueness ...` on an OEM console. Not a
+    crash, but a finding is a sentence somebody reads while something is
+    wrong, and a literal escape sequence in the middle of it is noise at
+    exactly the wrong moment.
+
+    Comments and docstrings are excluded: they are read in an editor and
+    never encoded to a console, so the house style of em-dashes in prose is
+    untouched -- 374 of them survive in `src/`.
+    """
+    import ast
+
+    offenders = []
+    for path in _console_bound_modules():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docstrings = {
+            doc
+            for node in ast.walk(tree)
+            if isinstance(
+                node,
+                ast.Module | ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef,
+            )
+            and (doc := ast.get_docstring(node, clean=False))
+        }
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node.value not in docstrings
+                and not node.value.isascii()
+            ):
+                bad = sorted({c for c in node.value if ord(c) > 127})
+                offenders.append(f"{path.name}:{node.lineno}: {bad} in {node.value[:60]!r}")
+    assert not offenders, (
+        "string literals bound for a console are not ASCII:\n" + "\n".join(offenders)
+    )
 
 
 def test_version_command_available_on_direct_module_run() -> None:

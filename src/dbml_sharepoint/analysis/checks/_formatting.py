@@ -130,7 +130,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error",
                     f"{ctx}: {style} on a Yes/No column matches nothing. The style "
                     f"compares against quoted strings and a boolean is not one, so "
-                    f"every branch is false and the cell renders unstyled — silently. "
+                    f"every branch is false and the cell renders unstyled -- silently. "
                     f"Use a bespoke formatter testing the value's truthiness.",
                     location=at,
                 ))
@@ -301,7 +301,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                             FindingCode.FORM_SECTION_ENTIRELY_HIDDEN,
                             "error",
                             f"form_formatting[{entity_name}].body: section "
-                            f"{title!r} has no column that appears on any form — "
+                            f"{title!r} has no column that appears on any form -- "
                             f"every one of {sorted(named)} is declared new: false "
                             f"and existing: false, so the section renders as a "
                             f"bare heading. Drop the section, or put a visible "
@@ -329,7 +329,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"form_formatting[{entity_name}].body: "
                         f"{', '.join(unplaced)} in no section. SharePoint appends "
                         f"unreferenced columns to the LAST section, so the form "
-                        f"still renders them — but its layout is then partly "
+                        f"still renders them -- but its layout is then partly "
                         f"incidental, and every column added later lands there too. "
                         f"Reference every column explicitly to keep the declared "
                         f"arrangement the deployed one.",
@@ -351,7 +351,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             findings.append(Finding(
                 FindingCode.LIST_VALIDATION_MESSAGE_TOO_LONG,
                 "error",
-                f"{ctx}: message must be ≤1024 characters.",
+                f"{ctx}: message must be <=1024 characters.",
                 location=at,
             ))
         xcols = cross_site_by_entity.get(entity_name, set())

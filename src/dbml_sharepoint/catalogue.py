@@ -38,6 +38,11 @@ _NOT_A_SOLUTION = {"README.md", "healthcare.md"}
 
 _SUMMARY_MAX = 140
 
+#: ASCII, because the summary is rendered into the wizard's terminal table and
+#: a Windows console code page cannot encode U+2026. See
+#: `test_messages_bound_for_a_console_are_ascii`.
+_ELLIPSIS = "..."
+
 
 class UnknownSolutionError(LookupError):
     """Named solution does not exist. Carries the available names.
@@ -84,13 +89,64 @@ class Solution:
         return self.root / RELEASE_RELPATH
 
 
+#: Typographic characters a README may use, and their terminal spellings.
+#:
+#: The READMEs are documentation read in a browser and they use real
+#: punctuation; that is house style and should stay. But the wizard renders
+#: the title and summary into a TERMINAL, where the encoding is the console's
+#: choice -- and ten of the thirty shipped families carry one of these. `→`
+#: cannot be encoded by cp1252, cp850 OR cp437, so picking a template on a
+#: legacy Windows console could raise `UnicodeEncodeError` from inside rich.
+#:
+#: Folded here rather than in the READMEs, because `_clean` already exists to
+#: turn README prose into something a terminal can show -- stripping `**` and
+#: backticks for exactly the same reason.
+#:
+#: A closed table, not a general "strip anything non-ASCII": silently mangling
+#: a character nobody anticipated is how a summary comes to read `Risk 5x5
+#: matri`. `test_every_catalogue_entry_is_ascii` fails on a new template that
+#: introduces one, which is a build failure somebody can fix in a line.
+_TERMINAL_SPELLINGS = {
+    # Keyed by CODEPOINT, not by the character.
+    #
+    # `test_messages_bound_for_a_console_are_ascii` walks every string
+    # literal in this module and checks the parsed value, so `"\u2014"` fails
+    # it just as the bare character does -- the escape is only source
+    # spelling. It is right not to distinguish an input from an output: it
+    # cannot, and a guard that tried would be guessing.
+    #
+    # `chr()` keeps every literal here ASCII -- ints and their replacements --
+    # so the table needs no exemption from a rule this repository just
+    # adopted.
+    chr(codepoint): plain
+    for codepoint, plain in (
+        (0x2014, "--"),    # em dash
+        (0x2013, "-"),     # en dash
+        (0x2018, "'"),     # left single quote
+        (0x2019, "'"),     # right single quote / apostrophe
+        (0x201C, '"'),     # left double quote
+        (0x201D, '"'),     # right double quote
+        (0x2026, "..."),   # ellipsis
+        (0x2192, "->"),    # rightwards arrow
+        (0x00D7, "x"),     # multiplication sign, as in a 5x5 matrix
+        (0x2264, "<="),
+        (0x2265, ">="),
+        (0x00B1, "+/-"),
+    )
+}
+
+
 def _clean(text: str) -> str:
     """Strip the markdown a README uses for emphasis, keeping the words.
 
     The summary is rendered into a terminal table, where `**bold**` and
-    backticks are noise rather than formatting.
+    backticks are noise rather than formatting -- and where a character the
+    console cannot encode is worse than noise, so typographic punctuation is
+    folded to its ASCII spelling on the way through.
     """
     text = re.sub(r"[*_`]+", "", text)
+    for fancy, plain in _TERMINAL_SPELLINGS.items():
+        text = text.replace(fancy, plain)
     return re.sub(r"\s+", " ", text).strip()
 
 
@@ -144,7 +200,12 @@ def _summary(readme: str) -> str:
     if match:
         text = text[: match.start() + 1]
     if len(text) > _SUMMARY_MAX:
-        text = text[: _SUMMARY_MAX - 1].rstrip() + "…"
+        # Reserve exactly as many characters as the marker occupies. This read
+        # `- 1` while the marker was a one-character ellipsis; ASCII-ifying it
+        # to "..." for the wizard's table made every truncated summary two
+        # characters over the cap, which `test_each_summary_fits_a_terminal`
+        # caught on fifteen templates.
+        text = text[: _SUMMARY_MAX - len(_ELLIPSIS)].rstrip() + _ELLIPSIS
     return text
 
 

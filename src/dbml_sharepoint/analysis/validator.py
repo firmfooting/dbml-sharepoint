@@ -76,7 +76,7 @@ def _undeployable(context: str, column: str) -> str:
         else f"{column} is a SharePoint system column, not a deployed field"
     )
     return (
-        f"{context}: {column!r} cannot carry a per-column declaration — "
+        f"{context}: {column!r} cannot carry a per-column declaration -- "
         f"{reason}, so it never receives these properties. Declaring it here "
         f"would validate clean and deploy nothing."
     )
@@ -308,7 +308,7 @@ def _check_column(
             FindingCode.AUTO_INCREMENT_PK_MUST_BE_ID,
             "error",
             f"{table}.{name}: an auto-increment primary key must be named "
-            f"'Id' — it maps to SharePoint's built-in ID column, which is "
+            f"'Id' -- it maps to SharePoint's built-in ID column, which is "
             f"created with the list and cannot be renamed. Declared under "
             f"any other name it is validated as an ordinary column and "
             f"never provisioned.",
@@ -331,7 +331,7 @@ def _check_column(
         findings.append(Finding(
             FindingCode.LEGACY_CHOICE_TYPE,
             "error",
-            f"{table}.{name}: legacy 'choice' type — migrate to a named DBML enum.",
+            f"{table}.{name}: legacy 'choice' type -- migrate to a named DBML enum.",
         ))
     elif (
         col.type not in KNOWN_SCALARS
@@ -375,7 +375,7 @@ def _check_column(
         findings.append(Finding(
             FindingCode.UNIQUE_WITHOUT_NOT_NULL,
             "warning",
-            f"{table}.{name}: unique without not_null — "
+            f"{table}.{name}: unique without not_null -- "
             "uniqueness enforced only on populated values.",
         ))
 

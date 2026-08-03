@@ -582,7 +582,7 @@ def _parse_column_validation(block: Any, context: str) -> EntitySection[ColumnVa
         for key in ("when", "message"):
             if not raw.get(key):
                 raise ValueError(
-                    f"{where}: {key!r} is required — a rule with no message fails the save "
+                    f"{where}: {key!r} is required -- a rule with no message fails the save "
                     f"with SharePoint's generic text, which tells the author nothing",
                 )
         columns[name] = ColumnValidation(
