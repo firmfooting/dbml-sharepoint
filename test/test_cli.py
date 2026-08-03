@@ -1,3 +1,4 @@
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -193,6 +194,70 @@ def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
     assert not any("\\" in p for p in listed)
     for relpath, digest in listed.items():
         assert digest == sha256_lf((out / relpath).read_text(encoding="utf-8")), relpath
+
+
+def test_a_windows_built_bundle_verifies_with_raw_byte_hashing(
+    tmp_path: Path,
+) -> None:
+    """`sha256sum -c` and `Get-FileHash` hash the bytes ON DISK.
+
+    This is the property that makes the bundle verifiable with ordinary
+    tools instead of a bespoke one-liner, and it is the one the suite could
+    not see: `test_build_checksums_validate_and_cover_the_bundle` above
+    compares `sha256_lf(read_text(...))` against a digest that was itself
+    computed by `sha256_lf`, so it normalises BOTH sides and passes however
+    the file was written.
+
+    Hashing `read_bytes()` is what an external tool does. On Windows,
+    before every artifact went through `write_artifact`, every one of these
+    differed.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+
+    mismatched = []
+    for line in (out / "checksums.txt").read_text(encoding="utf-8").splitlines():
+        digest, _, relpath = line.partition("  ")
+        raw = hashlib.sha256((out / relpath).read_bytes()).hexdigest()
+        if raw != digest:
+            mismatched.append(relpath)
+    assert not mismatched, f"digest does not describe the bytes on disk: {mismatched}"
+
+
+def test_no_emitted_artifact_carries_a_carriage_return(tmp_path: Path) -> None:
+    """One line-ending policy for the whole bundle: LF, everywhere.
+
+    Asserted over the WHOLE bundle rather than the files someone remembered
+    to list -- the CRLF got in through `reporting/`, which no checksum test
+    was looking at, and a new writer would land the same way.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+
+    offenders = [
+        str(p.relative_to(out))
+        for p in sorted(out.rglob("*"))
+        if p.is_file() and b"\r" in p.read_bytes()
+    ]
+    assert not offenders, f"CRLF in emitted artifacts: {offenders}"
 
 
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
