@@ -63,8 +63,16 @@ $ dbml-sharepoint build --mapping ./mapping.yaml …
 expected ',' or '}', but got '<stream end>'
 ```
 
-There is no traceback. If you see one, it is a bug in this tool rather than
-a mistake in your file — please report it.
+That covers what the YAML and DBML parsers reject, and the loader's own
+checks — an unknown key, a missing required one, a value of the wrong kind.
+
+It does **not** yet cover a section whose *shape* is wrong where the loader
+then indexes into it: `entities: []` parses as valid YAML and reaches
+`raw["entities"].items()`, which raises `AttributeError` and prints a
+traceback. `_CONFIG_ERRORS` deliberately does not catch that class, because
+an unexpected error really is a bug in the tool and must keep its stack — so
+closing this means the loader validating the shape, not the CLI widening what
+it swallows. Tracked in #141.
 
 ## `report`
 
