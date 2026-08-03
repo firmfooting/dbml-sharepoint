@@ -210,11 +210,23 @@ dbml-sharepoint
 ```
 
 To do it by hand, copy the template directory out first, then build from
-inside your copy — substituting your site:
+inside your copy — substituting your site.
+
+These templates live *inside the installed package*, so a plain `cp -r
+<name>` only works if you happen to be standing in this directory. Let
+Python find it instead — this works from anywhere, clone or install:
 
 ```bash
-cp -r <name> ./my-project && cd ./my-project
+python -c "import dbml_sharepoint, pathlib, shutil, sys; \
+shutil.copytree(pathlib.Path(dbml_sharepoint.__file__).parent / 'solutions' / sys.argv[1], sys.argv[2])" \
+  risk-register ./my-project
 
+cd ./my-project
+```
+
+Then, from inside your copy:
+
+```bash
 dbml-sharepoint build \
   --schema 10-design/schema.dbml \
   --mapping 20-configure/mapping.yaml \

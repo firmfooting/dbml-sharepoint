@@ -147,12 +147,23 @@ def write_artifact(path: Path, text: str) -> None:
     produce a bundle no standard checksum tool could verify. A default
     nobody states at the call site is a default nobody reviews.
 
+    The CONTENT is normalised too, not just the newline translation.
+    ``newline="\\n"`` only stops Python turning ``\\n`` into ``\\r\\n`` on the
+    way out; a ``\\r`` already inside the string passes straight through. A
+    template checked out with CRLF, or a mapping value carrying one, would
+    put CR bytes in the artifact while ``sha256_lf`` hashed them away —
+    which is the exact divergence between the digest and the bytes on disk
+    that this whole path exists to close. Normalising here means the
+    guarantee holds for any input, not just for inputs that were already
+    clean.
+
     Creates parent directories: reporting writes into ``reporting/sql/``
     and ``reporting/powerquery/``, and having the writer own that keeps
     every caller from repeating the mkdir.
     """
+    normalised = text.replace("\r\n", "\n").replace("\r", "\n")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="\n")
+    path.write_text(normalised, encoding="utf-8", newline="\n")
 
 
 def sha256_lf(text: str) -> str:
@@ -174,8 +185,13 @@ def write_checksums(out: Path, relpaths: list[str]) -> None:
     recorded digest matches the bytes on disk and the standard tools agree.
     ``test_a_windows_built_bundle_verifies_with_raw_byte_hashing`` pins it.
     """
+    # Hash the BYTES on disk, which is what a verifier hashes. Digesting
+    # the string through sha256_lf made the manifest describe normalised
+    # content rather than the file, so the two could disagree while every
+    # test that used sha256_lf on both sides still passed. Reading back is
+    # also the only thing that proves what was actually written.
     lines = [
-        f"{sha256_lf((out / relpath).read_text(encoding='utf-8'))}  {relpath}"
+        f"{hashlib.sha256((out / relpath).read_bytes()).hexdigest()}  {relpath}"
         for relpath in sorted(relpaths)
     ]
     write_artifact(out / "checksums.txt", "\n".join(lines) + "\n")

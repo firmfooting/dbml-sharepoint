@@ -35,7 +35,7 @@ from dbml_sharepoint.wizard import run_wizard, stdin_is_interactive
 
 app = typer.Typer(
     name="dbml-sharepoint",
-    help="Generic DBML → SharePoint browser-paste deploy.js generator.",
+    help="Generic DBML → SharePoint browser-paste deploy.js.txt generator.",
     # Not `no_args_is_help`: a bare invocation runs the wizard. The help
     # fallback moved into the callback below, which can tell an interactive
     # terminal from a pipe -- `no_args_is_help` cannot.
@@ -171,7 +171,7 @@ def _load_config(
 def validate_site_url(site_url: str) -> None:
     """Reject a malformed or non-https ``--site-url`` at parse time.
 
-    The URL is interpolated into the generated deploy.js (as ``SITE_URL`` and in
+    The URL is interpolated into the generated deploy.js.txt (as ``SITE_URL`` and in
     the site-match preflight comparison), so it must be a well-formed absolute
     ``https://`` URL with a host. Catches typos (``http://``, a bare path, a
     missing host) before the operator pastes into a privileged console. Shared
@@ -200,15 +200,15 @@ def build(
     seed: bool = typer.Option(
         False,
         "--seed",
-        help="Also emit demo-data.js from the mapping's demo_items — "
-        "'[DEMO] '-marked sample rows pasted after deploy.js.",
+        help="Also emit demo-data.js.txt from the mapping's demo_items — "
+        "'[DEMO] '-marked sample rows pasted after deploy.js.txt.",
     ),
     extension: str | None = typer.Option(
         None,
         help="Extension name; overrides the mapping's `extension:` key. Resolved via entry points.",
     ),
 ) -> None:
-    """Generate deploy.js + manifest from the DBML schema and mapping."""
+    """Generate deploy.js.txt + manifest from the DBML schema and mapping."""
     execute_build(
         schema=schema,
         mapping=mapping,

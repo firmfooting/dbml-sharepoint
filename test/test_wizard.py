@@ -182,6 +182,79 @@ def test_refuses_a_non_empty_destination_and_reprompts(tmp_path: Path) -> None:
     assert (destination / "README.md").is_file()
 
 
+def test_an_existing_empty_directory_is_accepted_and_scaffolded(
+    tmp_path: Path,
+) -> None:
+    """`_ask_destination` deliberately accepts an existing EMPTY directory.
+
+    `copytree` without `dirs_exist_ok` then raised FileExistsError, so the
+    wizard reported "Could not scaffold the project" for a path it had just
+    told the user was fine -- and `mkdir foo && cd ..` before running is an
+    entirely ordinary thing to have done.
+    """
+    destination = tmp_path / "proj"
+    destination.mkdir()
+
+    assert wizard.run_wizard(ScriptedConsole(_answers(destination))) == 0
+    assert (destination / "README.md").is_file()
+    assert (destination / "20-configure" / "mapping.yaml").is_file()
+
+
+def test_changing_the_prefix_repoints_the_copied_documentation(
+    tmp_path: Path,
+) -> None:
+    """The docs name the lists literally, and the wizard sends people to them.
+
+    Choosing ACME_ builds ACME_Risk while DEPLOY.md still said to verify
+    that `RR_Risk` exists -- documentation that disagrees with what was
+    built, which is the failure this project exists to avoid.
+    """
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, prefix="ACME_"))
+
+    assert wizard.run_wizard(console) == 0
+
+    stale = [
+        str(p.relative_to(destination))
+        for p in sorted(destination.rglob("*.md"))
+        if "RR_" in p.read_text(encoding="utf-8")
+    ]
+    assert not stale, f"docs still name the template's prefix: {stale}"
+    deploy_md = (destination / "30-deploy" / "DEPLOY.md").read_text(encoding="utf-8")
+    assert "ACME_Risk" in deploy_md
+    # And it says so rather than editing the user's docs silently.
+    assert "Repointed" in console.text
+
+
+def test_keeping_the_default_prefix_rewrites_no_documentation(
+    tmp_path: Path,
+) -> None:
+    """No-op when the prefix is unchanged -- the common case must not
+    report edits it did not make."""
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, prefix="RR_"))
+
+    assert wizard.run_wizard(console) == 0
+    assert "Repointed" not in console.text
+
+
+def test_a_long_prefix_is_accepted(tmp_path: Path) -> None:
+    """The wizard must not invent a SharePoint rule.
+
+    The old guard was `^[A-Za-z0-9_-]{1,16}$`, whose character set and
+    16-character ceiling appear in no Learn page, no probe and no validator
+    rule. It rejected prefixes `build` accepts and looped forever with no
+    way forward. The authority is the validator, which runs on the build.
+    """
+    destination = tmp_path / "proj"
+    long_prefix = "CONTOSO_GOVERNANCE_RISK_"
+    console = ScriptedConsole(_answers(destination, prefix=long_prefix))
+
+    assert wizard.run_wizard(console) == 0
+    bundle = load_mapping(destination / "20-configure" / "mapping.yaml")
+    assert bundle.mapping.prefix == long_prefix
+
+
 def test_declining_the_write_leaves_nothing_behind(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, write="n"))
