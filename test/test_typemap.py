@@ -1,7 +1,12 @@
 # test/test_typemap.py
-import pytest
+from pathlib import Path
 
-from dbml_sharepoint.analysis.typemap import map_column
+import pytest
+from _findings import only
+from _packs import pack
+
+from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.typemap import describe_unknown_type, map_column
 from dbml_sharepoint.model.parser import Column, Reference
 
 ENUM_NAMES = {"status", "topic"}
@@ -100,3 +105,78 @@ def test_calculated_date_maps_to_calculated() -> None:
     assert field.field_type_kind == 17
     assert field.output_type == 4  # SP.FieldType DateTime
     assert field.required is False
+
+
+# --- unknown-type diagnosis -------------------------------------------------
+
+
+def test_a_near_miss_scalar_is_suggested() -> None:
+    """`persson` for `person` is a typo, and the supported set is a closed
+    frozenset sitting next to the check -- suggesting from it is arithmetic
+    over data we already hold, not a claim about SharePoint."""
+    assert "person" in describe_unknown_type("persson", enums=())
+
+
+def test_sql_vocabulary_gets_the_supported_set() -> None:
+    """`decimal` is not a typo, it is somebody bringing SQL vocabulary to a
+    DBML file. There is no near miss to offer, so the answer is the list --
+    which is what teaches them `number`."""
+    described = describe_unknown_type("decimal", enums=())
+    assert "number" in described
+    assert "nvarchar" in described
+
+
+def test_a_misspelled_enum_is_suggested_from_the_schema() -> None:
+    """The candidates must include the enums the file itself declares.
+
+    A suggestion source of KNOWN_SCALARS alone cannot answer the commonest
+    version of this mistake: the user wrote the name of their own enum
+    slightly wrong.
+    """
+    described = describe_unknown_type("task_stat", enums=("task_status", "priority"))
+    assert "task_status" in described
+
+
+def test_the_diagnosis_never_mentions_the_source_tree() -> None:
+    """The reader is a SharePoint admin editing a .dbml file.
+
+    typemap's message used to end "Add it to typemap.py or declare it as an
+    enum" -- half of which is an instruction to edit this repository.
+    """
+    described = describe_unknown_type("decimal", enums=())
+    assert "typemap.py" not in described
+
+
+def test_both_unknown_type_sites_say_the_same_thing(tmp_path: Path) -> None:
+    """`build` reports this as a Finding and `report` reaches the raising
+    site in typemap, because `report` does not validate. The same schema
+    diagnosed two different ways is how a user comes to believe the two
+    commands disagree about their file."""
+    from dbml_sharepoint.analysis.validator import validate_all
+    from dbml_sharepoint.extension import BaseExtension
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml="""
+            Table Risk {
+              Id int [pk, increment]
+              Title nvarchar [not null]
+              Cost decimal
+            }
+        """,
+        mapping="""
+            entities:
+              Risk: { kind: List, base_template: 100, site_role: default }
+        """,
+    )
+    findings = validate_all(schema, bundle, BaseExtension())
+    message = only(findings, FindingCode.UNKNOWN_COLUMN_TYPE).message
+
+    with pytest.raises(ValueError) as raised:
+        map_column(
+            next(c for c in schema.tables[0].columns if c.name == "Cost"), set(),
+        )
+
+    shared = describe_unknown_type("decimal", enums=())
+    assert shared in message
+    assert shared in str(raised.value)

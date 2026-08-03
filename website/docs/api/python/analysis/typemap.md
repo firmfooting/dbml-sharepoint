@@ -26,6 +26,39 @@ CALCULATED_OUTPUT_TYPES = {'calculated_text': 2, 'calculated_number': 9, 'calcul
 CALCULATED_TYPES = frozenset({'calculated_date', 'calculated_number', 'calculated_text'})
 ```
 
+### `KNOWN_SCALARS`
+
+```python
+KNOWN_SCALARS = frozenset({'boolean', 'date', 'datetime', 'hyperlink', 'int', 'longtext', 'number', 'nvarchar', 'person', 'richtext'})
+```
+
+### `describe_unknown_type`
+
+```python
+def describe_unknown_type(declared: str, *, enums: collections.abc.Iterable[str]) -> str
+```
+
+Say what to do about a type this build does not recognise.
+
+Two callers, deliberately one sentence: `validate_column` reports this as
+a Finding, and `map_column` raises it -- which is the path `report`
+takes, because `report` does not validate. The same schema diagnosed two
+different ways is how somebody comes to believe the two commands
+disagree about their file.
+
+Suggesting is arithmetic over data already held. The supported set is a
+closed frozenset in this module and the enums come from the parsed
+schema, so nothing here is an assertion about SharePoint -- which is why
+this can be generous where the rest of the codebase must not be.
+
+Enums are in the candidate list because the commonest version of this
+mistake is not `decimal`, it is somebody misspelling the name of an enum
+they declared themselves twenty lines up.
+
+When there is no near miss the answer is the whole list. `decimal` is not
+a typo, it is SQL vocabulary arriving in a DBML file, and only seeing
+`number` in the supported set teaches that.
+
 ### `UNIQUE_SUPPORTED_SCALAR_TYPES`
 
 ```python
