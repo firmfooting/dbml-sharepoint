@@ -52,9 +52,27 @@ A validation failure exits **1**, not 2. `2` is the usage-error code
 `typer` raises before the pipeline runs at all. Gate on non-zero rather
 than on a specific code.
 
-An invalid `mapping.yaml` currently prints a Python traceback above the
-one useful sentence. The message at the bottom is the actionable part; the
-frames above it are noise, not a crash.
+An unreadable or malformed input file is part of exit **1**, not 2 — a
+refused build rather than a misuse of the command line. It is reported as a
+single message naming the file and, where the parser gives one, the line:
+
+```console
+$ dbml-sharepoint build --mapping ./mapping.yaml …
+[ERROR] mapping ./mapping.yaml: while parsing a flow mapping
+  in "./mapping.yaml", line 3, column 12
+expected ',' or '}', but got '<stream end>'
+```
+
+That covers what the YAML and DBML parsers reject, and the loader's own
+checks — an unknown key, a missing required one, a value of the wrong kind.
+
+It does **not** yet cover a section whose *shape* is wrong where the loader
+then indexes into it: `entities: []` parses as valid YAML and reaches
+`raw["entities"].items()`, which raises `AttributeError` and prints a
+traceback. `_CONFIG_ERRORS` deliberately does not catch that class, because
+an unexpected error really is a bug in the tool and must keep its stack — so
+closing this means the loader validating the shape, not the CLI widening what
+it swallows. Tracked in #141.
 
 ## `report`
 
