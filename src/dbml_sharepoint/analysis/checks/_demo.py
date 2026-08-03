@@ -49,8 +49,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "error",
                 f"demo_items[{entity_name}]: {entity_name} is a DocumentLibrary, and a "
                 f"library's items are files. Seeding posts to /items, which SharePoint "
-                f"refuses outright — HTTP 500, \"To add an item to a document library, "
-                f"use SPFileCollection.Add()\" — so the paste fails in front of whoever "
+                f"refuses outright -- HTTP 500, \"To add an item to a document library, "
+                f"use SPFileCollection.Add()\" -- so the paste fails in front of whoever "
                 f"was being shown the demo. Seed the register list that accompanies the "
                 f"library, and upload sample documents by hand.",
                 location=Location(Section.DEMO_ITEMS, entity=entity_name),
@@ -86,7 +86,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     FindingCode.DEMO_TITLE_MISSING_MARKER,
                     "error",
-                    f"{ctx}: Title must start with '[DEMO] ' — the marker "
+                    f"{ctx}: Title must start with '[DEMO] ' -- the marker "
                     f"the teardown trusts to tell demo rows from real "
                     f"records.",
                     location=at,

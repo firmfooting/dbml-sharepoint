@@ -133,7 +133,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"never sends 'kind', so SharePoint would provision whatever this "
                 f"number names while the rest of the build treats {entity_name} as a "
                 f"'{entity.kind}'. If you meant a document library, that kind is "
-                f"refused outright — see issue #14.",
+                f"refused outright -- see issue #14.",
                 location=Location(Section.ENTITIES, entity=entity_name),
             ))
 
@@ -181,7 +181,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "warning",
                 f"{entity_name}: accept_unindexable_display_column is set, but "
                 + " and ".join(reasons)
-                + ". Remove it — there is nothing to accept.",
+                + ". Remove it -- there is nothing to accept.",
             ))
 
         # The display column's index is IMPLICIT: it is appended in
@@ -210,7 +210,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # entity. Only the declared-but-not-rendered case is invisible
                 # there: a cross-site logical column, or the auto-increment Id.
                 hint = (
-                    " — a cross-site logical column is replaced by generated "
+                    " -- a cross-site logical column is replaced by generated "
                     "Abbreviation and SiteUrl fields, so it never exists on the "
                     "list"
                     if display in display_xcols
@@ -397,7 +397,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             if display_index is not None and display_index not in declared | unique_indexes:
                 extra.append(
                     f"{display_index!r}, indexed automatically because this "
-                    f"list is a lookup target — a picker cannot enumerate an "
+                    f"list is a lookup target -- a picker cannot enumerate an "
                     f"unindexed column past 5,000 items",
                 )
             findings.append(Finding(
@@ -426,8 +426,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "warning",
                 f"{entity_name}.indexes: {len(effective_indexes)} of the 20 "
                 f"available indexes are already spoken for. SharePoint also "
-                f"creates indexes by itself — opening a sorted view on an "
-                f"unindexed column adds one — and those are invisible to this "
+                f"creates indexes by itself -- opening a sorted view on an "
+                f"unindexed column adds one -- and those are invisible to this "
                 f"build, so leave headroom.",
             ))
         columns_by_name = {col.name: col for col in indexed_table.columns}
@@ -509,7 +509,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             findings.append(Finding(
                 FindingCode.UNKNOWN_ENTITY,
                 "error",
-                f"versioning.overrides: unknown entity {entity_name!r} — the "
+                f"versioning.overrides: unknown entity {entity_name!r} -- the "
                 f"override is read by nobody, so the real list keeps the "
                 f"defaults.",
                 location=Location(Section.VERSIONING, sub="overrides"),
@@ -554,7 +554,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA,
                     "error",
                     f"{table.name}.{col.name}: calculated column has no "
-                    f"formula — add calculated_formulas.{table.name}."
+                    f"formula -- add calculated_formulas.{table.name}."
                     f"{col.name} to the mapping.",
                 ))
                 continue
@@ -591,7 +591,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error",
                     f"{table.name}.{col.name}: calculated formula references "
                     f"[{ref}], which is not a rendered column of "
-                    f"{table.name} — SharePoint would reject the field "
+                    f"{table.name} -- SharePoint would reject the field "
                     f"creation at deploy time.",
                 ))
             for ref in sorted(refs & declared):
@@ -618,9 +618,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error",
                     f"{table.name}.{col.name}: calculated formula references "
                     f"[{ref}], {description}. SharePoint refuses this operand "
-                    f"when the calculated field is created — HTTP 500, \"the "
+                    f"when the calculated field is created -- HTTP 500, \"the "
                     f"columns are defined as a data type that is not supported "
-                    f"in formulas\" — after earlier deploy phases may already "
+                    f"in formulas\" -- after earlier deploy phases may already "
                     f"have written to the site. Compute from a supported "
                     f"operand type instead ({_SUPPORTED_CALCULATED_OPERANDS}), "
                     f"or drop the formula.",
@@ -672,7 +672,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     FindingCode.CALCULATED_FORMULA_CYCLE,
                     "error",
                     f"calculated_formulas[{entity_name}]: circular reference "
-                    f"among {sorted(remaining)} — no creation order can "
+                    f"among {sorted(remaining)} -- no creation order can "
                     f"satisfy mutually dependent calculated columns.",
                     location=Location(
                         Section.CALCULATED_FORMULAS, entity=entity_name,
@@ -691,7 +691,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     FindingCode.INDEX_ON_CALCULATED_COLUMN,
                     "error",
                     f"{table.name}.indexes: {col_name!r} is a "
-                    f"calculated column — SharePoint cannot index calculated "
+                    f"calculated column -- SharePoint cannot index calculated "
                     f"columns.",
                 ))
 

@@ -79,7 +79,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 FindingCode.ENUM_MEMBERS_DIFFER,
                 "error",
                 f"DBML enum {enum_name!r} members differ from configured "
-                f"enum_sources[{enum_name!r}] — "
+                f"enum_sources[{enum_name!r}] -- "
                 f"DBML: {dbml_enum.members!r}; YAML: {choices!r}",
                 location=at_enum,
             ))

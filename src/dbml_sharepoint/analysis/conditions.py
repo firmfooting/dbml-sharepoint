@@ -288,7 +288,7 @@ _UNSUPPORTED_MEASURE: dict[str, str] = {
     CAML: "CAML has no LEN",
     EXPRESSION: (
         "list formatting's length() counts array items and returns 1/0 for other "
-        "types — it does not measure a string, so the formula would be false for "
+        "types -- it does not measure a string, so the formula would be false for "
         "every value"
     ),
 }
@@ -512,7 +512,7 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
             FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
             target,
             f"a view filter cannot say {leaf.op!r}. CAML has <Contains> and "
-            f"<BeginsWith> and no negation of either — its <Where> element has "
+            f"<BeginsWith> and no negation of either -- its <Where> element has "
             f"no <Not>, and <NotIncludes> negates <Includes>, which is a "
             f"multi-value membership test rather than a substring match. This "
             f"is a SharePoint limit, not one this tool can lift. (If you wrote "
@@ -579,7 +579,7 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
         raise _reject(
             FindingCode.CONDITION_NEEDLE_EMPTY,
             target,
-            f"operator {leaf.op!r} needs a non-empty 'value' — an empty needle "
+            f"operator {leaf.op!r} needs a non-empty 'value' -- an empty needle "
             f"matches every value on the positive operators and none on the "
             f"negative ones, so the condition cannot discriminate. Use "
             f"'is_null'/'is_not_null' to test for a blank column",
@@ -589,7 +589,7 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
         raise _reject(
             FindingCode.CONDITION_SET_EMPTY,
             target,
-            f"operator {leaf.op!r} has an empty list, which is a constant — say what "
+            f"operator {leaf.op!r} has an empty list, which is a constant -- say what "
             f"you mean with a condition rather than an empty set",
             at,
         )
@@ -707,7 +707,7 @@ def _check_date_literal(
                 FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
                 target,
                 f"{value!r} is a point in time and {op!r} is a substring test, so "
-                f"the two cannot be combined — the sentinel would reach the formula "
+                f"the two cannot be combined -- the sentinel would reach the formula "
                 f"as its own spelling rather than as a date. Use a comparison "
                 f"(eq/neq/lt/leq/gt/geq) or a set test (in/not_in)",
                 where,
@@ -727,7 +727,7 @@ def _check_date_literal(
             f"{value!r} is an unquoted YAML datetime; quote it. Unquoted, it "
             f"reaches the renderers as a datetime object whose text form "
             f"separates date from time with a SPACE, and no probe has run "
-            f"that spelling — '{value.isoformat()}' has",
+            f"that spelling -- '{value.isoformat()}' has",
             where,
         )
 
@@ -754,17 +754,17 @@ def _check_date_literal(
     hint = ""
     if isinstance(value, str) and _NOW_OFFSET.match(value.strip()):
         hint = (
-            " — 'now' takes no offset form (today±N does, now±N has no "
-            "verified rendering); use a bare 'now', or 'today±N' for a "
+            " -- 'now' takes no offset form (today+/-N does, now+/-N has no "
+            "verified rendering); use a bare 'now', or 'today+/-N' for a "
             "whole-day boundary"
         )
     raise _reject(
         FindingCode.CONDITION_DATE_UNPARSEABLE,
         target,
-        f"{value!r} is not a date, the sentinel 'today'/'today±N', or "
+        f"{value!r} is not a date, the sentinel 'today'/'today+/-N', or "
         f"'now'. What SharePoint does with an unparseable date literal has "
-        f"not been probed — it may refuse the view or filter on something "
-        f"nobody intended — so it is refused here, where the answer does not "
+        f"not been probed -- it may refuse the view or filter on something "
+        f"nobody intended -- so it is refused here, where the answer does not "
         f"matter{hint}",
         where,
     )
@@ -958,7 +958,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
             target,
             f"the 'now' sentinel needs a datetime column; {leaf.field!r} is "
-            f"{column_type!r}, which has no time of day — use 'today'",
+            f"{column_type!r}, which has no time of day -- use 'today'",
             where,
         )
 
@@ -980,7 +980,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
         raise _reject(
             FindingCode.CONDITION_ME_UNSUPPORTED_BY_TARGET,
             target,
-            "the 'me' sentinel has no verified client-side equivalent — a "
+            "the 'me' sentinel has no verified client-side equivalent -- a "
             "show/hide formula is evaluated against the item's field values, "
             "not against the signed-in user, so the rule would save, read "
             "back equal, pass the phase and never fire",
@@ -1327,7 +1327,7 @@ def _condition_problems(
             # rule positively rather than fix the operator they chose.
             problems.append((
                 FindingCode.CONDITION_NEGATION_UNRENDERABLE,
-                (f"{problem} — negating this rule turns it into {leaf.op!r}, "
+                (f"{problem} -- negating this rule turns it into {leaf.op!r}, "
                  f"which that target cannot express. Rewrite it as a positive "
                  f"filter, or move it to a target that supports the negation."),
                 leaf.field,
@@ -1353,7 +1353,7 @@ def _operand_problems(
             problems.append((
                 FindingCode.CONDITION_ME_TAKES_NO_PROPERTY,
                 (f"{where}: 'me' compares the person column's user id, so it takes no "
-                 f"'property' — drop {leaf.property!r}"),
+                 f"'property' -- drop {leaf.property!r}"),
             ))
         if leaf.op not in _ME_OPS:
             problems.append((
