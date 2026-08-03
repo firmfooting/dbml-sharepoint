@@ -13,6 +13,7 @@ from typer.testing import CliRunner, Result
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.catalogue import (
+    RELEASE_RELPATH,
     SCHEMA_RELPATH,
 )
 from dbml_sharepoint.cli import app
@@ -1202,3 +1203,40 @@ def test_report_defaults_its_inputs_to_the_project_layout(
 
     assert result.exit_code == 0, result.output
     assert (Path("reports") / "guide.md").is_file()
+
+
+def test_report_does_not_borrow_a_release_from_the_working_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit inputs must not pick up the current project's provenance.
+
+    `report --schema ../other/... --mapping ../other/...` run from inside a
+    project would otherwise stamp THIS project's release tag and schema
+    version onto a data dictionary describing somebody else's schema.
+    Nothing links a release.yaml to the schema it describes, so the result
+    is not missing provenance but wrong provenance -- and the output looks
+    equally confident either way.
+    """
+    project = _project(tmp_path)
+    release_tag = (project / RELEASE_RELPATH).read_text(encoding="utf-8")
+    assert "release:" in release_tag
+    monkeypatch.chdir(project)
+
+    out = tmp_path / "reports"
+    result = runner.invoke(app, [
+        "report",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--out", str(out),
+    ])
+
+    assert result.exit_code == 0, result.output
+    dictionary = (out / "data-dictionary.md").read_text(encoding="utf-8")
+    # With the project's release borrowed, the tag from its release.yaml is
+    # stamped into this dictionary -- which describes a different schema.
+    tag = next(
+        line.split(":", 1)[1].strip().strip('"')
+        for line in release_tag.splitlines()
+        if line.startswith("release:")
+    )
+    assert tag not in dictionary, f"borrowed the working project's release {tag!r}"

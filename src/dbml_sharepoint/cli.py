@@ -509,6 +509,11 @@ def report(
     data-dictionary.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
     """
+    # Whether this run is reporting on the project in the working directory,
+    # or on files somebody named explicitly. It decides the release default
+    # below, so it has to be read BEFORE the paths are resolved.
+    from_the_project = schema is None and mapping is None
+
     schema = _project_input(schema, SCHEMA_RELPATH, "--schema")
     mapping = _project_input(mapping, MAPPING_RELPATH, "--mapping")
     # Not through `_project_input`: this option is genuinely optional and its
@@ -516,7 +521,16 @@ def report(
     # release.yaml must not refuse the way a missing schema does. Picking it
     # up when it IS there means running `report` inside a project stamps the
     # provenance it could always have had.
-    if release is None and RELEASE_RELPATH.is_file():
+    #
+    # Only when the schema and mapping came from the project too. Otherwise
+    # `report --schema ../other/schema.dbml --mapping ../other/mapping.yaml`
+    # run from a project directory would stamp THIS project's release tag and
+    # schema version onto a data dictionary describing somebody else's
+    # schema -- provenance that is not merely missing but wrong, and wrong in
+    # a way the output looks confident about. Nothing links a release.yaml to
+    # the schema it describes, so the only safe inference is that all three
+    # came from the same place.
+    if release is None and from_the_project and RELEASE_RELPATH.is_file():
         release = RELEASE_RELPATH
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
 
