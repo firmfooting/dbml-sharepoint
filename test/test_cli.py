@@ -1,4 +1,5 @@
 import hashlib
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,13 @@ from dbml_sharepoint.cli import app
 from dbml_sharepoint.extension import BaseExtension
 
 runner = CliRunner()
+
+#: Terminal styling, stripped before any assertion about a rendered message.
+#: CI emits it and a developer terminal usually does not, which is enough on
+#: its own to make an assertion pass locally and fail on both runners --
+#: `test_help_still_renders_as_rich_panels` records the same lesson about
+#: box-drawing corners.
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def test_help_lists_build_command() -> None:
@@ -1163,14 +1171,25 @@ def test_a_missing_input_names_the_standard_path_it_looked_for(
     IS the feature for anyone who is not in one.
     """
     monkeypatch.chdir(tmp_path)
+    # Pin the rendering this assertion reads. rich lays the refusal out in a
+    # panel whose width and colour it decides from the environment, and the
+    # first version of this test asserted on that panel raw: green on a
+    # developer machine, red on both CI runners, for reasons that are nothing
+    # to do with the behaviour under test. Fixing the width and disabling
+    # colour makes the message the only variable.
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("NO_COLOR", "1")
 
     result = runner.invoke(app, [
         "build", "--site-url", "https://example.sharepoint.com/sites/test",
     ])
 
     assert result.exit_code == 2
-    assert "--schema" in result.output
-    assert str(SCHEMA_RELPATH) in result.output
+    # Collapsed, because even at 200 columns a panel wraps somewhere and a
+    # wrap inside the path would make this a test of the terminal.
+    rendered = " ".join(_ANSI.sub("", result.output).split())
+    assert "--schema" in rendered
+    assert str(SCHEMA_RELPATH) in rendered
 
 
 def test_report_defaults_its_inputs_to_the_project_layout(
