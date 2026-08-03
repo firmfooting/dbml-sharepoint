@@ -101,6 +101,57 @@ def test_help_still_renders_as_rich_panels() -> None:
         assert command in out, f"{command!r} is missing from the help screen"
 
 
+def test_help_text_survives_a_legacy_windows_code_page() -> None:
+    """Every string the help screen prints must encode to cp1252.
+
+    `--help` is the first command anybody runs, and a non-ASCII character in
+    a help string turned it into a traceback rather than a help screen:
+
+        UnicodeEncodeError: 'charmap' codec can't encode character
+        '\\u2192' in position 13: character maps to <undefined>
+
+    That came from an arrow in the Typer app's own help. It does not
+    reproduce everywhere -- a UTF-8 console renders it fine -- but it
+    reproduces wherever the effective stdout encoding is a legacy Windows
+    code page, and this tool's audience is SharePoint administrators on
+    Windows. Python 3.14 still lets the locale decide (PEP 686's UTF-8
+    default lands in 3.15), so we cannot wait it out.
+
+    cp1252 rather than ascii because cp1252 is the encoding the failing
+    environments actually report; testing against it states the real
+    constraint rather than a stricter invented one.
+
+    Deliberately NOT asserted over the *rendered* output: rich substitutes
+    ASCII box-drawing when it detects a legacy console, so the frame is
+    already safe and only the strings we author are at risk. Those are what
+    this walks.
+    """
+    import typer.main
+
+    def texts(command: object, path: str) -> list[tuple[str, str]]:
+        found = [
+            (f"{path} {attr}", value)
+            for attr in ("help", "short_help", "epilog")
+            if isinstance(value := getattr(command, attr, None), str)
+        ]
+        for param in getattr(command, "params", ()):
+            if isinstance(value := getattr(param, "help", None), str):
+                found.append((f"{path} {param.name} help", value))
+        for name, sub in getattr(command, "commands", {}).items():
+            found.extend(texts(sub, f"{path} {name}"))
+        return found
+
+    offenders = []
+    for where, text in texts(typer.main.get_command(app), "dbml-sharepoint"):
+        try:
+            text.encode("cp1252")
+        except UnicodeEncodeError as exc:
+            offenders.append(f"{where}: {text[exc.start:exc.end]!r} in {text!r}")
+    assert not offenders, "help text is not encodable on a legacy console:\n" + "\n".join(
+        offenders,
+    )
+
+
 def test_version_command_available_on_direct_module_run() -> None:
     """Regression: the `version` command must be registered *before* the
     ``if __name__ == "__main__"`` guard. When the module is run directly

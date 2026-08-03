@@ -35,7 +35,14 @@ from dbml_sharepoint.wizard import run_wizard, stdin_is_interactive
 
 app = typer.Typer(
     name="dbml-sharepoint",
-    help="Generic DBML → SharePoint browser-paste deploy.js.txt generator.",
+    # ASCII "->" rather than an arrow. This string is rendered by rich to a
+    # console whose encoding the locale decides, and a cp1252 console cannot
+    # encode U+2192 -- which made a bare `--help`, the first command anybody
+    # runs, raise UnicodeEncodeError instead of printing. rich already
+    # substitutes ASCII box-drawing on a legacy console; it does not
+    # substitute our own text. Guarded by
+    # test_help_text_survives_a_legacy_windows_code_page.
+    help="Generic DBML -> SharePoint browser-paste deploy.js.txt generator.",
     # Not `no_args_is_help`: a bare invocation runs the wizard. The help
     # fallback moved into the callback below, which can tell an interactive
     # terminal from a pipe -- `no_args_is_help` cannot.
