@@ -46,6 +46,12 @@ MAPPING_RELPATH = Path("20-configure/mapping.yaml")
 RELEASE_RELPATH = Path("20-configure/release.yaml")
 ```
 
+### `PLACEHOLDER_SITE_URL`
+
+```python
+PLACEHOLDER_SITE_URL = 'https://yourtenant.sharepoint.com/sites/your-site'
+```
+
 ### `UnknownSolutionError`
 
 Named solution does not exist. Carries the available names.

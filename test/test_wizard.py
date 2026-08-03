@@ -14,7 +14,7 @@ import pytest
 from rich.console import Console
 
 from dbml_sharepoint import wizard
-from dbml_sharepoint.catalogue import load_solution
+from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, load_solution
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 
@@ -226,16 +226,85 @@ def test_changing_the_prefix_repoints_the_copied_documentation(
     assert "Repointed" in console.text
 
 
-def test_keeping_the_default_prefix_rewrites_no_documentation(
+def test_the_chosen_site_url_reaches_the_copied_documentation(
     tmp_path: Path,
 ) -> None:
-    """No-op when the prefix is unchanged -- the common case must not
-    report edits it did not make."""
+    """The rebuild command in the copied docs must name the chosen site.
+
+    The same failure `_retitle_docs` exists to prevent, one answer further
+    down the same wizard. The operator answers with their site, and the
+    project they are handed says to rebuild against
+    `https://yourtenant.sharepoint.com/sites/your-site` -- the one
+    instruction in that folder guaranteed not to work, and the one they
+    return to on every schema change.
+    """
+    destination = tmp_path / "proj"
+    site_url = "https://contoso.sharepoint.com/sites/ops"
+    console = ScriptedConsole(_answers(destination, site_url=site_url))
+
+    assert wizard.run_wizard(console) == 0
+
+    stale = [
+        str(p.relative_to(destination))
+        for p in sorted(destination.rglob("*.md"))
+        if PLACEHOLDER_SITE_URL in p.read_text(encoding="utf-8")
+    ]
+    assert not stale, f"docs still name the placeholder site: {stale}"
+    deploy_md = (destination / "30-deploy" / "deploy.md").read_text(encoding="utf-8")
+    assert f"--site-url {site_url}" in deploy_md
+
+
+def test_a_cross_site_link_in_the_docs_is_not_repointed(tmp_path: Path) -> None:
+    """Only the deploy target is substituted, not every SharePoint URL.
+
+    credentialing-register's deploy.md carries a formatting-JSON example
+    whose `href` points at a by-laws page on a *governance* site -- a
+    deliberately different site from the one being deployed to. A fuzzy
+    "rewrite anything that looks like a SharePoint URL" would silently
+    repoint it at the deploy target, inventing a link to a page that does
+    not exist there.
+    """
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination,
+            template="credentialing-register",
+            prefix="CR_",
+            site_url="https://contoso.sharepoint.com/sites/ops",
+        ),
+    )
+
+    assert wizard.run_wizard(console) == 0
+
+    deploy_md = (destination / "30-deploy" / "deploy.md").read_text(encoding="utf-8")
+    assert "sites/governance/credentialing-by-laws.aspx" in deploy_md
+
+
+def test_keeping_the_default_prefix_reports_no_prefix_change(
+    tmp_path: Path,
+) -> None:
+    """The wizard must not report an edit it did not make.
+
+    This used to assert nothing was reported at all, because the prefix was
+    the only substitution and keeping it made the whole step a no-op. The
+    site URL is always answered, so documentation IS now repointed in this
+    case -- and the report has to name the site URL and stay silent about
+    the prefix, rather than counting files and claiming a prefix pair. The
+    version of this that read "Repointed 1 doc(s) from RR_ to RR_" is
+    exactly the wrong answer.
+    """
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, prefix="RR_"))
 
     assert wizard.run_wizard(console) == 0
-    assert "Repointed" not in console.text
+    # Collapsed because rich wraps the report line at the console width, so a
+    # substring assertion against the raw text is a false negative waiting to
+    # happen. The prompts themselves say "List name prefix", so the check has
+    # to be against the substitution's own `label old -> new` spelling rather
+    # than the bare word.
+    reported = " ".join(console.text.split())
+    assert "site URL" in reported
+    assert "prefix RR_" not in reported
 
 
 def test_a_long_prefix_is_accepted(tmp_path: Path) -> None:
