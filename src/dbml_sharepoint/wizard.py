@@ -27,7 +27,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from dbml_sharepoint.bundle import ASSESS_SCRIPT, DEPLOY_SCRIPT
+from dbml_sharepoint.bundle import ASSESS_SCRIPT, DEPLOY_SCRIPT, write_artifact
 from dbml_sharepoint.catalogue import (
     PLACEHOLDER_SITE_URL,
     Solution,
@@ -212,7 +212,11 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
             f"(found {count}). The template does not match the family "
             f"standard; refusing to guess where the prefix belongs.",
         )
-    mapping_path.write_text(new_text, encoding="utf-8")
+    # `write_artifact`, not `write_text`. The trap AGENTS.md records is
+    # per-call-site: text mode inherits the platform newline, so this wrote
+    # CRLF on Windows and handed the operator a mapping whose line endings
+    # depend on which machine ran the wizard. The templates ship LF.
+    write_artifact(mapping_path, new_text)
 
     bundle = load_mapping(mapping_path)
     if bundle.mapping.prefix != prefix:
@@ -298,7 +302,11 @@ def _repoint_docs(
                 applied.append(substitution)
         if rewritten == text:
             continue
-        path.write_text(rewritten, encoding="utf-8")
+        # Same reason as the mapping rewrite above, and it matters more here:
+        # the site-URL substitution applies on every run, so `write_text`
+        # would have rewritten a documentation file in every scaffolded
+        # project with CRLF rather than the LF it was copied with.
+        write_artifact(path, rewritten)
         changed.append(path)
     return changed, applied
 

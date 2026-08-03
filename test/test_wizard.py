@@ -498,3 +498,27 @@ def test_the_declined_build_prints_a_runnable_command(tmp_path: Path) -> None:
     assert wizard.run_wizard(console) == 0
     assert "10-design/schema.dbml" in console.text
     assert "20-configure/mapping.yaml" in console.text
+
+
+def test_every_scaffolded_file_is_written_with_lf(tmp_path: Path) -> None:
+    """The wizard hands over a project; it must not depend on the machine.
+
+    `.gitattributes` declares the whole repository LF and the templates ship
+    that way, but `Path.write_text` inherits the platform newline -- so on
+    Windows both rewrites emitted CRLF. Measured before the fix: the copied
+    `mapping.yaml` and `30-deploy/deploy.md` came out CRLF while every file
+    `copytree` left alone stayed LF, which is the worst version of it -- one
+    project, two conventions, decided by which machine ran the wizard.
+
+    Asserted over the whole tree rather than the two known files: the point
+    is that no writer added later reintroduces it.
+    """
+    destination = tmp_path / "proj"
+    assert wizard.run_wizard(ScriptedConsole(_answers(destination))) == 0
+
+    crlf = [
+        str(path.relative_to(destination))
+        for path in sorted(destination.rglob("*"))
+        if path.is_file() and b"\r\n" in path.read_bytes()
+    ]
+    assert not crlf, f"scaffolded with CRLF: {crlf}"
