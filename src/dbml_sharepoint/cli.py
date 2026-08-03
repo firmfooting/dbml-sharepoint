@@ -391,6 +391,13 @@ def execute_build(
         typer.echo(f"Validation produced {len(errors)} error(s); aborting JS generation.", err=True)
         for f in errors:
             typer.echo(f"  [ERROR] {f.detail}", err=True)
+        # Warnings too, before the exit. A build that refuses has ALSO found
+        # everything else wrong with the mapping, and printing only the
+        # errors hides that until the errors are fixed -- so the operator
+        # fixes, rebuilds, and meets a second list they could have seen the
+        # first time. This is the one path where suppressing them costs an
+        # extra round trip rather than nothing.
+        _echo_warnings(findings)
         raise typer.Exit(code=1)
 
     if dry_run:

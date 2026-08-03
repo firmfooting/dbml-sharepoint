@@ -1071,3 +1071,22 @@ def test_the_manifest_names_the_finding_code(tmp_path: Path) -> None:
 
     manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
     assert "unique_without_not_null" in manifest
+
+
+def test_a_refused_build_still_reports_its_warnings(tmp_path: Path) -> None:
+    """Errors and warnings are found in the same pass, so both are known.
+
+    Printing only the errors means the operator fixes those, rebuilds, and
+    meets a second list they could have seen the first time. On every other
+    path suppressing a warning costs nothing; on this one it costs a round
+    trip.
+    """
+    schema, mapping = _minimal_pack(
+        tmp_path,
+        "  Code nvarchar [unique]\n  Cost decimal",
+    )
+    result = _fixture_build(tmp_path / "build", schema, mapping)
+
+    assert result.exit_code == 1
+    assert "unknown_column_type" in result.output
+    assert "unique_without_not_null" in result.output
