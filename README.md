@@ -169,11 +169,11 @@ changes; paste it in the site's console before a first deploy.
 Reporting: every build also ships `build/reporting/` — one Power Query
 (M) file per list (plus dictionary, model-info and user-added-column
 audit queries), a SQLCMD views script for warehouse-landed copies,
-`reporting.md` with the Power BI relationship table, and
+`guide.md` with the Power BI relationship table, and
 `data-dictionary.md`. Point the queries' `SiteUrl` parameter at the
 deployed site. `dbml-sharepoint report` emits the same queries without
 needing a site URL (schema-only layout: `powerquery/`, `sql/`,
-`reporting.md`, `data-dictionary.md`).
+`guide.md`, `data-dictionary.md`).
 
 ## Extension protocol
 

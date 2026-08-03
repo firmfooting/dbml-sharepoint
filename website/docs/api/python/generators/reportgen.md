@@ -29,13 +29,19 @@ reporting.md. Person columns land differently per extract tool, so the SQL
 views carry them as display-name text while the M queries expand both the
 site-user id and display name.
 
+### `SITE_NAME_QUERY`
+
+```python
+SITE_NAME_QUERY = '_SiteName'
+```
+
 ### `generate_powerquery`
 
 ```python
 def generate_powerquery(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, site_role: str) -> dict[str, str]
 ```
 
-One M query per list for the site role: {filename: query text}.
+One M query per list for the site role, plus the shared site lookup.
 
 ### `generate_sql_views`
 
