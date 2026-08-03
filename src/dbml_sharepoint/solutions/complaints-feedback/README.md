@@ -38,5 +38,5 @@ six demo items behind `--seed`.
 the SLA table in governance (regulated sectors: put your statutory
 timeframes in). Note that `Status` and `Outcome` members are named inside
 deployed view filters, form rules and the save rule, and that the SLA
-table sets the two day-count bars' scales — `30-deploy/DEPLOY.md` lists
+table sets the two day-count bars' scales — `30-deploy/deploy.md` lists
 both couplings before you build.

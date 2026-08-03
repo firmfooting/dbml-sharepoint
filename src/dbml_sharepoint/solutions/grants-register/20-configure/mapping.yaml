@@ -387,7 +387,7 @@ column_validation:
 # rule does not apply to.
 #
 # NOT enforceable, and therefore still governance checks (see
-# 50-govern/GOVERNANCE.md): the linked agreement on a successful bid, the
+# 50-govern/governance.md): the linked agreement on a successful bid, the
 # filed copy on a submitted acquittal, and the debrief on a lost one. The
 # first two are hyperlink columns and the third is rich text. Rich text is
 # refused outright by the build; hyperlink operands are accepted by this

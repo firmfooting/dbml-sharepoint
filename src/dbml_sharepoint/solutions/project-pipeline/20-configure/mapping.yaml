@@ -324,7 +324,7 @@ column_validation:
         message: "A gate decision cannot have been made in the future. Use the date the gate actually sat."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
-# This is as much of data-quality rule 1 in 50-govern/GOVERNANCE.md as
+# This is as much of data-quality rule 1 in 50-govern/governance.md as
 # SharePoint can hold; the governance document now says which part and why.
 list_validation:
   Proposal:

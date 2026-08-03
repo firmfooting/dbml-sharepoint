@@ -50,4 +50,4 @@ makes scores comparable across teams.
 that pastes six `[DEMO] `-titled rows across four functions, covering all
 five current states and all six digitisation statuses, with two landing in
 *Key-person risk* — so every view, every colour band and the score bar
-render on a first look. See `30-deploy/DEPLOY.md`.
+render on a first look. See `30-deploy/deploy.md`.

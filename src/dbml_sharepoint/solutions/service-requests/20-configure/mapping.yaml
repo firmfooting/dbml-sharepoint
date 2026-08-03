@@ -143,7 +143,7 @@ field_sets:
 # it does so by luck: SharePoint sorts a Choice column as text, and
 # "Urgent" > "Normal" > "Low" alphabetically. RENAMING A PRIORITY MEMBER
 # CAN THEREFORE REORDER EVERY QUEUE — see the checklist in
-# 30-deploy/DEPLOY.md before editing that enum.
+# 30-deploy/deploy.md before editing that enum.
 views:
   Request:
     - title: "Open by category"
@@ -239,7 +239,7 @@ views:
         CompletedDate: 170
     # The published table called this "Turnaround report" and asked for
     # completions "in month" with DaysToComplete shown. ONE substitution
-    # remains, stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
+    # remains, stated in 30-deploy/deploy.md: CAML has no calendar-month
     # predicate, so this is a rolling ninety days.
     #
     # The per-category figure IS here, as a mean rather than a sum — adding

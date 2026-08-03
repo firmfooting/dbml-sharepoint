@@ -31,5 +31,5 @@ overdue colouring, three save rules, and ten demo rows.
 | 5 | `50-govern/` | The standard task list, leavers variant, privacy notes |
 
 **Customisation points:** the `TaskFunction` enum; your standard task set
-(documented in `50-govern/GOVERNANCE.md` — the template deliberately ships
+(documented in `50-govern/governance.md` — the template deliberately ships
 the checklist as governance, not seed data, so you review it before use).

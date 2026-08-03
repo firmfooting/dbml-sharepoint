@@ -234,7 +234,7 @@ column_validation:
         message: "A definition review is at least annual. Pick a date within the next twelve months, or leave it blank until the measure goes Active."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
-# This is data-quality rule 3 in 50-govern/GOVERNANCE.md, which until now
+# This is data-quality rule 3 in 50-govern/governance.md, which until now
 # was a rule nothing enforced.
 list_validation:
   Measure:

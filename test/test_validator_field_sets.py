@@ -435,7 +435,7 @@ def test_a_body_section_hidden_from_every_form_is_refused() -> None:
 def test_the_last_section_may_be_empty_because_it_is_the_catch_all() -> None:
     """Learn: "A column not referenced in any of the sections will be
     automatically referenced in the last section." risk-register's System
-    section is exactly this shape and its DEPLOY.md documents the bare
+    section is exactly this shape and its deploy.md documents the bare
     heading on the New form as cosmetic and expected."""
     schema, bundle = _calculated_project(
         form_visibility=_hidden("Score"),

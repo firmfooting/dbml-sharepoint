@@ -161,7 +161,7 @@ views:
         ValidityMonths: 150
         Provider: 200
   TrainingRecord:
-    # The default is the view 40-adopt/STAFF-GUIDE.md sends every member of
+    # The default is the view 40-adopt/staff-guide.md sends every member of
     # staff to: their own coverage, as the organisation knows it. Collapsed,
     # because on a real register this is one group per employee.
     - title: "By person"
@@ -291,7 +291,7 @@ column_validation:
 # be an operand in a SharePoint validation formula, and "linked" is not
 # "sighted" in any case. A rule that passes on a link to the wrong
 # document buys nothing and costs the coordinator a save. It stays a
-# governance check; see 50-govern/GOVERNANCE.md.
+# governance check; see 50-govern/governance.md.
 list_validation:
   TrainingRecord:
     when:
@@ -311,7 +311,7 @@ list_validation:
 # repository has not read that write back from a live list — a demo paste
 # failing in front of an audience is exactly the failure the demo
 # validation exists to prevent. Link one by hand after the paste; the
-# checklist in 30-deploy/DEPLOY.md says so.
+# checklist in 30-deploy/deploy.md says so.
 #
 # Coverage: a five-course catalogue including two that never expire and
 # three that are mandatory, and six records spanning current, expiring,

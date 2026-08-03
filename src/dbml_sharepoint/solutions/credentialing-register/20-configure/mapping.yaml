@@ -88,7 +88,7 @@ display_names:
 #
 # THREE deadline dates, all guarded. ScopeReviewDate is one even though
 # its name does not say so: it is the next scheduled credentialing review,
-# the cycle in 50-govern/GOVERNANCE.md runs on it, and a review nobody is
+# the cycle in 50-govern/governance.md runs on it, and a review nobody is
 # reminded about is the failure this register exists to prevent.
 #
 # The guards name the states where the date is history rather than a
@@ -171,7 +171,7 @@ views:
         Status: 120
         ScopeApprovedDate: 180
         ScopeReviewDate: 180
-    # The escalation surface. GOVERNANCE.md sends a practitioner here on
+    # The escalation surface. governance.md sends a practitioner here on
     # the day an expired registration or lapsed mandatory credential is
     # found, and they stay until the credentialing authority resolves it.
     - title: "Under review or lapsed"
@@ -300,7 +300,7 @@ views:
 # external document, and left each theme to confirm or revise it.
 #
 # Revised, because the document this register points at is not one the
-# TEMPLATE can name. GOVERNANCE.md defers to "your by-laws" and "your
+# TEMPLATE can name. governance.md defers to "your by-laws" and "your
 # credentialing committee" — a class of document, not a document — so the
 # only shippable link is a REPLACE-WITH placeholder, which is precisely
 # the live hazard that removed risk-register's. It would be worse here
@@ -309,7 +309,7 @@ views:
 # click away when it is not.
 #
 # The strapline says the thing the link was for. Adding a real one is a
-# two-line edit and 30-deploy/DEPLOY.md spells it out, including the
+# two-line edit and 30-deploy/deploy.md spells it out, including the
 # absolute-https rule.
 form_formatting:
   Practitioner:
@@ -331,7 +331,7 @@ form_formatting:
 #
 # ADOPTERS: which disciplines carry a registration number is
 # jurisdictional. If yours differ, this is the block to edit — see
-# 30-deploy/DEPLOY.md.
+# 30-deploy/deploy.md.
 form_visibility:
   Practitioner:
     columns:
@@ -371,7 +371,7 @@ column_validation:
 # can hold. The OTHER half — that ScopeSummary carries the approved
 # wording — is NOT enforceable: ScopeSummary is rich text, and SharePoint
 # validation formulas cannot reference a multi-line column at all. It
-# stays a governance check, and 50-govern/GOVERNANCE.md now says so.
+# stays a governance check, and 50-govern/governance.md now says so.
 #
 # Credential: Expired is a claim about a date, and a claim with no date
 # behind it cannot be checked by anyone. Withdrawn is deliberately not

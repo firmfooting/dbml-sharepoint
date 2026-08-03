@@ -91,7 +91,7 @@ display_names:
 # column ("it checks for the value true which maps to Yes for users",
 # list-form-conditional-show-hide; `=if([$Promoted], …)` is listed as
 # valid). Documented rather than read back off a live list, so
-# 30-deploy/DEPLOY.md carries a checklist line asking the first adopter to
+# 30-deploy/deploy.md carries a checklist line asking the first adopter to
 # confirm it renders — the same treatment tiered-huddle's Route formula
 # gets. The classes are the token table's own `low` and `muted`; no icon,
 # because an arrow beside every active contact in a directory is noise.
@@ -113,7 +113,7 @@ views:
   Organisation:
     # Deliberately unfiltered, and the blank group at the end is doing
     # real work: it is every organisation nobody owns, which is exactly
-    # what GOVERNANCE.md's quarterly ownership check is looking for.
+    # what governance.md's quarterly ownership check is looking for.
     #
     # A filtered "Unowned" view would be better and IS NOT BUILDABLE. A
     # person column needs a `property` accessor to be compared at all —
@@ -121,7 +121,7 @@ views:
     # and CAML refuses every accessor it might be given. The `me` sentinel
     # resolves that deadlock for equality only, by supplying the accessor
     # itself; there is no equivalent for a null test. So the grouping
-    # carries it. See 30-deploy/DEPLOY.md.
+    # carries it. See 30-deploy/deploy.md.
     - title: "By owner"
       default: true
       fields: [Title, OrgType, Owner, Website]
@@ -159,7 +159,7 @@ views:
         Email: 220
         Phone: 160
         IsActive: 120
-    # The privacy surface. GOVERNANCE.md's annual purge review — contact
+    # The privacy surface. governance.md's annual purge review — contact
     # details cleared, row and interaction history kept — is worked from
     # here, and it is the only place these rows appear once they leave the
     # working view.
@@ -221,7 +221,7 @@ views:
 # SharePoint suppresses column descriptions on the Edit form.
 #
 # The Contact strapline carries the privacy rule rather than leaving it in
-# GOVERNANCE.md, because that is where it is needed: at the moment someone
+# governance.md, because that is where it is needed: at the moment someone
 # is typing a note about a person who can ask to read it.
 form_formatting:
   Organisation:
@@ -240,7 +240,7 @@ form_formatting:
 # about what may be RECORDED — business-contact facts only, no opinions,
 # no sensitive attributes — and no formula can read the difference between
 # a professional note and a personal one. Those stay governance checks,
-# and 50-govern/GOVERNANCE.md now says so in as many words.
+# and 50-govern/governance.md now says so in as many words.
 
 # Per-column save rules. Each column carries its own formula and its own
 # message, and they all run.
@@ -262,7 +262,7 @@ column_validation:
 # demo-only lists without its non-empty refusal. Dates are today±N so the
 # window-derived views land correctly on whatever day the demo runs.
 #
-# PRIVACY POSTURE, seriously applied. 50-govern/GOVERNANCE.md calls this
+# PRIVACY POSTURE, seriously applied. 50-govern/governance.md calls this
 # register's privacy rules load-bearing rather than boilerplate, so the
 # demo does not invent people: every Title names a ROLE at an
 # organisation, every person column is "@me", and the only contact details

@@ -236,7 +236,7 @@ views:
     # Urgent — so neither direction gives the intended order, and there is
     # no numeric rank column to sort on. The view sorts oldest first, and
     # urgency is carried by the pill and by the row wash instead, which is
-    # the honest substitution. 30-deploy/DEPLOY.md says so.
+    # the honest substitution. 30-deploy/deploy.md says so.
     #
     # THE ROW WASH LIVES HERE, and it is this list's one row-level signal
     # (§1.6). An Emergency message still pending relay at 2 a.m. is the
@@ -269,7 +269,7 @@ views:
     # last 24 hours. CAML has no rolling-hours predicate — `today-1` is
     # midnight yesterday, so this view is the last one to two days
     # depending on when it is opened. That is right for a morning handover
-    # and wrong for an exact 24-hour count; 30-deploy/DEPLOY.md says which.
+    # and wrong for an exact 24-hour count; 30-deploy/deploy.md says which.
     - title: "Last 24 hours"
       fields: ["@identity", CallerContact, RelayedTo, RelayedAt, MinutesToRelay]
       where:
@@ -521,7 +521,7 @@ column_validation:
 # validation formulas cannot reference at all; and requiring an AllClearAt
 # would refuse to save the row at the moment a code is ANNOUNCED, which is
 # precisely when it must be recorded. The "Still running" view is the
-# control instead, and 50-govern/GOVERNANCE.md says so.
+# control instead, and 50-govern/governance.md says so.
 list_validation:
   MessageLog:
     when:
@@ -547,7 +547,7 @@ list_validation:
 # Emergency message still pending so the row wash fires.
 #
 # Nothing here contains clinical detail. Operators log what switchboard
-# DID; the healthcare note in 50-govern/GOVERNANCE.md is emphatic about
+# DID; the healthcare note in 50-govern/governance.md is emphatic about
 # that boundary and demo data that blurred it would undermine the document
 # it sits beside.
 demo_items:

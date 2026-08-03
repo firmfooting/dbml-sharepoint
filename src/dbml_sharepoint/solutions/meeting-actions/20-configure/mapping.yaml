@@ -135,7 +135,7 @@ views:
     # Decision carries no date of its own — the date belongs to the
     # meeting, on the other list, which CAML cannot sort across. Created
     # is the honest proxy rather than a new column: decisions are entered
-    # during or straight after the meeting (see 40-adopt/STAFF-GUIDE.md),
+    # during or straight after the meeting (see 40-adopt/staff-guide.md),
     # so creation order IS meeting order in practice, and adding a date
     # column would ask the minute-taker to retype something the lookup
     # already knows. Shown, not just sorted on, so nobody has to guess
@@ -174,7 +174,7 @@ views:
         DueDate: 160
         Status: 120
         Notes: 200
-    # 40-adopt/STAFF-GUIDE.md used to say "the Open by person view
+    # 40-adopt/staff-guide.md used to say "the Open by person view
     # filtered to you", which meant filtering it by hand every time. This
     # is that view, filtered by SharePoint: AssignedTo is a person column,
     # which is exactly the case the current-user sentinel exists for.
@@ -209,7 +209,7 @@ views:
     # THE PUBLISHED ROW WAS "This meeting — filter by Meeting, link it
     # from the agenda". A static view cannot filter to one parent record.
     # This is one grouped view instead: open the previous meeting's group
-    # as the first agenda item, which is the habit 50-govern/GOVERNANCE.md
+    # as the first agenda item, which is the habit 50-govern/governance.md
     # calls the difference between a register and a graveyard. Unfiltered
     # on purpose — "did anyone do them?" needs the Done and Dropped rows
     # in the answer.
@@ -294,7 +294,7 @@ column_validation:
 # ONE rule, and it is the register's own data-quality rule #2 made real:
 # a completion date accompanies every Done.
 #
-# Dropped is deliberately NOT included. 40-adopt/STAFF-GUIDE.md asks for a
+# Dropped is deliberately NOT included. 40-adopt/staff-guide.md asks for a
 # note when an action is dropped, and that stays a habit rather than a
 # rule: dropping an action is already the honest move against leaving it
 # Open, and a template whose first act is to make the honest move harder

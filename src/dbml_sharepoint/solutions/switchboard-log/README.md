@@ -50,4 +50,4 @@ AS 4083 code set — replace with your jurisdiction's, and note that it is
 the grouping column of the drill-coverage view, so the code set you deploy
 is the report you get; `Urgency` and the two `Status` enums are named in
 view filters, form rules and save rules, so read the "Before you build"
-block in `30-deploy/DEPLOY.md` before editing any of them.
+block in `30-deploy/deploy.md` before editing any of them.

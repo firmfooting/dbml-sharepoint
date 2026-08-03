@@ -29,7 +29,7 @@ is THE view and its target on a live register is empty. The seeded build
 ships one genuinely overdue item anyway: a view that demonstrates empty
 teaches the adopter it does not work, and the first time anyone sees
 *Overdue* populate should not be the first time a real pump is out of
-test. `30-deploy/DEPLOY.md` says so where you decide whether to seed.
+test. `30-deploy/deploy.md` says so where you decide whether to seed.
 
 **Work the folders in order:**
 
@@ -44,4 +44,4 @@ test. `30-deploy/DEPLOY.md` says so where you decide whether to seed.
 **Customisation points:** `EquipmentType` enum; frequency defaults per
 class live in governance (the schema stores each item's actual frequency).
 Note that `Status` and `Result` members are named in deployed view filters
-and the save rule — `30-deploy/DEPLOY.md` lists the couplings.
+and the save rule — `30-deploy/deploy.md` lists the couplings.

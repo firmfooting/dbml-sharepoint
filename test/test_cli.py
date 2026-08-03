@@ -136,7 +136,7 @@ def test_build_writes_deploy_js_and_manifest(tmp_path: Path) -> None:
 
 def test_build_writes_full_bundle(tmp_path: Path) -> None:
     """A plain build (no flags) emits the complete bundle: scripts, both
-    manifests, INDEX.md and checksums.txt."""
+    manifests, index.md and checksums.txt."""
     out = tmp_path / "build"
     result = runner.invoke(app, [
         "build",
@@ -149,7 +149,7 @@ def test_build_writes_full_bundle(tmp_path: Path) -> None:
     ])
     assert result.exit_code == 0, result.output
     for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "deploy-manifest.md",
-                 "assess-manifest.md", "INDEX.md", "checksums.txt"):
+                 "assess-manifest.md", "index.md", "checksums.txt"):
         assert (out / name).exists(), name
     # assess.js.txt stays read-only (no write verbs).
     assert "X-HTTP-Method" not in (out / "assess.js.txt").read_text(encoding="utf-8")
@@ -157,11 +157,11 @@ def test_build_writes_full_bundle(tmp_path: Path) -> None:
     assert "Generated at:" in (out / "rollback.js.txt").read_text(encoding="utf-8")
     assert "Generated at:" in (out / "assess.js.txt").read_text(encoding="utf-8")
     # Reporting ships with every build.
-    assert (out / "reporting" / "REPORTING.md").exists()
+    assert (out / "reporting" / "reporting.md").exists()
     assert (out / "reporting" / "data-dictionary.md").exists()
     assert (out / "reporting" / "sql" / "views.sql").exists()
     assert list((out / "reporting" / "powerquery").glob("*.pq"))
-    assert "`reporting/`" in (out / "INDEX.md").read_text(encoding="utf-8")
+    assert "`reporting/`" in (out / "index.md").read_text(encoding="utf-8")
 
 
 def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
@@ -183,11 +183,11 @@ def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
         listed[relpath] = digest
     base = {
         "deploy.js.txt", "rollback.js.txt", "assess.js.txt",
-        "deploy-manifest.md", "assess-manifest.md", "INDEX.md",
+        "deploy-manifest.md", "assess-manifest.md", "index.md",
     }
     assert base <= set(listed)
     assert "reporting/sql/views.sql" in listed
-    assert "reporting/REPORTING.md" in listed
+    assert "reporting/reporting.md" in listed
     assert "reporting/data-dictionary.md" in listed
     assert any(p.startswith("reporting/powerquery/") for p in listed)
     assert not any("\\" in p for p in listed)
@@ -269,7 +269,7 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     out = tmp_path / "build"
     out.mkdir()
     for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
-                 "INDEX.md", "checksums.txt"):
+                 "index.md", "checksums.txt"):
         (out / name).write_text("stale", encoding="utf-8")
     (out / "reporting").mkdir()
     (out / "reporting" / "stale.pq").write_text("stale", encoding="utf-8")
@@ -294,7 +294,7 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     ])
     assert result.exit_code == 1
     for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
-                 "INDEX.md", "checksums.txt"):
+                 "index.md", "checksums.txt"):
         assert not (out / name).exists(), name
     assert not (out / "reporting").exists()
     assert (out / "deploy-manifest.md").exists()
@@ -407,7 +407,7 @@ def test_build_reports_validation_errors_without_crashing(tmp_path: Path) -> Non
 def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
     out = tmp_path / "build"
     out.mkdir()
-    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "INDEX.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "index.md", "checksums.txt"):
         (out / name).write_text("stale", encoding="utf-8")
     (out / "reporting").mkdir()
     (out / "reporting" / "stale.pq").write_text("stale", encoding="utf-8")
@@ -422,7 +422,7 @@ def test_build_dry_run_writes_manifest_but_no_js(tmp_path: Path) -> None:
         "--dry-run",
     ])
     assert result.exit_code == 0, result.output
-    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "INDEX.md", "checksums.txt"):
+    for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "index.md", "checksums.txt"):
         assert not (out / name).exists(), name
     assert not (out / "reporting").exists()
     assert (out / "deploy-manifest.md").exists()
@@ -674,8 +674,8 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
     assert failed.returncode == 1
     assert not (out / "powerquery").exists()
     assert not (out / "sql").exists()
-    assert not (out / "REPORTING.md").exists()
-    assert not (out / "DATA-DICTIONARY.md").exists()
+    assert not (out / "reporting.md").exists()
+    assert not (out / "data-dictionary.md").exists()
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
 
 
@@ -737,7 +737,7 @@ def test_report_clearing_spares_operator_files_inside_owned_directories(
 
     assert refused.returncode == 1
     assert not (out / "sql" / "views.sql").exists()
-    assert not (out / "DATA-DICTIONARY.md").exists()
+    assert not (out / "data-dictionary.md").exists()
     assert (out / "sql" / "001_migration.sql").read_text(encoding="utf-8") == "-- hand written"
     assert (out / "powerquery" / "notes.md").read_text(encoding="utf-8") == "mine"
     # The directories survive precisely because the operator left something

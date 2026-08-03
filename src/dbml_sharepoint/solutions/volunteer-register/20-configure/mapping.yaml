@@ -71,7 +71,7 @@ prevent_list_deletion: true
 # Auto splitting already reads WWCCNumber and WWCCExpiry correctly — the
 # acronym-run rule breaks before the LAST capital of a run, so "WWCCExpiry"
 # becomes "WWCC Expiry" with no help. They are declared anyway, because
-# these are the two columns 30-deploy/DEPLOY.md tells an adopter to
+# these are the two columns 30-deploy/deploy.md tells an adopter to
 # re-label for their own jurisdiction (Blue Card, WWVP, Disclosure and
 # Barring). Changing them HERE changes only what people read; changing the
 # DBML name changes the indexes, the views and the reporting bundle with
@@ -91,7 +91,7 @@ display_names:
 #
 # Both expiry dates carry the standard deadline treatment. The guard names
 # Exited only: an Inactive volunteer is on a break and intends to return,
-# so their checks keep being swept (40-adopt/STAFF-GUIDE.md) and a lapsed
+# so their checks keep being swept (40-adopt/staff-guide.md) and a lapsed
 # one must keep shouting. Exited is the one state where the date is
 # history and the colour would be noise.
 column_formatting:
@@ -196,7 +196,7 @@ views:
         PoliceCheckExpiry: 180
         WWCCExpiry: 160
         InductionDate: 160
-    # The retention surface. GOVERNANCE.md's annual trim runs off this
+    # The retention surface. governance.md's annual trim runs off this
     # view; Inactive sits beside Exited because the difference between a
     # break and a departure is a conversation, and this is where the
     # programme owner has it.
@@ -227,7 +227,7 @@ form_formatting:
     body: formatting/volunteer-form-body.json
 
 # A start date only exists once someone has actually started, and
-# 40-adopt/STAFF-GUIDE.md is explicit that Active is the gate: checks
+# 40-adopt/staff-guide.md is explicit that Active is the gate: checks
 # complete, then Active, then a start date. Status defaults to Applying,
 # so the field is absent on the New form and appears the moment the
 # coordinator moves the volunteer off Applying.
@@ -264,7 +264,7 @@ column_validation:
 # Induction and a start date are the two requirements the governance matrix
 # states for EVERY role type, so they are the two a formula can hold. WHICH
 # police check or WWCC a given role needs varies by role and stays a
-# governance check — see 50-govern/GOVERNANCE.md, which now says so
+# governance check — see 50-govern/governance.md, which now says so
 # explicitly, and "Missing checks" above, which is the surface for it.
 list_validation:
   Volunteer:

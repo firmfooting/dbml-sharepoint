@@ -32,5 +32,5 @@ anything real.
 | 5 | `50-govern/` | Thresholds, assessment, management plans, publication posture |
 
 **Customisation points:** the gift value thresholds and the COI management
-actions are policy — set them in `50-govern/GOVERNANCE.md` and keep the
+actions are policy — set them in `50-govern/governance.md` and keep the
 enums aligned with your code of conduct.

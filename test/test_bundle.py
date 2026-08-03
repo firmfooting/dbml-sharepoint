@@ -29,7 +29,7 @@ def test_generated_files_is_the_full_bundle() -> None:
         "deploy.js.txt", "rollback.js.txt", "assess.js.txt",
         "demo-data.js.txt",
         "deploy-manifest.md", "assess-manifest.md",
-        "INDEX.md", "checksums.txt",
+        "index.md", "checksums.txt",
     }
 
 
@@ -48,12 +48,34 @@ def test_a_stale_script_from_an_older_build_is_cleared(tmp_path: Path) -> None:
     failure clear_generated exists to prevent."""
     out = tmp_path / "build"
     out.mkdir()
-    for legacy in ("deploy.js", "rollback.js", "assess.js", "demo-data.js"):
+    legacy_names = (
+        "deploy.js", "rollback.js", "assess.js", "demo-data.js",  # pre-.js.txt
+        "INDEX.md",                                               # pre-lowercase
+    )
+    for legacy in legacy_names:
         (out / legacy).write_text("// last month's run", encoding="utf-8")
 
     clear_generated(out)
 
     assert sorted(p.name for p in out.iterdir()) == []
+
+
+def test_clearing_leaves_files_this_build_never_wrote(tmp_path: Path) -> None:
+    """The legacy sweep must not become a licence to delete.
+
+    `--out` is routinely aimed at a directory an operator also keeps their
+    own work in, and every name added to the legacy list is one more thing
+    removed from it without being asked. Anything the bundle has never
+    emitted stays.
+    """
+    out = tmp_path / "build"
+    out.mkdir()
+    (out / "notes.md").write_text("mine", encoding="utf-8")
+    (out / "deploy.js.bak").write_text("mine", encoding="utf-8")
+
+    clear_generated(out)
+
+    assert sorted(p.name for p in out.iterdir()) == ["deploy.js.bak", "notes.md"]
 
 
 def test_sha256_lf_is_newline_insensitive() -> None:
@@ -137,7 +159,7 @@ def test_checksums_is_written_lf_even_on_windows(tmp_path: Path) -> None:
 
     This pins the FILE being well-formed, not the bundle being
     sha256sum-verifiable: the digests are of LF-normalised bytes, so a
-    Windows-built bundle still will not match bare `-c`. INDEX.md documents
+    Windows-built bundle still will not match bare `-c`. index.md documents
     that and advertises an LF-normalising Python one-liner instead.
 
     Asserted on BYTES deliberately. Every other checksum test here reads the
@@ -197,11 +219,11 @@ def test_write_index_lists_base_artifacts_not_itself(tmp_path: Path) -> None:
     out = tmp_path / "build"
     out.mkdir()
     write_index(out)
-    md = (out / "INDEX.md").read_text(encoding="utf-8")
+    md = (out / "index.md").read_text(encoding="utf-8")
     for name in ("deploy-manifest.md", ASSESS_SCRIPT, "assess-manifest.md",
                  DEPLOY_SCRIPT, ROLLBACK_SCRIPT, "checksums.txt"):
         assert f"`{name}`" in md, name
-    assert "`INDEX.md`" not in md
+    assert "`index.md`" not in md
     assert "`reporting/`" not in md
     # Pointer to the manifest's run steps, and a verify recipe for each of
     # the two shells an operator actually has. The bundle is LF everywhere,
@@ -216,4 +238,4 @@ def test_write_index_reporting_row(tmp_path: Path) -> None:
     out = tmp_path / "build"
     out.mkdir()
     write_index(out, reporting=True)
-    assert "`reporting/`" in (out / "INDEX.md").read_text(encoding="utf-8")
+    assert "`reporting/`" in (out / "index.md").read_text(encoding="utf-8")

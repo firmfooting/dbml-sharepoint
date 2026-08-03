@@ -237,7 +237,7 @@ column_validation:
 # which the condition grammar does not express — every operand is a
 # literal. "Everyone but a delivery driver needs a host" needs a person
 # column as an operand, which SharePoint validation formulas cannot read
-# at all. Both stay governance checks; 50-govern/GOVERNANCE.md says so.
+# at all. Both stay governance checks; 50-govern/governance.md says so.
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] " — the marker rollback.js trusts to delete
