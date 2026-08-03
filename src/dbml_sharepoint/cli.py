@@ -100,8 +100,12 @@ _CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseExcept
 # always written reporting/data-dictionary.md -- which is the
 # inconsistency the rename closed.
 _REPORT_FILES = (
-    "reporting.md",
+    "guide.md",
     "data-dictionary.md",
+    # Superseded names, newest first. `reporting.md` existed only briefly
+    # between the case normalisation and this rename, but "briefly" is not
+    # "never" for anyone tracking main.
+    "reporting.md",
     "REPORTING.md",
     "DATA-DICTIONARY.md",
 )
@@ -459,7 +463,7 @@ def report(
     for filename, content in queries.items():
         write_artifact(pq_dir / filename, content)
     write_artifact(sql_dir / "views.sql", views_sql)
-    write_artifact(out / "reporting.md", reporting_md)
+    write_artifact(out / "guide.md", reporting_md)
     write_artifact(out / "data-dictionary.md", dictionary_md)
     typer.echo(
         f"Generated {len(queries)} Power Query file(s), sql/views.sql, "

@@ -157,7 +157,7 @@ def test_build_writes_full_bundle(tmp_path: Path) -> None:
     assert "Generated at:" in (out / "rollback.js.txt").read_text(encoding="utf-8")
     assert "Generated at:" in (out / "assess.js.txt").read_text(encoding="utf-8")
     # Reporting ships with every build.
-    assert (out / "reporting" / "reporting.md").exists()
+    assert (out / "reporting" / "guide.md").exists()
     assert (out / "reporting" / "data-dictionary.md").exists()
     assert (out / "reporting" / "sql" / "views.sql").exists()
     assert list((out / "reporting" / "powerquery").glob("*.pq"))
@@ -187,7 +187,7 @@ def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
     }
     assert base <= set(listed)
     assert "reporting/sql/views.sql" in listed
-    assert "reporting/reporting.md" in listed
+    assert "reporting/guide.md" in listed
     assert "reporting/data-dictionary.md" in listed
     assert any(p.startswith("reporting/powerquery/") for p in listed)
     assert not any("\\" in p for p in listed)
@@ -674,7 +674,7 @@ def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> Non
     assert failed.returncode == 1
     assert not (out / "powerquery").exists()
     assert not (out / "sql").exists()
-    assert not (out / "reporting.md").exists()
+    assert not (out / "guide.md").exists()
     assert not (out / "data-dictionary.md").exists()
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
 

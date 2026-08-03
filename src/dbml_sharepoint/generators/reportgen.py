@@ -1136,7 +1136,7 @@ def emit_reporting(
         + generate_dictionary_sql(schema, bundle, site_role, **dictionary_kwargs),
     )
     write_artifact(
-        reporting_dir / "reporting.md",
+        reporting_dir / "guide.md",
         generate_reporting_md(schema, bundle, site_role),
     )
     write_artifact(
@@ -1145,7 +1145,7 @@ def emit_reporting(
     )
     relpaths += [
         "reporting/sql/views.sql",
-        "reporting/reporting.md",
+        "reporting/guide.md",
         "reporting/data-dictionary.md",
     ]
     return relpaths
