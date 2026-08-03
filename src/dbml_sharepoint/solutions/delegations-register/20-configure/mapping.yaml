@@ -198,7 +198,7 @@ views:
 # delegation. When the register and the instrument disagree the instrument
 # wins, so a person checking their authority must be one click from it.
 #
-# It ships as a REPLACE-WITH placeholder and 30-deploy/DEPLOY.md makes
+# It ships as a REPLACE-WITH placeholder and 30-deploy/deploy.md makes
 # substituting it a blocking step. Use an absolute https:// address:
 # SharePoint's formatter emits only http, https, mailto and tel links, so a
 # site-relative path is not a valid substitution.

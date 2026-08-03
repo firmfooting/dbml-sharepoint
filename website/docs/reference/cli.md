@@ -12,7 +12,7 @@ dbml-sharepoint COMMAND [OPTIONS]
 ## `build`
 
 Generate the full deployment bundle (deploy.js.txt, rollback.js.txt, assess.js.txt,
-manifests, reporting, INDEX.md, checksums.txt — plus demo-data.js.txt with
+manifests, reporting, index.md, checksums.txt — plus demo-data.js.txt with
 `--seed`).
 
 | Option | Default | Meaning |
@@ -59,12 +59,12 @@ frames above it are noise, not a crash.
 ## `report`
 
 Emit the reporting pack only (no site URL required): `powerquery/`,
-`sql/views.sql`, `REPORTING.md`, `DATA-DICTIONARY.md`.
+`sql/views.sql`, `reporting.md`, `data-dictionary.md`.
 
 Each run replaces the previous pack, so a list dropped from the schema does
 not leave its `.pq` file behind. What it removes is exactly what it writes:
-every `*.pq` under `powerquery/`, `sql/views.sql`, `REPORTING.md` and
-`DATA-DICTIONARY.md` — then `powerquery/` and `sql/` themselves, but only if
+every `*.pq` under `powerquery/`, `sql/views.sql`, `reporting.md` and
+`data-dictionary.md` — then `powerquery/` and `sql/` themselves, but only if
 emptying them left nothing. Treat `*.pq` as owned by this command: keep
 hand-written queries somewhere other than `--out`. Anything else survives,
 including files of other types sitting inside those two directories.

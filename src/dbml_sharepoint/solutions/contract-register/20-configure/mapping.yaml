@@ -133,7 +133,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). "Live contracts" is the default working list;
-# the four lenses are the ones 30-deploy/DEPLOY.md used to ask the adopter
+# the four lenses are the ones 30-deploy/deploy.md used to ask the adopter
 # to build by hand, now with filters, sorts and pixel widths. Widths are
 # keyed on INTERNAL names — the build rewrites them to display titles,
 # because ColumnWidth binds by display name and an internal name silently
@@ -279,7 +279,7 @@ column_validation:
 # NOT enforceable here, and therefore left to the governance cadence:
 # EndDate after StartDate. The condition grammar compares a column to a
 # LITERAL, never to another column, so "EndDate > StartDate" has no
-# spelling — see 50-govern/GOVERNANCE.md.
+# spelling — see 50-govern/governance.md.
 list_validation:
   Contract:
     when:

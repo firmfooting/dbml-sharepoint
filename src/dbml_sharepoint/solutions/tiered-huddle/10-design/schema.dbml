@@ -171,7 +171,7 @@ Table Tier3Board {
   // Facilities. The declaration STAYS here: deleting it would not delete
   // anything on a deployed site, it would just leave a live column the
   // schema no longer knows about, which the _UserAddedColumns.pq drift
-  // audit then reports forever. See 30-deploy/DEPLOY.md.
+  // audit then reports forever. See 30-deploy/deploy.md.
   // Never deployed this template before? Then nothing exists yet and you
   // may delete this pair and its retired_columns entry outright.
   EnvironmentStatus     rag_status   [note: 'Retired — kept so the history stays readable; use Facilities instead']

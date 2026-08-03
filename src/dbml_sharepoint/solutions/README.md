@@ -6,7 +6,7 @@ Each template is a complete, working input set for `dbml-sharepoint build`
 deployment guide, staff education, and governance resources.
 
 The library is organised into four themes, plus sector guides
-(currently: [regional healthcare](HEALTHCARE.md) — NSQHS mapping,
+(currently: [regional healthcare](healthcare.md) — NSQHS mapping,
 statutory-system boundaries, and a first-90-days sequence). Templates interconnect across
 themes by *process hand-off* (documented in their governance files), never
 by list lookups — every template deploys and stands alone.
@@ -146,11 +146,11 @@ deploy, demonstrate, delete.
                            <list>-form-body.json per list, plus any bespoke
                            row formatter; referenced from mapping.yaml
   30-deploy/           Administrator guidance
-      DEPLOY.md          — build, paste, verify; template-specific checks
+      deploy.md          — build, paste, verify; template-specific checks
   40-adopt/            Staff education
-      STAFF-GUIDE.md     — day-to-day usage in plain language
+      staff-guide.md     — day-to-day usage in plain language
   50-govern/           Governance resources
-      GOVERNANCE.md      — ownership, review cadence, data quality, lifecycle
+      governance.md      — ownership, review cadence, data quality, lifecycle
 ```
 
 Work the folders in order: **design** what you're deploying (rename columns,
@@ -173,7 +173,7 @@ display_names:
 
 The title is the only thing this changes. The schema, lookups, indexes,
 calculated formulas and the reporting queries all bind to the internal
-name, and so do the DEPLOY.md checklists — where a document names a
+name, and so do the deploy.md checklists — where a document names a
 column exactly, it is naming it the way the schema does. Change a title
 before first deploy if you are going to change it: a rename made in the
 SharePoint UI afterwards is drift, which the next re-paste detects,
@@ -254,10 +254,10 @@ a directory the next upgrade replaces.
 4. Watch the `[SP-DEPLOY]` lines; success ends with `errors: []`. On any
    error: read it, fix the stated cause, paste the same script again —
    reruns verify-and-skip completed work.
-5. Complete the template's own `30-deploy/DEPLOY.md` verification checklist.
+5. Complete the template's own `30-deploy/deploy.md` verification checklist.
 6. Optional: to demonstrate the solution with content, rebuild with
    `--seed` and paste `build/demo-data.js.txt` from the same console. Each
-   template's DEPLOY.md gives the command and says what the rows show.
+   template's deploy.md gives the command and says what the rows show.
 
 **Views arrive with the paste.** Every list's views are declared in
 `mapping.yaml` under
@@ -291,7 +291,7 @@ managed, unfiltered **All Items** view holding every rendered column — the
 recovery view for the day a filter hides the row you need. It is hidden
 from the modern view bar whenever an authored view is the default.
 
-Two shapes are deliberately absent, and the affected DEPLOY.md says so
+Two shapes are deliberately absent, and the affected deploy.md says so
 rather than leaving you to notice. A view filtered to a single parent
 record — one vehicle, one practitioner, one meeting — is not something a
 static view can express; what ships instead is one view grouped on the

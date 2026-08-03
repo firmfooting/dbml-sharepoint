@@ -24,7 +24,7 @@ retired.
 
 **Two save rules.** An Active measure cannot be saved without a review
 date, and a review date cannot be set more than twelve months out — the
-"at least annual" cadence in `50-govern/GOVERNANCE.md` was a rule nothing
+"at least annual" cadence in `50-govern/governance.md` was a rule nothing
 enforced until now.
 
 **Work the folders in order:**
@@ -46,4 +46,4 @@ before first deploy.
 that pastes six `[DEMO] `-titled rows — four Active measures across four
 areas and four forums, one Under development with no review date, and one
 Retired — so every view and every status colour renders on a first look.
-See `30-deploy/DEPLOY.md`.
+See `30-deploy/deploy.md`.

@@ -34,7 +34,7 @@ RELEASE_RELPATH = Path("20-configure") / "release.yaml"
 
 #: Files at the top of `solutions/` that document the collection rather than
 #: being one of its members.
-_NOT_A_SOLUTION = {"README.md", "HEALTHCARE.md"}
+_NOT_A_SOLUTION = {"README.md", "healthcare.md"}
 
 _SUMMARY_MAX = 140
 

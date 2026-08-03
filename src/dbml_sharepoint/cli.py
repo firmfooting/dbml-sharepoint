@@ -92,7 +92,19 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
 # an unexpected error is a bug in the tool and must keep its traceback.
 _CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseException)
 
-_REPORT_FILES = ("REPORTING.md", "DATA-DICTIONARY.md")
+# Includes the pre-normalisation names for the same reason `bundle`'s
+# _LEGACY_ARTIFACTS does: `report` clears its previous output so a query
+# for a list that has left the schema cannot outlive it, and a name this
+# command used to write is exactly that kind of survivor. Note the old
+# DATA-DICTIONARY.md spelling was unique to THIS command -- `build` has
+# always written reporting/data-dictionary.md -- which is the
+# inconsistency the rename closed.
+_REPORT_FILES = (
+    "reporting.md",
+    "data-dictionary.md",
+    "REPORTING.md",
+    "DATA-DICTIONARY.md",
+)
 # (subdirectory, glob) pairs naming everything `report` writes below `out`.
 _REPORT_DIRECTORY_CONTENTS = (("powerquery", "*.pq"), ("sql", "views.sql"))
 
@@ -363,14 +375,14 @@ def report(
     out: Path = typer.Option(Path("./reports"), help="Output directory."),
     release: Path | None = typer.Option(
         None,
-        help="Optional release.yaml; stamps release metadata into DATA-DICTIONARY.md.",
+        help="Optional release.yaml; stamps release metadata into data-dictionary.md.",
     ),
 ) -> None:
     """Generate reporting queries (Power Query M + SQL views) from the schema.
 
-    Emits one .pq file per list, a SQLCMD views script, REPORTING.md with
+    Emits one .pq file per list, a SQLCMD views script, reporting.md with
     usage instructions and the Power BI relationship table, and a
-    DATA-DICTIONARY.md companion. Assumes a schema that `build` accepts;
+    data-dictionary.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
     """
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
@@ -447,11 +459,11 @@ def report(
     for filename, content in queries.items():
         write_artifact(pq_dir / filename, content)
     write_artifact(sql_dir / "views.sql", views_sql)
-    write_artifact(out / "REPORTING.md", reporting_md)
-    write_artifact(out / "DATA-DICTIONARY.md", dictionary_md)
+    write_artifact(out / "reporting.md", reporting_md)
+    write_artifact(out / "data-dictionary.md", dictionary_md)
     typer.echo(
         f"Generated {len(queries)} Power Query file(s), sql/views.sql, "
-        f"REPORTING.md and DATA-DICTIONARY.md in {out}.",
+        f"reporting.md and data-dictionary.md in {out}.",
     )
 
 

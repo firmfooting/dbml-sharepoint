@@ -61,7 +61,7 @@ def _answers(destination: Path, *, build: str = "n", **over: str) -> list[str]:
 def test_scaffolds_the_whole_family(tmp_path: Path) -> None:
     """Not just the three build inputs.
 
-    DEPLOY.md, STAFF-GUIDE.md and GOVERNANCE.md are the reason the
+    deploy.md, staff-guide.md and governance.md are the reason the
     templates are worth shipping; a scaffold that dropped them would leave
     the user with a mapping and no explanation of it.
     """
@@ -73,7 +73,7 @@ def test_scaffolds_the_whole_family(tmp_path: Path) -> None:
     assert (destination / "10-design" / "schema.dbml").is_file()
     assert (destination / "20-configure" / "mapping.yaml").is_file()
     assert (destination / "20-configure" / "release.yaml").is_file()
-    assert (destination / "30-deploy" / "DEPLOY.md").is_file()
+    assert (destination / "30-deploy" / "deploy.md").is_file()
     assert (destination / "README.md").is_file()
 
 
@@ -205,7 +205,7 @@ def test_changing_the_prefix_repoints_the_copied_documentation(
 ) -> None:
     """The docs name the lists literally, and the wizard sends people to them.
 
-    Choosing ACME_ builds ACME_Risk while DEPLOY.md still said to verify
+    Choosing ACME_ builds ACME_Risk while deploy.md still said to verify
     that `RR_Risk` exists -- documentation that disagrees with what was
     built, which is the failure this project exists to avoid.
     """
@@ -220,7 +220,7 @@ def test_changing_the_prefix_repoints_the_copied_documentation(
         if "RR_" in p.read_text(encoding="utf-8")
     ]
     assert not stale, f"docs still name the template's prefix: {stale}"
-    deploy_md = (destination / "30-deploy" / "DEPLOY.md").read_text(encoding="utf-8")
+    deploy_md = (destination / "30-deploy" / "deploy.md").read_text(encoding="utf-8")
     assert "ACME_Risk" in deploy_md
     # And it says so rather than editing the user's docs silently.
     assert "Repointed" in console.text
@@ -422,7 +422,7 @@ def test_a_mapping_with_no_prefix_line_is_refused(tmp_path: Path) -> None:
 
 def test_the_declined_build_prints_a_runnable_command(tmp_path: Path) -> None:
     """The paths it prints are relative to the project directory, which is
-    the form the copied DEPLOY.md also uses."""
+    the form the copied deploy.md also uses."""
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, build="n"))
 

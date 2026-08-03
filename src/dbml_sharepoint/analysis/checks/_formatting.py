@@ -292,7 +292,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # LAST section: unreferenced columns land there, so it is
                     # empty only when every column is placed elsewhere —
                     # which is exactly risk-register's System section, whose
-                    # DEPLOY.md already documents the bare heading on the New
+                    # deploy.md already documents the bare heading on the New
                     # form as cosmetic and expected.
                     named = [n for n in section_fields if n in declared]
                     if named and not is_last and all(n in hidden_everywhere for n in named):

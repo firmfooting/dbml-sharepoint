@@ -2421,7 +2421,7 @@
           // URL migration to the clean URL: renames cannot change the .aspx
           // name, so the escaped-URL view is recreated. Declared views are
           // deployer-owned — every setting is reasserted below; only
-          // bookmarks to the old URL break (one-time, noted in DEPLOY.md).
+          // bookmarks to the old URL break (one-time, noted in deploy.md).
           log('INFO', `[Phase 3.1] Migrating view '${view.title}' on '${view.list}' from ${urlBasename(existing)} to ${desiredBasename}...`);
           if (!halfMigrated) await createViewWithCleanUrl();
           if (existing.DefaultView) {

@@ -26,4 +26,4 @@ view and every colour working before you type a thing.
 
 **Customisation points:** `ContractType` and `Status` choices; value
 thresholds and approval delegations are policy, not schema — see
-`50-govern/GOVERNANCE.md`.
+`50-govern/governance.md`.

@@ -36,4 +36,4 @@ eleven demo rows behind `--seed`.
 `Critical` drives the row wash and every `Status` member is named in a view
 filter, a form rule or a save rule; and whether reporters may also *edit*
 their own reports (SharePoint levels can't scope "own items only" — see
-`50-govern/GOVERNANCE.md` for the honest options).
+`50-govern/governance.md` for the honest options).

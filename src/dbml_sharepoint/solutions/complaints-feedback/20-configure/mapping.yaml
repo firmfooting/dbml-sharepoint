@@ -223,7 +223,7 @@ views:
         RecordedBy: 160
     # The published table called this "Monthly report" and asked for items
     # "closed in month", grouped by FeedbackType, showing both day-counts
-    # and Outcome. ONE substitution remains, stated in 30-deploy/DEPLOY.md:
+    # and Outcome. ONE substitution remains, stated in 30-deploy/deploy.md:
     # CAML has no calendar-month predicate, so this is a rolling thirty days
     # and the title says so rather than implying a calendar boundary.
     #

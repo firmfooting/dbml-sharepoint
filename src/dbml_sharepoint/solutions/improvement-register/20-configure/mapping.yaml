@@ -87,7 +87,7 @@ display_names:
 # means "how long" is better than a coloured one that means "what the chip
 # already said".
 #
-# max is 180 days. Test discipline in 50-govern/GOVERNANCE.md is one team,
+# max is 180 days. Test discipline in 50-govern/governance.md is one team,
 # one fortnight, small before big; two quarters from idea to outcome is a
 # cycle that stopped being a test somewhere, and a bar that pins at full
 # width is the register saying so.
@@ -287,7 +287,7 @@ column_validation:
         message: "An outcome cannot have been decided in the future. Use the date the change actually became the standard way, or the date it was abandoned."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
-# This is as much of data-quality rule 1 in 50-govern/GOVERNANCE.md as
+# This is as much of data-quality rule 1 in 50-govern/governance.md as
 # SharePoint can hold; the governance document now says which part and why.
 list_validation:
   Improvement:

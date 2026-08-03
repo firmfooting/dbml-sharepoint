@@ -220,7 +220,7 @@ views:
         ReturnedAt: 180
     # The published table promised "Monthly km by vehicle — DepartedAt in
     # month, group by Vehicle, SUM TripKm". ONE substitution remains, and it
-    # is stated in 30-deploy/DEPLOY.md: CAML has no calendar-month
+    # is stated in 30-deploy/deploy.md: CAML has no calendar-month
     # predicate, so this is a rolling thirty days and the title says so.
     #
     # Grouped by vehicle and collapsed, SharePoint renders a per-group

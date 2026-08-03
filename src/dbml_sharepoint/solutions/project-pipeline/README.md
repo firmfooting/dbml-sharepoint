@@ -48,4 +48,4 @@ stage names, and a renamed member empties a view without failing the build.
 that pastes six `[DEMO] `-titled rows — one per live stage plus a declined
 and a delivered one — so every view, every rating band and the score bar
 render on a first look. One is deliberately left unscored. See
-`30-deploy/DEPLOY.md`.
+`30-deploy/deploy.md`.

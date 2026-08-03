@@ -106,7 +106,7 @@ display_names:
 # disagree. Here the band is Urgency, because Urgency is what decides
 # whether a given number of days was acceptable — the same 12 days is fine
 # for a Routine change and a governance failure for an Emergency one. The
-# max is 21 calendar days: the slowest SLA in 50-govern/GOVERNANCE.md is
+# max is 21 calendar days: the slowest SLA in 50-govern/governance.md is
 # 15 business days, so a full bar is a change that took longer than the
 # most generous authority level allows.
 column_formatting:
@@ -326,7 +326,7 @@ column_validation:
         message: "A decision cannot have been made in the future. Use the date the approver actually decided."
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
-# This is half of data-quality rule 1 in 50-govern/GOVERNANCE.md; the other
+# This is half of data-quality rule 1 in 50-govern/governance.md; the other
 # half cannot live here and the governance document now says so.
 list_validation:
   ChangeRequest:

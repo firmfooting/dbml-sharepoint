@@ -606,7 +606,7 @@ moves, it does not disappear. Two consequences are enforced:
   the **last** section, because unreferenced columns land there, so only an
   earlier section can be provably empty. `solutions/risk-register`'s
   **System** section is exactly that shape: it is last, it holds only
-  `MatrixVersion`, and its DEPLOY.md documents the bare heading on the New
+  `MatrixVersion`, and its deploy.md documents the bare heading on the New
   form as cosmetic and expected.
 
 To hide a column from a form, declare it — `form_visibility` with

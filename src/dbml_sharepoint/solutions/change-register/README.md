@@ -43,4 +43,4 @@ set from the slowest SLA in that table.
 that pastes six `[DEMO] `-titled rows — two in triage, one under review,
 one approved and stalled past sixty days, one emergency decided in a day
 and one rejected after three weeks — so every view and every colour band
-renders on a first look. See `30-deploy/DEPLOY.md`.
+renders on a first look. See `30-deploy/deploy.md`.

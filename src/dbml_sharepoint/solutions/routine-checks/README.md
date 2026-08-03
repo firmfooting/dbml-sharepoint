@@ -31,7 +31,7 @@ line.
 **One thing it will never do:** tell you a check did *not* happen. A missed
 check leaves no row, and no row triggers nothing. Missed-check monitoring
 is people looking on a cadence; the register makes looking trivial, not
-automatic. `50-govern/GOVERNANCE.md` is explicit about it.
+automatic. `50-govern/governance.md` is explicit about it.
 
 **Work the folders in order:**
 
@@ -46,4 +46,4 @@ automatic. `50-govern/GOVERNANCE.md` is explicit about it.
 **Customisation points:** `CheckType` and frequency vocabulary; the
 out-of-range escalation per checkpoint type lives in governance. Note that
 `Result` members are named in a view filter, a form rule and the save
-rule — `30-deploy/DEPLOY.md` lists the couplings before you build.
+rule — `30-deploy/deploy.md` lists the couplings before you build.

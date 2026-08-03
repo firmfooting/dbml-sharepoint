@@ -221,8 +221,8 @@ def _retitle_docs(destination: Path, old_prefix: str, new_prefix: str) -> list[P
     """Point the copied documentation at the lists the build will create.
 
     Changing the prefix renames every list, and the template's own
-    DEPLOY.md, README.md and GOVERNANCE.md name them literally: choosing
-    `ACME_` for risk-register produces `ACME_Risk` while DEPLOY.md still
+    deploy.md, README.md and governance.md name them literally: choosing
+    `ACME_` for risk-register produces `ACME_Risk` while deploy.md still
     says to verify `RR_Risk` exists. The wizard sends the operator to those
     files, so documentation that disagrees with what was built is the
     failure this project exists to avoid, in miniature.
@@ -380,7 +380,7 @@ def _run(console: Console) -> int:
             "and tells you what is already there.\n\n"
             "Then [bold]"
             f"{answers.destination / 'build' / DEPLOY_SCRIPT}[/bold].\n\n"
-            f"[dim]{answers.destination / '30-deploy' / 'DEPLOY.md'} has the "
+            f"[dim]{answers.destination / '30-deploy' / 'deploy.md'} has the "
             "full procedure for this template.[/dim]",
             title="Next",
             border_style="green",

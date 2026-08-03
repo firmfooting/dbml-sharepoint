@@ -20,7 +20,7 @@ release.yaml ─▶ model/release ────────┘   ordering, typema
                      │
                      ▼
         bundle.emit_bundle()  — the ONE emission sequence:
-        stale clearing, INDEX.md, checksums.txt, provenance
+        stale clearing, index.md, checksums.txt, provenance
 ```
 
 ## Repository map

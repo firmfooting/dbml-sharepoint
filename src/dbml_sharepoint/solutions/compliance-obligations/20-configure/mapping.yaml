@@ -269,7 +269,7 @@ column_validation:
 # tell the author which branch failed.
 #
 # NOT enforceable, and therefore still a governance check (see
-# 50-govern/GOVERNANCE.md): the remediation pointer a gap row must carry.
+# 50-govern/governance.md): the remediation pointer a gap row must carry.
 # It lives in Notes, which is rich text, and SharePoint validation formulas
 # cannot reference a multi-line column at all.
 list_validation:
