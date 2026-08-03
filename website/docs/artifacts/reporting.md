@@ -13,9 +13,8 @@ deployed lists.
 - **One Power Query (M) file per list**, plus dictionary, model-info and
   user-added-column audit queries. Point the queries' `SiteUrl`
   parameter at the deployed site and load them in Power BI or Excel.
-- **`powerquery/_SiteName.pq`** — the deployed site's own display title,
-  read from SharePoint at refresh. Every list query references it, so it
-  must be imported and named exactly `_SiteName`.
+  Each query is self-contained, including the lookup of the site's own
+  display title — see below.
 - **`sql/views.sql`** — a SQLCMD views script for warehouse-landed
   copies of the lists.
 - **`guide.md`** — includes the Power BI relationship table
@@ -34,8 +33,15 @@ Every table carries **`Site Url`** and **`Site Name`** for that, and the
 name is read from the site rather than configured: nothing to type in,
 and a site renamed in SharePoint shows its new name at the next refresh.
 
-Import the pack once per site with its own `SiteUrl`, append the matching
-lists, and build relationships on the **`… Key`** columns.
+Each query resolves that name itself, from whichever URL it was given —
+deliberately, rather than sharing one lookup query. A shared query binds
+to a single `SiteUrl`, so every copy of a list pointed at a different
+site would still be stamped with the *first* site's name.
+
+So: add one text parameter per site, duplicate each list query and change
+its `SiteUrl` reference, append the copies, and build relationships on the
+**`… Key`** columns. Nothing else in a duplicate needs editing — the rows,
+the item links, the site name and the keys all follow that one reference.
 
 :::warning Join on the Key columns, not on `Id`
 `Id` is unique within one list on one site and nowhere wider. Append three
