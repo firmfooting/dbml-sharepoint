@@ -1,6 +1,7 @@
 # test/test_bundle.py
 """Bundle-level packaging: artifact clearing, LF-stable hashing, INDEX/checksums."""
 
+import hashlib
 from pathlib import Path
 
 from dbml_sharepoint.bundle import (
@@ -11,6 +12,7 @@ from dbml_sharepoint.bundle import (
     ROLLBACK_SCRIPT,
     clear_generated,
     sha256_lf,
+    write_artifact,
     write_checksums,
     write_index,
 )
@@ -153,16 +155,42 @@ def test_checksums_is_written_lf_even_on_windows(tmp_path: Path) -> None:
 
 
 def test_write_checksums_round_trip_validates(tmp_path: Path) -> None:
+    """The recorded digest is of the BYTES on disk.
+
+    It used to be `sha256_lf(read_text(...))`, and this test asserted the
+    same expression it was computed from -- so it held whatever the file
+    actually contained. Hashing `read_bytes()` is what `sha256sum` does,
+    and is the only form that can disagree when the manifest is wrong.
+    """
     out = tmp_path / "build"
     out.mkdir()
-    (out / "x.js").write_text("line1\nline2\n", encoding="utf-8")
+    write_artifact(out / "x.js.txt", "line1\nline2\n")
 
-    write_checksums(out, ["x.js"])
+    write_checksums(out, ["x.js.txt"])
 
     line = (out / "checksums.txt").read_text(encoding="utf-8").splitlines()[0]
     digest, _, relpath = line.partition("  ")
-    assert relpath == "x.js"
-    assert digest == sha256_lf((out / relpath).read_text(encoding="utf-8"))
+    assert relpath == "x.js.txt"
+    assert digest == hashlib.sha256((out / relpath).read_bytes()).hexdigest()
+
+
+def test_write_artifact_strips_carriage_returns_from_the_content(
+    tmp_path: Path,
+) -> None:
+    """`newline="\\n"` only stops Python ADDING a CR; it does not remove one
+    already in the string.
+
+    A `.j2` checked out with CRLF, or a mapping value carrying one, would
+    otherwise put CR bytes in the artifact while the digest hashed them
+    away -- reopening the exact gap between the manifest and the bytes on
+    disk that this writer exists to close.
+    """
+    out = tmp_path / "build"
+    write_artifact(out / "crlf.js.txt", "a\r\nb\rc\nd\n")
+
+    raw = (out / "crlf.js.txt").read_bytes()
+    assert b"\r" not in raw
+    assert raw == b"a\nb\nc\nd\n"
 
 
 def test_write_index_lists_base_artifacts_not_itself(tmp_path: Path) -> None:

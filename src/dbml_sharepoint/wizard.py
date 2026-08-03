@@ -36,11 +36,20 @@ from dbml_sharepoint.model.mapping_loader import load_mapping
 #: development, and a stale deploy script in a new project is worse than none.
 _NEVER_COPY = ("build", "reports", "__pycache__")
 
-#: Weaker than SharePoint's own rules on purpose. The authority is the
-#: validator, which runs on the build; a wizard rule stronger than what the
-#: thirty shipped templates satisfy would refuse input the tool accepts.
-#: Every shipped prefix is alphanumerics plus a trailing underscore.
-_PREFIX_OK = re.compile(r"^[A-Za-z0-9_-]{1,16}$")
+#: Refuses only what cannot be a filename component or would corrupt the
+#: YAML line the prefix is written into. NOT a SharePoint rule.
+#:
+#: This was `^[A-Za-z0-9_-]{1,16}$`, which invented both a character set
+#: and a 16-character ceiling that nothing in Microsoft Learn, the
+#: validator or the thirty shipped templates supports. That is precisely
+#: the "assert from plausibility" failure AGENTS.md opens with, and it made
+#: the wizard reject prefixes `--build` accepts, looping forever on a
+#: perfectly good answer with no way to proceed.
+#:
+#: The authority for what SharePoint accepts is the validator, which runs
+#: on the build; the wizard's job is to stop the obviously-broken input
+#: that would fail confusingly later, and nothing more.
+_PREFIX_REJECTED = re.compile(r'[\s/\\:*?"<>|]')
 
 
 class WizardError(RuntimeError):
@@ -146,10 +155,11 @@ def _ask_prefix(console: Console, solution: Solution) -> str:
             default=solution.prefix,
             console=console,
         ).strip()
-        if _PREFIX_OK.match(prefix):
+        if prefix and not _PREFIX_REJECTED.search(prefix):
             return prefix
         console.print(
-            "[red]Use letters, digits, hyphen or underscore (1-16 chars).[/red]",
+            "[red]A prefix cannot be empty or contain whitespace or any of "
+            '[/red][bold]/ \\ : * ? " < > |[/bold][red].[/red]',
         )
 
 
@@ -207,17 +217,54 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
         )
 
 
-def _scaffold(answers: Answers) -> None:
+def _retitle_docs(destination: Path, old_prefix: str, new_prefix: str) -> list[Path]:
+    """Point the copied documentation at the lists the build will create.
+
+    Changing the prefix renames every list, and the template's own
+    DEPLOY.md, README.md and GOVERNANCE.md name them literally: choosing
+    `ACME_` for risk-register produces `ACME_Risk` while DEPLOY.md still
+    says to verify `RR_Risk` exists. The wizard sends the operator to those
+    files, so documentation that disagrees with what was built is the
+    failure this project exists to avoid, in miniature.
+
+    Markdown only, and that is checked rather than assumed: nothing else in
+    a shipped family carries the prefix -- the schema declares logical
+    names, the mapping's own `prefix:` is already rewritten, and the
+    formatting JSON refers to columns, not lists.
+
+    Returns the files it changed so the caller can report them.
+    """
+    if old_prefix == new_prefix or not old_prefix:
+        return []
+    changed = []
+    for path in sorted(destination.rglob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        if old_prefix not in text:
+            continue
+        path.write_text(text.replace(old_prefix, new_prefix), encoding="utf-8")
+        changed.append(path)
+    return changed
+
+
+def _scaffold(answers: Answers) -> list[Path]:
     shutil.copytree(
         answers.solution.root,
         answers.destination,
         ignore=shutil.ignore_patterns(*_NEVER_COPY),
+        # The destination may already exist: `_ask_destination` accepts an
+        # existing EMPTY directory, and without this copytree raises
+        # FileExistsError and the wizard reports a scaffold failure for a
+        # path it had just told the user was fine.
+        dirs_exist_ok=True,
     )
     _rewrite_prefix(
         answers.destination / answers.solution.mapping_path.relative_to(
             answers.solution.root,
         ),
         answers.prefix,
+    )
+    return _retitle_docs(
+        answers.destination, answers.solution.prefix, answers.prefix,
     )
 
 
@@ -275,7 +322,7 @@ def _run(console: Console) -> int:
         return 0
 
     try:
-        _scaffold(answers)
+        retitled = _scaffold(answers)
     except (WizardError, OSError) as exc:
         console.print(f"[red]Could not scaffold the project:[/red] {exc}")
         return 1
@@ -284,6 +331,12 @@ def _run(console: Console) -> int:
     schema_path = answers.destination / "10-design" / "schema.dbml"
     release_path = answers.destination / "20-configure" / "release.yaml"
     console.print(f"\n[green]Wrote[/green] {answers.destination}")
+    if retitled:
+        # Say so rather than editing the user's new documentation silently.
+        console.print(
+            f"[dim]Repointed {len(retitled)} doc(s) from "
+            f"{answers.solution.prefix} to {answers.prefix}.[/dim]",
+        )
 
     if not Confirm.ask("\nBuild it now?", default=True, console=console):
         console.print(

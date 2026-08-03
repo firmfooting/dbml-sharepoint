@@ -87,11 +87,18 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 
 ## Things that will waste your time
 
-- **Generated files are committed, and the generator writes CRLF on Windows.**
-  `website/scripts/generate_api.py` and `test/manual/render_probes.py` rewrite
-  every file they touch with CRLF line endings, so `git status` shows drift that
-  is not real. Check with `git diff --ignore-cr-at-eol` before believing it, and
-  `git checkout --` the files if that comes back empty.
+- **Generated files are committed. Everything written must be LF.**
+  `.gitattributes` declares `* text=auto eol=lf`, and `Path.write_text`
+  defaults to text mode — so a writer that omits `newline="\n"` emits CRLF on
+  Windows and marks every file it touched as modified, hiding the one real
+  change among the noise. Both committed-output generators were fixed (they go
+  through `generate_api.write_page` and an explicit `newline="\n"`), as were
+  the shipped bundle artifacts (`bundle.write_artifact`). **Use those helpers
+  rather than `write_text` when adding a writer** — the trap is per-call-site,
+  so the next one reintroduces it. If you do see phantom drift, diagnose it
+  with `git diff --ignore-cr-at-eol` and `git checkout --` the files that come
+  back empty. Note `git status` can also report a file modified from a stale
+  stat cache alone; if `git diff` is empty for it there is no real change.
 - **The deploy.js.txt golden.** Template changes fail
   `test_simple_deploy_js_matches_golden` until the fixture under
   `test/fixtures/expected/` is deliberately regenerated. Review the fixture diff

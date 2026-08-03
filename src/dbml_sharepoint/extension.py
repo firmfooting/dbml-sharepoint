@@ -80,7 +80,8 @@ class BaseExtension:
     def seed_lists(
         self, bundle: Any, schema: Any, site_context: SiteContext,
     ) -> dict[str, dict[str, Any]]:
-        return {}                         # SP list title -> field dict, embedded in deploy.js seed
+        # SP list title -> field dict, embedded in the deploy script seed
+        return {}
 
     def manifest_extras(self, bundle: Any, schema: Any) -> ManifestExtras:
         return ManifestExtras()

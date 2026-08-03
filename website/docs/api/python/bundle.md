@@ -98,6 +98,16 @@ inherited the platform newline, which is how a Windows build came to
 produce a bundle no standard checksum tool could verify. A default
 nobody states at the call site is a default nobody reviews.
 
+The CONTENT is normalised too, not just the newline translation.
+``newline="\n"`` only stops Python turning ``\n`` into ``\r\n`` on the
+way out; a ``\r`` already inside the string passes straight through. A
+template checked out with CRLF, or a mapping value carrying one, would
+put CR bytes in the artifact while ``sha256_lf`` hashed them away —
+which is the exact divergence between the digest and the bytes on disk
+that this whole path exists to close. Normalising here means the
+guarantee holds for any input, not just for inputs that were already
+clean.
+
 Creates parent directories: reporting writes into ``reporting/sql/``
 and ``reporting/powerquery/``, and having the writer own that keeps
 every caller from repeating the mkdir.

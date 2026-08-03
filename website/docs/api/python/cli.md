@@ -45,7 +45,7 @@ def validate_site_url(site_url: str) -> None
 
 Reject a malformed or non-https ``--site-url`` at parse time.
 
-The URL is interpolated into the generated deploy.js (as ``SITE_URL`` and in
+The URL is interpolated into the generated deploy.js.txt (as ``SITE_URL`` and in
 the site-match preflight comparison), so it must be a well-formed absolute
 ``https://`` URL with a host. Catches typos (``http://``, a bare path, a
 missing host) before the operator pastes into a privileged console. Shared
@@ -58,7 +58,7 @@ by the core CLI and any extension project CLIs that compose it. Raises
 def build(schema: pathlib.Path = ..., mapping: pathlib.Path = ..., release: pathlib.Path = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., extension: str | None = ...) -> None
 ```
 
-Generate deploy.js + manifest from the DBML schema and mapping.
+Generate deploy.js.txt + manifest from the DBML schema and mapping.
 
 ### `execute_build`
 
