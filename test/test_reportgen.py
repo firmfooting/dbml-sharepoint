@@ -45,7 +45,11 @@ def _calculated() -> tuple[Schema, MappingBundle]:
 def test_powerquery_one_query_per_entity_with_odata_feed() -> None:
     schema, bundle = _simple()
     queries = generate_powerquery(schema, bundle, "default")
-    assert set(queries) == {"APP_Project.pq", "APP_Task.pq", "APP_AppSettings.pq"}
+    assert set(queries) == {
+        "APP_Project.pq", "APP_Task.pq", "APP_AppSettings.pq",
+        # The shared site-title lookup every list query references.
+        "_SiteName.pq",
+    }
     task = queries["APP_Task.pq"]
     assert "OData.Feed(" in task
     assert "getbytitle('APP_Task')" in task
@@ -92,10 +96,83 @@ def test_sql_views_typed_and_enriched_with_joins() -> None:
 
 
 def test_reporting_md_lists_relationships_for_power_bi() -> None:
+    """On the site-qualified Key columns, never on Id.
+
+    `Id` is unique within one list on one site. A report that appends the
+    same list from several sites has three different rows with Id = 1, so a
+    relationship on Id degrades from many-to-one to many-to-many and joins
+    each child to the same-numbered parent on every site -- rendering
+    happily with wrong numbers.
+    """
     schema, bundle = _simple()
     md = generate_reporting_md(schema, bundle, "default")
-    assert "| APP_Task | ProjectId | APP_Project | Id |" in md
+    assert "| APP_Task | Project Key | APP_Project | Project Key |" in md
+    assert "| APP_Task | ProjectId | APP_Project | Id |" not in md
     assert "SiteUrl" in md  # parameter setup instructions
+
+
+def test_every_list_query_carries_the_site_it_came_from() -> None:
+    """Without these, an appended multi-site table has nothing to slice by."""
+    schema, bundle = _simple()
+    queries = generate_powerquery(schema, bundle, "default")
+    for name, query in queries.items():
+        if name.startswith("_"):
+            continue
+        assert '"Site Url", each SiteUrl' in query, name
+        assert '"Site Name", each SiteName' in query, name
+
+
+def test_the_site_name_is_read_from_the_site_not_configured() -> None:
+    """The whole point: nobody maintains a URL-to-name list by hand, and a
+    site renamed in SharePoint shows its new name at the next refresh.
+
+    `_api/web?$select=Title` is documented on Microsoft Learn and was
+    confirmed against a live tenant to answer with an OData entry carrying
+    `d:Title` -- the shape `OData.Feed` consumes.
+    """
+    schema, bundle = _simple()
+    site_name = generate_powerquery(schema, bundle, "default")["_SiteName.pq"]
+    assert '"/_api/web?$select=Title"' in site_name
+    assert "OData.Feed(" in site_name
+
+
+def test_the_site_name_lookup_fails_soft() -> None:
+    """A slicer label must not be able to take the refresh down.
+
+    This is one of the few places the codebase should NOT fail closed: the
+    rows are the data, the name is decoration, and an unhandled error here
+    would fail every table in the report.
+    """
+    schema, bundle = _simple()
+    site_name = generate_powerquery(schema, bundle, "default")["_SiteName.pq"]
+    assert "try" in site_name
+    assert "otherwise SiteUrl" in site_name
+
+
+def test_row_keys_are_site_qualified() -> None:
+    """`Id` alone collides the moment a second site is appended."""
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert '"Task Key",' in task
+    assert 'each SiteUrl & "|" & Number.ToText([Id])' in task
+
+
+def test_a_null_lookup_does_not_break_the_refresh() -> None:
+    """`Number.ToText(null)` raises rather than returning null, so an
+    optional lookup left blank would fail the whole refresh."""
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "if [ProjectId] = null then null" in task
+
+
+def test_a_role_with_no_lists_yields_no_queries_at_all() -> None:
+    """Not even the site-name helper.
+
+    A pack of one file reads like a partial success; the honest answer to
+    "this role deploys nothing here" is nothing.
+    """
+    schema, bundle = _simple()
+    assert generate_powerquery(schema, bundle, "admin") == {}
 
 
 def test_report_respects_site_role_filter() -> None:
