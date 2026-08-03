@@ -268,7 +268,6 @@ def execute_build(
     an exception of its own here would give the wizard a second vocabulary
     for the same failures. The wizard catches it.
     """
-    clear_generated(out, reporting=True)
     validate_site_url(site_url)
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
     if release_obj is None:  # unreachable: --release is a required option
@@ -295,6 +294,20 @@ def execute_build(
             err=True,
         )
         raise typer.Exit(code=2)
+
+    # Everything above this line is a pure read that can refuse: a malformed
+    # URL, an unreadable input file, an extension needing its own CLI, a role
+    # the mapping does not declare. None of them has made anything in `out`
+    # stale, and `--out` is routinely the directory holding the bundle the
+    # operator is part-way through pasting -- so a refusal that learnt nothing
+    # must not destroy it. `report` has always drawn the line here; `build`
+    # used to clear as its first statement and disagreed.
+    #
+    # From here the build is committed to writing, so every later refusal DOES
+    # clear. That is what the guarantee is actually for: a `deploy.js.txt`
+    # describing a schema this run rejected is the stale script an operator
+    # could paste.
+    clear_generated(out, reporting=True)
 
     findings = validate_all(parsed_schema, bundle, ext)
     errors = [f for f in findings if f.severity == "error"]
