@@ -419,6 +419,73 @@ def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
 
 
+def test_build_never_clears_output_before_it_accepts_its_inputs(tmp_path: Path) -> None:
+    """A usage error must not destroy the last good bundle.
+
+    The twin of `test_report_never_clears_output_before_it_reads_the_schema`,
+    and it exists because `build` used to disagree with `report` about this.
+    Clearing on the way in meant a mistyped `--site-url` — which exits 2 for
+    "usage error, before the pipeline runs at all", having read nothing and
+    learnt nothing — deleted a bundle the operator may have been part-way
+    through pasting.
+
+    The three refusals asserted here are exactly the ones that happen before
+    any input file has been believed: a malformed URL, an unreadable schema
+    path, and a site role the mapping does not declare.
+    """
+    out = tmp_path / "build"
+    good = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert good.exit_code == 0, good.output
+
+    def snapshot() -> dict[str, bytes]:
+        """Every file below `out`, by relative path, with its bytes.
+
+        Names alone are not enough: a regression that rewrote an artifact in
+        place -- same name, different content -- would satisfy a name
+        comparison while having destroyed exactly what this protects. The
+        bundle an operator is part-way through pasting has to be unchanged,
+        not merely still present.
+        """
+        return {
+            str(path.relative_to(out)): path.read_bytes()
+            for path in sorted(out.rglob("*"))
+            if path.is_file()
+        }
+
+    bundle = snapshot()
+    assert "deploy.js.txt" in bundle
+
+    def rebuild(**overrides: str) -> int:
+        args = {
+            "--schema": str(FIXTURES / "simple.dbml"),
+            "--mapping": str(FIXTURES / "sharepoint-mapping.yaml"),
+            "--release": str(FIXTURES / "release.yaml"),
+            "--site-url": "https://example.sharepoint.com/sites/test",
+            "--site-role": "default",
+            "--out": str(out),
+            **overrides,
+        }
+        flat = [part for pair in args.items() for part in pair]
+        return runner.invoke(app, ["build", *flat]).exit_code
+
+    assert rebuild(**{"--site-url": "http://example.sharepoint.com/sites/test"}) == 2
+    assert snapshot() == bundle, "a bad --site-url changed the bundle"
+
+    assert rebuild(**{"--schema": str(tmp_path / "nope.dbml")}) == 1
+    assert snapshot() == bundle, "a bad --schema changed the bundle"
+
+    assert rebuild(**{"--site-role": "nosuchrole"}) == 2
+    assert snapshot() == bundle, "a bad --site-role changed the bundle"
+
+
 def test_build_rejects_invalid_site_role(tmp_path: Path) -> None:
     """Regression: a misspelled --site-role must fail fast instead of being
     silently filtered to an empty deploy plan that still exits 0."""
@@ -454,6 +521,18 @@ def test_build_rejects_extension_that_requires_project_cli(
         resolve_project_only,
     )
     out = tmp_path / "build"
+    # An EXISTING bundle, because that is the case with something to lose.
+    # Asserting only that `out` was never created tests the empty-directory
+    # case, which is the one where the old behaviour was harmless.
+    existing = out / "deploy.js.txt"
+    out.mkdir()
+    existing.write_bytes(b"// the operator is part-way through pasting this")
+    before = {
+        str(path.relative_to(out)): path.read_bytes()
+        for path in sorted(out.rglob("*"))
+        if path.is_file()
+    }
+
     result = runner.invoke(app, [
         "build",
         "--schema", str(FIXTURES / "simple.dbml"),
@@ -468,8 +547,15 @@ def test_build_rejects_extension_that_requires_project_cli(
     assert result.exit_code == 2
     assert "requires its project-specific CLI" in result.output
     assert "Use the extension's project CLI instead" in result.output
-    # clear_generated ran first (creating out), but nothing was generated.
-    assert not any(out.iterdir())
+    after = {
+        str(path.relative_to(out)): path.read_bytes()
+        for path in sorted(out.rglob("*"))
+        if path.is_file()
+    }
+    # This used to assert "clear_generated ran first (creating out), but
+    # nothing was generated" -- which was true, and was the bug: the refusal
+    # happens before a single input is read, so it has nothing to clear.
+    assert after == before
 
 
 def test_build_rejects_non_https_site_url(tmp_path: Path) -> None:
