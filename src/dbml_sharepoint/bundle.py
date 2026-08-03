@@ -3,9 +3,16 @@
 
 A successful build emits a fixed artifact set — the deployment bundle.
 This module owns the cross-cutting concerns: the canonical artifact name
-list, stale-artifact clearing (so no failure mode leaves a pasteable
-script from an older build), platform-stable content hashing, and the
+list, stale-artifact clearing, platform-stable content hashing, and the
 index.md / checksums.txt writers.
+
+The clearing guarantee is about staleness and starts once a build has
+accepted its inputs: from that point no failure leaves a pasteable script
+from an older build. It deliberately does NOT extend to a refusal that
+happens first — a malformed ``--site-url``, an unreadable file — because
+such a run has read nothing and made nothing stale, and ``--out`` is
+routinely the directory holding the bundle the operator is part-way
+through pasting. See ``clear_generated``.
 
 **Every artifact is written UTF-8 with LF, on every platform** — through
 ``write_artifact``, which is the only writer the emission path may use.
@@ -134,8 +141,14 @@ def clear_generated(out: Path, *, reporting: bool = False) -> None:
 
     The guarantee is about *staleness*, not about position: once a build has
     accepted its inputs, every later failure — validation errors, a seed
-    refusal, a generator raise, a dry run — leaves at most a fresh error
-    manifest, never a stale script an operator could paste beside it.
+    refusal, a generator raise — leaves at most a fresh manifest describing
+    the findings, never a stale script an operator could paste beside it.
+
+    A ``--dry-run`` is not a failure and is grouped here only because it too
+    withholds the scripts: it succeeds, writes a fresh ``deploy-manifest.md``
+    carrying the deployment plan, and clears the previous scripts for the
+    same reason — the manifest would otherwise describe one build while the
+    scripts beside it came from another.
 
     So ``build`` calls this at the point it commits to writing, not as its
     first statement. It used to be first, on the reasoning that ANY failure
