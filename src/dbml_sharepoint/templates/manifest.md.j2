@@ -96,7 +96,7 @@ untouched. If an unexpected crash strands the enrolment, remove yourself in
 ## Validation findings
 
 {% for f in findings %}
-- **[{{ f.severity | upper }}]** {{ f.message }}
+- **[{{ f.severity | upper }}]** {{ f.detail }}
 {% else %}
 - (no findings)
 {% endfor %}
