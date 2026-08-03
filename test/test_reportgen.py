@@ -45,11 +45,7 @@ def _calculated() -> tuple[Schema, MappingBundle]:
 def test_powerquery_one_query_per_entity_with_odata_feed() -> None:
     schema, bundle = _simple()
     queries = generate_powerquery(schema, bundle, "default")
-    assert set(queries) == {
-        "APP_Project.pq", "APP_Task.pq", "APP_AppSettings.pq",
-        # The shared site-title lookup every list query references.
-        "_SiteName.pq",
-    }
+    assert set(queries) == {"APP_Project.pq", "APP_Task.pq", "APP_AppSettings.pq"}
     task = queries["APP_Task.pq"]
     assert "OData.Feed(" in task
     assert "getbytitle('APP_Task')" in task
@@ -116,8 +112,6 @@ def test_every_list_query_carries_the_site_it_came_from() -> None:
     schema, bundle = _simple()
     queries = generate_powerquery(schema, bundle, "default")
     for name, query in queries.items():
-        if name.startswith("_"):
-            continue
         assert '"Site Url", each SiteUrl' in query, name
         assert '"Site Name", each SiteName' in query, name
 
@@ -131,9 +125,28 @@ def test_the_site_name_is_read_from_the_site_not_configured() -> None:
     `d:Title` -- the shape `OData.Feed` consumes.
     """
     schema, bundle = _simple()
-    site_name = generate_powerquery(schema, bundle, "default")["_SiteName.pq"]
-    assert '"/_api/web?$select=Title"' in site_name
-    assert "OData.Feed(" in site_name
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert '"/_api/web?$select=Title"' in task
+
+
+def test_each_query_resolves_its_own_site_name() -> None:
+    """NOT a shared query, and this is the reason.
+
+    A multi-site report is built by duplicating a list query per site and
+    pointing each copy at a different URL. A single shared site-name query
+    binds to ONE SiteUrl parameter, so every copy would be stamped with the
+    first site's name -- wrong, and silently so, since the rows would be
+    right and only the label wrong.
+
+    Inline, the name is derived from whichever URL fetched the rows beside
+    it, so a duplicate needs no edit beyond its site parameter.
+    """
+    schema, bundle = _simple()
+    queries = generate_powerquery(schema, bundle, "default")
+    assert not any(name.startswith("_Site") for name in queries)
+    for name, query in queries.items():
+        assert "SiteName =" in query, name
+        assert '"/_api/web?$select=Title"' in query, name
 
 
 def test_the_site_name_lookup_fails_soft() -> None:
@@ -144,9 +157,9 @@ def test_the_site_name_lookup_fails_soft() -> None:
     would fail every table in the report.
     """
     schema, bundle = _simple()
-    site_name = generate_powerquery(schema, bundle, "default")["_SiteName.pq"]
-    assert "try" in site_name
-    assert "otherwise SiteUrl" in site_name
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "try" in task
+    assert "otherwise SiteUrl," in task
 
 
 def test_row_keys_are_site_qualified() -> None:
@@ -163,16 +176,6 @@ def test_a_null_lookup_does_not_break_the_refresh() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert "if [ProjectId] = null then null" in task
-
-
-def test_a_role_with_no_lists_yields_no_queries_at_all() -> None:
-    """Not even the site-name helper.
-
-    A pack of one file reads like a partial success; the honest answer to
-    "this role deploys nothing here" is nothing.
-    """
-    schema, bundle = _simple()
-    assert generate_powerquery(schema, bundle, "admin") == {}
 
 
 def test_report_respects_site_role_filter() -> None:
