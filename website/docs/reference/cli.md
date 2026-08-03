@@ -52,9 +52,19 @@ A validation failure exits **1**, not 2. `2` is the usage-error code
 `typer` raises before the pipeline runs at all. Gate on non-zero rather
 than on a specific code.
 
-An invalid `mapping.yaml` currently prints a Python traceback above the
-one useful sentence. The message at the bottom is the actionable part; the
-frames above it are noise, not a crash.
+An unreadable or malformed input file is part of exit **1**, not 2 — a
+refused build rather than a misuse of the command line. It is reported as a
+single message naming the file and, where the parser gives one, the line:
+
+```console
+$ dbml-sharepoint build --mapping ./mapping.yaml …
+[ERROR] mapping ./mapping.yaml: while parsing a flow mapping
+  in "./mapping.yaml", line 3, column 12
+expected ',' or '}', but got '<stream end>'
+```
+
+There is no traceback. If you see one, it is a bug in this tool rather than
+a mistake in your file — please report it.
 
 ## `report`
 
