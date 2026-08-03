@@ -18,6 +18,11 @@ from dbml_sharepoint.bundle import (
     emit_bundle,
     write_artifact,
 )
+from dbml_sharepoint.catalogue import (
+    MAPPING_RELPATH,
+    RELEASE_RELPATH,
+    SCHEMA_RELPATH,
+)
 from dbml_sharepoint.extension import SiteContext, resolve_extension
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
@@ -177,6 +182,43 @@ def _echo_warnings(findings: list[Finding]) -> None:
         typer.echo(f"  [WARNING] {f.detail}", err=True)
 
 
+def _project_input(explicit: Path | None, relpath: Path, flag: str) -> Path:
+    """The path the operator gave, or the family standard's, or a refusal.
+
+    `catalogue` declares where a project keeps its three inputs and
+    `test_template_standard` enforces it across all thirty shipped families,
+    so inside a scaffolded project these paths are an already-proven fact
+    rather than a guess. Making the operator retype them on every rebuild --
+    the most repeated action in the tool, since the intended workflow is
+    edit-mapping, rebuild, re-paste -- was asking for something we already
+    had.
+
+    An explicit flag always wins. A default that cannot be overridden is a
+    trap, and pointing `--schema` at a scratch copy while the rest of the
+    project stays put is an ordinary thing to want.
+
+    Defaulting from a LAYOUT is safe in a way that defaulting a site URL
+    would not be: being wrong here means a file that is not there, and this
+    refuses. Being wrong about a target means a bundle armed for someone
+    else's tenant, with only the wrong-site guard between that and a
+    mispaste -- so `--site-url` stays required and is not treated the same
+    way.
+
+    The refusal names the standard path, because for anyone outside a
+    project that message is the entire feature. "Missing option '--schema'"
+    is true and teaches nothing.
+    """
+    if explicit is not None:
+        return explicit
+    if relpath.is_file():
+        return relpath
+    raise typer.BadParameter(
+        f"{flag} was not given, and there is no {relpath} in the current "
+        f"directory. Run this from a project directory (`dbml-sharepoint new` "
+        f"creates one), or pass {flag} explicitly.",
+    )
+
+
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
     detail = f"missing required key {exc}" if isinstance(exc, KeyError) else str(exc)
     typer.echo(f"[ERROR] {what} {path}: {detail}", err=True)
@@ -241,9 +283,15 @@ def validate_site_url(site_url: str) -> None:
 
 @app.command()
 def build(
-    schema: Path = typer.Option(..., help="Path to the DBML schema file."),
-    mapping: Path = typer.Option(..., help="Path to schema/sharepoint-mapping.yaml."),
-    release: Path = typer.Option(..., help="Path to release.yaml."),
+    schema: Path | None = typer.Option(
+        None, help=f"Path to the DBML schema file. Default: {SCHEMA_RELPATH}",
+    ),
+    mapping: Path | None = typer.Option(
+        None, help=f"Path to the mapping YAML. Default: {MAPPING_RELPATH}",
+    ),
+    release: Path | None = typer.Option(
+        None, help=f"Path to release.yaml. Default: {RELEASE_RELPATH}",
+    ),
     site_url: str = typer.Option(..., help="Target SharePoint site URL."),
     site_role: str = typer.Option(
         "default", help="Site role; must match a site_role declared by the mapping's entities.",
@@ -261,11 +309,19 @@ def build(
         help="Extension name; overrides the mapping's `extension:` key. Resolved via entry points.",
     ),
 ) -> None:
-    """Generate deploy.js.txt + manifest from the DBML schema and mapping."""
+    """Generate deploy.js.txt + manifest from the DBML schema and mapping.
+
+    Resolves the three input paths here rather than inside `execute_build`:
+    the defaults are a convenience for a person at a terminal, and
+    `execute_build` is the programmatic entry point the wizard and extension
+    CLIs compose. Those callers know exactly which files they mean, and a
+    path that silently came from the working directory would be a surprise
+    in a library call.
+    """
     execute_build(
-        schema=schema,
-        mapping=mapping,
-        release=release,
+        schema=_project_input(schema, SCHEMA_RELPATH, "--schema"),
+        mapping=_project_input(mapping, MAPPING_RELPATH, "--mapping"),
+        release=_project_input(release, RELEASE_RELPATH, "--release"),
         site_url=site_url,
         site_role=site_role,
         out=out,
@@ -430,15 +486,20 @@ def execute_build(
 
 @app.command()
 def report(
-    schema: Path = typer.Option(..., help="Path to the DBML schema file."),
-    mapping: Path = typer.Option(..., help="Path to schema/sharepoint-mapping.yaml."),
+    schema: Path | None = typer.Option(
+        None, help=f"Path to the DBML schema file. Default: {SCHEMA_RELPATH}",
+    ),
+    mapping: Path | None = typer.Option(
+        None, help=f"Path to the mapping YAML. Default: {MAPPING_RELPATH}",
+    ),
     site_role: str = typer.Option(
         "default", help="Site role; must match a site_role declared by the mapping's entities.",
     ),
     out: Path = typer.Option(Path("./reports"), help="Output directory."),
     release: Path | None = typer.Option(
         None,
-        help="Optional release.yaml; stamps release metadata into data-dictionary.md.",
+        help="Optional release.yaml; stamps release metadata into "
+        f"data-dictionary.md. Default: {RELEASE_RELPATH} when it exists.",
     ),
 ) -> None:
     """Generate reporting queries (Power Query M + SQL views) from the schema.
@@ -448,6 +509,15 @@ def report(
     data-dictionary.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
     """
+    schema = _project_input(schema, SCHEMA_RELPATH, "--schema")
+    mapping = _project_input(mapping, MAPPING_RELPATH, "--mapping")
+    # Not through `_project_input`: this option is genuinely optional and its
+    # absence is a supported mode (an unstamped dictionary), so a missing
+    # release.yaml must not refuse the way a missing schema does. Picking it
+    # up when it IS there means running `report` inside a project stamps the
+    # provenance it could always have had.
+    if release is None and RELEASE_RELPATH.is_file():
+        release = RELEASE_RELPATH
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
 
     # Same data-driven role vocabulary as `build`: a misspelled role would

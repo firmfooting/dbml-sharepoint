@@ -1,14 +1,19 @@
 import hashlib
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from _builders import ID_PK, table
 from _packs import blocks, entities, replaced, with_tail, write_dbml, write_mapping
-from _paths import FIXTURES, PACKAGE
+from _paths import FIXTURES, PACKAGE, SOLUTION_TEMPLATES
 from typer.testing import CliRunner, Result
 
 from dbml_sharepoint import __version__
+from dbml_sharepoint.catalogue import (
+    SCHEMA_RELPATH,
+)
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extension import BaseExtension
 
@@ -1090,3 +1095,91 @@ def test_a_refused_build_still_reports_its_warnings(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "unknown_column_type" in result.output
     assert "unique_without_not_null" in result.output
+
+
+def _project(tmp_path: Path) -> Path:
+    """A directory laid out the way `dbml-sharepoint new` leaves one.
+
+    A real shipped family, copied whole, rather than three fixture files
+    posted into the standard paths. A template is not just its three
+    inputs -- the mapping references sibling files like an enum source, and
+    a hand-built stand-in that omits them tests a project shape nobody ever
+    has. Copying one is also the closest thing to what the wizard does,
+    which is the situation this default exists for.
+    """
+    root = tmp_path / "proj"
+    shutil.copytree(SOLUTION_TEMPLATES / "risk-register", root)
+    return root
+
+
+def test_build_defaults_its_inputs_to_the_project_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inside a scaffolded project the three paths are already known.
+
+    `catalogue` declares them and `test_template_standard` enforces them
+    across all 30 families, so making the operator retype them on every
+    rebuild -- the most repeated action in the tool -- was asking for
+    something we already had.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert (Path("build") / "deploy.js.txt").is_file()
+
+
+def test_an_explicit_path_beats_the_project_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A default that cannot be overridden is a trap, not a convenience."""
+    monkeypatch.chdir(_project(tmp_path))
+    missing = tmp_path / "nowhere.dbml"
+
+    result = runner.invoke(app, [
+        "build", "--schema", str(missing),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+    ])
+
+    # A path that does not exist is the unambiguous probe: the project
+    # default IS present and would have built cleanly, so failing on
+    # `nowhere.dbml` can only mean the explicit value won. Asserting on a
+    # successful build with a different schema would prove the same thing
+    # far more weakly -- the two could agree by accident.
+    assert result.exit_code == 1
+    assert "nowhere.dbml" in result.output
+
+
+def test_a_missing_input_names_the_standard_path_it_looked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Outside a project the error has to teach the layout.
+
+    "Missing option '--schema'" is true and useless: it does not say that
+    running from a project directory would have supplied it. The message
+    IS the feature for anyone who is not in one.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, [
+        "build", "--site-url", "https://example.sharepoint.com/sites/test",
+    ])
+
+    assert result.exit_code == 2
+    assert "--schema" in result.output
+    assert str(SCHEMA_RELPATH) in result.output
+
+
+def test_report_defaults_its_inputs_to_the_project_layout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`report` is the other command driven from a project directory."""
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, ["report"])
+
+    assert result.exit_code == 0, result.output
+    assert (Path("reports") / "guide.md").is_file()
