@@ -149,3 +149,26 @@ def test_the_theme_line_is_skipped_not_shown() -> None:
     template. It is skipped rather than parsed because it wraps
     inconsistently and only half the families carry it."""
     assert not load_solution("visitor-log").summary.startswith("Theme")
+
+
+def test_every_catalogue_entry_is_ascii() -> None:
+    """What the wizard prints must survive a legacy console.
+
+    The picker renders every title into a rich table and the chosen
+    template's summary into a panel, before any build has run. Ten of the
+    thirty families carried typographic punctuation from their README --
+    including `→`, which no Windows console code page can encode, so picking
+    one could raise `UnicodeEncodeError` from inside rich.
+
+    Asserted over the whole shipped catalogue rather than the ten, so a new
+    template introducing a character `_TERMINAL_SPELLINGS` does not know
+    fails here -- visibly, and fixable in one line -- rather than being
+    silently mangled or crashing somebody's wizard.
+    """
+    offenders = [
+        (solution.id, field, sorted({c for c in value if ord(c) > 127}))
+        for solution in available_solutions()
+        for field in ("id", "title", "summary", "prefix")
+        if not (value := getattr(solution, field)).isascii()
+    ]
+    assert not offenders, f"catalogue text a terminal may not encode: {offenders}"
