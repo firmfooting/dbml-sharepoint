@@ -80,6 +80,24 @@ LAYERS: dict[str, str] = {
 _CODE_SPAN = re.compile(r"(`[^`]*`)")
 
 
+def write_page(path: Path, text: str) -> None:
+    """Write one generated page: UTF-8, LF, on every platform.
+
+    `.gitattributes` declares `* text=auto eol=lf`, so this repository's
+    working tree is LF and the committed blobs are LF. Writing in text mode
+    on Windows produced CRLF, which meant every regeneration reported all
+    27 pages as modified when only one had really changed -- drift that is
+    not real, that has to be filtered with `git diff --ignore-cr-at-eol`
+    before it can be reviewed, and that makes a genuine change easy to
+    revert by accident while cleaning up the noise.
+
+    The module docstring promises "rerunning on an unchanged tree produces
+    byte-identical pages". On Windows that was only true if you ignored the
+    bytes at the end of every line.
+    """
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
 def md_escape(text: str) -> str:
     """Escape prose for CommonMark, leaving code spans untouched."""
     parts = _CODE_SPAN.split(text)
@@ -280,14 +298,15 @@ def generate_python_pages() -> None:
     if out_dir.exists():
         shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True)
-    (out_dir / "_category_.json").write_text(
-        '{\n  "label": "Python modules",\n  "position": 2\n}\n', encoding="utf-8",
+    write_page(
+        out_dir / "_category_.json",
+        '{\n  "label": "Python modules",\n  "position": 2\n}\n',
     )
     for layer_position, (layer, label) in enumerate(LAYERS.items(), start=1):
         (out_dir / layer).mkdir()
-        (out_dir / layer / "_category_.json").write_text(
+        write_page(
+            out_dir / layer / "_category_.json",
             f'{{\n  "label": "{label}",\n  "position": {layer_position}\n}}\n',
-            encoding="utf-8",
         )
     for position, (module_name, role) in enumerate(MODULES, start=1):
         module = importlib.import_module(f"dbml_sharepoint.{module_name}")
@@ -309,7 +328,7 @@ def generate_python_pages() -> None:
             else:
                 page += render_constant(name, obj)
         page_path = out_dir / (module_name.replace(".", "/") + ".md")
-        page_path.write_text(page, encoding="utf-8")
+        write_page(page_path, page)
 
 
 _CONTRACT_COMMENT = re.compile(r"^\{#(.*?)#\}", re.DOTALL)
@@ -410,7 +429,7 @@ def generate_templates_page() -> None:
     page += section("Entry-point scripts", scripts)
     page += section("Shared partials", partials)
     page += section("deploy.js phase bodies", phase_bodies)
-    (OUT_DIR / "templates.md").write_text(page, encoding="utf-8")
+    write_page(OUT_DIR / "templates.md", page)
 
 
 
@@ -512,13 +531,14 @@ def generate_conditions_page() -> None:
         "## Normalisation", "",
         docstring_block(conditions), "",
     ]
-    (OUT_DIR / "conditions.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_page(OUT_DIR / "conditions.md", "\n".join(lines) + "\n")
 
 
 def generate_index() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "_category_.json").write_text(
-        '{\n  "label": "API reference",\n  "position": 6\n}\n', encoding="utf-8",
+    write_page(
+        OUT_DIR / "_category_.json",
+        '{\n  "label": "API reference",\n  "position": 6\n}\n',
     )
     page = (
         "---\ntitle: Overview\nsidebar_position: 1\n---\n\n"
@@ -533,7 +553,7 @@ def generate_index() -> None:
         page_ref = "python/" + module_name.replace(".", "/") + ".md"
         page += f"| [`{module_name}`]({page_ref}) | {md_escape(role)} |\n"
     page += "\nTemplates: see the [template reference](templates.md).\n"
-    (OUT_DIR / "index.md").write_text(page, encoding="utf-8")
+    write_page(OUT_DIR / "index.md", page)
 
 
 def write_all() -> None:

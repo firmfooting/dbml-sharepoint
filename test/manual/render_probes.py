@@ -83,7 +83,11 @@ def render_all() -> list[Path]:
     written = []
     for template in probe_templates():
         target = target_for(template)
-        target.write_text(render_one(template), encoding="utf-8")
+        # newline="\n": `.gitattributes` declares `* text=auto eol=lf`, so
+        # the working tree is LF. Writing in text mode on Windows made every
+        # rendered probe show as modified on every run -- drift that is not
+        # real, and that hides a genuine change among fifteen phantom ones.
+        target.write_text(render_one(template), encoding="utf-8", newline="\n")
         written.append(target)
     return written
 
