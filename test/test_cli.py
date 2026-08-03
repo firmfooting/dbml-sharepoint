@@ -6,7 +6,7 @@ from pathlib import Path
 from _builders import ID_PK, table
 from _packs import blocks, entities, replaced, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES, PACKAGE
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.cli import app
@@ -975,3 +975,99 @@ def test_report_reports_config_errors_the_same_way(tmp_path: Path) -> None:
     # good set survives. Clearing here destroyed output on a YAML typo.
     assert (out / "powerquery" / "stale.pq").read_text(encoding="utf-8") == "stale"
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
+
+
+def _fixture_build(out: Path, schema: Path, mapping: Path | None = None) -> Result:
+    return runner.invoke(app, [
+        "build",
+        "--schema", str(schema),
+        "--mapping", str(mapping or FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+
+
+def _minimal_pack(tmp_path: Path, columns: str = "") -> tuple[Path, Path]:
+    """A schema and mapping raising exactly the warnings the caller declares.
+
+    Deliberately not `FIXTURES/simple.dbml`: that pack already raises an
+    `unindexed_filter_columns` warning, so a test asserting "one warning" or
+    "no warnings" against it is really asserting something about a fixture
+    it does not control. Building the pack here makes the warning count a
+    property of the test.
+    """
+    schema = write_dbml(
+        tmp_path,
+        blocks(f"""
+            Table Risk {{
+              {ID_PK}
+              Title nvarchar [not null]
+            {columns}
+            }}
+        """),
+    )
+    return schema, write_mapping(tmp_path, entities("Risk"))
+
+
+def test_a_successful_build_reports_the_warnings_it_raised(tmp_path: Path) -> None:
+    """A build that raises warnings must not print only its success line.
+
+    The manifest is not optional reading and the docs say so, but a build
+    that prints one cheerful line trains the operator that success means
+    there is nothing to look at. The one time it matters, the habit is
+    already formed -- and `unique without not_null` is exactly the kind of
+    thing discovered in production, by a duplicate.
+    """
+    schema, mapping = _minimal_pack(tmp_path, "  Code nvarchar [unique]")
+    out = tmp_path / "build"
+    result = _fixture_build(out, schema, mapping)
+
+    assert result.exit_code == 0, result.output
+    assert "1 validation warning" in result.output
+    assert "unique_without_not_null" in result.output
+
+
+def test_a_clean_build_says_nothing_about_warnings(tmp_path: Path) -> None:
+    """Silence when clean is deliberate, not accidental.
+
+    A "0 warnings" line on every build is noise that makes the non-zero
+    case LESS visible, which is the opposite of the point.
+    """
+    schema, mapping = _minimal_pack(tmp_path)
+    out = tmp_path / "build"
+    result = _fixture_build(out, schema, mapping)
+
+    assert result.exit_code == 0, result.output
+    assert "warning" not in result.output.lower()
+
+
+def test_a_refused_build_names_the_finding_code(tmp_path: Path) -> None:
+    """The message is prose and is free to be reworded in any commit; the
+    code is the identity, and the published catalogue is keyed by it. With
+    only the message on screen there was nothing to carry the operator from
+    the terminal to `reference/findings.md`."""
+    bad = tmp_path / "bad.dbml"
+    bad.write_text(
+        replaced(
+            (FIXTURES / "simple.dbml").read_text(encoding="utf-8"),
+            "Status    status     [not null, default: 'Open']",
+            "Status    persson",
+        ),
+        encoding="utf-8",
+    )
+    result = _fixture_build(tmp_path / "build", bad)
+
+    assert result.exit_code == 1
+    assert "unknown_column_type" in result.output
+
+
+def test_the_manifest_names_the_finding_code(tmp_path: Path) -> None:
+    """Same argument, same reason, on the artifact the docs send people to."""
+    schema, mapping = _minimal_pack(tmp_path, "  Code nvarchar [unique]")
+    out = tmp_path / "build"
+    assert _fixture_build(out, schema, mapping).exit_code == 0
+
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert "unique_without_not_null" in manifest

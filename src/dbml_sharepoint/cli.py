@@ -10,6 +10,7 @@ import typer
 import yaml
 from pyparsing.exceptions import ParseBaseException
 
+from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
     SeedRequiresDemoItemsError,
@@ -145,6 +146,35 @@ def _clear_report_output(out: Path) -> None:
             directory.rmdir()  # refuses when the operator left anything here
     for filename in _REPORT_FILES:
         (out / filename).unlink(missing_ok=True)
+
+
+def _echo_warnings(findings: list[Finding]) -> None:
+    """Say what the build warned about, on the terminal, or say nothing.
+
+    A build that raised warnings used to print one cheerful success line and
+    leave them in the manifest. The manifest is not optional reading and the
+    docs say so, but the terminal was teaching the opposite: success means
+    there is nothing to look at. The one time it matters, the habit is
+    already formed -- and `unique without not_null` is precisely the finding
+    discovered in production, by a duplicate.
+
+    Printed in full rather than counted. Warnings are few by construction,
+    and a build that raises dozens is itself the signal.
+
+    Silence when clean is deliberate. A "0 warnings" line on every build is
+    noise that makes the non-zero case LESS visible, which is the opposite
+    of the point; `test_a_clean_build_says_nothing_about_warnings` pins it.
+
+    stderr, matching the error path: this is diagnostic output, and a
+    pipeline capturing stdout wants the bundle message, not this.
+    """
+    warnings = [f for f in findings if f.severity == "warning"]
+    if not warnings:
+        return
+    plural = "" if len(warnings) == 1 else "s"
+    typer.echo(f"{len(warnings)} validation warning{plural}:", err=True)
+    for f in warnings:
+        typer.echo(f"  [WARNING] {f.detail}", err=True)
 
 
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
@@ -360,11 +390,12 @@ def execute_build(
     if errors:
         typer.echo(f"Validation produced {len(errors)} error(s); aborting JS generation.", err=True)
         for f in errors:
-            typer.echo(f"  [ERROR] {f.message}", err=True)
+            typer.echo(f"  [ERROR] {f.detail}", err=True)
         raise typer.Exit(code=1)
 
     if dry_run:
         typer.echo(f"Dry run complete. Manifest written to {out / 'deploy-manifest.md'}.")
+        _echo_warnings(findings)
         return
 
     try:
@@ -387,6 +418,7 @@ def execute_build(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
     typer.echo(message)
+    _echo_warnings(findings)
 
 
 @app.command()
