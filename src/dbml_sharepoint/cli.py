@@ -223,7 +223,7 @@ def build(
     seed: bool = typer.Option(
         False,
         "--seed",
-        help="Also emit demo-data.js.txt from the mapping's demo_items — "
+        help="Also emit demo-data.js.txt from the mapping's demo_items -- "
         "'[DEMO] '-marked sample rows pasted after deploy.js.txt.",
     ),
     extension: str | None = typer.Option(

@@ -329,7 +329,7 @@ def _join_finding(
             f"{subject} renders {count} join-bearing columns ({names}). "
             f"SharePoint Online refuses a view query with more than "
             f"{JOIN_LIMIT} join operations and returns the view BLANK, at any "
-            f"list size — indexing does not help and a small list does not "
+            f"list size -- indexing does not help and a small list does not "
             f"escape it. Measured 2026-07-31 at 6,000 items: 12 rendered, 13 "
             f"raised SPQueryThrottledException (-2147024749). {shared} {remedy}",
             location=at,
@@ -389,7 +389,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     FindingCode.FIELD_SET_NAME_HAS_MARKER,
                     "error",
-                    f"{ctx}: a field set name cannot contain '@' — that is "
+                    f"{ctx}: a field set name cannot contain '@' -- that is "
                     f"the marker a view's fields uses to reference a set.",
                     location=at_set,
                 ))
@@ -711,7 +711,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                                 "Measured on a matched pair at 6,000 items, the "
                                 "indexed column returned all 60 expected rows and "
                                 "the unindexed one returned 50 of 60 with HTTP 200 "
-                                "and no error — the view does not break, it "
+                                "and no error -- the view does not break, it "
                                 "quietly shows the wrong rows. Selectivity still "
                                 "matters: a blank that most rows share is not a "
                                 "selective filter."
@@ -776,7 +776,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         FindingCode.FORMATTER_FIELD_NOT_DISPLAYED,
                         "error",
                         f"{ctx}: formatting references [${ref}], which this "
-                        f"view does not display — a view formatter can only "
+                        f"view does not display -- a view formatter can only "
                         f"read columns in its own 'fields', so the format "
                         f"would never fire. Add {ref} to fields, or drop the "
                         f"reference.",
@@ -811,7 +811,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         FindingCode.TOTAL_COLUMN_NOT_DISPLAYED,
                         "error",
                         f"{ctx}: totals references {total_col!r}, which is not one "
-                        f"of this view's fields — SharePoint has no column to put "
+                        f"of this view's fields -- SharePoint has no column to put "
                         f"the figure under, so no total appears.",
                         location=at_view,
                     ))
@@ -832,7 +832,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         FindingCode.TOTAL_ON_LOOKUP_COLUMN,
                         "error",
                         f"{ctx}: totals[{total_col}] = {func!r} on a lookup column. "
-                        f"SharePoint can only count a lookup — its stored value is a "
+                        f"SharePoint can only count a lookup -- its stored value is a "
                         f"row id, not a quantity. Use 'count'.",
                         location=at_view,
                     ))
@@ -886,7 +886,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     FindingCode.HIDE_WITHOUT_ALL_ITEMS_VIEW,
                     "error",
-                    f"{hide_ctx}: {col_name!r} cannot be hidden — no 'All "
+                    f"{hide_ctx}: {col_name!r} cannot be hidden -- no 'All "
                     f"Items' view is generated for {entity_name} at all, so "
                     "this key would silently do nothing.",
                     location=at_hide,
@@ -936,7 +936,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "error",
                     f"{hide_ctx}: {col_name!r} is a cross-site reference. It "
                     f"expands to a Choice + URL pair, so no Lookup exists and "
-                    f"it costs no join operation — hiding it removes columns "
+                    f"it costs no join operation -- hiding it removes columns "
                     f"from the recovery view and buys nothing.",
                     location=at_hide,
                 ))
@@ -972,7 +972,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"entities[{entity_name}]: hide_from_all_items is set, but "
                     f"'All Items' renders {len(unsuppressed)} join-bearing "
                     f"columns with nothing hidden, within the measured ceiling "
-                    f"of {JOIN_LIMIT}. Remove it — it degrades the recovery "
+                    f"of {JOIN_LIMIT}. Remove it -- it degrades the recovery "
                     f"view for nothing.",
                     location=Location(Section.ENTITIES, entity=entity_name),
                 ))

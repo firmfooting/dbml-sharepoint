@@ -38,6 +38,11 @@ _NOT_A_SOLUTION = {"README.md", "healthcare.md"}
 
 _SUMMARY_MAX = 140
 
+#: ASCII, because the summary is rendered into the wizard's terminal table and
+#: a Windows console code page cannot encode U+2026. See
+#: `test_messages_bound_for_a_console_are_ascii`.
+_ELLIPSIS = "..."
+
 
 class UnknownSolutionError(LookupError):
     """Named solution does not exist. Carries the available names.
@@ -144,7 +149,12 @@ def _summary(readme: str) -> str:
     if match:
         text = text[: match.start() + 1]
     if len(text) > _SUMMARY_MAX:
-        text = text[: _SUMMARY_MAX - 1].rstrip() + "…"
+        # Reserve exactly as many characters as the marker occupies. This read
+        # `- 1` while the marker was a one-character ellipsis; ASCII-ifying it
+        # to "..." for the wizard's table made every truncated summary two
+        # characters over the cap, which `test_each_summary_fits_a_terminal`
+        # caught on fifteen templates.
+        text = text[: _SUMMARY_MAX - len(_ELLIPSIS)].rstrip() + _ELLIPSIS
     return text
 
 

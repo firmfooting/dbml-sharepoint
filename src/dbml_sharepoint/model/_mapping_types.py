@@ -567,7 +567,7 @@ _REMOVED_SECTIONS: dict[str, str] = {
         "The `columns:` level is required."
     ),
     "hidden_on_display": (
-        "nothing — it never worked on modern lists, which read ShowInEditForm and "
+        "nothing -- it never worked on modern lists, which read ShowInEditForm and "
         "ignore ShowInDisplayForm, so the setting was written, verified and had no "
         "effect. Hide from the Edit form instead, accepting that this hides the "
         "column from Display too:\n"

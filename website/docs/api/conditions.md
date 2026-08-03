@@ -47,7 +47,7 @@ everywhere else in this package.
 | `not_in` | `<Or><IsNull><FieldRef Name="Status"/></IsNull><And><Neq><FieldRef Name="Status"/><Value Type="Text">A</Value></Neq><Neq><FieldRef Name="Status"/><Value Type="Text">B</Value></Neq></And></Or>` | `([$Status] != 'A' && [$Status] != 'B')` | `AND([Status]<>"A",[Status]<>"B")` |
 | `contains` | `<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>` | `indexOf([$Note], 'x') >= 0` | `ISNUMBER(FIND("x",[Note]))` |
 | `begins_with` | `<BeginsWith><FieldRef Name="Note"/><Value Type="Text">ab</Value></BeginsWith>` | `indexOf([$Note], 'ab') == 0` | `LEFT([Note],2)="ab"` |
-| `measure: length` | _not supported — 'measure' cannot be rendered: CAML has no LEN_ | _not supported — 'measure' cannot be rendered: list formatting's length() counts array items and returns 1/0 for other types — it does not measure a string, so the formula would be false for every value_ | `LEN([Note])>10` |
+| `measure: length` | _not supported — 'measure' cannot be rendered: CAML has no LEN_ | _not supported — 'measure' cannot be rendered: list formatting's length() counts array items and returns 1/0 for other types -- it does not measure a string, so the formula would be false for every value_ | `LEN([Note])>10` |
 | `property (person)` | _not supported — CAML cannot reach person or lookup sub-properties_ | `[$Owner.title] != ''` | _not supported — person and lookup operands are unsupported in validation formulas_ |
 
 ## Not yet verified

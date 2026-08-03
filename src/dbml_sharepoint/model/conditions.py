@@ -110,7 +110,7 @@ def _group(kind: str, items: Any, context: str) -> Group:
     if not isinstance(items, list):
         raise ValueError(f"{context}.{kind}: expected a list of conditions")
     if not items:
-        raise ValueError(f"{context}.{kind}: empty group — remove it or give it a condition")
+        raise ValueError(f"{context}.{kind}: empty group -- remove it or give it a condition")
     children = tuple(
         parse_condition(item, f"{context}.{kind}[{index}]") for index, item in enumerate(items)
     )

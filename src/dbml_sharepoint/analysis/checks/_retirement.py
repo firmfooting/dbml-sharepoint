@@ -62,7 +62,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     FindingCode.RETIRED_COLUMN_NOT_RENDERED,
                     "error",
                     f"{ctx}: {col_name!r} is not a rendered column of "
-                    f"{entity_name}. Retire the column the DBML declares — "
+                    f"{entity_name}. Retire the column the DBML declares -- "
                     f"never delete the declaration, or the column stays live "
                     f"on the site and drifts the _UserAddedColumns audit on "
                     f"every refresh, forever.",
@@ -86,7 +86,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     FindingCode.RETIRED_COLUMN_REQUIRED_WITH_A_DEFAULT,
                     "warning",
                     f"{ctx}: {col_name!r} is required with a declared "
-                    f"default — saves succeed, but every new row is stamped "
+                    f"default -- saves succeed, but every new row is stamped "
                     f"with {col.default!r} forever.",
                     location=at,
                 ))
@@ -126,7 +126,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     FindingCode.RETIRED_COLUMN_STILL_INDEXED,
                     "warning",
-                    f"{ctx}: {indexed_col!r} is still in the DBML indexes block — a "
+                    f"{ctx}: {indexed_col!r} is still in the DBML indexes block -- a "
                     f"list's index budget is finite and this one is now dead "
                     f"weight.",
                     location=at,
@@ -192,7 +192,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     FindingCode.COLUMN_VALIDATION_ON_A_RETIRED_COLUMN,
                     "error",
                     f"column_validation[{entity_name}].{ruled}: {ruled!r} is retired, "
-                    f"so it is hidden on the new form — a save rule on it cannot "
+                    f"so it is hidden on the new form -- a save rule on it cannot "
                     f"be satisfied there and would reject every new item. "
                     f"Remove the rule, or the retirement.",
                     location=Location(
@@ -334,7 +334,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             if len(cv_rule.message) > 1024:
                 findings.append(Finding(
                     FindingCode.VALIDATION_MESSAGE_TOO_LONG,
-                    "error", f"{ctx}.{column}: message must be ≤1024 characters.",
+                    "error", f"{ctx}.{column}: message must be <=1024 characters.",
                     location=col_at,
                 ))
             # SharePoint permits a column validation formula to reference
@@ -345,7 +345,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 findings.append(Finding(
                     FindingCode.COLUMN_VALIDATION_REFERENCES_OTHER_COLUMNS,
                     "error",
-                    f"{ctx}.{column}: references {others} — column validation may only "
+                    f"{ctx}.{column}: references {others} -- column validation may only "
                     f"reference its own column; use list_validation for a cross-column rule.",
                     location=col_at,
                 ))
