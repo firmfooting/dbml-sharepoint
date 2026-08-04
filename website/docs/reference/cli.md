@@ -67,12 +67,25 @@ dbml-sharepoint validate          # inside a project directory
 |---|---|---|
 | `--schema PATH` | `10-design/schema.dbml` | Path to the DBML schema file |
 | `--mapping PATH` | `20-configure/mapping.yaml` | Path to the mapping YAML |
-| `--site-role ROLE` | `default` | Which entities to check |
+| `--site-role ROLE` | `default` | Rejected if the mapping does not declare it; does **not** narrow what is checked |
 | `--extension NAME` | mapping's `extension:` | Extension whose extra validators to run |
 
 Prints every finding with its code, then a count. Exits **1** if there are
 errors, **0** otherwise — warnings do not fail it, the same rule `build`
 applies.
+
+**Validation is always project-wide.** `--site-role` does not scope it, and
+an earlier version of this table wrongly said it selected which entities to
+check. A finding under `admin` is reported even when validating with
+`--site-role default`, which is deliberate: a mapping is one document, and
+an error hidden until somebody deploys that role means the mapping reads
+clean right up until the deploy that breaks. `validate_all` takes no role at
+all, and `build` calls it exactly the same way — so this matches what a build
+would report, which is the only useful contract for a pre-build check.
+
+What the flag does do here is reject a role the mapping does not declare, so
+`validate --site-role adnim` fails now rather than at
+`build --site-role adnim` later.
 
 ### `validate` versus `build --dry-run`
 

@@ -6,8 +6,16 @@ import sys
 from pathlib import Path
 
 import pytest
-from _builders import ID_PK, table
-from _packs import blocks, entities, replaced, with_tail, write_dbml, write_mapping
+from _builders import ID_PK, TITLE, table
+from _packs import (
+    blocks,
+    entities,
+    entity,
+    replaced,
+    with_tail,
+    write_dbml,
+    write_mapping,
+)
 from _paths import FIXTURES, PACKAGE, SOLUTION_TEMPLATES
 from typer.testing import CliRunner, Result
 
@@ -1421,3 +1429,47 @@ def test_validate_rejects_an_unknown_site_role(tmp_path: Path) -> None:
 
     assert result.exit_code == 2
     assert "nosuchrole" in result.output
+
+
+def test_validate_checks_every_role_not_just_the_selected_one(tmp_path: Path) -> None:
+    """`--site-role` does NOT narrow what gets validated, and must not.
+
+    Raised by review on #135, which read the option as selecting which
+    entities to check -- the CLI reference said exactly that -- and called
+    the mismatch a bug. The behaviour is right and the documentation was
+    wrong: `validate_all(schema, bundle, extension)` takes no role, and
+    `build` calls it the same way, so validation has always been
+    project-wide.
+
+    Narrowing it would be the actual bug. A mapping is one document; an
+    error under `admin` is an error whether or not this run happens to be
+    deploying `admin`, and hiding it until somebody runs with that role
+    means the mapping validates clean right up until the deploy that
+    breaks. The flag's job here is to reject a role the mapping does not
+    declare -- catching the typo before `build --site-role adnim` does.
+
+    Pinned so that a future "scope validation to the role" change has to
+    argue with a test rather than look like a tidy-up.
+    """
+    mapping = write_mapping(tmp_path, blocks(
+        entities(entity("Project"), entity("AdminOnly", site_role="admin")),
+        """
+        views:
+          AdminOnly:
+            - title: Broken
+              fields: [NoSuchColumn]
+        """,
+    ))
+    schema = write_dbml(tmp_path, blocks(
+        table("Project", ID_PK, TITLE),
+        table("AdminOnly", ID_PK, TITLE),
+    ))
+
+    result = runner.invoke(app, [
+        "validate", "--schema", str(schema), "--mapping", str(mapping),
+        "--site-role", "default",
+    ])
+
+    # The finding belongs to an entity this role would never deploy.
+    assert result.exit_code == 1, result.output
+    assert "AdminOnly" in result.output, result.output
