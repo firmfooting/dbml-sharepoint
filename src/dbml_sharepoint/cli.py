@@ -182,7 +182,9 @@ def _echo_warnings(findings: list[Finding]) -> None:
         typer.echo(f"  [WARNING] {f.detail}", err=True)
 
 
-def _project_input(explicit: Path | None, relpath: Path, flag: str) -> Path:
+def _project_input(
+    explicit: Path | None, relpath: Path, flag: str, *, from_the_project: bool = True,
+) -> Path:
     """The path the operator gave, or the family standard's, or a refusal.
 
     `catalogue` declares where a project keeps its three inputs and
@@ -207,11 +209,26 @@ def _project_input(explicit: Path | None, relpath: Path, flag: str) -> Path:
     The refusal names the standard path, because for anyone outside a
     project that message is the entire feature. "Missing option '--schema'"
     is true and teaches nothing.
+
+    `from_the_project=False` withdraws the default for an input whose
+    provenance is only implied by the others -- `build` passes it for
+    `--release` when the schema or mapping was named explicitly. A release
+    is not self-describing: nothing ties a release.yaml to the schema it
+    documents, so borrowing one across projects produces confident, wrong
+    provenance rather than an obviously missing one. The paths themselves
+    need no such guard; they name the file they load.
     """
     if explicit is not None:
         return explicit
-    if relpath.is_file():
+    if relpath.is_file() and from_the_project:
         return relpath
+    if not from_the_project:
+        raise typer.BadParameter(
+            f"{flag} was not given. It defaults to {relpath} only when the "
+            f"other inputs also come from this project, and they do not -- so "
+            f"defaulting it would stamp this project's release onto somebody "
+            f"else's schema. Pass {flag} explicitly.",
+        )
     raise typer.BadParameter(
         f"{flag} was not given, and there is no {relpath} in the current "
         f"directory. Run this from a project directory (`dbml-sharepoint new` "
@@ -318,10 +335,37 @@ def build(
     path that silently came from the working directory would be a surprise
     in a library call.
     """
+    # The same rule `report` applies, and for a sharper reason: this command
+    # emits the bundle somebody pastes into a tenant. Defaulting the release
+    # is only safe when the schema and mapping came from the project too.
+    # Otherwise `build --schema ../other/... --mapping ../other/...` run from
+    # a project directory stamps THIS project's release tag and schema
+    # version into a deploy bundle describing somebody else's schema --
+    # measured at "Release tag: 1.0.0" on a bundle built from a schema whose
+    # own release said 0.1.0-test. Nothing links a release.yaml to the schema
+    # it describes, so the only safe inference is that all three came from
+    # the same place.
+    #
+    # Refuses rather than skipping the stamp: a release is REQUIRED here, so
+    # unlike `report` there is no unstamped mode to fall back to. That higher
+    # cost is why the threshold is BOTH inputs, not either -- `report` can
+    # afford `schema is None and mapping is None` because being wrong there
+    # only loses a stamp, while the same rule here would outlaw pointing
+    # `--schema` at a scratch copy with the rest of the project left in
+    # place, which `_project_input` documents as an ordinary thing to want
+    # and `test_an_explicit_path_beats_the_project_default` pins.
+    #
+    # One foreign input plus one from the project is the case this lets
+    # through. It is the combination that mostly cannot validate anyway --
+    # another project's schema against this project's mapping -- whereas
+    # both-foreign is unambiguous, and is exactly what was measured.
+    from_the_project = schema is None or mapping is None
     execute_build(
         schema=_project_input(schema, SCHEMA_RELPATH, "--schema"),
         mapping=_project_input(mapping, MAPPING_RELPATH, "--mapping"),
-        release=_project_input(release, RELEASE_RELPATH, "--release"),
+        release=_project_input(
+            release, RELEASE_RELPATH, "--release", from_the_project=from_the_project,
+        ),
         site_url=site_url,
         site_role=site_role,
         out=out,

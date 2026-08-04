@@ -1240,3 +1240,90 @@ def test_report_does_not_borrow_a_release_from_the_working_project(
         if line.startswith("release:")
     )
     assert tag not in dictionary, f"borrowed the working project's release {tag!r}"
+
+
+def test_build_does_not_borrow_a_release_from_the_working_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guard `report` already has, on the command that ships a bundle.
+
+    `report` learned this in the commit before last: infer the project's
+    release ONLY when the schema and mapping came from the project too.
+    `build` kept defaulting unconditionally, so
+    `build --schema ../other/... --mapping ../other/...` run from a project
+    directory stamped THIS project's release tag into a deploy bundle
+    describing somebody else's schema.
+
+    Measured before the fix: a bundle built from `test/fixtures/simple.dbml`
+    (release `0.1.0-test`) inside a copy of `risk-register` reported
+    "Release tag: 1.0.0" -- the risk-register value. Nothing links a
+    release.yaml to the schema it describes, so that is not missing
+    provenance but wrong provenance, on the artifact that actually gets
+    pasted into a tenant.
+
+    Refuses rather than silently skipping the stamp: unlike `report`, a
+    release is REQUIRED by `build`, so there is no unstamped mode to fall
+    back to. Naming `--release` tells the operator exactly what to supply.
+    """
+    monkeypatch.chdir(_project(tmp_path))
+
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+    ])
+
+    assert result.exit_code == 2, result.output
+    assert "--release" in result.output
+
+
+def test_report_stamps_the_project_release_it_discovered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Discovery has to be observed by its EFFECT, not by exit 0.
+
+    `test_report_defaults_its_inputs_to_the_project_layout` above proves the
+    command succeeds inside a project, which it would do just as happily if
+    the release were ignored -- an unstamped dictionary is a supported
+    result, so nothing about a zero exit distinguishes "found and stamped it"
+    from "never looked". The negative case
+    (`..._does_not_borrow_a_release_...`) asserts the tag is ABSENT, so
+    without this its assertion would also hold if the tag could never appear
+    at all. This is the positive half that gives the pair meaning.
+    """
+    project = _project(tmp_path)
+    release_text = (project / RELEASE_RELPATH).read_text(encoding="utf-8")
+    tag = next(
+        line.split(":", 1)[1].strip().strip('"')
+        for line in release_text.splitlines()
+        if line.startswith("release:")
+    )
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["report"])
+
+    assert result.exit_code == 0, result.output
+    dictionary = (Path("reports") / "data-dictionary.md").read_text(encoding="utf-8")
+    assert tag in dictionary, f"discovered release {tag!r} was not stamped"
+
+
+def test_report_succeeds_in_a_project_with_no_release_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing release.yaml is a supported mode, not a refusal.
+
+    This is what separates `--release` from the other two inputs, and the
+    reason it does not go through `_project_input`. Deleting the file from an
+    otherwise complete project is the only way to prove the difference is
+    real rather than incidental to every fixture happening to have one.
+    """
+    project = _project(tmp_path)
+    (project / RELEASE_RELPATH).unlink()
+    monkeypatch.chdir(project)
+
+    result = runner.invoke(app, ["report"])
+
+    assert result.exit_code == 0, result.output
+    assert (Path("reports") / "data-dictionary.md").is_file()
