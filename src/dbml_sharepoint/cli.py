@@ -551,7 +551,9 @@ def validate(
         None, help=f"Path to the mapping YAML. Default: {MAPPING_RELPATH}",
     ),
     site_role: str = typer.Option(
-        "default", help="Site role; must match a site_role declared by the mapping's entities.",
+        "default",
+        help="Site role; must match one the mapping declares. Does NOT narrow "
+             "what is checked -- validation is always project-wide.",
     ),
     extension: str | None = typer.Option(
         None,
@@ -580,6 +582,15 @@ def validate(
     rather than `--dry-run` learning to omit the target.
 
     Writes nothing at all, and takes no `--out`. A question, not an artifact.
+
+    `--site-role` does NOT scope the check, and must not. `validate_all`
+    takes no role and `build` calls it identically, so validation has always
+    been project-wide -- this reports exactly what a build would. Narrowing
+    it would hide an error under `admin` from anyone validating `default`,
+    which means the mapping reads clean until the deploy that breaks. The
+    flag's job here is to reject a role the mapping does not declare, moving
+    a typo's discovery earlier. Pinned by
+    `test_validate_checks_every_role_not_just_the_selected_one`.
     """
     schema = _project_input(schema, SCHEMA_RELPATH, "--schema")
     mapping = _project_input(mapping, MAPPING_RELPATH, "--mapping")
