@@ -241,17 +241,44 @@ def test_the_mapper_refuses_legacy_choice_through_the_predicate() -> None:
 # --- The single-authority pin ------------------------------------------------
 
 
+def _names_a_type_map(node: ast.expr) -> bool:
+    """Whether this name holds a column-name -> declared-type mapping.
+
+    Matched by name because that is all a static check has: `types`,
+    `types_by_col` and `demo_types` are the three spellings in the package,
+    and every one of them contains `type`.
+    """
+    return isinstance(node, ast.Name) and "type" in node.id.lower()
+
+
 def _names_a_column_type(node: ast.expr) -> bool:
     """Whether this operand is a DBML column's declared type.
 
-    Spelled two ways across the package and both are matched: an attribute
-    access (`col.type`, `display_column.type`, `operand.type`) and a local
-    holding one (`col_type`, `column_type`, `declared_type`).
+    Spelled three ways across the package and all three are matched: an
+    attribute access (`col.type`, `display_column.type`, `operand.type`), a
+    local holding one (`col_type`, `column_type`, `declared_type`), and a
+    lookup straight out of a type map (`types_by_col.get(col_name)`,
+    `types[field]`) with no local in between.
+
+    The third was missed until Codex found it on #148, and it had one live
+    offender: `_formatting.py` asked `types_by_col.get(col_name) ==
+    "boolean"`, which is exactly the comparison this pin exists to forbid,
+    written in the one shape the pin could not see. A detector with an
+    unnamed hole is worse than the check it replaces, because the green
+    result reads as coverage.
     """
     if isinstance(node, ast.Attribute):
         return node.attr == "type"
     if isinstance(node, ast.Name):
         return node.id == "type" or node.id.endswith("_type")
+    if isinstance(node, ast.Call):
+        return (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and _names_a_type_map(node.func.value)
+        )
+    if isinstance(node, ast.Subscript):
+        return _names_a_type_map(node.value)
     return False
 
 
@@ -322,9 +349,12 @@ def test_no_module_outside_typemap_compares_a_column_type_to_a_literal() -> None
     # Without this the test is green on a package that compares nothing at
     # all: rename `col.type` to `col.kind` and "no offenders" reads as a clean
     # bill of health rather than as a detector that has stopped detecting.
-    # 32 comparisons outside typemap when this was written, every one against
+    # 33 comparisons outside typemap when this was written, every one against
     # a named constant. It was 40 before #101's eight became predicate calls,
-    # which is the measurement the docstring's count comes from.
+    # which is the measurement the docstring's count comes from. The 33rd is
+    # `_views.py`'s `types_by_col.get(name) not in UNSUPPORTED_INDEX_TYPES`,
+    # which the detector only started seeing when the call shape was added --
+    # it was always allowed, and it was always invisible.
     assert inspected > 25, (
         f"only {inspected} column-type comparisons found -- has `type` been renamed?"
     )
