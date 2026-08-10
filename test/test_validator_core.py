@@ -195,6 +195,34 @@ def test_unknown_type_is_error() -> None:
     assert finding.severity == "error"
     assert "frobnicate" in finding.message
 
+def test_an_enum_array_is_a_known_type() -> None:
+    """`validate` and `map_column` must agree about the same file.
+
+    They diagnose independently -- `build` reports a Finding here and
+    `report` reaches the raising site in typemap, because `report` does not
+    validate -- so a type one of them accepts and the other refuses is how
+    somebody comes to believe the two commands disagree about their schema.
+    """
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]")),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    none_of(validate(schema), FindingCode.UNKNOWN_COLUMN_TYPE)
+
+def test_a_misspelled_enum_array_is_still_an_unknown_type() -> None:
+    """The typo case must stay loud, and it must name the enum it is closest
+    to. `describe_unknown_type` already did this before `[]` meant anything,
+    which is the whole argument for adopting that spelling rather than a
+    naming convention -- but only if it survives the widening."""
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_evnet[]")),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    finding = only(validate(schema), FindingCode.UNKNOWN_COLUMN_TYPE)
+    assert finding.severity == "error"
+    assert "audit_evnet[]" in finding.message
+    assert "audit_event" in finding.message
+
 def test_reserved_author_is_error() -> None:
     schema = make_schema(make_table("PaperRegister", make_column("Author", "person")))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
@@ -339,6 +367,20 @@ def test_orphan_enum_is_warning() -> None:
         make_schema(make_table("Task"), enums=[make_enum("status", "a")]),
     )
     assert only(findings, FindingCode.ORPHAN_ENUM).severity == "warning"
+
+def test_an_enum_used_only_in_its_array_form_is_not_orphan() -> None:
+    """`_collect_referenced_enums` matches `col.type` against the enum names,
+    which `audit_event[]` does not equal -- so the one enum the schema
+    genuinely uses was reported as defined-but-unreferenced.
+
+    A false orphan warning is worse than noise. The remedy it invites is
+    deleting the enum, which deletes the column's choices with it.
+    """
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]")),
+        enums=[make_enum("audit_event", "View", "Edit")],
+    )
+    none_of(validate(schema), FindingCode.ORPHAN_ENUM)
 
 def test_enum_default_not_in_members_is_error() -> None:
     """An enum-typed column whose default is not one of the enum's declared

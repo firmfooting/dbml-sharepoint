@@ -17,7 +17,7 @@ from dbml_sharepoint.model.parser import Column
 
 type FieldKind = Literal[
     "Skip", "Text", "Note", "DateTime", "Choice", "Lookup",
-    "Boolean", "Number", "URL", "User", "Calculated",
+    "Boolean", "Number", "URL", "User", "Calculated", "MultiChoice",
 ]
 
 # DBML type -> SP.FieldCalculated OutputType (SP.FieldType: Text=2,
@@ -208,6 +208,23 @@ def map_column(col: Column, enum_names: set[str]) -> SPField:
             f"{col.name}: [unique] is not supported for SharePoint "
             f"{col.type!r} columns.",
         )
+    if col.default is not None and is_multi_value(col.type):
+        # Gated here rather than dropped in the field body, for the reason
+        # every other gate in this module is: a dropped default is the silent
+        # kind of wrong. The build goes green, the deploy verifies clean, and
+        # the column an author declared a default for simply has none.
+        #
+        # There is no honest coercion available. DBML carries ONE scalar and
+        # the item write shape measured on 2026-08-10 is a collection --
+        # `{"__metadata": {"type": "Collection(Edm.String)"}, "results": [..]}`
+        # -- so a single declared member would have to be guessed into a
+        # one-element set, and an empty one reads back as `null` rather than
+        # `[]`. Neither is a thing DBML said.
+        raise ValueError(
+            f"{col.name}: default: is not supported on a multi-value column. "
+            f"DBML carries one scalar and SharePoint's write shape for "
+            f"{col.type!r} is a collection.",
+        )
     return field
 
 
@@ -241,6 +258,29 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
             name=col.name, kind="Choice", field_type_kind=6,
             required=col.required, unique=col.unique, default=col.default,
             description=description, choices_enum=col.type,
+        )
+
+    if is_multi_value(col.type) and element_type(col.type) in enum_names:
+        # FieldType.MultiChoice = 15, and `SP.FieldChoice` DERIVES from
+        # `SP.FieldMultiChoice` -- `Choices` is a FieldMultiChoice property,
+        # which is why the deployer's existing Choice machinery already
+        # understands the only derived property this type adds.
+        #
+        # No new creation machinery, MEASURED rather than argued. On
+        # 2026-08-10 a plain POST to /fields with
+        # `__metadata: {type: 'SP.FieldMultiChoice'}`, FieldTypeKind 15 and
+        # `Choices: {results: [...]}` returned HTTP 201, and the field read
+        # back TypeAsString="MultiChoice", FieldTypeKind=15, Choices as
+        # Collection(Edm.String). Lookup remains the one field type that
+        # needs the AddField detour; this is not in that class.
+        #
+        # `choices_enum` is the ELEMENT type. `audit_event[]` is not an enum
+        # any schema declares, so resolving the members means asking what one
+        # member of the collection is.
+        return SPField(
+            name=col.name, kind="MultiChoice", field_type_kind=15,
+            required=col.required, unique=col.unique, default=col.default,
+            description=description, choices_enum=element_type(col.type),
         )
 
     if col.ref is not None:

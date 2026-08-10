@@ -114,6 +114,99 @@ def test_calculated_date_maps_to_calculated() -> None:
     assert field.required is False
 
 
+# --- multi-value enums ------------------------------------------------------
+
+MULTI_ENUMS = {"audit_event", *ENUM_NAMES}
+
+
+def test_an_enum_array_is_a_multichoice_field() -> None:
+    """FieldType.MultiChoice is 15, and SharePoint's own read-back of a field
+    created this way on 2026-08-10 reported TypeAsString="MultiChoice",
+    FieldTypeKind=15 and Choices as Collection(Edm.String).
+
+    The backing enum is the ELEMENT type: `Choices` is populated from the
+    members of `audit_event`, not from an enum literally called
+    `audit_event[]`, which is not a thing any schema declares.
+    """
+    field = map_column(Column(name="Events", type="audit_event[]"), MULTI_ENUMS)
+
+    assert field.kind == "MultiChoice"
+    assert field.field_type_kind == 15
+    assert field.choices_enum == "audit_event"
+
+
+def test_a_multi_value_column_keeps_its_required_flag() -> None:
+    """`[not null]` composes normally on an array declaration -- pydbml parses
+    it -- and Required is an ordinary field property SharePoint honours on a
+    MultiChoice. Nothing about arity changes it."""
+    field = map_column(
+        Column(name="Events", type="audit_event[]", required=True), MULTI_ENUMS,
+    )
+    assert field.required is True
+
+
+def test_a_misspelled_enum_array_is_still_refused_by_name() -> None:
+    """THE argument for `enum_name[]` as the authored syntax: it was ALREADY a
+    named build error that names the enum it is closest to, so adopting it
+    widens an existing refusal instead of opening a new parse surface.
+
+    That property is only worth anything if it survives the widening. A
+    naming convention was rejected on the standing rule that a typo must
+    never silently do nothing, and this is the assertion that keeps
+    `audit_evnet[]` loud.
+    """
+    with pytest.raises(ValueError) as raised:
+        map_column(Column(name="Events", type="audit_evnet[]"), MULTI_ENUMS)
+
+    assert "unknown type 'audit_evnet[]'" in str(raised.value)
+    assert "audit_event" in str(raised.value)
+
+
+def test_an_array_of_something_that_is_not_an_enum_is_refused() -> None:
+    """`person[]` and a multi-value lookup are a SEPARATE issue with a
+    separate cost profile: both stay join-bearing, and whether one costs a
+    single join or one per selected value is unmeasured. The arity predicate
+    is deliberately type-agnostic, so this is the refusal that stops it
+    letting them through the back door."""
+    with pytest.raises(ValueError, match="unknown type 'person\\[\\]'"):
+        map_column(Column(name="Owners", type="person[]"), MULTI_ENUMS)
+
+
+def test_unique_on_a_multi_value_column_is_refused() -> None:
+    """`[unique]` composes on an array declaration, so an author can write it.
+    SharePoint cannot honour it: Microsoft lists "Choice (multi-valued)" as a
+    type that cannot enforce unique values, and a POST setting
+    EnforceUniqueValues on one returned HTTP 500 on 2026-08-10.
+
+    The complaint has to be about uniqueness, not about the type being
+    unknown -- which is what it said before the type was recognised.
+    """
+    with pytest.raises(ValueError) as raised:
+        map_column(
+            Column(name="Events", type="audit_event[]", unique=True), MULTI_ENUMS,
+        )
+
+    assert "[unique] is not supported" in str(raised.value)
+
+
+def test_a_default_on_a_multi_value_column_is_refused() -> None:
+    """DBML carries ONE scalar default and the write shape is a collection --
+    `{"__metadata": {"type": "Collection(Edm.String)"}, "results": [...]}`,
+    measured on 2026-08-10. There is no honest coercion between the two.
+
+    Refused rather than dropped, because dropping it is the silent kind of
+    wrong: the build goes green, the deploy verifies clean, and the column an
+    author declared a default for simply does not have one.
+    """
+    with pytest.raises(ValueError) as raised:
+        map_column(
+            Column(name="Events", type="audit_event[]", default="View"), MULTI_ENUMS,
+        )
+
+    assert "default" in str(raised.value)
+    assert "Events" in str(raised.value)
+
+
 # --- unknown-type diagnosis -------------------------------------------------
 
 
