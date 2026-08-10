@@ -1383,12 +1383,24 @@ def _condition_problems(
     # build_schema_json instead of a finding: a traceback where the author
     # needed a sentence.
     #
-    # Only operators normalisation INTRODUCED are reported here. Anything
-    # the author wrote was already judged above, in their own vocabulary,
-    # and repeating it under a rewritten name would read as two faults.
-    authored_ops = {leaf.op for leaf in leaves(condition)}
+    # Only leaves normalisation INTRODUCED are reported here. Anything the
+    # author wrote was already judged above, in their own vocabulary, and
+    # repeating it under a rewritten name would read as two faults.
+    #
+    # By IDENTITY, not by operator name, and the difference is a hole rather
+    # than a nicety. `_push` returns the authored object unchanged when it
+    # does not flip a leaf and builds a new one when it does, so identity
+    # answers the question exactly. Names only approximate it, and the
+    # approximation failed in the direction that reports nothing: an authored
+    # `contains` anywhere in the tree made this skip the `contains` that
+    # normalisation had just introduced somewhere else. Paired with the
+    # standalone-refusal skip above, `none_of[not_contains(Note, "")]` beside
+    # any authored `contains` was judged by neither pass -- no finding, and
+    # then a _RefusalError out of `to_caml` at generation time, which is the
+    # traceback this pass exists to prevent.
+    authored = {id(leaf) for leaf in leaves(condition)}
     for leaf in leaves(normalise(condition)):
-        if leaf.op in authored_ops or leaf.field not in rendered:
+        if id(leaf) in authored or leaf.field not in rendered:
             continue
         for _code, problem in _render_problems(leaf, target, types, context):
             # Its own code, not the inner one: the author never wrote the

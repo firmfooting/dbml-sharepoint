@@ -1348,6 +1348,49 @@ def test_a_relational_leaf_under_none_of_is_still_judged_as_authored() -> None:
     assert only(findings, FindingCode.CONDITION_DATE_UNPARSEABLE).severity == "error"
 
 
+def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name() -> None:
+    """The exemption above hands the leaf to the second pass. This is the
+    shape where the second pass used to drop it too, so nothing judged it.
+
+    That pass skipped by OPERATOR NAME -- "the author wrote a `contains`
+    somewhere, so a `contains` here is theirs" -- and the two skips compose
+    into silence: the first pass steps over the authored `not_contains`
+    because CAML never sees it, and the second steps over the `contains`
+    normalisation put in its place because a sibling rule happens to be
+    spelled the same. The empty needle then reaches `to_caml` and comes back
+    as a `_RefusalError` at generation time, which is precisely the traceback
+    the second pass was added to prevent.
+
+    The sibling is the whole experiment, so it is asserted to be innocent:
+    `contains(Status, "x")` renders, and removing it must not be what makes
+    the finding appear.
+    """
+    types = {"Note": "nvarchar", "Status": "nvarchar"}
+    condition = parse_condition(
+        {"all_of": [
+            {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]},
+            {"field": "Status", "op": "contains", "value": "x"},
+        ]},
+        "w",
+    )
+
+    findings = _findings(condition, types=types)
+
+    assert only(findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE).severity == "error"
+    # Same answer without the sibling, so the finding is about the empty
+    # needle rather than about the pair.
+    alone = parse_condition(
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]}, "w",
+    )
+    assert only(
+        _findings(alone, types=types), FindingCode.CONDITION_NEGATION_UNRENDERABLE,
+    ).severity == "error"
+    # And the renderer does refuse, which is what makes reporting nothing a
+    # traceback rather than a permissive build.
+    with pytest.raises(ValueError, match="non-empty 'value'"):
+        to_caml(condition, types)
+
+
 def test_a_lookup_value_accessor_compares_as_text() -> None:
     """Regression: a lookup is int-typed in DBML, so typing the literal by the
     COLUMN rejected every real title as 'not a number' and left lookupId the
