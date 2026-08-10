@@ -5,6 +5,7 @@ import datetime as dt
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.typemap import is_hyperlink, is_person
 from dbml_sharepoint.analysis.validator import (
     _DATE_TYPES,
     _DEMO_ISO_DATE,
@@ -112,7 +113,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # non-string there, so an invalid mapping surfaced as a build
                 # traceback rather than a finding. A validator must refuse
                 # everything its generator refuses, and refuse it first.
-                if col_type == "hyperlink":
+                if is_hyperlink(col_type):
                     if isinstance(value, dict):
                         unknown = set(value) - {"url", "description"}
                         if unknown or "url" not in value:
@@ -183,7 +184,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                                 location=at,
                             ))
                     continue
-                if col_type == "person":
+                if is_person(col_type):
                     if value != "@me":
                         findings.append(Finding(
                             FindingCode.DEMO_PERSON_VALUE_UNSUPPORTED,
