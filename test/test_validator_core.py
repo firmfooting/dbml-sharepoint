@@ -724,19 +724,22 @@ def test_dbml_indexes_reject_a_multi_value_column() -> None:
 def test_a_multi_value_member_holding_the_separator_is_refused() -> None:
     """The export joins members with "; ", so a member containing it makes
     the cell impossible to split back. Green build, clean deploy, and a
-    silently wrong number in somebody's report."""
+    silently wrong number in somebody's report.
+
+    Schema-only: reads nothing but `schema` and its own enums, so it fires
+    from `validate()` rather than `validate_against_mapping` -- no bundle
+    needed to reach it."""
     schema = make_schema(
         make_table("Platform", make_column("Events", "audit_event[]")),
         enums=[make_enum("audit_event", "View", "Permission change; revoked")],
     )
 
-    findings = validate_against_mapping(schema, make_bundle(entities=["Platform"]))
-
     finding = only(
-        findings, FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
     )
     assert finding.severity == "error"
     assert "Permission change; revoked" in finding.message
+    assert "audit_event" in finding.message
 
 
 def test_the_same_enum_on_a_scalar_column_is_not_refused() -> None:
@@ -749,8 +752,7 @@ def test_the_same_enum_on_a_scalar_column_is_not_refused() -> None:
     )
 
     none_of(
-        validate_against_mapping(schema, make_bundle(entities=["Platform"])),
-        FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
     )
 
 
@@ -763,8 +765,7 @@ def test_a_bare_semicolon_in_a_member_is_not_refused() -> None:
     )
 
     none_of(
-        validate_against_mapping(schema, make_bundle(entities=["Platform"])),
-        FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
     )
 
 
@@ -776,8 +777,7 @@ def test_every_offending_member_is_named_once_per_column() -> None:
     )
 
     finding = only(
-        validate_against_mapping(schema, make_bundle(entities=["Platform"])),
-        FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
     )
     assert "a; b" in finding.message
     assert "c; d" in finding.message

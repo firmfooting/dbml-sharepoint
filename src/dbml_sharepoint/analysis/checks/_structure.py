@@ -2,7 +2,6 @@
 """Entities, cross-site references, indexes, deferred lookups, calculated columns."""
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
-from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.lookups import (
     DEFAULT_DISPLAY_COLUMN,
@@ -243,44 +242,6 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"Indexed=true, reads it back and fails when it did not "
                     f"stick. Name an indexable column as display_column.",
                 ))
-
-    # The exported cell joins a multi-value column's members with
-    # `MULTI_VALUE_JOIN`, so a member containing that string makes the
-    # export unsplittable: a set holding it exports to the same text as
-    # a set holding its parts.
-    #
-    # COLUMN-driven, not enum-driven. Only a multi-value cell is
-    # joined, so the same enum on a scalar Choice is harmless -- and a
-    # rule that refused it would be stronger than what the export
-    # actually requires, which is the failure AGENTS.md warns about.
-    #
-    # An error rather than a warning because the deploy is fine and
-    # that is exactly the danger: the list works, the form works, and
-    # the wrong number turns up in a report months later with nothing
-    # anywhere able to see it.
-    for table in schema.tables:
-        for export_col in table.columns:
-            if is_multi_value(export_col.type):
-                offending = ambiguous_members(
-                    vc.enum_by_name[element_type(export_col.type)].members
-                    if element_type(export_col.type) in vc.enum_by_name
-                    else [],
-                )
-                if offending:
-                    findings.append(Finding(
-                        FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
-                        f"{table.name}.{export_col.name}: enum member(s) "
-                        f"{', '.join(repr(m) for m in offending)} contain "
-                        f'"{MULTI_VALUE_JOIN}", the separator the exported cell '
-                        f"joins members with. A set holding such a member "
-                        f"exports to the same text as a set holding its parts, "
-                        f"so the export cannot be split back into what the row "
-                        f"held. Rename the member, or model the column as a "
-                        f"child entity with one row per value.",
-                        location=Location(
-                            Section.SCHEMA, entity=table.name, column=export_col.name,
-                        ),
-                    ))
 
     # Every entity in the mapping must exist in the schema.
     for entity_name in bundle.mapping.entities:

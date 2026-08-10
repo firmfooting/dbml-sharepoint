@@ -5,6 +5,7 @@ import re
 from dataclasses import replace
 
 from dbml_sharepoint.analysis import typemap
+from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 
 # Re-exported, not merely used. `extension.py` documents `Finding` as the
 # reporting type and `generators/manifestgen.py` consumes it, so extension
@@ -415,6 +416,38 @@ def _check_column(
             f"says what was declared. Remove the default, and set the value "
             f"on the item instead.",
         ))
+
+    if typemap.is_multi_value(col.type):
+        # The exported cell joins a multi-value column's members with
+        # `MULTI_VALUE_JOIN`, so a member containing that string makes the
+        # export unsplittable: a set holding it exports to the same text as
+        # a set holding its parts.
+        #
+        # COLUMN-driven, not enum-driven. Gated on `is_multi_value(col.type)`
+        # rather than on the enum, so the same enum backing a scalar Choice
+        # is untouched -- a rule that refused it too would be stronger than
+        # what the export actually requires, which is the failure AGENTS.md
+        # warns about.
+        #
+        # An error rather than a warning because the deploy is fine and that
+        # is exactly the danger: the list works, the form works, and the
+        # wrong number turns up in a report months later with nothing
+        # anywhere able to see it.
+        element = typemap.element_type(col.type)
+        offending = ambiguous_members(enums.get(element, []))
+        if offending:
+            findings.append(_report(
+                FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+                at,
+                f"enum {element!r} member(s) "
+                f"{', '.join(repr(m) for m in offending)} contain "
+                f'"{MULTI_VALUE_JOIN}", the separator the exported cell '
+                f"joins members with. A set holding such a member exports "
+                f"to the same text as a set holding its parts, so the "
+                f"export cannot be split back into what the row held. "
+                f"Rename the member in {element!r}, or model the column as "
+                f"a child entity with one row per value.",
+            ))
 
     if col.ref is not None and col.ref.target_table not in tables:
         findings.append(_report(

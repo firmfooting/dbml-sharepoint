@@ -1,8 +1,8 @@
 """What an exported multi-value cell is separated by, and what breaks it.
 
 Both sides need this fact and neither owns it. `generators/reportgen.py`
-joins a set with the separator; `analysis/checks/_structure.py` refuses a
-member that contains it. `AGENTS.md` names the pattern -- where both sides
+joins a set with the separator; `analysis/validator.py` refuses a member
+that contains it. `AGENTS.md` names the pattern -- where both sides
 need the same fact, it lives in a shared module, `analysis/joins.py` being
 the worked example -- and the alternative here was worse in both
 directions: `analysis/` importing from `generators/` inverts the layering,
@@ -18,8 +18,9 @@ from collections.abc import Iterable
 #: (`Permission change`), so a comma reads as punctuation inside one, and a
 #: comma in a cell is the character every CSV consumer downstream of a Power
 #: BI export handles differently. A semicolon is what SharePoint itself puts
-#: between members on the wire, so it is the separator a reader already
-#: associates with these columns.
+#: between members on the wire -- measured 2026-08-10, an `<Eq>` against the
+#: `;#`-delimited string matched the whole set -- so it is the separator a
+#: reader already associates with these columns.
 MULTI_VALUE_JOIN = "; "
 
 
