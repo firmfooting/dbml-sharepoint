@@ -500,13 +500,18 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
             at,
         )
     if leaf.op in ("not_contains", "not_begins_with") and target == CAML:
-        # The generic message below names an operator the author very
-        # likely never wrote: `none_of[contains]` normalises to
-        # `not_contains` before it reaches here, so "operator
-        # 'not_contains' has no rendering" reads as a tool defect. It is a
-        # platform one, it is permanent, and the two targets where the same
-        # condition DOES render are worth naming rather than leaving the
-        # author to discover.
+        # The generic message below names an operator the author may never
+        # have written: `none_of[contains]` normalises to `not_contains`
+        # before it reaches here, so "operator 'not_contains' has no
+        # rendering" reads as a tool defect. It is a platform one, it is
+        # permanent, and the two targets where the same condition DOES render
+        # are worth naming rather than leaving the author to discover.
+        #
+        # Both sources are named, because this cannot tell them apart and
+        # naming only one was backwards for the other. The last sentence is
+        # not padding: `none_of[not_contains]` is the shape that WAS refused
+        # here (#20) and now builds, so an author who reads this message on a
+        # neighbouring rule must not conclude their working one is doomed.
         positive = NEGATION[leaf.op]
         raise _reject(
             FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
@@ -515,8 +520,10 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
             f"<BeginsWith> and no negation of either -- its <Where> element has "
             f"no <Not>, and <NotIncludes> negates <Includes>, which is a "
             f"multi-value membership test rather than a substring match. This "
-            f"is a SharePoint limit, not one this tool can lift. (If you wrote "
-            f"none_of[{positive}], that is where this came from.) The same "
+            f"is a SharePoint limit, not one this tool can lift. You either "
+            f"wrote {leaf.op!r} directly or wrote none_of[{positive}], which "
+            f"normalises to it; none_of[{leaf.op}] is NOT this case and does "
+            f"render, since it normalises back to {positive!r}. The same "
             f"condition renders on column_validation/list_validation and on "
             f"form_visibility; for a view, filter the other way round, or "
             f"precompute the test into a column and filter on that",
@@ -668,8 +675,79 @@ def _looks_like_a_date(value: object) -> bool:
     return False
 
 
+def _reject_meaningless_now(
+    value: object, column_type: str, field: str, target: str, where: Location,
+) -> None:
+    """`now` on a DATE column would silently render as the literal string
+    "now" inside a DateTime value, which SharePoint accepts and answers with
+    the wrong rows. Caught here, named, and pointed at `today`.
+
+    A function rather than an inline guard because it has to run from two
+    places. `in` recurses through `_leaf` per member and so met it; CAML
+    renders `not_in` by looping the members itself, and that loop called only
+    `_check_date_literal`, for which `now` on a non-datetime column is merely
+    an unparseable literal. Both spellings refused, so nothing wrong was ever
+    emitted -- but only one of the two messages named `today`, which is the
+    fix (#21).
+    """
+    if (
+        isinstance(value, str)
+        and _NOW.match(value)
+        and column_type in _DATE_TYPES
+        and column_type not in _DATETIME_TYPES
+    ):
+        raise _reject(
+            FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
+            target,
+            f"the 'now' sentinel needs a datetime column; {field!r} is "
+            f"{column_type!r}, which has no time of day -- use 'today'",
+            where,
+        )
+
+
+def _reject_sentinel_with_a_substring_operator(
+    value: object, column_type: str, op: str, target: str, where: Location,
+) -> None:
+    """A sentinel is a POINT IN TIME. Comparison, ordering and set membership
+    mean something against one; a substring test does not. What the renderers
+    emit for the combination -- verified by running them, not by reasoning:
+
+        contains + now  ->  ISNUMBER(FIND(NOW(),[OccurredAt]))
+        begins_with     ->  LEFT([OccurredAt],3)=NOW()
+
+    That 3 is len('now'): the sentinel's SPELLING reaching the formula as a
+    character count. It is measuring the word, not the date, and that is
+    decidable here without knowing anything about how SharePoint would treat
+    either formula -- which nobody does, since no probe has ever sent one.
+    Refusing needs no such answer.
+
+    Called from `_leaf` ahead of the non-text-column guard, and that ordering
+    is the whole reason this is a function. It lived inside
+    `_check_date_literal` until 2026-08-10 and could not fire from there:
+    every sentinel column type is a date type, every date type is in
+    `_NON_TEXT_FOR_SUBSTRING`, and that guard ran first -- so a rule with a
+    row in the published catalogue was unreachable by any input (#140). The
+    generic message it lost to is true and says less.
+
+    It does NOT disturb the ordering `_leaf`'s own comment records. That one
+    is about type RESOLUTION -- the real declared type before the measure
+    substitution -- and this guard reads `declared_type` and runs before the
+    substitution too.
+    """
+    if op in _TEXT_OPS and (_is_today(value, column_type) or _is_now(value, column_type)):
+        raise _reject(
+            FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
+            target,
+            f"{value!r} is a point in time and {op!r} is a substring test, so "
+            f"the two cannot be combined -- the sentinel would reach the formula "
+            f"as its own spelling rather than as a date. Use a comparison "
+            f"(eq/neq/lt/leq/gt/geq) or a set test (in/not_in)",
+            where,
+        )
+
+
 def _check_date_literal(
-    value: object, column_type: str, target: str, where: Location, op: str = "eq",
+    value: object, column_type: str, target: str, where: Location,
 ) -> None:
     """A date column's literal, once `today` and `now` have had their turn,
     must be a real date. Nothing downstream checks it, and no probe has
@@ -689,29 +767,10 @@ def _check_date_literal(
     if column_type not in _DATE_TYPES or value is None:
         return
     if _is_today(value, column_type) or _is_now(value, column_type):
-        # A sentinel is a POINT IN TIME. Comparison, ordering and set
-        # membership mean something against one; a substring test does not,
-        # and the exemption used to wave it past this guard. What the
-        # renderers then emit — verified by running them, not by reasoning:
-        #
-        #   contains + now  ->  ISNUMBER(FIND(NOW(),[OccurredAt]))
-        #   begins_with     ->  LEFT([OccurredAt],3)=NOW()
-        #
-        # That 3 is len('now'): the sentinel's SPELLING reaching the formula
-        # as a character count. It is measuring the word, not the date, and
-        # that is decidable here without knowing anything about how
-        # SharePoint would treat either formula — which nobody does, since
-        # no probe has ever sent one. Refusing needs no such answer.
-        if op in _TEXT_OPS:
-            raise _reject(
-                FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
-                target,
-                f"{value!r} is a point in time and {op!r} is a substring test, so "
-                f"the two cannot be combined -- the sentinel would reach the formula "
-                f"as its own spelling rather than as a date. Use a comparison "
-                f"(eq/neq/lt/leq/gt/geq) or a set test (in/not_in)",
-                where,
-            )
+        # A sentinel is not a literal, so there is nothing here to parse. The
+        # one combination it cannot survive -- a substring operator -- is
+        # refused by `_reject_sentinel_with_a_substring_operator`, which runs
+        # earlier in `_leaf` and says why it has to.
         return
     if _looks_like_a_date(value):
         return
@@ -886,6 +945,14 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
     # is_not_null on the same column hits — the tool contradicting itself,
     # and routing the author to whichever spelling the guard misses.
     declared_type = _column_type(leaf.field, types, target, where)
+    # Ahead of the type guard below, and deliberately: both refuse a substring
+    # test against `today`/`now`, and this one says which of the two facts is
+    # the author's problem. The type guard subsumed it entirely until
+    # 2026-08-10, leaving a rule with a published catalogue row that nothing
+    # could reach -- see the helper.
+    _reject_sentinel_with_a_substring_operator(
+        leaf.value, declared_type, leaf.op, target, where,
+    )
     if leaf.op in _TEXT_OPS and declared_type in _NON_TEXT_FOR_SUBSTRING:
         raise _reject(
             FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
@@ -922,7 +989,11 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             # conjunction rather than once per set member.
             ref = f'<FieldRef Name="{leaf.field}"/>'
             for item in leaf.value:
-                _check_date_literal(item, column_type, target, where, leaf.op)
+                # Same order as the leaf path below, so `not_in [now]` and
+                # `in [now]` answer identically rather than differing by
+                # which branch of this function happened to loop.
+                _reject_meaningless_now(item, column_type, leaf.field, target, where)
+                _check_date_literal(item, column_type, target, where)
             parts = [
                 f"<Neq>{ref}{_caml_value(column_type, item, where)}</Neq>"
                 for item in leaf.value
@@ -945,24 +1016,8 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             where,
         )
 
-    # `now` on a DATE column would silently render as the literal string
-    # "now" inside a DateTime value, which SharePoint accepts and answers
-    # with the wrong rows. Caught here, named, and pointed at `today`.
-    if (
-        isinstance(leaf.value, str)
-        and _NOW.match(leaf.value)
-        and column_type in _DATE_TYPES
-        and column_type not in _DATETIME_TYPES
-    ):
-        raise _reject(
-            FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
-            target,
-            f"the 'now' sentinel needs a datetime column; {leaf.field!r} is "
-            f"{column_type!r}, which has no time of day -- use 'today'",
-            where,
-        )
-
-    _check_date_literal(leaf.value, column_type, target, where, leaf.op)
+    _reject_meaningless_now(leaf.value, column_type, leaf.field, target, where)
+    _check_date_literal(leaf.value, column_type, target, where)
 
     if _is_now(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
@@ -1228,6 +1283,18 @@ def condition_findings(
     ]
 
 
+def _dealias(node: Condition) -> Condition:
+    """The same tree with a fresh `Leaf` object at every position.
+
+    Structurally identical and equal by value; only object identity differs,
+    which is exactly what the passes in `_condition_problems` use to mean
+    "this occurrence".
+    """
+    if isinstance(node, Leaf):
+        return replace(node)
+    return Group(node.kind, tuple(_dealias(child) for child in node.children))
+
+
 def _condition_problems(
     condition: Condition,
     *,
@@ -1240,10 +1307,32 @@ def _condition_problems(
     """The shared body. `context` renders the message prefixes; the caller
     supplies `at.path` for it when it wants locations back as well."""
     problems: list[_Problem] = []
+    # EVERY LEAF A DISTINCT OBJECT, before anything below keys on one. Three
+    # things here identify a leaf by `id` -- the operand suppression set, the
+    # set normalisation flips, and the attribution of a normalised fault to
+    # its origin -- and all three mean the leaf's OCCURRENCE in this tree.
+    # `parse_condition` never shares a leaf, so a mapping file cannot tell the
+    # difference; a caller building a tree in Python can, and did: one `Leaf`
+    # placed both bare and under `none_of` made `_flipped_by_normalisation`
+    # report the object as flipped, so the bare occurrence was skipped as
+    # though it were the negated one. Validation passed and `to_caml` raised
+    # on it -- a traceback where the whole point was a named finding.
+    #
+    # De-aliased rather than re-keyed on a path: a path would have to be
+    # threaded through all three, and the only property any of them wants is
+    # that two occurrences are two things. `Leaf` is frozen, so the copy is
+    # equal to the original everywhere it is compared.
+    condition = _dealias(condition)
     # Keyed by identity, not by field name: two leaves on one column can
     # fail for different reasons, and reporting only the first costs the
     # author another build.
     suppressed: set[int] = set()
+    #: What each AUTHORED leaf has already been reported for, by `id`. The
+    #: normalisation pass at the end judges the leaves that replace a given
+    #: authored leaf, so an operand fault it finds there is the fault already
+    #: reported for THAT leaf, worded around the other operator -- and only
+    #: for that leaf.
+    reported: dict[int, set[FindingCode]] = {}
     unknown_ops = {leaf.op for leaf in leaves(condition) if leaf.op not in NEGATION}
     # Bounds are measured after normalisation, since negation expands each
     # leaf into any_of[is_null, flipped] and `in` into one leaf per value.
@@ -1290,6 +1379,7 @@ def _condition_problems(
             # suppressed, so one bad operand cannot mask any other fault.
             problems.extend((code, message, leaf.field) for code, message in operand)
             suppressed.add(id(leaf))
+            reported.setdefault(id(leaf), set()).update(code for code, _ in operand)
 
     if unknown_ops:
         # normalise() needs a negation for every operator, so it cannot run
@@ -1298,13 +1388,27 @@ def _condition_problems(
         # into a traceback.
         return _dedupe(problems)
 
+    flipped = _flipped_by_normalisation(condition)
     for leaf in leaves(condition):
         if id(leaf) in suppressed or leaf.field not in rendered:
             continue
-        problems.extend(
-            (code, message, leaf.field)
-            for code, message in _render_problems(leaf, target, types, context)
-        )
+        if id(leaf) in flipped and _renders_only_inverted(leaf.op, target):
+            # This leaf never reaches the renderer: `_push` flips it first, so
+            # judging it standalone judges an operator that is never emitted.
+            # The build refused `none_of[not_contains]` on a rule the tool had
+            # just proved it could emit -- `all_of[contains]`, straight to
+            # <Contains> (#20). Whatever normalisation puts in its place is
+            # judged by the second pass below.
+            #
+            # Narrow on purpose. A blanket "skip any authored leaf
+            # normalisation replaces" would also skip relational leaves under
+            # `none_of`, whose faults are then reported only by that second
+            # pass, in a rewritten vocabulary and under a code about the
+            # negation rather than about the fault.
+            continue
+        rendering = _render_problems(leaf, target, types, context)
+        problems.extend((code, message, leaf.field) for code, message in rendering)
+        reported.setdefault(id(leaf), set()).update(code for code, _ in rendering)
 
     # Second pass, over the tree the RENDERER will actually see. De Morgan
     # normalisation rewrites operators — none_of[contains] becomes
@@ -1313,25 +1417,115 @@ def _condition_problems(
     # build_schema_json instead of a finding: a traceback where the author
     # needed a sentence.
     #
-    # Only operators normalisation INTRODUCED are reported here. Anything
-    # the author wrote was already judged above, in their own vocabulary,
-    # and repeating it under a rewritten name would read as two faults.
-    authored_ops = {leaf.op for leaf in leaves(condition)}
-    for leaf in leaves(normalise(condition)):
-        if leaf.op in authored_ops or leaf.field not in rendered:
+    # Only leaves normalisation INTRODUCED are reported here. Anything the
+    # author wrote was already judged above, in their own vocabulary, and
+    # repeating it under a rewritten name would read as two faults.
+    #
+    # By IDENTITY, not by operator name, and the difference is a hole rather
+    # than a nicety. `_push` returns the authored object unchanged when it
+    # does not flip a leaf and builds a new one when it does, so identity
+    # answers the question exactly. Names only approximate it, and the
+    # approximation failed in the direction that reports nothing: an authored
+    # `contains` anywhere in the tree made this skip the `contains` that
+    # normalisation had just introduced somewhere else. Paired with the
+    # standalone-refusal skip above, `none_of[not_contains(Note, "")]` beside
+    # any authored `contains` was judged by neither pass -- no finding, and
+    # then a _RefusalError out of `to_caml` at generation time, which is the
+    # traceback this pass exists to prevent.
+    #
+    # Walked PER AUTHORED LEAF rather than over `normalise(condition)` as a
+    # whole, which is what makes the suppression below able to name an
+    # origin. `_push` on a leaf depends on nothing but that leaf and its
+    # polarity, and `_flipped_by_normalisation` computes the same polarity
+    # `_push` would, so `_push(leaf, negate=...)` is exactly what the whole-
+    # tree normalisation puts in that leaf's place -- pinned by
+    # `test_per_leaf_normalisation_matches_the_whole_tree`.
+    for leaf in leaves(condition):
+        if leaf.field not in rendered:
             continue
-        for _code, problem in _render_problems(leaf, target, types, context):
-            # Its own code, not the inner one: the author never wrote the
-            # operator being named, and the remedy is different — rewrite the
-            # rule positively rather than fix the operator they chose.
-            problems.append((
-                FindingCode.CONDITION_NEGATION_UNRENDERABLE,
-                (f"{problem} -- negating this rule turns it into {leaf.op!r}, "
-                 f"which that target cannot express. Rewrite it as a positive "
-                 f"filter, or move it to a target that supports the negation."),
-                leaf.field,
-            ))
+        for introduced in leaves(_push(leaf, negate=id(leaf) in flipped)):
+            if introduced is leaf:
+                continue
+            for code, problem in _render_problems(introduced, target, types, context):
+                if code not in _CAPABILITY_REFUSALS:
+                    # Not about the negation at all. The operand is wrong and
+                    # would be wrong at either polarity, so it keeps its own
+                    # code and its own words.
+                    #
+                    # Recoding these was saying something false.
+                    # `none_of[gt(Due, "banana")]` normalises to `leq`, which
+                    # CAML renders perfectly well, and the appended sentence
+                    # told the author the target could not express it. The
+                    # fault is the date.
+                    #
+                    # Suppressed when THIS leaf has already been reported for
+                    # this code: one operand, one fault, one finding, shown in
+                    # the operator the author wrote. Keyed on the leaf and not
+                    # on `(code, column)`, which folded two different leaves
+                    # together -- `begins_with(Note, "")` stood in for the
+                    # empty needle in `none_of[not_contains(Note, "")]` beside
+                    # it, so fixing the first made the second appear on the
+                    # NEXT build, reading as though the fix had caused it.
+                    if code not in reported.get(id(leaf), ()):
+                        problems.append((code, problem, leaf.field))
+                    continue
+                # Its own code, not the inner one: the author never wrote the
+                # operator being named, and the remedy is different — rewrite
+                # the rule positively rather than fix the operator they chose.
+                problems.append((
+                    FindingCode.CONDITION_NEGATION_UNRENDERABLE,
+                    (f"{problem} -- negating this rule turns it into {introduced.op!r}, "
+                     f"which that target cannot express. Rewrite it as a positive "
+                     f"filter, or move it to a target that supports the negation."),
+                    leaf.field,
+                ))
     return _dedupe(problems)
+
+
+def _flipped_by_normalisation(node: Condition, *, negate: bool = False) -> frozenset[int]:
+    """Identities of the AUTHORED leaves `normalise` inverts.
+
+    Mirrors `_push`'s polarity bookkeeping and nothing else: a leaf under an
+    odd number of `none_of` wrappers is flipped, and every other leaf reaches
+    the renderer as written. Keyed by `id`, the way `_condition_problems`
+    already keys its suppression set, because two leaves on one column can sit
+    at different polarities.
+    """
+    if isinstance(node, Leaf):
+        return frozenset({id(node)}) if negate else frozenset()
+    child_negate = not negate if node.kind == "none_of" else negate
+    return frozenset().union(*(
+        _flipped_by_normalisation(child, negate=child_negate) for child in node.children
+    ))
+
+
+#: The refusals that are about the OPERATOR the target cannot render, as
+#: opposed to the operand it was handed. Only these earn
+#: `CONDITION_NEGATION_UNRENDERABLE` when normalisation introduced the leaf:
+#: the sentence that code appends -- "which that target cannot express" -- is
+#: a claim about capability, and appending it to an operand fault states
+#: something the module itself knows to be untrue.
+_CAPABILITY_REFUSALS = frozenset({
+    FindingCode.CONDITION_OPERATOR_UNRENDERABLE,
+    FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
+})
+
+
+def _renders_only_inverted(op: str, target: str) -> bool:
+    """Whether the target refuses this operator but renders its inverse.
+
+    The exact condition under which judging an authored leaf standalone
+    contradicts what will be emitted, and it is a small set: `not_contains`
+    and `not_begins_with` on CAML, because `<Where>` has no negation of
+    `<Contains>` or `<BeginsWith>` while both positives are elements it does
+    have. Every operator in the grammar renders on the two formula targets, so
+    this is False for them throughout.
+
+    Derived from `CAPABILITIES` rather than listing the two operators, so an
+    operator added to the grammar that some target cannot render is covered
+    the day it is added rather than the day somebody remembers this function.
+    """
+    return op not in CAPABILITIES[target] and NEGATION[op] in CAPABILITIES[target]
 
 
 def _operand_problems(
