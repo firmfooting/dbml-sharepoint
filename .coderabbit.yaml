@@ -1,0 +1,20 @@
+# CodeRabbit configuration.
+#
+# The whole point of this file is the one setting below. `base_branches`
+# defaults to an empty list, which means CodeRabbit reviews only pull requests
+# targeting the DEFAULT branch -- and `AGENTS.md` prescribes stacking for any
+# change too large to review in one pass, so every PR above the bottom of a
+# stack targets another feature branch and was silently never reviewed.
+#
+# Measured 2026-08-10 across a four-deep stack: the bottom PR got its automatic
+# pass, and the three above it got nothing at all. Nobody noticed, because a
+# review that never runs looks exactly like a review that found nothing.
+#
+# `.*` matches every base branch. Documented at
+# https://docs.coderabbit.ai/reference/yaml-template -- "Base branches (other
+# than the default branch) to review. Accepts regex patterns. Use '.*' to match
+# all branches."
+reviews:
+  auto_review:
+    base_branches:
+      - ".*"
