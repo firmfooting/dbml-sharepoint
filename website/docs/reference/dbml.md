@@ -30,6 +30,33 @@ finding rather than guessing.
 The legacy bare `choice` type is rejected — declare an enum so the
 choice set is part of the reviewed schema.
 
+### Multi-value columns are not emitted
+
+Every column in the table above is single-valued. This tool emits no
+`MultiChoice`, no multi-value lookup and no multi-value Person column, and
+there is no syntax that asks for one — an array-suffixed type such as
+`audit_event[]` parses as DBML but fails the build with `unknown type
+'audit_event[]'`, naming the enum it is closest to.
+
+That refusal is deliberate rather than pending. A multi-value column cannot
+be indexed and cannot enforce unique values ([supported index column
+types](https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0),
+[unique column
+types](https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns)),
+and conditional show/hide formulas do not support "Choice with multiple
+selections" ([conditional
+formulas](https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-conditional-show-hide)).
+Several further behaviours — the item value's write and read-back shape, and
+which CAML predicates filter such a column — are not documented at all;
+`test/manual/multi-value-probe.js` exists to settle them against a live site
+before any of it is built.
+
+Model a genuinely multi-valued fact as a child entity with one row per value
+today. Note that this is not a decision to defer: SharePoint treats a column's
+type as immutable, and this tool fails closed on an immutable-shape change, so
+a column shipped as text or as a single Choice cannot later be converted in
+place on a list that is already deployed.
+
 ## Enums
 
 ```dbml
