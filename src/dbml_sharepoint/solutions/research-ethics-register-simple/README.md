@@ -20,7 +20,8 @@ where somebody starts recruiting who should not, and it is invisible unless
 something watches. This register watches: two independent status columns, two
 form sections, a calculated **Site Readiness** column that collapses the pair
 into one answer, and a row wash on the one combination that is genuinely
-dangerous — a project marked *Underway* with no site authorisation.
+dangerous — a project that has started here (*Underway*, or *Closed to
+recruitment* having been Underway first) with no site authorisation.
 
 ## Why one list, and what that costs
 

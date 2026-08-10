@@ -39,10 +39,13 @@ columns and you cannot edit it:
 | **Not proceeding** | Refused or withdrawn. Ethics Status beside it says which. |
 | **Suspended at this site** | Stopped by us. |
 
-If a row is marked **Underway** with no site authorisation, the whole row
-turns pink in the default view. That is not decoration — somebody may be
-recruiting who should not be. Tell the research governance officer the same
-day; do not fix it by changing the stage.
+If a row is marked **Underway** or **Closed to recruitment** with no site
+authorisation, the whole row turns pink in the default view. That is not
+decoration — somebody may be recruiting who should not be, or already has.
+Tell the research governance officer the same day; do not fix it by changing
+the stage. Closing recruitment does not close the gap, so the wash does not
+lift until the authorisation is recorded or the project moves to Completed or
+Discontinued.
 
 ## The six views
 

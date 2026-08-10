@@ -262,13 +262,22 @@ views:
       # a project whose stage says it has started here, with no site
       # authorisation. Somebody is recruiting who should not be.
       #
+      # BOTH started stages count. "Closed to recruitment" is reached only by
+      # having been Underway, so recruitment has already happened without
+      # authorisation, and the project is still live — this view shows it, and
+      # the two deadline guards above already treat it as live. Reading the
+      # wash off "Underway" alone would have retired the escalation at a stage
+      # change that fixes nothing, which is the worst moment to go quiet.
+      # Planning is excluded: unauthorised there is the ordinary in-between
+      # state, and it is amber in SiteReadiness, not red.
+      #
       # Written against the two CHOICE columns rather than against
       # SiteReadiness, even though a view formatter does read a calculated
       # column cleanly (confirmed live — see the note in risk-register's
-      # mapping and in style-guide.md). Two reasons: the condition wanted here
-      # is narrower than any single readiness value — RUNNING without
-      # authorisation, not merely unauthorised — and it is one comparison
-      # rather than an OR across three readiness strings.
+      # mapping and in style-guide.md). The condition wanted here is narrower
+      # than any single readiness value — RUNNING without authorisation, not
+      # merely unauthorised — and "Suspended at this site" would have to be
+      # ORed in as well, on top of the two stages, to say the same thing.
       #
       # Both columns must stay in this view's fields: a view formatter can
       # only read columns the view displays. ProjectStage is named explicitly

@@ -128,12 +128,15 @@ nobody wrote.
 ## Escalation
 
 **A project running without site authorisation.** `ProjectStage` = *Underway*
-with `SiteAuthorisationStatus` anything but *Authorised* is the one state
-this register washes an entire row for. The governance officer contacts the
+or *Closed to recruitment*, with `SiteAuthorisationStatus` anything but
+*Authorised*, is the one state this register washes an entire row for. Both
+started stages count: a project only reaches *Closed to recruitment* by having
+been *Underway*, so the recruiting has already happened, and the project is
+still live and still in the default view. The governance officer contacts the
 site investigator the same day; whether the project pauses is the Chief
 Executive's or delegate's call, made through your research governance
 process — recorded here, decided there. Do not resolve it by editing the
-stage.
+stage; closing recruitment does not clear it either.
 
 **A safety event, protocol deviation or breach.** Goes to the reviewing
 committee *and* to the local research governance officer, per your service's
