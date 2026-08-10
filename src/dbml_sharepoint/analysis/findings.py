@@ -199,6 +199,24 @@ class FindingCode(StrEnum):
     LOOKUP_DISPLAY_COLUMN_UNKNOWN = "lookup_display_column_unknown", "error"
     LOOKUP_WOULD_RENDER_BLANK = "lookup_would_render_blank", "error"
     MULTIPLE_DEFAULT_VIEWS = "multiple_default_views", "error"
+    # Both specialise a rule that already fires, and both exist because the
+    # generic REMEDY is wrong here rather than because the generic diagnosis
+    # is. An index is the answer to an unindexed filter and a different
+    # column is the answer to an unindexable type; on a multi-value column
+    # the first fails the build and the second is not the only option, since
+    # the same enum without the brackets is indexable.
+    MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE = (
+        "multi_value_filtered_view_unindexable", "warning"
+    )
+    MULTI_VALUE_INDEX_UNSUPPORTED = "multi_value_index_unsupported", "error"
+    # One rule, three modules: a calculated formula (checks/_structure.py), a
+    # validation formula and a show/hide formula (both analysis/conditions.py,
+    # reached from column_validation and form_visibility). All three refuse a
+    # multi-value operand, so all three keep one code and `location.section`
+    # says which surface asked -- the same arrangement the `condition_` codes
+    # already have. CAML is deliberately not among them: a view filter over a
+    # multi-value column is measured to work.
+    MULTI_VALUE_OPERAND_UNSUPPORTED = "multi_value_operand_unsupported", "error"
     POLYMORPHIC_COLUMN_NOT_RENDERED = "polymorphic_column_not_rendered", "error"
     PREVIOUS_TITLE_CLAIMED_TWICE = "previous_title_claimed_twice", "error"
     PREVIOUS_TITLE_IS_A_CURRENT_TITLE = "previous_title_is_a_current_title", "error"
@@ -232,6 +250,16 @@ class FindingCode(StrEnum):
     STYLE_REQUIRES_CALCULATED = "style_requires_calculated", "error"
     STYLE_CALCULATED_TYPE_MISMATCH = "style_calculated_type_mismatch", "error"
     STYLE_ON_BOOLEAN_MATCHES_NOTHING = "style_on_boolean_matches_nothing", "error"
+    # Its sibling above, one measurement later. The two rules share a cause --
+    # a quoted-string comparison against a value that is not a string -- and
+    # differ in what the reader is left looking at, which is the only thing a
+    # code has to say. The boolean case renders UNSTYLED; the multi-value case
+    # was watched on a tenant on 2026-08-10 rendering a neutral fill on every
+    # row, which is worse, because a gap reads as a gap and a fill reads as a
+    # verdict. The name says what was seen: not an absence, a false neutral.
+    MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL = (
+        "multi_value_style_renders_a_false_neutral", "error"
+    )
     STYLE_MAP_KEY_NOT_IN_ENUM = "style_map_key_not_in_enum", "error"
     COLOR_BY_MAP_KEY_NOT_IN_ENUM = "color_by_map_key_not_in_enum", "error"
     TREND_AGAINST_NOT_RENDERED = "trend_against_not_rendered", "error"
@@ -373,6 +401,15 @@ class FindingCode(StrEnum):
     EMPTY_ENUM = "empty_enum", "warning"
     ILLEGAL_COLUMN_NAME_CHARACTER = "illegal_column_name_character", "error"
     LEGACY_CHOICE_TYPE = "legacy_choice_type", "error"
+    # Arity, not type name. Both have a generic counterpart that would fire
+    # instead -- UNIQUE_UNSUPPORTED_FOR_TYPE, and nothing at all for the
+    # default -- and both are separate codes because the evidence and the
+    # remedy are separate: the generic uniqueness message names the type
+    # `'audit_event[]'`, which invites deleting the brackets rather than the
+    # constraint, and there is no generic "default: is not supported" rule
+    # for the second to widen. One declaration still produces one finding.
+    MULTI_VALUE_DEFAULT_UNSUPPORTED = "multi_value_default_unsupported", "error"
+    MULTI_VALUE_UNIQUE_UNSUPPORTED = "multi_value_unique_unsupported", "error"
     ORPHAN_ENUM = "orphan_enum", "warning"
     RESERVED_COLUMN_NAME = "reserved_column_name", "error"
     UNIQUE_UNSUPPORTED_FOR_TYPE = "unique_unsupported_for_type", "error"

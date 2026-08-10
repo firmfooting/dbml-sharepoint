@@ -391,6 +391,31 @@ def _check_column(
                 f"enum {col.type!r} ({members}).",
             ))
 
+    if col.default is not None and typemap.is_multi_value(col.type):
+        # `map_column` raises on this too, and both are wanted: `report` does
+        # not validate, so the generator needs its own guard, and `validate`
+        # is the command that exists to tell an author what is wrong without a
+        # site URL. Until this rule existed the two disagreed -- `validate`
+        # green, `build` a ValueError -- which reads as the tool contradicting
+        # itself about one file.
+        #
+        # Refused rather than coerced, because there is nothing honest to
+        # coerce to. DBML carries ONE scalar; the item write shape measured on
+        # 2026-08-10 is a collection, and an empty one reads back as `null`
+        # rather than as an empty array. A single declared member would have
+        # to be guessed into a one-element set, and a DROPPED default is the
+        # silent kind of wrong: green build, clean read-back, and a column
+        # whose declared default simply is not there.
+        findings.append(_report(
+            FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED,
+            at,
+            f"default: is not supported on a multi-value "
+            f"column. DBML carries one scalar and SharePoint's write shape "
+            f"for {col.type!r} is a collection, so there is no coercion that "
+            f"says what was declared. Remove the default, and set the value "
+            f"on the item instead.",
+        ))
+
     if col.ref is not None and col.ref.target_table not in tables:
         findings.append(_report(
             FindingCode.UNKNOWN_REF_TARGET,
@@ -398,7 +423,34 @@ def _check_column(
             f"ref target {col.ref.target_table} not defined.",
         ))
 
-    if col.unique and not typemap.supports_unique(col, set(enums)):
+    if col.unique and typemap.is_multi_value(col.type):
+        # Ahead of the generic rule, not beside it: `supports_unique` asks
+        # arity first and returns False, so both would fire on one
+        # declaration. The specific one wins because the generic message can
+        # only name the DBML type -- "[unique] is not supported for
+        # SharePoint 'audit_event[]' columns" -- which reads as a complaint
+        # about the enum and invites deleting the brackets. It is the ARITY
+        # that SharePoint refuses.
+        #
+        # Documented and then measured: Microsoft lists "Choice
+        # (multi-valued)" among the types unique values cannot be enforced
+        # for, and a probe on 2026-08-10 set EnforceUniqueValues on a live
+        # MultiChoice field and got HTTP 500 back. Loud rather than
+        # accepted-and-ignored, which is the good outcome -- but the build
+        # still refuses first, so a deploy fails closed before it starts
+        # writing to somebody's site.
+        # https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns
+        findings.append(_report(
+            FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED,
+            at,
+            f"[unique] is not supported on a multi-value column -- "
+            f"SharePoint cannot enforce unique values on a "
+            f"{typemap.MULTI_VALUE_SP_TYPE_NAME} column, and refuses the "
+            f"setting outright. Drop [unique], or declare the column as a "
+            f"single-value {typemap.element_type(col.type)!r} if one value "
+            f"per item was what was meant.",
+        ))
+    elif col.unique and not typemap.supports_unique(col, set(enums)):
         findings.append(_report(
             FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE,
             at,

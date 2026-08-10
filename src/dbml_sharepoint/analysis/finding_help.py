@@ -585,6 +585,46 @@ FINDING_HELP: dict[FindingCode, str] = {
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."
     ),
+    FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED: (
+        "A multi-value column declares `default:`. DBML carries one scalar "
+        "and SharePoint's write shape for the column is a collection, so "
+        "there is no coercion that says what was declared. Refused rather "
+        "than dropped: a dropped default is invisible in a green build."
+    ),
+    FindingCode.MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE: (
+        "A view filters on a multi-value column and nothing else in the "
+        "filter carries an index. The usual remedy does not apply: "
+        "SharePoint refuses an index on such a column, so following it "
+        "would fail the build. Filter on a scalar column instead."
+    ),
+    FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED: (
+        "An `indexes { }` entry names a multi-value column. Measured on "
+        "2026-08-10: SharePoint refuses the index and reads `Indexed` back "
+        "as false, against a control on a single-value Choice in the same "
+        "list that stuck. The same enum without the brackets is indexable."
+    ),
+    FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED: (
+        "A calculated formula, a validation formula or a conditional "
+        "show/hide rule reads a multi-value column. Measured on 2026-08-10: "
+        "a calculated field refused it with HTTP 500 and a validation "
+        "formula with \"This field type does not support validation "
+        "formulas\"; show/hide is documented unsupported and would save and "
+        "silently never react. A VIEW filter over the same column works."
+    ),
+    FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL: (
+        "A `severity` or `pill` style sits on a multi-value column. Both "
+        "compare `@currentField` against quoted strings and a multi-value "
+        "field is an array, so no branch matches and every cell takes the "
+        "fallback. Watched on a live site on 2026-08-10: that is a filled "
+        "grey cell on every row -- a verdict rather than a gap, and "
+        "invisible to the build and the deploy alike."
+    ),
+    FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED: (
+        "`[unique]` is declared on a multi-value column. SharePoint cannot "
+        "enforce unique values on a Choice (multi-valued) column, and "
+        "measured on 2026-08-10 refuses `EnforceUniqueValues` on one with "
+        "HTTP 500."
+    ),
     FindingCode.ORPHAN_ENUM: (
         "An enum is defined but no column references it."
     ),

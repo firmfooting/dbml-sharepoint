@@ -250,6 +250,12 @@ def format_description(note: str) -> str
 UNSUPPORTED_INDEX_TYPES = {'longtext': 'Multiple lines of text (Note)', 'richtext': 'Multiple lines of text (Note)', 'hyperlink': 'Hyperlink'}
 ```
 
+### `MULTI_VALUE_SP_TYPE_NAME`
+
+```python
+MULTI_VALUE_SP_TYPE_NAME = 'Choice (multi-valued)'
+```
+
 ### `unsupported_index_reason`
 
 ```python

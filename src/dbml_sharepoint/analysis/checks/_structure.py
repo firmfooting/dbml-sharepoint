@@ -10,6 +10,9 @@ from dbml_sharepoint.analysis.lookups import (
 from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPE_LIST,
+    MULTI_VALUE_SP_TYPE_NAME,
+    element_type,
+    is_multi_value,
     unsupported_index_reason,
 )
 from dbml_sharepoint.analysis.validator import (
@@ -433,7 +436,31 @@ def check(vc: ValidationContext) -> list[Finding]:
             unindexable = (
                 None if column is None else unsupported_index_reason(column.type)
             )
-            if unindexable is not None:
+            if column is not None and is_multi_value(column.type):
+                # Ahead of the generic rule rather than beside it -- both
+                # would otherwise fire, since `unsupported_index_reason` is
+                # arity-aware. The specific one exists for its second remedy:
+                # the generic message can only say "SharePoint cannot index
+                # this type", and the fix it implies is a different column,
+                # while here the SAME enum without the brackets is indexable.
+                # That is usually what the author wants to hear.
+                #
+                # Measured 2026-08-10 and read WITH ITS CONTROL: setting
+                # Indexed=true on a live MultiChoice was refused ("This column
+                # type is not supported for indexing") and read back false,
+                # while the same run set Indexed=true on a single-value Choice
+                # in the same list and it stuck. So the refusal belongs to the
+                # field type and not to the probe.
+                findings.append(Finding(
+                    FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED,
+                    f"{entity_name}.indexes: {col_name!r} is a multi-value "
+                    f"column, which SharePoint refuses to index -- it is a "
+                    f"{MULTI_VALUE_SP_TYPE_NAME} column. Remove it from "
+                    f"indexes {{ }}, or declare it as a single-value "
+                    f"{element_type(column.type)!r} column, which can carry "
+                    f"an index.",
+                ))
+            elif unindexable is not None:
                 findings.append(Finding(
                     FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE,
                     f"{entity_name}.indexes: {col_name!r} is a "
@@ -579,6 +606,32 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # above as not a rendered column. Do not add an `in xcols`
                 # test here expecting it to fire — it cannot.
                 if operand is None:
+                    continue
+                if is_multi_value(operand.type):
+                    # Asked by arity, because `_FORBIDDEN_CALCULATED_OPERANDS`
+                    # is keyed by DBML type name and `audit_event[]` is not a
+                    # key it could hold -- the key would have to be minted per
+                    # enum per schema, so a membership test looks like it
+                    # covers the type and does not.
+                    #
+                    # Measured 2026-08-10 on a live tenant, and the answer was
+                    # the same sentence the five denylisted types gave:
+                    # HTTP 500, "One or more column references are not
+                    # allowed, because the columns are defined as a data type
+                    # that is not supported in formulas."
+                    findings.append(Finding(
+                        FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED,
+                        f"{table.name}.{col.name}: calculated formula "
+                        f"references [{ref}], a multi-value column. "
+                        f"SharePoint refuses this operand when the calculated "
+                        f"field is created -- HTTP 500, \"the columns are "
+                        f"defined as a data type that is not supported in "
+                        f"formulas\" -- after earlier deploy phases may "
+                        f"already have written to the site. Compute from a "
+                        f"supported operand type instead "
+                        f"({_SUPPORTED_CALCULATED_OPERANDS}), or drop the "
+                        f"formula.",
+                    ))
                     continue
                 forbidden_kind = (
                     "lookup"
