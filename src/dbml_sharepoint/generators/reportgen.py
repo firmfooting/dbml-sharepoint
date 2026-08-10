@@ -28,6 +28,7 @@ from typing import Any
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
+from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
@@ -36,36 +37,6 @@ from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
-
-# THE SEPARATOR BETWEEN MEMBERS in every joined multi-value cell, and the one
-# place it is spelled — the Power Query transform that builds the cell and the
-# dictionary entry that tells a reader how to split it back apart must not be
-# able to come to disagree.
-#
-# Chosen for the EXPORT rather than from SharePoint. A comma is out twice
-# over: a multi-value member is a phrase and not a token ("Permission change"),
-# so a comma reads as punctuation inside one; and a comma inside a cell is the
-# one character every CSV consumer downstream of a Power BI export handles
-# differently. A bare space is out for the same phrase reason. A semicolon is
-# what SharePoint itself puts between the members of a set on the wire —
-# measured 2026-08-10, an `<Eq>` against the `;#`-delimited string matched the
-# whole set — so it is the separator a reader already associates with one of
-# these columns, and the trailing space is for the eye only.
-#
-# A MEMBER CONTAINING IT is refused, by `_refuse_ambiguous_members` below.
-# `{"Permission change; revoked"}` and `{"Permission change", "revoked"}` join
-# to the same text, so the cell stops being reconstructible and a downstream
-# count of selections is wrong with nothing able to see it -- silent
-# wrongness in a production export, which is the failure class this
-# repository exists to close. An escape is not the answer: the dictionary
-# tells a reader to `Text.Split` the cell, and a human reading it splits by
-# eye, so an encoding only they two do not understand is worse than a refusal.
-#
-# A finding would be better than an exception, and belongs in `analysis/`,
-# which this module must not import from. Until one exists the generator
-# refuses to emit an export it cannot describe -- the same thing
-# `_sp_type_cell` does for a field kind it has no words for.
-MULTI_VALUE_JOIN = "; "
 
 
 @dataclass
@@ -407,6 +378,9 @@ def _render_m(plan: _ListPlan) -> str:
             f'{{"{inner}"}}, {{"{out}"}}),',
         )
         prev = step
+    # The separator, and why it is that string, live in `analysis/exports.py` --
+    # the check that refuses a member containing it needs the same fact, and a
+    # generator is the wrong place for `analysis/` to import from.
     if plan.multi_value_joins:
         lines += [
             "    // A multi-value column arrives as a LIST, so it is joined to",
