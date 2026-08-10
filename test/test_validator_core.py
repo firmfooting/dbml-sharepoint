@@ -242,6 +242,9 @@ def test_unknown_ref_target_is_error() -> None:
     schema = make_schema(make_table("Task", make_ref("Project", "Missing.Id")))
     finding = only(validate(schema), FindingCode.UNKNOWN_REF_TARGET)
     assert finding.severity == "error"
+    assert finding.location == Location(Section.SCHEMA, entity="Task", column="Project")
+    # The unresolved TARGET is the value the author has to fix, and it is not
+    # in the location -- the location is the column that names it.
     assert "Missing" in finding.message
 
 def test_legacy_choice_type_is_error() -> None:
@@ -252,6 +255,7 @@ def test_unknown_type_is_error() -> None:
     schema = make_schema(make_table("Task", make_column("Bad", "frobnicate")))
     finding = only(validate(schema), FindingCode.UNKNOWN_COLUMN_TYPE)
     assert finding.severity == "error"
+    assert finding.location == Location(Section.SCHEMA, entity="Task", column="Bad")
     assert "frobnicate" in finding.message
 
 def test_an_enum_array_is_a_known_type() -> None:
@@ -286,7 +290,9 @@ def test_reserved_author_is_error() -> None:
     schema = make_schema(make_table("PaperRegister", make_column("Author", "person")))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
     assert finding.severity == "error"
-    assert "Author" in finding.message
+    assert finding.location == Location(
+        Section.SCHEMA, entity="PaperRegister", column="Author",
+    )
 
 @pytest.mark.parametrize(
     "column_type",
@@ -379,10 +385,62 @@ def test_a_default_on_a_multi_value_column_is_refused_by_validate() -> None:
 # constructed. That allowlist is a ratchet and only shrinks.
 
 
+def test_every_schema_finding_opens_with_its_own_location_path() -> None:
+    """The prefix is RENDERED from the location, not typed beside it.
+
+    `test_findings.test_every_finding_site_carries_a_location` proves a
+    location is passed; it cannot see whether the sentence then spells the
+    same path a second time. That is the drift #99 is actually about — two
+    copies of one fact, and only one of them structured — so it is asserted
+    here, at runtime, over every rule this entry point can reach.
+
+    Deliberately not a substring check on prose: nothing is asserted about
+    the words, only that the message opens with exactly what `Location.path`
+    renders. Hand-write a prefix again and this fails; reword any diagnosis
+    freely and it does not.
+    """
+    findings = validate(make_schema(
+        make_table(
+            "Risk",
+            make_column("Title"),
+            make_column("Title"),
+            make_column("Author", "person"),
+            make_column("Bad Name"),
+            make_column("A" * (MAX_INTERNAL_NAME + 1)),
+            make_column("Legacy", "choice"),
+            make_column("Mystery", "frobnicate"),
+            make_column("Status", "status", default="Nope"),
+            make_column("Code", "nvarchar", unique=True),
+            make_column("Blob", "longtext", unique=True, required=True),
+            make_ref("Owner", "Missing.Id"),
+        ),
+        make_table("Risk"),
+        enums=[
+            make_enum("status", "Open"),
+            make_enum("status", "Shut"),
+            make_enum("empty"),
+            make_enum("orphaned", "x"),
+        ],
+    ))
+
+    # A guard on the fixture, not on the rule: a schema that stopped tripping
+    # anything would satisfy the loop below vacuously.
+    assert len(findings) >= 10, findings
+
+    for finding in findings:
+        assert finding.location is not None, finding
+        assert finding.message.startswith(finding.location.path + ": "), (
+            f"{finding.code}: message {finding.message!r} does not open with "
+            f"its own location path {finding.location.path!r}"
+        )
+
+
 def test_a_duplicate_table_name_is_an_error() -> None:
     findings = validate(make_schema(make_table("Risk"), make_table("Risk")))
 
-    assert only(findings, FindingCode.DUPLICATE_TABLE_NAME).severity == "error"
+    finding = only(findings, FindingCode.DUPLICATE_TABLE_NAME)
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.SCHEMA, entity="Risk")
 
 
 def test_a_duplicate_column_name_is_an_error() -> None:
@@ -395,7 +453,7 @@ def test_a_duplicate_column_name_is_an_error() -> None:
 
     finding = only(findings, FindingCode.DUPLICATE_COLUMN_NAME)
     assert finding.severity == "error"
-    assert "Title" in finding.message
+    assert finding.location == Location(Section.SCHEMA, entity="Risk", column="Title")
 
 
 def test_two_tables_may_each_declare_the_same_column_name() -> None:
@@ -417,7 +475,11 @@ def test_a_duplicate_enum_name_is_an_error() -> None:
         enums=[make_enum("status", "Open"), make_enum("status", "Shut")],
     ))
 
-    assert only(findings, FindingCode.DUPLICATE_ENUM_NAME).severity == "error"
+    finding = only(findings, FindingCode.DUPLICATE_ENUM_NAME)
+    assert finding.severity == "error"
+    # An enum shares the entity slot with a table, so the word "enum" in the
+    # reason is what tells `schema[status]` apart from a table of that name.
+    assert finding.location == Location(Section.SCHEMA, entity="status")
 
 
 def test_an_enum_with_no_members_is_a_warning() -> None:
@@ -428,7 +490,9 @@ def test_an_enum_with_no_members_is_a_warning() -> None:
         enums=[make_enum("status")],
     ))
 
-    assert only(findings, FindingCode.EMPTY_ENUM).severity == "warning"
+    finding = only(findings, FindingCode.EMPTY_ENUM)
+    assert finding.severity == "warning"
+    assert finding.location == Location(Section.SCHEMA, entity="status")
 
 
 @pytest.mark.parametrize("illegal", [" ", "!", "@", ":", "/", "\\", "'", "<"])
@@ -467,6 +531,11 @@ def test_a_column_name_over_the_limit_is_an_error() -> None:
 
     finding = only(findings, FindingCode.COLUMN_NAME_TOO_LONG)
     assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.SCHEMA, entity="Risk", column="A" * (MAX_INTERNAL_NAME + 1),
+    )
+    # The limit is the one value the location cannot carry, and it is what the
+    # author needs in order to shorten the name.
     assert str(MAX_INTERNAL_NAME) in finding.message
 
 
@@ -474,7 +543,9 @@ def test_orphan_enum_is_warning() -> None:
     findings = validate(
         make_schema(make_table("Task"), enums=[make_enum("status", "a")]),
     )
-    assert only(findings, FindingCode.ORPHAN_ENUM).severity == "warning"
+    finding = only(findings, FindingCode.ORPHAN_ENUM)
+    assert finding.severity == "warning"
+    assert finding.location == Location(Section.SCHEMA, entity="status")
 
 def test_an_enum_used_only_in_its_array_form_is_not_orphan() -> None:
     """`_collect_referenced_enums` matches `col.type` against the enum names,
@@ -500,6 +571,7 @@ def test_enum_default_not_in_members_is_error() -> None:
     ))
     finding = only(findings, FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER)
     assert finding.severity == "error"
+    assert finding.location == Location(Section.SCHEMA, entity="Task", column="Status")
     assert "Nope" in finding.message
 
 def test_enum_default_in_members_is_ok() -> None:

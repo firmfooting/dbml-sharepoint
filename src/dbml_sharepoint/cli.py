@@ -644,7 +644,7 @@ def explain(
         return
 
     # Tolerate the token exactly as a build prints it. Findings render as
-    # `[ERROR] unknown_column_type: Project.Sponsor: ...`, and the obvious
+    # `[ERROR] unknown_column_type: schema[Project].Sponsor: ...`, and the obvious
     # thing to do is select the code and paste it -- which brings the colon.
     wanted = code.strip().rstrip(":").lower()
     found = next((c for c in FINDING_HELP if str(c) == wanted), None)

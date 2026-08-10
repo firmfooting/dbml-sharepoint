@@ -6,6 +6,7 @@ from typing import cast
 import pytest
 from _model import bundle as make_bundle
 from _model import column
+from _model import enum as make_enum
 from _model import schema as make_schema
 from _model import table as make_table
 from _paths import FIXTURES
@@ -724,3 +725,229 @@ def test_the_sql_view_builder_refuses_the_same_unhandled_kind(
 
     with pytest.raises(ValueError, match="Uncharted"):
         generate_sql_views(schema, bundle, "default")
+
+
+def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`generate_data_dictionary` is the ONE entry point that never calls
+    `_build_plans`, so the guard there cannot cover it.
+
+    `_sp_type_cell` ended `return sp.kind`, which put the raw internal token
+    -- `MultiChoice` -- in the "SharePoint type" column of
+    data-dictionary.md, `_DataDictionary.pq` and `vw_<prefix>DataDictionary`
+    alike. That is a document stating a column's type wrongly in the one
+    place a report author goes to look it up, and nothing else in this module
+    can see it happen.
+
+    The loadable dictionary tables were already covered, incidentally:
+    `generate_dictionary_powerquery` and `generate_dictionary_sql` both build
+    `_UserAddedColumns` and so go through `_build_plans` before they return.
+    The markdown page is the only entry point in this module that does not,
+    which is exactly why the leak survived there.
+    """
+    schema, bundle = _simple()
+    _kind_swapped(monkeypatch, "Title", "Uncharted")
+
+    with pytest.raises(ValueError, match="Uncharted") as err:
+        generate_data_dictionary(schema, bundle, "default")
+
+    assert "_sp_type_cell" in str(err.value)
+
+
+# --- Multi-value columns ----------------------------------------------------
+
+
+def _multi_value(*, display_names: bool = False) -> tuple[Schema, MappingBundle]:
+    """A schema declaring a multi-value column — the thing S9 exists to report.
+
+    `AuditEvents` rather than `Events` so the display-name test has a name that
+    auto-splits, and one member carries a space because that is what rules the
+    separator choice: a multi-value member is a phrase, not a token.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            column("Title", required=True),
+            column("AuditEvents", "audit_event[]"),
+        ),
+        enums=[make_enum("audit_event", "View", "Edit", "Permission change")],
+    )
+    if display_names:
+        return schema, make_bundle(entities=["Platform"], display_name_mode="auto")
+    return schema, make_bundle(entities=["Platform"])
+
+
+def test_powerquery_joins_a_multi_value_column_into_one_text_cell() -> None:
+    """MEASURED 2026-08-10: under `odata=nometadata`, which is what the
+    Power Query layer speaks, a multi-value item value comes back as a bare
+    JSON array — so the cell holds a LIST, not text.
+
+    The scalar arm's `Table.TransformColumnTypes(…, type text)` over a list
+    does not produce a mistyped column; it produces an Error value in every
+    populated cell, and the query still loads. The join has to happen before
+    anything tries to type it, and the type is then ascribed by the step that
+    produced the text.
+    """
+    schema, bundle = _multi_value()
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert "$select=Id,Title,AuditEvents" in q
+    assert "Table.TransformColumns(" in q
+    assert 'Text.Combine(_, "; ")' in q
+    assert "type text}" in q
+    # The raw list must never reach the typing step: that is the failure this
+    # arm exists to avoid, not a cosmetic difference.
+    assert '{"AuditEvents", type text},' not in q
+    assert '{"AuditEvents", type text}\n' not in q
+
+
+def test_powerquery_renders_an_empty_multi_value_set_as_blank() -> None:
+    """MEASURED 2026-08-10: an empty multi-value set reads back as `null`,
+    NOT as `[]`.
+
+    `Text.Combine(null, "; ")` raises, and a raise inside a transform fails
+    the whole refresh — one row that has never had a value would take the
+    report down. Guarded, the cell is blank, which is what "no members" means.
+    """
+    schema, bundle = _multi_value()
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert "each if _ = null or List.IsEmpty(_) then null" in q
+
+
+def test_sql_view_gives_a_multi_value_column_nvarchar_max() -> None:
+    """A joined set has no meaningful 255 bound, and SQL Server truncates a
+    CAST to NVARCHAR(255) silently."""
+    schema, bundle = _multi_value()
+    sql = generate_sql_views(schema, bundle, "default")
+
+    assert "CAST(t.[AuditEvents] AS NVARCHAR(MAX)) AS [AuditEvents]" in sql
+
+
+def test_both_drift_audits_agree_about_a_multi_value_column() -> None:
+    """The audits are built from two different lists — the M one from
+    `field_internal_names`, the SQL one from `sql_columns` — and a kind that
+    lands in one but not the other makes them contradict each other over the
+    same deployment. A multi-value column must be expected by both."""
+    schema, bundle = _multi_value()
+
+    m_audit = generate_dictionary_powerquery(
+        schema, bundle, "default",
+    )["_UserAddedColumns.pq"]
+    sql_audit = generate_dictionary_sql(schema, bundle, "default")
+
+    assert '"AuditEvents"' in m_audit
+    assert "(N'APP_Platform', N'AuditEvents')" in sql_audit
+
+
+def test_dictionary_describes_a_multi_value_column_in_human_words() -> None:
+    """`MultiChoice` is this codebase's internal token for FieldTypeKind 15.
+    The dictionary is read by report authors, so it says what the column is
+    and how the export spells a set."""
+    schema, bundle = _multi_value()
+    md = generate_data_dictionary(schema, bundle, "default")
+
+    assert "Choice (multiple): 1. View, 2. Edit, 3. Permission change" in md
+    assert '"; "' in md
+    assert "MultiChoice" not in md
+
+
+def test_display_names_still_reach_a_multi_value_column() -> None:
+    """The joined column is not in `m_types`, which is where every other
+    renameable output name comes from — so without an explicit entry the one
+    column type this stage added would be the one that never got its display
+    title, and only a reader comparing two report pages would ever notice."""
+    schema, bundle = _multi_value(display_names=True)
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert '{"AuditEvents", "Audit Events"}' in q
+
+
+def test_reporting_md_states_the_multi_value_landing_contract() -> None:
+    """The two targets do different things and the page has to say so.
+
+    Power Query joins the set in a step this generator writes. The SQL views
+    only `CAST` whatever the extract landed -- this module never sees that
+    process, so it cannot join anything there. A page that said the members
+    "are joined by" the separator would be describing, to a warehouse
+    reader, a transform no part of their path performs.
+    """
+    schema, bundle = _multi_value()
+    md = generate_reporting_md(schema, bundle, "default")
+
+    assert "Multi-value choice columns are a landing contract" in md
+    assert "land such a column as text" in md
+
+
+def _ambiguous() -> tuple[Schema, MappingBundle]:
+    """A member carrying the separator the joined cell is split on.
+
+    `{"Permission change; revoked"}` and `{"Permission change", "revoked"}`
+    both join to the same string, so the export is lossy and no reader --
+    human or `Text.Split` -- can tell which the row held.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            column("Title", required=True),
+            column("AuditEvents", "audit_event[]"),
+        ),
+        enums=[make_enum("audit_event", "View", "Permission change; revoked")],
+    )
+    return schema, make_bundle(entities=["Platform"])
+
+
+@pytest.mark.parametrize("generate", [
+    generate_powerquery,
+    generate_sql_views,
+    generate_dictionary_powerquery,
+    generate_dictionary_sql,
+    generate_data_dictionary,
+])
+def test_a_member_containing_the_separator_is_refused(
+    generate: object,
+) -> None:
+    """Every entry point, because the export is lossy at all of them.
+
+    A joined cell is only reconstructible while no member contains the
+    string it is split on. This one does, so `{"Permission change; revoked"}`
+    and `{"Permission change", "revoked"}` land as the same text and a
+    downstream count of selections is wrong with nothing to notice it --
+    the silent-wrongness failure this repository exists to close, in a
+    production export.
+
+    Refused rather than escaped: an escape would have to be understood by
+    every consumer of the cell, including a human reading it, and the
+    dictionary's advice is `Text.Split`. Naming the member is the whole
+    value of the error, so it is asserted.
+    """
+    schema, bundle = _ambiguous()
+
+    with pytest.raises(ValueError, match="AuditEvents") as err:
+        generate(schema, bundle, "default")  # type: ignore[operator]
+
+    assert "Permission change; revoked" in str(err.value)
+    assert '"; "' in str(err.value)
+
+
+def test_a_member_containing_only_a_bare_semicolon_is_allowed() -> None:
+    """The separator is `"; "`, and only that string makes a cell ambiguous.
+
+    Refusing every semicolon would refuse `"Approved;pending review"`, which
+    joins and splits back perfectly well. A guard stronger than the fault it
+    guards against costs a legitimate schema for nothing.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            column("Title", required=True),
+            column("AuditEvents", "audit_event[]"),
+        ),
+        enums=[make_enum("audit_event", "View", "Approved;pending")],
+    )
+    bundle = make_bundle(entities=["Platform"])
+
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert 'Text.Combine(_, "; ")' in q
