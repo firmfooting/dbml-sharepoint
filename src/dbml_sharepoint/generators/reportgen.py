@@ -790,7 +790,24 @@ def _sp_type_cell(
             if formula:
                 return f"Calculated {output}: {formula}"
             return f"Calculated {output}"
-    return sp.kind
+    # `generate_data_dictionary` is the ONE entry point in this module that
+    # never goes through `_build_plans`, so the `case _` that guards the
+    # queries does not cover this page. Ending `return sp.kind` published the
+    # internal token instead: a reader of data-dictionary.md would be told a
+    # column's SharePoint type is "MultiChoice", which is this codebase's word
+    # and not one that appears anywhere in a SharePoint UI, in the one place
+    # they went to look it up -- and nothing in the build could see it.
+    #
+    # The loadable tables are covered incidentally, because both their entry
+    # points also build `_UserAddedColumns` and so hit `_build_plans` first.
+    # That is not a guard, it is a coincidence of ordering, and this is.
+    raise ValueError(
+        f"{sp.name}: the data dictionary has no description for SharePoint "
+        f"field kind {sp.kind!r}. Add an arm to _sp_type_cell saying what a "
+        f"report author should understand the column to be, rather than "
+        f"printing an internal token into data-dictionary.md and the "
+        f"dictionary tables loaded beside it.",
+    )
 
 
 def _form_behaviour_cells(

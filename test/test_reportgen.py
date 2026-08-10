@@ -727,6 +727,34 @@ def test_the_sql_view_builder_refuses_the_same_unhandled_kind(
         generate_sql_views(schema, bundle, "default")
 
 
+def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`generate_data_dictionary` is the ONE entry point that never calls
+    `_build_plans`, so the guard there cannot cover it.
+
+    `_sp_type_cell` ended `return sp.kind`, which put the raw internal token
+    -- `MultiChoice` -- in the "SharePoint type" column of
+    data-dictionary.md, `_DataDictionary.pq` and `vw_<prefix>DataDictionary`
+    alike. That is a document stating a column's type wrongly in the one
+    place a report author goes to look it up, and nothing else in this module
+    can see it happen.
+
+    The loadable dictionary tables were already covered, incidentally:
+    `generate_dictionary_powerquery` and `generate_dictionary_sql` both build
+    `_UserAddedColumns` and so go through `_build_plans` before they return.
+    The markdown page is the only entry point in this module that does not,
+    which is exactly why the leak survived there.
+    """
+    schema, bundle = _simple()
+    _kind_swapped(monkeypatch, "Title", "Uncharted")
+
+    with pytest.raises(ValueError, match="Uncharted") as err:
+        generate_data_dictionary(schema, bundle, "default")
+
+    assert "_sp_type_cell" in str(err.value)
+
+
 # --- Multi-value columns ----------------------------------------------------
 
 
