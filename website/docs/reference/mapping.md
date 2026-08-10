@@ -375,9 +375,11 @@ something that demonstrably works:
   members. That is a second question through the same operator, told apart
   only by the value, so a value containing `;#` is refused
   (`multi_value_set_equality_unsupported`). It is not offered under a name
-  of its own either: only its positive form was measured, and a string
-  comparison is order-sensitive, so the same set written the other way round
-  would match nothing.
+  of its own either, and the reason is what was **not** measured: the probe
+  sent `View;#Edit` and never `Edit;#View`, so whether SharePoint compares
+  that string literally or normalises the set first is unknown. Exact-set
+  equality is withheld because it is uncharacterised, not because it is
+  known to be broken — one more query would settle it.
 
 `includes` on a **single-value** column is refused too, for the mirror-image
 reason (`multi_value_membership_on_a_single_value_column`).

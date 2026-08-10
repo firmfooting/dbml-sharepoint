@@ -480,12 +480,19 @@ _MULTI_VALUE_OPERATORS: dict[str, frozenset[str]] = {
 # contain these two characters. That is undetectable when reading a mapping,
 # so the delimited form is refused rather than offered.
 #
-# Nor is it given an operator of its own. `<Eq>` was measured in one direction
-# only -- its negation never was -- and the comparison is against a string, so
-# it is order-sensitive: the same set declared in the other order would match
-# nothing, silently. Exact-set equality is therefore not expressible by this
-# tool, which the reference documentation says outright rather than leaving an
-# author to discover.
+# Nor is it given an operator of its own, and the reason is what was NOT
+# measured. C2 sent `View;#Edit` and got back the row holding exactly that
+# set. Nobody sent `Edit;#View`, so whether SharePoint compares the delimited
+# string literally or normalises the set first is unknown -- and those two
+# behaviours differ for every author who lists the members in a different
+# order from the one the field happens to store.
+#
+# It would be easy to write "the comparison is against a string, so it is
+# order-sensitive" here. That is an inference from the shape of the request,
+# not a thing anyone watched happen, and this file is the wrong place to start
+# guessing about SharePoint. Exact-set equality is therefore not offered,
+# because it is not characterised -- not because it is known to be broken. The
+# probe would need one more query to settle it.
 _SET_DELIMITER = ";#"
 
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
@@ -1116,8 +1123,8 @@ def _check_arity(leaf: Leaf, declared_type: str, target: str, where: Location) -
                 f"membership and matches the WHOLE SET instead, so this one "
                 f"leaf would silently ask a different question from the one it "
                 f"reads like. Name a single member; exact-set equality is not "
-                f"expressible here, because only its positive form was measured "
-                f"and the comparison is order-sensitive",
+                f"offered, because it is not characterised -- one member order "
+                f"was measured and the other never was",
                 where,
             )
     elif leaf.op in _MEMBERSHIP_OPS:

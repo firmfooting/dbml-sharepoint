@@ -634,10 +634,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "puts between the members of a set. Measured on 2026-08-10: `<Eq>` "
         "against such a value stops testing membership and matches the whole "
         "set instead -- one operator, two questions, told apart only by the "
-        "value. Name a single member. Exact-set equality is not expressible: "
-        "only its positive form was ever measured, and the comparison is "
-        "order-sensitive, so the same set written in another order would "
-        "match nothing."
+        "value. Name a single member. Exact-set equality is not offered "
+        "because it is not characterised: the probe sent the members in one "
+        "order and never in the other, so whether SharePoint compares the "
+        "delimited string literally or normalises the set first is unknown."
     ),
     FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL: (
         "A `severity` or `pill` style sits on a multi-value column. Both "
