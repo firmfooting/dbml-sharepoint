@@ -93,7 +93,13 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
     (root / "10-design").mkdir(parents=True, exist_ok=True)
     (root / "20-configure").mkdir(parents=True, exist_ok=True)
     (root / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
-    (root / "20-configure" / "mapping.yaml").write_text(mapping, encoding="utf-8")
+    # newline="\n" because this stands in for a *shipped* family, and every
+    # shipped file is LF under `.gitattributes`. Text mode would hand the
+    # wizard CRLF on Windows and LF everywhere else, so the stand-in would
+    # stop resembling the thing it stands in for on one platform only.
+    (root / "20-configure" / "mapping.yaml").write_text(
+        mapping, encoding="utf-8", newline="\n",
+    )
     (root / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
     return Solution(
         id="fake-template",
@@ -792,11 +798,19 @@ def test_the_summary_names_every_answer_before_the_write_is_confirmed(
 
     assert wizard.run_wizard(console) == 0
     reported = _collapsed(console)
-    before_confirm = reported.split("Write these files?")[0]
-    assert "risk-register" in before_confirm
-    assert str(destination) in before_confirm
-    assert "ACME_" in before_confirm
-    assert site_url in before_confirm
+    # Bounded at BOTH ends. Stopping at the confirm is not enough for the
+    # template: `risk-register` is a row in the catalogue table and the
+    # default of the project-directory prompt, so that assertion held with
+    # or without the panel line it claims to cover. The prefix, directory
+    # and site URL are all answers that differ from their defaults, so they
+    # appear nowhere but the panel -- but the bound belongs on all four,
+    # since the next value added here will not necessarily be chosen that
+    # way.
+    panel = reported.split("About to write")[1].split("Write these files?")[0]
+    assert "risk-register" in panel
+    assert str(destination) in panel
+    assert "ACME_" in panel
+    assert site_url in panel
 
 
 def test_the_only_declared_site_role_is_not_asked_for(
