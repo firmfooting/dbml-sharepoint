@@ -568,11 +568,20 @@
         [MULTI]: winningShape.build(reversed),
       });
       const after = await get(`${listPath}/items(${r2.Id})?$select=${odataName(MULTI)}`);
-      m5observed = rewritten.ok ? 'REWRITTEN' : 'WRITE REFUSED';
+      // The whole question is what came BACK, so a failed readback answers
+      // nothing. Printing `undefined` beside "REWRITTEN" would put a value
+      // this run never saw where the observation belongs.
+      m5observed = rewritten.ok
+        ? (after.ok ? 'REWRITTEN' : 'REWRITTEN, READBACK UNREADABLE')
+        : 'WRITE REFUSED';
       m5detail = rewritten.ok
-        ? `wrote ${show(reversed)}; read back ${show(after.d?.[MULTI])}. `
-          + 'If the readback is in the WRITTEN order, an exact comparison is safe; if it is normalised, '
-          + 'the reconciler must compare as a SET or it will report drift on every redeploy.'
+        ? (after.ok
+          ? `wrote ${show(reversed)}; read back ${show(after.d?.[MULTI])}. `
+            + 'If the readback is in the WRITTEN order, an exact comparison is safe; if it is normalised, '
+            + 'the reconciler must compare as a SET or it will report drift on every redeploy.'
+          : `wrote ${show(reversed)}; the readback FAILED HTTP ${after.status} — ${after.error}. `
+            + 'Whether the value round-trips and whether member order survives are both NOT established '
+            + 'by this run.')
         : `HTTP ${rewritten.status} — ${rewritten.error}`;
       // Put R2 back the way the C rows expect it.
       if (rewritten.ok) {
