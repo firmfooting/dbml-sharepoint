@@ -38,6 +38,45 @@ CALCULATED_TYPE_LIST = 'calculated_date, calculated_number, calculated_text'
 KNOWN_SCALARS = frozenset({'boolean', 'date', 'datetime', 'hyperlink', 'int', 'longtext', 'number', 'nvarchar', 'person', 'richtext'})
 ```
 
+### `MULTI_VALUE_SUFFIX`
+
+```python
+MULTI_VALUE_SUFFIX = '[]'
+```
+
+### `is_multi_value`
+
+```python
+def is_multi_value(col_type: str) -> bool
+```
+
+Whether a declared DBML type holds many values rather than one.
+
+ONE PREDICATE, because arity is a property of the DECLARATION and every
+denylist in this codebase is keyed by type NAME. `UNSUPPORTED_INDEX_TYPES`
+and `JOIN_BEARING_TYPES` are dicts and frozensets of names; `audit_event[]`
+is not a key in either, and the key could not be added -- it would have to
+be minted per enum per schema. So a membership test against them looks
+like it covers a multi-value column and silently does not, which is the
+shape of failure this project exists to close.
+
+Callers ask this instead of adding a string entry. The suffix test is
+deliberately arity-only and says nothing about which SharePoint field the
+type becomes; `map_column` decides that, and refuses everything except an
+enum, so `person[]` and `int[]` are still unknown types today.
+
+### `element_type`
+
+```python
+def element_type(col_type: str) -> str
+```
+
+What one member of `col_type` is declared as.
+
+A scalar is its own element type, so a caller can resolve a name without
+branching on arity first -- which is the point: a branch is a place the
+two arms come to disagree.
+
 ### `describe_unknown_type`
 
 ```python
@@ -78,6 +117,21 @@ def supports_unique(col: dbml_sharepoint.model.parser.Column, enum_names: set[st
 ```
 
 Whether this DBML column maps to a uniqueness-capable SP field.
+
+ARITY IS ASKED FIRST, and it has to be. The `ref` arm short-circuits
+before anything looks at the type at all, so a multi-value column
+carrying a ref was declared uniqueness-capable outright; and the scalar
+arm returns the right answer for `audit_event[]` only because that string
+happens not to be a member of a frozenset of scalar names. Correct by
+accident is the state this predicate exists to end -- the accident holds
+only while no denylist key is ever an array form, which is not a property
+anything enforces.
+
+Measured on 2026-08-10: a POST setting EnforceUniqueValues on a
+MultiChoice field returned HTTP 500, "This column type is not supported
+for indexing". Refused loudly rather than accepted-and-ignored, so this
+turns a failed deploy into a failed build rather than covering a silence.
+https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns
 
 ### `SPField`
 
@@ -154,6 +208,28 @@ def format_description(note: str) -> str
 ```python
 UNSUPPORTED_INDEX_TYPES = {'longtext': 'Multiple lines of text (Note)', 'richtext': 'Multiple lines of text (Note)', 'hyperlink': 'Hyperlink'}
 ```
+
+### `unsupported_index_reason`
+
+```python
+def unsupported_index_reason(col_type: str) -> str | None
+```
+
+The SharePoint type name that explains why `col_type` cannot be
+indexed, or None if it can.
+
+THE ACCESSOR EXISTS SO THE DENYLIST CAN BE ARITY-AWARE. Three call sites
+used to test `col.type in UNSUPPORTED_INDEX_TYPES` directly, and that dict
+is keyed by DBML type name -- so `audit_event[]` misses every one of them
+while the rule reads as though it covers the column. Two of the three
+produce a build error and the third decides whether to RECOMMEND an index,
+which on a multi-value column would prescribe a remedy the deploy cannot
+carry out.
+
+Calculated columns are deliberately still not covered here: they are
+identified by CALCULATED_TYPES rather than by one type name, and a caller
+excluding unindexable columns has to consult both. That is a second
+predicate, not a second string.
 
 ### `JOIN_BEARING_TYPES`
 

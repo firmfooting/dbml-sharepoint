@@ -1,5 +1,7 @@
 # test/test_reportgen.py
+from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from _model import bundle as make_bundle
@@ -8,6 +10,8 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.typemap import FieldKind, SPField, map_column
+from dbml_sharepoint.generators import reportgen
 from dbml_sharepoint.generators.reportgen import (
     generate_data_dictionary,
     generate_dictionary_powerquery,
@@ -24,7 +28,7 @@ from dbml_sharepoint.model.mapping_loader import (
     MappingBundle,
     load_mapping,
 )
-from dbml_sharepoint.model.parser import Schema, TableIndex, parse_dbml
+from dbml_sharepoint.model.parser import Column, Schema, TableIndex, parse_dbml
 from dbml_sharepoint.model.release import load_release
 
 
@@ -660,3 +664,63 @@ def test_powerquery_still_selects_retired_columns() -> None:
     schema, bundle = _retired()
     q = generate_powerquery(schema, bundle, "default")["APP_Board.pq"]
     assert "OperationsStatus" in q
+
+
+def _kind_swapped(
+    monkeypatch: pytest.MonkeyPatch, column_name: str, kind: str,
+) -> None:
+    """Make `_build_plans` see one column as a field kind it does not handle.
+
+    Monkeypatched rather than schema-driven on purpose: the guard has to hold
+    for the NEXT kind somebody adds to `typemap.FieldKind`, and a kind that
+    exists is a kind somebody has already had the chance to wire up here.
+    """
+    def fake(col: Column, enum_names: set[str]) -> SPField:
+        sp = map_column(col, enum_names)
+        if col.name == column_name:
+            return replace(sp, kind=cast("FieldKind", kind))
+        return sp
+
+    monkeypatch.setattr(reportgen, "map_column", fake)
+
+
+def test_build_plans_refuses_a_field_kind_it_does_not_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unhandled `sp.kind` must abort, because the two drift audits
+    disagree about it and neither of them can say so.
+
+    `field_internal_names` is appended BEFORE the match, so an unhandled kind
+    is recorded as a column the list is expected to have while contributing no
+    `$select`, no Power Query type and no SQL column. `_UserAddedColumns.pq`
+    is built from the expected list, so the M audit sees nothing wrong; the
+    SQL audit is built from `sql_columns`, so it reports the same column as an
+    unexpected user-added one. Two audits over one deployment, contradicting
+    each other, with the column silently absent from every query that was
+    supposed to carry it.
+
+    A `case _` that raises is the only version of this the build can see.
+    """
+    schema, bundle = _simple()
+    _kind_swapped(monkeypatch, "Title", "Uncharted")
+
+    with pytest.raises(ValueError, match="Uncharted") as err:
+        generate_powerquery(schema, bundle, "default")
+
+    # Named well enough to fix from the message alone: which column, on which
+    # entity, and what has to be taught about it.
+    assert "Title" in str(err.value)
+    assert "Project" in str(err.value)
+
+
+def test_the_sql_view_builder_refuses_the_same_unhandled_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SQL side is the audit that reports a FALSE POSITIVE on an
+    unhandled kind, so it must fail closed too rather than emitting a view
+    that quietly omits the column."""
+    schema, bundle = _simple()
+    _kind_swapped(monkeypatch, "Title", "Uncharted")
+
+    with pytest.raises(ValueError, match="Uncharted"):
+        generate_sql_views(schema, bundle, "default")

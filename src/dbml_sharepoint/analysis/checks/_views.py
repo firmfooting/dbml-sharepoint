@@ -22,7 +22,7 @@ from dbml_sharepoint.analysis.joins import (
 )
 from dbml_sharepoint.analysis.typemap import (
     NUMERIC_ONLY_TOTALS,
-    UNSUPPORTED_INDEX_TYPES,
+    unsupported_index_reason,
 )
 from dbml_sharepoint.analysis.validator import (
     SYSTEM_COLUMNS,
@@ -681,7 +681,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # the exposure is real and only the remedy has to change.
                     indexable = {
                         name for name in filtered
-                        if types_by_col.get(name) not in UNSUPPORTED_INDEX_TYPES
+                        if unsupported_index_reason(types_by_col.get(name, "")) is None
                         and name not in vc.calculated_by_entity.get(entity_name, set())
                     }
                     if not covered:

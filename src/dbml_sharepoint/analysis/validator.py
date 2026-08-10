@@ -331,6 +331,19 @@ def _check_column(
         col.type not in KNOWN_SCALARS
         and col.type not in CALCULATED_TYPES
         and col.type not in enums
+        # `audit_event[]` is a multi-value Choice over the enum's members.
+        # Asked through the ELEMENT type rather than by adding the array form
+        # to `enums`, because the array form is not a thing any schema
+        # declares -- and only an enum qualifies, so `person[]` and a
+        # multi-value lookup stay unknown types here, exactly as `map_column`
+        # keeps them unknown. The two must agree: `build` reports this as a
+        # Finding while `report` reaches the raising site in typemap, and a
+        # type one accepts and the other refuses reads as the two commands
+        # disagreeing about the file.
+        and not (
+            typemap.is_multi_value(col.type)
+            and typemap.element_type(col.type) in enums
+        )
         and not is_pk_id
     ):
         findings.append(Finding(
@@ -373,12 +386,21 @@ def _check_column(
 
 
 def _collect_referenced_enums(schema: Schema) -> set[str]:
+    """Which declared enums some column actually uses.
+
+    Asked through the ELEMENT type, because `audit_event[]` does not equal
+    `audit_event` and a name match alone reported the one enum a schema
+    genuinely uses as defined-but-unreferenced. A false orphan warning is
+    worse than noise here: the remedy it invites is deleting the enum, which
+    takes the column's choices with it.
+    """
     enum_names = {e.name for e in schema.enums}
     referenced: set[str] = set()
     for table in schema.tables:
         for col in table.columns:
-            if col.type in enum_names:
-                referenced.add(col.type)
+            element = typemap.element_type(col.type)
+            if element in enum_names:
+                referenced.add(element)
     return referenced
 
 

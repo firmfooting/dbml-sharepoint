@@ -4,10 +4,16 @@
    (title, description, required, choices, defaults) with readback
    verification. Fail closed: shape mismatch aborts the field, never
    mutates it. #}
+  {# TypeAsString for each FieldTypeKind this tool emits. Every value is what
+     SharePoint reported on read-back, not a name transcribed from a page:
+     assertFieldImmutableShape compares against it, so a wrong string fails a
+     field that is in fact correct. 15/MultiChoice was measured on a live
+     tenant on 2026-08-10 alongside FieldTypeKind=15 and Choices as
+     Collection(Edm.String). #}
   const TYPE_AS_STRING_BY_KIND = new Map([
     [2, 'Text'], [3, 'Note'], [4, 'DateTime'], [6, 'Choice'],
     [7, 'Lookup'], [8, 'Boolean'], [9, 'Number'], [11, 'URL'], [20, 'User'],
-    [17, 'Calculated'],
+    [17, 'Calculated'], [15, 'MultiChoice'],
   ]);
   const indexedFieldKeys = new Set(
     SCHEMA.indexed_columns.map(idx => `${idx.list}\u0000${idx.field}`),

@@ -195,6 +195,34 @@ def test_unknown_type_is_error() -> None:
     assert finding.severity == "error"
     assert "frobnicate" in finding.message
 
+def test_an_enum_array_is_a_known_type() -> None:
+    """`validate` and `map_column` must agree about the same file.
+
+    They diagnose independently -- `build` reports a Finding here and
+    `report` reaches the raising site in typemap, because `report` does not
+    validate -- so a type one of them accepts and the other refuses is how
+    somebody comes to believe the two commands disagree about their schema.
+    """
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]")),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    none_of(validate(schema), FindingCode.UNKNOWN_COLUMN_TYPE)
+
+def test_a_misspelled_enum_array_is_still_an_unknown_type() -> None:
+    """The typo case must stay loud, and it must name the enum it is closest
+    to. `describe_unknown_type` already did this before `[]` meant anything,
+    which is the whole argument for adopting that spelling rather than a
+    naming convention -- but only if it survives the widening."""
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_evnet[]")),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    finding = only(validate(schema), FindingCode.UNKNOWN_COLUMN_TYPE)
+    assert finding.severity == "error"
+    assert "audit_evnet[]" in finding.message
+    assert "audit_event" in finding.message
+
 def test_reserved_author_is_error() -> None:
     schema = make_schema(make_table("PaperRegister", make_column("Author", "person")))
     finding = only(validate(schema), FindingCode.RESERVED_COLUMN_NAME)
@@ -340,6 +368,20 @@ def test_orphan_enum_is_warning() -> None:
     )
     assert only(findings, FindingCode.ORPHAN_ENUM).severity == "warning"
 
+def test_an_enum_used_only_in_its_array_form_is_not_orphan() -> None:
+    """`_collect_referenced_enums` matches `col.type` against the enum names,
+    which `audit_event[]` does not equal -- so the one enum the schema
+    genuinely uses was reported as defined-but-unreferenced.
+
+    A false orphan warning is worse than noise. The remedy it invites is
+    deleting the enum, which deletes the column's choices with it.
+    """
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]")),
+        enums=[make_enum("audit_event", "View", "Edit")],
+    )
+    none_of(validate(schema), FindingCode.ORPHAN_ENUM)
+
 def test_enum_default_not_in_members_is_error() -> None:
     """An enum-typed column whose default is not one of the enum's declared
     members must be rejected at validate() time, not deferred to a deploy-time
@@ -469,6 +511,31 @@ def test_dbml_indexes_reject_unsupported_field_types() -> None:
     assert len(refused) == 2, refused
     assert any("Notes" in m and "Multiple lines of text" in m for m in refused)
     assert any("Url" in m and "Hyperlink" in m for m in refused)
+
+def test_dbml_indexes_reject_a_multi_value_column() -> None:
+    """A denylist keyed by type NAME cannot hold `audit_event[]`.
+
+    The key would have to be minted per enum per schema, so a membership test
+    looks like it covers the new type and silently does not -- the deploy
+    would then try to create an index SharePoint refuses, part-way through a
+    run. Microsoft lists "Choice (multi-valued)" as an unsupported index
+    column type, and a probe on 2026-08-10 measured the refusal directly:
+    HTTP error, "This column type is not supported for indexing", read back
+    `Indexed=false`, against a control on a single-value Choice in the same
+    list that stuck.
+    """
+    schema = make_schema(
+        make_table("Task", make_column("Events", "audit_event[]"), indexes=["Events"]),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    finding = only(
+        validate_against_mapping(schema, make_bundle(entities=["Task"])),
+        FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE,
+    )
+    assert finding.severity == "error"
+    assert "Events" in finding.message
+    assert "Choice (multi-valued)" in finding.message
+
 
 def test_dbml_indexes_reject_duplicates_and_more_than_twenty() -> None:
     # Col0 is listed twice on purpose -- that is the duplicate this asserts.
