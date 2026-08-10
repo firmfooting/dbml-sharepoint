@@ -1,0 +1,4 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/sp/view-formatting.schema.json",
+  "additionalRowClass": "=if(([$ProjectStage] == 'Underway' || [$ProjectStage] == 'Closed to recruitment') && [$SiteAuthorisationStatus] != 'Authorised', 'sp-css-backgroundColor-BgDustRose', '')"
+}
