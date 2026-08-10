@@ -254,6 +254,55 @@ def test_unique_is_rejected_for_unsupported_sharepoint_types(
     # The type is the parameter under test and the thing the author must change.
     assert column_type in finding.message
 
+def test_unique_on_a_multi_value_column_is_refused_by_its_own_code() -> None:
+    """Its own code, because the remedy and the evidence are its own.
+
+    `unique_unsupported_for_type` reads as a fact about the named type, and
+    the name it can print here is `'audit_event[]'` -- which invites deleting
+    the brackets, i.e. changing the column's meaning, rather than dropping
+    the constraint. The arity is the problem, SharePoint's own vocabulary for
+    it is "Choice (multi-valued)", and a probe on 2026-08-10 measured
+    EnforceUniqueValues on one at HTTP 500. One declaration must still
+    produce one finding, so the generic code must NOT also fire.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            make_column("Events", "audit_event[]", required=True, unique=True),
+        ),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+
+    findings = validate(schema)
+
+    finding = only(findings, FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert "Events" in finding.message
+    assert "Choice (multi-valued)" in finding.message
+    none_of(findings, FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE)
+
+def test_a_default_on_a_multi_value_column_is_refused_by_validate() -> None:
+    """`validate` and `build` must refuse the same declaration.
+
+    `map_column` already raises on this, so `build` fails -- but `validate`
+    passed it silently, and `validate` is the command that exists to tell an
+    author what is wrong without a site URL. A declaration only one of the
+    two refuses reads as the tool contradicting itself.
+
+    There is no honest coercion to fall back on: DBML carries one scalar and
+    the item write shape measured on 2026-08-10 is a collection, with an
+    empty one reading back as `null` rather than `[]`.
+    """
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]", default="View")),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+
+    finding = only(validate(schema), FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED)
+
+    assert finding.severity == "error"
+    assert "Events" in finding.message
+
 # --- The schema-level rules, which nothing reached at runtime ---------------
 #
 # Six rules whose construction sites no test executed. They are the cheapest

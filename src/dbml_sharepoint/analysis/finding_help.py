@@ -585,6 +585,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."
     ),
+    FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED: (
+        "A multi-value column declares `default:`. DBML carries one scalar "
+        "and SharePoint's write shape for the column is a collection, so "
+        "there is no coercion that says what was declared. Refused rather "
+        "than dropped: a dropped default is invisible in a green build."
+    ),
+    FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED: (
+        "`[unique]` is declared on a multi-value column. SharePoint cannot "
+        "enforce unique values on a Choice (multi-valued) column, and "
+        "measured on 2026-08-10 refuses `EnforceUniqueValues` on one with "
+        "HTTP 500."
+    ),
     FindingCode.ORPHAN_ENUM: (
         "An enum is defined but no column references it."
     ),

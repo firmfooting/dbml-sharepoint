@@ -373,6 +373,15 @@ class FindingCode(StrEnum):
     EMPTY_ENUM = "empty_enum", "warning"
     ILLEGAL_COLUMN_NAME_CHARACTER = "illegal_column_name_character", "error"
     LEGACY_CHOICE_TYPE = "legacy_choice_type", "error"
+    # Arity, not type name. Both have a generic counterpart that would fire
+    # instead -- UNIQUE_UNSUPPORTED_FOR_TYPE, and nothing at all for the
+    # default -- and both are separate codes because the evidence and the
+    # remedy are separate: the generic uniqueness message names the type
+    # `'audit_event[]'`, which invites deleting the brackets rather than the
+    # constraint, and there is no generic "default: is not supported" rule
+    # for the second to widen. One declaration still produces one finding.
+    MULTI_VALUE_DEFAULT_UNSUPPORTED = "multi_value_default_unsupported", "error"
+    MULTI_VALUE_UNIQUE_UNSUPPORTED = "multi_value_unique_unsupported", "error"
     ORPHAN_ENUM = "orphan_enum", "warning"
     RESERVED_COLUMN_NAME = "reserved_column_name", "error"
     UNIQUE_UNSUPPORTED_FOR_TYPE = "unique_unsupported_for_type", "error"
