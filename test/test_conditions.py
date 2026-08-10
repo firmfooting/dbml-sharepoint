@@ -532,11 +532,14 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
             condition = parse_condition(
                 [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
             )
-            # Two guards now refuse this, and the type one fires first: a
-            # substring test on a datetime column is wrong whatever the
-            # value is, so it never reaches the sentinel check. Both
-            # messages are correct; the alternation keeps this test honest
-            # about which one the author actually sees.
+            # Two guards refuse this and the SENTINEL one fires first, since
+            # 2026-08-10 (#140). Both messages are correct -- a substring
+            # test on a datetime column is wrong whatever the value is --
+            # but only one of them names the sentinel, and the catalogue
+            # says that is the code this input gets. The alternation stays
+            # so this test keeps pinning the refusal rather than the
+            # ordering; `test_a_substring_test_against_a_sentinel_names_the
+            # _sentinel` is what pins the ordering.
             with pytest.raises(ValueError, match=r"point in time|substring test"):
                 to_validation(condition, TYPES)
         # CAML renders only the positive two directly, and it did render
@@ -1419,28 +1422,47 @@ def test_a_condition_nested_past_the_depth_ceiling_is_refused() -> None:
 
 @pytest.mark.parametrize("column_type", ["date", "datetime", "calculated_date"])
 @pytest.mark.parametrize("op", ["contains", "begins_with"])
-def test_a_substring_test_against_a_sentinel_is_always_refused(
+def test_a_substring_test_against_a_sentinel_names_the_sentinel(
     op: str, column_type: str,
 ) -> None:
-    """A substring test against `today`/`now` never renders, whichever rule
-    catches it.
+    """A substring test against `today`/`now` is refused BY THE RULE WRITTEN
+    FOR IT, which it was not until 2026-08-10.
 
-    Asserting the BEHAVIOUR rather than the code, deliberately.
-    `CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR` exists for exactly this
-    input and is never the rule that fires: every sentinel column type is a
-    date type, every date type is in `_NON_TEXT_FOR_SUBSTRING`, and that
-    guard runs first on both the validation and the render path. Measured
-    across all four text operators, three date types, four sentinel
-    spellings and three targets -- 144 combinations, zero reaching it.
+    This test asserted only that the input was refused, because it was not:
+    every sentinel column type is a date type, every date type is in
+    `_NON_TEXT_FOR_SUBSTRING`, and that guard ran first on both the
+    validation and the render path. Measured then across all four text
+    operators, three date types, four sentinel spellings and three
+    targets -- 144 combinations, zero reaching
+    `CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR`. It was documented,
+    shipped in the published catalogue, and unreachable by any input (#140).
 
-    So the refusal is real and pinned here; which rule owns it is a live
-    question for that dead branch, and not something this test should
-    pretend to settle.
+    The code is asserted now rather than the behaviour, and that is the
+    whole point of the change: `findings.md` and `explain` both tell a
+    reader this code owns this input, so the build has to agree with them.
+    The generic "a value that is not text" is true and says less than "the
+    sentinel would reach the formula as its own spelling rather than as a
+    date".
     """
-    with pytest.raises(ValueError):
-        to_caml(
-            Group("all_of", (Leaf("Due", op, "today"),)), {"Due": column_type},
-        )
+    findings = _findings(
+        Group("all_of", (Leaf("Due", op, "today"),)), types={"Due": column_type},
+    )
+
+    assert only(
+        findings, FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
+    ).severity == "error"
+
+
+def test_a_substring_test_on_a_text_column_is_not_a_sentinel_test() -> None:
+    """The mirror for the reorder above. `today` is a sentinel only on a date
+    column -- on a text column it is the literal word, and moving the sentinel
+    guard ahead of the type guard must not make `contains(Note, 'today')`
+    refuse a perfectly ordinary substring search for the string "today"."""
+    condition = parse_condition(
+        [{"field": "Note", "op": "contains", "value": "today"}], "ctx",
+    )
+
+    assert to_expression(condition, TYPES) == "indexOf([$Note], 'today') >= 0"
 
 
 def test_a_validation_formula_cannot_read_a_lookup() -> None:

@@ -668,8 +668,49 @@ def _looks_like_a_date(value: object) -> bool:
     return False
 
 
+def _reject_sentinel_with_a_substring_operator(
+    value: object, column_type: str, op: str, target: str, where: Location,
+) -> None:
+    """A sentinel is a POINT IN TIME. Comparison, ordering and set membership
+    mean something against one; a substring test does not. What the renderers
+    emit for the combination -- verified by running them, not by reasoning:
+
+        contains + now  ->  ISNUMBER(FIND(NOW(),[OccurredAt]))
+        begins_with     ->  LEFT([OccurredAt],3)=NOW()
+
+    That 3 is len('now'): the sentinel's SPELLING reaching the formula as a
+    character count. It is measuring the word, not the date, and that is
+    decidable here without knowing anything about how SharePoint would treat
+    either formula -- which nobody does, since no probe has ever sent one.
+    Refusing needs no such answer.
+
+    Called from `_leaf` ahead of the non-text-column guard, and that ordering
+    is the whole reason this is a function. It lived inside
+    `_check_date_literal` until 2026-08-10 and could not fire from there:
+    every sentinel column type is a date type, every date type is in
+    `_NON_TEXT_FOR_SUBSTRING`, and that guard ran first -- so a rule with a
+    row in the published catalogue was unreachable by any input (#140). The
+    generic message it lost to is true and says less.
+
+    It does NOT disturb the ordering `_leaf`'s own comment records. That one
+    is about type RESOLUTION -- the real declared type before the measure
+    substitution -- and this guard reads `declared_type` and runs before the
+    substitution too.
+    """
+    if op in _TEXT_OPS and (_is_today(value, column_type) or _is_now(value, column_type)):
+        raise _reject(
+            FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
+            target,
+            f"{value!r} is a point in time and {op!r} is a substring test, so "
+            f"the two cannot be combined -- the sentinel would reach the formula "
+            f"as its own spelling rather than as a date. Use a comparison "
+            f"(eq/neq/lt/leq/gt/geq) or a set test (in/not_in)",
+            where,
+        )
+
+
 def _check_date_literal(
-    value: object, column_type: str, target: str, where: Location, op: str = "eq",
+    value: object, column_type: str, target: str, where: Location,
 ) -> None:
     """A date column's literal, once `today` and `now` have had their turn,
     must be a real date. Nothing downstream checks it, and no probe has
@@ -689,29 +730,10 @@ def _check_date_literal(
     if column_type not in _DATE_TYPES or value is None:
         return
     if _is_today(value, column_type) or _is_now(value, column_type):
-        # A sentinel is a POINT IN TIME. Comparison, ordering and set
-        # membership mean something against one; a substring test does not,
-        # and the exemption used to wave it past this guard. What the
-        # renderers then emit — verified by running them, not by reasoning:
-        #
-        #   contains + now  ->  ISNUMBER(FIND(NOW(),[OccurredAt]))
-        #   begins_with     ->  LEFT([OccurredAt],3)=NOW()
-        #
-        # That 3 is len('now'): the sentinel's SPELLING reaching the formula
-        # as a character count. It is measuring the word, not the date, and
-        # that is decidable here without knowing anything about how
-        # SharePoint would treat either formula — which nobody does, since
-        # no probe has ever sent one. Refusing needs no such answer.
-        if op in _TEXT_OPS:
-            raise _reject(
-                FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
-                target,
-                f"{value!r} is a point in time and {op!r} is a substring test, so "
-                f"the two cannot be combined -- the sentinel would reach the formula "
-                f"as its own spelling rather than as a date. Use a comparison "
-                f"(eq/neq/lt/leq/gt/geq) or a set test (in/not_in)",
-                where,
-            )
+        # A sentinel is not a literal, so there is nothing here to parse. The
+        # one combination it cannot survive -- a substring operator -- is
+        # refused by `_reject_sentinel_with_a_substring_operator`, which runs
+        # earlier in `_leaf` and says why it has to.
         return
     if _looks_like_a_date(value):
         return
@@ -886,6 +908,14 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
     # is_not_null on the same column hits — the tool contradicting itself,
     # and routing the author to whichever spelling the guard misses.
     declared_type = _column_type(leaf.field, types, target, where)
+    # Ahead of the type guard below, and deliberately: both refuse a substring
+    # test against `today`/`now`, and this one says which of the two facts is
+    # the author's problem. The type guard subsumed it entirely until
+    # 2026-08-10, leaving a rule with a published catalogue row that nothing
+    # could reach -- see the helper.
+    _reject_sentinel_with_a_substring_operator(
+        leaf.value, declared_type, leaf.op, target, where,
+    )
     if leaf.op in _TEXT_OPS and declared_type in _NON_TEXT_FOR_SUBSTRING:
         raise _reject(
             FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
@@ -922,7 +952,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             # conjunction rather than once per set member.
             ref = f'<FieldRef Name="{leaf.field}"/>'
             for item in leaf.value:
-                _check_date_literal(item, column_type, target, where, leaf.op)
+                _check_date_literal(item, column_type, target, where)
             parts = [
                 f"<Neq>{ref}{_caml_value(column_type, item, where)}</Neq>"
                 for item in leaf.value
@@ -962,7 +992,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             where,
         )
 
-    _check_date_literal(leaf.value, column_type, target, where, leaf.op)
+    _check_date_literal(leaf.value, column_type, target, where)
 
     if _is_now(leaf.value, column_type) and target == EXPRESSION:
         raise _reject(
