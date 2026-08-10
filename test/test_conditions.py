@@ -4,7 +4,7 @@
 import datetime as dt
 
 import pytest
-from _findings import only
+from _findings import none_of, only
 from _paths import MANUAL
 
 from dbml_sharepoint.analysis import conditions
@@ -1328,16 +1328,17 @@ def test_a_relational_leaf_under_none_of_is_still_judged_as_authored() -> None:
     """The exemption is about operators the target cannot render, not about
     negation. A relational leaf is flipped by `none_of` just as a text one is,
     and CAML renders `gt` and `leq` alike -- so the leaf stays exempt from the
-    exemption and its unparseable literal is still reported by the first pass,
-    in the author's own vocabulary.
+    exemption and its unparseable literal is reported by the first pass, in
+    the author's own vocabulary.
 
-    This is the assertion the broad fix would break. "Skip any authored leaf
-    normalisation replaces" leaves only the second pass, which recodes
-    everything it finds as `condition_negation_unrenderable` and appends
-    "negating this rule turns it into 'leq'" -- an explanation of the wrong
-    fault, since the problem is the date and not the negation. Verified by
-    broadening the exemption on purpose: this test fails and the two above
-    still pass.
+    ONE finding, and that is the second half of this. The second pass sees the
+    flipped `leq` carrying the same bad literal, and until it learned to keep
+    a non-capability refusal's own code it recoded that as
+    `condition_negation_unrenderable` and appended "negating this rule turns
+    it into 'leq', which that target cannot express" -- a sentence about a
+    capability CAML has. The author was handed the wrong fault beside the
+    right one. Same code now, so `_dedupe` folds the pair into the one finding
+    there was ever one of.
     """
     condition = parse_condition(
         {"none_of": [{"field": "Due", "op": "gt", "value": "banana"}]}, "w",
@@ -1346,6 +1347,36 @@ def test_a_relational_leaf_under_none_of_is_still_judged_as_authored() -> None:
     findings = _findings(condition, types={"Due": "date"})
 
     assert only(findings, FindingCode.CONDITION_DATE_UNPARSEABLE).severity == "error"
+    none_of(findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE)
+
+
+def test_the_exemption_stays_narrow_for_an_operator_the_target_renders() -> None:
+    """The assertion the broad fix breaks, and it needs a leaf whose two
+    polarities fail DIFFERENTLY to show it.
+
+    `begins_with` on a date column is two faults at once: the operator is a
+    substring test the column type cannot take, and CAML has no
+    `not_begins_with` for the flip. The narrow exemption reports both -- the
+    first pass names the substring fault in the operator the author wrote,
+    the second names the negation CAML cannot render.
+
+    "Skip any authored leaf normalisation replaces" loses the first of those
+    entirely: the author is told to rewrite the rule positively, does so, and
+    meets the substring fault they were never shown. Verified by broadening
+    the exemption on purpose -- this test fails and the one above still
+    passes, because a leaf that fails the same way at both polarities cannot
+    tell the two exemptions apart.
+    """
+    condition = parse_condition(
+        {"none_of": [{"field": "Due", "op": "begins_with", "value": "x"}]}, "w",
+    )
+
+    findings = _findings(condition, types={"Due": "date"})
+
+    assert only(
+        findings, FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
+    ).severity == "error"
+    assert only(findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE).severity == "error"
 
 
 def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name() -> None:
@@ -1364,6 +1395,10 @@ def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name()
     The sibling is the whole experiment, so it is asserted to be innocent:
     `contains(Status, "x")` renders, and removing it must not be what makes
     the finding appear.
+
+    Reported as `condition_needle_empty` rather than as a negation fault,
+    because that is what it is: the needle is empty at either polarity and
+    CAML renders `contains` perfectly well.
     """
     types = {"Note": "nvarchar", "Status": "nvarchar"}
     condition = parse_condition(
@@ -1376,14 +1411,14 @@ def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name()
 
     findings = _findings(condition, types=types)
 
-    assert only(findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE).severity == "error"
+    assert only(findings, FindingCode.CONDITION_NEEDLE_EMPTY).severity == "error"
     # Same answer without the sibling, so the finding is about the empty
     # needle rather than about the pair.
     alone = parse_condition(
         {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]}, "w",
     )
     assert only(
-        _findings(alone, types=types), FindingCode.CONDITION_NEGATION_UNRENDERABLE,
+        _findings(alone, types=types), FindingCode.CONDITION_NEEDLE_EMPTY,
     ).severity == "error"
     # And the renderer does refuse, which is what makes reporting nothing a
     # traceback rather than a permissive build.

@@ -1402,7 +1402,20 @@ def _condition_problems(
     for leaf in leaves(normalise(condition)):
         if id(leaf) in authored or leaf.field not in rendered:
             continue
-        for _code, problem in _render_problems(leaf, target, types, context):
+        for code, problem in _render_problems(leaf, target, types, context):
+            if code not in _CAPABILITY_REFUSALS:
+                # Not about the negation at all. The operand is wrong and
+                # would be wrong at either polarity, so it keeps its own code
+                # and its own words -- `_dedupe` then folds it into the
+                # identical message the first pass raised on the authored
+                # leaf, because neither message names an operator.
+                #
+                # Recoding these was saying something false. `none_of[gt(Due,
+                # "banana")]` normalises to `leq`, which CAML renders
+                # perfectly well, and the appended sentence told the author
+                # the target could not express it. The fault is the date.
+                problems.append((code, problem, leaf.field))
+                continue
             # Its own code, not the inner one: the author never wrote the
             # operator being named, and the remedy is different — rewrite the
             # rule positively rather than fix the operator they chose.
@@ -1431,6 +1444,18 @@ def _flipped_by_normalisation(node: Condition, *, negate: bool = False) -> froze
     return frozenset().union(*(
         _flipped_by_normalisation(child, negate=child_negate) for child in node.children
     ))
+
+
+#: The refusals that are about the OPERATOR the target cannot render, as
+#: opposed to the operand it was handed. Only these earn
+#: `CONDITION_NEGATION_UNRENDERABLE` when normalisation introduced the leaf:
+#: the sentence that code appends -- "which that target cannot express" -- is
+#: a claim about capability, and appending it to an operand fault states
+#: something the module itself knows to be untrue.
+_CAPABILITY_REFUSALS = frozenset({
+    FindingCode.CONDITION_OPERATOR_UNRENDERABLE,
+    FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
+})
 
 
 def _renders_only_inverted(op: str, target: str) -> bool:
