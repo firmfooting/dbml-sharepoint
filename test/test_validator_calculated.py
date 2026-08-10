@@ -3,6 +3,7 @@ import pytest
 from _findings import by_severity, none_of, only
 from _model import bundle as make_bundle
 from _model import column as make_column
+from _model import enum as make_enum
 from _model import person as make_person
 from _model import ref as make_ref
 from _model import schema as make_schema
@@ -277,6 +278,48 @@ def test_probed_calculated_operand_types_are_errors(
     assert "Risk.Copy" in f.message and "[Source]" in f.message
     # The probed description is the whole point of the parametrisation.
     assert described_as in f.message
+
+def test_calculated_formula_multi_value_operand_is_error() -> None:
+    """The denylist behind the rule above is keyed by DBML type NAME, so
+    `audit_event[]` is not in it and could not be -- the key would have to be
+    minted per enum per schema. Arity is asked instead.
+
+    Measured 2026-08-10 on a live tenant: SharePoint refused the field
+    creation with HTTP 500 and the same sentence the other five refused
+    operands gave -- "One or more column references are not allowed, because
+    the columns are defined as a data type that is not supported in
+    formulas". So this is a closed question, and the build refuses first: the
+    deploy would otherwise fail part-way through a run, after earlier phases
+    have written to the site.
+
+    Its own code rather than `calculated_formula_unsupported_operand`,
+    because this is one rule reachable from three surfaces -- a calculated
+    formula, a validation formula and a show/hide formula all refuse the same
+    operand for the same reason, and the catalogue keeps one code for one
+    rule regardless of which section reached it.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            make_column("Title", required=True),
+            make_column("Events", "audit_event[]"),
+            make_column("Copy", "calculated_text"),
+        ),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    bundle = make_bundle(
+        entities=["Platform"], calculated_formulas={"Platform": {"Copy": "=[Events]"}},
+    )
+
+    findings = validate_against_mapping(schema, bundle)
+
+    f = only(findings, FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED)
+    assert f.severity == "error"
+    assert "Platform.Copy" in f.message and "[Events]" in f.message
+    # Naming what IS allowed matters more than naming what is not: an author
+    # told "not this one" still has to guess.
+    assert "Yes/No" in f.message
+    none_of(findings, FindingCode.CALCULATED_FORMULA_UNSUPPORTED_OPERAND)
 
 @pytest.mark.parametrize("operand_type", ["nvarchar", "number", "boolean", "datetime"])
 def test_probe_accepted_calculated_operand_types_stay_allowed(operand_type: str) -> None:

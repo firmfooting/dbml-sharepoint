@@ -88,6 +88,65 @@ def test_style_map_keys_must_be_enum_members(tmp_path: Path) -> None:
     )
     assert "Bogus" in finding.message
 
+@pytest.mark.parametrize("style", ["severity", "pill"])
+def test_a_chip_style_on_a_multi_value_column_is_refused(
+    tmp_path: Path, style: str,
+) -> None:
+    """WATCHED ON A TENANT, and the answer is worse than the one predicted.
+
+    The prediction, from reading `styles._condition`, was that
+    `@currentField == 'View'` against an array is false in every branch and
+    the cell renders unstyled -- the same shape as
+    `style_on_boolean_matches_nothing`. Probe run 3, on 2026-08-10, looked at
+    the rendered page: the cell background is filled FLAT GREY. The chain
+    matches nothing, falls through to its `muted` fallback, and paints a
+    neutral fill on every row.
+
+    That is the worse failure, and it is why this is an error rather than a
+    warning. An unstyled cell reads as a gap. A uniform grey fill reads as a
+    VERDICT, on a template whose entire product is a capability matrix
+    scanned at a glance, and nothing in the build or the deploy can see it --
+    the formatter JSON saves, reads back byte-identical and passes every
+    phase.
+
+    Both chip styles, from one measurement plus one thing that can be read
+    here rather than asserted about SharePoint: `_severity` and `_pill` build
+    the same `_if_chain` over the same `_condition`, and both fall back to
+    `muted`, which is grey in both palettes.
+    """
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            """
+            Enum audit_event {
+              "View"
+              "Edit"
+            }
+            """,
+            table("Platform", ID_PK, TITLE, "Events audit_event[]"),
+        ),
+        mapping=blocks(entities("Platform"), f"""
+            column_formatting:
+              Platform:
+                Events: {{ style: {style}, map: {{ View: good, Edit: warning }} }}
+        """),
+    )
+
+    finding = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL,
+    )
+
+    assert finding.severity == "error"
+    assert finding.location == Location(
+        Section.COLUMN_FORMATTING, entity="Platform", column="Events",
+    )
+    # What the operator would otherwise have seen is the whole point of the
+    # message: "matches nothing" would describe an absence, and what was
+    # measured is a confident wrong answer.
+    assert "neutral" in finding.message
+    assert style in finding.message
+
 def test_data_bar_color_by_map_keys_must_be_enum_members(tmp_path: Path) -> None:
     """The data-bar colour translation is checked like severity maps: a
     map key the SOURCE column's enum cannot produce is a declaration bug
@@ -259,6 +318,55 @@ def test_unique_is_rejected_for_unsupported_sharepoint_types(
     assert finding.severity == "error"
     # The type is the parameter under test and the thing the author must change.
     assert column_type in finding.message
+
+def test_unique_on_a_multi_value_column_is_refused_by_its_own_code() -> None:
+    """Its own code, because the remedy and the evidence are its own.
+
+    `unique_unsupported_for_type` reads as a fact about the named type, and
+    the name it can print here is `'audit_event[]'` -- which invites deleting
+    the brackets, i.e. changing the column's meaning, rather than dropping
+    the constraint. The arity is the problem, SharePoint's own vocabulary for
+    it is "Choice (multi-valued)", and a probe on 2026-08-10 measured
+    EnforceUniqueValues on one at HTTP 500. One declaration must still
+    produce one finding, so the generic code must NOT also fire.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            make_column("Events", "audit_event[]", required=True, unique=True),
+        ),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+
+    findings = validate(schema)
+
+    finding = only(findings, FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert "Events" in finding.message
+    assert "Choice (multi-valued)" in finding.message
+    none_of(findings, FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE)
+
+def test_a_default_on_a_multi_value_column_is_refused_by_validate() -> None:
+    """`validate` and `build` must refuse the same declaration.
+
+    `map_column` already raises on this, so `build` fails -- but `validate`
+    passed it silently, and `validate` is the command that exists to tell an
+    author what is wrong without a site URL. A declaration only one of the
+    two refuses reads as the tool contradicting itself.
+
+    There is no honest coercion to fall back on: DBML carries one scalar and
+    the item write shape measured on 2026-08-10 is a collection, with an
+    empty one reading back as `null` rather than `[]`.
+    """
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]", default="View")),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+
+    finding = only(validate(schema), FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED)
+
+    assert finding.severity == "error"
+    assert "Events" in finding.message
 
 # --- The schema-level rules, which nothing reached at runtime ---------------
 #
@@ -600,13 +708,17 @@ def test_dbml_indexes_reject_a_multi_value_column() -> None:
         make_table("Task", make_column("Events", "audit_event[]"), indexes=["Events"]),
         enums=[make_enum("audit_event", "View", "Edit", "Export")],
     )
-    finding = only(
-        validate_against_mapping(schema, make_bundle(entities=["Task"])),
-        FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE,
-    )
+    findings = validate_against_mapping(schema, make_bundle(entities=["Task"]))
+
+    finding = only(findings, FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED)
     assert finding.severity == "error"
     assert "Events" in finding.message
     assert "Choice (multi-valued)" in finding.message
+    # Its own code, and only its own: the generic rule names an unindexable
+    # TYPE and its remedy is "pick a different column", while this one has a
+    # second remedy the generic rule cannot offer -- the same enum without the
+    # brackets is indexable. Both firing would be two findings for one entry.
+    none_of(findings, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
 
 
 def test_dbml_indexes_reject_duplicates_and_more_than_twenty() -> None:

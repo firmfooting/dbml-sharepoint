@@ -8,6 +8,7 @@ from _findings import only
 from _model import MappingSections
 from _model import bundle as make_bundle
 from _model import column as make_column
+from _model import enum as make_enum
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import blocks, entities, write_mapping
@@ -183,6 +184,112 @@ def test_each_rule_here_has_its_own_code() -> None:
         ))[0].code,
     ]
     assert len(set(codes)) == len(codes), codes
+
+
+def test_form_visibility_refuses_a_multi_value_operand() -> None:
+    """Documented, and the comment in `conditions.py` that anticipated this
+    said so: Microsoft lists "Choice with multiple selections" among the
+    column types conditional show/hide cannot read. That comment closed with
+    "None of them has a DBML type in this tool, so there is nothing here to
+    reject -- the omission is considered, not missed", which stopped being
+    true the day `enum_name[]` resolved.
+
+    This is the target where being wrong is worst. The formula stays
+    SYNTACTICALLY valid, so it saves, the read-back compares equal and the
+    deploy phase passes -- a green build, a green manifest, and a form that
+    never reacts.
+    https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-conditional-show-hide
+    """
+    findings = validate_form_visibility(
+        column="Note",
+        new=True,
+        existing=True,
+        when=parse_condition([{"field": "Events", "op": "eq", "value": "View"}], "w"),
+        required=False,
+        has_default=False,
+        is_calculated=False,
+        rendered={"Note", "Events"},
+        types={"Note": "nvarchar", "Events": "audit_event[]"},
+        lookups=set(),
+        at=AT,
+    )
+
+    found = only(findings, FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED)
+    assert found.severity == "error"
+    assert "Events" in found.message
+    assert found.location == Location(
+        Section.FORM_VISIBILITY, entity="X", column="Note", sub="when.Events",
+    )
+
+
+def test_column_validation_refuses_a_multi_value_operand() -> None:
+    """Measured 2026-08-10, not inferred: SharePoint refused the
+    ValidationFormula outright -- HTTP 500, "This field type does not support
+    validation formulas."
+
+    A loud failure rather than a silent one, which is the good outcome. The
+    build-time refusal still belongs here, because it turns a failed deploy
+    -- part-way through a paste, in front of an operator -- into a failed
+    build. That is the same argument the hyperlink operand carries beside it.
+    """
+    from dbml_sharepoint.analysis.validator import validate_against_mapping
+
+    schema = make_schema(
+        make_table(
+            "Platform",
+            make_column("Title"),
+            make_column("Events", "audit_event[]"),
+        ),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    bundle = make_bundle(
+        entities=["Platform"],
+        column_validation={"Platform": EntitySection(columns={
+            "Events": ColumnValidation(
+                when=parse_condition(
+                    [{"field": "Events", "op": "eq", "value": "View"}],
+                    "column_validation",
+                ),
+                message="Say what is logged.",
+            ),
+        })},
+    )
+
+    found = only(
+        validate_against_mapping(schema, bundle),
+        FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED,
+    )
+    assert found.severity == "error"
+    assert found.location == Location(
+        Section.COLUMN_VALIDATION,
+        entity="Platform",
+        column="Events",
+        sub="when.Events",
+    )
+
+
+def test_a_view_filter_still_accepts_a_multi_value_operand() -> None:
+    """The refusal is per TARGET, and CAML is not one of them.
+
+    Measured 2026-08-10 across two runs: `<Eq>` against a single member does
+    the membership test and returns the rows containing it, `<Neq>` returns
+    the rows without it plus the empty ones, and the predicate survives being
+    stored as a view's ViewQuery. Refusing here would remove a filter
+    SharePoint demonstrably serves -- an enforced rule must never be stronger
+    than what the reference implementation satisfies.
+    """
+    from dbml_sharepoint.analysis.conditions import CAML, condition_findings
+
+    findings = condition_findings(
+        parse_condition([{"field": "Events", "op": "eq", "value": "View"}], "w"),
+        target=CAML,
+        rendered={"Events"},
+        types={"Events": "audit_event[]"},
+        lookups=set(),
+        at=AT,
+    )
+
+    assert findings == []
 
 
 def test_condition_problems_are_reported_through_the_shared_validator() -> None:

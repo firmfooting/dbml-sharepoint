@@ -499,12 +499,21 @@ UNSUPPORTED_INDEX_TYPES = {
 # refusal still belongs here so a deploy fails closed before it starts.
 # https://support.microsoft.com/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
 #
+# SHAREPOINT'S OWN NAME for the type, which is why it is one public constant
+# rather than a string typed into each message. Microsoft spells it this way
+# in both lists an author will be sent to -- the column types an index cannot
+# be added to, and the column types unique values cannot be enforced for -- so
+# a message quoting it is quoting the page the reader will land on. The DBML
+# spelling (`audit_event[]`) is the wrong thing to lead with in a refusal: it
+# names the enum, and invites deleting the brackets, which changes what the
+# column means rather than dropping the setting that is refused.
+#
 # One name, not one per arity: the only multi-value type `map_column` will
 # resolve is an enum, which becomes a Choice. `person[]` and a multi-value
 # lookup are refused as unknown types, so this string cannot be wrong today,
 # and the day one of them is added it has to be revisited HERE rather than at
-# three call sites.
-_MULTI_VALUE_INDEX_REFUSAL = "Choice (multi-valued)"
+# every call site.
+MULTI_VALUE_SP_TYPE_NAME = "Choice (multi-valued)"
 
 
 def unsupported_index_reason(col_type: str) -> str | None:
@@ -525,7 +534,7 @@ def unsupported_index_reason(col_type: str) -> str | None:
     predicate, not a second string.
     """
     if is_multi_value(col_type):
-        return _MULTI_VALUE_INDEX_REFUSAL
+        return MULTI_VALUE_SP_TYPE_NAME
     return UNSUPPORTED_INDEX_TYPES.get(col_type)
 
 # One join operation per RENDERED column of these types, against the list view

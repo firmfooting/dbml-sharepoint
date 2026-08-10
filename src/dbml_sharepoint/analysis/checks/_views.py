@@ -22,6 +22,7 @@ from dbml_sharepoint.analysis.joins import (
 )
 from dbml_sharepoint.analysis.typemap import (
     NUMERIC_ONLY_TOTALS,
+    is_multi_value,
     unsupported_index_reason,
 )
 from dbml_sharepoint.analysis.validator import (
@@ -684,7 +685,37 @@ def check(vc: ValidationContext) -> list[Finding]:
                         if unsupported_index_reason(types_by_col.get(name, "")) is None
                         and name not in vc.calculated_by_entity.get(entity_name, set())
                     }
-                    if not covered:
+                    # A multi-value filter column takes the exposure warning
+                    # out of the generic rule's hands, because the generic
+                    # remedy fails the build. "Add a bare DBML index to a
+                    # selective filter column" is right for every scalar and
+                    # impossible here -- SharePoint refuses an index on a
+                    # Choice (multi-valued) column, measured 2026-08-10
+                    # against a control that stuck on a single-value Choice --
+                    # so an author who followed it would land on
+                    # `multi_value_index_unsupported`, sent there by this
+                    # tool. The `not covered` gate is shared deliberately: one
+                    # indexed condition still serves the query, so a
+                    # multi-value column beside an indexed one is not an
+                    # exposure and must not warn.
+                    unindexable_multi = sorted(
+                        name for name in filtered
+                        if is_multi_value(types_by_col.get(name, ""))
+                    )
+                    if not covered and unindexable_multi:
+                        findings.append(Finding(
+                            FindingCode.MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE,
+                            f"{ctx}.where: filters on multi-value "
+                            f"{'columns' if len(unindexable_multi) > 1 else 'column'} "
+                            f"({', '.join(unindexable_multi)}), which SharePoint "
+                            f"can never index, and no other filtered column "
+                            f"carries an effective index. {exposure}. There is "
+                            f"no index remedy for this filter: add a scalar "
+                            f"filter column that can carry one, or accept the "
+                            f"risk for a list that will stay small.",
+                            location=at_where,
+                        ))
+                    elif not covered:
                         remedy = (
                             (
                                 "Add a bare DBML index to the tested column. "
