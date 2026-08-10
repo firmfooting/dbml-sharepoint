@@ -25,7 +25,12 @@ import re
 from dataclasses import replace
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, TODAY_SENTINEL
+from dbml_sharepoint.analysis.typemap import (
+    CALCULATED_TYPES,
+    NOW_SENTINEL,
+    TODAY_SENTINEL,
+    is_multi_value,
+)
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 
 #: Where a refusal raised by a renderer says it is. The renderers are public
@@ -314,10 +319,12 @@ _UNSUPPORTED_PROPERTY: dict[str, str] = {
 # exactly this shape.
 #
 # The same Learn page lists Currency, Location, Managed Metadata and the
-# multi-select Person/Choice/Lookup variants as unsupported. None of them
-# has a DBML type in this tool, so there is nothing here to reject — the
-# omission is considered, not missed. Time-of-day comparisons on Date and
-# Time are likewise unreachable: `today` is already refused for this
+# multi-select Person/Choice/Lookup variants as unsupported. Currency,
+# Location and Managed Metadata still have no DBML type in this tool, so
+# there is still nothing here to reject for them. The multi-select variants
+# DO now — `enum_name[]` — and they are refused just below, by arity rather
+# than by a type name this dict could hold. Time-of-day comparisons on Date
+# and Time are likewise unreachable: `today` is already refused for this
 # target (the client-side equivalent is @now, with datetime rather than
 # date semantics).
 # https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-conditional-show-hide
@@ -344,6 +351,44 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
         **_CALCULATED_OPERAND,
     },
     EXPRESSION: dict(_CALCULATED_OPERAND),
+}
+
+# The same question asked by ARITY, because the dict above cannot hold the
+# answer. Its keys are DBML type names and a multi-value type is spelled
+# `<enum>[]`, which would have to be minted per enum per schema -- so a
+# membership test against it reads as though it covers the new type and
+# silently does not.
+#
+# CAML IS DELIBERATELY ABSENT, and that is the measured half of this. A view
+# filter over a multi-value column works: two probe runs on 2026-08-10 showed
+# `<Eq>` against a single member returning the rows that contain it, `<Neq>`
+# returning the rows that do not plus the empty ones, and the predicate
+# surviving being stored as a view's ViewQuery. Adding CAML here would refuse
+# a filter SharePoint demonstrably serves.
+#
+# The two that ARE here refuse for different evidence, and each says which:
+# VALIDATION was measured, EXPRESSION is documented.
+_MULTI_VALUE_OPERAND_REFUSALS: dict[str, str] = {
+    # Measured 2026-08-10 on a live tenant: setting ValidationFormula against
+    # a MultiChoice column was refused with HTTP 500 and "This field type does
+    # not support validation formulas." Loud rather than silent, which is the
+    # good outcome -- but the build still refuses first, so a failed deploy
+    # part-way through a paste becomes a failed build.
+    VALIDATION: (
+        "SharePoint refuses a validation formula that reads one -- \"This "
+        "field type does not support validation formulas\""
+    ),
+    # Documented rather than probed, and this is the target where a wrong
+    # answer is worst: the formula stays SYNTACTICALLY valid, so it saves,
+    # reads back byte-identical and passes the deploy phase, leaving a green
+    # build and a form that never reacts. Microsoft lists "Choice with
+    # multiple selections" among the column types conditional show/hide
+    # cannot read.
+    EXPRESSION: (
+        "conditional show/hide cannot read one -- Microsoft lists \"Choice "
+        "with multiple selections\" among the unsupported column types, and "
+        "the formula would still save and still never react"
+    ),
 }
 
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
@@ -894,6 +939,16 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             f"{declared_type!r}, so the needle would be typed as {declared_type!r} "
             f"and searched for inside a value that is not text. Compare it instead "
             f"(eq/neq/lt/leq/gt/geq), or test a text column",
+            where,
+        )
+    if is_multi_value(declared_type) and target in _MULTI_VALUE_OPERAND_REFUSALS:
+        raise _reject(
+            FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED,
+            target,
+            f"{leaf.field!r} holds many values, and "
+            f"{_MULTI_VALUE_OPERAND_REFUSALS[target]}. Test a scalar column "
+            f"instead, or filter a view on this one -- a view filter over a "
+            f"multi-value column is the one target that works",
             where,
         )
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})

@@ -209,6 +209,14 @@ class FindingCode(StrEnum):
         "multi_value_filtered_view_unindexable", "warning"
     )
     MULTI_VALUE_INDEX_UNSUPPORTED = "multi_value_index_unsupported", "error"
+    # One rule, three modules: a calculated formula (checks/_structure.py), a
+    # validation formula and a show/hide formula (both analysis/conditions.py,
+    # reached from column_validation and form_visibility). All three refuse a
+    # multi-value operand, so all three keep one code and `location.section`
+    # says which surface asked -- the same arrangement the `condition_` codes
+    # already have. CAML is deliberately not among them: a view filter over a
+    # multi-value column is measured to work.
+    MULTI_VALUE_OPERAND_UNSUPPORTED = "multi_value_operand_unsupported", "error"
     POLYMORPHIC_COLUMN_NOT_RENDERED = "polymorphic_column_not_rendered", "error"
     PREVIOUS_TITLE_CLAIMED_TWICE = "previous_title_claimed_twice", "error"
     PREVIOUS_TITLE_IS_A_CURRENT_TITLE = "previous_title_is_a_current_title", "error"

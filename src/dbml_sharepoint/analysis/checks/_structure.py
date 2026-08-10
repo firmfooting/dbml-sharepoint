@@ -607,6 +607,32 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # test here expecting it to fire — it cannot.
                 if operand is None:
                     continue
+                if is_multi_value(operand.type):
+                    # Asked by arity, because `_FORBIDDEN_CALCULATED_OPERANDS`
+                    # is keyed by DBML type name and `audit_event[]` is not a
+                    # key it could hold -- the key would have to be minted per
+                    # enum per schema, so a membership test looks like it
+                    # covers the type and does not.
+                    #
+                    # Measured 2026-08-10 on a live tenant, and the answer was
+                    # the same sentence the five denylisted types gave:
+                    # HTTP 500, "One or more column references are not
+                    # allowed, because the columns are defined as a data type
+                    # that is not supported in formulas."
+                    findings.append(Finding(
+                        FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED,
+                        f"{table.name}.{col.name}: calculated formula "
+                        f"references [{ref}], a multi-value column. "
+                        f"SharePoint refuses this operand when the calculated "
+                        f"field is created -- HTTP 500, \"the columns are "
+                        f"defined as a data type that is not supported in "
+                        f"formulas\" -- after earlier deploy phases may "
+                        f"already have written to the site. Compute from a "
+                        f"supported operand type instead "
+                        f"({_SUPPORTED_CALCULATED_OPERANDS}), or drop the "
+                        f"formula.",
+                    ))
+                    continue
                 forbidden_kind = (
                     "lookup"
                     if operand.ref is not None

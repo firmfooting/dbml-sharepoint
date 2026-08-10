@@ -603,6 +603,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "as false, against a control on a single-value Choice in the same "
         "list that stuck. The same enum without the brackets is indexable."
     ),
+    FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED: (
+        "A calculated formula, a validation formula or a conditional "
+        "show/hide rule reads a multi-value column. Measured on 2026-08-10: "
+        "a calculated field refused it with HTTP 500 and a validation "
+        "formula with \"This field type does not support validation "
+        "formulas\"; show/hide is documented unsupported and would save and "
+        "silently never react. A VIEW filter over the same column works."
+    ),
     FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED: (
         "`[unique]` is declared on a multi-value column. SharePoint cannot "
         "enforce unique values on a Choice (multi-valued) column, and "
