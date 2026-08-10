@@ -1266,6 +1266,16 @@ def test_build_does_not_borrow_a_release_from_the_working_project(
     back to. Naming `--release` tells the operator exactly what to supply.
     """
     monkeypatch.chdir(_project(tmp_path))
+    # Same pinning as `test_a_missing_input_names_the_standard_path_it_looked_for`
+    # above, for the same reason and then one more. rich decides width and
+    # colour from the environment, and with colour ON its option highlighter
+    # emits the two dashes as SEPARATE styled spans -- `--release` renders as
+    # `ESC[1;36m-ESC[0mESC[1;36m-release`, so the literal substring is not in
+    # the output at all. CI sets GITHUB_ACTIONS, rich colours, this assertion
+    # went red on both runners while staying green on an uncoloured developer
+    # terminal. Reproduce the CI rendering with `GITHUB_ACTIONS=true`.
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("NO_COLOR", "1")
 
     result = runner.invoke(app, [
         "build",
@@ -1276,7 +1286,8 @@ def test_build_does_not_borrow_a_release_from_the_working_project(
     ])
 
     assert result.exit_code == 2, result.output
-    assert "--release" in result.output
+    rendered = " ".join(_ANSI.sub("", result.output).split())
+    assert "--release" in rendered
 
 
 def test_report_stamps_the_project_release_it_discovered(
