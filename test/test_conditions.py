@@ -777,7 +777,11 @@ def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
     documented child set has no `<Not>` and no `<NotContains>`, and
     `<NotIncludes>` negates `<Includes>` — a multi-value membership test,
     not a substring match. The message says so, says where the condition
-    DOES render, and names the authored spelling it most likely came from.
+    DOES render, and names BOTH authored spellings it can have come from.
+
+    Both, because it named only `none_of[contains]` until 2026-08-10 and was
+    therefore backwards for the author who literally typed `not_contains` —
+    in the commit whose whole purpose was the diagnostic (#20).
     """
     for authored in (
         [{"field": "Note", "op": "not_contains", "value": "x"}],
@@ -785,12 +789,33 @@ def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
         {"none_of": [{"field": "Note", "op": "begins_with", "value": "x"}]},
     ):
         condition = parse_condition(authored, "ctx")
-        with pytest.raises(ValueError, match="cannot say"):
+        with pytest.raises(ValueError, match="cannot say") as refused:
             to_caml(condition, TYPES)
+        # Neither source is named as the only one, since this rule cannot
+        # tell them apart.
+        assert "wrote 'not_" in str(refused.value)
+        assert "or wrote none_of[" in str(refused.value)
         # ...and both formula targets render it, which is the point of
         # naming them in the message.
         assert to_validation(condition, TYPES)
         assert to_expression(condition, TYPES)
+
+
+def test_the_negative_text_message_is_right_that_the_other_shape_renders() -> None:
+    """The message tells the author `none_of[not_contains]` is not this case
+    and does render. That is a claim about this tool's own behaviour, so it is
+    pinned rather than trusted: a change that re-broke #20 would leave the
+    message stating something false, and nothing else would notice."""
+    with pytest.raises(ValueError, match=r"none_of\[not_contains\] is NOT this case"):
+        to_caml(
+            parse_condition([{"field": "Note", "op": "not_contains", "value": "x"}], "ctx"),
+            TYPES,
+        )
+
+    negated = parse_condition(
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]}, "ctx",
+    )
+    assert "<Contains>" in to_caml(negated, TYPES)
 
 
 def test_a_text_operator_refuses_a_column_that_is_not_text() -> None:
@@ -1210,6 +1235,117 @@ def test_an_authored_operator_is_not_re_reported_under_a_rewritten_name() -> Non
         types={"Status": "nvarchar"}, lookups=set(), context="views[X].where",
     )
     assert problems == [], f"a plain supported operator must be clean: {problems}"
+
+
+# --- Judging the leaf that will actually be emitted (#20) -------------------
+#
+# The first pass renders every AUTHORED leaf standalone, as the capability
+# oracle. Under `none_of` that leaf never reaches the renderer -- `_push`
+# flips it first -- so the leaf being judged was not the leaf being emitted,
+# and the build failed on a rule the tool had just proved it could emit.
+#
+# `not_contains` and `not_begins_with` are the only operators on any target
+# that do not render but whose inverse does, so CAML view filters are the only
+# place this bites. The exemption is written to that shape rather than to
+# "skip any authored leaf normalisation replaces", which would also skip
+# relational leaves under `none_of` and change unrelated message wording. The
+# four tests below are the two halves of that boundary.
+
+
+def test_a_view_filter_accepts_none_of_wrapped_round_a_negative_text_operator() -> None:
+    """`none_of[not_contains]` normalises to a bare `contains`, which CAML
+    renders -- and the build refused it anyway (#20).
+
+    The contradiction is asserted in one test on purpose: the renderer is run
+    first and its output is the evidence that the refusal was wrong. Asserting
+    only "no findings" would still pass if somebody made CAML reject
+    `contains` too.
+    """
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]}, "w",
+    )
+
+    assert to_caml(condition, {"Note": "nvarchar"}) == (
+        '<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>'
+    )
+    assert validate_condition(
+        condition, target=CAML, rendered={"Note"},
+        types={"Note": "nvarchar"}, lookups=set(), context="views[0].where",
+    ) == []
+
+
+def test_the_implication_idiom_survives_a_negative_text_operator() -> None:
+    """`any_of[none_of[A], B]` is the implication idiom the module docstring
+    names as the reason `none_of` exists at all, so it is the shape that
+    matters most. It renders `<Or><Contains/><Eq/></Or>` and was refused."""
+    condition = parse_condition(
+        {"any_of": [
+            {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]},
+            {"field": "Status", "op": "eq", "value": "Open"},
+        ]},
+        "w",
+    )
+    types = {"Note": "nvarchar", "Status": "nvarchar"}
+
+    assert "<Or><Contains>" in to_caml(condition, types)
+    assert validate_condition(
+        condition, target=CAML, rendered=set(types),
+        types=types, lookups=set(), context="views[0].where",
+    ) == []
+
+
+def test_none_of_round_a_positive_text_operator_is_still_refused() -> None:
+    """The mirror that keeps the exemption narrow. `none_of[contains]`
+    normalises to `not_contains`, which CAML genuinely cannot express, and it
+    must still be reported -- under the code for a negation the target cannot
+    render, not the one for an operator the author chose."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]}, "w",
+    )
+
+    findings = _findings(condition, types={"Note": "nvarchar"})
+
+    assert only(
+        findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE,
+    ).severity == "error"
+
+
+def test_a_bare_negative_text_operator_is_still_refused() -> None:
+    """The other mirror. Nothing negates this leaf, so it reaches the renderer
+    exactly as authored and CAML has no spelling for it."""
+    condition = parse_condition(
+        [{"field": "Note", "op": "not_contains", "value": "x"}], "w",
+    )
+
+    findings = _findings(condition, types={"Note": "nvarchar"})
+
+    assert only(
+        findings, FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
+    ).severity == "error"
+
+
+def test_a_relational_leaf_under_none_of_is_still_judged_as_authored() -> None:
+    """The exemption is about operators the target cannot render, not about
+    negation. A relational leaf is flipped by `none_of` just as a text one is,
+    and CAML renders `gt` and `leq` alike -- so the leaf stays exempt from the
+    exemption and its unparseable literal is still reported by the first pass,
+    in the author's own vocabulary.
+
+    This is the assertion the broad fix would break. "Skip any authored leaf
+    normalisation replaces" leaves only the second pass, which recodes
+    everything it finds as `condition_negation_unrenderable` and appends
+    "negating this rule turns it into 'leq'" -- an explanation of the wrong
+    fault, since the problem is the date and not the negation. Verified by
+    broadening the exemption on purpose: this test fails and the two above
+    still pass.
+    """
+    condition = parse_condition(
+        {"none_of": [{"field": "Due", "op": "gt", "value": "banana"}]}, "w",
+    )
+
+    findings = _findings(condition, types={"Due": "date"})
+
+    assert only(findings, FindingCode.CONDITION_DATE_UNPARSEABLE).severity == "error"
 
 
 def test_a_lookup_value_accessor_compares_as_text() -> None:

@@ -500,13 +500,18 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
             at,
         )
     if leaf.op in ("not_contains", "not_begins_with") and target == CAML:
-        # The generic message below names an operator the author very
-        # likely never wrote: `none_of[contains]` normalises to
-        # `not_contains` before it reaches here, so "operator
-        # 'not_contains' has no rendering" reads as a tool defect. It is a
-        # platform one, it is permanent, and the two targets where the same
-        # condition DOES render are worth naming rather than leaving the
-        # author to discover.
+        # The generic message below names an operator the author may never
+        # have written: `none_of[contains]` normalises to `not_contains`
+        # before it reaches here, so "operator 'not_contains' has no
+        # rendering" reads as a tool defect. It is a platform one, it is
+        # permanent, and the two targets where the same condition DOES render
+        # are worth naming rather than leaving the author to discover.
+        #
+        # Both sources are named, because this cannot tell them apart and
+        # naming only one was backwards for the other. The last sentence is
+        # not padding: `none_of[not_contains]` is the shape that WAS refused
+        # here (#20) and now builds, so an author who reads this message on a
+        # neighbouring rule must not conclude their working one is doomed.
         positive = NEGATION[leaf.op]
         raise _reject(
             FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
@@ -515,8 +520,10 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
             f"<BeginsWith> and no negation of either -- its <Where> element has "
             f"no <Not>, and <NotIncludes> negates <Includes>, which is a "
             f"multi-value membership test rather than a substring match. This "
-            f"is a SharePoint limit, not one this tool can lift. (If you wrote "
-            f"none_of[{positive}], that is where this came from.) The same "
+            f"is a SharePoint limit, not one this tool can lift. You either "
+            f"wrote {leaf.op!r} directly or wrote none_of[{positive}], which "
+            f"normalises to it; none_of[{leaf.op}] is NOT this case and does "
+            f"render, since it normalises back to {positive!r}. The same "
             f"condition renders on column_validation/list_validation and on "
             f"form_visibility; for a view, filter the other way round, or "
             f"precompute the test into a column and filter on that",
@@ -1346,8 +1353,23 @@ def _condition_problems(
         # into a traceback.
         return _dedupe(problems)
 
+    flipped = _flipped_by_normalisation(condition)
     for leaf in leaves(condition):
         if id(leaf) in suppressed or leaf.field not in rendered:
+            continue
+        if id(leaf) in flipped and _renders_only_inverted(leaf.op, target):
+            # This leaf never reaches the renderer: `_push` flips it first, so
+            # judging it standalone judges an operator that is never emitted.
+            # The build refused `none_of[not_contains]` on a rule the tool had
+            # just proved it could emit -- `all_of[contains]`, straight to
+            # <Contains> (#20). Whatever normalisation puts in its place is
+            # judged by the second pass below.
+            #
+            # Narrow on purpose. A blanket "skip any authored leaf
+            # normalisation replaces" would also skip relational leaves under
+            # `none_of`, whose faults are then reported only by that second
+            # pass, in a rewritten vocabulary and under a code about the
+            # negation rather than about the fault.
             continue
         problems.extend(
             (code, message, leaf.field)
@@ -1380,6 +1402,40 @@ def _condition_problems(
                 leaf.field,
             ))
     return _dedupe(problems)
+
+
+def _flipped_by_normalisation(node: Condition, *, negate: bool = False) -> frozenset[int]:
+    """Identities of the AUTHORED leaves `normalise` inverts.
+
+    Mirrors `_push`'s polarity bookkeeping and nothing else: a leaf under an
+    odd number of `none_of` wrappers is flipped, and every other leaf reaches
+    the renderer as written. Keyed by `id`, the way `_condition_problems`
+    already keys its suppression set, because two leaves on one column can sit
+    at different polarities.
+    """
+    if isinstance(node, Leaf):
+        return frozenset({id(node)}) if negate else frozenset()
+    child_negate = not negate if node.kind == "none_of" else negate
+    return frozenset().union(*(
+        _flipped_by_normalisation(child, negate=child_negate) for child in node.children
+    ))
+
+
+def _renders_only_inverted(op: str, target: str) -> bool:
+    """Whether the target refuses this operator but renders its inverse.
+
+    The exact condition under which judging an authored leaf standalone
+    contradicts what will be emitted, and it is a small set: `not_contains`
+    and `not_begins_with` on CAML, because `<Where>` has no negation of
+    `<Contains>` or `<BeginsWith>` while both positives are elements it does
+    have. Every operator in the grammar renders on the two formula targets, so
+    this is False for them throughout.
+
+    Derived from `CAPABILITIES` rather than listing the two operators, so an
+    operator added to the grammar that some target cannot render is covered
+    the day it is added rather than the day somebody remembers this function.
+    """
+    return op not in CAPABILITIES[target] and NEGATION[op] in CAPABILITIES[target]
 
 
 def _operand_problems(
