@@ -296,11 +296,14 @@ def emit_bundle(
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure
     # packaging helpers without pulling the whole generation stack.
-    from dbml_sharepoint.generators.assessgen import generate_assess_js, generate_assess_manifest
-    from dbml_sharepoint.generators.demogen import generate_demo_js
-    from dbml_sharepoint.generators.jsgen import generate_deploy_js
-    from dbml_sharepoint.generators.reportgen import emit_reporting
-    from dbml_sharepoint.generators.rollbackgen import generate_rollback_js
+    from dbml_sharepoint.generators.assessgen import (  # noqa: PLC0415
+        generate_assess_js,
+        generate_assess_manifest,
+    )
+    from dbml_sharepoint.generators.demogen import generate_demo_js  # noqa: PLC0415
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js  # noqa: PLC0415
+    from dbml_sharepoint.generators.reportgen import emit_reporting  # noqa: PLC0415
+    from dbml_sharepoint.generators.rollbackgen import generate_rollback_js  # noqa: PLC0415
 
     if seed and not mapping_bundle.mapping.demo_items:
         raise SeedRequiresDemoItemsError(

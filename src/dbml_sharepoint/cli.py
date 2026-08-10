@@ -12,6 +12,7 @@ import typer
 import yaml
 from pyparsing.exceptions import ParseBaseException
 
+from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.finding_help import FINDING_HELP
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.validator import validate_all
@@ -789,8 +790,6 @@ def report(
 @app.command()
 def version() -> None:
     """Print the deployer version."""
-    from . import __version__
-
     typer.echo(__version__)
 
 
