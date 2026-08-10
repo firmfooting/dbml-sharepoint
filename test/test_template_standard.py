@@ -42,8 +42,8 @@ from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 # This module is the family-standard conformance sweep: 22 rules, thirteen of
-# them parametrised across the whole template library, so 30 templates become
-# 399 of the suite's 1293 cases.
+# them parametrised across the whole template library, so 31 templates become
+# 413 of the suite's 1646 cases.
 #
 # The marker is for FOCUS, not speed. Measured: the full suite is 4.66s and
 # `-m "not conformance"` is 4.65s -- skipping a third of the cases saves
@@ -178,6 +178,25 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Assessment and evidence": "Assess",
         "Gaps and remediation": "Act",
         "Ownership and cycle": "Govern",
+    },
+    # Two consecutive Act sections, which §1.2 permits and this register
+    # depends on: "Ethics decision" and "Site authorisation" are two
+    # authorities, two reference numbers and two sets of dates, and the form's
+    # own shape has to say so before anybody reads a word. Merging them into
+    # one "Approvals" block would be the collapse the template exists to
+    # prevent.
+    #
+    # "Oversight and what is owed" is the Govern beat and it carries the
+    # recurring facts this single-list design collapses onto the project row —
+    # the next report, the last one filed, the latest amendment and the
+    # history note that is all the earlier ones leave behind.
+    ("research-ethics-register-simple", "Project"): {
+        "The project": "Identify",
+        "Review pathway": "Assess",
+        "Ethics decision": "Act",
+        "Site authorisation": "Act",
+        "Oversight and what is owed": "Govern",
+        "System": "System",
     },
     # A contract has no assessment step and no treatment step: the middle of
     # the arc collapses to the commercial terms, which are what the register
@@ -1347,17 +1366,26 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
 
-    Measured 2026-07-31 across 30 templates / 53 entities: the distribution is
-    2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1, and the 5 is
+    Measured 2026-07-31 across 30 templates / 53 entities: the distribution was
+    2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1, and the 5 was
     opportunities-register/Opportunity (DecisionMaker, OpportunityOwner,
-    ProjectContact, plus Author and Editor). If this fails at 6, that is a
-    template growing a join column — update the number here DELIBERATELY, and
-    check the spec's survey paragraph with it."""
+    ProjectContact, plus Author and Editor).
+
+    RE-MEASURED 2026-08-10 across 31 templates / 54 entities, when
+    research-ethics-register-simple joined the roster: 2 -> 7, 3 -> 28,
+    4 -> 18, 5 -> 1. The whole delta is the one new entity, which lands at 3
+    (SiteInvestigator plus Author and Editor) — a single-list template carries
+    no Lookup at all, so it cannot move the ceiling. The worst is unchanged
+    and is still the same opportunities-register entity, re-derived rather
+    than assumed.
+
+    If this fails at 6, that is a template growing a join column — update the
+    number here DELIBERATELY, and check the spec's survey paragraph with it."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 30, (
-        f"{len(templates)} templates discovered, not the 30 this survey was "
+    assert len(templates) == 31, (
+        f"{len(templates)} templates discovered, not the 31 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster — re-measure the distribution and the worst count below "
         f"before trusting either."
