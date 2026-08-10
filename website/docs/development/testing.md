@@ -14,14 +14,14 @@ so the next person to look at the number does not have to re-derive it.
 
 | | Count |
 |---|---|
-| Collected cases | 1,293 |
-| **Distinct test functions** | **838** |
-| Extra cases from parametrisation | 455 |
+| Collected cases | 1,646 |
+| **Distinct test functions** | **1,048** |
+| Extra cases from parametrisation | 598 |
 
 The gap is concentrated in one file. `test_template_standard.py` is **22
-functions producing 399 cases**, because thirteen of them are parametrised
-across the whole template library. That is 22 conformance rules applied to 30
-templates, not 399 things anyone maintains — and parametrising is what makes a
+functions producing 413 cases**, because thirteen of them are parametrised
+across the whole template library. That is 22 conformance rules applied to 31
+templates, not 413 things anyone maintains — and parametrising is what makes a
 failure say *which* template drifted instead of "something under `solutions/`
 is wrong".
 
@@ -141,7 +141,7 @@ directories; both were previously called `TEMPLATES` in different modules.
 
 ## The axis that grows
 
-Conformance cases scale as *rules × templates*. At 30 templates that is 399
+Conformance cases scale as *rules × templates*. At 31 templates that is 413
 cases and about 5s. At 100 templates it would be roughly 1,300 cases and ~16s
 serial — still fine, but worth knowing that the count grows when a **template**
 is added, not when a test is.
