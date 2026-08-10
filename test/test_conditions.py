@@ -4,7 +4,7 @@
 import datetime as dt
 
 import pytest
-from _findings import only
+from _findings import messages, none_of, only
 from _paths import MANUAL
 
 from dbml_sharepoint.analysis import conditions
@@ -452,6 +452,57 @@ def test_now_on_a_date_column_is_refused_and_names_today() -> None:
             render(condition, TYPES)
 
 
+@pytest.mark.parametrize("op", ["in", "not_in"])
+@pytest.mark.parametrize("target", [CAML, VALIDATION, EXPRESSION])
+def test_in_and_not_in_diagnose_now_on_a_date_column_identically(
+    op: str, target: str,
+) -> None:
+    """Two spellings of one mistake got two different explanations, and only
+    one of them named the fix (#21).
+
+        in [now]      -> the 'now' sentinel needs a datetime column; 'Due' is
+                         'date', which has no time of day - use 'today'
+        not_in [now]  -> 'now' is not a date, the sentinel 'today'/'today+/-N',
+                         or 'now'
+
+    The second told the author their value was not one of three things, the
+    third of which was the value they had written.
+
+    The asymmetry was structural rather than accidental. `in` recurses through
+    `_leaf` per member, so every member met the sentinel guard; CAML renders
+    `not_in` by looping the members itself and called only
+    `_check_date_literal`, for which `now` on a non-datetime column is just an
+    unparseable literal. Both refused, so nothing wrong was ever emitted --
+    but rewriting a rule from `not_in` to `in` changed the explanation of the
+    same input, which is the kind of thing that costs somebody an afternoon.
+
+    Parametrised over every target so the CAML-only loop cannot drift from the
+    three that recurse.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Due", op, ["now"]),)),
+        target=target,
+        types={"Due": "date"},
+    )
+
+    assert "use 'today'" in only(
+        findings, FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
+    ).message
+
+
+def test_a_bad_date_among_good_ones_is_still_caught_per_member() -> None:
+    """The mirror. The per-member sentinel check must not displace the
+    per-member literal check that CAML's `not_in` loop already had -- one bad
+    literal among good ones used to walk straight past it."""
+    findings = _findings(
+        Group("all_of", (Leaf("Due", "not_in", ["2026-07-29", "banana"]),)),
+        target=CAML,
+        types={"Due": "date"},
+    )
+
+    assert only(findings, FindingCode.CONDITION_DATE_UNPARSEABLE).severity == "error"
+
+
 def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
     """`now` is the one sentinel here whose every rendering contradicts a
     published Microsoft source, so the evidence has to stay findable.
@@ -532,11 +583,14 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
             condition = parse_condition(
                 [{"field": "OccurredAt", "op": op, "value": value}], "ctx",
             )
-            # Two guards now refuse this, and the type one fires first: a
-            # substring test on a datetime column is wrong whatever the
-            # value is, so it never reaches the sentinel check. Both
-            # messages are correct; the alternation keeps this test honest
-            # about which one the author actually sees.
+            # Two guards refuse this and the SENTINEL one fires first, since
+            # 2026-08-10 (#140). Both messages are correct -- a substring
+            # test on a datetime column is wrong whatever the value is --
+            # but only one of them names the sentinel, and the catalogue
+            # says that is the code this input gets. The alternation stays
+            # so this test keeps pinning the refusal rather than the
+            # ordering; `test_a_substring_test_against_a_sentinel_names_the
+            # _sentinel` is what pins the ordering.
             with pytest.raises(ValueError, match=r"point in time|substring test"):
                 to_validation(condition, TYPES)
         # CAML renders only the positive two directly, and it did render
@@ -723,7 +777,11 @@ def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
     documented child set has no `<Not>` and no `<NotContains>`, and
     `<NotIncludes>` negates `<Includes>` — a multi-value membership test,
     not a substring match. The message says so, says where the condition
-    DOES render, and names the authored spelling it most likely came from.
+    DOES render, and names BOTH authored spellings it can have come from.
+
+    Both, because it named only `none_of[contains]` until 2026-08-10 and was
+    therefore backwards for the author who literally typed `not_contains` —
+    in the commit whose whole purpose was the diagnostic (#20).
     """
     for authored in (
         [{"field": "Note", "op": "not_contains", "value": "x"}],
@@ -731,12 +789,33 @@ def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
         {"none_of": [{"field": "Note", "op": "begins_with", "value": "x"}]},
     ):
         condition = parse_condition(authored, "ctx")
-        with pytest.raises(ValueError, match="cannot say"):
+        with pytest.raises(ValueError, match="cannot say") as refused:
             to_caml(condition, TYPES)
+        # Neither source is named as the only one, since this rule cannot
+        # tell them apart.
+        assert "wrote 'not_" in str(refused.value)
+        assert "or wrote none_of[" in str(refused.value)
         # ...and both formula targets render it, which is the point of
         # naming them in the message.
         assert to_validation(condition, TYPES)
         assert to_expression(condition, TYPES)
+
+
+def test_the_negative_text_message_is_right_that_the_other_shape_renders() -> None:
+    """The message tells the author `none_of[not_contains]` is not this case
+    and does render. That is a claim about this tool's own behaviour, so it is
+    pinned rather than trusted: a change that re-broke #20 would leave the
+    message stating something false, and nothing else would notice."""
+    with pytest.raises(ValueError, match=r"none_of\[not_contains\] is NOT this case"):
+        to_caml(
+            parse_condition([{"field": "Note", "op": "not_contains", "value": "x"}], "ctx"),
+            TYPES,
+        )
+
+    negated = parse_condition(
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]}, "ctx",
+    )
+    assert "<Contains>" in to_caml(negated, TYPES)
 
 
 def test_a_text_operator_refuses_a_column_that_is_not_text() -> None:
@@ -1158,6 +1237,323 @@ def test_an_authored_operator_is_not_re_reported_under_a_rewritten_name() -> Non
     assert problems == [], f"a plain supported operator must be clean: {problems}"
 
 
+# --- Judging the leaf that will actually be emitted (#20) -------------------
+#
+# The first pass renders every AUTHORED leaf standalone, as the capability
+# oracle. Under `none_of` that leaf never reaches the renderer -- `_push`
+# flips it first -- so the leaf being judged was not the leaf being emitted,
+# and the build failed on a rule the tool had just proved it could emit.
+#
+# `not_contains` and `not_begins_with` are the only operators on any target
+# that do not render but whose inverse does, so CAML view filters are the only
+# place this bites. The exemption is written to that shape rather than to
+# "skip any authored leaf normalisation replaces", which would also skip
+# relational leaves under `none_of` and change unrelated message wording. The
+# four tests below are the two halves of that boundary.
+
+
+def test_a_view_filter_accepts_none_of_wrapped_round_a_negative_text_operator() -> None:
+    """`none_of[not_contains]` normalises to a bare `contains`, which CAML
+    renders -- and the build refused it anyway (#20).
+
+    The contradiction is asserted in one test on purpose: the renderer is run
+    first and its output is the evidence that the refusal was wrong. Asserting
+    only "no findings" would still pass if somebody made CAML reject
+    `contains` too.
+    """
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]}, "w",
+    )
+
+    assert to_caml(condition, {"Note": "nvarchar"}) == (
+        '<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>'
+    )
+    assert validate_condition(
+        condition, target=CAML, rendered={"Note"},
+        types={"Note": "nvarchar"}, lookups=set(), context="views[0].where",
+    ) == []
+
+
+def test_the_implication_idiom_survives_a_negative_text_operator() -> None:
+    """`any_of[none_of[A], B]` is the implication idiom the module docstring
+    names as the reason `none_of` exists at all, so it is the shape that
+    matters most. It renders `<Or><Contains/><Eq/></Or>` and was refused."""
+    condition = parse_condition(
+        {"any_of": [
+            {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]},
+            {"field": "Status", "op": "eq", "value": "Open"},
+        ]},
+        "w",
+    )
+    types = {"Note": "nvarchar", "Status": "nvarchar"}
+
+    assert "<Or><Contains>" in to_caml(condition, types)
+    assert validate_condition(
+        condition, target=CAML, rendered=set(types),
+        types=types, lookups=set(), context="views[0].where",
+    ) == []
+
+
+def test_none_of_round_a_positive_text_operator_is_still_refused() -> None:
+    """The mirror that keeps the exemption narrow. `none_of[contains]`
+    normalises to `not_contains`, which CAML genuinely cannot express, and it
+    must still be reported -- under the code for a negation the target cannot
+    render, not the one for an operator the author chose."""
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]}, "w",
+    )
+
+    findings = _findings(condition, types={"Note": "nvarchar"})
+
+    assert only(
+        findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE,
+    ).severity == "error"
+
+
+def test_a_bare_negative_text_operator_is_still_refused() -> None:
+    """The other mirror. Nothing negates this leaf, so it reaches the renderer
+    exactly as authored and CAML has no spelling for it."""
+    condition = parse_condition(
+        [{"field": "Note", "op": "not_contains", "value": "x"}], "w",
+    )
+
+    findings = _findings(condition, types={"Note": "nvarchar"})
+
+    assert only(
+        findings, FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE,
+    ).severity == "error"
+
+
+def test_a_relational_leaf_under_none_of_is_still_judged_as_authored() -> None:
+    """The exemption is about operators the target cannot render, not about
+    negation. A relational leaf is flipped by `none_of` just as a text one is,
+    and CAML renders `gt` and `leq` alike -- so the leaf stays exempt from the
+    exemption and its unparseable literal is reported by the first pass, in
+    the author's own vocabulary.
+
+    ONE finding, and that is the second half of this. The second pass sees the
+    flipped `leq` carrying the same bad literal, and until it learned to keep
+    a non-capability refusal's own code it recoded that as
+    `condition_negation_unrenderable` and appended "negating this rule turns
+    it into 'leq', which that target cannot express" -- a sentence about a
+    capability CAML has. The author was handed the wrong fault beside the
+    right one. Same code now, so `_dedupe` folds the pair into the one finding
+    there was ever one of.
+    """
+    condition = parse_condition(
+        {"none_of": [{"field": "Due", "op": "gt", "value": "banana"}]}, "w",
+    )
+
+    findings = _findings(condition, types={"Due": "date"})
+
+    assert only(findings, FindingCode.CONDITION_DATE_UNPARSEABLE).severity == "error"
+    none_of(findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE)
+
+
+def test_the_exemption_stays_narrow_for_an_operator_the_target_renders() -> None:
+    """The assertion the broad fix breaks, and it needs a leaf whose two
+    polarities fail DIFFERENTLY to show it.
+
+    `begins_with` on a date column is two faults at once: the operator is a
+    substring test the column type cannot take, and CAML has no
+    `not_begins_with` for the flip. The narrow exemption reports both -- the
+    first pass names the substring fault in the operator the author wrote,
+    the second names the negation CAML cannot render.
+
+    "Skip any authored leaf normalisation replaces" loses the first of those
+    entirely: the author is told to rewrite the rule positively, does so, and
+    meets the substring fault they were never shown. Verified by broadening
+    the exemption on purpose -- this test fails and the one above still
+    passes, because a leaf that fails the same way at both polarities cannot
+    tell the two exemptions apart.
+    """
+    condition = parse_condition(
+        {"none_of": [{"field": "Due", "op": "begins_with", "value": "x"}]}, "w",
+    )
+
+    findings = _findings(condition, types={"Due": "date"})
+
+    assert only(
+        findings, FindingCode.CONDITION_SUBSTRING_TEST_ON_A_NON_TEXT_COLUMN,
+    ).severity == "error"
+    assert only(findings, FindingCode.CONDITION_NEGATION_UNRENDERABLE).severity == "error"
+
+
+def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name() -> None:
+    """The exemption above hands the leaf to the second pass. This is the
+    shape where the second pass used to drop it too, so nothing judged it.
+
+    That pass skipped by OPERATOR NAME -- "the author wrote a `contains`
+    somewhere, so a `contains` here is theirs" -- and the two skips compose
+    into silence: the first pass steps over the authored `not_contains`
+    because CAML never sees it, and the second steps over the `contains`
+    normalisation put in its place because a sibling rule happens to be
+    spelled the same. The empty needle then reaches `to_caml` and comes back
+    as a `_RefusalError` at generation time, which is precisely the traceback
+    the second pass was added to prevent.
+
+    The sibling is the whole experiment, so it is asserted to be innocent:
+    `contains(Status, "x")` renders, and removing it must not be what makes
+    the finding appear.
+
+    Reported as `condition_needle_empty` rather than as a negation fault,
+    because that is what it is: the needle is empty at either polarity and
+    CAML renders `contains` perfectly well.
+    """
+    types = {"Note": "nvarchar", "Status": "nvarchar"}
+    condition = parse_condition(
+        {"all_of": [
+            {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]},
+            {"field": "Status", "op": "contains", "value": "x"},
+        ]},
+        "w",
+    )
+
+    findings = _findings(condition, types=types)
+
+    assert only(findings, FindingCode.CONDITION_NEEDLE_EMPTY).severity == "error"
+    # Same answer without the sibling, so the finding is about the empty
+    # needle rather than about the pair.
+    alone = parse_condition(
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]}, "w",
+    )
+    assert only(
+        _findings(alone, types=types), FindingCode.CONDITION_NEEDLE_EMPTY,
+    ).severity == "error"
+    # And the renderer does refuse, which is what makes reporting nothing a
+    # traceback rather than a permissive build.
+    with pytest.raises(ValueError, match="non-empty 'value'"):
+        to_caml(condition, types)
+
+
+def test_one_bad_operand_under_none_of_is_one_finding_not_two() -> None:
+    """Both passes see the same empty needle, at two polarities.
+
+    The first judges the authored `contains`, the second the `not_contains`
+    normalisation makes of it, and both refusals name the operator in their
+    prose -- so `_dedupe`, which matches whole messages, sees two different
+    strings and keeps both. The author got `condition_needle_empty` twice at
+    one location for one mistake.
+
+    The expression target rather than CAML because CAML would refuse
+    `not_contains` on capability first and never reach the operand, which
+    would hide the duplicate rather than fix it.
+    """
+    types = {"Note": "nvarchar"}
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "contains", "value": ""}]}, "w",
+    )
+
+    findings = _findings(condition, target=EXPRESSION, types=types)
+
+    # The operator the AUTHOR wrote, not the one normalisation made.
+    assert "'contains'" in only(findings, FindingCode.CONDITION_NEEDLE_EMPTY).message
+    assert "'not_contains'" not in only(
+        findings, FindingCode.CONDITION_NEEDLE_EMPTY,
+    ).message
+
+
+def test_two_broken_leaves_on_one_column_are_two_findings() -> None:
+    """Folding one fault into another is not the same as not repeating it.
+
+    Both leaves here carry an empty needle, and both are wrong. The one
+    under `none_of` is judged only by the normalisation pass -- CAML has no
+    negation of `<Contains>`, so the authored `not_contains` is skipped
+    standalone -- and suppressing by `(code, column)` let the `begins_with`
+    beside it stand in for it. The author saw one finding, fixed it, rebuilt,
+    and met the other: a build that reports a NEW error after a clean fix,
+    which reads as the fix having caused it.
+
+    Suppression exists for one leaf reported twice at two polarities. Two
+    leaves are two mistakes.
+    """
+    types = {"Note": "nvarchar"}
+    condition = parse_condition(
+        {"all_of": [
+            {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]},
+            {"field": "Note", "op": "begins_with", "value": ""},
+        ]},
+        "w",
+    )
+
+    findings = _findings(condition, target=CAML, types=types)
+
+    empty = messages(findings, FindingCode.CONDITION_NEEDLE_EMPTY)
+    assert len(empty) == 2, empty
+    # One per leaf: the authored `begins_with`, and the `contains`
+    # normalisation puts where the `not_contains` was.
+    assert any("'begins_with'" in message for message in empty)
+    assert any("'contains'" in message for message in empty)
+
+
+def test_one_leaf_object_used_at_both_polarities_is_judged_at_both() -> None:
+    """Polarity is a property of an OCCURRENCE, not of an object.
+
+    Three things here key on `id(leaf)`: the operand suppression set, the
+    set of leaves normalisation flips, and the attribution of a normalised
+    fault to its origin. A caller building a tree in Python -- which the
+    grammar's own tests do -- can put ONE `Leaf` in two places at opposite
+    polarities, and identity then answers for both. The bare `not_contains`
+    below was skipped as though it were the negated one, so validation
+    passed and `to_caml` raised on it instead: a traceback where the whole
+    point was a named finding.
+
+    `parse_condition` never shares a leaf, so no mapping file can reach
+    this. That is a reason it went unnoticed, not a reason it is allowed --
+    `condition_findings` takes a `Condition`, not a path.
+    """
+    shared = Leaf("Note", "not_contains", "x")
+    condition = Group("all_of", (shared, Group("none_of", (shared,))))
+
+    findings = _findings(condition, target=CAML, types={"Note": "nvarchar"})
+
+    # The bare occurrence is emitted as written and CAML has no <NotContains>.
+    only(findings, FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE)
+    with pytest.raises(Exception, match="not_contains"):
+        to_caml(condition, {"Note": "nvarchar"})
+
+
+@pytest.mark.parametrize("declared", [
+    {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]},
+    {"none_of": [{"field": "Count", "op": "gt", "value": 5}]},
+    {"none_of": [{"field": "Status", "op": "in", "value": ["a", "b"]}]},
+    {"all_of": [
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]},
+        {"field": "Note", "op": "begins_with", "value": "y"},
+        {"any_of": [
+            {"none_of": [{"field": "Count", "op": "is_null"}]},
+            {"none_of": [{"none_of": [{"field": "Status", "op": "eq", "value": "a"}]}]},
+        ]},
+    ]},
+])
+def test_per_leaf_normalisation_matches_the_whole_tree(declared: dict[str, object]) -> None:
+    """The invariant `_condition_problems` names an origin with.
+
+    Its last pass judges each authored leaf's replacements by calling
+    `_push` on that leaf alone, at the polarity
+    `_flipped_by_normalisation` reports. That is only the same thing as
+    `normalise(tree)` while `_push` on a leaf depends on nothing but the
+    leaf and its polarity -- true today, and the reason a fault can be
+    attributed to the leaf that caused it rather than to its column.
+
+    Give `_push` any context sensitivity and the leaves stop lining up
+    here, before the suppression starts hiding findings under a column
+    name.
+    """
+    condition = parse_condition(declared, "w")
+    flipped = conditions._flipped_by_normalisation(condition)
+
+    per_leaf = [
+        introduced
+        for leaf in conditions.leaves(condition)
+        for introduced in conditions.leaves(
+            conditions._push(leaf, negate=id(leaf) in flipped),
+        )
+    ]
+
+    assert per_leaf == conditions.leaves(normalise(condition))
+
+
 def test_a_lookup_value_accessor_compares_as_text() -> None:
     """Regression: a lookup is int-typed in DBML, so typing the literal by the
     COLUMN rejected every real title as 'not a number' and left lookupId the
@@ -1419,28 +1815,47 @@ def test_a_condition_nested_past_the_depth_ceiling_is_refused() -> None:
 
 @pytest.mark.parametrize("column_type", ["date", "datetime", "calculated_date"])
 @pytest.mark.parametrize("op", ["contains", "begins_with"])
-def test_a_substring_test_against_a_sentinel_is_always_refused(
+def test_a_substring_test_against_a_sentinel_names_the_sentinel(
     op: str, column_type: str,
 ) -> None:
-    """A substring test against `today`/`now` never renders, whichever rule
-    catches it.
+    """A substring test against `today`/`now` is refused BY THE RULE WRITTEN
+    FOR IT, which it was not until 2026-08-10.
 
-    Asserting the BEHAVIOUR rather than the code, deliberately.
-    `CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR` exists for exactly this
-    input and is never the rule that fires: every sentinel column type is a
-    date type, every date type is in `_NON_TEXT_FOR_SUBSTRING`, and that
-    guard runs first on both the validation and the render path. Measured
-    across all four text operators, three date types, four sentinel
-    spellings and three targets -- 144 combinations, zero reaching it.
+    This test asserted only that the input was refused, because it was not:
+    every sentinel column type is a date type, every date type is in
+    `_NON_TEXT_FOR_SUBSTRING`, and that guard ran first on both the
+    validation and the render path. Measured then across all four text
+    operators, three date types, four sentinel spellings and three
+    targets -- 144 combinations, zero reaching
+    `CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR`. It was documented,
+    shipped in the published catalogue, and unreachable by any input (#140).
 
-    So the refusal is real and pinned here; which rule owns it is a live
-    question for that dead branch, and not something this test should
-    pretend to settle.
+    The code is asserted now rather than the behaviour, and that is the
+    whole point of the change: `findings.md` and `explain` both tell a
+    reader this code owns this input, so the build has to agree with them.
+    The generic "a value that is not text" is true and says less than "the
+    sentinel would reach the formula as its own spelling rather than as a
+    date".
     """
-    with pytest.raises(ValueError):
-        to_caml(
-            Group("all_of", (Leaf("Due", op, "today"),)), {"Due": column_type},
-        )
+    findings = _findings(
+        Group("all_of", (Leaf("Due", op, "today"),)), types={"Due": column_type},
+    )
+
+    assert only(
+        findings, FindingCode.CONDITION_SENTINEL_WITH_A_SUBSTRING_OPERATOR,
+    ).severity == "error"
+
+
+def test_a_substring_test_on_a_text_column_is_not_a_sentinel_test() -> None:
+    """The mirror for the reorder above. `today` is a sentinel only on a date
+    column -- on a text column it is the literal word, and moving the sentinel
+    guard ahead of the type guard must not make `contains(Note, 'today')`
+    refuse a perfectly ordinary substring search for the string "today"."""
+    condition = parse_condition(
+        [{"field": "Note", "op": "contains", "value": "today"}], "ctx",
+    )
+
+    assert to_expression(condition, TYPES) == "indexOf([$Note], 'today') >= 0"
 
 
 def test_a_validation_formula_cannot_read_a_lookup() -> None:
