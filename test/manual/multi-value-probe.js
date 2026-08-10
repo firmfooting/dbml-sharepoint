@@ -339,6 +339,21 @@
       FillInChoice: false,
     });
 
+    // A POST to /fields creates the column but does NOT put it on the default
+    // view. Found on run 2, where X1 could not be answered from `All Items`
+    // because there was no Evt column there to look at -- the question is about
+    // how the column RENDERS, so a column nobody can see answers nothing. The
+    // deployer builds its views explicitly and declares their fields, so this
+    // never bites a real build; it bites a probe that assumed otherwise.
+    const onDefaultView = [];
+    for (const name of [MULTI, SINGLE]) {
+      const added = await post(
+        `${listPath}/DefaultView/viewfields/addviewfield('${odataName(name)}')`,
+      );
+      onDefaultView.push(`${name}=${added.ok ? 'shown' : `HTTP ${added.status}`}`);
+    }
+    log('INFO', `Added to the default view: ${onDefaultView.join(' ')}`);
+
     // === M2: what did we actually get? =====================================
     const shape = await get(
       `${fieldPath(MULTI)}?$select=InternalName,TypeAsString,FieldTypeKind,Choices,FillInChoice,Indexed,EnforceUniqueValues`,
@@ -723,11 +738,15 @@
       formatted.ok ? 'MANUAL' : 'WRITE REFUSED',
       formatted.ok
         ? `OPEN ${window.location.origin}${listDefaultUrl || `${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`} `
-          + `and look at the ${MULTI} column. Report THREE things: (a) does R1 {View} get a GREEN pill; `
+          + `and look at the ${MULTI} column. Report FOUR things: (a) does R1 {View} get a GREEN pill; `
           + '(b) does R2 {View,Edit} get any pill at all; (c) what TEXT does each cell show — both members, '
-          + 'one member, or something like "View,Edit" run together. Anything other than a green pill on R1 '
-          + 'means the existing severity machinery silently renders nothing on a multi-value column, and the '
-          + 'specification needs a refusal rather than array-aware behaviour.'
+          + 'one member, or something like "View,Edit" run together; and (d) is the cell background PLAIN, '
+          + 'or filled a flat grey. (d) separates the two ways this can fail and they need different '
+          + 'answers: a plain cell means the formatter matched nothing and rendered nothing, while a grey '
+          + 'fill means it matched a neutral default and rendered a wrong answer confidently — worse, '
+          + 'because it looks like a verdict. Anything other than a green pill on R1 means the existing '
+          + 'severity machinery cannot serve a multi-value column, and the specification needs a refusal '
+          + 'rather than array-aware behaviour.'
         : `HTTP ${formatted.status} — ${formatted.error}`,
     );
 
