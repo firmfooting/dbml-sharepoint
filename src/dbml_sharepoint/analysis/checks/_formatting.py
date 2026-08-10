@@ -9,7 +9,7 @@ from dbml_sharepoint.analysis.conditions import (
     validate_condition,
 )
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.typemap import is_multi_value
+from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
     SYSTEM_COLUMNS,
@@ -158,7 +158,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"array, or style a scalar column beside this one.",
                     location=at,
                 ))
-            elif style in ("severity", "pill") and types_by_col.get(col_name) == "boolean":
+            elif style in ("severity", "pill") and is_boolean(
+                types_by_col.get(col_name),
+            ):
                 # Both styles compare @currentField against QUOTED strings.
                 # A SharePoint Yes/No column is a boolean, so every branch
                 # of the generated =if chain is false and the cell renders

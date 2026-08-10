@@ -77,6 +77,47 @@ A scalar is its own element type, so a caller can resolve a name without
 branching on arity first -- which is the point: a branch is a place the
 two arms come to disagree.
 
+### `is_boolean`
+
+```python
+def is_boolean(column_type: str | None) -> bool
+```
+
+Whether this DBML type is the Yes/No column (SP Boolean, kind 8).
+
+### `is_person`
+
+```python
+def is_person(column_type: str | None) -> bool
+```
+
+Whether this DBML type is the Person-or-Group column (SP User, kind 20).
+
+### `is_hyperlink`
+
+```python
+def is_hyperlink(column_type: str | None) -> bool
+```
+
+Whether this DBML type is the Hyperlink column (SP URL, kind 11).
+
+Worth asking rather than assuming: a URL column is a RECORD over REST
+(SP.FieldUrlValue), not a scalar, so every caller that gets this wrong
+writes a bare string and the value silently does not arrive.
+
+### `is_legacy_choice`
+
+```python
+def is_legacy_choice(column_type: str | None) -> bool
+```
+
+Whether this is the retired `choice` type, which has no mapping at all.
+
+Two places must agree and previously each held the word: `validate_column`
+reports it as `LEGACY_CHOICE_TYPE`, and `_resolve_column` raises on it --
+the path `report` takes, because `report` does not validate. One spelling
+kept them from diagnosing the same schema two different ways.
+
 ### `describe_unknown_type`
 
 ```python

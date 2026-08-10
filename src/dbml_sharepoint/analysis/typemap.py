@@ -100,6 +100,64 @@ def element_type(col_type: str) -> str:
     """
     return col_type.removesuffix(MULTI_VALUE_SUFFIX)
 
+# THE type-identity questions, asked as questions rather than spelled out.
+#
+# Every one of these was a bare `== "boolean"` somewhere else -- eight sites
+# across four modules, which is what #101 measured. A literal comparison is
+# invisible to this module: rename a type or give it an alias and `map_column`
+# is necessarily updated, because nothing deploys otherwise, while the
+# comparison just stops matching. Nothing raises and no finding fires; a
+# boolean column takes the non-boolean path and renders `<Value Type="Text">`,
+# which SharePoint stores and answers with the wrong rows.
+#
+# So the name is written ONCE, here, and `_resolve_column` and `_scalar` below
+# ask these too. A predicate the mapper does not itself consult is a second
+# opinion rather than the one answer, and free to drift from it -- which is
+# the bug, relocated.
+#
+# `str | None` because the demo checks and `demogen` hold
+# `types_by_col.get(name)`. A column with no declared type is not a boolean,
+# and making each caller spell `or ""` is four more chances to forget.
+#
+# NOT frozensets of aliases: DBML declares exactly these names today
+# (`KNOWN_SCALARS` is the vocabulary) and a set of one, per type, would be
+# scaffolding for an alias nobody has asked for. Widening one of these later
+# means editing one function, which is the property #101 wanted.
+#
+# `test_no_module_outside_typemap_compares_a_column_type_to_a_literal` keeps
+# the eight from coming back.
+
+
+def is_boolean(column_type: str | None) -> bool:
+    """Whether this DBML type is the Yes/No column (SP Boolean, kind 8)."""
+    return column_type == "boolean"
+
+
+def is_person(column_type: str | None) -> bool:
+    """Whether this DBML type is the Person-or-Group column (SP User, kind 20)."""
+    return column_type == "person"
+
+
+def is_hyperlink(column_type: str | None) -> bool:
+    """Whether this DBML type is the Hyperlink column (SP URL, kind 11).
+
+    Worth asking rather than assuming: a URL column is a RECORD over REST
+    (SP.FieldUrlValue), not a scalar, so every caller that gets this wrong
+    writes a bare string and the value silently does not arrive.
+    """
+    return column_type == "hyperlink"
+
+
+def is_legacy_choice(column_type: str | None) -> bool:
+    """Whether this is the retired `choice` type, which has no mapping at all.
+
+    Two places must agree and previously each held the word: `validate_column`
+    reports it as `LEGACY_CHOICE_TYPE`, and `_resolve_column` raises on it --
+    the path `report` takes, because `report` does not validate. One spelling
+    kept them from diagnosing the same schema two different ways.
+    """
+    return column_type == "choice"
+
 
 def describe_unknown_type(declared: str, *, enums: Iterable[str]) -> str:
     """Say what to do about a type this build does not recognise.
@@ -237,7 +295,7 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
 
     description = format_description(col.note)
 
-    if col.type == "choice":
+    if is_legacy_choice(col.type):
         raise ValueError(
             f"{col.name}: legacy 'choice' type is not supported. "
             "Migrate to a named DBML enum.",
@@ -298,6 +356,21 @@ def _scalar(col: Column, description: str, enum_names: set[str]) -> SPField:
         name=col.name, required=col.required, unique=col.unique,
         default=col.default, description=description,
     )
+    # Hoisted out of the match below, and the three that follow it with it. A
+    # `case` pattern spelled as a bare name CAPTURES rather than compares, and
+    # a value pattern has to be dotted -- which a module cannot do to its own
+    # constants. Leaving them in the match would mean the predicates named a
+    # vocabulary the mapper did not read, so widening one would change what
+    # `conditions.py` renders and not what gets provisioned. That divergence
+    # is the bug #101 is about, so it is not worth reintroducing to keep one
+    # match statement tidy.
+    if is_boolean(col.type):
+        return SPField(**base, kind="Boolean", field_type_kind=8)
+    if is_person(col.type):
+        return SPField(**base, kind="User", field_type_kind=20, selection_mode=0)
+    if is_hyperlink(col.type):
+        return SPField(**base, kind="URL", field_type_kind=11, display_format=0)
+
     match col.type:
         case "int":
             return SPField(**base, kind="Number", field_type_kind=9)
@@ -315,16 +388,10 @@ def _scalar(col: Column, description: str, enum_names: set[str]) -> SPField:
                 **base, kind="Note", field_type_kind=3,
                 rich_text=True, number_of_lines=6,
             )
-        case "person":
-            return SPField(**base, kind="User", field_type_kind=20, selection_mode=0)
         case "date":
             return SPField(**base, kind="DateTime", field_type_kind=4, date_only=True)
         case "datetime":
             return SPField(**base, kind="DateTime", field_type_kind=4, date_only=False)
-        case "boolean":
-            return SPField(**base, kind="Boolean", field_type_kind=8)
-        case "hyperlink":
-            return SPField(**base, kind="URL", field_type_kind=11, display_format=0)
         case _:
             # `enum_names` is what this call was told the schema declares, so
             # the suggestion can name the user's own enums. It said "Add it
