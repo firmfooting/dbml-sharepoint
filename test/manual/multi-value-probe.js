@@ -108,9 +108,30 @@
  *          rewrites ViewQuery XML on save, so a predicate proven only through
  *          GetItems is not yet proven where the deployer writes it. This is
  *          the same C6/C7 discipline datetime-sentinel-probe.js used.
- *   Re-run with CLEANUP_AT_END = true to remove the list.
+ *   Re-run with CLEANUP_AT_END = true to remove the list. That re-run deletes
+ *   the list the first run left behind before building its own, so it really
+ *   does clean up; it refuses to touch a list of that title that this probe
+ *   cannot prove it created.
  *
- * STATUS: NOT YET RUN. Every row below is a question, not a finding.
+ * STATUS: RUN ON A LIVE SITE 2026-08-10, NOT YET CLEANLY. Every run so far
+ * has found a defect in this file rather than delivering a full sheet, and
+ * each lesson is encoded at the line it applies to rather than here:
+ *
+ *   run 1  answered fifteen of seventeen rows. M5 reported WRITE REFUSED
+ *          because the readback selected no `Id`, so the re-write went to
+ *          `items(undefined)` — a probe bug that reads in the transcript
+ *          exactly like SharePoint refusing the re-write. It also
+ *          established that <NotIncludes> returned no rows and that <Eq>
+ *          behaves as "includes" rather than whole-set equality, which left
+ *          negation with no working predicate and is why C9 and C10 exist.
+ *   run 2  could not answer X1 at all: a POST to /fields does not put the
+ *          column on the default view, so there was no Evt column to look
+ *          at. Both fields are now added to the default view explicitly.
+ *
+ * So: every row below is still a question, not a finding. Nothing here has
+ * been promoted into the type map, the condition grammar or a capability
+ * specification, and nothing should be until a run completes with Q0=BUILT
+ * and no NOT ESTABLISHED rows.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -269,9 +290,15 @@
 
   const listPath = `web/lists/getbytitle('${odataName(PROBE_LIST)}')`;
   const fieldPath = (name) => `${listPath}/fields/getbyinternalnameortitle('${odataName(name)}')`;
+  // Written on create and checked before any delete: the probe will only
+  // remove a list it can prove is its own, and says so rather than guessing.
+  const PROBE_DESCRIPTION = 'dbml-sharepoint multi-value column probe. Safe to delete.';
   let createdList = false;
   let viewUrl = null;
   let listDefaultUrl = null;
+  const deleteProbeList = async () => post(
+    listPath, undefined, { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' },
+  );
 
   // The four candidate item-value shapes, most-likely first. Learn's list-item
   // REST page documents none of them for a multi-value column, so this is an
@@ -290,11 +317,32 @@
 
   try {
     // === Setup: the list ==================================================
+    // A cleanup re-run arrives with last run's list still there. Creating
+    // over it fails on the title conflict, which would leave `createdList`
+    // false and make the `finally` below skip the delete -- so the documented
+    // "re-run with CLEANUP_AT_END = true" would never actually clean up and
+    // the operator would be told it had. Remove the previous list first, and
+    // only when it proves to be this probe's own by its Description.
+    if (CLEANUP_AT_END) {
+      const prior = await get(`${listPath}?$select=Title,Description`);
+      if (prior.ok && prior.d?.Description === PROBE_DESCRIPTION) {
+        const swept = await deleteProbeList();
+        log(swept.ok ? 'INFO' : 'ERROR', swept.ok
+          ? 'Removed the list left behind by the previous run.'
+          : `Could not remove the previous run's list (HTTP ${swept.status} ${swept.error}). `
+            + `Delete it by hand: ${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`);
+      } else if (prior.ok) {
+        log('ERROR', `A list titled '${PROBE_LIST}' exists but its Description is `
+          + `${show(prior.d?.Description)}, not this probe's. Refusing to delete a list this probe `
+          + 'cannot prove it owns. Rename or remove it by hand, then re-run.');
+        return { aborted: 'foreign-list-in-the-way' };
+      }
+    }
     const made = await post('web/lists', {
       __metadata: { type: 'SP.List' },
       BaseTemplate: 100,
       Title: PROBE_LIST,
-      Description: 'dbml-sharepoint multi-value column probe. Safe to delete.',
+      Description: PROBE_DESCRIPTION,
     });
     if (!made.ok) {
       record('Q0', 'the fixture actually built', 'ABORTED', `could not create the probe list: HTTP ${made.status} ${made.error}`);
@@ -331,6 +379,9 @@
     }
 
     // The single-value control, created exactly as the tool creates one today.
+    // It is I1C's concern and nothing else's: if it fails, the index rows go
+    // VOID and every other row must carry on unaffected. So its failure is
+    // said out loud here, and no other measurement is allowed to name it.
     const createdSingle = await post(`${listPath}/fields`, {
       __metadata: { type: 'SP.FieldChoice' },
       FieldTypeKind: 6,
@@ -338,6 +389,11 @@
       Choices: { results: CHOICES },
       FillInChoice: false,
     });
+    if (!createdSingle.ok) {
+      log('ERROR', `The single-value control field '${SINGLE}' was not created `
+        + `(HTTP ${createdSingle.status} ${createdSingle.error}). I1/I1C go VOID. Item writes below `
+        + 'omit it, so the multi-value rows are still answerable.');
+    }
 
     // A POST to /fields creates the column but does NOT put it on the default
     // view. Found on run 2, where X1 could not be answered from `All Items`
@@ -346,11 +402,14 @@
     // deployer builds its views explicitly and declares their fields, so this
     // never bites a real build; it bites a probe that assumed otherwise.
     const onDefaultView = [];
+    let multiOnDefaultView = { ok: false, status: 0, error: 'not attempted' };
     for (const name of [MULTI, SINGLE]) {
+      if (name === SINGLE && !createdSingle.ok) continue;
       const added = await post(
         `${listPath}/DefaultView/viewfields/addviewfield('${odataName(name)}')`,
       );
-      onDefaultView.push(`${name}=${added.ok ? 'shown' : `HTTP ${added.status}`}`);
+      if (name === MULTI) multiOnDefaultView = added;
+      onDefaultView.push(`${name}=${added.ok ? 'shown' : `HTTP ${added.status} ${added.error}`}`);
     }
     log('INFO', `Added to the default view: ${onDefaultView.join(' ')}`);
 
@@ -376,12 +435,17 @@
     let winningShape = null;
     let winningError = '';
     for (const candidate of writeShapes) {
-      const attempt = await post(`${listPath}/items`, {
+      const body = {
         __metadata: { type: itemType },
         Title: ROWS[1].title,
         [MULTI]: candidate.build(ROWS[1].values),
-        [SINGLE]: ROWS[1].values[0],
-      });
+      };
+      // Only name the control field if it exists. Naming a field that was
+      // never created makes SharePoint refuse the item for a reason that has
+      // nothing to do with the multi-value shape, and all four candidates
+      // would fail identically -- which reads as M3's answer.
+      if (createdSingle.ok) body[SINGLE] = ROWS[1].values[0];
+      const attempt = await post(`${listPath}/items`, body);
       if (attempt.ok) { winningShape = candidate; break; }
       winningError += `${candidate.name}: HTTP ${attempt.status} ${attempt.error}; `;
     }
@@ -406,7 +470,7 @@
       const body = { __metadata: { type: itemType }, Title: row.title };
       if (row.values.length) {
         body[MULTI] = winningShape.build(row.values);
-        body[SINGLE] = row.values[0];
+        if (createdSingle.ok) body[SINGLE] = row.values[0];
       }
       const seeded = await post(`${listPath}/items`, body);
       if (!seeded.ok) seedErrors.push(`${row.title}: HTTP ${seeded.status} ${seeded.error}`);
@@ -419,19 +483,30 @@
     // probe selected only Title and the multi field, so `r2.Id` was undefined
     // and M5 POSTed to `items(undefined)` -- a 400 that reads exactly like
     // SharePoint refusing the re-write, when nothing had been asked of it.
-    const backVerbose = await get(`${listPath}/items?$select=Id,Title,${odataName(MULTI)}&$orderby=Id`);
-    const backNoMeta = await get(
-      `${listPath}/items?$select=Title,${odataName(MULTI)}&$orderby=Id`,
-      'application/json;odata=nometadata',
-    );
+    // The two requests differ ONLY in their Accept header, so any difference
+    // in the answer is the content type's doing and nothing else's.
+    const itemQuery = `${listPath}/items?$select=Id,Title,${odataName(MULTI)}&$orderby=Id`;
+    const backVerbose = await get(itemQuery);
+    const backNoMeta = await get(itemQuery, 'application/json;odata=nometadata');
     const verboseRows = backVerbose.d?.results || [];
     const noMetaRows = backNoMeta.d?.value || backNoMeta.d?.results || [];
+    // A refused nometadata GET leaves noMetaRows empty, which is
+    // indistinguishable from SharePoint answering with nothing in it. Say
+    // which happened; half an answer here is worse than none.
+    const noMetaDetail = backNoMeta.ok
+      ? `nometadata: ${show(noMetaRows.map((r) => ({ [r.Title]: r[MULTI] })))}`
+      : `nometadata: REQUEST FAILED HTTP ${backNoMeta.status} — ${backNoMeta.error} `
+        + '(not observed to be empty — not observed at all)';
     record(
       'M4',
       'what an item value READS BACK as',
-      verboseRows.length ? 'READ' : 'UNREADABLE',
-      `verbose: ${show(verboseRows.map((r) => ({ [r.Title]: r[MULTI] })))} || `
-      + `nometadata: ${show(noMetaRows.map((r) => ({ [r.Title]: r[MULTI] })))}`,
+      backVerbose.ok && backNoMeta.ok && verboseRows.length
+        ? 'READ'
+        : (verboseRows.length ? 'READ (verbose only)' : 'UNREADABLE'),
+      (backVerbose.ok
+        ? `verbose: ${show(verboseRows.map((r) => ({ [r.Title]: r[MULTI] })))}`
+        : `verbose: REQUEST FAILED HTTP ${backVerbose.status} — ${backVerbose.error}`)
+      + ` || ${noMetaDetail}`,
     );
 
     // === Q0: the fixture control ===========================================
@@ -453,14 +528,28 @@
       const got = verboseRows.find((r) => r.Title === row.title);
       return !got || !sameMembers(got[MULTI], row.values);
     });
+    // The field's TYPE is a depends-on value, not an observation: if it did
+    // not come back MultiChoice, then every C, I, V, F and X row below is
+    // about some other kind of column and none of them means what it says.
+    // M2 still reports whatever it read, unasserted -- that stays a question.
+    const multiTypeOk = shape.ok && shape.d?.TypeAsString === 'MultiChoice';
+    // Kept apart from the control field on purpose. A missing single-value
+    // control voids I1/I1C and nothing else, so it must not be able to stamp
+    // "meaningless" on predicate rows that do not depend on it.
+    const fixtureUsable = multiTypeOk && !seedErrors.length && !wrongRows.length
+      && verboseRows.length === ROWS.length;
     record(
       'Q0',
       'the fixture actually built: two fields, four rows, seeded sets as asked',
-      (!seedErrors.length && !wrongRows.length && verboseRows.length === ROWS.length && createdSingle.ok)
-        ? 'BUILT' : 'FAILED',
-      `rows=${verboseRows.length}/${ROWS.length} single-value control field=${createdSingle.ok ? 'created' : 'FAILED'} `
+      (fixtureUsable && createdSingle.ok) ? 'BUILT' : 'FAILED',
+      `rows=${verboseRows.length}/${ROWS.length} ${MULTI} TypeAsString=${show(shape.d?.TypeAsString)} `
+      + `single-value control field=${createdSingle.ok ? 'created' : 'FAILED'} `
       + `mismatched=${show(wrongRows.map((r) => r.title))} ${seedErrors.join('; ')}`,
     );
+    if (!multiTypeOk) {
+      log('ERROR', `${MULTI} did not read back as MultiChoice (TypeAsString=${show(shape.d?.TypeAsString)}). `
+        + 'Every row below is about a different kind of column than the one this probe asks about.');
+    }
     if (wrongRows.length || verboseRows.length !== ROWS.length) {
       log('ERROR', 'The fixture is not what the C rows assume. Every predicate result below is meaningless until this is fixed.');
     }
@@ -536,23 +625,64 @@
     // Learn lists "Choice (multi-valued)" as unable to enforce unique values.
     // Whether REST refuses it or silently drops it decides whether the
     // validator's refusal is a convenience or a necessity.
-    const uniqueWrite = await merge(fieldPath(MULTI), {
+    //
+    // EnforceUniqueValues is asked ALONE first. Sending it together with
+    // Indexed:true — which I1 may already have found refused on this column —
+    // would let one refusal answer for the other, and the transcript could not
+    // say which property SharePoint objected to. SharePoint does require an
+    // index behind a uniqueness constraint, so if the lone write is refused
+    // the paired write is tried too, and BOTH results are reported: a lone
+    // refusal that a paired write then satisfies is a different finding from
+    // a column that refuses uniqueness however it is asked.
+    const uniqueAlone = await merge(fieldPath(MULTI), {
+      __metadata: { type: 'SP.FieldMultiChoice' }, EnforceUniqueValues: true,
+    });
+    const uniquePaired = uniqueAlone.ok ? null : await merge(fieldPath(MULTI), {
       __metadata: { type: 'SP.FieldMultiChoice' }, EnforceUniqueValues: true, Indexed: true,
     });
+    const uniqueWrite = uniqueAlone.ok ? uniqueAlone : (uniquePaired || uniqueAlone);
     const uniqueBack = await get(`${fieldPath(MULTI)}?$select=EnforceUniqueValues,Indexed`);
+    const pairedNote = uniquePaired
+      ? `alone: REFUSED HTTP ${uniqueAlone.status} ${uniqueAlone.error}; `
+        + `with Indexed:true: ${uniquePaired.ok ? `HTTP ${uniquePaired.status}` : `REFUSED HTTP ${uniquePaired.status} ${uniquePaired.error}`}. `
+      : `alone: HTTP ${uniqueAlone.status} (no paired attempt needed). `;
     record(
       'I2',
       'EnforceUniqueValues:true on a MultiChoice — accepted? readback?',
-      uniqueWrite.ok ? (uniqueBack.d?.EnforceUniqueValues === true ? 'ACCEPTED AND STUCK' : 'ACCEPTED BUT DID NOT STICK') : 'REFUSED',
       uniqueWrite.ok
-        ? `HTTP ${uniqueWrite.status}, readback EnforceUniqueValues=${show(uniqueBack.d?.EnforceUniqueValues)} `
-          + `Indexed=${show(uniqueBack.d?.Indexed)}`
-        : `HTTP ${uniqueWrite.status} — ${uniqueWrite.error}`,
+        // An unreadable readback is not the same answer as a readback of
+        // false, and reporting it as DID NOT STICK would state a fact this
+        // run never observed.
+        ? (uniqueBack.ok
+          ? (uniqueBack.d?.EnforceUniqueValues === true ? 'ACCEPTED AND STUCK' : 'ACCEPTED BUT DID NOT STICK')
+          : 'ACCEPTED, READBACK UNREADABLE')
+        : 'REFUSED',
+      uniqueWrite.ok
+        ? pairedNote + (uniqueBack.ok
+          ? `readback EnforceUniqueValues=${show(uniqueBack.d?.EnforceUniqueValues)} `
+            + `Indexed=${show(uniqueBack.d?.Indexed)}`
+          : `readback FAILED HTTP ${uniqueBack.status} — ${uniqueBack.error}; whether it stuck is `
+            + 'NOT established by this run')
+        : pairedNote,
     );
-    // Leave the field in a known state for the C rows regardless of the above.
-    await merge(fieldPath(MULTI), {
+    // Leave the field in a known state for the rows below, and PROVE it. C1..C10
+    // do not write, so they survive a failed reset; V1's save test does, and a
+    // uniqueness constraint left standing would refuse its items for a reason
+    // that is not V1's question. So this is read back and the affected rows
+    // fail closed individually rather than the run being abandoned — the other
+    // fifteen questions have already cost the operator a live paste.
+    const resetWrite = await merge(fieldPath(MULTI), {
       __metadata: { type: 'SP.FieldMultiChoice' }, EnforceUniqueValues: false, Indexed: false,
     });
+    const resetBack = await get(`${fieldPath(MULTI)}?$select=EnforceUniqueValues,Indexed`);
+    const fieldStateKnown = resetWrite.ok && resetBack.ok
+      && resetBack.d?.EnforceUniqueValues === false && resetBack.d?.Indexed === false;
+    if (!fieldStateKnown) {
+      log('ERROR', `Could not return ${MULTI} to a known state (unique off, indexed off): `
+        + `write ${resetWrite.ok ? `HTTP ${resetWrite.status}` : `REFUSED ${resetWrite.error}`}, `
+        + `readback ${resetBack.ok ? show(resetBack.d) : `FAILED ${resetBack.error}`}. `
+        + 'V1\'s save test will not run against an unknown field state.');
+    }
 
     // === C1..C7: which rows does each predicate actually return? ===========
     //
@@ -632,29 +762,44 @@
     // probe.js found an element that worked in one position and silently
     // returned nothing in the other. So the predicate that matters is stored,
     // read back, and looked at.
+    const VIEW_TITLE = 'Probe membership';
     if (membershipWinner) {
       const view = await post(`${listPath}/views`, {
         __metadata: { type: 'SP.View' },
-        Title: 'Probe membership',
+        Title: VIEW_TITLE,
         ViewQuery: `<Where>${membershipWinner.where}</Where>`,
         RowLimit: 50,
       });
       const views = await get(`${listPath}/views?$select=Id,Title,ServerRelativeUrl,ViewQuery`);
-      const stored = (views.d?.results || []).find((v) => v.Title === 'Probe membership');
+      const stored = (views.d?.results || []).find((v) => v.Title === VIEW_TITLE);
       viewUrl = stored?.ServerRelativeUrl || null;
-      if (stored) {
-        await post(`${listPath}/views('${stored.Id}')/viewfields/addviewfield('${odataName(MULTI)}')`);
-      }
+      // Addressed by TITLE, which is the form Learn's AddViewField page
+      // actually documents — `views/getbytitle('<view>')/ViewFields/
+      // AddViewField('<internal name>')`. A bare `views('<guid>')` indexer is
+      // not documented anywhere, and the title is known exactly: this probe
+      // just created the view under it. The result is checked, because C8 is
+      // a LOOK at a view and a view missing the tested column answers nothing.
+      const columnOnView = stored
+        ? await post(`${listPath}/views/getbytitle('${odataName(VIEW_TITLE)}')/viewfields/addviewfield('${odataName(MULTI)}')`)
+        : { ok: false, status: 0, error: 'the view was never created' };
       record(
         'C8',
         'the winning predicate survives being STORED as a view ViewQuery (manual: look)',
-        view.ok && stored ? 'MANUAL' : 'NOT ESTABLISHED',
-        view.ok && stored
+        view.ok && stored && columnOnView.ok && fixtureUsable ? 'MANUAL' : 'NOT ESTABLISHED',
+        view.ok && stored && columnOnView.ok
           ? `stored ${membershipWinner.label}; SharePoint read the query back as ${show(stored.ViewQuery)}. `
-            + `OPEN ${window.location.origin}${viewUrl} and confirm it lists exactly R1 and R2. `
-            + 'A view that lists everything, or nothing, means the predicate does not survive storage and the '
-            + 'condition grammar must refuse it however well GetItems behaved.'
-          : `could not create or read the view: ${view.ok ? 'not found after create' : `HTTP ${view.status} ${view.error}`}`,
+            + (fixtureUsable
+              ? `OPEN ${window.location.origin}${viewUrl} and confirm it lists exactly R1 and R2. `
+                + 'A view that lists everything, or nothing, means the predicate does not survive storage and '
+                + 'the condition grammar must refuse it however well GetItems behaved.'
+              : 'Q0 FAILED, so the rows this view would be judged against are not the fixture the winning '
+                + 'predicate was chosen from. Do not read this view as an answer; fix the fixture and re-run.')
+          : `could not create, read or populate the view: ${view.ok
+            ? (stored
+              ? `${MULTI} could not be added to it (HTTP ${columnOnView.status} ${columnOnView.error}), so there `
+                + 'is nothing to look at'
+              : 'not found after create')
+            : `HTTP ${view.status} ${view.error}`}`,
       );
     } else {
       record(
@@ -669,19 +814,61 @@
     // === V1: validation formula operand ====================================
     // mapping.md already records that validation formulas refuse Lookup and
     // Person operands. Multi-value is not documented either way.
+    //
+    // Accepting the MERGE is NOT the answer. An accepted-but-inert formula —
+    // one that saves, reads back byte-identical and never blocks anything —
+    // is the exact failure class this directory exists to catch, so the row
+    // that used to say "accepted" and caveat itself in prose now asks all
+    // three questions: does SharePoint take it, does it keep it, does it FIRE.
+    const VALIDATION_FORMULA = `=NOT(ISBLANK([${MULTI}]))`;
     const validation = await merge(fieldPath(MULTI), {
       __metadata: { type: 'SP.FieldMultiChoice' },
-      ValidationFormula: `=NOT(ISBLANK([${MULTI}]))`,
+      ValidationFormula: VALIDATION_FORMULA,
       ValidationMessage: 'probe',
     });
+    const validationBack = validation.ok
+      ? await get(`${fieldPath(MULTI)}?$select=ValidationFormula`)
+      : null;
+    // Both sides, because only one of them is diagnostic on its own: a refused
+    // violating save proves the rule fires, and an accepted compliant save
+    // proves the refusal was the rule rather than the column. Neither is
+    // asserted — whatever happens is recorded and both rows are removed again.
+    let firing = 'not attempted';
+    if (validation.ok && fieldStateKnown) {
+      const violating = await post(`${listPath}/items`, {
+        __metadata: { type: itemType }, Title: 'V1 violating (no members)',
+      });
+      const compliant = await post(`${listPath}/items`, {
+        __metadata: { type: itemType }, Title: 'V1 compliant (one member)',
+        [MULTI]: winningShape.build([CHOICES[0]]),
+      });
+      firing = `violating save ${violating.ok
+        ? `ACCEPTED HTTP ${violating.status} — the stored rule did NOT fire`
+        : `REFUSED HTTP ${violating.status} (${violating.error})`}; `
+        + `compliant save ${compliant.ok
+          ? `ACCEPTED HTTP ${compliant.status}`
+          : `REFUSED HTTP ${compliant.status} (${compliant.error}) — so a refusal above cannot be `
+            + 'attributed to the rule'}`;
+      for (const made of [violating, compliant]) {
+        if (made.ok && made.d?.Id !== undefined) {
+          await post(`${listPath}/items(${made.d.Id})`, undefined,
+            { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+        }
+      }
+    } else if (validation.ok) {
+      firing = `NOT attempted: ${MULTI} is not in a known state (see the reset error above), so a refused `
+        + 'save could be a leftover uniqueness constraint rather than the validation formula';
+    }
     record(
       'V1',
       'a ValidationFormula may reference a MultiChoice column',
       validation.ok ? 'ACCEPTED' : 'REFUSED',
       validation.ok
-        ? `HTTP ${validation.status} — accepted. NOTE this only shows SharePoint STORED it; whether the rule `
-          + 'actually blocks a save is a separate observation, and an accepted-but-inert formula is the failure '
-          + 'class this directory exists to catch.'
+        ? `HTTP ${validation.status} stored. Read back as ${show(validationBack?.d?.ValidationFormula)} `
+          + `(wrote ${show(VALIDATION_FORMULA)}). Does it FIRE: ${firing}. `
+          + 'ACCEPTED with a rule that does not fire is the worst outcome here, not the best: nothing in a '
+          + 'build or a deploy could ever see it, and the validator would be free to emit a rule that does '
+          + 'nothing.'
         : `HTTP ${validation.status} — ${validation.error}`,
     );
     if (validation.ok) {
@@ -693,19 +880,36 @@
     // === F1: calculated-column operand =====================================
     // The same question calculated-operand-probe.js asked of every other type
     // on 2026-07-30, asked of the one type that did not exist then.
+    // Same discipline as V1: a field-creation 200 says the formula was taken,
+    // not that it survived intact or that it evaluates. SharePoint normalises
+    // formulas on save, and a calculated column can also store fine and then
+    // render an error value in every row. Both are read.
+    const CALC_FIELD = 'CalcOverMulti';
+    const CALC_FORMULA = `=[${MULTI}]`;
     const calc = await post(`${listPath}/fields`, {
       __metadata: { type: 'SP.FieldCalculated' },
       FieldTypeKind: 17,
-      Title: 'CalcOverMulti',
+      Title: CALC_FIELD,
       OutputType: 2,
-      Formula: `=[${MULTI}]`,
+      Formula: CALC_FORMULA,
     });
+    const calcBack = calc.ok
+      ? await get(`${listPath}/fields/getbyinternalnameortitle('${odataName(CALC_FIELD)}')?$select=Formula,OutputType`)
+      : null;
+    const calcValues = calc.ok
+      ? await get(`${listPath}/items?$select=Title,${odataName(CALC_FIELD)}&$orderby=Id`)
+      : null;
     record(
       'F1',
       'a calculated column formula may reference a MultiChoice column',
       calc.ok ? 'ACCEPTED' : 'REFUSED',
       calc.ok
-        ? `HTTP ${calc.status} — accepted; the operand matrix in reference/dbml.md gains a row`
+        ? `HTTP ${calc.status} stored. Formula read back as ${show(calcBack?.d?.Formula)} `
+          + `(wrote ${show(CALC_FORMULA)}). Evaluated per row: ${calcValues?.ok
+            ? show((calcValues.d?.results || []).map((r) => ({ [r.Title]: r[CALC_FIELD] })))
+            : `NOT READ (HTTP ${calcValues?.status} ${calcValues?.error})`}. `
+          + 'The operand matrix in reference/dbml.md gains a row only if the formula survived AND every row '
+          + 'evaluated to a value rather than an error.'
         : `HTTP ${calc.status} — ${calc.error}`,
     );
 
@@ -732,12 +936,23 @@
       __metadata: { type: 'SP.FieldMultiChoice' },
       CustomFormatter: JSON.stringify(severityFormatter),
     });
+    // Gated on the column actually being ON the view the operator is sent to.
+    // Run 2 answered X1 from a view with no Evt column in it, which is not a
+    // weaker answer than the real one -- it is a different question. A
+    // formatter write that succeeds over an invisible column establishes
+    // nothing about rendering.
     record(
       'X1',
       'the severity formatter this repo generates, on an array (manual: look)',
-      formatted.ok ? 'MANUAL' : 'WRITE REFUSED',
-      formatted.ok
-        ? `OPEN ${window.location.origin}${listDefaultUrl || `${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`} `
+      formatted.ok && multiOnDefaultView.ok ? 'MANUAL' : (formatted.ok ? 'NOT ESTABLISHED' : 'WRITE REFUSED'),
+      !formatted.ok
+        ? `HTTP ${formatted.status} — ${formatted.error}`
+        : !multiOnDefaultView.ok
+          ? `the formatter was stored (HTTP ${formatted.status}), but ${MULTI} could not be added to the `
+            + `default view (HTTP ${multiOnDefaultView.status} ${multiOnDefaultView.error}), so there is no `
+            + 'cell to look at. Add the column to the view by hand and re-read this row, or fix the failure '
+            + 'and re-run; do NOT report a rendering answer from a view that does not show the column.'
+          : `OPEN ${window.location.origin}${listDefaultUrl || `${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`} `
           + `and look at the ${MULTI} column. Report FOUR things: (a) does R1 {View} get a GREEN pill; `
           + '(b) does R2 {View,Edit} get any pill at all; (c) what TEXT does each cell show — both members, '
           + 'one member, or something like "View,Edit" run together; and (d) is the cell background PLAIN, '
@@ -746,8 +961,7 @@
           + 'fill means it matched a neutral default and rendered a wrong answer confidently — worse, '
           + 'because it looks like a verdict. Anything other than a green pill on R1 means the existing '
           + 'severity machinery cannot serve a multi-value column, and the specification needs a refusal '
-          + 'rather than array-aware behaviour.'
-        : `HTTP ${formatted.status} — ${formatted.error}`,
+          + 'rather than array-aware behaviour.',
     );
 
     // === Verdict ===========================================================
@@ -768,14 +982,16 @@
       `caml_membership=${membershipWinner ? membershipWinner.label : 'NONE FOUND'} `
       + 'stored_view=<fill in after looking> formatter=<fill in after looking>',
     );
-    if (!fixtureOk) {
-      log('ERROR', 'fixture=FAILED — the C rows assume four rows with known sets, so their answers mean nothing from this run. Fix the fixture and re-run before reporting.');
+    if (!fixtureUsable) {
+      log('ERROR', 'fixture=FAILED — the C rows assume four rows with known sets on a MultiChoice column, so their answers mean nothing from this run. Fix the fixture and re-run before reporting.');
+    } else if (!fixtureOk) {
+      log('ERROR', `fixture=FAILED on the single-value CONTROL field only. The C, M, V, F and X rows do not depend on it and stand; I1 and I1C are VOID. Fix '${SINGLE}' and re-run if the index question matters.`);
     }
     log('INFO', 'Paste both VERDICT lines back, with the two <fill in> values set after doing the manual steps.');
     return { results, winningShape: winningShape?.name || null, viewUrl };
   } finally {
     if (createdList && CLEANUP_AT_END) {
-      const gone = await post(listPath, undefined, { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' });
+      const gone = await deleteProbeList();
       if (gone.ok) {
         log('INFO', `Deleted '${PROBE_LIST}'.`);
       } else {

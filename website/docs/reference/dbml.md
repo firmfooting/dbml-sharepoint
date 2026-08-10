@@ -52,10 +52,14 @@ which CAML predicates filter such a column — are not documented at all;
 before any of it is built.
 
 Model a genuinely multi-valued fact as a child entity with one row per value
-today. Note that this is not a decision to defer: SharePoint treats a column's
-type as immutable, and this tool fails closed on an immutable-shape change, so
-a column shipped as text or as a single Choice cannot later be converted in
-place on a list that is already deployed.
+today. Note that this is not a decision to defer, because of what *this tool*
+does rather than any claim about SharePoint: the deployer treats a field's
+`TypeAsString` as immutable and aborts when an existing column reads back with
+a different one, so a column shipped as text or as a single Choice cannot be
+converted in place by editing the schema and re-running a build. Whether
+SharePoint itself would permit that particular conversion through list settings
+is a separate question this repository has not established, and the deploy
+fails closed either way.
 
 ## Enums
 
