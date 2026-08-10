@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # The test suite
 
-`uv run pytest` reports around 1,300 tests. That number looks alarming and is
+`uv run pytest` reports around 1,650 tests. That number looks alarming and is
 mostly an artefact of how it is counted. This page records what is actually
 there, why none of it is trimmed, and where the real maintenance cost sits —
 so the next person to look at the number does not have to re-derive it.
@@ -18,12 +18,13 @@ so the next person to look at the number does not have to re-derive it.
 | **Distinct test functions** | **1,048** |
 | Extra cases from parametrisation | 598 |
 
-The gap is concentrated in one file. `test_template_standard.py` is **22
-functions producing 413 cases**, because thirteen of them are parametrised
-across the whole template library. That is 22 conformance rules applied to 31
-templates, not 413 things anyone maintains — and parametrising is what makes a
-failure say *which* template drifted instead of "something under `solutions/`
-is wrong".
+The gap is concentrated in one file. `test_template_standard.py` is **23
+functions producing 413 cases**. Thirteen of them are parametrised across the
+whole template library, which is 13 × 31 = 403 of those cases; the other ten
+functions contribute one case each. So the 413 is 13 conformance rules applied
+to 31 templates plus 10 one-off checks, not 413 things anyone maintains — and
+parametrising is what makes a failure say *which* template drifted instead of
+"something under `solutions/` is wrong".
 
 Every other file is close to one case per function: `test_jsgen` 112/112,
 `test_reportgen` 37/37, `test_forms` 35/35.

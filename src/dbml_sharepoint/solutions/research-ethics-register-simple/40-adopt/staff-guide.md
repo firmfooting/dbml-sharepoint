@@ -95,7 +95,7 @@ authorisation date in the future.
 
 ## Oversight, and the columns that stand in for lists
 
-This register has no amendment rows and no report rows. Five columns carry
+This register has no amendment rows and no report rows. Seven columns carry
 that history instead, and they only work if you keep them:
 
 - **Next Report Due** — when the next report is due. Your committee sets the

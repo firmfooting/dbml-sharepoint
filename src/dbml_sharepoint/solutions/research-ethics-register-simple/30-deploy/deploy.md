@@ -25,11 +25,17 @@ follow.
       record the decision in `50-govern/governance.md`.
 - [ ] You know who forms **RG Research Governance** — the people who record
       decisions and run the two sweeps.
-- [ ] `EthicsPathway` and `authorisation_status` members match your partner
-      committee's and your own vocabulary (`10-design/schema.dbml`). Both are
-      colour-mapped in `mapping.yaml` and both are named in the readiness
-      formula, so a renamed member loses its colour **and** silently changes
-      what `SiteReadiness` computes. Rename in three places or in none.
+- [ ] `EthicsStatus` and `SiteAuthorisationStatus` members match your partner
+      committee's and your own vocabulary (`10-design/schema.dbml`). These are
+      the two the **readiness formula reads by name**, so a renamed member
+      loses its colour map **and** silently changes what `SiteReadiness`
+      computes — including the two members the formula tests for directly,
+      `Approved` and `Authorised`. Rename in three places or in none:
+      the enum, the colour map, and `calculated_formulas`.
+- [ ] `EthicsPathway` members match the pathway names on your committee's own
+      application forms. This one is colour-mapped but is **not** in the
+      readiness formula, so a rename here costs a colour and nothing else.
+      See the LNR note in `50-govern/governance.md` before renaming it.
 - [ ] **Decide your reporting horizon before first deploy.** The *Reports
       due soon* view filters `NextReportDue ≤ today+60`. Change the `today+60`
       in `mapping.yaml` now if your cycle differs — a view title and a filter

@@ -317,6 +317,12 @@ views:
     # the list of them. Oldest decision first, because the longer a project
     # has been sitting approved-but-unauthorised the likelier somebody has
     # assumed otherwise.
+    #
+    # The terminal stages are excluded like every other operational view. A
+    # project that was discontinued during governance review satisfies both
+    # gate predicates forever, and this view sorts OLDEST FIRST — so without
+    # the exclusion, closed work would collect at exactly the end of the queue
+    # a reader trusts most.
     - title: "Ethics cleared, not authorised"
       fields: ["@identity", "@gates", EthicsDecisionDate, SSASubmittedDate,
                ProjectStage, SiteInvestigator]
@@ -324,6 +330,7 @@ views:
         - { field: EthicsStatus, op: in,
             value: ["Approved", "Ethics review not required"] }
         - { field: SiteAuthorisationStatus, op: neq, value: "Authorised" }
+        - { field: ProjectStage, op: not_in, value: ["Completed", "Discontinued"] }
       sort:
         - { field: EthicsDecisionDate, direction: asc }
       widths:
@@ -355,6 +362,11 @@ views:
         - any_of:
             - { field: EthicsStatus, op: eq, value: "Response required" }
             - { field: SiteAuthorisationStatus, op: eq, value: "Information requested" }
+        # A project abandoned while a gate still said "Response required" owes
+        # nobody an answer any more. Without this it stays in the queue for
+        # good, and this is the queue that means somebody HERE is holding
+        # something up.
+        - { field: ProjectStage, op: not_in, value: ["Completed", "Discontinued"] }
       sort:
         - { field: SubmittedDate, direction: asc }
       widths:
@@ -478,20 +490,34 @@ form_visibility:
 # Three of the four are the same shape and the same failure: a date typed with
 # next year's year. On this register that is not cosmetic — a forward-dated
 # authorisation says the site cleared a project it has not.
+#
+# All three of those dates are OPTIONAL, and a register's normal starting
+# state is a project in Planning with none of them yet. So each carries the
+# blank arm explicitly: the rule to enforce is "if there is a date, it is not
+# in the future", not "there is a date". project-pipeline's DecisionDate,
+# improvement-register's AdoptedDate and measures-register's ReviewDate are
+# written the same way, and its ProposedDate is the contrast — that one is
+# `not null`, so a bare comparison is the whole rule.
 column_validation:
   Project:
     columns:
       SubmittedDate:
         when:
-          - { field: SubmittedDate, op: leq, value: today }
+          any_of:
+            - { field: SubmittedDate, op: is_null }
+            - { field: SubmittedDate, op: leq, value: today }
         message: "An ethics application cannot have been submitted in the future. Use the date it actually went to the committee."
       EthicsDecisionDate:
         when:
-          - { field: EthicsDecisionDate, op: leq, value: today }
+          any_of:
+            - { field: EthicsDecisionDate, op: is_null }
+            - { field: EthicsDecisionDate, op: leq, value: today }
         message: "A committee cannot have decided in the future. Use the date on the decision letter."
       AuthorisationDate:
         when:
-          - { field: AuthorisationDate, op: leq, value: today }
+          any_of:
+            - { field: AuthorisationDate, op: is_null }
+            - { field: AuthorisationDate, op: leq, value: today }
         message: "A site authorisation cannot be dated in the future. Use the date the authorisation was actually given."
       # A negative count is a typed minus sign, and this column is the only
       # surviving trace of how many times the approved protocol has moved.
@@ -515,14 +541,31 @@ column_validation:
 # ApprovalConditions and GovernanceNotes say anything — SharePoint validation
 # formulas cannot reference a multi-line column at all — and anything about
 # SiteInvestigator, because they cannot reference a person column either.
+#
+# "Expired" is in the permitted set, and it is the one member of it that never
+# meant "cleared". It is there because a SharePoint list validation formula is
+# STATELESS — it sees the row being saved and not the row it replaces — so it
+# cannot tell a project being authorised against a lapsed approval from an
+# approval lapsing under an authorisation that was already given. Only one of
+# those can be prevented here, and the other is a state this register exists
+# to display: SiteReadiness renders it "Site authorised - ethics not cleared",
+# the only blocked-red value in the template, and the expiry sweep in
+# 50-govern is under standing instruction to produce it. Refusing the save
+# would make the documented monthly sweep impossible and leave a lapsed
+# approval reading "Ready to start here", which is the exact misreading the
+# two gates exist to prevent.
+#
+# The line the rule still holds is the one that matters: the members it
+# refuses — Not yet submitted, Submitted, Under review, Response required,
+# Not approved, Withdrawn — are the ones where clearance NEVER existed.
 list_validation:
   Project:
     when:
       any_of:
         - { field: SiteAuthorisationStatus, op: neq, value: "Authorised" }
         - { field: EthicsStatus, op: in,
-            value: ["Approved", "Ethics review not required"] }
-    message: "This project cannot be recorded as site-authorised yet. A site authorisation is given against evidence of ethics clearance, so Ethics Status must be Approved - or Ethics review not required, for a quality activity that correctly did not go to a committee."
+            value: ["Approved", "Ethics review not required", "Expired"] }
+    message: "This project cannot be recorded as site-authorised. A site authorisation is given against evidence of ethics clearance, so Ethics Status must be Approved - or Ethics review not required, for a quality activity that correctly did not go to a committee. An approval that has since expired stays recordable, because a live authorisation over a lapsed approval is the state this register has to show rather than hide."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
 # starts "[DEMO] " — the marker rollback.js trusts to delete demo-only lists

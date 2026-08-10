@@ -41,9 +41,10 @@ from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
-# This module is the family-standard conformance sweep: 22 rules, thirteen of
-# them parametrised across the whole template library, so 31 templates become
-# 413 of the suite's 1646 cases.
+# This module is the family-standard conformance sweep: 23 functions, thirteen
+# of them parametrised across the whole template library, so 31 templates
+# account for 403 of this file's 413 cases and the other ten functions
+# contribute one each. The file is 413 of the suite's 1646 cases.
 #
 # The marker is for FOCUS, not speed. Measured: the full suite is 4.66s and
 # `-m "not conformance"` is 4.65s -- skipping a third of the cases saves

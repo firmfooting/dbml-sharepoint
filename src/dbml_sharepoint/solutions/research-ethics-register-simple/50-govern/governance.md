@@ -106,11 +106,14 @@ derives urgency. The views and the cell colours are live; a person closes the
 loop. This is also why "report overdue" is a **view filter** in this template
 and never a calculated column.
 
-**The expiry sweep.** Work the default view sorted by *Ethics Approval
-Expiry* — the overdue colouring puts the lapsed and lapsing ones in red at
-the top — to a decision each month: an extension amendment lodged, or the
-project closed. On the day an approval passes its expiry, move `EthicsStatus`
-to *Expired*. That is what makes **Site Readiness** say *Site authorised -
+**The expiry sweep.** Open *Live projects* and **click the *Ethics Approval
+Expiry* header to sort ascending** before you work it. That sort is not the
+saved one — the view is stored sorted by title — and the overdue colouring
+marks the lapsed and lapsing rows red without moving them, so on a register
+of any size the ones you are looking for are scattered down the page until
+you sort. Then work it to a decision each month: an extension amendment
+lodged, or the project closed. On the day an approval passes its expiry, move
+`EthicsStatus` to *Expired*. That is what makes **Site Readiness** say *Site authorised -
 ethics not cleared*, in blocked red, for a project whose local paperwork
 still says yes. Until somebody moves it, the readiness column is stale and
 says so nowhere.
@@ -152,8 +155,8 @@ only an answer for the rows below.
 
 | Rule | Where it lives | Why there |
 |---|---|---|
-| **A project cannot be site-authorised unless ethics is cleared** | **Enforced at save**, on the list | The domain rule: authorisation is given against evidence of ethics approval. *Ethics review not required* counts as clearance, deliberately — refusing it would push adopters into recording a fake approval for a quality activity that correctly never went to a committee |
-| A submission, ethics decision or site authorisation cannot be dated in the future | **Enforced at save**, on each column (three rules) | Each reads only its own column, so each keeps its own message. A forward-dated authorisation says the site cleared a project it has not |
+| **A project cannot be site-authorised unless ethics is cleared, or once was** | **Enforced at save**, on the list | The domain rule: authorisation is given against evidence of ethics approval. *Ethics review not required* counts as clearance, deliberately — refusing it would push adopters into recording a fake approval for a quality activity that correctly never went to a committee. *Expired* counts too, and for a different reason: a list validation formula sees only the row being saved, so it cannot tell an authorisation granted against a lapsed approval from an approval lapsing under one already granted. Refusing it would make the expiry sweep below impossible. What the rule still refuses are the statuses where clearance never existed |
+| A submission, ethics decision or site authorisation cannot be dated in the future | **Enforced at save**, on each column (three rules) | Each reads only its own column, so each keeps its own message. A forward-dated authorisation says the site cleared a project it has not. All three dates are optional, and each rule carries a blank arm — the rule is *if there is a date it is not in the future*, not *there is a date* |
 | Amendment count cannot be negative | **Enforced at save**, on the column | It is the only surviving trace of how many times the approved protocol has moved |
 | That `Approval Conditions` carries the committee's **verbatim wording** | **Governance check** | Rich text, and SharePoint validation formulas cannot reference a multi-line column at all. There is no formula to write. The form's own help text carries the instruction instead |
 | That `Summary` and `Governance Notes` say anything useful, and that Governance Notes is kept newest-first and dated | **Governance check** | Same reason. And the append discipline is a convention over an ordinary rich-text column: the deployer sets `AppendOnly` false on every multi-line column, so 200 versions of list history are the audit trail, not a platform guarantee |
@@ -237,10 +240,14 @@ template needs an interval it stores a date you supply.
   load-bearing part of this document.
 - The register does hold **staff professional information** — who is
   investigating what — and the conditions a committee attached to somebody's
-  project. Neither is sensitive, both are visible to every site member by
-  default, and that default is a deliberate operational choice: *may this
-  start here* is a question ward managers, department heads and student
-  supervisors all have to answer.
+  project. Neither is health information about an identifiable person, which
+  is the boundary this register is built around and the one it will not
+  cross. Whether either should nonetheless be visible to every site member is
+  **your** decision, not this template's, and `30-deploy/deploy.md` makes it a
+  gate before first build. The default is read-wide, and the reason is
+  operational: *may this start here* is a question ward managers, department
+  heads and student supervisors all have to answer, and a register only the
+  governance office can see is a register nobody consults.
 - If your context requires restriction, scope the site membership and record
   the decision here. Do not solve it by hiding columns — a column hidden in
   the form designer is not a permission, and this repository's own
