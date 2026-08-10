@@ -110,8 +110,16 @@ def check(vc: ValidationContext) -> list[Finding]:
             # no mapping section in front of it — so `location.path`
             # ("schema[Table].Column") is not their prefix. The subject really
             # is the schema column, so the location is right and the prefix is
-            # what predates it; it cannot be reworded while 294 assertions
-            # still match on prose.
+            # what predates it.
+            #
+            # The stated reason for leaving it — "294 assertions still match on
+            # prose" — no longer holds. #99 reworded all sixteen of
+            # `validator.py`'s schema findings to render their prefix from
+            # `Location.path` and the whole suite stayed green: the 294 prose
+            # assertions had already been replaced by code-and-value ones. So
+            # these three are now the only schema-section messages spelling
+            # the path a second way, and converting them is follow-up work on
+            # #99 rather than something blocked.
             at_column = Location(
                 Section.SCHEMA, entity=table.name, column=col.name,
             )
