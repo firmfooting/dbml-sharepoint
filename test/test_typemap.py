@@ -1,10 +1,12 @@
 # test/test_typemap.py
+import ast
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from _findings import only
 from _packs import pack
+from _paths import PACKAGE
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.typemap import (
@@ -235,3 +237,97 @@ def test_the_mapper_refuses_legacy_choice_through_the_predicate() -> None:
     with pytest.raises(ValueError, match="legacy 'choice' type"):
         map_column(Column(name="Status", type="choice"), ENUM_NAMES)
 
+
+# --- The single-authority pin ------------------------------------------------
+
+
+def _names_a_column_type(node: ast.expr) -> bool:
+    """Whether this operand is a DBML column's declared type.
+
+    Spelled two ways across the package and both are matched: an attribute
+    access (`col.type`, `display_column.type`, `operand.type`) and a local
+    holding one (`col_type`, `column_type`, `declared_type`).
+    """
+    if isinstance(node, ast.Attribute):
+        return node.attr == "type"
+    if isinstance(node, ast.Name):
+        return node.id == "type" or node.id.endswith("_type")
+    return False
+
+
+def _holds_a_string_literal(node: ast.expr) -> bool:
+    """A bare `"boolean"`, or one inside an inline set/tuple/list."""
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
+    if isinstance(node, ast.Set | ast.Tuple | ast.List):
+        return any(_holds_a_string_literal(e) for e in node.elts)
+    return False
+
+
+def test_no_module_outside_typemap_compares_a_column_type_to_a_literal() -> None:
+    """`typemap` is THE answer to "what is this column type, in SharePoint
+    terms". A string comparison anywhere else is invisible to it.
+
+    That is not a style complaint. Rename a type, or give one an alias, and
+    `typemap` gets updated because nothing deploys otherwise -- while the
+    comparison simply stops matching. No exception, no finding, no failing
+    test: a boolean column quietly takes the non-boolean path and renders as
+    `<Value Type="Text">`, which SharePoint stores and answers with the wrong
+    rows. Eight such sites had accumulated by the time #101 was measured, and
+    the issue itself counted only four of them.
+
+    WHAT IS FORBIDDEN is comparing a column type against a string LITERAL --
+    `==`, `!=`, `in`, `not in`, including a literal inside an inline
+    `{"a", "b"}`.
+
+    WHAT IS ALLOWED is comparing it against a NAMED constant:
+    `col.type in enums`, `column_type in _NUMBER_TYPES`,
+    `col.type in KNOWN_SCALARS`. A named set is a declared vocabulary with one
+    home and a reader can find it; the anonymous literal is the whole harm.
+    Forbidding those too would fight most of `conditions.py` and buy nothing.
+
+    KNOWN GAP, named rather than implied away by this test's title: `_demo.py`
+    asks `col_type.startswith("calculated")`. That is a method call, not a
+    comparison, so this test does not see it -- and switching it to
+    `in CALCULATED_TYPES` is a behaviour change, because `startswith` also
+    matches `calculated_*` names typemap does not support. Left for its own
+    change rather than smuggled into this one.
+
+    Static in the same way `test_severity_is_declared_exactly_once` is: a
+    property of the source, not of any particular run.
+    """
+    offenders: list[str] = []
+    inspected = 0
+    for path in sorted(PACKAGE.rglob("*.py")):
+        if path.name == "typemap.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare):
+                continue
+            operands = [node.left, *node.comparators]
+            if not any(_names_a_column_type(o) for o in operands):
+                continue
+            inspected += 1
+            if not any(
+                isinstance(op, ast.Eq | ast.NotEq | ast.In | ast.NotIn)
+                for op in node.ops
+            ):
+                continue
+            if any(_holds_a_string_literal(o) for o in operands):
+                offenders.append(
+                    f"{path.relative_to(PACKAGE)}:{node.lineno}: {ast.unparse(node)}",
+                )
+
+    # Without this the test is green on a package that compares nothing at
+    # all: rename `col.type` to `col.kind` and "no offenders" reads as a clean
+    # bill of health rather than as a detector that has stopped detecting.
+    # 40 comparisons outside typemap when this was written; all but the eight
+    # #101 named were already against a named constant.
+    assert inspected > 25, (
+        f"only {inspected} column-type comparisons found -- has `type` been renamed?"
+    )
+    assert not offenders, (
+        "column type compared to a string literal instead of asked of typemap:\n"
+        + "\n".join(offenders)
+    )
