@@ -151,7 +151,7 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 | `src/dbml_sharepoint/generators/` | Emit deploy.js.txt, rollback.js.txt, assess.js.txt, reporting |
 | `src/dbml_sharepoint/templates/` | Jinja templates for the emitted JS |
 | `src/dbml_sharepoint/model/` | Mapping parsing and types |
-| `src/dbml_sharepoint/solutions/` | The 30 shipped list templates (schema + mapping + release per family). Inside the package so the wizard can offer them to somebody who never cloned this repository — only files under the package reach the wheel. Do **not** confuse with `templates/` above, which is Jinja |
+| `src/dbml_sharepoint/solutions/` | The 31 shipped list templates (schema + mapping + release per family). Inside the package so the wizard can offer them to somebody who never cloned this repository — only files under the package reach the wheel. Do **not** confuse with `templates/` above, which is Jinja |
 | `test/manual/` | Live-site probes. Transcripts are gitignored and a test enforces that no tracked file under these names references a tenant |
 | `website/` | Docusaurus docs. `docs/api/` is generated and committed |
 

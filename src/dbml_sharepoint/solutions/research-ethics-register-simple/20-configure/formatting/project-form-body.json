@@ -1,0 +1,28 @@
+{
+  "sections": [
+    {
+      "displayname": "The project",
+      "fields": ["Title", "ProjectType", "Department", "PrincipalInvestigator", "SiteInvestigator", "ProtocolReference", "Summary"]
+    },
+    {
+      "displayname": "Review pathway",
+      "fields": ["EthicsPathway", "ParticipantInvolvement", "ReviewingHREC"]
+    },
+    {
+      "displayname": "Ethics decision",
+      "fields": ["EthicsStatus", "EthicsReference", "SubmittedDate", "EthicsDecisionDate", "EthicsApprovalExpiry", "ConditionsStatus", "ApprovalConditions"]
+    },
+    {
+      "displayname": "Site authorisation",
+      "fields": ["SiteAuthorisationStatus", "SSASubmittedDate", "AuthorisationDate", "AuthorisationReference", "AuthorisedBy"]
+    },
+    {
+      "displayname": "Oversight and what is owed",
+      "fields": ["ProjectStage", "NextReportDue", "LastReportSubmitted", "LatestAmendmentReference", "LatestAmendmentStatus", "LatestAmendmentDate", "AmendmentCount", "GovernanceNotes", "CompletedDate"]
+    },
+    {
+      "displayname": "System",
+      "fields": ["SiteReadiness"]
+    }
+  ]
+}
