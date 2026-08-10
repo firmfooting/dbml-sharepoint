@@ -85,33 +85,6 @@ def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> l
     return out
 
 
-def _refuse_ambiguous_members(column: str, members: list[str]) -> None:
-    """Refuse a choice set the joined cell could not be split back into.
-
-    Called from both places a multi-value column is described -- the plan
-    builder behind the queries and the SQL views, and `_sp_type_cell` behind
-    the data dictionary -- because the dictionary page is the one entry point
-    that never builds a plan.
-
-    Only `MULTI_VALUE_JOIN` itself is refused. A bare `;` inside a member
-    joins and splits back perfectly well, and refusing it would cost a
-    legitimate schema for a fault it does not have.
-    """
-    offending = [member for member in members if MULTI_VALUE_JOIN in member]
-    if not offending:
-        return
-    raise ValueError(
-        f"{column}: multi-value choice member(s) "
-        f"{', '.join(repr(member) for member in offending)} contain "
-        f'"{MULTI_VALUE_JOIN}", which is the separator the exported cell '
-        f"joins members with. A set holding such a member joins to the same "
-        f"text as a set holding its parts, so the export cannot be split back "
-        f"into what the row actually held and any count of selections taken "
-        f"from it is wrong with nothing able to notice. Rename the member, or "
-        f"model the column as a child entity with one row per value.",
-    )
-
-
 def _display_column(bundle: MappingBundle, target_entity: str) -> str:
     entity = bundle.mapping.entities.get(target_entity)
     if entity is not None and entity.display_column:
@@ -137,7 +110,6 @@ def _build_plans(
     tables = _tables_for_role(schema, bundle, site_role)
     emitted = {t.name for t in tables}
     enum_names = {e.name for e in schema.enums}
-    enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = {
         (xref.entity, xref.column)
         for xref in bundle.mapping.cross_site_reference_columns
@@ -240,12 +212,6 @@ def _build_plans(
                     # CROSS APPLY, no STRING_SPLIT, no OPENJSON — and none is
                     # being added here. One text cell is the only shape both
                     # targets can carry today.
-                    #
-                    # Which only works while the cell can be split back apart,
-                    # so the members are checked before anything is planned.
-                    _refuse_ambiguous_members(
-                        sp.name, enum_members.get(sp.choices_enum or "", []),
-                    )
                     plan.selects.append(sp.name)
                     plan.multi_value_joins.append(sp.name)
                     plan.sql_columns.append((sp.name, "NVARCHAR(MAX)"))
@@ -797,7 +763,6 @@ def _sp_type_cell(
             # at one text cell holding several members finds out that it is
             # several members and what to split on.
             members = enum_members.get(sp.choices_enum or "", [])
-            _refuse_ambiguous_members(sp.name, members)
             joined = ", ".join(
                 f"{i}. {member}" for i, member in enumerate(members, 1)
             )
