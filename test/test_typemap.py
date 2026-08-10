@@ -322,8 +322,9 @@ def test_no_module_outside_typemap_compares_a_column_type_to_a_literal() -> None
     # Without this the test is green on a package that compares nothing at
     # all: rename `col.type` to `col.kind` and "no offenders" reads as a clean
     # bill of health rather than as a detector that has stopped detecting.
-    # 40 comparisons outside typemap when this was written; all but the eight
-    # #101 named were already against a named constant.
+    # 32 comparisons outside typemap when this was written, every one against
+    # a named constant. It was 40 before #101's eight became predicate calls,
+    # which is the measurement the docstring's count comes from.
     assert inspected > 25, (
         f"only {inspected} column-type comparisons found -- has `type` been renamed?"
     )
