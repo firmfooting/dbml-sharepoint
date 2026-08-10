@@ -1,0 +1,259 @@
+// ============================================================================
+// Research ethics register (single list) — every project this service refers
+// to a partner HREC, on one row.
+// Render the ERD by pasting this file into https://dbdiagram.io
+//
+// WHY ONE LIST. The obvious shape for this domain is three: a project, its
+// amendments, its progress reports, joined by Lookups. That shape is refused
+// here for a measured reason. A SharePoint Lookup picker enumerates its whole
+// target list and there is NO way to restrict what it offers — the field has
+// no filtering attribute, the calculated-column workaround is refused past
+// 5,000 items, and the target list's own default view filter is ignored by
+// the picker. All three were measured on a live tenant; see the "SharePoint
+// cannot filter a lookup" block in website/docs/reference/mapping.md.
+//
+// A project register is an ACCUMULATOR: it only grows. By year three the
+// picker on an amendment form offers every long-closed project alongside the
+// live one, and staff cannot find theirs. The list never approaches 5,000
+// items — 5 to 30 new projects a year — so this is not the item threshold.
+// It is picker usability, and it has no fix inside a list schema.
+//
+// The insight the whole design turns on: FILTERING WORKS EVERYWHERE IN
+// SHAREPOINT EXCEPT A LOOKUP PICKER. Remove the child lists and the
+// accumulation problem becomes one SharePoint solves well — a default view
+// filtered to live projects. That is what ProjectStage and the "Live
+// projects" view are for, and they are load-bearing rather than housekeeping.
+//
+// WHAT IT COSTS is stated rather than hidden, here and in README.md and
+// 50-govern/governance.md: there are no per-amendment and no per-report rows,
+// so the register cannot answer "which projects filed late in 2025", and two
+// simultaneous in-flight amendments are not representable. The partner HREC
+// holds the authoritative file either way.
+//
+// TWO GATES, NEVER MERGED. Ethics approval (the partner committee's decision)
+// and site authorisation (this service's own) are separate states with
+// separate authorities, references and dates. A project can be
+// ethics-approved and not authorised here, and that is the operationally
+// dangerous state this register exists to make visible. SiteReadiness
+// collapses the pair into one answer and costs NO join: both gates are Choice
+// columns on this same table, which a SharePoint calculated column may read.
+//
+// NO PARTICIPANT DATA, at any grain. Not names, not identifiers, not
+// aggregate recruitment counts. See 50-govern/governance.md.
+// ============================================================================
+
+Project research_ethics_register_simple { database_type: 'SharePoint Online Lists' }
+
+// What kind of activity this is. The register holds research AND the quality
+// activities beside it, because the question "did this need ethics review,
+// and who decided?" is asked of both.
+Enum project_type {
+  "Research"
+  "Quality improvement"
+  "Clinical audit"
+  "Evaluation"
+  "Student project"
+}
+
+// The review pathway. Negligible risk means no foreseeable risk of harm or
+// discomfort and any foreseeable risk is no more than inconvenience; low risk
+// means the maximum foreseeable risk is discomfort. Lower-risk projects may
+// take a pathway other than full committee review. Sources are cited in
+// 50-govern/governance.md, by what they say rather than by clause number.
+//
+// The last member is not a loophole. An organisation is expected to have a
+// process for deciding when a quality assurance or evaluation activity needs
+// ethics review, and recording that the decision was made, by whom and when,
+// is the audit answer.
+Enum ethics_pathway {
+  "Not yet determined"
+  "Greater than low risk (full HREC review)"
+  "Low or negligible risk (LNR review)"
+  "Quality assurance or evaluation - no ethics review"
+}
+
+// An attribute of the STUDY DESIGN, not of any participant. It is one of the
+// triggers for considering ethics review, and it is what makes the pathway
+// choice above defensible on the row.
+Enum participant_involvement {
+  "No contact with patients or staff"
+  "Existing data or records only"
+  "Staff participants only"
+  "Patient or client participants"
+}
+
+// GATE 1 — the partner committee's decision.
+//
+// "Response required" is the only member that says the ball is with US rather
+// than with the committee, which is why it exists rather than being folded
+// into "Under review". The "Response required" view is built on it.
+//
+// "Ethics review not required" is the recorded outcome of the quality or
+// evaluation determination above, and the save rule on site authorisation
+// treats it as an ethics clearance, because for such an activity it is one.
+//
+// "Expired" is maintained by the expiry sweep in 50-govern/governance.md.
+// Nothing computes it: a SharePoint calculated column cannot read [Today].
+Enum ethics_status {
+  "Not yet submitted"
+  "Submitted"
+  "Under review"
+  "Response required"
+  "Approved"
+  "Not approved"
+  "Ethics review not required"
+  "Withdrawn"
+  "Expired"
+}
+
+// Conditions are orthogonal to the decision: a project is approved AND its
+// conditions are outstanding, or approved and there were none. Folding them
+// into ethics_status would make "Approved" mean two different things.
+Enum conditions_status {
+  "None"
+  "Outstanding"
+  "Met"
+}
+
+// GATE 2 — this service's own authorisation, on the research governance
+// officer's site-specific assessment. Evidence of ethics approval is required
+// before the Chief Executive or delegate can authorise, which is the list
+// save rule in mapping.yaml.
+//
+// "Information requested" is this gate's ball-in-our-court member, and the
+// "Response required" view tests it beside the ethics one.
+Enum authorisation_status {
+  "Not yet submitted"
+  "Submitted"
+  "Under governance review"
+  "Information requested"
+  "Authorised"
+  "Not authorised"
+  "Suspended"
+}
+
+// THE ACCUMULATION ANSWER. What the project itself is doing, independent of
+// either gate. The default view filters the two terminal members away, so a
+// register ten years deep still opens on this year's work — which is the
+// whole reason a single list is workable here where a lookup picker is not.
+Enum project_stage {
+  "Planning"
+  "Underway"
+  "Closed to recruitment"
+  "Completed"
+  "Discontinued"
+}
+
+// The status of the LATEST amendment only. There are no amendment rows: this
+// column, its reference and its date are the collapsed trace of the most
+// recent change to the approved protocol. Earlier amendments survive in
+// Governance Notes and in the list's version history, and nowhere else.
+Enum amendment_status {
+  "Drafting"
+  "Submitted"
+  "Under review"
+  "Information requested"
+  "Approved"
+  "Not approved"
+  "Withdrawn"
+}
+
+Table Project {
+  Id                      int                     [pk, increment]
+  Title                   nvarchar                [not null, note: 'The project title, worded as the ethics application words it']
+  ProjectType             project_type            [not null, default: 'Research', note: 'What kind of activity this is. Quality improvement and audit belong here too - the register records the decision about whether they needed review']
+  Department              nvarchar                [not null, note: 'The department or service this project runs in']
+  // Text, not a person column: on an externally reviewed project the
+  // principal investigator is frequently at the partner site or a university
+  // and has no account in this tenant.
+  PrincipalInvestigator   nvarchar                [not null, note: 'The principal investigator, named as the ethics application names them. They may be at another organisation']
+  SiteInvestigator        person                  [note: 'The person HERE who answers for this project at this site. Leave blank only while it is still being decided']
+  ProtocolReference       nvarchar                [note: 'Your protocol number and version, e.g. "PROT-14 v2.1"']
+  Summary                 richtext                [note: 'What the project does, in plain language. No participant information of any kind']
+
+  // --- Review pathway -----------------------------------------------------
+  EthicsPathway           ethics_pathway          [not null, default: 'Not yet determined', note: 'Which review pathway this project takes. Low or negligible risk projects may be reviewed outside a full committee meeting; a quality activity may need no ethics review at all, and recording that decision here is the point']
+  ParticipantInvolvement  participant_involvement [note: 'What the project does with people, as a property of the design. This is one of the things that decides the pathway above']
+  ReviewingHREC           nvarchar                [note: 'The partner Human Research Ethics Committee reviewing this project. Write the name the same way every time']
+
+  // --- Gate 1: the partner committee --------------------------------------
+  EthicsStatus            ethics_status           [not null, default: 'Not yet submitted', note: 'Where the ETHICS application sits. This is not the same thing as site authorisation below']
+  EthicsReference         nvarchar                [note: 'The reference the committee itself uses for this project, e.g. "HREC/2026/PHS/123456"']
+  SubmittedDate           date                    [note: 'The date the ethics application was submitted']
+  EthicsDecisionDate      date                    [note: 'The date the committee decided. For a quality activity that needed no review, the date that determination was made']
+  // The expiry sweep works this column.
+  EthicsApprovalExpiry    date                    [note: 'When this ethics approval ends. Nothing computes it - a report or an extension moves it, and the sweep in 50-govern finds the ones that have not moved']
+  ConditionsStatus        conditions_status       [not null, default: 'None', note: 'Whether the approval carried conditions and whether they have been met. Outstanding conditions are not the same as an approval that has not arrived']
+  ApprovalConditions      richtext                [note: 'The conditions as the committee worded them, verbatim. Paraphrase is how a condition quietly stops being met']
+
+  // --- Gate 2: this site --------------------------------------------------
+  SiteAuthorisationStatus authorisation_status    [not null, default: 'Not yet submitted', note: 'Where the SITE-SPECIFIC ASSESSMENT sits. Ethics approval alone does not let a project start here']
+  SSASubmittedDate        date                    [note: 'The date the site-specific assessment was lodged with research governance']
+  AuthorisationDate       date                    [note: 'The date the Chief Executive or delegate authorised this project for this site']
+  AuthorisationReference  nvarchar                [note: 'The site authorisation reference, if your governance office issues one']
+  // A role, not a name. The individual changes; the delegation does not.
+  AuthorisedBy            nvarchar                [note: 'The role that authorised it, e.g. "Chief Executive" or "Director of Medical Services". Name the role rather than the person']
+
+  // --- Oversight, and the recurring facts collapsed onto the row ----------
+  ProjectStage            project_stage           [not null, default: 'Planning', note: 'What the project itself is doing. Underway means it has started HERE - do not set it until both gates above are cleared. The default view hides the two terminal values, which is how this register stays usable as it accumulates']
+  // The reporting sweep works this pair. Progress reports go to the
+  // reviewing committee at least annually and continued approval depends on
+  // them, but the DUE DATE is set by your committee rather than nationally -
+  // some use the approval anniversary, some a fixed institutional date - so
+  // the register stores a date you supply rather than deriving one from a
+  // cadence it would have to guess. Sources in 50-govern/governance.md.
+  NextReportDue           date                    [note: 'When the next report is due to the committee. Your committee sets this date']
+  // Earns its column by making a stale Next Report Due diagnosable: a due
+  // date in the past with a LATER submission behind it means somebody filed
+  // the report and did not roll the date, which is a different problem from
+  // a report nobody has written.
+  LastReportSubmitted     date                    [note: 'The date the most recent report actually went to the committee. Blank until the first one does']
+
+  // The latest amendment, as three columns rather than as a list. They
+  // travel together on purpose: a reference with no status is a filing note,
+  // and a status with no date cannot age.
+  LatestAmendmentReference nvarchar               [note: 'The reference of the most recent amendment, as the committee numbers it, e.g. "Amendment 3"']
+  LatestAmendmentStatus   amendment_status        [note: 'Where the most recent amendment sits with the committee. Blank means this project has never been amended']
+  LatestAmendmentDate     date                    [note: 'The date the most recent amendment was submitted or decided, whichever is later']
+  // The only honest replacement for the amendment rows this design gives up.
+  // Without it a reader who sees one amendment reference cannot tell whether
+  // that is the only amendment or the fifth - which is exactly the fact the
+  // collapse destroys.
+  AmendmentCount          int                     [not null, default: 0, note: 'How many amendments this project has had in total, including the one named above. Bump it each time you record a new amendment']
+
+  // The append-style history note. SharePoint has a true append-only Note
+  // field and this is NOT it - the deployer sets AppendOnly false on every
+  // multi-line column - so the append discipline is a governance convention
+  // over an ordinary rich-text column, backed by list versioning. Said
+  // plainly here because a column that merely looks append-only is worse
+  // than one that does not pretend.
+  GovernanceNotes         richtext                [note: 'The history of this project, newest entry first, each one dated and initialled: amendments, minute references, who chased what, why a date moved. This is where the amendments and reports that have no rows of their own survive']
+  CompletedDate           date                    [note: 'The date the project finished or was discontinued at this site']
+
+  // --- Calculated ---------------------------------------------------------
+  // THE ANSWER, and no lookup pays for it: both gates are Choice columns on
+  // this table, which a SharePoint calculated column can read. The formula
+  // lives in mapping.yaml.
+  //
+  // It cannot know that an approval expired yesterday - a calculated column
+  // may not reference [Today], which the build refuses. The overdue-date
+  // colouring on the two deadline columns is the live half; the expiry sweep
+  // in 50-govern is what moves Ethics Status to Expired and makes this
+  // column tell the truth again.
+  SiteReadiness           calculated_text         [note: 'Calculated automatically from the two gates above: whether this project can actually start here']
+
+  // Exactly the columns a declared view filters on, and nothing else. Four
+  // of twenty slots, and every declared filter is served past the list view
+  // threshold - including the OR in "Response required", because an OR is
+  // only narrowable when EVERY branch is indexed and both of its branches
+  // are. Ethics Approval Expiry is deliberately NOT indexed: no view filters
+  // it, the expiry sweep works the default view, and an index that serves
+  // nothing is a slot spent. The calculated column cannot be indexed by
+  // SharePoint at all and is rejected by the validator.
+  indexes {
+    EthicsStatus
+    SiteAuthorisationStatus
+    ProjectStage
+    NextReportDue
+  }
+}
