@@ -141,7 +141,8 @@ UNMANAGED = "__dbmlsp_unmanaged__"
 # Confirmed live, both with HTTP 500 "This field type does not support
 # validation formulas": Note (3) and URL (11). Lookup (7), User (20) and
 # Calculated (17) are refused as validation operands for the same platform
-# limitation.
+# limitation. MultiChoice (15) joined them on 2026-08-10, refused with that
+# same sentence — see test/manual/multi-value-probe.js.
 #
 # This set is a hand-kept list of platform facts, so treat it as incomplete
 # by default — Boolean (8) is the one this tool emits whose behaviour is not
@@ -149,7 +150,7 @@ UNMANAGED = "__dbmlsp_unmanaged__"
 # clear that SharePoint refuses for this reason is treated there as the
 # no-op it is, because a formula the field cannot hold is already absent.
 # This set only avoids making the pointless request.
-_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 11, 17, 20})
+_COLUMN_VALIDATION_UNSUPPORTED_FIELD_KINDS = frozenset({3, 7, 11, 15, 17, 20})
 
 
 def _section_target[T](
@@ -803,6 +804,31 @@ def _field_body(
             body["FillInChoice"] = False
             if sp.default is not None:
                 body["DefaultValue"] = sp.default
+        case "MultiChoice":
+            # The SAME create call as a single-value Choice, differing only in
+            # FieldTypeKind and __metadata type. Measured on 2026-08-10: a
+            # plain POST to /fields with SP.FieldMultiChoice, kind 15 and
+            # Choices.results returned HTTP 201 and read back
+            # TypeAsString="MultiChoice" with Choices as
+            # Collection(Edm.String). Lookup remains the one field type this
+            # collection refuses; MultiChoice is not in that class, so there
+            # is no AddField detour here.
+            #
+            # `SP.FieldChoice` derives FROM `SP.FieldMultiChoice` and
+            # `Choices` is a FieldMultiChoice property, which is why the
+            # reconciler's Choices comparator -- its only array-aware one --
+            # already understands this field's one derived property.
+            #
+            # No DefaultValue arm, and that is not an omission: `map_column`
+            # refuses a declared default outright, because DBML carries one
+            # scalar and the write shape is a collection.
+            if sp.choices_enum is None:
+                raise ValueError(
+                    f"MultiChoice field {sp.name!r} has no backing enum "
+                    "(typemap invariant violated)",
+                )
+            body["Choices"] = {"results": list(enums_by_name[sp.choices_enum].members)}
+            body["FillInChoice"] = False
         case "DateTime":
             body["DisplayFormat"] = 0 if sp.date_only else 1
             # SP dynamic defaults ("[today]") and literal dates both ride
@@ -892,6 +918,10 @@ def _meta_type(kind: str) -> str:
         "Note": "SP.FieldMultiLineText",
         "DateTime": "SP.FieldDateTime",
         "Choice": "SP.FieldChoice",
+        # SP.FieldChoice DERIVES from SP.FieldMultiChoice, so this is the base
+        # of the type already here rather than a sibling of it. Accepted by
+        # the /fields collection on 2026-08-10, HTTP 201.
+        "MultiChoice": "SP.FieldMultiChoice",
         "Lookup": "SP.FieldLookup",
         "Boolean": "SP.Field",
         "Number": "SP.FieldNumber",

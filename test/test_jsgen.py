@@ -11,7 +11,13 @@ from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
 from dbml_sharepoint.model.mapping_loader import CrossSiteRef, MappingBundle, load_mapping
-from dbml_sharepoint.model.parser import Column, Reference, Schema, parse_dbml
+from dbml_sharepoint.model.parser import (
+    Column,
+    EnumDef,
+    Reference,
+    Schema,
+    parse_dbml,
+)
 from dbml_sharepoint.model.release import load_release
 
 EXPECTED = FIXTURES / "expected"
@@ -776,6 +782,50 @@ def test_choice_fields_disable_fill_in_and_preserve_exact_order() -> None:
 
     assert status["body"]["Choices"] == {"results": ["Open", "Closed"]}
     assert status["body"]["FillInChoice"] is False
+
+
+def test_a_multi_value_enum_is_created_as_a_multichoice_field() -> None:
+    """MEASURED on a live tenant, 2026-08-10. A plain POST to `/fields` with
+    `__metadata: {type: 'SP.FieldMultiChoice'}`, `FieldTypeKind: 15` and
+    `Choices: {results: [...]}` returned HTTP 201, and the field read back
+    `TypeAsString="MultiChoice"`, `FieldTypeKind=15` and `Choices` as
+    `Collection(Edm.String)`.
+
+    So no new creation machinery: Lookup is still the one field type that
+    needs the `AddField` detour, and this is not in that class. That is what
+    made MultiChoice the multi-value type worth building first, and the claim
+    was a probe question until this date rather than an inference from Learn.
+
+    `FillInChoice: false` for the same reason the single-value arm sets it:
+    adoption of an existing column must not silently accept free-form values
+    that were never declared.
+    """
+    from dbml_sharepoint.generators.jsgen import _field_body
+
+    field = _field_body(
+        Column(name="Events", type="audit_event[]"),
+        {"audit_event": EnumDef(name="audit_event", members=["View", "Edit", "Export"])},
+        "APP_",
+    )
+
+    assert field is not None
+    assert field["body"]["__metadata"] == {"type": "SP.FieldMultiChoice"}
+    assert field["body"]["FieldTypeKind"] == 15
+    assert field["body"]["Choices"] == {"results": ["View", "Edit", "Export"]}
+    assert field["body"]["FillInChoice"] is False
+
+
+def test_the_multichoice_kind_is_wired_into_the_reconciler() -> None:
+    """`TYPE_AS_STRING_BY_KIND` is what `declaredFieldState` reads to decide
+    the immutable shape a field must keep. Without an entry for kind 15 it
+    throws `unsupported declared FieldTypeKind` the moment Phase 2.1 creates
+    one, aborting the whole deployment -- so the map has to learn the
+    vocabulary in the same change that starts emitting the kind.
+
+    `MultiChoice` is what SharePoint itself reported on read-back, not a name
+    transcribed from a documentation page.
+    """
+    assert "[15, 'MultiChoice']" in _generate_simple_js()
 
 
 def test_exact_acl_reconciliation_removes_unlisted_principals() -> None:
@@ -2116,6 +2166,51 @@ def test_exact_column_validation_skips_unsupported_field_types(tmp_path: Path) -
     for name in ("Detail", "Notes", "Owner", "Parent"):
         assert fields[name]["validation_formula"] == UNMANAGED, name
         assert fields[name]["validation_message"] == UNMANAGED, name
+
+
+def test_exact_column_validation_skips_a_multi_value_column(tmp_path: Path) -> None:
+    """MEASURED 2026-08-10, and it is the same platform limitation the other
+    five kinds in this set were confirmed with: setting a ValidationFormula
+    on a MultiChoice field was refused with "This field type does not support
+    validation formulas."
+
+    So exact reconciliation must not try to CLEAR one either -- a formula the
+    field type cannot carry is already absent, and the request only fails the
+    field MERGE. `UNMANAGED`, not `""`.
+    """
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks("""
+            enum audit_event {
+              View
+              Edit
+            }
+        """, table("Platform", ID_PK, TITLE, "Summary nvarchar", "Events audit_event[]")),
+        mapping=blocks(entities("Platform"), """
+            column_validation:
+              Platform:
+                reconcile: exact
+                columns:
+                  Summary:
+                    when:
+                      - { field: Summary, op: neq, value: forbidden }
+                    message: Use a different summary.
+        """),
+    )
+    fields = {
+        field["title"]: field
+        for field in build_schema_json(schema, bundle, "default")["lists"][0][
+            "fields_phase1"
+        ]
+    }
+
+    assert fields["Events"]["validation_formula"] == UNMANAGED
+    assert fields["Events"]["validation_message"] == UNMANAGED
+    # The control: a column that CAN hold one is still cleared, so this test
+    # cannot pass by the section being ignored wholesale.
+    assert fields["Summary"]["validation_formula"] == '=[Summary]<>"forbidden"'
 
 
 def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:

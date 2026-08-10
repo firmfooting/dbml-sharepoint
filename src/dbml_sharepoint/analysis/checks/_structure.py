@@ -10,7 +10,7 @@ from dbml_sharepoint.analysis.lookups import (
 from dbml_sharepoint.analysis.ordering import compute_phases
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPE_LIST,
-    UNSUPPORTED_INDEX_TYPES,
+    unsupported_index_reason,
 )
 from dbml_sharepoint.analysis.validator import (
     CALCULATED_TYPES,
@@ -224,14 +224,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"not exist.",
                 ))
             display_column = declared_names.get(display)
-            if (
-                display_column is not None
-                and display_column.type in UNSUPPORTED_INDEX_TYPES
-            ):
+            unindexable = (
+                None if display_column is None
+                else unsupported_index_reason(display_column.type)
+            )
+            if unindexable is not None:
                 findings.append(Finding(
                     FindingCode.DISPLAY_COLUMN_TYPE_UNINDEXABLE,
                     f"{entity_name}.display_column: {display!r} is a "
-                    f"{UNSUPPORTED_INDEX_TYPES[display_column.type]} column, "
+                    f"{unindexable} column, "
                     f"which SharePoint cannot index. A lookup target's display "
                     f"column is indexed automatically so its picker keeps "
                     f"working past 5,000 items, and the deploy sets "
@@ -429,11 +430,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
                 continue
             column = columns_by_name.get(col_name)
-            if column is not None and column.type in UNSUPPORTED_INDEX_TYPES:
+            unindexable = (
+                None if column is None else unsupported_index_reason(column.type)
+            )
+            if unindexable is not None:
                 findings.append(Finding(
                     FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE,
                     f"{entity_name}.indexes: {col_name!r} is a "
-                    f"{UNSUPPORTED_INDEX_TYPES[column.type]} column, which SharePoint "
+                    f"{unindexable} column, which SharePoint "
                     f"cannot index.",
                 ))
 

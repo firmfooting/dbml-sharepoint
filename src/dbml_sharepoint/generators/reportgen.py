@@ -195,6 +195,35 @@ def _build_plans(
                     else:
                         plan.m_types.append((sp.name, "type text"))
                         plan.sql_columns.append((sp.name, "NVARCHAR(255)"))
+                case _:
+                    # WITHOUT THIS THE TWO DRIFT AUDITS CONTRADICT EACH OTHER,
+                    # and neither of them can say so.
+                    #
+                    # `field_internal_names` is appended above, BEFORE this
+                    # match, so an unhandled kind is recorded as a column the
+                    # list is expected to have — while contributing no
+                    # `$select`, no Power Query type and no SQL column.
+                    # `_UserAddedColumns.pq` is built from that expected list,
+                    # so the M audit sees a clean list; the SQL audit is built
+                    # from `sql_columns`, so it reports the very same column as
+                    # an unexpected user-added one. One deployment, two audits,
+                    # opposite verdicts, and the column silently missing from
+                    # every query that was supposed to carry it.
+                    #
+                    # A silently dropped column in an export is this project's
+                    # failure class, so a new FieldKind has to fail the build
+                    # here until somebody decides what it means in M and in
+                    # SQL. There is no defensible default: guessing `type text`
+                    # is what turns a multi-value column into a per-row error
+                    # value, and guessing NVARCHAR(255) is what truncates one.
+                    raise ValueError(
+                        f"{table.name}.{col.name}: reporting has no plan for "
+                        f"SharePoint field kind {sp.kind!r}. Add a case to "
+                        f"reportgen._build_plans giving it a $select, a Power "
+                        f"Query type and a SQL column type -- and a matching "
+                        f"arm in _sp_type_cell -- rather than letting it fall "
+                        f"out of every generated query.",
+                    )
         if bundle.mapping.display_name_mode is not None:
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
             # same map: overrides hit exact column names, everything else
