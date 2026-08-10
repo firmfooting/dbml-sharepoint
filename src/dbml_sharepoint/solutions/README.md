@@ -44,6 +44,7 @@ hand-off into that same improvement/investment chain.
 | [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
 | [contract-register](contract-register/) | Contracts & renewals | Calculated term length, renewal pipeline views |
 | [service-evidence-register](service-evidence-register/) | Evidence of service-provider performance | Contemporaneous event log → dated chase trail → raised theme; how promptly the record was made is itself a column |
+| [research-ethics-register](research-ethics-register/) | Projects sent to an external HREC | Two gates, never merged — ethics approval and site authorisation, with a calculated answer to "can this actually start here?" |
 | [compliance-obligations](compliance-obligations/) | Legislation / standards / funding obligations | The accreditation backbone: obligation → owner → evidence → review |
 | [grants-register](grants-register/) | Funding submissions & acquittals | The post-award obligations everyone else drops, as a due-date view |
 | [delegations-register](delegations-register/) | Who may approve what | The searchable mirror of your instrument of delegation — the lookup every other register's "per your delegations" points at |

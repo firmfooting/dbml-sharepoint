@@ -60,7 +60,7 @@ uv tool install git+https://github.com/shauneccles/dbml-sharepoint
 # or: pip install git+https://github.com/shauneccles/dbml-sharepoint
 ```
 
-The 30 solution templates are part of the package, so an install is all you
+The 31 solution templates are part of the package, so an install is all you
 need to use them — no clone required.
 
 Or work from a clone, if you are contributing:
@@ -74,7 +74,7 @@ uv run dbml-sharepoint version
 
 ## Quickstart
 
-Run it with no arguments and pick one of the 30 shipped templates:
+Run it with no arguments and pick one of the 31 shipped templates:
 
 ```bash
 dbml-sharepoint

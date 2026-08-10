@@ -141,7 +141,7 @@ directories; both were previously called `TEMPLATES` in different modules.
 
 ## The axis that grows
 
-Conformance cases scale as *rules × templates*. At 30 templates that is 399
+Conformance cases scale as *rules × templates*. At 31 templates that is 413
 cases and about 5s. At 100 templates it would be roughly 1,300 cases and ~16s
 serial — still fine, but worth knowing that the count grows when a **template**
 is added, not when a test is.

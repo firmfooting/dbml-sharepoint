@@ -16,6 +16,16 @@ clinical event (a complaint about care, an improvement from an incident),
 record the substance at the process level and reference the clinical
 system's identifier, never the clinical content.
 
+*Research data is the sharpest version of this, because the tempting column
+sounds harmless.* **research-ethics-register** holds project metadata only —
+title, investigator, protocol reference, which committee, what was decided,
+when it expires, what report is owed. It holds **no participant data at any
+grain, including aggregate recruitment or screening counts**, and it links
+the filed progress report rather than holding it. Recruitment numbers belong
+in your clinical trial management system or the study file; a research
+register that starts holding them is one column away from holding who. The
+same applies to any register you build yourself from a research process.
+
 **2. Statutory and mandated systems win.** Victorian health services (and
 equivalents elsewhere) run mandated systems for clinical incidents
 (VHIMS/RiskMan-class), and many run enterprise risk in the same platform.
@@ -53,6 +63,7 @@ A SharePoint list never replaces a mandated system:
 | Consumer feedback (Std 2 partnering) | complaints-feedback | Statutory-scheme check first |
 | Quality improvement (Std 1 CQI) | improvement-register | Feed it from feedback, audits, incidents |
 | Out-of-scope problems discovered by projects | opportunities-register | One-minute capture; route to existing controls before assessing anything |
+| Research & QI projects sent to an external HREC | research-ethics-register | Ethics approval and site authorisation as two separate gates; the answer to "may this start here?" |
 | Clinical audit actions / accreditation findings | audit-actions | Recommendations to closure with evidence |
 | Committee meetings, decisions, actions | meeting-actions | Governance-lite for every committee |
 | Corporate risk tiers | risk-register | See boundary 2 |
