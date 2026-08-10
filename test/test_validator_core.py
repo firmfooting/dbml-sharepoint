@@ -964,6 +964,39 @@ def test_validate_all_is_the_sum_of_its_parts() -> None:
     assert findings == expected
 
 
+class _ErrorExtension(BaseExtension):
+    """The error-strength half of the extension pair.
+
+    `_StubExtension` above reports the warning. Both halves exist because
+    severity is fixed per code, so an extension that needs to FAIL a build
+    has to reach for `EXTENSION_REPORTED` -- and nothing exercised that half
+    until the reachability gate named it.
+    """
+
+    name: ClassVar[str] = "erroring-stub"
+
+    def extra_validators(self, bundle: Any, schema: Any) -> list[Finding]:
+        return [Finding(FindingCode.EXTENSION_REPORTED, "stub extension error")]
+
+
+def test_an_extension_can_report_an_error_not_only_a_warning() -> None:
+    """The other half of the one rule whose strength the core cannot know.
+
+    `EXTENSION_REPORTED` and `EXTENSION_WARNING` are split precisely so an
+    extension can pick, and severity now comes from the code rather than the
+    call site -- so "an extension reported an error" is only really proven by
+    building one and reading the severity back off the finding.
+    """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+
+    findings = validate_all(schema, bundle, _ErrorExtension())
+
+    finding = only(findings, FindingCode.EXTENSION_REPORTED)
+    assert finding.message == "stub extension error"
+    assert finding.severity == "error"
+
+
 # --- Rules that fired for nobody --------------------------------------------
 #
 # Second batch for #98. Each of these is a shipped, documented rule whose

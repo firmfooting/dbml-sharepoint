@@ -196,9 +196,9 @@ def test_every_code_can_actually_be_produced() -> None:
     declared = {c.name for c in FindingCode}
 
     # Raised by an extension's own validators, never by the core -- see the
-    # members' comment. `test_validator_core._StubExtension` constructs the
-    # warning; both exist so an extension can report either strength without
-    # anybody restating a severity.
+    # members' comment. Both exist so an extension can report either strength
+    # without anybody restating a severity, and `test_validator_core` builds
+    # one of each: `_StubExtension` the warning, `_ErrorExtension` the error.
     extension_only = {"EXTENSION_REPORTED", "EXTENSION_WARNING"}
 
     unreachable = declared - referenced - extension_only
