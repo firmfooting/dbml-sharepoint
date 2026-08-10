@@ -6,6 +6,7 @@ from typing import cast
 import pytest
 from _model import bundle as make_bundle
 from _model import column
+from _model import enum as make_enum
 from _model import schema as make_schema
 from _model import table as make_table
 from _paths import FIXTURES
@@ -724,3 +725,112 @@ def test_the_sql_view_builder_refuses_the_same_unhandled_kind(
 
     with pytest.raises(ValueError, match="Uncharted"):
         generate_sql_views(schema, bundle, "default")
+
+
+# --- Multi-value columns ----------------------------------------------------
+
+
+def _multi_value(*, display_names: bool = False) -> tuple[Schema, MappingBundle]:
+    """A schema declaring a multi-value column — the thing S9 exists to report.
+
+    `AuditEvents` rather than `Events` so the display-name test has a name that
+    auto-splits, and one member carries a space because that is what rules the
+    separator choice: a multi-value member is a phrase, not a token.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            column("Title", required=True),
+            column("AuditEvents", "audit_event[]"),
+        ),
+        enums=[make_enum("audit_event", "View", "Edit", "Permission change")],
+    )
+    if display_names:
+        return schema, make_bundle(entities=["Platform"], display_name_mode="auto")
+    return schema, make_bundle(entities=["Platform"])
+
+
+def test_powerquery_joins_a_multi_value_column_into_one_text_cell() -> None:
+    """MEASURED 2026-08-10: under `odata=nometadata`, which is what the
+    Power Query layer speaks, a multi-value item value comes back as a bare
+    JSON array — so the cell holds a LIST, not text.
+
+    The scalar arm's `Table.TransformColumnTypes(…, type text)` over a list
+    does not produce a mistyped column; it produces an Error value in every
+    populated cell, and the query still loads. The join has to happen before
+    anything tries to type it, and the type is then ascribed by the step that
+    produced the text.
+    """
+    schema, bundle = _multi_value()
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert "$select=Id,Title,AuditEvents" in q
+    assert "Table.TransformColumns(" in q
+    assert 'Text.Combine(_, "; ")' in q
+    assert "type text}" in q
+    # The raw list must never reach the typing step: that is the failure this
+    # arm exists to avoid, not a cosmetic difference.
+    assert '{"AuditEvents", type text},' not in q
+    assert '{"AuditEvents", type text}\n' not in q
+
+
+def test_powerquery_renders_an_empty_multi_value_set_as_blank() -> None:
+    """MEASURED 2026-08-10: an empty multi-value set reads back as `null`,
+    NOT as `[]`.
+
+    `Text.Combine(null, "; ")` raises, and a raise inside a transform fails
+    the whole refresh — one row that has never had a value would take the
+    report down. Guarded, the cell is blank, which is what "no members" means.
+    """
+    schema, bundle = _multi_value()
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert "each if _ = null or List.IsEmpty(_) then null" in q
+
+
+def test_sql_view_gives_a_multi_value_column_nvarchar_max() -> None:
+    """A joined set has no meaningful 255 bound, and SQL Server truncates a
+    CAST to NVARCHAR(255) silently."""
+    schema, bundle = _multi_value()
+    sql = generate_sql_views(schema, bundle, "default")
+
+    assert "CAST(t.[AuditEvents] AS NVARCHAR(MAX)) AS [AuditEvents]" in sql
+
+
+def test_both_drift_audits_agree_about_a_multi_value_column() -> None:
+    """The audits are built from two different lists — the M one from
+    `field_internal_names`, the SQL one from `sql_columns` — and a kind that
+    lands in one but not the other makes them contradict each other over the
+    same deployment. A multi-value column must be expected by both."""
+    schema, bundle = _multi_value()
+
+    m_audit = generate_dictionary_powerquery(
+        schema, bundle, "default",
+    )["_UserAddedColumns.pq"]
+    sql_audit = generate_dictionary_sql(schema, bundle, "default")
+
+    assert '"AuditEvents"' in m_audit
+    assert "(N'APP_Platform', N'AuditEvents')" in sql_audit
+
+
+def test_dictionary_describes_a_multi_value_column_in_human_words() -> None:
+    """`MultiChoice` is this codebase's internal token for FieldTypeKind 15.
+    The dictionary is read by report authors, so it says what the column is
+    and how the export spells a set."""
+    schema, bundle = _multi_value()
+    md = generate_data_dictionary(schema, bundle, "default")
+
+    assert "Choice (multiple): 1. View, 2. Edit, 3. Permission change" in md
+    assert '"; "' in md
+    assert "MultiChoice" not in md
+
+
+def test_display_names_still_reach_a_multi_value_column() -> None:
+    """The joined column is not in `m_types`, which is where every other
+    renameable output name comes from — so without an explicit entry the one
+    column type this stage added would be the one that never got its display
+    title, and only a reader comparing two report pages would ever notice."""
+    schema, bundle = _multi_value(display_names=True)
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert '{"AuditEvents", "Audit Events"}' in q

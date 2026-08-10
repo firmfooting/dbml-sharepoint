@@ -37,6 +37,26 @@ from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
 
+# THE SEPARATOR BETWEEN MEMBERS in every joined multi-value cell, and the one
+# place it is spelled — the Power Query transform that builds the cell and the
+# dictionary entry that tells a reader how to split it back apart must not be
+# able to come to disagree.
+#
+# Chosen for the EXPORT rather than from SharePoint. A comma is out twice
+# over: a multi-value member is a phrase and not a token ("Permission change"),
+# so a comma reads as punctuation inside one; and a comma inside a cell is the
+# one character every CSV consumer downstream of a Power BI export handles
+# differently. A bare space is out for the same phrase reason. A semicolon is
+# what SharePoint itself puts between the members of a set on the wire —
+# measured 2026-08-10, an `<Eq>` against the `;#`-delimited string matched the
+# whole set — so it is the separator a reader already associates with one of
+# these columns, and the trailing space is for the eye only.
+#
+# WHAT THIS CANNOT DO: if a choice member ever contains "; " the joined cell is
+# ambiguous, and nothing here can detect it. Refusing that needs a named
+# finding, which is not this module's to mint.
+MULTI_VALUE_JOIN = "; "
+
 
 @dataclass
 class _ListPlan:
@@ -50,6 +70,10 @@ class _ListPlan:
     record_expands: list[tuple[str, str, str]] = field(default_factory=list)
     # (output column, M type token)
     m_types: list[tuple[str, str]] = field(default_factory=list)
+    # Multi-value columns joined to one text cell. Deliberately NOT in
+    # `m_types`: the join step ascribes their type, because the raw list must
+    # never reach `Table.TransformColumnTypes` at all.
+    multi_value_joins: list[str] = field(default_factory=list)
     # (landed column, SQL type)
     sql_columns: list[tuple[str, str]] = field(default_factory=list)
     # (fk column, target list title, target display column)
@@ -184,6 +208,32 @@ def _build_plans(
                         plan.joins.append(
                             (f"{sp.name}Id", prefix + target, display),
                         )
+                case "MultiChoice":
+                    # MEASURED 2026-08-10 on a live tenant: the item value
+                    # reads back as a bare JSON array under `odata=nometadata`
+                    # — the dialect the Power Query layer speaks — and as
+                    # {"__metadata":…,"results":[…]} under `odata=verbose`,
+                    # the deploy layer's. The two need not agree, and only the
+                    # first one matters here: THE CELL HOLDS A LIST.
+                    #
+                    # Which is why this cannot ride the scalar Choice arm.
+                    # `type text` over a list does not mistype the column, it
+                    # puts an Error value in every populated cell while the
+                    # query still loads — a report that renders and is wrong.
+                    # The join therefore happens in its own step, before
+                    # anything types anything, and that step ascribes the type.
+                    #
+                    # SQL takes the same joined string, and it is NVARCHAR(MAX)
+                    # because a joined set has no bound worth guessing and a
+                    # CAST that overflows truncates in silence. A joined string
+                    # rather than a junction table because there is no
+                    # junction-table machinery anywhere in this generator — no
+                    # CROSS APPLY, no STRING_SPLIT, no OPENJSON — and none is
+                    # being added here. One text cell is the only shape both
+                    # targets can carry today.
+                    plan.selects.append(sp.name)
+                    plan.multi_value_joins.append(sp.name)
+                    plan.sql_columns.append((sp.name, "NVARCHAR(MAX)"))
                 case "Calculated":
                     plan.selects.append(sp.name)
                     if sp.output_type == 9:
@@ -228,7 +278,16 @@ def _build_plans(
             # Derived out-columns (FooId/FooTitle/FooUrl) resolve through the
             # same map: overrides hit exact column names, everything else
             # auto-splits ("RiskOwnerTitle" -> "Risk Owner Title").
-            for out_name in [name for name, _ in plan.m_types] + ["ItemURL"]:
+            # `multi_value_joins` is listed alongside `m_types` because it is
+            # the only output column NOT in `m_types`, and a renameable name
+            # that this loop cannot see is a column that silently keeps its
+            # internal name in a model where every other column got its
+            # display title.
+            for out_name in (
+                [name for name, _ in plan.m_types]
+                + plan.multi_value_joins
+                + ["ItemURL"]
+            ):
                 display = bundle.mapping.display_name_for(table.name, out_name)
                 if display != out_name:
                     plan.renames.append((out_name, display))
@@ -304,6 +363,35 @@ def _render_m(plan: _ListPlan) -> str:
             f'{{"{inner}"}}, {{"{out}"}}),',
         )
         prev = step
+    if plan.multi_value_joins:
+        lines += [
+            "    // A multi-value column arrives as a LIST, so it is joined to",
+            "    // one text cell here — before the typing step below, which",
+            "    // over a list would put an Error value in every populated",
+            "    // cell rather than mistyping the column, and the query would",
+            "    // still load. An empty set reads back as null, not [], and",
+            "    // Text.Combine(null) raises: that would fail the whole",
+            "    // refresh over one row that has never had a value.",
+            (f'    // Members are separated by "{MULTI_VALUE_JOIN}" —'
+             " Text.Split to get the list back."),
+            "    JoinedMultiValue = Table.TransformColumns(",
+            f"        {prev},",
+            "        {",
+        ]
+        for name in plan.multi_value_joins:
+            lines += [
+                (f'            {{"{name}", each if _ = null '
+                 "or List.IsEmpty(_) then null"),
+                (f'                else Text.Combine(_, "{MULTI_VALUE_JOIN}"), '
+                 "type text},"),
+            ]
+        # M list literals do not allow a trailing comma.
+        lines[-1] = lines[-1].rstrip(",")
+        lines += [
+            "        }",
+            "    ),",
+        ]
+        prev = "JoinedMultiValue"
     lines.append("    Typed = Table.TransformColumnTypes(")
     lines.append(f"        {prev},")
     lines.append("        {")
@@ -667,6 +755,23 @@ def _sp_type_cell(
             members = enum_members.get(sp.choices_enum or "", [])
             return "Choice: " + ", ".join(
                 f"{i}. {member}" for i, member in enumerate(members, 1)
+            )
+        case "MultiChoice":
+            # `MultiChoice` is this codebase's token for FieldTypeKind 15, and
+            # the raw token is what a fall-through printed here — into the one
+            # column a report author reads to find out what a column IS.
+            #
+            # Same declaration-order ordinals as Choice, and then how the
+            # export spells a set, because this page is where somebody looking
+            # at one text cell holding several members finds out that it is
+            # several members and what to split on.
+            members = enum_members.get(sp.choices_enum or "", [])
+            joined = ", ".join(
+                f"{i}. {member}" for i, member in enumerate(members, 1)
+            )
+            return (
+                f"Choice (multiple): {joined} (exported as one text cell, "
+                f'members joined by "{MULTI_VALUE_JOIN}")'
             )
         case "Number":
             return "Number"
