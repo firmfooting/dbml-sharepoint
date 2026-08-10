@@ -55,11 +55,23 @@ Enum project_type {
   "Student project"
 }
 
-// The review pathway. Negligible risk means no foreseeable risk of harm or
-// discomfort and any foreseeable risk is no more than inconvenience; low risk
-// means the maximum foreseeable risk is discomfort. Lower-risk projects may
-// take a pathway other than full committee review. Sources are cited in
-// 50-govern/governance.md, by what they say rather than by clause number.
+// The review pathway. The National Statement (2025) sorts risk into four
+// profiles: minimal (no risk of harm or discomfort, at worst minor burden or
+// inconvenience) and low (no risk of harm, risk of discomfort) are the lower
+// pair; greater than low (risk of harm) and high (risk of significant harm)
+// are the higher pair. Greater than low risk must go to an HREC; no more than
+// low risk may be reviewed under other processes.
+//
+// The LNR member keeps its name on purpose. "Negligible risk" is the wording
+// of editions before 2025 -- the current one says "minimal" -- but the state
+// review PATHWAYS, their application forms and their committees are still
+// named LNR, and this column records which pathway a project took, not which
+// national risk category it sits in. An operator picks what their committee's
+// form says. If your partner committee has renamed its pathway, rename this
+// member to match; nothing in the build depends on the wording.
+//
+// Sources are cited in 50-govern/governance.md, by what they say rather than
+// by paragraph number.
 //
 // The last member is not a loophole. An organisation is expected to have a
 // process for deciding when a quality assurance or evaluation activity needs

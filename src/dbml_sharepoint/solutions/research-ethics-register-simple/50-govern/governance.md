@@ -198,25 +198,34 @@ national; the forms, the timeframes and the delegations are not.
 | Progress reports go to the reviewing committee **at least annually**, and continued approval is contingent on them | [SLHD RPA post-approval guidelines](https://www.slhd.nsw.gov.au/rpa/research/postapproval.html) — *"reports on the progress of all approved studies must be submitted to the Committee at least annually"*, and approval runs *"subject to the receipt of satisfactory annual reports"* |
 | The report **due date** is set locally, not nationally | [RMH progress and final reports](https://www.thermh.org.au/research/office-for-research/post-approval-project-management/progress-and-final-reports) — *"Annual Progress Reports must be submitted by 31 March each year"*, a fixed institutional date set for that office's own reconciliation; other schemes use the approval anniversary. This is why the register stores a date you supply rather than deriving one from a cadence |
 | Protocol deviations and suspected breaches go to the **local research governance officer**, not only to the committee or sponsor, and quickly | [SLHD RPA post-approval guidelines](https://www.slhd.nsw.gov.au/rpa/research/postapproval.html) — a suspected breach is reported to the sponsor **and** the RGO within 72 hours of becoming aware of it |
-| **Negligible risk** research is research in which there is no foreseeable risk of harm or discomfort and any foreseeable risk is no more than inconvenience; **low risk** research is research in which the maximum foreseeable risk is discomfort. Lower-risk projects may take a review pathway other than the full committee | [SESLHD, low risk and negligible risk research](https://www.seslhd.health.nsw.gov.au/services-clinics/directory/research-home/ethics/low-risk-and-negligible-risk-research), quoting the National Statement definitions verbatim |
+| The National Statement sorts research risk into four profiles — **minimal** (*"No risk of harm or discomfort; potential for minor burden or inconvenience"*) and **low** (*"No risk of harm; risk of discomfort"*) are the lower-risk pair; **greater than low** (*"Risk of harm"*) and **high** (*"Risk of significant harm"*) are the higher-risk pair | National Statement (2025), Chapter 2.1, **Figure 1: Risk profiles of research** — read from the document itself, not from a summary of it |
+| Research **greater than low risk must go to an HREC**; research of **no more than low risk may be reviewed under other processes**, and an institution may determine that some research is exempt from ethics review | National Statement (2025), *Purpose, scope and limits* — *"Research with a greater than low level of risk (as defined in Chapter 2.1) must be reviewed by a Human Research Ethics Committee (HREC). Research involving no more than low risk may be reviewed under other processes"* |
+| **"Negligible risk" is not current National Statement vocabulary.** The 2025 edition uses *minimal* where earlier editions said *negligible*. The pathway member in this register is still named **LNR (low and negligible risk)**, because that is what the state review pathways, their application forms and their committees are still called — and an operator picks the pathway their committee's form names, not the one a national document names | The 2025 edition's Figure 1 carries no "negligible" category; state health services still publish LNR pathways and LNR application forms. If your partner committee has renamed its pathway, rename this Choice member to match its form |
 | Not every quality-improvement or evaluation activity needs ethics review, and an organisation is expected to have a **process** for deciding | [NHMRC, *Ethical Considerations in Quality Assurance and Evaluation Activities* (2014)](https://www.nhmrc.gov.au/sites/default/files/documents/attachments/ethical-considerations-in-quality-assurance-and-evaluation-activites.pdf) — guidance for identifying triggers for ethical review and for deciding the appropriate level of oversight |
 | A single ethical review is accepted across jurisdictions for multi-centre research in publicly funded health services — which is why a service with no committee of its own can use somebody else's — while **site governance stays local** | [ACT Health, National Mutual Acceptance scheme](https://www.act.gov.au/health/conducting-health-research/ethics-and-governance/nma-scheme) — *"a national agreement for mutual acceptance of a single scientific and ethical review for multi-centre health and medical research conducted in publicly funded health services across all Australian states and territories"*, with local research governance processes still applying |
 
-**No clause numbers are quoted anywhere in this template**, deliberately. The
-National Statement's internal numbering has been revised more than once, and
-a register that quotes a five-part number at a research governance officer is
-one edition away from being wrong. Everything above is cited by what it says.
+**No paragraph numbers are quoted anywhere in this template**, deliberately.
+The National Statement's internal numbering has been revised more than once,
+and a register that quotes a five-part number at a research governance officer
+is one edition away from being wrong. The two exceptions above are a *chapter*
+and a *figure* — coarse enough to survive a renumbering, and the figure is the
+definition rather than a paraphrase of it. Everything else is cited by what it
+says.
 
-**Which edition of the National Statement.** The current one is the
-**National Statement on Ethical Conduct in Human Research (2025)**, which took
-effect **23 June 2026**, superseding the 2023 edition — so as of this
-template's release it is in force
-([NHMRC](https://www.nhmrc.gov.au/about-us/publications/national-statement-ethical-conduct-human-research-2025);
-the effective date and the supersession were confirmed independently in
-[this summary of the change](https://www.minterellison.com/articles/now-in-effect-national-statement-changes-for-researchers),
-because NHMRC's own page would not load when this was written). Confirm it
-yourself before quoting it at anybody — it is the one fact on this page with
-a date attached to it, and dates go stale.
+**Which edition of the National Statement.** The current one is the **National
+Statement on Ethical Conduct in Human Research (2025)**, published by NHMRC
+with the Australian Research Council and Universities Australia (NHMRC
+publication reference E72D). That much is read from the document itself, and
+so are the risk profiles above.
+
+**The document carries no commencement date.** Its publication details give the
+year and nothing finer, so the widely reported effective date of **23 June
+2026**, superseding the 2023 edition, rests on
+[NHMRC's own page for the edition](https://www.nhmrc.gov.au/about-us/publications/national-statement-ethical-conduct-human-research-2025)
+and on secondary reporting, not on anything inside the PDF. Treat the edition
+as established and the date as worth confirming — and note that your partner
+committee's transition arrangements are its own to set, whatever the national
+date says.
 
 **Nothing here states a fee, a form name, a turnaround time or a reporting
 interval as a national rule**, because none of them is one. Where the
