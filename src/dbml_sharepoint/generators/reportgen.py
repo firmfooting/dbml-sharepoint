@@ -52,9 +52,19 @@ from dbml_sharepoint.model.release import Release
 # whole set — so it is the separator a reader already associates with one of
 # these columns, and the trailing space is for the eye only.
 #
-# WHAT THIS CANNOT DO: if a choice member ever contains "; " the joined cell is
-# ambiguous, and nothing here can detect it. Refusing that needs a named
-# finding, which is not this module's to mint.
+# A MEMBER CONTAINING IT is refused, by `_refuse_ambiguous_members` below.
+# `{"Permission change; revoked"}` and `{"Permission change", "revoked"}` join
+# to the same text, so the cell stops being reconstructible and a downstream
+# count of selections is wrong with nothing able to see it -- silent
+# wrongness in a production export, which is the failure class this
+# repository exists to close. An escape is not the answer: the dictionary
+# tells a reader to `Text.Split` the cell, and a human reading it splits by
+# eye, so an encoding only they two do not understand is worse than a refusal.
+#
+# A finding would be better than an exception, and belongs in `analysis/`,
+# which this module must not import from. Until one exists the generator
+# refuses to emit an export it cannot describe -- the same thing
+# `_sp_type_cell` does for a field kind it has no words for.
 MULTI_VALUE_JOIN = "; "
 
 
@@ -104,6 +114,33 @@ def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> l
     return out
 
 
+def _refuse_ambiguous_members(column: str, members: list[str]) -> None:
+    """Refuse a choice set the joined cell could not be split back into.
+
+    Called from both places a multi-value column is described -- the plan
+    builder behind the queries and the SQL views, and `_sp_type_cell` behind
+    the data dictionary -- because the dictionary page is the one entry point
+    that never builds a plan.
+
+    Only `MULTI_VALUE_JOIN` itself is refused. A bare `;` inside a member
+    joins and splits back perfectly well, and refusing it would cost a
+    legitimate schema for a fault it does not have.
+    """
+    offending = [member for member in members if MULTI_VALUE_JOIN in member]
+    if not offending:
+        return
+    raise ValueError(
+        f"{column}: multi-value choice member(s) "
+        f"{', '.join(repr(member) for member in offending)} contain "
+        f'"{MULTI_VALUE_JOIN}", which is the separator the exported cell '
+        f"joins members with. A set holding such a member joins to the same "
+        f"text as a set holding its parts, so the export cannot be split back "
+        f"into what the row actually held and any count of selections taken "
+        f"from it is wrong with nothing able to notice. Rename the member, or "
+        f"model the column as a child entity with one row per value.",
+    )
+
+
 def _display_column(bundle: MappingBundle, target_entity: str) -> str:
     entity = bundle.mapping.entities.get(target_entity)
     if entity is not None and entity.display_column:
@@ -129,6 +166,7 @@ def _build_plans(
     tables = _tables_for_role(schema, bundle, site_role)
     emitted = {t.name for t in tables}
     enum_names = {e.name for e in schema.enums}
+    enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = {
         (xref.entity, xref.column)
         for xref in bundle.mapping.cross_site_reference_columns
@@ -231,6 +269,12 @@ def _build_plans(
                     # CROSS APPLY, no STRING_SPLIT, no OPENJSON — and none is
                     # being added here. One text cell is the only shape both
                     # targets can carry today.
+                    #
+                    # Which only works while the cell can be split back apart,
+                    # so the members are checked before anything is planned.
+                    _refuse_ambiguous_members(
+                        sp.name, enum_members.get(sp.choices_enum or "", []),
+                    )
                     plan.selects.append(sp.name)
                     plan.multi_value_joins.append(sp.name)
                     plan.sql_columns.append((sp.name, "NVARCHAR(MAX)"))
@@ -657,6 +701,19 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
          "Run the script in SQLCMD mode after adjusting `:setvar "
          "LandingSchema` / `:setvar ReportSchema`."),
         "",
+        ("**Multi-value choice columns are a landing contract, not a "
+         "transform.** The Power Query queries join a set into one text cell "
+         f'separated by `\"{MULTI_VALUE_JOIN}\"`, in a step written into the '
+         "`.pq` file. The SQL views do not: they `CAST` whatever the extract "
+         "landed, as `NVARCHAR(MAX)` so nothing is truncated in silence. "
+         "Your extract must therefore land such a column as text, and the "
+         "text it lands is the text your reports will read — SharePoint's "
+         "own `;#`-delimited string, a JSON array, or the same "
+         f'`\"{MULTI_VALUE_JOIN}\"` join, depending on the extractor. Match '
+         "it to the Power Query separator if the two layers are to agree, or "
+         "record which one your warehouse uses; this generator cannot see "
+         "the extract and does not guess."),
+        "",
         ("Per list you get `vw_<List>` (typed casts) and, where the list has "
          "lookups, `vw_<List>_Enriched` (lookups joined to their display "
          "columns) — the horizontal, cross-list reporting layer."),
@@ -766,12 +823,20 @@ def _sp_type_cell(
             # at one text cell holding several members finds out that it is
             # several members and what to split on.
             members = enum_members.get(sp.choices_enum or "", [])
+            _refuse_ambiguous_members(sp.name, members)
             joined = ", ".join(
                 f"{i}. {member}" for i, member in enumerate(members, 1)
             )
+            # Says WHICH export joins them. The Power Query one does, in a
+            # step this generator writes. The SQL views do not: they cast
+            # whatever the extract process landed, and this module never sees
+            # that process. Telling a warehouse reader the members "are"
+            # joined by "; " would state as fact something no part of the SQL
+            # path performs -- reporting.md carries the landing contract.
             return (
-                f"Choice (multiple): {joined} (exported as one text cell, "
-                f'members joined by "{MULTI_VALUE_JOIN}")'
+                f"Choice (multiple): {joined} (a set of members; the Power "
+                f"Query export joins them into one text cell separated by "
+                f'"{MULTI_VALUE_JOIN}")'
             )
         case "Number":
             return "Number"
