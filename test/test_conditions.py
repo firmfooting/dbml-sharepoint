@@ -1914,3 +1914,216 @@ def test_an_operator_the_target_cannot_render_is_refused(
     findings = _findings(Group("all_of", (Leaf("Status", "eq", "Open"),)))
 
     assert only(findings, FindingCode.CONDITION_OPERATOR_UNRENDERABLE).severity == "error"
+
+
+# --- A multi-value column's operators ---------------------------------------
+#
+# `<Eq>` against a MultiChoice column means MEMBERSHIP, not whole-set equality.
+# That is undocumented on Learn and was measured on a live tenant on
+# 2026-08-10, over three runs, against a four-row fixture --
+# R1 {View}  R2 {View,Edit}  R3 {Edit,Export}  R4 {} -- recorded on issue #152.
+#
+# The authored grammar therefore spells membership as `includes` rather than
+# letting `eq` mean two things depending on a column's arity. Everything below
+# pins one half of that: what the two new operators emit, and what the old ones
+# now refuse.
+
+MULTI_TYPES = {"Events": "audit_event[]", "Status": "nvarchar"}
+
+_EVENTS_REF = '<FieldRef Name="Events"/>'
+_VIEW_VALUE = '<Value Type="Text">View</Value>'
+
+
+def test_includes_renders_the_eq_predicate_that_was_measured() -> None:
+    """Byte-for-byte the predicate probe C1 sent.
+
+    C1 asked `<Eq><FieldRef Name="Evt"/><Value Type="Text">View</Value></Eq>`
+    and got back R1 and R2 -- the two rows CONTAINING View, not the one whose
+    whole set is {View}. C8 then stored the same predicate as a view's
+    ViewQuery, SharePoint rewrote that XML on save as it always does, and the
+    stored view still listed both rows.
+
+    Asserted as an exact string because the string is the evidence: a different
+    `Value Type`, or a `<Contains>`, is a predicate nobody has run.
+    """
+    rendered = to_caml(Leaf("Events", "includes", "View"), MULTI_TYPES)
+
+    assert rendered == f"<Eq>{_EVENTS_REF}{_VIEW_VALUE}</Eq>"
+
+
+def test_not_includes_renders_the_neq_wrapper_the_deployer_already_emits() -> None:
+    """Measured C9: a bare `<Neq>` returns R3 AND R4 -- the rows without the
+    member, plus the empty row.
+
+    That is UNLIKE single-value CAML, where a negative is three-valued and
+    drops nulls, which is the whole reason `neq` is wrapped in `<Or><IsNull>`.
+    On a multi-value column the wrapper is redundant rather than wrong, and C10
+    measured the composed form returning the same two rows. Emitting it keeps
+    ONE `neq` rendering rather than an arity-dependent branch, and the union is
+    established twice over: C9 gives R3+R4 and C6's `<IsNull>` gives R4, a
+    subset of it, so nothing here rests on a claim about `<Or>` child order.
+    """
+    rendered = to_caml(Leaf("Events", "not_includes", "View"), MULTI_TYPES)
+
+    assert rendered == (
+        f"<Or><IsNull>{_EVENTS_REF}</IsNull>"
+        f"<Neq>{_EVENTS_REF}{_VIEW_VALUE}</Neq></Or>"
+    )
+
+
+def test_none_of_includes_normalises_to_not_includes_with_no_second_null_arm() -> None:
+    """`not_includes` already admits the empty row, so the normaliser must not
+    OR another `is_null` around it.
+
+    Relational negation adds that arm because CAML's bare `<Leq>` drops empty
+    rows. `neq` and `not_in` are exempt because their renderings carry the
+    semantic themselves; C9 measured `not_includes` in the same family, so it
+    is exempt for the same measured reason rather than by resemblance.
+    """
+    authored = Group("none_of", (Leaf("Events", "includes", "View"),))
+
+    assert normalise(authored) == Group("all_of", (Leaf("Events", "not_includes", "View"),))
+    assert to_caml(authored, MULTI_TYPES) == to_caml(
+        Leaf("Events", "not_includes", "View"), MULTI_TYPES,
+    )
+
+
+@pytest.mark.parametrize(
+    ("op", "expected"),
+    [
+        ("is_null", f"<IsNull>{_EVENTS_REF}</IsNull>"),
+        ("is_not_null", f"<IsNotNull>{_EVENTS_REF}</IsNotNull>"),
+    ],
+)
+def test_the_null_tests_still_render_on_a_multi_value_column(op: str, expected: str) -> None:
+    """Measured C6/C7: `<IsNull>` returned R4 alone and `<IsNotNull>` returned
+    R1, R2 and R3. Both correct, so both stay -- and they are the only way to
+    ask about a column nobody has given a value, which M4 measured reading back
+    as `null` rather than as an empty array."""
+    assert to_caml(Leaf("Events", op, None), MULTI_TYPES) == expected
+
+
+@pytest.mark.parametrize("op", ["eq", "neq", "in", "not_in", "lt", "leq", "gt", "geq"])
+def test_a_scalar_operator_on_a_multi_value_column_is_refused(op: str) -> None:
+    """`eq` is the one that matters, and it is refused precisely BECAUSE it
+    works.
+
+    `<Eq>` does the membership test. Accepting the authored `eq` for it would
+    give one word two meanings -- equality on a scalar column, membership on a
+    multi-value one -- separated only by a DBML arity the mapping does not
+    show. Adding `[]` to a column's type would then silently change every
+    filter already written against it, on a green build.
+
+    The ordering operators are refused for the opposite reason: nothing has
+    measured them, and a set has no order to compare.
+    """
+    value = ["View"] if op in ("in", "not_in") else "View"
+
+    findings = _findings(
+        Group("all_of", (Leaf("Events", op, value),)), types=MULTI_TYPES,
+    )
+
+    finding = only(findings, FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert "includes" in finding.message
+
+
+@pytest.mark.parametrize("op", ["contains", "begins_with"])
+def test_a_substring_operator_on_a_multi_value_column_is_refused(op: str) -> None:
+    """`<Contains>` was measured working, and is still refused.
+
+    C3 returned R1 and R2 -- the same rows `<Eq>` returned -- so the
+    measurement cannot tell membership from a substring match over whatever
+    delimited form the column is stored in. A needle that is a PREFIX of a
+    member would answer differently under the two readings, and no probe has
+    sent one. `includes` covers every case C3 actually observed, so nothing
+    that was measured becomes inexpressible.
+
+    `begins_with` was never asked at all. Learn documents `<Contains>` for Text
+    and Note columns only, which makes both of these undocumented as well as
+    unmeasured.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Events", op, "View"),)), types=MULTI_TYPES,
+    )
+
+    assert only(
+        findings, FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED,
+    ).severity == "error"
+
+
+def test_a_delimited_value_is_refused_rather_than_testing_the_whole_set() -> None:
+    """Measured C2: `<Eq>` against `"View;#Edit"` returned R2 alone -- an
+    exact-set match.
+
+    So one operator answers two different questions, and the only thing
+    separating them is whether the VALUE happens to contain `;#`. A reader of
+    the mapping cannot see which was meant, which is the trap this grammar
+    exists to close. The form is not offered under a name of its own either:
+    only `<Eq>` was measured, its negation never was, and the delimited
+    comparison is order-sensitive, so the same set declared in another order
+    would match nothing.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Events", "includes", "View;#Edit"),)), types=MULTI_TYPES,
+    )
+
+    finding = only(findings, FindingCode.MULTI_VALUE_SET_EQUALITY_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert ";#" in finding.message
+
+
+@pytest.mark.parametrize("op", ["includes", "not_includes"])
+def test_membership_on_a_single_value_column_is_refused(op: str) -> None:
+    """The other half of refusing `eq` on a multi-value column.
+
+    Guarded in only one direction, `includes` would quietly render `<Eq>` on a
+    scalar Choice and mean equality -- the same word meaning two things, just
+    approached from the other side.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Status", op, "Open"),)), types=MULTI_TYPES,
+    )
+
+    finding = only(findings, FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN)
+    assert finding.severity == "error"
+    assert "eq" in finding.message
+
+
+@pytest.mark.parametrize("target", [EXPRESSION, VALIDATION])
+def test_membership_has_no_rendering_on_the_formula_targets(target: str) -> None:
+    """Only a view filter can read a multi-value column at all -- measured, a
+    validation formula is refused outright, and show/hide is documented
+    unsupported -- so neither operator is in either target's capability table.
+
+    Pinned so the message is a deliberate choice rather than an accident of
+    check order: the author is told the operator has no rendering there, which
+    is the more actionable of the two true sentences, since `includes` does not
+    exist on that target for any column at all.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Events", "includes", "View"),)),
+        target=target,
+        types=MULTI_TYPES,
+    )
+
+    assert only(findings, FindingCode.CONDITION_OPERATOR_UNRENDERABLE).severity == "error"
+
+
+def test_the_multi_value_operand_refusal_still_covers_the_formula_targets() -> None:
+    """#158's refusal is not weakened by the operator gate landing beside it: a
+    formula target still refuses the COLUMN, whatever is asked of it."""
+    findings = _findings(
+        Group("all_of", (Leaf("Events", "eq", "View"),)),
+        target=VALIDATION,
+        types=MULTI_TYPES,
+    )
+
+    assert only(findings, FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED).severity == "error"
+
+
+def test_membership_describes_itself_in_the_manifest() -> None:
+    """`describe` renders the DECLARED operator, so a manifest reader sees the
+    word the mapping used rather than the `<Eq>` it becomes -- which on this
+    column would read as equality and mean something else."""
+    assert describe(Leaf("Events", "includes", "View")) == "Events includes 'View'"

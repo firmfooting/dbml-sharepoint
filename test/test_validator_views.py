@@ -221,7 +221,7 @@ def test_a_view_filtering_a_multi_value_column_is_told_no_index_is_possible() ->
     bundle = make_bundle(entities=["Platform"], views={"Platform": [ViewDef(
         title="Logs viewing",
         fields=["Title", "Events"],
-        where=Group("all_of", (Leaf(field="Events", op="eq", value="View"),)),
+        where=Group("all_of", (Leaf(field="Events", op="includes", value="View"),)),
     )]})
 
     findings = validate_against_mapping(_multi_value_platform(), bundle)
@@ -253,7 +253,7 @@ def test_an_indexed_sibling_filter_clears_the_multi_value_warning() -> None:
         fields=["Title", "Status", "Events"],
         where=Group("all_of", (
             Leaf(field="Status", op="eq", value="Live"),
-            Leaf(field="Events", op="eq", value="View"),
+            Leaf(field="Events", op="includes", value="View"),
         )),
     )]})
 
@@ -261,6 +261,35 @@ def test_an_indexed_sibling_filter_clears_the_multi_value_warning() -> None:
 
     none_of(findings, FindingCode.MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE)
     none_of(findings, FindingCode.UNINDEXED_FILTER_COLUMNS)
+
+def test_a_view_filtering_a_multi_value_column_with_eq_is_sent_to_includes() -> None:
+    """The grammar's arity rule, reached the way an author reaches it.
+
+    `<Eq>` really is the predicate this filter needs -- measured 2026-08-10 --
+    and that is exactly why the authored `eq` cannot be it. One word would
+    mean equality on `Status` and containment on `Events`, told apart only by
+    a `[]` in the DBML that the mapping never shows, so adding `[]` to a
+    column would silently change every filter written against it.
+
+    Reached through `validate_against_mapping` rather than through the
+    renderer, because the unit test cannot show that the refusal survives the
+    walk from a declared view down to a leaf and comes back with the view's
+    own location on it.
+    """
+    bundle = make_bundle(entities=["Platform"], views={"Platform": [ViewDef(
+        title="Logs viewing",
+        fields=["Title", "Events"],
+        where=Group("all_of", (Leaf(field="Events", op="eq", value="View"),)),
+    )]})
+
+    findings = validate_against_mapping(_multi_value_platform(), bundle)
+
+    finding = only(findings, FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED)
+    assert finding.severity == "error"
+    assert "includes" in finding.message
+    assert finding.location == Location(
+        Section.VIEWS, entity="Platform", view="Logs viewing", sub="where.Events",
+    )
 
 def test_explicit_or_unique_filter_index_clears_warning() -> None:
     schema, bundle = _project_inputs(

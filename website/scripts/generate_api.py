@@ -446,7 +446,14 @@ def generate_conditions_page() -> None:
     model = importlib.import_module("dbml_sharepoint.model.conditions")
     parse = model.parse_condition
 
-    types = {"Status": "nvarchar", "Count": "number", "Owner": "person", "Note": "nvarchar"}
+    # `Events` is multi-value, and it is in this table so the two membership
+    # operators print their real renderings beside the scalar ones -- and so
+    # the two formula targets print their refusal, which is the fact an author
+    # most needs from this page.
+    types = {
+        "Status": "nvarchar", "Count": "number", "Owner": "person", "Note": "nvarchar",
+        "Events": "audit_event[]",
+    }
     samples: list[tuple[str, dict[str, object]]] = [
         ("eq", {"field": "Status", "op": "eq", "value": "Open"}),
         ("neq", {"field": "Status", "op": "neq", "value": "Open"}),
@@ -458,6 +465,8 @@ def generate_conditions_page() -> None:
         ("not_in", {"field": "Status", "op": "not_in", "value": ["A", "B"]}),
         ("contains", {"field": "Note", "op": "contains", "value": "x"}),
         ("begins_with", {"field": "Note", "op": "begins_with", "value": "ab"}),
+        ("includes", {"field": "Events", "op": "includes", "value": "View"}),
+        ("not_includes", {"field": "Events", "op": "not_includes", "value": "View"}),
         ("measure: length", {"field": "Note", "measure": "length", "op": "gt", "value": 10}),
         ("property (person)", {"field": "Owner", "property": "title", "op": "neq", "value": ""}),
     ]
