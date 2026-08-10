@@ -170,6 +170,8 @@
   expect('C6', 'CAML <IsNull> returns which rows');
   expect('C7', 'CAML <IsNotNull> returns which rows');
   expect('C8', 'the winning predicate survives being STORED as a view ViewQuery (manual: look)');
+  expect('C9', 'CAML <Neq> "View" returns which rows');
+  expect('C10', 'CAML <Or><Neq><IsNull> "View" -- the deployer\'s own neq wrapper -- returns which rows');
   expect('V1', 'a ValidationFormula may reference a MultiChoice column');
   expect('F1', 'a calculated column formula may reference a MultiChoice column');
   expect('X1', 'the severity formatter this repo generates, on an array (manual: look)');
@@ -398,7 +400,11 @@
     // === M4: what does it read back as? ====================================
     // Both content types, because the deployer speaks verbose and the reporting
     // layer's Power Query speaks nometadata, and they need not agree.
-    const backVerbose = await get(`${listPath}/items?$select=Title,${odataName(MULTI)}&$orderby=Id`);
+    // `Id` is selected because M5 re-writes R2 by id. The first run of this
+    // probe selected only Title and the multi field, so `r2.Id` was undefined
+    // and M5 POSTed to `items(undefined)` -- a 400 that reads exactly like
+    // SharePoint refusing the re-write, when nothing had been asked of it.
+    const backVerbose = await get(`${listPath}/items?$select=Id,Title,${odataName(MULTI)}&$orderby=Id`);
     const backNoMeta = await get(
       `${listPath}/items?$select=Title,${odataName(MULTI)}&$orderby=Id`,
       'application/json;odata=nometadata',
@@ -560,6 +566,21 @@
         + 'it is included. The deployer already wraps `neq` in <Or><IsNull> for exactly this reason'],
       ['C6', 'IsNull', `<IsNull>${ref}</IsNull>`, 'R4 only is the expected shape of a working null test'],
       ['C7', 'IsNotNull', `<IsNotNull>${ref}</IsNotNull>`, 'R1+R2+R3 is the expected shape'],
+      // Added after the first live run, which left NEGATION with no working
+      // predicate at all: <NotIncludes> returned nothing, and <Eq> turned out
+      // to mean "includes" -- so its negation is the obvious candidate and was
+      // never asked. If this also returns nothing, the condition grammar must
+      // REFUSE every negative operator on a multi-value column by name, rather
+      // than emit a filter that silently shows an empty view.
+      ['C9', 'Neq "View"', `<Neq>${ref}${textValue('View')}</Neq>`,
+        'R3 only means Neq is the negative membership operator and excludes the empty row R4, like every other '
+        + 'CAML negative; R3+R4 means it includes it; nothing means negation is unavailable and must be refused'],
+      // The mirror of C9 in the shape the deployer actually emits for `neq`.
+      // If C9 works but this does not, the wrapper is the problem, not Neq.
+      ['C10', 'Or[Neq "View", IsNull]',
+        `<Or><Neq>${ref}${textValue('View')}</Neq><IsNull>${ref}</IsNull></Or>`,
+        'R3+R4 is what the deployer\'s existing `neq` wrapper is for -- it exists so a null row is not silently '
+        + 'dropped by a negative. Anything else means the wrapper does not compose with a multi-value column'],
     ];
     const camlRows = async (where) => {
       const r = await post(`${listPath}/GetItems?$select=Title`, {
