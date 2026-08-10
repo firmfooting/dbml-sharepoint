@@ -846,6 +846,15 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
     exists, and the vocabulary has to stay data-driven the way `build` and
     `report` keep it. A hardcoded `default | admin` here would refuse a
     perfectly good mapping whose roles are `hq` and `branch`.
+
+    The scripted answer is `default`, not `archive`, and that is the whole
+    experiment. `_site_roles` sorts, so `roles[0]` is `archive` -- answering
+    `archive` made the captured value identical for a wizard that asked and
+    a wizard that took the first role and never asked at all, with the
+    scripted answer sitting unread. Answering the OTHER role separates them.
+    The prompt and the vocabulary it offered are asserted too, because
+    "offers exactly the roles the mapping declares" is the sentence this
+    test opens with and a captured value alone does not show it.
     """
     solution = _fake_family(
         tmp_path / "fake",
@@ -864,11 +873,14 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
         "https://contoso.sharepoint.com/sites/x",
         "y",          # write
         "y",          # build
-        "archive",    # site role
+        "default",    # site role -- NOT roles[0], see the docstring
     ])
 
     assert wizard.run_wizard(console) == 0
-    assert captured["site_role"] == "archive"
+    assert captured["site_role"] == "default"
+    reported = _collapsed(console)
+    assert "Site role" in reported
+    assert "[archive/default]" in reported
 
 
 def test_the_shipped_template_is_never_written_to(tmp_path: Path) -> None:
