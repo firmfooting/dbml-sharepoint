@@ -77,12 +77,19 @@
  * to remember this paragraph.
  *
  * THE SEPARATION THIS FILE KEEPS. Values the measurement DEPENDS ON are
- * asserted: the list exists, both fields exist, four rows were seeded, and the
- * seeded sets are what was asked for. Values the measurement OBSERVES are
- * never asserted: which write shape wins, what the readback looks like, what
- * Indexed reads back, and which rows a predicate returns. Asserting over the
+ * asserted: the list exists, both fields exist, four rows were seeded, the
+ * seeded sets are what was asked for, R2 went back to its seeded set after M5
+ * mutated it, and the formatter X1 asks about is the one actually on the
+ * column. Values the measurement OBSERVES are never asserted: which write
+ * shape wins, what the readback looks like, what Indexed reads back, which
+ * rows a predicate returns, and what the cell renders. Asserting over the
  * second kind kills the experiment the moment it starts working, and that is
  * indistinguishable from a real failure.
+ *
+ * The same separation decides how a FAILED READBACK is reported. A GET that
+ * never arrived is not an observation of `false`; every row that cannot see
+ * its own answer says UNREADABLE or NOT ESTABLISHED rather than reporting a
+ * verdict the run did not reach.
  *
  * WHAT IT WRITES: one list, named by PROBE_LIST below, created at start and
  * deleted at end. It never reads, writes or enumerates any other list. If
@@ -561,6 +568,12 @@
     const r2 = verboseRows.find((r) => r.Title === ROWS[1].title);
     let m5detail = 'R2 was not readable';
     let m5observed = 'NOT ESTABLISHED';
+    // C1..C10 read R2's members. M5 is the only row that mutates them, so its
+    // restoration is a value those ten rows DEPEND ON, and an unverified
+    // restoration would let them record a mutated fixture under the meanings
+    // printed beside them. Nothing else touches R2, so it starts true.
+    let r2Restored = true;
+    let r2RestoreNote = '';
     if (r2) {
       const reversed = [...ROWS[1].values].reverse();
       const rewritten = await merge(`${listPath}/items(${r2.Id})`, {
@@ -583,51 +596,88 @@
             + 'Whether the value round-trips and whether member order survives are both NOT established '
             + 'by this run.')
         : `HTTP ${rewritten.status} — ${rewritten.error}`;
-      // Put R2 back the way the C rows expect it.
-      if (rewritten.ok) {
-        await merge(`${listPath}/items(${r2.Id})`, {
-          __metadata: { type: itemType }, [MULTI]: winningShape.build(ROWS[1].values),
-        });
+      // Put R2 back the way the C rows expect it, and PROVE it went back. The
+      // readback above is M5's OBSERVATION and is never asserted; this one is
+      // a CONTROL over the fixture the C rows inherit, so it is checked by
+      // member and the dependent rows fail closed when it does not hold. It
+      // runs whether or not the mutation was accepted: a refused MERGE that
+      // nevertheless landed would leave R2 reversed just the same.
+      const restore = await merge(`${listPath}/items(${r2.Id})`, {
+        __metadata: { type: itemType }, [MULTI]: winningShape.build(ROWS[1].values),
+      });
+      const restoreBack = await get(`${listPath}/items(${r2.Id})?$select=${odataName(MULTI)}`);
+      r2Restored = restore.ok && restoreBack.ok && sameMembers(restoreBack.d?.[MULTI], ROWS[1].values);
+      r2RestoreNote = r2Restored
+        ? ` R2 was restored to ${show(ROWS[1].values)} and read back as such.`
+        : ` R2 COULD NOT BE PROVED RESTORED: write ${restore.ok ? `HTTP ${restore.status}` : `REFUSED HTTP ${restore.status} ${restore.error}`}, `
+          + `readback ${restoreBack.ok ? show(restoreBack.d?.[MULTI]) : `FAILED HTTP ${restoreBack.status} ${restoreBack.error}`}.`;
+      if (!r2Restored) {
+        log('ERROR', `R2 was mutated by M5 and could not be proved restored.${r2RestoreNote} `
+          + 'C1..C10 read R2, so their rows are NOT ESTABLISHED from this run.');
       }
     }
-    record('M5', 'a re-write round-trips, and member order survives', m5observed, m5detail);
+    record('M5', 'a re-write round-trips, and member order survives', m5observed, m5detail + r2RestoreNote);
+    // What the CAML rows actually depend on: the seeded fixture AND R2 having
+    // been put back after M5 mutated it.
+    const camlFixtureUsable = fixtureUsable && r2Restored;
 
     // === I1 / I1C: the index question, and its control =====================
+    // The GET is kept, not flattened to a placeholder. A readback that never
+    // arrived is not an observation of `false`: folding a transport failure
+    // into the value would let it print as ACCEPTED BUT DID NOT STICK, which
+    // is a statement about SharePoint this run did not make. I2 below already
+    // keeps the two apart; I1 now does the same.
     const indexOne = async (name, metaType) => {
       const wrote = await merge(fieldPath(name), { __metadata: { type: metaType }, Indexed: true });
       const back = await get(`${fieldPath(name)}?$select=Indexed`);
-      return { wrote, readback: back.ok ? back.d.Indexed : '(unreadable)' };
+      return { wrote, back };
     };
+    const notAttempted = { ok: false, status: 0, error: 'control field was never created' };
     const multiIndex = await indexOne(MULTI, 'SP.FieldMultiChoice');
     const singleIndex = createdSingle.ok
       ? await indexOne(SINGLE, 'SP.FieldChoice')
-      : { wrote: { ok: false, status: 0, error: 'control field was never created' }, readback: '(not attempted)' };
+      : { wrote: notAttempted, back: notAttempted };
+    const indexReadback = (r) => (r.back.ok
+      ? show(r.back.d?.Indexed)
+      : `UNREADABLE (HTTP ${r.back.status} ${r.back.error})`);
 
-    const controlHeld = singleIndex.wrote.ok && singleIndex.readback === true;
+    // An unreadable control is not a control that failed. Either way I1 is
+    // void, but the transcript has to say which, or a reader takes a network
+    // failure for evidence about the property.
+    const controlHeld = singleIndex.wrote.ok && singleIndex.back.ok && singleIndex.back.d?.Indexed === true;
     record(
       'I1C',
       'CONTROL: Indexed:true on the SINGLE-value Choice, where Learn says it is supported',
-      controlHeld ? 'STUCK' : 'DID NOT STICK',
+      controlHeld
+        ? 'STUCK'
+        : (singleIndex.wrote.ok && !singleIndex.back.ok ? 'READBACK UNREADABLE' : 'DID NOT STICK'),
       `write ${singleIndex.wrote.ok ? `HTTP ${singleIndex.wrote.status}` : `REFUSED ${singleIndex.wrote.error}`}, `
-      + `readback Indexed=${show(singleIndex.readback)}`,
+      + `readback Indexed=${indexReadback(singleIndex)}`,
     );
     record(
       'I1',
       'Indexed:true on a MultiChoice — accepted? and what does it read back as?',
       controlHeld
         ? (multiIndex.wrote.ok
-          ? (multiIndex.readback === true ? 'ACCEPTED AND STUCK' : 'ACCEPTED BUT DID NOT STICK')
+          ? (multiIndex.back.ok
+            ? (multiIndex.back.d?.Indexed === true ? 'ACCEPTED AND STUCK' : 'ACCEPTED BUT DID NOT STICK')
+            : 'ACCEPTED, READBACK UNREADABLE')
           : 'REFUSED')
         : 'VOID',
       controlHeld
         ? `write ${multiIndex.wrote.ok ? `HTTP ${multiIndex.wrote.status}` : `REFUSED ${multiIndex.wrote.error}`}, `
-          + `readback Indexed=${show(multiIndex.readback)}. `
+          + `readback Indexed=${indexReadback(multiIndex)}. `
+          + (multiIndex.wrote.ok && !multiIndex.back.ok
+            ? 'The write was taken but the readback never arrived, so whether it stuck is NOT established by '
+              + 'this run — this is not the same finding as a property that read back false. '
+            : '')
           + 'REFUSED is the good outcome (loud). ACCEPTED BUT DID NOT STICK aborts a deploy part-way, which is '
           + 'survivable. ACCEPTED AND STUCK is the dangerous one: the property claims an index Learn says '
           + 'cannot exist, and nothing in a build or a deploy could ever see the difference.'
-        : 'the single-value control did not stick either, so this property is not reporting what the question '
-          + 'needs on this tenant and BOTH index rows are void — exactly the outcome native-index-probe.js hit '
-          + 'with its ID control on 2026-07-30.',
+        : `the single-value control did not hold (${indexReadback(singleIndex)}), so this property is not `
+          + 'reporting what the question needs on this tenant and BOTH index rows are void — exactly the '
+          + 'outcome native-index-probe.js hit with its ID control on 2026-07-30. An UNREADABLE control voids '
+          + 'them for a different reason than one that read back false; I1C says which.',
     );
 
     // === I2: uniqueness ====================================================
@@ -752,8 +802,14 @@
       record(
         id,
         `CAML <${label.split(' ')[0]}> returns which rows`,
-        got.ok ? 'RETURNED' : 'QUERY REFUSED',
-        got.ok ? `${label} -> ${show(got.titles)} || ${meaning}` : `${label} -> ${got.error}`,
+        got.ok ? (camlFixtureUsable ? 'RETURNED' : 'NOT ESTABLISHED') : 'QUERY REFUSED',
+        got.ok
+          ? `${label} -> ${show(got.titles)} || `
+            + (camlFixtureUsable
+              ? meaning
+              : 'the fixture these rows are read against is not established (see Q0 and M5), so this row '
+                + 'is a list of titles and not an answer. Do not read the meaning off it; fix and re-run.')
+          : `${label} -> ${got.error}`,
       );
       // Remember whichever membership predicate returned BOTH View-bearing
       // rows, for the stored-view confirmation in C8. Observed, not asserted:
@@ -794,15 +850,16 @@
       record(
         'C8',
         'the winning predicate survives being STORED as a view ViewQuery (manual: look)',
-        view.ok && stored && columnOnView.ok && fixtureUsable ? 'MANUAL' : 'NOT ESTABLISHED',
+        view.ok && stored && columnOnView.ok && camlFixtureUsable ? 'MANUAL' : 'NOT ESTABLISHED',
         view.ok && stored && columnOnView.ok
           ? `stored ${membershipWinner.label}; SharePoint read the query back as ${show(stored.ViewQuery)}. `
-            + (fixtureUsable
+            + (camlFixtureUsable
               ? `OPEN ${window.location.origin}${viewUrl} and confirm it lists exactly R1 and R2. `
                 + 'A view that lists everything, or nothing, means the predicate does not survive storage and '
                 + 'the condition grammar must refuse it however well GetItems behaved.'
-              : 'Q0 FAILED, so the rows this view would be judged against are not the fixture the winning '
-                + 'predicate was chosen from. Do not read this view as an answer; fix the fixture and re-run.')
+              : 'The fixture is not established (Q0 FAILED, or M5 could not prove R2 restored), so the rows '
+                + 'this view would be judged against are not the fixture the winning predicate was chosen '
+                + 'from. Do not read this view as an answer; fix the fixture and re-run.')
           : `could not create, read or populate the view: ${view.ok
             ? (stored
               ? `${MULTI} could not be added to it (HTTP ${columnOnView.status} ${columnOnView.error}), so there `
@@ -945,6 +1002,25 @@
       __metadata: { type: 'SP.FieldMultiChoice' },
       CustomFormatter: JSON.stringify(severityFormatter),
     });
+    // A 200 says the property was taken, not that THIS formatter is the one
+    // the operator will be looking at. An absent, emptied or rewritten
+    // CustomFormatter renders the default cell, and a default cell reported as
+    // "the repository formatter did nothing" is a false verdict of exactly the
+    // kind X1 exists to catch. So the two expressions that decide the render
+    // are read back and compared -- they are what the measurement DEPENDS ON.
+    // What the cell then LOOKS like stays the observation, and is not asserted.
+    const formatterBack = formatted.ok
+      ? await get(`${fieldPath(MULTI)}?$select=CustomFormatter`)
+      : null;
+    let storedFormatter = null;
+    try {
+      storedFormatter = JSON.parse(formatterBack?.d?.CustomFormatter || 'null');
+    } catch (err) {
+      storedFormatter = null;
+    }
+    const formatterHeld = !!storedFormatter
+      && storedFormatter.attributes?.class === severityFormatter.attributes.class
+      && storedFormatter.style?.display === severityFormatter.style.display;
     // Gated on the column actually being ON the view the operator is sent to.
     // Run 2 answered X1 from a view with no Evt column in it, which is not a
     // weaker answer than the real one -- it is a different question. A
@@ -953,15 +1029,25 @@
     record(
       'X1',
       'the severity formatter this repo generates, on an array (manual: look)',
-      formatted.ok && multiOnDefaultView.ok ? 'MANUAL' : (formatted.ok ? 'NOT ESTABLISHED' : 'WRITE REFUSED'),
+      formatted.ok && formatterHeld && multiOnDefaultView.ok
+        ? 'MANUAL'
+        : (formatted.ok ? 'NOT ESTABLISHED' : 'WRITE REFUSED'),
       !formatted.ok
         ? `HTTP ${formatted.status} — ${formatted.error}`
-        : !multiOnDefaultView.ok
-          ? `the formatter was stored (HTTP ${formatted.status}), but ${MULTI} could not be added to the `
-            + `default view (HTTP ${multiOnDefaultView.status} ${multiOnDefaultView.error}), so there is no `
-            + 'cell to look at. Add the column to the view by hand and re-read this row, or fix the failure '
-            + 'and re-run; do NOT report a rendering answer from a view that does not show the column.'
-          : `OPEN ${window.location.origin}${listDefaultUrl || `${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`} `
+        : !formatterHeld
+          ? `the MERGE was accepted (HTTP ${formatted.status}) but the formatter this row is about is NOT the `
+            + `one now on the column: readback ${formatterBack?.ok
+              ? show(formatterBack.d?.CustomFormatter)
+              : `FAILED HTTP ${formatterBack?.status} ${formatterBack?.error}`}. `
+            + 'Looking at the cell would report how SOME other formatter (or none) renders, so no rendering '
+            + 'answer is established by this run. Fix the store and re-run.'
+          : !multiOnDefaultView.ok
+            ? `the formatter was stored and read back intact (HTTP ${formatted.status}), but ${MULTI} could not `
+              + `be added to the default view (HTTP ${multiOnDefaultView.status} ${multiOnDefaultView.error}), `
+              + 'so there is no cell to look at. Add the column to the view by hand and re-read this row, or '
+              + 'fix the failure and re-run; do NOT report a rendering answer from a view that does not show '
+              + 'the column.'
+            : `OPEN ${window.location.origin}${listDefaultUrl || `${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`} `
           + `and look at the ${MULTI} column. Report FOUR things: (a) does R1 {View} get a GREEN pill; `
           + '(b) does R2 {View,Edit} get any pill at all; (c) what TEXT does each cell show — both members, '
           + 'one member, or something like "View,Edit" run together; and (d) is the cell background PLAIN, '
@@ -991,8 +1077,8 @@
       `caml_membership=${membershipWinner ? membershipWinner.label : 'NONE FOUND'} `
       + 'stored_view=<fill in after looking> formatter=<fill in after looking>',
     );
-    if (!fixtureUsable) {
-      log('ERROR', 'fixture=FAILED — the C rows assume four rows with known sets on a MultiChoice column, so their answers mean nothing from this run. Fix the fixture and re-run before reporting.');
+    if (!camlFixtureUsable) {
+      log('ERROR', 'fixture=FAILED — the C rows assume four rows with known sets on a MultiChoice column, and R2 restored after M5, so their answers mean nothing from this run. Fix the fixture and re-run before reporting.');
     } else if (!fixtureOk) {
       log('ERROR', `fixture=FAILED on the single-value CONTROL field only. The C, M, V, F and X rows do not depend on it and stand; I1 and I1C are VOID. Fix '${SINGLE}' and re-run if the index question matters.`);
     }
