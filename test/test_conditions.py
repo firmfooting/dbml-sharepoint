@@ -4,7 +4,7 @@
 import datetime as dt
 
 import pytest
-from _findings import none_of, only
+from _findings import messages, none_of, only
 from _paths import MANUAL
 
 from dbml_sharepoint.analysis import conditions
@@ -1451,6 +1451,80 @@ def test_one_bad_operand_under_none_of_is_one_finding_not_two() -> None:
     assert "'not_contains'" not in only(
         findings, FindingCode.CONDITION_NEEDLE_EMPTY,
     ).message
+
+
+def test_two_broken_leaves_on_one_column_are_two_findings() -> None:
+    """Folding one fault into another is not the same as not repeating it.
+
+    Both leaves here carry an empty needle, and both are wrong. The one
+    under `none_of` is judged only by the normalisation pass -- CAML has no
+    negation of `<Contains>`, so the authored `not_contains` is skipped
+    standalone -- and suppressing by `(code, column)` let the `begins_with`
+    beside it stand in for it. The author saw one finding, fixed it, rebuilt,
+    and met the other: a build that reports a NEW error after a clean fix,
+    which reads as the fix having caused it.
+
+    Suppression exists for one leaf reported twice at two polarities. Two
+    leaves are two mistakes.
+    """
+    types = {"Note": "nvarchar"}
+    condition = parse_condition(
+        {"all_of": [
+            {"none_of": [{"field": "Note", "op": "not_contains", "value": ""}]},
+            {"field": "Note", "op": "begins_with", "value": ""},
+        ]},
+        "w",
+    )
+
+    findings = _findings(condition, target=CAML, types=types)
+
+    empty = messages(findings, FindingCode.CONDITION_NEEDLE_EMPTY)
+    assert len(empty) == 2, empty
+    # One per leaf: the authored `begins_with`, and the `contains`
+    # normalisation puts where the `not_contains` was.
+    assert any("'begins_with'" in message for message in empty)
+    assert any("'contains'" in message for message in empty)
+
+
+@pytest.mark.parametrize("declared", [
+    {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]},
+    {"none_of": [{"field": "Count", "op": "gt", "value": 5}]},
+    {"none_of": [{"field": "Status", "op": "in", "value": ["a", "b"]}]},
+    {"all_of": [
+        {"none_of": [{"field": "Note", "op": "not_contains", "value": "x"}]},
+        {"field": "Note", "op": "begins_with", "value": "y"},
+        {"any_of": [
+            {"none_of": [{"field": "Count", "op": "is_null"}]},
+            {"none_of": [{"none_of": [{"field": "Status", "op": "eq", "value": "a"}]}]},
+        ]},
+    ]},
+])
+def test_per_leaf_normalisation_matches_the_whole_tree(declared: dict[str, object]) -> None:
+    """The invariant `_condition_problems` names an origin with.
+
+    Its last pass judges each authored leaf's replacements by calling
+    `_push` on that leaf alone, at the polarity
+    `_flipped_by_normalisation` reports. That is only the same thing as
+    `normalise(tree)` while `_push` on a leaf depends on nothing but the
+    leaf and its polarity -- true today, and the reason a fault can be
+    attributed to the leaf that caused it rather than to its column.
+
+    Give `_push` any context sensitivity and the leaves stop lining up
+    here, before the suppression starts hiding findings under a column
+    name.
+    """
+    condition = parse_condition(declared, "w")
+    flipped = conditions._flipped_by_normalisation(condition)
+
+    per_leaf = [
+        introduced
+        for leaf in conditions.leaves(condition)
+        for introduced in conditions.leaves(
+            conditions._push(leaf, negate=id(leaf) in flipped),
+        )
+    ]
+
+    assert per_leaf == conditions.leaves(normalise(condition))
 
 
 def test_a_lookup_value_accessor_compares_as_text() -> None:

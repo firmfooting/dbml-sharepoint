@@ -1299,6 +1299,12 @@ def _condition_problems(
     # fail for different reasons, and reporting only the first costs the
     # author another build.
     suppressed: set[int] = set()
+    #: What each AUTHORED leaf has already been reported for, by `id`. The
+    #: normalisation pass at the end judges the leaves that replace a given
+    #: authored leaf, so an operand fault it finds there is the fault already
+    #: reported for THAT leaf, worded around the other operator -- and only
+    #: for that leaf.
+    reported: dict[int, set[FindingCode]] = {}
     unknown_ops = {leaf.op for leaf in leaves(condition) if leaf.op not in NEGATION}
     # Bounds are measured after normalisation, since negation expands each
     # leaf into any_of[is_null, flipped] and `in` into one leaf per value.
@@ -1345,6 +1351,7 @@ def _condition_problems(
             # suppressed, so one bad operand cannot mask any other fault.
             problems.extend((code, message, leaf.field) for code, message in operand)
             suppressed.add(id(leaf))
+            reported.setdefault(id(leaf), set()).update(code for code, _ in operand)
 
     if unknown_ops:
         # normalise() needs a negation for every operator, so it cannot run
@@ -1371,22 +1378,9 @@ def _condition_problems(
             # pass, in a rewritten vocabulary and under a code about the
             # negation rather than about the fault.
             continue
-        problems.extend(
-            (code, message, leaf.field)
-            for code, message in _render_problems(leaf, target, types, context)
-        )
-
-    # What the first pass has ALREADY said about each column, as codes. The
-    # second pass judges the flipped leaf, which carries the same field and
-    # the same operand -- so an operand fault it finds is the one already
-    # reported here, worded around the other operator. `_dedupe` cannot see
-    # that: it matches whole messages, and these messages name the operator
-    # ("operator 'contains' needs a non-empty 'value'" against "operator
-    # 'not_contains' needs..."), so `none_of[contains(Note, "")]` reported
-    # `condition_needle_empty` twice at one location.
-    already: set[tuple[FindingCode, str | None]] = {
-        (code, field) for code, _message, field in problems
-    }
+        rendering = _render_problems(leaf, target, types, context)
+        problems.extend((code, message, leaf.field) for code, message in rendering)
+        reported.setdefault(id(leaf), set()).update(code for code, _ in rendering)
 
     # Second pass, over the tree the RENDERER will actually see. De Morgan
     # normalisation rewrites operators — none_of[contains] becomes
@@ -1410,37 +1404,53 @@ def _condition_problems(
     # any authored `contains` was judged by neither pass -- no finding, and
     # then a _RefusalError out of `to_caml` at generation time, which is the
     # traceback this pass exists to prevent.
-    authored = {id(leaf) for leaf in leaves(condition)}
-    for leaf in leaves(normalise(condition)):
-        if id(leaf) in authored or leaf.field not in rendered:
+    #
+    # Walked PER AUTHORED LEAF rather than over `normalise(condition)` as a
+    # whole, which is what makes the suppression below able to name an
+    # origin. `_push` on a leaf depends on nothing but that leaf and its
+    # polarity, and `_flipped_by_normalisation` computes the same polarity
+    # `_push` would, so `_push(leaf, negate=...)` is exactly what the whole-
+    # tree normalisation puts in that leaf's place -- pinned by
+    # `test_per_leaf_normalisation_matches_the_whole_tree`.
+    for leaf in leaves(condition):
+        if leaf.field not in rendered:
             continue
-        for code, problem in _render_problems(leaf, target, types, context):
-            if code not in _CAPABILITY_REFUSALS:
-                # Not about the negation at all. The operand is wrong and
-                # would be wrong at either polarity, so it keeps its own code
-                # and its own words.
-                #
-                # Recoding these was saying something false. `none_of[gt(Due,
-                # "banana")]` normalises to `leq`, which CAML renders
-                # perfectly well, and the appended sentence told the author
-                # the target could not express it. The fault is the date.
-                #
-                # Suppressed when the first pass already reported this code
-                # for this column: one operand, one fault, one finding. The
-                # author is shown it in the operator they wrote.
-                if (code, leaf.field) not in already:
-                    problems.append((code, problem, leaf.field))
+        for introduced in leaves(_push(leaf, negate=id(leaf) in flipped)):
+            if introduced is leaf:
                 continue
-            # Its own code, not the inner one: the author never wrote the
-            # operator being named, and the remedy is different — rewrite the
-            # rule positively rather than fix the operator they chose.
-            problems.append((
-                FindingCode.CONDITION_NEGATION_UNRENDERABLE,
-                (f"{problem} -- negating this rule turns it into {leaf.op!r}, "
-                 f"which that target cannot express. Rewrite it as a positive "
-                 f"filter, or move it to a target that supports the negation."),
-                leaf.field,
-            ))
+            for code, problem in _render_problems(introduced, target, types, context):
+                if code not in _CAPABILITY_REFUSALS:
+                    # Not about the negation at all. The operand is wrong and
+                    # would be wrong at either polarity, so it keeps its own
+                    # code and its own words.
+                    #
+                    # Recoding these was saying something false.
+                    # `none_of[gt(Due, "banana")]` normalises to `leq`, which
+                    # CAML renders perfectly well, and the appended sentence
+                    # told the author the target could not express it. The
+                    # fault is the date.
+                    #
+                    # Suppressed when THIS leaf has already been reported for
+                    # this code: one operand, one fault, one finding, shown in
+                    # the operator the author wrote. Keyed on the leaf and not
+                    # on `(code, column)`, which folded two different leaves
+                    # together -- `begins_with(Note, "")` stood in for the
+                    # empty needle in `none_of[not_contains(Note, "")]` beside
+                    # it, so fixing the first made the second appear on the
+                    # NEXT build, reading as though the fix had caused it.
+                    if code not in reported.get(id(leaf), ()):
+                        problems.append((code, problem, leaf.field))
+                    continue
+                # Its own code, not the inner one: the author never wrote the
+                # operator being named, and the remedy is different — rewrite
+                # the rule positively rather than fix the operator they chose.
+                problems.append((
+                    FindingCode.CONDITION_NEGATION_UNRENDERABLE,
+                    (f"{problem} -- negating this rule turns it into {introduced.op!r}, "
+                     f"which that target cannot express. Rewrite it as a positive "
+                     f"filter, or move it to a target that supports the negation."),
+                    leaf.field,
+                ))
     return _dedupe(problems)
 
 
