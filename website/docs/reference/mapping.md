@@ -252,7 +252,9 @@ views:
 ```
 
 - `where` takes the shared [condition grammar](../api/conditions.md):
-  typed operators (`eq`, `neq`, `leq`, `geq`, `in`, `contains`, ...), date
+  typed operators (`eq`, `neq`, `leq`, `geq`, `in`, `contains`, ...),
+  `includes` / `not_includes` for a
+  [multi-value column](dbml.md#multi-value-columns), date
   sentinels such as `today+30` and `now`, and nesting through `all_of` / `any_of` /
   `none_of`. A bare list means `all_of`, so every view written before
   nesting existed keeps working unchanged. The same grammar drives
@@ -308,6 +310,90 @@ the elements that exist expresses it.
 The build says so by name rather than reporting a missing operator. For a
 view, filter the other way round, or precompute the test into a column and
 filter on that.
+
+:::
+
+### Filtering a multi-value column
+
+A view filter is the **only** conditional surface that can read a
+[multi-value column](dbml.md#multi-value-columns), and membership gets two
+operators of its own rather than being folded into `eq`:
+
+```yaml
+views:
+  Platform:
+    - title: "Logs viewing"
+      fields: [Title, Status, Events]
+      where:
+        - { field: Status, op: eq,       value: "Live" }
+        - { field: Events, op: includes, value: "View" }
+```
+
+| Declared | Renders | Measured 2026-08-10 |
+|---|---|---|
+| `includes` | `<Eq>` | the rows containing the member — `{View}` and `{View,Edit}` |
+| `not_includes` | `<Or><IsNull/><Neq/></Or>` | the rows without it **plus the empty row** — `{Edit,Export}` and `{}` |
+| `is_null` / `is_not_null` | `<IsNull>` / `<IsNotNull>` | correct |
+| `eq`, `neq`, `in`, `not_in`, `lt`, `leq`, `gt`, `geq`, `contains`, `begins_with` | — | **refused**, `multi_value_condition_operator_unsupported` |
+
+Each leaf names one member. "Logs both View and Edit" is `all_of` over two
+`includes`; "either" is `any_of`. `none_of[includes X]` normalises to
+`not_includes X`, which is why the two are one operator pair rather than two
+unrelated ones.
+
+:::warning Microsoft documents the two operators that do not work
+
+`<Includes>` and `<NotIncludes>` are what
+[Learn](https://learn.microsoft.com/sharepoint/dev/schema/includes-element-query)
+documents for a multi-value column — for a multi-value **Lookup**, strictly;
+`MultiChoice` is not mentioned. Measured against a live MultiChoice column,
+both returned an **empty set with no error**.
+
+The undocumented `<Eq>` is the one that does the membership test, and
+`<Neq>` its negative. A grammar built on the documentation would have
+produced a view that is always empty, on a build that passes and a deploy
+that verifies clean — so this tool emits `<Eq>`/`<Neq>` and neither
+`<Includes>` nor `<NotIncludes>` is in its vocabulary at all.
+
+Three more measurements shape the table above, and each one refuses
+something that demonstrably works:
+
+- **`eq` is refused because it works.** `<Eq>` really is the membership
+  predicate here. Accepting the authored `eq` for it would mean one word
+  meant equality on a scalar column and containment on a multi-value one,
+  separated only by a `[]` in the DBML that a mapping never shows — so
+  adding those two characters to a column's type would silently change every
+  filter already written against it.
+- **`contains` is refused although it works.** `<Contains>` returned the
+  same two rows `<Eq>` did, which cannot tell membership from a substring
+  match over the delimited form; the two readings disagree for a needle that
+  is a prefix of a member, and no probe has sent one. `includes` covers
+  every case that was actually observed. Learn documents `<Contains>` for
+  Text and Note columns only.
+- **Exact-set equality is not expressible.** `<Eq>` against a `;#`-delimited
+  value — `"View;#Edit"` — matched the row whose set is exactly those two
+  members. That is a second question through the same operator, told apart
+  only by the value, so a value containing `;#` is refused
+  (`multi_value_set_equality_unsupported`). It is not offered under a name
+  of its own either, and the reason is what was **not** measured: the probe
+  sent `View;#Edit` and never `Edit;#View`, so whether SharePoint compares
+  that string literally or normalises the set first is unknown. Exact-set
+  equality is withheld because it is uncharacterised, not because it is
+  known to be broken — one more query would settle it.
+
+`includes` on a **single-value** column is refused too, for the mirror-image
+reason (`multi_value_membership_on_a_single_value_column`).
+
+:::
+
+:::caution A filtered multi-value view has no index remedy
+
+The threshold warning above tells an author to add a DBML index to a
+selective filter column. That is impossible here — SharePoint refuses an
+index on a multi-value column outright, measured with a control — so the
+build issues `multi_value_filtered_view_unindexable` instead, and following
+the generic advice would have failed the build. Filter on a scalar column
+beside it; one indexed condition in an `all_of` still serves the query.
 
 :::
 
@@ -562,6 +648,25 @@ target respectively. SharePoint exposes calculated values to column
 formatters as typed `type;#value` strings; the flag selects the matching
 decode before comparison, arithmetic, display, or date conversion.
 
+:::danger `severity` and `pill` paint a false neutral on a multi-value column
+
+Both compare `@currentField` against quoted strings, and `@currentField` on a
+[multi-value column](dbml.md#multi-value-columns) is an **array** —
+so no branch of the `=if` chain matches and every cell takes the fallback.
+
+Watched on a live site on 2026-08-10, that is not an unstyled cell: it is a
+**filled grey cell on every row**. A gap reads as a gap and invites somebody
+to ask why; a uniform neutral fill reads as a verdict, on a column whose whole
+product is a matrix scanned at a glance. The formatter JSON saves, reads back
+byte-identical and passes every deploy phase, so nothing but a person looking
+at the page could ever see it.
+
+Refused at build time (`multi_value_style_renders_a_false_neutral`). A
+bespoke formatter built on `join()` or `forEach` is the documented way to
+render one of these columns, and would have to be watched before it ships.
+
+:::
+
 ## `form_formatting`
 
 ```yaml
@@ -754,6 +859,13 @@ the reproducible one.
   available here; they were confirmed against a live tenant. The
   [condition grammar reference](../api/conditions.md) has the exact
   per-target matrix, generated by running the renderers.
+- A [multi-value column](dbml.md#multi-value-columns) as the
+  operand. Microsoft lists "Choice with multiple selections" among the types
+  conditional show/hide cannot read, and this is the target where being
+  wrong is worst: the formula stays syntactically valid, so it saves, reads
+  back byte-identical and passes the deploy phase, leaving a green build and
+  a form that never reacts. (`multi_value_operand_unsupported`.) Filter a
+  view on the column instead — that is the one surface that works.
 
 It **warns** — without refusing the build — when a required column with no
 default carries a `when` that *may* hide it at creation. Whether the
@@ -830,7 +942,10 @@ This lands on `Field.ValidationFormula` — a different property from the
 visibility formula, in a different expression language, so the two never
 interfere and a column may carry both. Person, lookup, rich-text and
 multi-line columns cannot be operands in a validation formula; those are
-build errors naming the target.
+build errors naming the target. So is a
+[multi-value column](dbml.md#multi-value-columns): measured on
+2026-08-10, SharePoint refuses the formula outright with *"This field type
+does not support validation formulas."* (`multi_value_operand_unsupported`).
 
 One interaction to keep in mind: a validation rule on a column that
 `form_visibility` hides from the New form still runs on create. If the rule
@@ -1056,7 +1171,12 @@ calculated_formulas:
 ```
 
 Formulas for `calculated_*` typed columns. SharePoint's own rules (no
-Lookup/Person references, no `[Today]`) are enforced at build time.
+Lookup/Person references, no `[Today]`) are enforced at build time, and so
+is the [multi-value](dbml.md#multi-value-columns) case — measured
+on 2026-08-10, a formula reading one is refused with *"One or more column
+references are not allowed…"* (`multi_value_operand_unsupported`). The full
+live-verified operand matrix is in the
+[DBML reference](dbml.md#constraints-sharepoint-imposes).
 
 ## Structure and behaviour
 

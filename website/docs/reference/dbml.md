@@ -20,6 +20,7 @@ finding rather than guessing.
 | `longtext` | Multiple lines, plain text | |
 | `richtext` | Multiple lines, rich text | |
 | an enum name | Choice | Enum values become the choice set; `default:` supported |
+| an enum name with `[]` | Choice (multi-valued) | `MultiChoice`, `FieldTypeKind` 15. Several members per row. Refuses `[unique]`, `default:` and every index — see below |
 | `date` | Date only | |
 | `datetime` | Date and time | |
 | `boolean` | Yes/No | |
@@ -79,6 +80,98 @@ Table Risk {
 Enum-typed columns become Choice columns with exactly the declared
 values. Enum value sets can also be loaded from YAML via the mapping's
 `enum_sources` when several schemas share a vocabulary.
+
+## Multi-value columns
+
+Add `[]` to an enum type and the column holds several members per row:
+
+```dbml
+enum audit_event {
+  View
+  Edit
+  Export
+  "Permission change"
+}
+
+Table Platform {
+  Events audit_event[] [note: 'Which audit events the platform logs.']
+}
+```
+
+That deploys as a SharePoint **Choice (multi-valued)** column —
+`TypeAsString` `MultiChoice`, `FieldTypeKind` 15, created by the same plain
+`POST` to `/fields` every other column uses. A typo still fails the way a
+scalar one does: `audit_evnet[]` is *"unknown type 'audit_evnet[]'. Did you
+mean 'audit_event'?"*.
+
+`[]` is the only spelling. A column setting (`[multi]`) is a parse error
+inside pydbml before this tool sees the file, and a naming convention would
+make a typo silently do nothing.
+
+:::info Measured on a live tenant, 2026-08-10
+
+Almost nothing below is documented by Microsoft. Every row was observed on
+SharePoint Online across three runs of the probe recorded on issue #152
+(`test/manual/multi-value-probe.js`), against a four-row fixture —
+`{View}`, `{View,Edit}`, `{Edit,Export}`, `{}`.
+
+Where Learn *does* document something about this column type — CAML's
+`<Includes>`, `<NotIncludes>` and `<Contains>` — the measurement contradicts
+it. That is set out in the
+[mapping reference](mapping.md#filtering-a-multi-value-column), because it
+decides what a view filter may say.
+
+| Question | Measured |
+|---|---|
+| Creation | plain `POST` to `/fields`, `SP.FieldMultiChoice` — no `AddFieldAsXml` |
+| Read-back | `TypeAsString="MultiChoice"`, `FieldTypeKind=15`, `Choices` as `Collection(Edm.String)` |
+| Item write shape | `{"__metadata":{"type":"Collection(Edm.String)"},"results":[…]}` |
+| Item read-back | a bare array; **an empty set reads back as `null`, not `[]`** |
+| Member order | **preserved** — written reversed, read back reversed |
+| `Indexed: true` | **refused**, *"This column type is not supported for indexing"*, reads back `false` — with a control on a single-value Choice in the same list that stuck |
+| `EnforceUniqueValues: true` | **refused**, HTTP 500 |
+| Validation formula operand | **refused** — *"This field type does not support validation formulas."* |
+| Calculated formula operand | **refused** — *"One or more column references are not allowed…"* |
+| A `severity` column formatter | **renders a flat grey fill on every row** — see below |
+
+:::
+
+### What a multi-value column refuses
+
+Each is a named build error, so nothing reaches a deploy that a live tenant
+would reject part-way through:
+
+- **`[unique]`.** Microsoft lists "Choice (multi-valued)" among the types
+  unique values cannot be enforced for, and the measurement agrees.
+  → `multi_value_unique_unsupported`
+- **`default:`.** DBML carries one scalar and the write shape is a
+  collection, so there is no coercion that says what was declared. Refused
+  rather than dropped, because a dropped default is invisible in a green
+  build. → `multi_value_default_unsupported`
+- **An `indexes { }` entry**, and a lookup target's implicit
+  `display_column` index. → `multi_value_index_unsupported`,
+  `display_column_type_unindexable`
+- **A calculated formula, a validation formula or a `form_visibility`
+  rule** that reads one. → `multi_value_operand_unsupported`
+- **A `severity` or `pill` column formatter.** Both compare `@currentField`
+  against quoted strings, and a multi-value field is an array, so no branch
+  matches and every cell takes the fallback. Watched on the page: that is a
+  **filled grey cell on every row** — a verdict rather than a gap, and
+  invisible to the build and the deploy alike.
+  → `multi_value_style_renders_a_false_neutral`
+
+A **view filter** is the one conditional surface that does work. The
+operator matrix, and the two CAML elements Microsoft documents that turn out
+to be the broken ones, are in the
+[mapping reference](mapping.md#filtering-a-multi-value-column).
+
+### What it costs
+
+Nothing against the 12-join view ceiling or the list view threshold. A
+multi-value Choice is enum-typed with no `ref`, so it is not join-bearing —
+verified in-repo by a test rather than assumed. Multi-value **Lookup** and
+**Person** are a different feature with a different cost, are not
+implemented, and `person[]` is still an unknown type.
 
 ## References (lookups)
 
@@ -211,6 +304,7 @@ was run against SharePoint Online on 2026-07-30 and answered every question:
 | Plain multi-line text (`longtext`) | **refused** |
 | Rich text (`richtext`) | **refused** |
 | Hyperlink (`hyperlink`) | **refused** |
+| Choice, multi-valued (`enum_name[]`) | **refused** — asked separately by `multi-value-probe.js` on 2026-08-10 |
 
 Every refusal returned the same body: *"One or more column references are not
 allowed, because the columns are defined as a data type that is not supported

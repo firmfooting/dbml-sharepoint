@@ -268,6 +268,19 @@ def test_column_validation_refuses_a_multi_value_operand() -> None:
     )
 
 
+def _caml_findings(op: str) -> list[Finding]:
+    from dbml_sharepoint.analysis.conditions import CAML, condition_findings
+
+    return condition_findings(
+        parse_condition([{"field": "Events", "op": op, "value": "View"}], "w"),
+        target=CAML,
+        rendered={"Events"},
+        types={"Events": "audit_event[]"},
+        lookups=set(),
+        at=AT,
+    )
+
+
 def test_a_view_filter_still_accepts_a_multi_value_operand() -> None:
     """The refusal is per TARGET, and CAML is not one of them.
 
@@ -277,19 +290,27 @@ def test_a_view_filter_still_accepts_a_multi_value_operand() -> None:
     stored as a view's ViewQuery. Refusing here would remove a filter
     SharePoint demonstrably serves -- an enforced rule must never be stronger
     than what the reference implementation satisfies.
+
+    Written with `eq` when this guard was minted, because `eq` was then the
+    only way to say it. It is `includes` now: S6 gave membership its own
+    operator so the word could not mean equality on one column and containment
+    on another. The GUARD is unchanged and is the point -- one target, one
+    measured predicate, no finding.
     """
-    from dbml_sharepoint.analysis.conditions import CAML, condition_findings
+    assert _caml_findings("includes") == []
 
-    findings = condition_findings(
-        parse_condition([{"field": "Events", "op": "eq", "value": "View"}], "w"),
-        target=CAML,
-        rendered={"Events"},
-        types={"Events": "audit_event[]"},
-        lookups=set(),
-        at=AT,
-    )
 
-    assert findings == []
+def test_the_membership_spelling_is_the_only_one_a_view_filter_takes() -> None:
+    """The other side of the guard above, so neither can drift alone.
+
+    Without this, deleting the arity check would leave the test above passing
+    on a grammar where `eq` and `includes` both rendered `<Eq>` and meant
+    different things depending on a `[]` nobody can see in a mapping.
+    """
+    found = only(_caml_findings("eq"), FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED)
+
+    assert found.severity == "error"
+    assert "includes" in found.message
 
 
 def test_condition_problems_are_reported_through_the_shared_validator() -> None:

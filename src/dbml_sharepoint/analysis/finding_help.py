@@ -585,6 +585,17 @@ FINDING_HELP: dict[FindingCode, str] = {
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."
     ),
+    FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED: (
+        "A condition asks a multi-value column something with no verified "
+        "rendering. Measured on 2026-08-10: CAML's `<Eq>` against such a "
+        "column tests MEMBERSHIP rather than equality, so membership is "
+        "spelled `includes` and `eq` is refused rather than quietly meaning "
+        "two different things on two columns. `includes`, `not_includes`, "
+        "`is_null` and `is_not_null` are the four that were measured; "
+        "`contains` works but cannot be told apart from a substring match, "
+        "and `<Includes>`/`<NotIncludes>`, the two operators Microsoft "
+        "documents, returned nothing at all."
+    ),
     FindingCode.MULTI_VALUE_DEFAULT_UNSUPPORTED: (
         "A multi-value column declares `default:`. DBML carries one scalar "
         "and SharePoint's write shape for the column is a collection, so "
@@ -603,6 +614,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "as false, against a control on a single-value Choice in the same "
         "list that stuck. The same enum without the brackets is indexable."
     ),
+    FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN: (
+        "`includes` or `not_includes` is used on a column that holds exactly "
+        "one value. Both render `<Eq>`/`<Neq>`, which on a single-value "
+        "column means equality -- so accepting them would give the word two "
+        "meanings from the other side. Use `eq`/`neq`, or declare the column "
+        "as an array of its enum if it really does hold many."
+    ),
     FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED: (
         "A calculated formula, a validation formula or a conditional "
         "show/hide rule reads a multi-value column. Measured on 2026-08-10: "
@@ -610,6 +628,16 @@ FINDING_HELP: dict[FindingCode, str] = {
         "formula with \"This field type does not support validation "
         "formulas\"; show/hide is documented unsupported and would save and "
         "silently never react. A VIEW filter over the same column works."
+    ),
+    FindingCode.MULTI_VALUE_SET_EQUALITY_UNSUPPORTED: (
+        "A membership test's value contains `;#`, the separator SharePoint "
+        "puts between the members of a set. Measured on 2026-08-10: `<Eq>` "
+        "against such a value stops testing membership and matches the whole "
+        "set instead -- one operator, two questions, told apart only by the "
+        "value. Name a single member. Exact-set equality is not offered "
+        "because it is not characterised: the probe sent the members in one "
+        "order and never in the other, so whether SharePoint compares the "
+        "delimited string literally or normalises the set first is unknown."
     ),
     FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL: (
         "A `severity` or `pill` style sits on a multi-value column. Both "

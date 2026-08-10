@@ -389,6 +389,25 @@ class FindingCode(StrEnum):
     CONDITION_VALUE_NOT_A_NUMBER = "condition_value_not_a_number", "error"
     CONDITION_VALUE_NOT_ALLOWED = "condition_value_not_allowed", "error"
     CONDITION_VALUE_NOT_FINITE = "condition_value_not_finite", "error"
+    # Three rules about ARITY, raised from the same module and carrying the
+    # `MULTI_VALUE_` prefix rather than `CONDITION_` for the reason stated
+    # above: a code names its SUBJECT. A reader who meets one of these is
+    # being told something about a multi-value column, not about the grammar,
+    # and `explain multi_value_...` should list them together with the six
+    # refusals that already exist.
+    #
+    # They come in a set of three because the trap has three faces, and all
+    # three are the same trap: one authored word meaning two things depending
+    # on a column's arity or a value's spelling.
+    MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED = (
+        "multi_value_condition_operator_unsupported", "error"
+    )
+    MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN = (
+        "multi_value_membership_on_a_single_value_column", "error"
+    )
+    MULTI_VALUE_SET_EQUALITY_UNSUPPORTED = (
+        "multi_value_set_equality_unsupported", "error"
+    )
 
     # --- schema-only rules, from validator.validate() ---
     AUTO_INCREMENT_PK_MUST_BE_ID = "auto_increment_pk_must_be_id", "error"
