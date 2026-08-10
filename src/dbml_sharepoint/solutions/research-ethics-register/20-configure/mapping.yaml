@@ -1,0 +1,990 @@
+# Research ethics register — physical mapping. THE TWO GATES LIVE HERE.
+prefix: "RG_"
+
+entities:
+  Project:        { kind: List, base_template: 100, site_role: default }
+  Amendment:      { kind: List, base_template: 100, site_role: default }
+  ProgressReport: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# SiteReadiness is the register's headline answer, and it costs no join:
+# both gates are Choice columns on Project, which a SharePoint calculated
+# column may read. A lookup here would have been a join on every view.
+#
+# WHAT IT CANNOT DO, stated rather than hidden: a calculated column may not
+# reference [Today] — SharePoint's own rule, enforced at build time — so
+# SiteReadiness does NOT know that an approval expired yesterday. It goes
+# stale until somebody moves EthicsStatus to Expired. The live half is the
+# "Approvals expiring" view (today+90 compiles to CAML TODAY()+90, evaluated
+# at query time) and the overdue-date formatting on EthicsApprovalExpiry
+# (compared against @now in the browser at render time). The sweep in
+# 50-govern/governance.md is what closes the gap, and it is named there as a
+# duty rather than assumed.
+#
+# The branch order matters. Withdrawn and Suspended are tested FIRST because
+# they are facts about the project rather than about either gate, and a
+# withdrawn project that happens to still hold a site authorisation must not
+# read as "site authorised - ethics not cleared".
+#
+# EthicsStatus = Expired falls through to the last branch on purpose: an
+# expired approval under a live site authorisation IS "site authorised -
+# ethics not cleared", which is the state the blocked-red pill is for.
+#
+# " - " rather than ", " inside the literals so no comma ever sits inside a
+# formula argument list.
+calculated_formulas:
+  Project:
+    SiteReadiness: '=IF([EthicsStatus]="Withdrawn","Withdrawn",IF([SiteAuthorisationStatus]="Suspended","Suspended at this site",IF(OR([EthicsStatus]="Not approved",[SiteAuthorisationStatus]="Not authorised"),"Not approved",IF(OR([EthicsStatus]="Approved",[EthicsStatus]="Ethics review not required"),IF([SiteAuthorisationStatus]="Authorised","Ready to start here","Ethics cleared - site authorisation outstanding"),IF([SiteAuthorisationStatus]="Authorised","Site authorised - ethics not cleared","Neither gate cleared")))))'
+    DaysToEthicsDecision: '=IF(OR(ISBLANK([SubmittedDate]),ISBLANK([EthicsDecisionDate])),"",INT([EthicsDecisionDate])-INT([SubmittedDate]))'
+
+# Security: the research governance function maintains; all site members
+# read. Read-wide is deliberate and operational — "is this approved, and may
+# it start here" is a question a ward manager, a department head and a
+# student supervisor all have to answer, and a register only the governance
+# office can see is a register nobody consults.
+#
+# The register holds no participant data at any grain, so the privacy
+# question here is about STAFF professional information and about a
+# project's conditions being visible more widely than its investigator
+# expects. Scope SITE membership deliberately; 30-deploy/deploy.md makes it
+# a gate.
+groups:
+  - name: "RG Research Governance"
+    description: "Maintain the project register, record ethics decisions and site authorisations, run the expiry and reporting sweeps."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "RG List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "RG Research Governance" }
+        level: "Contribute"
+      - principal: { kind: group, name: "RG List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Read"
+
+# UI hardening (tamper-resilience): site owners/admins bypass every ACL,
+# so the realistic threat is well-meaning UI tampering. Sealed columns
+# block schema edits and deletion of every deployed column through the
+# UI even for site admins (display-name renames stay possible — drift,
+# reverted on re-paste; the deployer unseals for its own runs and
+# re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
+# list objects (rollback.js clears it per list after you confirm that
+# list's deletion). Friction + tamper-evidence, not enforcement — see
+# "The shared security model" in templates/README.md.
+seal_columns: true
+prevent_list_deletion: true
+
+# Backend internal names stay exactly as authored in the DBML (the lookups,
+# the indexes, the views, the formulas and the reporting bundle all key on
+# them); the deployer renames the display Title after create. Auto splitting
+# handles the acronyms correctly on its own — SSASubmittedDate becomes "SSA
+# Submitted Date", ReviewingHREC becomes "Reviewing HREC" — so only two
+# columns need an override.
+display_names:
+  mode: auto
+  overrides:
+    ProgressReport:
+      ReportUrl: "Report URL"
+    Project:
+      DaysToEthicsDecision: "Days to Ethics Decision"
+
+# Column formatting: the fleet style standard (dbml-sharepoint
+# website/docs/reference/style-guide.md). Tokens map by the ROLE a value
+# plays in its lifecycle, never by what it is called.
+#
+# SiteReadiness carries `calculated: true` — a calculated text value arrives
+# prefixed `string;#`, and without the flag the map never matches. The same
+# flag in a VIEW formatter would be wrong, which is why the row wash in
+# formatting/row-underway-unauthorised.json does not carry it.
+#
+# Two of its seven values are doing the register's work:
+#   "Ethics cleared - site authorisation outstanding" is WARNING. It is the
+#   ordinary in-between state — the SSA is with the governance office — and
+#   it should be visible without being alarming.
+#   "Site authorised - ethics not cleared" is BLOCKED. The site's own
+#   paperwork says yes and the committee's does not, which includes an
+#   approval that quietly expired under a live authorisation. Nothing else
+#   in this register is red.
+#
+# THREE deadline dates, all guarded on the state where the date stops being
+# a deadline and becomes history. EthicsApprovalExpiry and NextReportDue
+# guard on ProjectStage rather than on EthicsStatus, because an approval
+# expiring under a project that is still Underway must keep shouting even
+# when somebody has already flipped the status to Expired.
+column_formatting:
+  Project:
+    EthicsStatus:
+      style: severity
+      map:
+        "Not yet submitted": neutral
+        "Submitted": neutral
+        "Under review": low
+        "Response required": warning
+        "Approved": good
+        "Ethics review not required": good
+        "Not approved": muted
+        "Withdrawn": muted
+        "Expired": severe
+    SiteAuthorisationStatus:
+      style: severity
+      map:
+        "Not yet submitted": neutral
+        "Submitted": neutral
+        "Under governance review": low
+        "Information requested": warning
+        "Authorised": good
+        "Not authorised": muted
+        "Suspended": blocked
+    ConditionsStatus:
+      style: severity
+      map: { "None": neutral, "Outstanding": warning, "Met": good }
+    ProjectStage:
+      style: severity
+      map:
+        "Planning": neutral
+        "Underway": low
+        "Closed to recruitment": low
+        "Completed": good
+        "Discontinued": muted
+    EthicsPathway:
+      style: pill
+      map:
+        "Not yet determined": neutral
+        "Greater than low risk (full HREC review)": warning
+        "Low or negligible risk (LNR review)": low
+        "Quality assurance or evaluation - no ethics review": good
+    SiteReadiness:
+      style: severity
+      calculated: true
+      map:
+        "Ready to start here": good
+        "Ethics cleared - site authorisation outstanding": warning
+        "Site authorised - ethics not cleared": blocked
+        "Neither gate cleared": neutral
+        "Not approved": muted
+        "Withdrawn": muted
+        "Suspended at this site": severe
+    # A count, so a data bar with an explicit max. Five is not arbitrary:
+    # past five rounds of correspondence the register's own governance says
+    # the application needs a conversation rather than another response, and
+    # a full bar is what says so.
+    ReviewRounds: { style: data-bar, max: 5 }
+    EthicsApprovalExpiry:
+      style: overdue-date
+      guard: { field: ProjectStage, not: [Completed, Discontinued] }
+    NextReportDue:
+      style: overdue-date
+      guard: { field: ProjectStage, not: [Completed, Discontinued] }
+  Amendment:
+    Status:
+      style: severity
+      map:
+        "Drafting": neutral
+        "Submitted": neutral
+        "Under review": low
+        "Information requested": warning
+        "Approved": good
+        "Not approved": muted
+        "Withdrawn": muted
+    SiteImpact:
+      style: pill
+      map:
+        "No local action needed": good
+        "Notify research governance": low
+        "Requires site re-authorisation": warning
+  ProgressReport:
+    Status:
+      style: severity
+      map:
+        "Not started": neutral
+        "In preparation": low
+        "Submitted": low
+        "Further information requested": warning
+        "Acknowledged": good
+        "Not required": muted
+    ReportType:
+      style: pill
+      map:
+        "Annual progress": low
+        "Interim": neutral
+        "Safety or adverse event": severe
+        "Protocol deviation or breach": severe
+        "Final report": good
+    DueDate:
+      style: overdue-date
+      guard: { field: Status, not: ["Acknowledged", "Not required"] }
+
+# Each list's views share an identifying spine, declared once. Project's
+# `identity` repeats five times and `gates` four; both child lists repeat
+# their spine four or five times. All past the three the standard sets as
+# the threshold for a set being worth the indirection.
+field_sets:
+  Project:
+    identity: [Title, ProjectType, Department, PrincipalInvestigator]
+    # The pair, plus the answer. They travel together on purpose: a view
+    # that showed one gate would be the misreading this register exists to
+    # correct.
+    gates: [EthicsStatus, SiteAuthorisationStatus, SiteReadiness]
+  Amendment:
+    amendment: [Title, Project, AmendmentType, Status]
+  ProgressReport:
+    report: [Title, Project, ReportType, DueDate, Status]
+
+# Declared views (deployed and reconciled by the views phase; undeclared
+# views are never touched). Widths are pixel ColumnWidth per view and the
+# keys are INTERNAL names — the build rewrites them to display titles,
+# because ColumnWidth binds by display name and an internal name silently
+# resets.
+views:
+  Project:
+    - title: "Current projects"
+      default: true
+      fields: ["@identity", "@gates", ConditionsStatus, ProjectStage,
+               EthicsApprovalExpiry, NextReportDue, SiteInvestigator]
+      where:
+        - { field: ProjectStage, op: not_in, value: ["Completed", "Discontinued"] }
+      sort:
+        - { field: Title, direction: asc }
+      # THE ONE ROW-LEVEL SIGNAL in this template, and it is the reason the
+      # template exists: a project whose stage says it has started here,
+      # with no site authorisation.
+      #
+      # Written against the two CHOICE columns rather than against
+      # SiteReadiness, even though a view formatter does read a calculated
+      # column cleanly (confirmed live — see the note in risk-register's
+      # mapping and in style-guide.md). Two reasons: the condition wanted
+      # here is narrower than any single SiteReadiness value — RUNNING
+      # without authorisation, not merely unauthorised — and it is one
+      # comparison rather than an OR across three readiness strings.
+      #
+      # Both columns must stay in this view's fields: a view formatter can
+      # only read columns the view displays. ProjectStage is named
+      # explicitly below and SiteAuthorisationStatus arrives in "@gates".
+      formatting: formatting/row-underway-unauthorised.json
+      widths:
+        Title: 280
+        ProjectType: 150
+        Department: 180
+        PrincipalInvestigator: 200
+        EthicsStatus: 170
+        SiteAuthorisationStatus: 200
+        SiteReadiness: 220
+        ConditionsStatus: 130
+        ProjectStage: 160
+        EthicsApprovalExpiry: 180
+        NextReportDue: 170
+        SiteInvestigator: 160
+    # THE VIEW THIS REGISTER IS FOR. A project the committee has approved
+    # and this service has not yet authorised cannot start here, and this
+    # is the list of them. Oldest decision first, because the longer a
+    # project has been sitting approved-but-unauthorised the likelier
+    # somebody has assumed otherwise.
+    - title: "Approved, not authorised"
+      fields: ["@identity", "@gates", EthicsDecisionDate, SSASubmittedDate,
+               ProjectStage, SiteInvestigator]
+      where:
+        - { field: EthicsStatus, op: eq, value: "Approved" }
+        - { field: SiteAuthorisationStatus, op: neq, value: "Authorised" }
+      sort:
+        - { field: EthicsDecisionDate, direction: asc }
+      widths:
+        Title: 280
+        ProjectType: 150
+        Department: 180
+        PrincipalInvestigator: 200
+        EthicsStatus: 170
+        SiteAuthorisationStatus: 200
+        SiteReadiness: 220
+        EthicsDecisionDate: 180
+        SSASubmittedDate: 180
+        ProjectStage: 160
+        SiteInvestigator: 160
+    # The window is 90 days and it lives once, here. The title is
+    # deliberately silent about the number so changing it does not leave a
+    # title lying. Terminal stages are excluded: a completed project's
+    # expiry is history, which is also what the formatter's guard says.
+    - title: "Approvals expiring"
+      fields: ["@identity", "@gates", EthicsReference, EthicsApprovalExpiry,
+               NextReportDue, SiteInvestigator]
+      where:
+        - { field: EthicsStatus, op: eq, value: "Approved" }
+        - { field: EthicsApprovalExpiry, op: leq, value: today+90 }
+        - { field: ProjectStage, op: not_in, value: ["Completed", "Discontinued"] }
+      sort:
+        - { field: EthicsApprovalExpiry, direction: asc }
+      widths:
+        Title: 280
+        ProjectType: 150
+        Department: 180
+        PrincipalInvestigator: 200
+        EthicsStatus: 170
+        SiteAuthorisationStatus: 200
+        SiteReadiness: 220
+        EthicsReference: 200
+        EthicsApprovalExpiry: 180
+        NextReportDue: 170
+        SiteInvestigator: 160
+    # Conditions are orthogonal to the decision, which is why they are a
+    # column and not a status member — and why this view exists. An
+    # approval whose conditions have not been met is an approval somebody
+    # will quote as unconditional.
+    - title: "Conditions outstanding"
+      fields: ["@identity", "@gates", ConditionsStatus, EthicsDecisionDate,
+               SiteInvestigator]
+      where:
+        - { field: ConditionsStatus, op: eq, value: "Outstanding" }
+      sort:
+        - { field: EthicsDecisionDate, direction: asc }
+      widths:
+        Title: 300
+        ProjectType: 150
+        Department: 180
+        PrincipalInvestigator: 200
+        EthicsStatus: 170
+        SiteAuthorisationStatus: 200
+        SiteReadiness: 220
+        ConditionsStatus: 130
+        EthicsDecisionDate: 180
+        SiteInvestigator: 160
+    - title: "Closed projects"
+      fields: ["@identity", EthicsStatus, ProjectStage, CompletedDate,
+               EthicsApprovalExpiry, EthicsReference]
+      where:
+        - { field: ProjectStage, op: in, value: ["Completed", "Discontinued"] }
+      sort:
+        - { field: CompletedDate, direction: desc }
+      widths:
+        Title: 300
+        ProjectType: 150
+        Department: 180
+        PrincipalInvestigator: 200
+        EthicsStatus: 170
+        ProjectStage: 160
+        CompletedDate: 180
+        EthicsApprovalExpiry: 180
+        EthicsReference: 200
+  Amendment:
+    # A static view cannot filter to one parent record, so what ships is
+    # one collapsed grouped view on the lookup rather than one view per
+    # project that rots as projects are added. Opening a project's group IS
+    # its amendment history, and the withdrawn and refused rows belong in
+    # it. Deliberately unfiltered for the same reason.
+    - title: "By project"
+      default: true
+      fields: ["@amendment", AmendmentNumber, SiteImpact, SubmittedDate,
+               DecisionDate, SiteClearedDate]
+      group_by: { field: Project, collapsed: true }
+      sort:
+        - { field: DecisionDate, direction: desc }
+      widths:
+        Title: 280
+        Project: 240
+        AmendmentType: 200
+        Status: 170
+        AmendmentNumber: 160
+        SiteImpact: 220
+        SubmittedDate: 170
+        DecisionDate: 170
+        SiteClearedDate: 180
+    - title: "With the HREC"
+      fields: ["@amendment", SubmittedBy, SubmittedDate, SiteImpact]
+      where:
+        - { field: Status, op: in,
+            value: ["Submitted", "Under review", "Information requested"] }
+      sort:
+        - { field: SubmittedDate, direction: asc }
+      widths:
+        Title: 280
+        Project: 240
+        AmendmentType: 200
+        Status: 170
+        SubmittedBy: 160
+        SubmittedDate: 170
+        SiteImpact: 220
+    # The two gates, one level down. The committee has approved the change
+    # and this site has not yet done whatever the change requires of it, so
+    # the amendment is not implementable here. SiteClearedDate is indexed
+    # precisely so this blank test is served past the list view threshold.
+    - title: "Approved, not cleared locally"
+      fields: ["@amendment", SiteImpact, DecisionDate, SiteClearedDate,
+               ImplementedDate]
+      where:
+        - { field: Status, op: eq, value: "Approved" }
+        - { field: SiteImpact, op: neq, value: "No local action needed" }
+        - { field: SiteClearedDate, op: is_null }
+      sort:
+        - { field: DecisionDate, direction: asc }
+      widths:
+        Title: 280
+        Project: 240
+        AmendmentType: 200
+        Status: 170
+        SiteImpact: 220
+        DecisionDate: 170
+        SiteClearedDate: 180
+        ImplementedDate: 180
+    - title: "Decided"
+      fields: ["@amendment", DecisionDate, ImplementedDate, Notes]
+      where:
+        - { field: Status, op: in, value: ["Approved", "Not approved", "Withdrawn"] }
+      sort:
+        - { field: DecisionDate, direction: desc }
+      widths:
+        Title: 280
+        Project: 240
+        AmendmentType: 200
+        Status: 170
+        DecisionDate: 170
+        ImplementedDate: 180
+        Notes: 200
+  ProgressReport:
+    # Everything not finished, soonest first. With the overdue formatting
+    # on DueDate the late ones arrive at the top in red, which is why
+    # there is no separate "overdue" view — it would be the same rows
+    # twice.
+    - title: "Outstanding reports"
+      default: true
+      fields: ["@report", PeriodEnd, PreparedBy, SubmittedDate]
+      where:
+        - { field: Status, op: not_in, value: ["Acknowledged", "Not required"] }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 280
+        Project: 240
+        ReportType: 220
+        DueDate: 160
+        Status: 200
+        PeriodEnd: 170
+        PreparedBy: 160
+        SubmittedDate: 170
+    - title: "By project"
+      fields: ["@report", PeriodStart, PeriodEnd, SubmittedDate, AcknowledgedDate]
+      group_by: { field: Project, collapsed: true }
+      sort:
+        - { field: DueDate, direction: desc }
+      widths:
+        Title: 280
+        Project: 240
+        ReportType: 220
+        DueDate: 160
+        Status: 200
+        PeriodStart: 170
+        PeriodEnd: 170
+        SubmittedDate: 170
+        AcknowledgedDate: 190
+    - title: "Due in 60 days"
+      fields: ["@report", PeriodEnd, PreparedBy]
+      where:
+        - { field: Status, op: in, value: ["Not started", "In preparation"] }
+        - { field: DueDate, op: leq, value: today+60 }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Project: 240
+        ReportType: 220
+        DueDate: 160
+        Status: 200
+        PeriodEnd: 170
+        PreparedBy: 160
+    - title: "Information requested"
+      fields: ["@report", SubmittedDate, Notes]
+      where:
+        - { field: Status, op: eq, value: "Further information requested" }
+      sort:
+        - { field: DueDate, direction: asc }
+      widths:
+        Title: 300
+        Project: 240
+        ReportType: 220
+        DueDate: 160
+        Status: 200
+        SubmittedDate: 170
+        Notes: 200
+    - title: "Filed"
+      fields: ["@report", SubmittedDate, AcknowledgedDate, ReportUrl]
+      where:
+        - { field: Status, op: eq, value: "Acknowledged" }
+      sort:
+        - { field: SubmittedDate, direction: desc }
+      widths:
+        Title: 280
+        Project: 240
+        ReportType: 220
+        DueDate: 160
+        Status: 200
+        SubmittedDate: 170
+        AcknowledgedDate: 190
+        ReportUrl: 180
+
+# Form layouts: a strapline header and a sectioned body per list. Section
+# field lists are authored with INTERNAL names; the build rewrites them to
+# display titles. Per-field description hints render on the NEW form only —
+# SharePoint suppresses column descriptions on the Edit form.
+#
+# The Project body spends TWO CONSECUTIVE SECTIONS on the Act beat, which
+# §1.2 permits and this register depends on: "Ethics decision" and "Site
+# authorisation" are two headings, two reference numbers and two sets of
+# dates. Merging them into one "Approvals" block would be the collapse the
+# whole template exists to prevent — the form itself has to say these are
+# two different things before anybody reads a word.
+#
+# NO GUIDE LINK in any header. The document this register defers to is your
+# service's research governance procedure and your reviewing committee's
+# terms of reference — a class of document, not one this template can name
+# — so the only shippable link is a REPLACE-WITH placeholder, which is the
+# live hazard the family standard removed from risk-register. Adding a real
+# one is two lines; 30-deploy/deploy.md spells it out, absolute-https rule
+# included.
+form_formatting:
+  Project:
+    header: formatting/project-form-header.json
+    body: formatting/project-form-body.json
+  Amendment:
+    header: formatting/amendment-form-header.json
+    body: formatting/amendment-form-body.json
+  ProgressReport:
+    header: formatting/progressreport-form-header.json
+    body: formatting/progressreport-form-body.json
+
+# Conditional visibility. Every conditioned field is optional, so hiding
+# one can never fail a save.
+#
+# Deliberately NOT conditioned on SiteReadiness: conditional visibility
+# cannot read a calculated column. The formula stays syntactically valid,
+# so it saves, the read-back compares equal and the phase passes — and the
+# form simply never reacts. The build refuses it; risk-register's mapping
+# records the same trap.
+form_visibility:
+  Project:
+    columns:
+      # The conditions wording only exists once there are conditions. This
+      # pairs with ConditionsStatus rather than with EthicsStatus, because
+      # conditions are orthogonal to the decision.
+      ApprovalConditions:
+        when:
+          - { field: ConditionsStatus, op: neq, value: "None" }
+      # Nobody completes a project at creation.
+      CompletedDate:
+        new: false
+        when:
+          - { field: ProjectStage, op: in, value: ["Completed", "Discontinued"] }
+  Amendment:
+    columns:
+      # The conditional that makes the amendment's local gate
+      # self-explaining: choose "No local action needed" and the local
+      # clearance date disappears, because there is nothing to clear.
+      SiteClearedDate:
+        when:
+          - { field: SiteImpact, op: neq, value: "No local action needed" }
+  ProgressReport:
+    columns:
+      AcknowledgedDate:
+        new: false
+        when:
+          - { field: Status, op: in,
+              value: ["Submitted", "Further information requested", "Acknowledged"] }
+
+# Per-column save rules. Each column carries its own formula and its own
+# message, and they all run — unlike list_validation, where a list has one
+# ValidationFormula and every cross-column rule shares one message.
+#
+# All four are the same shape and the same failure: a date typed with next
+# year's year. On this register that is not cosmetic. A forward-dated
+# submission or decision makes DaysToEthicsDecision negative and drops the
+# project out of the queue it should be sitting in; a forward-dated
+# authorisation says the site cleared a project it has not.
+column_validation:
+  Project:
+    columns:
+      SubmittedDate:
+        when:
+          - { field: SubmittedDate, op: leq, value: today }
+        message: "An ethics application cannot have been submitted in the future. Use the date it actually went to the committee."
+      EthicsDecisionDate:
+        when:
+          - { field: EthicsDecisionDate, op: leq, value: today }
+        message: "A committee cannot have decided in the future. Use the date on the decision letter."
+      AuthorisationDate:
+        when:
+          - { field: AuthorisationDate, op: leq, value: today }
+        message: "A site authorisation cannot be dated in the future. Use the date the authorisation was actually given."
+  Amendment:
+    columns:
+      SubmittedDate:
+        when:
+          - { field: SubmittedDate, op: leq, value: today }
+        message: "An amendment cannot have been submitted in the future. Use the date it actually went to the committee."
+  ProgressReport:
+    columns:
+      SubmittedDate:
+        when:
+          - { field: SubmittedDate, op: leq, value: today }
+        message: "A report cannot have been submitted in the future. Use the date it actually went to the committee."
+
+# Save-time enforcement, stored on the LIST so it may reference any column.
+# Written as implications: `if A then B` is `any_of[not A, B]`, which is why
+# each starts with the case the rule does not apply to.
+#
+# Project: THE DOMAIN RULE. A site cannot authorise a project it has no
+# ethics clearance for — evidence of HREC approval is what the Chief
+# Executive or delegate authorises against. The second member of the list
+# is what keeps the rule honest for a quality activity that correctly never
+# went to a committee: "Ethics review not required" IS its ethics
+# clearance, and refusing to let such a project be authorised would push
+# adopters into recording a fake approval.
+#
+# NOT enforceable, and therefore governance checks in 50-govern: that
+# Summary, ApprovalConditions, ChangeSummary and GovernanceNotes say
+# anything — SharePoint validation formulas cannot reference a multi-line
+# column at all — and anything about SiteInvestigator or PreparedBy, because
+# they cannot reference a person column either.
+list_validation:
+  Project:
+    when:
+      any_of:
+        - { field: SiteAuthorisationStatus, op: neq, value: "Authorised" }
+        - { field: EthicsStatus, op: in,
+            value: ["Approved", "Ethics review not required"] }
+    message: "This project cannot be recorded as site-authorised yet. A site authorisation is given against evidence of ethics clearance, so Ethics Status must be Approved - or Ethics review not required, for a quality activity that correctly did not go to a committee."
+  Amendment:
+    when:
+      any_of:
+        - { field: Status, op: neq, value: "Approved" }
+        - { field: DecisionDate, op: is_not_null }
+    message: "An approved amendment needs a decision date - that date is what the local clearance and the implementation are counted from."
+  ProgressReport:
+    when:
+      any_of:
+        - { field: Status, op: not_in, value: ["Submitted", "Acknowledged"] }
+        - { field: SubmittedDate, op: is_not_null }
+    message: "A report marked Submitted or Acknowledged needs a submitted date - continued approval depends on the report having actually gone, and a claim with no date behind it cannot be checked by anyone."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
+# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# demo-only lists without its non-empty refusal. Dates are today±N so the
+# sweep-derived views land correctly on whatever day the demo runs, and
+# "@me" is whoever pastes the script.
+#
+# The six projects are one of each state the register distinguishes. ONE OF
+# THEM IS DELIBERATELY WRONG: the falls-prevention evaluation is Underway
+# with its site-specific assessment still under governance review. It is
+# the row that drives the wash, and its note says so — the same teaching
+# device as credentialing-register's expired credential sitting inside a
+# practitioner's own file.
+#
+# The projects are ordinary health-service work and name no person, no real
+# study and no real committee. The reviewing-committee names are shaped
+# like the real thing and are obviously invented.
+demo_items:
+  Project:
+    - key: proj-ready
+      values:
+        Title: "[DEMO] Bedside handover communication study"
+        ProjectType: "Research"
+        Department: "Medical ward"
+        PrincipalInvestigator: "[DEMO] Principal investigator, partner health service"
+        SiteInvestigator: "@me"
+        ProtocolReference: "[DEMO] PROT-14 v2.1"
+        Summary: "Demo row. Observational study of bedside clinical handover practice. Both gates cleared, so it can run here."
+        EthicsPathway: "Greater than low risk (full HREC review)"
+        ParticipantInvolvement: "Staff participants only"
+        ReviewingHREC: "[DEMO] Partner Health Service HREC"
+        EthicsStatus: "Approved"
+        EthicsReference: "[DEMO] HREC/2025/PHS/100001"
+        SubmittedDate: "today-420"
+        ReviewRounds: 2
+        EthicsDecisionDate: "today-360"
+        EthicsApprovalExpiry: "today+1100"
+        ConditionsStatus: "None"
+        SiteAuthorisationStatus: "Authorised"
+        SSASubmittedDate: "today-400"
+        AuthorisationDate: "today-350"
+        AuthorisationReference: "[DEMO] SSA-2025-011"
+        AuthorisedBy: "Chief Executive"
+        ProjectStage: "Underway"
+        NextReportDue: "today+130"
+        GovernanceNotes: "Demo row. Two rounds of correspondence before approval; the site-specific assessment was lodged alongside the ethics application, which is why authorisation followed ten days later."
+    - key: proj-gap
+      values:
+        Title: "[DEMO] Falls prevention bundle evaluation"
+        ProjectType: "Evaluation"
+        Department: "Sub-acute"
+        PrincipalInvestigator: "[DEMO] Nurse unit manager, this service"
+        SiteInvestigator: "@me"
+        ProtocolReference: "[DEMO] PROT-22 v1.0"
+        Summary: "Demo row. Evaluation of a falls prevention bundle across two wards."
+        EthicsPathway: "Low or negligible risk (LNR review)"
+        ParticipantInvolvement: "Existing data or records only"
+        ReviewingHREC: "[DEMO] Partner Health Service HREC"
+        EthicsStatus: "Approved"
+        EthicsReference: "[DEMO] HREC/2026/PHS/100014"
+        SubmittedDate: "today-120"
+        ReviewRounds: 1
+        EthicsDecisionDate: "today-75"
+        EthicsApprovalExpiry: "today+1290"
+        ConditionsStatus: "Outstanding"
+        ApprovalConditions: "Demo row. Approved subject to the data management plan being provided to the committee before data collection begins."
+        SiteAuthorisationStatus: "Under governance review"
+        SSASubmittedDate: "today-40"
+        ProjectStage: "Underway"
+        NextReportDue: "today+290"
+        GovernanceNotes: "Demo row. THIS ROW IS WRONG ON PURPOSE. It is ethics-approved, its site-specific assessment is still with the governance office, its approval conditions have not been met - and its stage says it has already started. That is the state this register exists to catch, and it is why the row is washed in Current projects. On a real site you would ring the investigator today."
+    - key: proj-under-review
+      values:
+        Title: "[DEMO] Discharge medication reconciliation audit"
+        ProjectType: "Clinical audit"
+        Department: "Pharmacy"
+        PrincipalInvestigator: "[DEMO] Senior pharmacist, this service"
+        SiteInvestigator: "@me"
+        ProtocolReference: "[DEMO] PROT-31 v1.2"
+        Summary: "Demo row. Retrospective audit of discharge medication reconciliation against the documented standard."
+        EthicsPathway: "Low or negligible risk (LNR review)"
+        ParticipantInvolvement: "Existing data or records only"
+        ReviewingHREC: "[DEMO] Regional University HREC"
+        EthicsStatus: "Response required"
+        EthicsReference: "[DEMO] HREC/2026/RU/2026-0042"
+        SubmittedDate: "today-38"
+        ReviewRounds: 1
+        SiteAuthorisationStatus: "Not yet submitted"
+        ProjectStage: "Planning"
+        GovernanceNotes: "Demo row. Neither gate cleared, and the ball is with US rather than with the committee - that is what Response required means, and it is the only ethics status that says so. The site-specific assessment is usually lodged alongside the ethics application rather than after it; see 40-adopt/staff-guide.md."
+    - key: proj-qi
+      values:
+        Title: "[DEMO] Meal service satisfaction improvement cycle"
+        ProjectType: "Quality improvement"
+        Department: "Food services"
+        PrincipalInvestigator: "[DEMO] Food services manager, this service"
+        SiteInvestigator: "@me"
+        Summary: "Demo row. Plan-do-study-act cycle on meal service satisfaction, using the existing satisfaction survey."
+        EthicsPathway: "Quality assurance or evaluation - no ethics review"
+        ParticipantInvolvement: "No contact with patients or staff"
+        EthicsStatus: "Ethics review not required"
+        ReviewRounds: 0
+        EthicsDecisionDate: "today-200"
+        ConditionsStatus: "None"
+        SiteAuthorisationStatus: "Authorised"
+        SSASubmittedDate: "today-205"
+        AuthorisationDate: "today-195"
+        AuthorisationReference: "[DEMO] SSA-2025-044"
+        AuthorisedBy: "Director of Clinical Services"
+        ProjectStage: "Underway"
+        GovernanceNotes: "Demo row. Considered against the quality-assurance guidance and found not to need ethics review - which is a decision, recorded, not an absence of one. It still needed site authorisation, and the save rule allows that because Ethics review not required IS this activity's ethics clearance."
+    - key: proj-expiring
+      values:
+        Title: "[DEMO] Regional telehealth access study"
+        ProjectType: "Research"
+        Department: "Community health"
+        PrincipalInvestigator: "[DEMO] Principal investigator, regional university"
+        SiteInvestigator: "@me"
+        ProtocolReference: "[DEMO] PROT-08 v3.0"
+        Summary: "Demo row. Mixed-methods study of telehealth access in outlying towns."
+        EthicsPathway: "Greater than low risk (full HREC review)"
+        ParticipantInvolvement: "Patient or client participants"
+        ReviewingHREC: "[DEMO] Regional University HREC"
+        EthicsStatus: "Approved"
+        EthicsReference: "[DEMO] HREC/2022/RU/2022-0311"
+        SubmittedDate: "today-1560"
+        ReviewRounds: 3
+        EthicsDecisionDate: "today-1480"
+        EthicsApprovalExpiry: "today+45"
+        ConditionsStatus: "Met"
+        ApprovalConditions: "Demo row. Approved subject to the participant information sheet being revised to plain English - revised, resubmitted and accepted."
+        SiteAuthorisationStatus: "Authorised"
+        SSASubmittedDate: "today-1520"
+        AuthorisationDate: "today-1460"
+        AuthorisationReference: "[DEMO] SSA-2022-006"
+        AuthorisedBy: "Chief Executive"
+        ProjectStage: "Closed to recruitment"
+        NextReportDue: "today-12"
+        GovernanceNotes: "Demo row. The approval runs out inside the window and the annual report is already late. Both dates are coloured, and both surfaces - Approvals expiring here, Outstanding reports on the report list - are pointing at the same project, which is usually how it goes."
+    - key: proj-closed
+      values:
+        Title: "[DEMO] Nurse-led wound clinic pilot"
+        ProjectType: "Research"
+        Department: "Outpatients"
+        PrincipalInvestigator: "[DEMO] Nurse practitioner, this service"
+        SiteInvestigator: "@me"
+        ProtocolReference: "[DEMO] PROT-02 v1.4"
+        Summary: "Demo row. Pilot of a nurse-led wound clinic model. Finished and reported."
+        EthicsPathway: "Greater than low risk (full HREC review)"
+        ParticipantInvolvement: "Patient or client participants"
+        ReviewingHREC: "[DEMO] Partner Health Service HREC"
+        EthicsStatus: "Approved"
+        EthicsReference: "[DEMO] HREC/2021/PHS/099210"
+        SubmittedDate: "today-1900"
+        ReviewRounds: 1
+        EthicsDecisionDate: "today-1850"
+        EthicsApprovalExpiry: "today-30"
+        ConditionsStatus: "Met"
+        SiteAuthorisationStatus: "Authorised"
+        SSASubmittedDate: "today-1880"
+        AuthorisationDate: "today-1830"
+        AuthorisationReference: "[DEMO] SSA-2021-002"
+        AuthorisedBy: "Chief Executive"
+        ProjectStage: "Completed"
+        CompletedDate: "today-120"
+        GovernanceNotes: "Demo row. Never deleted - the register's value is that it can still answer what was approved, by whom, and when. Its expiry date has passed and is deliberately NOT coloured: at a terminal stage the date is history rather than a deadline."
+  Amendment:
+    - key: amd-cleared
+      values:
+        Title: "[DEMO] Add a second observation ward"
+        Project: { demo_ref: proj-ready }
+        AmendmentNumber: "[DEMO] Amendment 1"
+        ChangeSummary: "Demo row. Extends observation to a second medical ward. No change to what is observed or recorded."
+        AmendmentType: "Investigator or site"
+        SiteImpact: "Requires site re-authorisation"
+        SubmittedBy: "@me"
+        SubmittedDate: "today-150"
+        Status: "Approved"
+        DecisionDate: "today-120"
+        HRECReference: "[DEMO] HREC/2025/PHS/100001-A1"
+        SiteClearedDate: "today-95"
+        ImplementedDate: "today-90"
+        Notes: "Demo row. Substantial, so the site authorised it again before it took effect. That order is the point."
+    - key: amd-not-cleared
+      values:
+        Title: "[DEMO] Revised participant information sheet"
+        Project: { demo_ref: proj-expiring }
+        AmendmentNumber: "[DEMO] Amendment 4"
+        ChangeSummary: "Demo row. Plain-English revision of the participant information sheet and consent form, version 3.0."
+        AmendmentType: "Participant materials"
+        SiteImpact: "Notify research governance"
+        SubmittedBy: "@me"
+        SubmittedDate: "today-60"
+        Status: "Approved"
+        DecisionDate: "today-35"
+        HRECReference: "[DEMO] HREC/2022/RU/2022-0311-A4"
+        Notes: "Demo row. Approved by the committee and the governance office has not been told, so the new sheet is not usable here yet. Blank Site Cleared Date is what puts it in Approved, not cleared locally."
+    - key: amd-with-hrec
+      values:
+        Title: "[DEMO] Extend approval by twelve months"
+        Project: { demo_ref: proj-gap }
+        AmendmentNumber: "[DEMO] Amendment 1"
+        ChangeSummary: "Demo row. Requests a twelve-month extension of the approval period; no change to the protocol."
+        AmendmentType: "Extension of approval"
+        SiteImpact: "Notify research governance"
+        SubmittedBy: "@me"
+        SubmittedDate: "today-22"
+        Status: "Under review"
+        Notes: "Demo row. Still with the committee."
+    - key: amd-refused
+      values:
+        Title: "[DEMO] Add an unconsented record-linkage arm"
+        Project: { demo_ref: proj-ready }
+        AmendmentNumber: "[DEMO] Amendment 2"
+        ChangeSummary: "Demo row. Proposed linkage to an administrative dataset without consent. Withdrawn scope."
+        AmendmentType: "Protocol"
+        SiteImpact: "Requires site re-authorisation"
+        SubmittedBy: "@me"
+        SubmittedDate: "today-70"
+        Status: "Not approved"
+        DecisionDate: "today-45"
+        HRECReference: "[DEMO] HREC/2025/PHS/100001-A2"
+        Notes: "Demo row. Refused. The row stays - a register that only holds the approvals cannot answer what was asked for and declined."
+    - key: amd-admin
+      values:
+        Title: "[DEMO] Change of site contact"
+        Project: { demo_ref: proj-qi }
+        AmendmentNumber: "[DEMO] Amendment 1"
+        ChangeSummary: "Demo row. Administrative change of the site contact person. No change to the activity."
+        AmendmentType: "Administrative"
+        SiteImpact: "No local action needed"
+        SubmittedBy: "@me"
+        SubmittedDate: "today-100"
+        Status: "Approved"
+        DecisionDate: "today-88"
+        ImplementedDate: "today-88"
+        Notes: "Demo row. Nothing to clear locally, so the local clearance date is off the form entirely for this row."
+  ProgressReport:
+    - key: rep-overdue
+      values:
+        Title: "[DEMO] Annual progress report, year 1"
+        Project: { demo_ref: proj-gap }
+        ReportType: "Annual progress"
+        PeriodStart: "today-440"
+        PeriodEnd: "today-75"
+        DueDate: "today-12"
+        Status: "In preparation"
+        PreparedBy: "@me"
+        Notes: "Demo row. Late. Continued approval is contingent on it."
+    - key: rep-due-soon
+      values:
+        Title: "[DEMO] Annual progress report, year 2"
+        Project: { demo_ref: proj-ready }
+        ReportType: "Annual progress"
+        PeriodStart: "today-320"
+        PeriodEnd: "today+40"
+        DueDate: "today+40"
+        Status: "Not started"
+        PreparedBy: "@me"
+        Notes: "Demo row. Due inside the window; nobody has started it."
+    - key: rep-submitted
+      values:
+        Title: "[DEMO] Annual progress report, final year"
+        Project: { demo_ref: proj-expiring }
+        ReportType: "Annual progress"
+        PeriodStart: "today-460"
+        PeriodEnd: "today-100"
+        DueDate: "today-95"
+        Status: "Submitted"
+        PreparedBy: "@me"
+        SubmittedDate: "today-98"
+        Notes: "Demo row. Gone, not yet acknowledged - so the obligation is not discharged and the row is still outstanding."
+    - key: rep-info
+      values:
+        Title: "[DEMO] Protocol deviation notification"
+        Project: { demo_ref: proj-ready }
+        ReportType: "Protocol deviation or breach"
+        PeriodStart: "today-70"
+        PeriodEnd: "today-60"
+        DueDate: "today-44"
+        Status: "Further information requested"
+        PreparedBy: "@me"
+        SubmittedDate: "today-52"
+        Notes: "Demo row. The committee has come back with questions. This one also went to the local research governance officer on the day it was found, which is a separate obligation - see 50-govern/governance.md."
+    - key: rep-filed
+      values:
+        Title: "[DEMO] Final report"
+        Project: { demo_ref: proj-closed }
+        ReportType: "Final report"
+        PeriodStart: "today-1850"
+        PeriodEnd: "today-120"
+        DueDate: "today-150"
+        Status: "Acknowledged"
+        PreparedBy: "@me"
+        SubmittedDate: "today-160"
+        AcknowledgedDate: "today-140"
+        Notes: "Demo row. Filed and acknowledged. The due date has passed and is deliberately not coloured - the guard suppresses it once the report is acknowledged."

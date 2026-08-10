@@ -1,0 +1,296 @@
+// ============================================================================
+// Research ethics register — projects sent to an external HREC, the site's
+// own authorisation of them, and the amendments and reports that follow.
+// Render the ERD by pasting this file into https://dbdiagram.io
+//
+// TWO GATES, NEVER MERGED. Ethics approval (the external committee's
+// decision) and site authorisation (this service's own) are separate states
+// with separate authorities, references and dates. A project can be
+// ethics-approved and not authorised here, and that is the state this
+// register exists to make visible. SiteReadiness collapses the pair into one
+// answer WITHOUT a lookup: both gates are Choice columns on this table.
+//
+// NO PARTICIPANT DATA, at any grain. Not names, not identifiers, not
+// aggregate recruitment counts. See 50-govern/governance.md.
+// ============================================================================
+
+Project research_ethics_register { database_type: 'SharePoint Online Lists' }
+
+// What kind of activity this is. The register holds research AND the quality
+// activities that sit beside it, because the question "did this need ethics
+// review, and who decided?" is asked of both.
+Enum project_type {
+  "Research"
+  "Quality improvement"
+  "Clinical audit"
+  "Evaluation"
+  "Student project"
+}
+
+// The review pathway, in National Statement terms. Chapter 2.1 defines
+// NEGLIGIBLE risk (no foreseeable harm or discomfort; at worst inconvenience)
+// and LOW risk (the only foreseeable risk is discomfort); lower-risk projects
+// may take a pathway other than the full committee.
+//
+// The last member is not a loophole. NHMRC's "Ethical Considerations in
+// Quality Assurance and Evaluation Activities" expects an organisation to
+// have a process for deciding when a QI or evaluation activity needs review —
+// and recording that the decision was made, by whom, is the audit answer.
+Enum ethics_pathway {
+  "Not yet determined"
+  "Greater than low risk (full HREC review)"
+  "Low or negligible risk (LNR review)"
+  "Quality assurance or evaluation - no ethics review"
+}
+
+// An attribute of the STUDY DESIGN, not of any participant. It is one of the
+// triggers for considering ethics review, and it is what makes the pathway
+// choice above defensible on the row.
+Enum participant_involvement {
+  "No contact with patients or staff"
+  "Existing data or records only"
+  "Staff participants only"
+  "Patient or client participants"
+}
+
+// GATE 1 — the external committee's decision.
+//
+// "Response required" is the only member that says the ball is with US rather
+// than with the committee, which is why it exists rather than being folded
+// into "Under review".
+//
+// "Ethics review not required" is the recorded outcome of the QI/evaluation
+// determination above, and the save rule on site authorisation treats it as
+// an ethics clearance, because for such an activity it is one.
+//
+// "Expired" is maintained by the expiry sweep in 50-govern/governance.md.
+// Nothing computes it: a SharePoint calculated column cannot read [Today].
+Enum ethics_status {
+  "Not yet submitted"
+  "Submitted"
+  "Under review"
+  "Response required"
+  "Approved"
+  "Not approved"
+  "Ethics review not required"
+  "Withdrawn"
+  "Expired"
+}
+
+// Conditions are orthogonal to the decision: a project is approved AND its
+// conditions are outstanding, or approved and there were none. Folding them
+// into ethics_status would have made "Approved" mean two different things.
+Enum conditions_status {
+  "None"
+  "Outstanding"
+  "Met"
+}
+
+// GATE 2 — this service's own authorisation, on the research governance
+// officer's site-specific assessment. Evidence of HREC approval is required
+// before the Chief Executive or delegate can authorise, which is the save
+// rule in mapping.yaml.
+Enum authorisation_status {
+  "Not yet submitted"
+  "Submitted"
+  "Under governance review"
+  "Information requested"
+  "Authorised"
+  "Not authorised"
+  "Suspended"
+}
+
+// What the project itself is doing, independent of either gate. A project can
+// be Underway with an outstanding authorisation, and that combination is the
+// one row-level signal this template ships.
+Enum project_stage {
+  "Planning"
+  "Underway"
+  "Closed to recruitment"
+  "Completed"
+  "Discontinued"
+}
+
+Enum amendment_type {
+  "Protocol"
+  "Participant materials"
+  "Investigator or site"
+  "Extension of approval"
+  "Safety-related"
+  "Administrative"
+}
+
+Enum amendment_status {
+  "Drafting"
+  "Submitted"
+  "Under review"
+  "Information requested"
+  "Approved"
+  "Not approved"
+  "Withdrawn"
+}
+
+// The two gates again, one level down: an approved amendment may still need
+// something done locally before it can be implemented here.
+Enum site_impact {
+  "No local action needed"
+  "Notify research governance"
+  "Requires site re-authorisation"
+}
+
+// The middle two are here because the deviation and safety obligations are
+// the ones people forget they have, and because the LOCAL research governance
+// officer is a recipient for them, not only the committee.
+Enum report_type {
+  "Annual progress"
+  "Interim"
+  "Safety or adverse event"
+  "Protocol deviation or breach"
+  "Final report"
+}
+
+Enum report_status {
+  "Not started"
+  "In preparation"
+  "Submitted"
+  "Further information requested"
+  "Acknowledged"
+  "Not required"
+}
+
+Table Project {
+  Id                      int                     [pk, increment]
+  Title                   nvarchar                [not null, note: 'The project title, worded as the ethics application words it']
+  ProjectType             project_type            [not null, default: 'Research', note: 'What kind of activity this is. Quality improvement and audit belong here too - the register records the decision about whether they needed review']
+  Department              nvarchar                [not null, note: 'The department or service this project runs in']
+  // Text, not a person column: on an externally-reviewed project the
+  // principal investigator is frequently at the coordinating site or a
+  // university and has no account in this tenant.
+  PrincipalInvestigator   nvarchar                [not null, note: 'The principal investigator, named as the ethics application names them. They may be at another organisation']
+  SiteInvestigator        person                  [note: 'The person HERE who answers for this project at this site. Leave blank only while it is still being decided']
+  ProtocolReference       nvarchar                [note: 'Your protocol number and version, e.g. "PROT-14 v2.1"']
+  Summary                 richtext                [note: 'What the project does, in plain language. No participant information of any kind']
+
+  // --- Review pathway -----------------------------------------------------
+  EthicsPathway           ethics_pathway          [not null, default: 'Not yet determined', note: 'Which review pathway this project takes. Low or negligible risk projects may be reviewed outside a full committee meeting; a quality activity may need no ethics review at all, and recording that decision here is the point']
+  ParticipantInvolvement  participant_involvement [note: 'What the project does with people, as a property of the design. This is one of the things that decides the pathway above']
+  ReviewingHREC           nvarchar                [note: 'The external Human Research Ethics Committee reviewing this project. Write the name the same way every time']
+
+  // --- Gate 1: the external committee -------------------------------------
+  EthicsStatus            ethics_status           [not null, default: 'Not yet submitted', note: 'Where the ETHICS application sits. This is not the same thing as site authorisation below']
+  EthicsReference         nvarchar                [note: 'The reference the committee itself uses for this project, e.g. "HREC/2026/QRCH/123456"']
+  SubmittedDate           date                    [note: 'The date the ethics application was submitted']
+  // A counter rather than a fourth list: a round of correspondence is the
+  // committee's record, and what the service needs is which round we are in.
+  ReviewRounds            int                     [not null, default: 0, note: 'How many times the committee has come back for more information. Leave at 0 if it has not']
+  EthicsDecisionDate      date                    [note: 'The date the committee decided']
+  // The expiry sweep works this column.
+  EthicsApprovalExpiry    date                    [note: 'When this ethics approval ends. Nothing computes it - a report or an extension moves it, and the sweep in 50-govern finds the ones that have not']
+  ConditionsStatus        conditions_status       [not null, default: 'None', note: 'Whether the approval carried conditions and whether they have been met. Outstanding conditions are not the same as an approval that has not arrived']
+  ApprovalConditions      richtext                [note: 'The conditions as the committee worded them, verbatim. Paraphrase is how a condition quietly stops being met']
+
+  // --- Gate 2: this site --------------------------------------------------
+  SiteAuthorisationStatus authorisation_status    [not null, default: 'Not yet submitted', note: 'Where the SITE-SPECIFIC ASSESSMENT sits. Ethics approval alone does not let a project start here']
+  SSASubmittedDate        date                    [note: 'The date the site-specific assessment was lodged with research governance']
+  AuthorisationDate       date                    [note: 'The date the Chief Executive or delegate authorised this project for this site']
+  AuthorisationReference  nvarchar                [note: 'The site authorisation reference, if your governance office issues one']
+  // A role, not a name. The individual changes; the delegation does not.
+  AuthorisedBy            nvarchar                [note: 'The role that authorised it, e.g. "Chief Executive" or "Director of Medical Services". Name the role rather than the person']
+
+  // --- Oversight ----------------------------------------------------------
+  ProjectStage            project_stage           [not null, default: 'Planning', note: 'What the project itself is doing. Underway means it has started HERE - do not set it until both gates above are cleared']
+  // The reporting sweep works this column. The interval is set by the
+  // reviewing committee, not nationally, so this is a date rather than a
+  // cadence the register would have to guess.
+  NextReportDue           date                    [note: 'When the next report is due to the committee. Your committee sets this - some use the approval anniversary, some a fixed date']
+  GovernanceNotes         richtext                [note: 'Anything the next person needs: minute references, who chased what, why a date moved']
+  CompletedDate           date                    [note: 'The date the project finished or was discontinued at this site']
+
+  // --- Calculated ---------------------------------------------------------
+  // THE ANSWER, and no lookup pays for it: both gates are Choice columns on
+  // this table, which a SharePoint calculated column can read. The formula
+  // lives in mapping.yaml.
+  //
+  // It cannot know that an approval expired yesterday - a calculated column
+  // may not reference [Today], which the build refuses. The "Approvals
+  // expiring" view and the overdue colouring on EthicsApprovalExpiry are the
+  // live half; the expiry sweep is what moves EthicsStatus to Expired.
+  SiteReadiness           calculated_text         [note: 'Calculated automatically from the two gates above: whether this project can actually start here']
+  DaysToEthicsDecision    calculated_number       [note: 'Calculated automatically: days from submission to the ethics decision. Blank until both dates exist']
+
+  // Every column a declared view filters on. The calculated pair cannot be
+  // indexed by SharePoint and is rejected by the build validator.
+  indexes {
+    EthicsStatus
+    SiteAuthorisationStatus
+    ConditionsStatus
+    ProjectStage
+    EthicsApprovalExpiry
+    NextReportDue
+  }
+}
+
+Table Amendment {
+  Id              int              [pk, increment]
+  Title           nvarchar         [not null, note: 'One line: what this amendment changes']
+  Project         int              [not null, ref: > Project.Id, note: 'The project being amended']
+  AmendmentNumber nvarchar         [note: 'The amendment number as the committee or sponsor numbers it, e.g. "Amendment 3"']
+  ChangeSummary   richtext         [not null, note: 'What changes, and why. Enough that somebody reading it in two years knows what the protocol used to say']
+
+  // --- Type and local impact ---------------------------------------------
+  AmendmentType   amendment_type   [not null, note: 'What part of the project changes']
+  // The two gates, one level down.
+  SiteImpact      site_impact      [not null, default: 'Notify research governance', note: 'What THIS SITE has to do once the committee approves it. A substantial amendment needs the site to authorise it again']
+
+  // --- Submission and decision -------------------------------------------
+  SubmittedBy     person           [note: 'Who lodged it with the committee']
+  SubmittedDate   date             [note: 'The date it was submitted to the committee']
+  Status          amendment_status [not null, default: 'Drafting', note: 'Where the amendment sits with the committee']
+  DecisionDate    date             [note: 'The date the committee decided']
+  HRECReference   nvarchar         [note: 'The reference the committee uses for this amendment, if it issues one separately']
+
+  // --- Local clearance ----------------------------------------------------
+  SiteClearedDate date             [note: 'The date the local action named above was completed. Blank means it has not been - an approved amendment is not implementable here until it is']
+  ImplementedDate date             [note: 'The date the change actually took effect at this site']
+  Notes           nvarchar         [note: 'Anything the next person needs']
+
+  indexes {
+    Project
+    Status
+    SiteImpact
+    SiteClearedDate
+    DecisionDate
+  }
+}
+
+Table ProgressReport {
+  Id               int           [pk, increment]
+  Title            nvarchar      [not null, note: 'One line: which report and for which period']
+  Project          int           [not null, ref: > Project.Id, note: 'The project this report is about']
+  ReportType       report_type   [not null, default: 'Annual progress', note: 'Which obligation this report discharges']
+
+  // --- Period and due date ------------------------------------------------
+  PeriodStart      date          [note: 'The first day of the period this report covers']
+  PeriodEnd        date          [note: 'The last day of the period this report covers']
+  // The reporting sweep works this column.
+  DueDate          date          [not null, note: 'When this report is due. Your committee sets the date - it is a condition of continued approval, not a courtesy']
+
+  // --- Preparation and submission ----------------------------------------
+  Status           report_status [not null, default: 'Not started', note: 'Where this report is up to']
+  PreparedBy       person        [note: 'Who is writing it']
+  SubmittedDate    date          [note: 'The date it went to the committee']
+  AcknowledgedDate date          [note: 'The date the committee acknowledged it. Until this exists, the obligation is not discharged']
+
+  // --- The filed record ---------------------------------------------------
+  // Design stance: the register indexes, the records system holds. The report
+  // itself contains exactly the participant-level content this list must not.
+  ReportUrl        hyperlink     [note: 'Link to the filed report in your records system. Do not paste report content into this list']
+  Notes            nvarchar      [note: 'What came back, in one line']
+
+  indexes {
+    Project
+    Status
+    DueDate
+    ReportType
+  }
+}

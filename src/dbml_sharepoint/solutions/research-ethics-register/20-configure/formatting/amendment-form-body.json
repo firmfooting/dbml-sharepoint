@@ -1,0 +1,20 @@
+{
+  "sections": [
+    {
+      "displayname": "The amendment",
+      "fields": ["Title", "Project", "AmendmentNumber", "ChangeSummary"]
+    },
+    {
+      "displayname": "Type and local impact",
+      "fields": ["AmendmentType", "SiteImpact"]
+    },
+    {
+      "displayname": "Submission and decision",
+      "fields": ["SubmittedBy", "SubmittedDate", "Status", "DecisionDate", "HRECReference"]
+    },
+    {
+      "displayname": "Local clearance",
+      "fields": ["SiteClearedDate", "ImplementedDate", "Notes"]
+    }
+  ]
+}

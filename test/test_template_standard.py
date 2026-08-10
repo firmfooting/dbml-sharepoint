@@ -42,8 +42,8 @@ from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 # This module is the family-standard conformance sweep: 22 rules, thirteen of
-# them parametrised across the whole template library, so 30 templates become
-# 399 of the suite's 1293 cases.
+# them parametrised across the whole template library, so 31 templates become
+# 413 of the suite's 1646 cases.
 #
 # The marker is for FOCUS, not speed. Measured: the full suite is 4.66s and
 # `-m "not conformance"` is 4.65s -- skipping a third of the cases saves
@@ -427,6 +427,41 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Chasing and resolution": "Act",
         "Review and escalation": "Govern",
         "System": "System",
+    },
+    # === Research ethics register ===========================================
+    # TWO CONSECUTIVE ACT SECTIONS, and they are the whole template. Ethics
+    # approval and site authorisation are separate gates with separate
+    # authorities, reference numbers and dates; merging them into one
+    # "Approvals" block is the collapse this register exists to prevent, so
+    # the form says it with two headings before anybody reads a word.
+    ("research-ethics-register", "Project"): {
+        "The project": "Identify",
+        "Review pathway": "Assess",
+        "Ethics decision": "Act",
+        "Site authorisation": "Act",
+        "Oversight": "Govern",
+        "System": "System",
+    },
+    # The same two-gate shape one level down, so the same doubled Act:
+    # what the committee decided, then what this site still has to do
+    # before the change is usable here. "Type and local impact" is the
+    # Assess beat - classifying how far an amendment reaches is the
+    # judgement that decides which of those two beats does any work.
+    ("research-ethics-register", "Amendment"): {
+        "The amendment": "Identify",
+        "Type and local impact": "Assess",
+        "Submission and decision": "Act",
+        "Local clearance": "Act",
+    },
+    # "Period and due date" is Assess for the same reason
+    # credentialing-register's "Issue and expiry" is: on an obligation
+    # register the dates ARE the assessment - what the report covers and
+    # when it is owed is what the row is weighed against.
+    ("research-ethics-register", "ProgressReport"): {
+        "The report": "Identify",
+        "Period and due date": "Assess",
+        "Preparation and submission": "Act",
+        "The filed record": "Govern",
     },
     # A chase is a small, complete arc: who you asked and what you asked
     # (Identify), what came back (Assess), and the artefact that proves it
@@ -1347,17 +1382,26 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
 
-    Measured 2026-07-31 across 30 templates / 53 entities: the distribution is
-    2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1, and the 5 is
-    opportunities-register/Opportunity (DecisionMaker, OpportunityOwner,
-    ProjectContact, plus Author and Editor). If this fails at 6, that is a
-    template growing a join column — update the number here DELIBERATELY, and
-    check the spec's survey paragraph with it."""
+    RE-MEASURED 2026-08-10 across 31 templates / 56 entities, when
+    research-ethics-register landed: the distribution is 2 -> 7, 3 -> 28,
+    4 -> 20, 5 -> 1, and the 5 is still opportunities-register/Opportunity
+    (DecisionMaker, OpportunityOwner, ProjectContact, plus Author and
+    Editor). The three new entities come in at 3 (Project: SiteInvestigator)
+    and 4 twice (Amendment and ProgressReport: one person and the Project
+    lookup) — that register keeps its principal investigator as TEXT rather
+    than a person column precisely because the investigator is usually at
+    another organisation, and the join it does not spend is a side benefit
+    worth recording. Previously measured 2026-07-31 across 30 templates / 53
+    entities at 2 -> 7, 3 -> 27, 4 -> 18, 5 -> 1.
+
+    If this fails at 6, that is a template growing a join column — update the
+    number here DELIBERATELY, and check the spec's survey paragraph with
+    it."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 30, (
-        f"{len(templates)} templates discovered, not the 30 this survey was "
+    assert len(templates) == 31, (
+        f"{len(templates)} templates discovered, not the 31 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster — re-measure the distribution and the worst count below "
         f"before trusting either."
