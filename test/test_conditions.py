@@ -1486,6 +1486,33 @@ def test_two_broken_leaves_on_one_column_are_two_findings() -> None:
     assert any("'contains'" in message for message in empty)
 
 
+def test_one_leaf_object_used_at_both_polarities_is_judged_at_both() -> None:
+    """Polarity is a property of an OCCURRENCE, not of an object.
+
+    Three things here key on `id(leaf)`: the operand suppression set, the
+    set of leaves normalisation flips, and the attribution of a normalised
+    fault to its origin. A caller building a tree in Python -- which the
+    grammar's own tests do -- can put ONE `Leaf` in two places at opposite
+    polarities, and identity then answers for both. The bare `not_contains`
+    below was skipped as though it were the negated one, so validation
+    passed and `to_caml` raised on it instead: a traceback where the whole
+    point was a named finding.
+
+    `parse_condition` never shares a leaf, so no mapping file can reach
+    this. That is a reason it went unnoticed, not a reason it is allowed --
+    `condition_findings` takes a `Condition`, not a path.
+    """
+    shared = Leaf("Note", "not_contains", "x")
+    condition = Group("all_of", (shared, Group("none_of", (shared,))))
+
+    findings = _findings(condition, target=CAML, types={"Note": "nvarchar"})
+
+    # The bare occurrence is emitted as written and CAML has no <NotContains>.
+    only(findings, FindingCode.CONDITION_NEGATIVE_TEXT_OPERATOR_UNRENDERABLE)
+    with pytest.raises(Exception, match="not_contains"):
+        to_caml(condition, {"Note": "nvarchar"})
+
+
 @pytest.mark.parametrize("declared", [
     {"none_of": [{"field": "Note", "op": "contains", "value": "x"}]},
     {"none_of": [{"field": "Count", "op": "gt", "value": 5}]},

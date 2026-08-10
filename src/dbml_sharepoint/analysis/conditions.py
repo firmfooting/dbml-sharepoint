@@ -1283,6 +1283,18 @@ def condition_findings(
     ]
 
 
+def _dealias(node: Condition) -> Condition:
+    """The same tree with a fresh `Leaf` object at every position.
+
+    Structurally identical and equal by value; only object identity differs,
+    which is exactly what the passes in `_condition_problems` use to mean
+    "this occurrence".
+    """
+    if isinstance(node, Leaf):
+        return replace(node)
+    return Group(node.kind, tuple(_dealias(child) for child in node.children))
+
+
 def _condition_problems(
     condition: Condition,
     *,
@@ -1295,6 +1307,22 @@ def _condition_problems(
     """The shared body. `context` renders the message prefixes; the caller
     supplies `at.path` for it when it wants locations back as well."""
     problems: list[_Problem] = []
+    # EVERY LEAF A DISTINCT OBJECT, before anything below keys on one. Three
+    # things here identify a leaf by `id` -- the operand suppression set, the
+    # set normalisation flips, and the attribution of a normalised fault to
+    # its origin -- and all three mean the leaf's OCCURRENCE in this tree.
+    # `parse_condition` never shares a leaf, so a mapping file cannot tell the
+    # difference; a caller building a tree in Python can, and did: one `Leaf`
+    # placed both bare and under `none_of` made `_flipped_by_normalisation`
+    # report the object as flipped, so the bare occurrence was skipped as
+    # though it were the negated one. Validation passed and `to_caml` raised
+    # on it -- a traceback where the whole point was a named finding.
+    #
+    # De-aliased rather than re-keyed on a path: a path would have to be
+    # threaded through all three, and the only property any of them wants is
+    # that two occurrences are two things. `Leaf` is frozen, so the copy is
+    # equal to the original everywhere it is compared.
+    condition = _dealias(condition)
     # Keyed by identity, not by field name: two leaves on one column can
     # fail for different reasons, and reporting only the first costs the
     # author another build.
