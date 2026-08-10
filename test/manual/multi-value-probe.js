@@ -250,7 +250,28 @@
     const r = await fetchWithRetry(apiUrl('contextinfo'), {
       method: 'POST', headers: { 'Accept': 'application/json;odata=verbose' },
     });
-    const info = (await r.json()).d.GetContextWebInformation;
+    // Named, because every write goes through here and this is the first
+    // request the probe makes. Reaching into the success-only `d` shape after
+    // a 401/403/500 threw a bare TypeError about `undefined`, which aborts the
+    // run before a single row is recorded and says nothing about why -- the
+    // one failure most likely to be a permissions problem the operator can
+    // fix, reported as a JavaScript bug.
+    if (!r.ok) {
+      const detail = spError(await r.text().catch(() => ''));
+      throw new Error(
+        `could not get a form digest (POST _api/contextinfo -> HTTP ${r.status}): ${detail}. `
+        + 'Every write in this probe needs one, so nothing below could have run. '
+        + 'Check you are signed in as a Site Owner on this web.',
+      );
+    }
+    const body = await r.json().catch(() => null);
+    const info = body?.d?.GetContextWebInformation;
+    if (!info?.FormDigestValue) {
+      throw new Error(
+        'the form digest response was not the documented shape '
+        + '(d.GetContextWebInformation.FormDigestValue missing). Nothing below could have run.',
+      );
+    }
     cachedDigest = info.FormDigestValue;
     digestExpiresAt = Date.now() + Math.max((Number(info.FormDigestTimeoutSeconds) || 1800) - 60, 60) * 1000;
     return cachedDigest;
@@ -1006,9 +1027,22 @@
     // the operator will be looking at. An absent, emptied or rewritten
     // CustomFormatter renders the default cell, and a default cell reported as
     // "the repository formatter did nothing" is a false verdict of exactly the
-    // kind X1 exists to catch. So the two expressions that decide the render
-    // are read back and compared -- they are what the measurement DEPENDS ON.
-    // What the cell then LOOKS like stays the observation, and is not asserted.
+    // kind X1 exists to catch. So the stored formatter is read back and
+    // compared -- it is what the measurement DEPENDS ON. What the cell then
+    // LOOKS like stays the observation, and is not asserted.
+    //
+    // The WHOLE object, not the two expressions that pick the colour. X1 asks
+    // four questions and one of them is what TEXT the cell shows, which is
+    // `children[0].txtContent`; `elmType` decides whether there is a box to
+    // colour at all. A comparison that covered only `class` and `style` would
+    // let a dropped child produce a missing-text answer attributed to
+    // MultiChoice, which is the same false verdict one level down.
+    //
+    // Deep-equal on the PARSED objects, so key order and whitespace are not
+    // the test. If SharePoint normalises the formatter in some way that turns
+    // out to be harmless, this row says NOT ESTABLISHED and prints what came
+    // back -- enough to tighten the comparison knowingly on the next run,
+    // rather than a MANUAL verdict about a formatter nobody compared.
     const formatterBack = formatted.ok
       ? await get(`${fieldPath(MULTI)}?$select=CustomFormatter`)
       : null;
@@ -1018,9 +1052,14 @@
     } catch (err) {
       storedFormatter = null;
     }
-    const formatterHeld = !!storedFormatter
-      && storedFormatter.attributes?.class === severityFormatter.attributes.class
-      && storedFormatter.style?.display === severityFormatter.style.display;
+    const sameJson = (a, b) => {
+      if (a === b) return true;
+      if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+      if (Array.isArray(a) !== Array.isArray(b)) return false;
+      const [ka, kb] = [Object.keys(a), Object.keys(b)];
+      return ka.length === kb.length && ka.every((k) => sameJson(a[k], b[k]));
+    };
+    const formatterHeld = sameJson(storedFormatter, severityFormatter);
     // Gated on the column actually being ON the view the operator is sent to.
     // Run 2 answered X1 from a view with no Evt column in it, which is not a
     // weaker answer than the real one -- it is a different question. A
@@ -1039,8 +1078,11 @@
             + `one now on the column: readback ${formatterBack?.ok
               ? show(formatterBack.d?.CustomFormatter)
               : `FAILED HTTP ${formatterBack?.status} ${formatterBack?.error}`}. `
+            + `wrote ${show(JSON.stringify(severityFormatter))}. `
             + 'Looking at the cell would report how SOME other formatter (or none) renders, so no rendering '
-            + 'answer is established by this run. Fix the store and re-run.'
+            + 'answer is established by this run. If the difference turns out to be a harmless '
+            + 'normalisation, tighten the comparison to ignore that part and re-run; do not read a verdict '
+            + 'off a formatter this run did not confirm.'
           : !multiOnDefaultView.ok
             ? `the formatter was stored and read back intact (HTTP ${formatted.status}), but ${MULTI} could not `
               + `be added to the default view (HTTP ${multiOnDefaultView.status} ${multiOnDefaultView.error}), `
@@ -1072,9 +1114,18 @@
       + `validation=${results.find((r) => r.id === 'V1').observed} `
       + `calculated=${results.find((r) => r.id === 'F1').observed}`,
     );
+    // The VERDICT lines are what gets pasted back, so a value here is read as
+    // the finding whatever the table beside it says. `membershipWinner` is
+    // chosen from whichever predicate returned the two View-bearing rows --
+    // which an incomplete or mutated fixture can produce by accident -- so it
+    // is only a membership answer while the fixture it was chosen from is
+    // established. The C rows already say NOT ESTABLISHED individually; this
+    // line was still naming a winner.
     log(
       'VERDICT',
-      `caml_membership=${membershipWinner ? membershipWinner.label : 'NONE FOUND'} `
+      `caml_membership=${camlFixtureUsable
+        ? (membershipWinner ? membershipWinner.label : 'NONE FOUND')
+        : 'NOT ESTABLISHED (fixture failed - do not report this run)'} `
       + 'stored_view=<fill in after looking> formatter=<fill in after looking>',
     );
     if (!camlFixtureUsable) {
