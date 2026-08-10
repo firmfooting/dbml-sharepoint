@@ -6,15 +6,19 @@ than `Prompt.ask` keeps the real prompt objects -- including their default
 handling and their validation of a `choices=` answer -- under test.
 """
 
+import hashlib
 import io
+import shutil
+import sys
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from rich.console import Console
 
 from dbml_sharepoint import wizard
-from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, load_solution
+from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, Solution, load_solution
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 
@@ -28,8 +32,8 @@ class ScriptedConsole(Console):
     exit code rather than hanging.
     """
 
-    def __init__(self, answers: Sequence[str]) -> None:
-        super().__init__(file=io.StringIO(), width=100, force_terminal=False)
+    def __init__(self, answers: Sequence[str], width: int = 100) -> None:
+        super().__init__(file=io.StringIO(), width=width, force_terminal=False)
         self._answers = list(answers)
 
     def input(self, prompt: object = "", **kwargs: object) -> str:
@@ -56,6 +60,89 @@ def _answers(destination: Path, *, build: str = "n", **over: str) -> list[str]:
     }
     script.update(over)
     return [*script.values(), build]
+
+
+def _collapsed(console: ScriptedConsole) -> str:
+    """What the user was shown, on one line.
+
+    Rich wraps at the console width, so a substring assertion against the
+    raw text is a false negative waiting to happen -- a message can be
+    correct and still fail the check because it broke over two lines.
+    """
+    return " ".join(console.text.split())
+
+
+#: The smallest mapping `load_mapping` accepts, which is what the wizard
+#: reads back after rewriting the prefix and again to find the site roles.
+_ONE_ENTITY = (
+    'prefix: "OLD_"\n'
+    "entities:\n"
+    "  Risk: { kind: List, base_template: 100, site_role: default }\n"
+)
+
+
+def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
+    """A minimal stand-in for a shipped family, and the `Solution` for it.
+
+    Used where the point of the test is a shape no shipped template has --
+    a mapping declaring two site roles, one with no `prefix:` line at all.
+    Inventing the template is honest there; doctoring a real one would
+    mostly test the doctoring, and pinning a behaviour to a shipped family
+    that happens to have the shape today breaks when it stops having it.
+    """
+    (root / "10-design").mkdir(parents=True, exist_ok=True)
+    (root / "20-configure").mkdir(parents=True, exist_ok=True)
+    (root / "10-design" / "schema.dbml").write_text("", encoding="utf-8")
+    (root / "20-configure" / "mapping.yaml").write_text(mapping, encoding="utf-8")
+    (root / "20-configure" / "release.yaml").write_text("", encoding="utf-8")
+    return Solution(
+        id="fake-template",
+        title="Fake",
+        summary="s",
+        lists=("Risk",),
+        prefix="OLD_",
+        root=root,
+    )
+
+
+def _offer_only(monkeypatch: pytest.MonkeyPatch, solution: Solution) -> None:
+    monkeypatch.setattr(wizard, "available_solutions", lambda: [solution])
+
+
+def _capture_build(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """Record what the wizard hands `execute_build`, and build nothing.
+
+    The real build is exercised by `test_building_now_produces_a_pasteable_
+    bundle`; these tests are about the arguments the wizard assembles, which
+    a successful build cannot distinguish -- `build` accepts a site role it
+    was never asked about just as happily as the right one.
+    """
+    from dbml_sharepoint import cli
+
+    captured: dict[str, object] = {}
+
+    def record(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "execute_build", record)
+    return captured
+
+
+def _tree_digest(root: Path) -> dict[str, str]:
+    """Content hashes for a tree, ignoring what the wizard refuses to copy.
+
+    `build/` and `reports/` are gitignored, so they exist only in a
+    contributor's checkout -- and a test that hashed them would fail for
+    whoever had built the template by hand rather than for a real change.
+    """
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(
+            path.read_bytes(),
+        ).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+        and not set(path.relative_to(root).parts) & set(wizard._NEVER_COPY)
+    }
 
 
 def test_scaffolds_the_whole_family(tmp_path: Path) -> None:
@@ -522,3 +609,309 @@ def test_every_scaffolded_file_is_written_with_lf(tmp_path: Path) -> None:
         if path.is_file() and b"\r\n" in path.read_bytes()
     ]
     assert not crlf, f"scaffolded with CRLF: {crlf}"
+
+
+def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
+    tmp_path: Path,
+) -> None:
+    """A path that exists and is not a directory needs its own answer.
+
+    It cannot fall through to the emptiness check -- `iterdir` on a file
+    raises `NotADirectoryError`, so the wizard would traceback out of a
+    prompt on nothing worse than a mistyped path, and one character is all
+    it takes to name a file next to the directory you meant.
+    """
+    occupied = tmp_path / "notes.txt"
+    occupied.write_text("keep me", encoding="utf-8")
+    destination = tmp_path / "proj"
+
+    console = ScriptedConsole([
+        "risk-register",
+        str(occupied),      # refused
+        str(destination),   # accepted
+        "RR_",
+        "https://contoso.sharepoint.com/sites/x",
+        "y",
+        "n",
+    ])
+
+    assert wizard.run_wizard(console) == 0
+    assert occupied.read_text(encoding="utf-8") == "keep me"
+    assert "exists and is not a directory" in _collapsed(console)
+    assert (destination / "README.md").is_file()
+
+
+def test_a_whitespace_only_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
+    """The empty half of the prefix guard, which the character class cannot
+    catch: ` ` strips to nothing, and writing `prefix: ""` would rename
+    every list in the template to its bare entity name without ever saying
+    so."""
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "risk-register",
+        str(destination),
+        "   ",   # refused: strips to empty
+        "RR_",
+        "https://contoso.sharepoint.com/sites/x",
+        "y",
+        "n",
+    ])
+
+    assert wizard.run_wizard(console) == 0
+    assert load_mapping(
+        destination / "20-configure" / "mapping.yaml",
+    ).mapping.prefix == "RR_"
+
+
+def test_a_number_outside_the_table_reprompts_rather_than_indexing(
+    tmp_path: Path,
+) -> None:
+    """`0` and a number past the end are both digits, and neither is a row.
+
+    Nothing stops somebody typing the count of templates plus one, and a
+    bare `int(answer) - 1` index would have handed back the LAST template
+    for `0` -- silently scaffolding a family they did not choose.
+    """
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "0",     # refused
+        "999",   # refused
+        "risk-register",
+        str(destination),
+        "RR_",
+        "https://contoso.sharepoint.com/sites/x",
+        "y",
+        "n",
+    ])
+
+    assert wizard.run_wizard(console) == 0
+    assert (destination / "30-deploy" / "deploy.md").is_file()
+    assert _collapsed(console).count("No template") == 2
+
+
+def test_a_second_prefix_key_defeats_the_rewrite_and_the_read_back_says_so(
+    tmp_path: Path,
+) -> None:
+    """The case the read-back exists for: the text changed, the meaning did not.
+
+    The rewrite is a targeted `count=1` line edit, and YAML lets the last
+    duplicate key win -- so a mapping declaring `prefix:` twice takes the
+    edit on the first line and loads the second. Re-reading the *text*
+    would have called that a success; only loading the mapping the build
+    will load catches it, which is why the check is written that way.
+    """
+    mapping = tmp_path / "mapping.yaml"
+    mapping.write_text(
+        'prefix: "A_"\nentities: {}\nprefix: "B_"\n', encoding="utf-8",
+    )
+
+    with pytest.raises(wizard.WizardError, match="loaded back as 'B_'"):
+        wizard._rewrite_prefix(mapping, "NEW_")
+
+
+def test_a_template_with_no_prefix_line_is_reported_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_rewrite_prefix` fails closed, and the wizard has to carry that
+    through to an exit code rather than letting a `WizardError` out of a
+    prompt loop. The user is told what went wrong and nothing half-written
+    is presented as a project."""
+    solution = _fake_family(tmp_path / "fake", mapping="entities: {}\n")
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, template="fake-template", prefix="NEW_"),
+    )
+
+    assert wizard.run_wizard(console) == 1
+    reported = _collapsed(console)
+    assert "Could not scaffold the project" in reported
+    assert "no top-level `prefix:` line" in reported
+
+
+def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other arm of the same guard: `copytree` raising `OSError`.
+
+    A template the catalogue offered and the filesystem then could not
+    supply is not a case the wizard can recover from, but it is one it must
+    name -- an unhandled `FileNotFoundError` out of `shutil` names the
+    wizard's internals instead of the template.
+    """
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+    shutil.rmtree(solution.root)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "Could not scaffold the project" in _collapsed(console)
+    assert not destination.exists()
+
+
+def test_a_template_whose_lists_could_not_be_read_is_still_described(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The catalogue deliberately returns no lists rather than refusing.
+
+    `_mapping_facts` uses a plain `safe_load` of two keys precisely so one
+    malformed template cannot take the picker down with it -- which means
+    the describe panel has to render for a template with nothing to list,
+    and say so, rather than showing an empty `Lists` line that reads like
+    the template provisions nothing.
+    """
+    solution = replace(_fake_family(tmp_path / "fake"), lists=())
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 0
+    assert "(none declared)" in _collapsed(console)
+
+
+def test_the_summary_names_every_answer_before_the_write_is_confirmed(
+    tmp_path: Path,
+) -> None:
+    """The confirm is the only chance to catch a mistyped answer.
+
+    Four questions back, "Write these files?" is not enough on its own to
+    review -- the panel above it is what the operator actually checks, and
+    a panel that omitted one of the four would be worse than no panel,
+    because it looks like a complete summary.
+    """
+    destination = tmp_path / "proj"
+    site_url = "https://contoso.sharepoint.com/sites/ops"
+    # Wide, so the destination path cannot be folded mid-word by the wrap.
+    console = ScriptedConsole(
+        _answers(destination, prefix="ACME_", site_url=site_url), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    reported = _collapsed(console)
+    before_confirm = reported.split("Write these files?")[0]
+    assert "risk-register" in before_confirm
+    assert str(destination) in before_confirm
+    assert "ACME_" in before_confirm
+    assert site_url in before_confirm
+
+
+def test_the_only_declared_site_role_is_not_asked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question with one possible answer is not a question.
+
+    Every shipped family declares `default` and nothing else, so asking
+    would put a prompt in front of all thirty of them to collect an answer
+    the mapping already gives. The script here carries no answer for it, so
+    a wizard that asked would run out of input and exit 130.
+    """
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, build="y"))
+
+    assert wizard.run_wizard(console) == 0
+    assert "Site role" not in _collapsed(console)
+    assert captured["site_role"] == "default"
+    assert captured["mapping"] == destination / "20-configure" / "mapping.yaml"
+    assert captured["schema"] == destination / "10-design" / "schema.dbml"
+    assert captured["release"] == destination / "20-configure" / "release.yaml"
+    assert captured["out"] == destination / "build"
+
+
+def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """And offers exactly the roles the mapping declares, not a fixed list.
+
+    No shipped family has a second role today, so nothing else reaches this
+    branch -- but a multi-site mapping is the documented reason `--site-role`
+    exists, and the vocabulary has to stay data-driven the way `build` and
+    `report` keep it. A hardcoded `default | admin` here would refuse a
+    perfectly good mapping whose roles are `hq` and `branch`.
+    """
+    solution = _fake_family(
+        tmp_path / "fake",
+        mapping=_ONE_ENTITY + (
+            "  Archive: { kind: List, base_template: 100, site_role: archive }\n"
+        ),
+    )
+    _offer_only(monkeypatch, solution)
+    captured = _capture_build(monkeypatch)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "fake-template",
+        str(destination),
+        "NEW_",
+        "https://contoso.sharepoint.com/sites/x",
+        "y",          # write
+        "y",          # build
+        "archive",    # site role
+    ])
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["site_role"] == "archive"
+
+
+def test_the_shipped_template_is_never_written_to(tmp_path: Path) -> None:
+    """The wizard rewrites the COPY, and only the copy.
+
+    Everything it edits -- the prefix line, the placeholders in the
+    documentation -- is edited in place, so a path assembled against the
+    solution's root rather than the destination would rewrite the template
+    inside the installed package. It would work perfectly for the operator
+    who ran it, and hand the next one a template carrying somebody else's
+    prefix and somebody else's site URL.
+    """
+    root = load_solution("risk-register").root
+    before = _tree_digest(root)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination,
+            prefix="ACME_",
+            site_url="https://contoso.sharepoint.com/sites/ops",
+            build="y",
+        ),
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert _tree_digest(root) == before
+
+
+@pytest.mark.parametrize(
+    ("stdin_tty", "stdout_tty", "expected"),
+    [(True, True, True), (True, False, False), (False, True, False)],
+)
+def test_prompting_needs_both_streams_to_be_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stdin_tty: bool,
+    stdout_tty: bool,
+    expected: bool,
+) -> None:
+    """Either stream being redirected means nobody can answer.
+
+    `dbml-sharepoint | tee log` has a terminal on stdin and a pipe on
+    stdout: the prompts go into the file and the user sees a hung command.
+    That is the case a stdin-only check misses, and the caller falls back to
+    printing help -- which is what a bare invocation did before the wizard
+    existed.
+    """
+
+    class Stream:
+        def __init__(self, tty: bool) -> None:
+            self._tty = tty
+
+        def isatty(self) -> bool:
+            return self._tty
+
+    monkeypatch.setattr(sys, "stdin", Stream(stdin_tty))
+    monkeypatch.setattr(sys, "stdout", Stream(stdout_tty))
+
+    assert wizard.stdin_is_interactive() is expected
