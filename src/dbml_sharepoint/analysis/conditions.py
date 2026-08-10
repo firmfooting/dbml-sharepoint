@@ -85,6 +85,10 @@ NEGATION: dict[str, str] = {
     "not_contains": "contains",
     "begins_with": "not_begins_with",
     "not_begins_with": "begins_with",
+    # Membership, for a MULTI-VALUE column and only for one. `eq` is not
+    # widened to mean this: see `_MEMBERSHIP_OPS`.
+    "includes": "not_includes",
+    "not_includes": "includes",
 }
 
 # Bounds keep a pathological declaration a build error rather than a
@@ -94,6 +98,14 @@ MAX_LEAVES = 32
 
 # Their own inverses, and never null-ambiguous.
 _NULL_TESTS = frozenset({"is_null", "is_not_null"})
+
+# Negative operators whose own rendering already admits the empty value, so
+# `_push` must not OR a second `is_null` arm around them. `neq` and `not_in`
+# define the empty value as outside the compared literal or set and say so in
+# their renderers; `not_includes` is here on a MEASUREMENT rather than on the
+# resemblance -- probe C9, 2026-08-10, found a bare `<Neq>` against a
+# MultiChoice column returning the rows without the member AND the empty row.
+_NULL_INCLUSIVE_NEGATIVES = frozenset({"neq", "not_in", "not_includes"})
 
 _FLIP: dict[str, str] = {"all_of": "any_of", "any_of": "all_of"}
 
@@ -142,11 +154,11 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # blank, so none_of must be true — and dropping it would change
             # output for a shape that already exists on main.
             return flipped
-        if node.op in ("neq", "not_in") or flipped.op in ("neq", "not_in"):
-            # These two inverse operators define the empty value as outside
-            # the compared literal/set. Their renderers already carry that
+        if node.op in _NULL_INCLUSIVE_NEGATIVES or flipped.op in _NULL_INCLUSIVE_NEGATIVES:
+            # These inverse operators define the empty value as outside the
+            # compared literal/set. Their renderers already carry that
             # semantic, so adding another null arm here would only duplicate
-            # it in every none_of[eq/in] tree.
+            # it in every none_of[eq/in/includes] tree.
             return flipped
         # SharePoint comparisons are three-valued: CAML's bare Leq does NOT
         # match rows where the column is empty, so a bare operator flip would
@@ -221,6 +233,18 @@ _CAML_OP_TAGS: dict[str, str] = {
     "eq": "Eq", "neq": "Neq", "lt": "Lt", "leq": "Leq", "gt": "Gt", "geq": "Geq",
     "is_null": "IsNull", "is_not_null": "IsNotNull",
     "contains": "Contains", "begins_with": "BeginsWith",
+    # NOT <Includes>/<NotIncludes>, and this is the sharpest measurement in
+    # the whole feature. Learn documents those two elements for a multi-value
+    # LOOKUP and documents nothing for MultiChoice; against a live MultiChoice
+    # column on 2026-08-10 both returned an EMPTY SET WITH NO ERROR (probe C4,
+    # C5), while the undocumented <Eq> did the membership test (C1: the two
+    # rows containing the member) and <Neq> its negative (C9). A grammar that
+    # emitted the documented elements would produce a view that is always
+    # empty, on a build that passes and a deploy that verifies clean -- this
+    # project's exact failure class. The two operators Learn documents are the
+    # two that are broken, so the authored names borrow their spelling and
+    # emit what was measured instead.
+    "includes": "Eq", "not_includes": "Neq",
 }
 _EXPR_OPS: dict[str, str] = {
     "eq": "==", "neq": "!=", "lt": "<", "leq": "<=", "gt": ">", "geq": ">=",
@@ -256,7 +280,9 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 #
 # EMPTY, and what the emptiness means is narrower than it looks: nothing is
 # waiting on a probe that has been WRITTEN AND NOT RUN. It is not a claim
-# that all fourteen operators here were watched.
+# that all fourteen operators the expression target renders were watched.
+# (Fourteen, not sixteen: `includes`/`not_includes` are CAML-only, and a
+# multi-value column is refused on this target as an operand outright.)
 #
 # What was watched, on 2026-07-29 and by eye
 # (test/manual/expression-text-operators-probe.js): the four TEXT operators.
@@ -391,6 +417,76 @@ _MULTI_VALUE_OPERAND_REFUSALS: dict[str, str] = {
         "the formula would still save and still never react"
     ),
 }
+
+# The authored spelling of membership, and the whole answer to the design
+# question a multi-value column asks: what should `eq` mean against a set?
+#
+# It means MEMBERSHIP to SharePoint. Measured 2026-08-10 on a live tenant over
+# three runs, against the fixture R1 {View} R2 {View,Edit} R3 {Edit,Export}
+# R4 {}: `<Eq>` "View" returned R1 and R2 -- the rows CONTAINING the member,
+# not the row whose whole set is {View}.
+#
+# The tempting move is to let the authored `eq` carry that, since the renderer
+# would emit the same XML either way. It is refused, and the reason is not
+# tidiness. `eq` would then mean equality on a scalar column and membership on
+# a multi-value one, separated only by a `[]` in a DBML file the mapping does
+# not show -- so a reader of `{field: Events, op: eq, value: View}` could not
+# tell which question was being asked, and adding `[]` to a column's type would
+# silently change the meaning of every filter already written against it, on a
+# green build. This module already refuses that trade once: PROPERTY_ACCESSORS
+# exists because "there is no defensible default between a person's display
+# name, their email and their id, so the accessor is DECLARED rather than
+# guessed". Same shape, same answer.
+#
+# So membership is its own operator, it is legal only where it was measured,
+# and `eq` on a multi-value column is a named build error pointing at it.
+_MEMBERSHIP_OPS = frozenset({"includes", "not_includes"})
+
+# What a multi-value column can be asked, per target. A miss is refused by
+# name; a target absent from this table can be asked NOTHING, which is the
+# fails-closed direction -- the formula targets refuse the operand outright
+# just above, and any target added later starts from nothing rather than from
+# the scalar vocabulary.
+#
+# Only these four were measured, and each was measured directly:
+#   includes      -> <Eq>          C1: R1 + R2, and C8 survives a stored view
+#   not_includes  -> <Or><IsNull><Neq></Or>
+#                                  C9: R3 + R4 (a bare Neq ALREADY admits the
+#                                  empty row here, unlike single-value CAML),
+#                                  C6: R4, so the union is R3 + R4 either way
+#   is_null       -> <IsNull>      C6: R4
+#   is_not_null   -> <IsNotNull>   C7: R1 + R2 + R3
+#
+# What is deliberately absent, and why refusing is not a rule stronger than
+# the platform:
+#   * `contains` WORKS -- C3 returned R1 and R2. It is refused because that
+#     result cannot distinguish membership from a substring match over the
+#     delimited form, the two readings disagree for a needle that is a prefix
+#     of a member, and no probe has sent one. Every case C3 observed is
+#     `includes`, so nothing measured becomes inexpressible.
+#   * `in`/`not_in` would be "intersects" rather than "is one of" -- the same
+#     arity-overloading trap as `eq`, one level up. `any_of`/`all_of` over
+#     `includes` says it in the author's own vocabulary.
+#   * the ordering operators and `begins_with` were never asked, and a set has
+#     no order.
+_MULTI_VALUE_OPERATORS: dict[str, frozenset[str]] = {
+    CAML: _MEMBERSHIP_OPS | _NULL_TESTS,
+}
+
+# SharePoint's own separator between the members of a set on the wire.
+# Measured C2: `<Eq>` against "View;#Edit" matched the row whose set is exactly
+# {View, Edit} -- so the SAME operator answers a second, different question,
+# and the only thing distinguishing them is whether the value happens to
+# contain these two characters. That is undetectable when reading a mapping,
+# so the delimited form is refused rather than offered.
+#
+# Nor is it given an operator of its own. `<Eq>` was measured in one direction
+# only -- its negation never was -- and the comparison is against a string, so
+# it is order-sensitive: the same set declared in the other order would match
+# nothing, silently. Exact-set equality is therefore not expressible by this
+# tool, which the reference documentation says outright rather than leaving an
+# author to discover.
+_SET_DELIMITER = ";#"
 
 _NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
@@ -983,6 +1079,60 @@ def _column_type(field: str, types: dict[str, str], target: str, at: Location) -
     return types[field]
 
 
+def _check_arity(leaf: Leaf, declared_type: str, target: str, where: Location) -> None:
+    """Whether this operator means anything against a column of this ARITY.
+
+    Both directions are guarded, and that is the point rather than symmetry
+    for its own sake. Guarding only the scalar operators would leave
+    `includes` rendering `<Eq>` on a single-value Choice and quietly meaning
+    equality; guarding only membership would leave `eq` quietly meaning
+    membership on a set. Either hole gives one authored word two meanings, and
+    a mapping shows neither.
+    """
+    if is_multi_value(declared_type):
+        allowed = _MULTI_VALUE_OPERATORS.get(target, frozenset())
+        if leaf.op not in allowed:
+            raise _reject(
+                FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED,
+                target,
+                f"{leaf.field!r} holds many values, and operator {leaf.op!r} has "
+                f"no verified rendering against one. Measured on a live tenant "
+                f"on 2026-08-10, CAML's <Eq> against a multi-value column tests "
+                f"MEMBERSHIP rather than equality, so this grammar spells that "
+                f"'includes' and refuses {leaf.op!r} rather than letting one "
+                f"word mean two things. Available here: "
+                f"{', '.join(sorted(allowed))}; combine several with "
+                f"all_of/any_of. (<Includes>/<NotIncludes>, which Microsoft "
+                f"documents, returned nothing at all and are not emitted.)",
+                where,
+            )
+        if leaf.op in _MEMBERSHIP_OPS and _SET_DELIMITER in str(leaf.value):
+            raise _reject(
+                FindingCode.MULTI_VALUE_SET_EQUALITY_UNSUPPORTED,
+                target,
+                f"{leaf.value!r} contains {_SET_DELIMITER!r}, which is how "
+                f"SharePoint delimits the members of a set. Measured on "
+                f"2026-08-10: <Eq> against a delimited value stops testing "
+                f"membership and matches the WHOLE SET instead, so this one "
+                f"leaf would silently ask a different question from the one it "
+                f"reads like. Name a single member; exact-set equality is not "
+                f"expressible here, because only its positive form was measured "
+                f"and the comparison is order-sensitive",
+                where,
+            )
+    elif leaf.op in _MEMBERSHIP_OPS:
+        scalar = "eq" if leaf.op == "includes" else "neq"
+        raise _reject(
+            FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN,
+            target,
+            f"operator {leaf.op!r} tests whether a column CONTAINS a value, and "
+            f"{leaf.field!r} is {declared_type!r}, which holds exactly one. Use "
+            f"{scalar!r} -- or declare the column as an array of its enum, "
+            f"`{declared_type}[]`, if it really does hold many",
+            where,
+        )
+
+
 def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
     where = _at(at, leaf.field)
     _check(leaf, target, where)
@@ -1019,6 +1169,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             f"multi-value column is the one target that works",
             where,
         )
+    _check_arity(leaf, declared_type, target, where)
     forbidden = _FORBIDDEN_OPERAND_TYPES.get(target, {})
     if declared_type in forbidden:
         raise _reject(
@@ -1104,10 +1255,21 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
         if leaf.op in _VALUELESS_OPS:
             return f"<{tag}>{ref}</{tag}>"
         rendered = f"<{tag}>{ref}{_caml_value(column_type, leaf.value, where)}</{tag}>"
-        if leaf.op == "neq":
+        if leaf.op in ("neq", "not_includes"):
             # Neq is the exact inverse of Eq in the authored grammar. CAML
             # comparisons are three-valued, so make the empty case explicit
             # to match the expression and validation targets.
+            #
+            # `not_includes` takes the SAME wrapper, and measurement says it
+            # need not: on a multi-value column a bare <Neq> already returns
+            # the empty row (probe C9, 2026-08-10, R3 + R4), unlike every
+            # single-value column, and C10 measured the composed form
+            # returning exactly the same rows. So the wrapper is redundant
+            # here rather than wrong, and it is kept because uniformity is
+            # worth more than the four elements it saves -- one `neq`
+            # rendering, correct on both arities, with no branch to get
+            # backwards. Nothing rests on <Or> child order either: C9 gives
+            # R3 + R4 and C6's <IsNull> gives R4, a subset.
             return f"<Or><IsNull>{ref}</IsNull>{rendered}</Or>"
         return rendered
 

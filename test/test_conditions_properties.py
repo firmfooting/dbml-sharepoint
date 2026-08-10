@@ -3,7 +3,7 @@
 `test_conditions.py` holds 114 hand-written cases, each pinning one shape the
 grammar has to handle. They are good at the shapes somebody thought of. What
 they cannot do is search: the normaliser rewrites an arbitrary tree of
-`all_of`/`any_of`/`none_of` over fourteen operators, with `property` and
+`all_of`/`any_of`/`none_of` over sixteen operators, with `property` and
 `measure` variants on every leaf, and the interesting bugs live in
 combinations nobody enumerated.
 
@@ -286,15 +286,19 @@ def test_relational_negation_admits_the_empty_row(op: str, threshold: int) -> No
 
 
 def test_the_strategy_covers_every_negatable_operator() -> None:
-    """The generator must be able to produce all fourteen operators.
+    """The generator must be able to produce all sixteen operators.
 
     Without this, narrowing NEGATABLE_OPS -- or a typo in the strategy --
     would quietly shrink what the properties above explore while every one of
     them still passed. A property suite that tests less than it claims is
     worse than none, because it reads like coverage.
+
+    Sixteen since `includes`/`not_includes` joined the grammar. The count is
+    spelled out rather than derived so that adding an operator has to come
+    here and say so, which is how the strategy stays as wide as the grammar.
     """
     assert set(NEGATABLE_OPS) == set(NEGATION)
-    assert len(NEGATABLE_OPS) == 14
+    assert len(NEGATABLE_OPS) == 16
 
 
 def test_the_bounds_are_still_what_the_properties_assume() -> None:
