@@ -611,6 +611,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "formulas\"; show/hide is documented unsupported and would save and "
         "silently never react. A VIEW filter over the same column works."
     ),
+    FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL: (
+        "A `severity` or `pill` style sits on a multi-value column. Both "
+        "compare `@currentField` against quoted strings and a multi-value "
+        "field is an array, so no branch matches and every cell takes the "
+        "fallback. Watched on a live site on 2026-08-10: that is a filled "
+        "grey cell on every row -- a verdict rather than a gap, and "
+        "invisible to the build and the deploy alike."
+    ),
     FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED: (
         "`[unique]` is declared on a multi-value column. SharePoint cannot "
         "enforce unique values on a Choice (multi-valued) column, and "

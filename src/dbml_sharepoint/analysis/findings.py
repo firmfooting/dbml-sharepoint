@@ -250,6 +250,16 @@ class FindingCode(StrEnum):
     STYLE_REQUIRES_CALCULATED = "style_requires_calculated", "error"
     STYLE_CALCULATED_TYPE_MISMATCH = "style_calculated_type_mismatch", "error"
     STYLE_ON_BOOLEAN_MATCHES_NOTHING = "style_on_boolean_matches_nothing", "error"
+    # Its sibling above, one measurement later. The two rules share a cause --
+    # a quoted-string comparison against a value that is not a string -- and
+    # differ in what the reader is left looking at, which is the only thing a
+    # code has to say. The boolean case renders UNSTYLED; the multi-value case
+    # was watched on a tenant on 2026-08-10 rendering a neutral fill on every
+    # row, which is worse, because a gap reads as a gap and a fill reads as a
+    # verdict. The name says what was seen: not an absence, a false neutral.
+    MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL = (
+        "multi_value_style_renders_a_false_neutral", "error"
+    )
     STYLE_MAP_KEY_NOT_IN_ENUM = "style_map_key_not_in_enum", "error"
     COLOR_BY_MAP_KEY_NOT_IN_ENUM = "color_by_map_key_not_in_enum", "error"
     TREND_AGAINST_NOT_RENDERED = "trend_against_not_rendered", "error"

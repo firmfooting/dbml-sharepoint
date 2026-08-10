@@ -9,6 +9,7 @@ from dbml_sharepoint.analysis.conditions import (
     validate_condition,
 )
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.typemap import is_multi_value
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
     SYSTEM_COLUMNS,
@@ -111,7 +112,53 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{calculated_type_for_style}, not {target_type}.",
                     location=at,
                 ))
-            if style in ("severity", "pill") and types_by_col.get(col_name) == "boolean":
+            if style in ("severity", "pill") and is_multi_value(
+                types_by_col.get(col_name, ""),
+            ):
+                # WATCHED ON A TENANT, and the sharper half of this rule is
+                # what was seen rather than what was predicted.
+                #
+                # The prediction from reading `styles._condition` was that
+                # `@currentField == 'View'` against an array is false in every
+                # branch and the cell renders unstyled -- the boolean case
+                # above, exactly. Probe run 3 on 2026-08-10 looked at the
+                # rendered page: the =if chain matches nothing, falls through
+                # to its `muted` fallback, and fills the cell FLAT GREY on
+                # every row.
+                #
+                # That is why this is an error and why it is not called
+                # "matches nothing". An unstyled cell reads as a gap. A
+                # uniform neutral fill reads as a verdict, on a template whose
+                # whole product is a capability matrix scanned at a glance,
+                # and an operator has no way to tell that the formatter never
+                # understood the value. Nothing in the build or the deploy can
+                # see it either: the JSON saves, reads back byte-identical and
+                # passes every phase.
+                #
+                # Both chip styles from one measurement, and the second is not
+                # an assertion about SharePoint -- `_severity` and `_pill`
+                # build the same `_if_chain` over the same `_condition` and
+                # both fall back to `muted`, which is readable here.
+                #
+                # @currentField on a multi-value field IS an array -- `length`
+                # counts its members, `join` concatenates them, `forEach`
+                # iterates them -- so an array-aware formatter is possible.
+                # None is offered until somebody has watched one render.
+                # https://learn.microsoft.com/sharepoint/dev/declarative-customization/column-formatting
+                findings.append(Finding(
+                    FindingCode.MULTI_VALUE_STYLE_RENDERS_A_FALSE_NEUTRAL,
+                    f"{ctx}: {style} on a multi-value column paints a neutral "
+                    f"fill on every row. The style compares @currentField "
+                    f"against quoted strings and a multi-value field is an "
+                    f"array, so no branch matches and every cell takes the "
+                    f"fallback -- measured on a live site, that is a filled "
+                    f"grey cell, which reads as a verdict rather than as a "
+                    f"gap. Nothing in the build or the deploy can see it. "
+                    f"Write a formatter built on join() or forEach over the "
+                    f"array, or style a scalar column beside this one.",
+                    location=at,
+                ))
+            elif style in ("severity", "pill") and types_by_col.get(col_name) == "boolean":
                 # Both styles compare @currentField against QUOTED strings.
                 # A SharePoint Yes/No column is a boolean, so every branch
                 # of the generated =if chain is false and the cell renders
