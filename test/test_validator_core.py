@@ -236,8 +236,11 @@ def test_unique_is_rejected_for_unsupported_sharepoint_types(
 # referenced and completely unexercised, which is the failure class this
 # project exists to close, pointed at the validator itself.
 #
-# Measured, not guessed: see #98 for the coverage-intersection method and the
-# `test_every_finding_code_is_reached` guard that keeps the count at zero.
+# Measured, not guessed: see #98 for the coverage-intersection method that
+# found them. What keeps the count from growing back is the reachability gate
+# in `conftest.py` -- `uv run pytest --check-finding-reachability`, which fails
+# when a declared code outside `_reachability.NOT_YET_REACHED` is never
+# constructed. That allowlist is a ratchet and only shrinks.
 
 
 def test_a_duplicate_table_name_is_an_error() -> None:
@@ -959,6 +962,39 @@ def test_validate_all_is_the_sum_of_its_parts() -> None:
         + extension.extra_validators(bundle, schema)
     )
     assert findings == expected
+
+
+class _ErrorExtension(BaseExtension):
+    """The error-strength half of the extension pair.
+
+    `_StubExtension` above reports the warning. Both halves exist because
+    severity is fixed per code, so an extension that needs to FAIL a build
+    has to reach for `EXTENSION_REPORTED` -- and nothing exercised that half
+    until the reachability gate named it.
+    """
+
+    name: ClassVar[str] = "erroring-stub"
+
+    def extra_validators(self, bundle: Any, schema: Any) -> list[Finding]:
+        return [Finding(FindingCode.EXTENSION_REPORTED, "stub extension error")]
+
+
+def test_an_extension_can_report_an_error_not_only_a_warning() -> None:
+    """The other half of the one rule whose strength the core cannot know.
+
+    `EXTENSION_REPORTED` and `EXTENSION_WARNING` are split precisely so an
+    extension can pick, and severity now comes from the code rather than the
+    call site -- so "an extension reported an error" is only really proven by
+    building one and reading the severity back off the finding.
+    """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+
+    findings = validate_all(schema, bundle, _ErrorExtension())
+
+    finding = only(findings, FindingCode.EXTENSION_REPORTED)
+    assert finding.message == "stub extension error"
+    assert finding.severity == "error"
 
 
 # --- Rules that fired for nobody --------------------------------------------
