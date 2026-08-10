@@ -470,6 +470,31 @@ def test_dbml_indexes_reject_unsupported_field_types() -> None:
     assert any("Notes" in m and "Multiple lines of text" in m for m in refused)
     assert any("Url" in m and "Hyperlink" in m for m in refused)
 
+def test_dbml_indexes_reject_a_multi_value_column() -> None:
+    """A denylist keyed by type NAME cannot hold `audit_event[]`.
+
+    The key would have to be minted per enum per schema, so a membership test
+    looks like it covers the new type and silently does not -- the deploy
+    would then try to create an index SharePoint refuses, part-way through a
+    run. Microsoft lists "Choice (multi-valued)" as an unsupported index
+    column type, and a probe on 2026-08-10 measured the refusal directly:
+    HTTP error, "This column type is not supported for indexing", read back
+    `Indexed=false`, against a control on a single-value Choice in the same
+    list that stuck.
+    """
+    schema = make_schema(
+        make_table("Task", make_column("Events", "audit_event[]"), indexes=["Events"]),
+        enums=[make_enum("audit_event", "View", "Edit", "Export")],
+    )
+    finding = only(
+        validate_against_mapping(schema, make_bundle(entities=["Task"])),
+        FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE,
+    )
+    assert finding.severity == "error"
+    assert "Events" in finding.message
+    assert "Choice (multi-valued)" in finding.message
+
+
 def test_dbml_indexes_reject_duplicates_and_more_than_twenty() -> None:
     # Col0 is listed twice on purpose -- that is the duplicate this asserts.
     schema = make_schema(make_table(

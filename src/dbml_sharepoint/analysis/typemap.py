@@ -62,6 +62,45 @@ KNOWN_SCALARS = frozenset({
 })
 
 
+# THE ARITY SUFFIX. DBML has no array type, so this is not a spelling this
+# project chose from several available ones -- it is the only one there is.
+# Measured against pydbml: `Events audit_event[]` parses and `Column.type`
+# comes back as the literal string `'audit_event[]'`, while a column SETTING
+# (`Events audit_event [multi]`) is a ParseSyntaxException inside pydbml,
+# reported in pyparsing's own vocabulary before this tool ever sees the file.
+# The settings grammar is a closed set and `multi` is not in it.
+MULTI_VALUE_SUFFIX = "[]"
+
+
+def is_multi_value(col_type: str) -> bool:
+    """Whether a declared DBML type holds many values rather than one.
+
+    ONE PREDICATE, because arity is a property of the DECLARATION and every
+    denylist in this codebase is keyed by type NAME. `UNSUPPORTED_INDEX_TYPES`
+    and `JOIN_BEARING_TYPES` are dicts and frozensets of names; `audit_event[]`
+    is not a key in either, and the key could not be added -- it would have to
+    be minted per enum per schema. So a membership test against them looks
+    like it covers a multi-value column and silently does not, which is the
+    shape of failure this project exists to close.
+
+    Callers ask this instead of adding a string entry. The suffix test is
+    deliberately arity-only and says nothing about which SharePoint field the
+    type becomes; `map_column` decides that, and refuses everything except an
+    enum, so `person[]` and `int[]` are still unknown types today.
+    """
+    return col_type.endswith(MULTI_VALUE_SUFFIX)
+
+
+def element_type(col_type: str) -> str:
+    """What one member of `col_type` is declared as.
+
+    A scalar is its own element type, so a caller can resolve a name without
+    branching on arity first -- which is the point: a branch is a place the
+    two arms come to disagree.
+    """
+    return col_type.removesuffix(MULTI_VALUE_SUFFIX)
+
+
 def describe_unknown_type(declared: str, *, enums: Iterable[str]) -> str:
     """Say what to do about a type this build does not recognise.
 
@@ -93,16 +132,36 @@ def describe_unknown_type(declared: str, *, enums: Iterable[str]) -> str:
         f"Anything else must be a DBML enum, which becomes a Choice column."
     )
 
-# Microsoft documents unique constraints for single-value Text, Choice,
-# Number, Date/Time, Lookup and Person columns. The deployer has no multi-value
-# variants, so every Choice/Lookup/Person it emits is in that supported shape.
+# Microsoft documents unique constraints for SINGLE-VALUE Text, Choice,
+# Number, Date/Time, Lookup and Person columns, and lists "Choice
+# (multi-valued)", "Lookup (multi-valued)" and "Person (multi-valued)" as
+# types that cannot enforce them. Arity is therefore not expressible here --
+# these are scalar type NAMES -- and is asked separately below.
 UNIQUE_SUPPORTED_SCALAR_TYPES = frozenset({
     "nvarchar", "int", "number", "date", "datetime", "person",
 })
 
 
 def supports_unique(col: Column, enum_names: set[str]) -> bool:
-    """Whether this DBML column maps to a uniqueness-capable SP field."""
+    """Whether this DBML column maps to a uniqueness-capable SP field.
+
+    ARITY IS ASKED FIRST, and it has to be. The `ref` arm short-circuits
+    before anything looks at the type at all, so a multi-value column
+    carrying a ref was declared uniqueness-capable outright; and the scalar
+    arm returns the right answer for `audit_event[]` only because that string
+    happens not to be a member of a frozenset of scalar names. Correct by
+    accident is the state this predicate exists to end -- the accident holds
+    only while no denylist key is ever an array form, which is not a property
+    anything enforces.
+
+    Measured on 2026-08-10: a POST setting EnforceUniqueValues on a
+    MultiChoice field returned HTTP 500, "This column type is not supported
+    for indexing". Refused loudly rather than accepted-and-ignored, so this
+    turns a failed deploy into a failed build rather than covering a silence.
+    https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/create-list-relationships-by-using-lookup-columns
+    """
+    if is_multi_value(col.type):
+        return False
     return (
         col.ref is not None
         or col.type in enum_names
@@ -319,6 +378,48 @@ UNSUPPORTED_INDEX_TYPES = {
     "richtext": "Multiple lines of text (Note)",
     "hyperlink": "Hyperlink",
 }
+
+# Microsoft lists "Choice (multi-valued)" among the column types an index
+# cannot be added to, and a probe on 2026-08-10 measured the refusal rather
+# than trusting it: a POST setting Indexed=true on a MultiChoice field was
+# refused -- "This column type is not supported for indexing" -- and read back
+# Indexed=false. Read WITH ITS CONTROL, which is what makes it trustworthy:
+# the same run set Indexed=true on a single-value Choice in the same list and
+# it stuck, so the refusal belongs to the field type and not to the probe.
+#
+# Loud, not silent, which is the good outcome -- unlike a calculated column,
+# where SharePoint accepts Indexed=true and reads back false. The build-time
+# refusal still belongs here so a deploy fails closed before it starts.
+# https://support.microsoft.com/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0
+#
+# One name, not one per arity: the only multi-value type `map_column` will
+# resolve is an enum, which becomes a Choice. `person[]` and a multi-value
+# lookup are refused as unknown types, so this string cannot be wrong today,
+# and the day one of them is added it has to be revisited HERE rather than at
+# three call sites.
+_MULTI_VALUE_INDEX_REFUSAL = "Choice (multi-valued)"
+
+
+def unsupported_index_reason(col_type: str) -> str | None:
+    """The SharePoint type name that explains why `col_type` cannot be
+    indexed, or None if it can.
+
+    THE ACCESSOR EXISTS SO THE DENYLIST CAN BE ARITY-AWARE. Three call sites
+    used to test `col.type in UNSUPPORTED_INDEX_TYPES` directly, and that dict
+    is keyed by DBML type name -- so `audit_event[]` misses every one of them
+    while the rule reads as though it covers the column. Two of the three
+    produce a build error and the third decides whether to RECOMMEND an index,
+    which on a multi-value column would prescribe a remedy the deploy cannot
+    carry out.
+
+    Calculated columns are deliberately still not covered here: they are
+    identified by CALCULATED_TYPES rather than by one type name, and a caller
+    excluding unindexable columns has to consult both. That is a second
+    predicate, not a second string.
+    """
+    if is_multi_value(col_type):
+        return _MULTI_VALUE_INDEX_REFUSAL
+    return UNSUPPORTED_INDEX_TYPES.get(col_type)
 
 # One join operation per RENDERED column of these types, against the list view
 # LOOKUP threshold. Kept here beside UNSUPPORTED_INDEX_TYPES because it is a

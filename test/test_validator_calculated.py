@@ -396,6 +396,11 @@ def _display_type_inputs(
         ("longtext", "Multiple lines of text (Note)"),
         ("richtext", "Multiple lines of text (Note)"),
         ("hyperlink", "Hyperlink"),
+        # The type-NAME-keyed denylist cannot hold this one: the key would
+        # have to be minted per enum per schema. It is caught by the arity
+        # predicate instead, which is why this row belongs beside the others
+        # rather than in a rule of its own.
+        ("audit_event[]", "Choice (multi-valued)"),
     ],
 )
 def test_an_unindexable_display_column_type_is_an_error(

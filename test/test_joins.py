@@ -77,6 +77,32 @@ def test_refs_person_columns_and_the_two_system_columns_bear_joins() -> None:
     }
 
 
+def test_a_multi_value_choice_bears_no_join() -> None:
+    """THE claim that made MultiChoice the cheap multi-value type, checked
+    against `joins.py` rather than assumed -- and this is the assertion that
+    keeps it true.
+
+    `join_bearing_columns` counts a column when it has a `ref` or its type is
+    in JOIN_BEARING_TYPES, which is `{"person"}`. A multi-value Choice is
+    enum-typed and has neither, so it costs no join: it touches neither the
+    12-join view ceiling nor the list view threshold, and no change to the
+    join model is needed for it.
+
+    That is a fact about arity NOT mattering here, which is why it is pinned.
+    Multi-value Lookup and Person keep their `ref`/`person` shape and so are
+    join-bearing -- but what one of them COSTS is unmeasured (one join, or
+    one per selected value?), and settling it needs the 6,000-row fixture.
+    They are a separate issue for exactly that reason, so nothing here may
+    quietly start counting an array type as though the answer were known.
+    """
+    table = make_table(
+        "Platform",
+        make_column("Title"),
+        make_column("Events", "audit_event[]"),
+    )
+    assert join_bearing_columns(table, set()) == {"Author", "Editor"}
+
+
 def test_a_cross_site_ref_bears_no_join() -> None:
     """It expands to a Choice + URL pair, so no Lookup exists to join through.
     The second assertion is the negative case: without the exclusion the same
