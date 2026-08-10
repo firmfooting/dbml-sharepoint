@@ -1426,6 +1426,33 @@ def test_an_exempt_leaf_is_still_judged_when_a_sibling_shares_its_flipped_name()
         to_caml(condition, types)
 
 
+def test_one_bad_operand_under_none_of_is_one_finding_not_two() -> None:
+    """Both passes see the same empty needle, at two polarities.
+
+    The first judges the authored `contains`, the second the `not_contains`
+    normalisation makes of it, and both refusals name the operator in their
+    prose -- so `_dedupe`, which matches whole messages, sees two different
+    strings and keeps both. The author got `condition_needle_empty` twice at
+    one location for one mistake.
+
+    The expression target rather than CAML because CAML would refuse
+    `not_contains` on capability first and never reach the operand, which
+    would hide the duplicate rather than fix it.
+    """
+    types = {"Note": "nvarchar"}
+    condition = parse_condition(
+        {"none_of": [{"field": "Note", "op": "contains", "value": ""}]}, "w",
+    )
+
+    findings = _findings(condition, target=EXPRESSION, types=types)
+
+    # The operator the AUTHOR wrote, not the one normalisation made.
+    assert "'contains'" in only(findings, FindingCode.CONDITION_NEEDLE_EMPTY).message
+    assert "'not_contains'" not in only(
+        findings, FindingCode.CONDITION_NEEDLE_EMPTY,
+    ).message
+
+
 def test_a_lookup_value_accessor_compares_as_text() -> None:
     """Regression: a lookup is int-typed in DBML, so typing the literal by the
     COLUMN rejected every real title as 'not a number' and left lookupId the

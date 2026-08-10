@@ -1376,6 +1376,18 @@ def _condition_problems(
             for code, message in _render_problems(leaf, target, types, context)
         )
 
+    # What the first pass has ALREADY said about each column, as codes. The
+    # second pass judges the flipped leaf, which carries the same field and
+    # the same operand -- so an operand fault it finds is the one already
+    # reported here, worded around the other operator. `_dedupe` cannot see
+    # that: it matches whole messages, and these messages name the operator
+    # ("operator 'contains' needs a non-empty 'value'" against "operator
+    # 'not_contains' needs..."), so `none_of[contains(Note, "")]` reported
+    # `condition_needle_empty` twice at one location.
+    already: set[tuple[FindingCode, str | None]] = {
+        (code, field) for code, _message, field in problems
+    }
+
     # Second pass, over the tree the RENDERER will actually see. De Morgan
     # normalisation rewrites operators — none_of[contains] becomes
     # not_contains — so a rule can pass every check above and still be
@@ -1406,15 +1418,18 @@ def _condition_problems(
             if code not in _CAPABILITY_REFUSALS:
                 # Not about the negation at all. The operand is wrong and
                 # would be wrong at either polarity, so it keeps its own code
-                # and its own words -- `_dedupe` then folds it into the
-                # identical message the first pass raised on the authored
-                # leaf, because neither message names an operator.
+                # and its own words.
                 #
                 # Recoding these was saying something false. `none_of[gt(Due,
                 # "banana")]` normalises to `leq`, which CAML renders
                 # perfectly well, and the appended sentence told the author
                 # the target could not express it. The fault is the date.
-                problems.append((code, problem, leaf.field))
+                #
+                # Suppressed when the first pass already reported this code
+                # for this column: one operand, one fault, one finding. The
+                # author is shown it in the operator they wrote.
+                if (code, leaf.field) not in already:
+                    problems.append((code, problem, leaf.field))
                 continue
             # Its own code, not the inner one: the author never wrote the
             # operator being named, and the remedy is different — rewrite the
