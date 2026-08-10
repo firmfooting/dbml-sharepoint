@@ -40,6 +40,29 @@ def test_location_appends_a_sub_path() -> None:
     assert loc.path == "form_visibility[Risk].Status.when"
 
 
+def test_location_renders_a_section_with_no_entity() -> None:
+    """The whole-section shape, which nothing pinned.
+
+    `path` builds its head conditionally, so this is what would break if the
+    brackets were ever made unconditional -- `schema[None]` reads as a real
+    entity called None and no other test would see it.
+    """
+    assert Location(Section.SCHEMA).path == "schema"
+
+
+def test_location_orders_view_then_column_then_sub() -> None:
+    """The tail is one tuple literal, and its ORDER is the whole rendering.
+
+    Each of the three has a test of its own above, and all three pass with
+    the tuple in any order -- only a location carrying more than one of them
+    can tell them apart.
+    """
+    loc = Location(
+        Section.VIEWS, entity="Risk", view="Open", column="Status", sub="sort",
+    )
+    assert loc.path == "views[Risk].Open.Status.sort"
+
+
 def test_finding_is_hashable_and_frozen() -> None:
     """Findings go into sets in tests, and nothing may mutate one after the
     check that produced it has returned."""
@@ -78,6 +101,66 @@ def test_validator_still_exports_finding_and_severity() -> None:
 
     assert validator.Finding is findings.Finding
     assert validator.Severity is findings.Severity
+
+
+#: Modules that still construct findings with no `location=`, with the issue
+#: that closes them. A RATCHET, exactly like `_reachability.NOT_YET_REACHED`:
+#: a name comes out when the module is converted and one going back in needs a
+#: reason in the pull request. `analysis/validator.py` left it with #99's first
+#: pass; `_structure.py` holds 25 sites whose "path" is often a derived name
+#: rather than a declared one, so it may need a `Section`/`Location` member
+#: that does not exist yet.
+_LOCATION_INCOMPLETE = frozenset({"_structure.py"})  # 25 sites, #99
+
+
+def test_every_finding_site_carries_a_location() -> None:
+    """`location` is where the dotted path lives; `message` is prose.
+
+    A site that passes none leaves the path existing only inside a sentence,
+    so a consumer that wants to say which declaration is at fault has to
+    parse prose — the trap this suite's `_findings.py` opens by describing,
+    and one `manifestgen`, the reporting output and extension authors all
+    inherit.
+
+    Adding a location WITHOUT reworking such a message is no better: two
+    spellings of one fact, free to drift apart. `validator.py` renders its
+    prefix from `Location.path` so there is only ever one.
+
+    Static in the same way `test_severity_is_declared_exactly_once` is: it
+    proves no construction site omits the keyword, which is a property of the
+    source rather than of any particular run.
+    """
+    import ast
+
+    def constructs_a_finding(func: ast.expr) -> bool:
+        """`Finding(...)` and `findings.Finding(...)` — both are written."""
+        if isinstance(func, ast.Name):
+            return func.id == "Finding"
+        return isinstance(func, ast.Attribute) and func.attr == "Finding"
+
+    offenders: list[str] = []
+    sites = 0
+    for path in sorted(PACKAGE.rglob("*.py")):
+        if path.name in _LOCATION_INCOMPLETE:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and constructs_a_finding(node.func)):
+                continue
+            sites += 1
+            if not any(kw.arg == "location" for kw in node.keywords):
+                offenders.append(f"{path.relative_to(PACKAGE)}:{node.lineno}")
+
+    # Without this the test is green on a package that constructs nothing at
+    # all: rename the class, or move the checks, and "no offenders" reads as a
+    # clean bill of health. 139 sites outside the allowlist when this was
+    # written.
+    assert sites > 100, (
+        f"only {sites} Finding construction sites found -- has it been renamed?"
+    )
+    assert not offenders, (
+        "Finding(...) constructed with no location=: " + ", ".join(offenders)
+    )
 
 
 def test_severity_is_declared_exactly_once() -> None:

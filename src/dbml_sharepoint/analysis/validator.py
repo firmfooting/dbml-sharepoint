@@ -2,6 +2,7 @@
 """Validation rules for the parsed schema."""
 
 import re
+from dataclasses import replace
 
 from dbml_sharepoint.analysis import typemap
 
@@ -208,6 +209,25 @@ _ASSOCIATED_GROUP_ALIASES = {
 }
 
 
+def _report(code: FindingCode, at: Location, reason: str) -> Finding:
+    """A finding whose prose prefix is RENDERED from its own location.
+
+    The location is mandatory at the signature, which is the point. A keyword
+    argument is sixteen chances to forget one, and all sixteen sites in this
+    module had. `conditions._reject(code, target, reason, at)` is the worked
+    example, and this copies it deliberately: that module holds 28 refusals
+    and was never part of #99, for exactly that reason.
+
+    The path stays in the message because nothing renders `location` yet:
+    `Finding.detail` shows the code and the prose, and no CLI or generator
+    path reads the field. Deleting the path from the sentence would delete it
+    from the operator's terminal. What this removes is the SECOND spelling --
+    the f-string that typed `Table.Column:` beside a `Location` saying the
+    same thing, with nothing comparing them.
+    """
+    return Finding(code, f"{at.path}: {reason}", location=at)
+
+
 def validate(schema: Schema) -> list[Finding]:
     """Core schema rules, judged without reference to any mapping.
 
@@ -229,10 +249,10 @@ def validate(schema: Schema) -> list[Finding]:
 
     seen_tables: set[str] = set()
     for table in schema.tables:
+        at_table = Location(Section.SCHEMA, entity=table.name)
         if table.name in seen_tables:
-            findings.append(Finding(
-                FindingCode.DUPLICATE_TABLE_NAME,
-                f"Duplicate table name: {table.name}",
+            findings.append(_report(
+                FindingCode.DUPLICATE_TABLE_NAME, at_table, "duplicate table name.",
             ))
             continue
         seen_tables.add(table.name)
@@ -240,9 +260,10 @@ def validate(schema: Schema) -> list[Finding]:
         seen_columns: set[str] = set()
         for col in table.columns:
             if col.name in seen_columns:
-                findings.append(Finding(
+                findings.append(_report(
                     FindingCode.DUPLICATE_COLUMN_NAME,
-                    f"{table.name}: duplicate column {col.name}",
+                    replace(at_table, column=col.name),
+                    "duplicate column name.",
                 ))
                 continue
             seen_columns.add(col.name)
@@ -252,20 +273,25 @@ def validate(schema: Schema) -> list[Finding]:
     seen_enums: set[str] = set()
     referenced_enums = _collect_referenced_enums(schema)
     for enum in schema.enums:
+        # Enums share the entity slot with tables, so `schema[status]` does not
+        # say which kind of declaration it is. The reason keeps the word "enum"
+        # for that -- a schema declaring a table and an enum of the same name
+        # would otherwise render two identical paths.
+        at_enum = Location(Section.SCHEMA, entity=enum.name)
         if enum.name in seen_enums:
-            findings.append(Finding(
-                FindingCode.DUPLICATE_ENUM_NAME,
-                f"Duplicate enum name: {enum.name}",
+            findings.append(_report(
+                FindingCode.DUPLICATE_ENUM_NAME, at_enum, "duplicate enum name.",
             ))
         seen_enums.add(enum.name)
         if not enum.members:
-            findings.append(Finding(
-                FindingCode.EMPTY_ENUM,
-                f"Enum {enum.name} has zero members.",
+            findings.append(_report(
+                FindingCode.EMPTY_ENUM, at_enum, "enum has zero members.",
             ))
         if enum.name not in referenced_enums:
-            findings.append(Finding(
-                FindingCode.ORPHAN_ENUM, f"Enum {enum.name} is orphan (defined but unreferenced).",
+            findings.append(_report(
+                FindingCode.ORPHAN_ENUM,
+                at_enum,
+                "enum is orphan (defined but unreferenced).",
             ))
 
     return findings
@@ -276,13 +302,13 @@ def _check_column(
 ) -> list[Finding]:
     findings: list[Finding] = []
     name = col.name
+    at = Location(Section.SCHEMA, entity=table, column=name)
     is_pk_id = name == "Id" and col.is_pk and col.is_auto_increment
     is_title = name == "Title"
 
     if name in RESERVED_NAMES and not is_pk_id:
-        findings.append(Finding(
-            FindingCode.RESERVED_COLUMN_NAME,
-            f"{table}.{name}: reserved column name.",
+        findings.append(_report(
+            FindingCode.RESERVED_COLUMN_NAME, at, "reserved column name.",
         ))
 
     # The identity column must be called Id. typemap skips ANY
@@ -301,31 +327,32 @@ def _check_column(
     # say ID. That is a rename with no deployed counterpart, which is the
     # same silent-drop class this rejection exists to close.
     if col.is_pk and col.is_auto_increment and not is_pk_id:
-        findings.append(Finding(
+        findings.append(_report(
             FindingCode.AUTO_INCREMENT_PK_MUST_BE_ID,
-            f"{table}.{name}: an auto-increment primary key must be named "
-            f"'Id' -- it maps to SharePoint's built-in ID column, which is "
-            f"created with the list and cannot be renamed. Declared under "
-            f"any other name it is validated as an ordinary column and "
-            f"never provisioned.",
+            at,
+            "an auto-increment primary key must be named 'Id' -- it maps to "
+            "SharePoint's built-in ID column, which is created with the list "
+            "and cannot be renamed. Declared under any other name it is "
+            "validated as an ordinary column and never provisioned.",
         ))
 
     if any(c in name for c in " !@#$%^&*()+={}[]|\\:;\"'<>,?/~`"):
-        findings.append(Finding(
-            FindingCode.ILLEGAL_COLUMN_NAME_CHARACTER,
-            f"{table}.{name}: contains illegal character.",
+        findings.append(_report(
+            FindingCode.ILLEGAL_COLUMN_NAME_CHARACTER, at, "contains illegal character.",
         ))
 
     if len(name) > MAX_INTERNAL_NAME:
-        findings.append(Finding(
+        findings.append(_report(
             FindingCode.COLUMN_NAME_TOO_LONG,
-            f"{table}.{name}: name exceeds {MAX_INTERNAL_NAME} chars.",
+            at,
+            f"name exceeds {MAX_INTERNAL_NAME} chars.",
         ))
 
     if col.type == "choice":
-        findings.append(Finding(
+        findings.append(_report(
             FindingCode.LEGACY_CHOICE_TYPE,
-            f"{table}.{name}: legacy 'choice' type -- migrate to a named DBML enum.",
+            at,
+            "legacy 'choice' type -- migrate to a named DBML enum.",
         ))
     elif (
         col.type not in KNOWN_SCALARS
@@ -346,9 +373,10 @@ def _check_column(
         )
         and not is_pk_id
     ):
-        findings.append(Finding(
+        findings.append(_report(
             FindingCode.UNKNOWN_COLUMN_TYPE,
-            f"{table}.{name}: unknown type {col.type!r}. "
+            at,
+            f"unknown type {col.type!r}. "
             + typemap.describe_unknown_type(col.type, enums=enums),
         ))
 
@@ -356,30 +384,33 @@ def _check_column(
         members = enums[col.type]
         declared = str(col.default).strip("\"'")
         if declared not in members:
-            findings.append(Finding(
+            findings.append(_report(
                 FindingCode.DEFAULT_NOT_AN_ENUM_MEMBER,
-                f"{table}.{name}: default {col.default!r} is not a member of "
+                at,
+                f"default {col.default!r} is not a member of "
                 f"enum {col.type!r} ({members}).",
             ))
 
     if col.ref is not None and col.ref.target_table not in tables:
-        findings.append(Finding(
+        findings.append(_report(
             FindingCode.UNKNOWN_REF_TARGET,
-            f"{table}.{name}: ref target {col.ref.target_table} not defined.",
+            at,
+            f"ref target {col.ref.target_table} not defined.",
         ))
 
     if col.unique and not typemap.supports_unique(col, set(enums)):
-        findings.append(Finding(
+        findings.append(_report(
             FindingCode.UNIQUE_UNSUPPORTED_FOR_TYPE,
-            f"{table}.{name}: [unique] is not supported for SharePoint "
-            f"{col.type!r} columns.",
+            at,
+            f"[unique] is not supported for SharePoint {col.type!r} columns.",
         ))
 
     if col.unique and not col.required and not is_title:
-        findings.append(Finding(
+        findings.append(_report(
             FindingCode.UNIQUE_WITHOUT_NOT_NULL,
-            f"{table}.{name}: unique without not_null -- "
-            "uniqueness enforced only on populated values.",
+            at,
+            "unique without not_null -- uniqueness enforced only on "
+            "populated values.",
         ))
 
     return findings
@@ -439,11 +470,15 @@ def _validate_cross_site_expansion(
         if col is None:
             continue
         if extension.expand_column(table, col, bundle) is None:
-            findings.append(Finding(
+            findings.append(_report(
                 FindingCode.CROSS_SITE_EXPANSION_UNHANDLED,
-                f"cross_site_reference_columns requires an extension that "
-                f"handles expand_column ({xref.entity}.{xref.column}); the "
-                f"active extension deferred it.",
+                Location(
+                    Section.CROSS_SITE_REFERENCE_COLUMNS,
+                    entity=xref.entity,
+                    column=xref.column,
+                ),
+                "requires an extension that handles expand_column; the "
+                "active extension deferred it.",
             ))
     return findings
 

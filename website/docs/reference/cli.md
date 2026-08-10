@@ -117,8 +117,8 @@ A column's DBML type is not one the typemap knows.
 
 The token may be pasted exactly as a build prints it — a trailing colon is
 tolerated, because findings render as
-`[ERROR] unknown_column_type: Project.Sponsor: ...` and the obvious thing to
-do is select the code and paste it.
+`[ERROR] unknown_column_type: schema[Project].Sponsor: ...` and the obvious
+thing to do is select the code and paste it.
 
 With no argument it lists every code and its severity. An unrecognised code
 exits **2** and suggests the nearest matches.
