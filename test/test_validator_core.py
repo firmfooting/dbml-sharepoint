@@ -577,13 +577,17 @@ def test_dbml_indexes_reject_a_multi_value_column() -> None:
         make_table("Task", make_column("Events", "audit_event[]"), indexes=["Events"]),
         enums=[make_enum("audit_event", "View", "Edit", "Export")],
     )
-    finding = only(
-        validate_against_mapping(schema, make_bundle(entities=["Task"])),
-        FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE,
-    )
+    findings = validate_against_mapping(schema, make_bundle(entities=["Task"]))
+
+    finding = only(findings, FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED)
     assert finding.severity == "error"
     assert "Events" in finding.message
     assert "Choice (multi-valued)" in finding.message
+    # Its own code, and only its own: the generic rule names an unindexable
+    # TYPE and its remedy is "pick a different column", while this one has a
+    # second remedy the generic rule cannot offer -- the same enum without the
+    # brackets is indexable. Both firing would be two findings for one entry.
+    none_of(findings, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
 
 
 def test_dbml_indexes_reject_duplicates_and_more_than_twenty() -> None:

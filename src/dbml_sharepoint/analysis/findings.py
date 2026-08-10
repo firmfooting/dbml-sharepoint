@@ -199,6 +199,16 @@ class FindingCode(StrEnum):
     LOOKUP_DISPLAY_COLUMN_UNKNOWN = "lookup_display_column_unknown", "error"
     LOOKUP_WOULD_RENDER_BLANK = "lookup_would_render_blank", "error"
     MULTIPLE_DEFAULT_VIEWS = "multiple_default_views", "error"
+    # Both specialise a rule that already fires, and both exist because the
+    # generic REMEDY is wrong here rather than because the generic diagnosis
+    # is. An index is the answer to an unindexed filter and a different
+    # column is the answer to an unindexable type; on a multi-value column
+    # the first fails the build and the second is not the only option, since
+    # the same enum without the brackets is indexable.
+    MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE = (
+        "multi_value_filtered_view_unindexable", "warning"
+    )
+    MULTI_VALUE_INDEX_UNSUPPORTED = "multi_value_index_unsupported", "error"
     POLYMORPHIC_COLUMN_NOT_RENDERED = "polymorphic_column_not_rendered", "error"
     PREVIOUS_TITLE_CLAIMED_TWICE = "previous_title_claimed_twice", "error"
     PREVIOUS_TITLE_IS_A_CURRENT_TITLE = "previous_title_is_a_current_title", "error"

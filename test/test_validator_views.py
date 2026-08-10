@@ -6,6 +6,7 @@ from _builders import ID_PK, TITLE, table
 from _findings import by_severity, codes, messages, none_of, only
 from _model import bundle as make_bundle
 from _model import column, person
+from _model import enum as make_enum
 from _model import schema as make_schema
 from _model import table as make_table
 from _packs import write_dbml
@@ -186,6 +187,80 @@ def test_unindexed_view_filter_warns_with_threshold_and_fields() -> None:
     assert "position in the filter does not matter" in finding.message
     assert "selectivity does" in finding.message
     assert "filter order" not in finding.message
+
+def _multi_value_platform() -> Schema:
+    """One entity whose only interesting column holds many enum members."""
+    return make_schema(
+        make_table(
+            "Platform",
+            column("Title", required=True),
+            column("Status", "status"),
+            column("Events", "audit_event[]"),
+        ),
+        enums=[
+            make_enum("status", "Live", "Retired"),
+            make_enum("audit_event", "View", "Edit", "Export"),
+        ],
+    )
+
+def test_a_view_filtering_a_multi_value_column_is_told_no_index_is_possible() -> None:
+    """The generic exposure warning prescribes a remedy this column cannot
+    take, and following it fails the build.
+
+    "Add a bare DBML index to a selective filter column" is the right advice
+    for every scalar. On a multi-value column an index is refused by
+    SharePoint -- measured 2026-08-10, HTTP error and `Indexed` reading back
+    false, against a control on a single-value Choice in the same list that
+    stuck -- so the author would add the index, hit
+    `multi_value_index_unsupported`, and have been sent there by this tool.
+    A remedy that fails the build is worse than the warning it answers.
+
+    Still a warning, not an error: the filter itself is legitimate CAML and a
+    list that stays under the threshold has no problem at all.
+    """
+    bundle = make_bundle(entities=["Platform"], views={"Platform": [ViewDef(
+        title="Logs viewing",
+        fields=["Title", "Events"],
+        where=Group("all_of", (Leaf(field="Events", op="eq", value="View"),)),
+    )]})
+
+    findings = validate_against_mapping(_multi_value_platform(), bundle)
+
+    finding = only(findings, FindingCode.MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE)
+    assert finding.severity == "warning"
+    assert "Events" in finding.message
+    assert finding.location == Location(
+        Section.VIEWS, entity="Platform", view="Logs viewing", sub="where",
+    )
+    # One `where`, one exposure warning. Two, one of which recommends an
+    # index the other forbids, is the shape of the audit contradiction this
+    # feature's first stage went and fixed.
+    none_of(findings, FindingCode.UNINDEXED_FILTER_COLUMNS)
+
+def test_an_indexed_sibling_filter_clears_the_multi_value_warning() -> None:
+    """The rule must not be stronger than the one it specialises.
+
+    `UNINDEXED_FILTER_COLUMNS` judges the condition SHAPE, and one indexed
+    condition in an `all_of` is enough to serve the query -- so a view that
+    also filters an indexed scalar is not exposed, and a multi-value column
+    beside it is not a finding. Warning on arity alone would fire on every
+    correctly-built view that happens to mention the column.
+    """
+    schema = _multi_value_platform()
+    schema.tables[0].indexes.append(TableIndex(("Status",)))
+    bundle = make_bundle(entities=["Platform"], views={"Platform": [ViewDef(
+        title="Live and logging",
+        fields=["Title", "Status", "Events"],
+        where=Group("all_of", (
+            Leaf(field="Status", op="eq", value="Live"),
+            Leaf(field="Events", op="eq", value="View"),
+        )),
+    )]})
+
+    findings = validate_against_mapping(schema, bundle)
+
+    none_of(findings, FindingCode.MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE)
+    none_of(findings, FindingCode.UNINDEXED_FILTER_COLUMNS)
 
 def test_explicit_or_unique_filter_index_clears_warning() -> None:
     schema, bundle = _project_inputs(

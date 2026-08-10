@@ -591,6 +591,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "there is no coercion that says what was declared. Refused rather "
         "than dropped: a dropped default is invisible in a green build."
     ),
+    FindingCode.MULTI_VALUE_FILTERED_VIEW_UNINDEXABLE: (
+        "A view filters on a multi-value column and nothing else in the "
+        "filter carries an index. The usual remedy does not apply: "
+        "SharePoint refuses an index on such a column, so following it "
+        "would fail the build. Filter on a scalar column instead."
+    ),
+    FindingCode.MULTI_VALUE_INDEX_UNSUPPORTED: (
+        "An `indexes { }` entry names a multi-value column. Measured on "
+        "2026-08-10: SharePoint refuses the index and reads `Indexed` back "
+        "as false, against a control on a single-value Choice in the same "
+        "list that stuck. The same enum without the brackets is indexable."
+    ),
     FindingCode.MULTI_VALUE_UNIQUE_UNSUPPORTED: (
         "`[unique]` is declared on a multi-value column. SharePoint cannot "
         "enforce unique values on a Choice (multi-valued) column, and "

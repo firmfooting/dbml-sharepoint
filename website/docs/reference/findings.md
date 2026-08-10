@@ -172,6 +172,8 @@ dbml-sharepoint explain unknown_column_type
 | `lookup_display_column_unknown` | error | A lookup target declares a `display_column` that is not one of its columns, so the deploy would emit an unresolvable `LookupField`. |
 | `lookup_would_render_blank` | error | A lookup target has no `Title` column and declares no `display_column`, so every lookup into it renders blank. |
 | `multi_value_default_unsupported` | error | A multi-value column declares `default:`. DBML carries one scalar and SharePoint's write shape for the column is a collection, so there is no coercion that says what was declared. Refused rather than dropped: a dropped default is invisible in a green build. |
+| `multi_value_filtered_view_unindexable` | warning | A view filters on a multi-value column and nothing else in the filter carries an index. The usual remedy does not apply: SharePoint refuses an index on such a column, so following it would fail the build. Filter on a scalar column instead. |
+| `multi_value_index_unsupported` | error | An `indexes { }` entry names a multi-value column. Measured on 2026-08-10: SharePoint refuses the index and reads `Indexed` back as false, against a control on a single-value Choice in the same list that stuck. The same enum without the brackets is indexable. |
 | `multi_value_unique_unsupported` | error | `[unique]` is declared on a multi-value column. SharePoint cannot enforce unique values on a Choice (multi-valued) column, and measured on 2026-08-10 refuses `EnforceUniqueValues` on one with HTTP 500. |
 | `multiple_default_views` | error | More than one view on an entity is marked default; a SharePoint list has exactly one. |
 | `orphan_enum` | warning | An enum is defined but no column references it. |
