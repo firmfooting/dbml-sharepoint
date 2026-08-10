@@ -14,7 +14,7 @@ and the teardown contract.
 from typing import Any
 
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
-from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL
+from dbml_sharepoint.analysis.typemap import TODAY_SENTINEL, is_hyperlink, is_person
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
@@ -43,9 +43,9 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any]:
     # lookup reference and then raised KeyError.
     if isinstance(value, dict) and "demo_ref" in value:
         return {"name": name, "kind": "ref", "value": str(value["demo_ref"])}
-    if col_type == "person":
+    if is_person(col_type):
         return {"name": name, "kind": "me", "value": None}
-    if col_type == "hyperlink":
+    if is_hyperlink(col_type):
         # A SharePoint URL column is a RECORD over REST (SP.FieldUrlValue,
         # Url + Description), not a scalar — writing a bare string is
         # rejected at create time. Without this kind, a hyperlink column

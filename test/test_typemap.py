@@ -1,18 +1,21 @@
 # test/test_typemap.py
+import ast
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from _findings import only
 from _packs import pack
+from _paths import PACKAGE
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.typemap import (
     describe_unknown_type,
-    element_type,
-    is_multi_value,
+    is_boolean,
+    is_hyperlink,
+    is_legacy_choice,
+    is_person,
     map_column,
-    supports_unique,
-    unsupported_index_reason,
 )
 from dbml_sharepoint.model.parser import Column, Reference
 
@@ -114,99 +117,6 @@ def test_calculated_date_maps_to_calculated() -> None:
     assert field.required is False
 
 
-# --- multi-value enums ------------------------------------------------------
-
-MULTI_ENUMS = {"audit_event", *ENUM_NAMES}
-
-
-def test_an_enum_array_is_a_multichoice_field() -> None:
-    """FieldType.MultiChoice is 15, and SharePoint's own read-back of a field
-    created this way on 2026-08-10 reported TypeAsString="MultiChoice",
-    FieldTypeKind=15 and Choices as Collection(Edm.String).
-
-    The backing enum is the ELEMENT type: `Choices` is populated from the
-    members of `audit_event`, not from an enum literally called
-    `audit_event[]`, which is not a thing any schema declares.
-    """
-    field = map_column(Column(name="Events", type="audit_event[]"), MULTI_ENUMS)
-
-    assert field.kind == "MultiChoice"
-    assert field.field_type_kind == 15
-    assert field.choices_enum == "audit_event"
-
-
-def test_a_multi_value_column_keeps_its_required_flag() -> None:
-    """`[not null]` composes normally on an array declaration -- pydbml parses
-    it -- and Required is an ordinary field property SharePoint honours on a
-    MultiChoice. Nothing about arity changes it."""
-    field = map_column(
-        Column(name="Events", type="audit_event[]", required=True), MULTI_ENUMS,
-    )
-    assert field.required is True
-
-
-def test_a_misspelled_enum_array_is_still_refused_by_name() -> None:
-    """THE argument for `enum_name[]` as the authored syntax: it was ALREADY a
-    named build error that names the enum it is closest to, so adopting it
-    widens an existing refusal instead of opening a new parse surface.
-
-    That property is only worth anything if it survives the widening. A
-    naming convention was rejected on the standing rule that a typo must
-    never silently do nothing, and this is the assertion that keeps
-    `audit_evnet[]` loud.
-    """
-    with pytest.raises(ValueError) as raised:
-        map_column(Column(name="Events", type="audit_evnet[]"), MULTI_ENUMS)
-
-    assert "unknown type 'audit_evnet[]'" in str(raised.value)
-    assert "audit_event" in str(raised.value)
-
-
-def test_an_array_of_something_that_is_not_an_enum_is_refused() -> None:
-    """`person[]` and a multi-value lookup are a SEPARATE issue with a
-    separate cost profile: both stay join-bearing, and whether one costs a
-    single join or one per selected value is unmeasured. The arity predicate
-    is deliberately type-agnostic, so this is the refusal that stops it
-    letting them through the back door."""
-    with pytest.raises(ValueError, match="unknown type 'person\\[\\]'"):
-        map_column(Column(name="Owners", type="person[]"), MULTI_ENUMS)
-
-
-def test_unique_on_a_multi_value_column_is_refused() -> None:
-    """`[unique]` composes on an array declaration, so an author can write it.
-    SharePoint cannot honour it: Microsoft lists "Choice (multi-valued)" as a
-    type that cannot enforce unique values, and a POST setting
-    EnforceUniqueValues on one returned HTTP 500 on 2026-08-10.
-
-    The complaint has to be about uniqueness, not about the type being
-    unknown -- which is what it said before the type was recognised.
-    """
-    with pytest.raises(ValueError) as raised:
-        map_column(
-            Column(name="Events", type="audit_event[]", unique=True), MULTI_ENUMS,
-        )
-
-    assert "[unique] is not supported" in str(raised.value)
-
-
-def test_a_default_on_a_multi_value_column_is_refused() -> None:
-    """DBML carries ONE scalar default and the write shape is a collection --
-    `{"__metadata": {"type": "Collection(Edm.String)"}, "results": [...]}`,
-    measured on 2026-08-10. There is no honest coercion between the two.
-
-    Refused rather than dropped, because dropping it is the silent kind of
-    wrong: the build goes green, the deploy verifies clean, and the column an
-    author declared a default for simply does not have one.
-    """
-    with pytest.raises(ValueError) as raised:
-        map_column(
-            Column(name="Events", type="audit_event[]", default="View"), MULTI_ENUMS,
-        )
-
-    assert "default" in str(raised.value)
-    assert "Events" in str(raised.value)
-
-
 # --- unknown-type diagnosis -------------------------------------------------
 
 
@@ -282,75 +192,173 @@ def test_both_unknown_type_sites_say_the_same_thing(tmp_path: Path) -> None:
     assert shared in str(raised.value)
 
 
-# --- column arity -----------------------------------------------------------
+# --- The type-identity predicates and the single-authority pin ---------------
 
 
-def test_the_dbml_array_suffix_is_what_makes_a_type_multi_value() -> None:
-    """One predicate, because arity is a property of the DECLARATION.
+def test_the_predicates_answer_the_declared_type() -> None:
+    assert is_boolean("boolean")
+    assert not is_boolean("int")
+    assert is_person("person")
+    assert not is_person("nvarchar")
+    assert is_hyperlink("hyperlink")
+    assert not is_hyperlink("richtext")
+    assert is_legacy_choice("choice")
+    assert not is_legacy_choice("status")
 
-    `audit_event[]` is what pydbml hands over for `Events audit_event[]` --
-    a literal type string, not a flag on the column -- so every check that
-    wants to know "is this many-valued?" has exactly this question to ask.
+
+@pytest.mark.parametrize(
+    "predicate", [is_boolean, is_person, is_hyperlink, is_legacy_choice],
+)
+def test_an_undeclared_type_is_none_of_them(
+    predicate: Callable[[str | None], bool],
+) -> None:
+    """`None` is what `types_by_col.get(name)` returns for a column the mapping
+    names and the schema does not, and both demo readers hold exactly that.
+    Answering True for an absent type would route an unknown column down a
+    typed path."""
+    assert not predicate(None)
+
+
+@pytest.mark.parametrize(
+    ("declared", "kind"),
+    [("boolean", "Boolean"), ("person", "User"), ("hyperlink", "URL")],
+)
+def test_the_mapper_itself_goes_through_the_predicates(
+    declared: str, kind: str,
+) -> None:
+    """A predicate `map_column` does not consult is a second opinion, free to
+    drift from the mapping it claims to describe -- which is the bug #101 is
+    about, relocated. These three cases were lifted out of `_scalar`'s match
+    statement precisely so there is one answer, so they are pinned here."""
+    assert map_column(Column(name="X", type=declared), ENUM_NAMES).kind == kind
+
+
+def test_the_mapper_refuses_legacy_choice_through_the_predicate() -> None:
+    with pytest.raises(ValueError, match="legacy 'choice' type"):
+        map_column(Column(name="Status", type="choice"), ENUM_NAMES)
+
+
+# --- The single-authority pin ------------------------------------------------
+
+
+def _names_a_type_map(node: ast.expr) -> bool:
+    """Whether this name holds a column-name -> declared-type mapping.
+
+    Matched by name because that is all a static check has: `types`,
+    `types_by_col` and `demo_types` are the three spellings in the package,
+    and every one of them contains `type`.
     """
-    assert is_multi_value("audit_event[]") is True
-    assert is_multi_value("audit_event") is False
-    assert is_multi_value("nvarchar") is False
+    return isinstance(node, ast.Name) and "type" in node.id.lower()
 
 
-def test_element_type_is_the_declaration_without_its_suffix() -> None:
-    """What a member of the collection is, which is what has to be looked up
-    in the schema's enums. A scalar is its own element type, so callers do
-    not have to branch on arity before asking."""
-    assert element_type("audit_event[]") == "audit_event"
-    assert element_type("audit_event") == "audit_event"
+def _names_a_column_type(node: ast.expr) -> bool:
+    """Whether this operand is a DBML column's declared type.
 
+    Spelled three ways across the package and all three are matched: an
+    attribute access (`col.type`, `display_column.type`, `operand.type`), a
+    local holding one (`col_type`, `column_type`, `declared_type`), and a
+    lookup straight out of a type map (`types_by_col.get(col_name)`,
+    `types[field]`) with no local in between.
 
-def test_a_multi_value_column_can_never_be_indexed() -> None:
-    """THE reason the arity predicate exists rather than a string entry.
-
-    `UNSUPPORTED_INDEX_TYPES` is keyed by DBML type NAME, and `audit_event[]`
-    is not a key in it -- nor is any other enum's array form, since the key
-    would have to be minted per enum per schema. A membership test therefore
-    looks like it covers the new type and silently does not.
-
-    Documented refused by Microsoft ("Choice (multi-valued)" is listed as an
-    unsupported index column type) and measured on 2026-08-10: a POST setting
-    `Indexed: true` on a MultiChoice field was REFUSED -- "This column type is
-    not supported for indexing." -- and read back `Indexed=false`. The control
-    on the same run set `Indexed: true` on a single-value Choice in the same
-    list and it stuck, so the refusal is the field's and not the probe's.
+    The third was missed until Codex found it on #148, and it had one live
+    offender: `_formatting.py` asked `types_by_col.get(col_name) ==
+    "boolean"`, which is exactly the comparison this pin exists to forbid,
+    written in the one shape the pin could not see. A detector with an
+    unnamed hole is worse than the check it replaces, because the green
+    result reads as coverage.
     """
-    assert unsupported_index_reason("audit_event[]") == "Choice (multi-valued)"
+    if isinstance(node, ast.Attribute):
+        return node.attr == "type"
+    if isinstance(node, ast.Name):
+        return node.id == "type" or node.id.endswith("_type")
+    if isinstance(node, ast.Call):
+        return (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and _names_a_type_map(node.func.value)
+        )
+    if isinstance(node, ast.Subscript):
+        return _names_a_type_map(node.value)
+    return False
 
 
-def test_arity_beats_the_ref_shortcut_when_deciding_uniqueness() -> None:
-    """`supports_unique` answered True for a multi-value column carrying a
-    `ref`, because `col.ref is not None` short-circuits before anything looks
-    at the type at all.
+def _holds_a_string_literal(node: ast.expr) -> bool:
+    """A bare `"boolean"`, or one inside an inline set/tuple/list."""
+    if isinstance(node, ast.Constant):
+        return isinstance(node.value, str)
+    if isinstance(node, ast.Set | ast.Tuple | ast.List):
+        return any(_holds_a_string_literal(e) for e in node.elts)
+    return False
 
-    Microsoft lists "Choice (multi-valued)", "Lookup (multi-valued)" and
-    "Person (multi-valued)" as column types that cannot enforce unique
-    values, and a probe on 2026-08-10 measured the Choice case: a POST
-    setting EnforceUniqueValues on a MultiChoice field came back HTTP 500,
-    "This column type is not supported for indexing".
 
-    The scalar arm of this function gets the right answer for `audit_event[]`
-    today only because that string is not a member of a frozenset of scalar
-    names -- correct by accident, which is the state the arity predicate
-    exists to end. The ref arm does not even get that.
+def test_no_module_outside_typemap_compares_a_column_type_to_a_literal() -> None:
+    """`typemap` is THE answer to "what is this column type, in SharePoint
+    terms". A string comparison anywhere else is invisible to it.
+
+    That is not a style complaint. Rename a type, or give one an alias, and
+    `typemap` gets updated because nothing deploys otherwise -- while the
+    comparison simply stops matching. No exception, no finding, no failing
+    test: a boolean column quietly takes the non-boolean path and renders as
+    `<Value Type="Text">`, which SharePoint stores and answers with the wrong
+    rows. Eight such sites had accumulated by the time #101 was measured, and
+    the issue itself counted only four of them.
+
+    WHAT IS FORBIDDEN is comparing a column type against a string LITERAL --
+    `==`, `!=`, `in`, `not in`, including a literal inside an inline
+    `{"a", "b"}`.
+
+    WHAT IS ALLOWED is comparing it against a NAMED constant:
+    `col.type in enums`, `column_type in _NUMBER_TYPES`,
+    `col.type in KNOWN_SCALARS`. A named set is a declared vocabulary with one
+    home and a reader can find it; the anonymous literal is the whole harm.
+    Forbidding those too would fight most of `conditions.py` and buy nothing.
+
+    KNOWN GAP, named rather than implied away by this test's title: `_demo.py`
+    asks `col_type.startswith("calculated")`. That is a method call, not a
+    comparison, so this test does not see it -- and switching it to
+    `in CALCULATED_TYPES` is a behaviour change, because `startswith` also
+    matches `calculated_*` names typemap does not support. Left for its own
+    change rather than smuggled into this one.
+
+    Static in the same way `test_severity_is_declared_exactly_once` is: a
+    property of the source, not of any particular run.
     """
-    multi_ref = Column(
-        name="Owners", type="person[]", ref=Reference("Team", "Id"), unique=True,
+    offenders: list[str] = []
+    inspected = 0
+    for path in sorted(PACKAGE.rglob("*.py")):
+        if path.name == "typemap.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Compare):
+                continue
+            operands = [node.left, *node.comparators]
+            if not any(_names_a_column_type(o) for o in operands):
+                continue
+            inspected += 1
+            if not any(
+                isinstance(op, ast.Eq | ast.NotEq | ast.In | ast.NotIn)
+                for op in node.ops
+            ):
+                continue
+            if any(_holds_a_string_literal(o) for o in operands):
+                offenders.append(
+                    f"{path.relative_to(PACKAGE)}:{node.lineno}: {ast.unparse(node)}",
+                )
+
+    # Without this the test is green on a package that compares nothing at
+    # all: rename `col.type` to `col.kind` and "no offenders" reads as a clean
+    # bill of health rather than as a detector that has stopped detecting.
+    # 33 comparisons outside typemap when this was written, every one against
+    # a named constant. It was 40 before #101's eight became predicate calls,
+    # which is the measurement the docstring's count comes from. The 33rd is
+    # `_views.py`'s `types_by_col.get(name) not in UNSUPPORTED_INDEX_TYPES`,
+    # which the detector only started seeing when the call shape was added --
+    # it was always allowed, and it was always invisible.
+    assert inspected > 25, (
+        f"only {inspected} column-type comparisons found -- has `type` been renamed?"
     )
-    assert supports_unique(multi_ref, ENUM_NAMES) is False
-
-
-def test_the_index_denylist_still_answers_for_the_scalar_types() -> None:
-    """The accessor replaces a dict membership test at three call sites, so
-    it has to keep giving them the same human name for the same types -- and
-    keep saying nothing about the types SharePoint can index."""
-    assert unsupported_index_reason("longtext") == "Multiple lines of text (Note)"
-    assert unsupported_index_reason("richtext") == "Multiple lines of text (Note)"
-    assert unsupported_index_reason("hyperlink") == "Hyperlink"
-    assert unsupported_index_reason("nvarchar") is None
-    assert unsupported_index_reason("audit_event") is None
+    assert not offenders, (
+        "column type compared to a string literal instead of asked of typemap:\n"
+        + "\n".join(offenders)
+    )
