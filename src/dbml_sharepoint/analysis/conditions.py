@@ -25,7 +25,12 @@ import re
 from dataclasses import replace
 
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
-from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, NOW_SENTINEL, TODAY_SENTINEL
+from dbml_sharepoint.analysis.typemap import (
+    CALCULATED_TYPES,
+    NOW_SENTINEL,
+    TODAY_SENTINEL,
+    is_boolean,
+)
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 
 #: Where a refusal raised by a renderer says it is. The renderers are public
@@ -1103,7 +1108,7 @@ def _caml_value(column_type: str, value: object, where: Location) -> str:
         # SharePoint's own "[Me]" filter, and the only spelling by which a
         # person column can be compared in CAML at all.
         return '<Value Type="Integer"><UserID/></Value>'
-    if column_type == "boolean":
+    if is_boolean(column_type):
         return f'<Value Type="Integer">{"1" if _boolean(value, where, CAML) else "0"}</Value>'
     if column_type in _NUMBER_TYPES:
         return f'<Value Type="Number">{_number(value, where, CAML)}</Value>'
@@ -1127,7 +1132,7 @@ def _caml_value(column_type: str, value: object, where: Location) -> str:
 
 
 def _expr_literal(column_type: str, value: object, where: Location) -> str:
-    if column_type == "boolean":
+    if is_boolean(column_type):
         return "true" if _boolean(value, where, EXPRESSION) else "false"
     if column_type in _NUMBER_TYPES:
         return _number(value, where, EXPRESSION)
@@ -1146,7 +1151,7 @@ def _validation_literal(column_type: str, value: object, where: Location) -> str
         match = _TODAY.match(str(value))
         sign, days = (match.group(1), match.group(2)) if match else (None, None)
         return "TODAY()" if days is None else f"TODAY(){sign}{days}"
-    if column_type == "boolean":
+    if is_boolean(column_type):
         return "TRUE" if _boolean(value, where, VALIDATION) else "FALSE"
     if column_type in _NUMBER_TYPES:
         return _number(value, where, VALIDATION)

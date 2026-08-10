@@ -1,4 +1,5 @@
 # test/test_typemap.py
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,14 @@ from _findings import only
 from _packs import pack
 
 from dbml_sharepoint.analysis.findings import FindingCode
-from dbml_sharepoint.analysis.typemap import describe_unknown_type, map_column
+from dbml_sharepoint.analysis.typemap import (
+    describe_unknown_type,
+    is_boolean,
+    is_hyperlink,
+    is_legacy_choice,
+    is_person,
+    map_column,
+)
 from dbml_sharepoint.model.parser import Column, Reference
 
 ENUM_NAMES = {"status", "topic"}
@@ -180,3 +188,50 @@ def test_both_unknown_type_sites_say_the_same_thing(tmp_path: Path) -> None:
     shared = describe_unknown_type("decimal", enums=())
     assert shared in message
     assert shared in str(raised.value)
+
+
+# --- The type-identity predicates and the single-authority pin ---------------
+
+
+def test_the_predicates_answer_the_declared_type() -> None:
+    assert is_boolean("boolean")
+    assert not is_boolean("int")
+    assert is_person("person")
+    assert not is_person("nvarchar")
+    assert is_hyperlink("hyperlink")
+    assert not is_hyperlink("richtext")
+    assert is_legacy_choice("choice")
+    assert not is_legacy_choice("status")
+
+
+@pytest.mark.parametrize(
+    "predicate", [is_boolean, is_person, is_hyperlink, is_legacy_choice],
+)
+def test_an_undeclared_type_is_none_of_them(
+    predicate: Callable[[str | None], bool],
+) -> None:
+    """`None` is what `types_by_col.get(name)` returns for a column the mapping
+    names and the schema does not, and both demo readers hold exactly that.
+    Answering True for an absent type would route an unknown column down a
+    typed path."""
+    assert not predicate(None)
+
+
+@pytest.mark.parametrize(
+    ("declared", "kind"),
+    [("boolean", "Boolean"), ("person", "User"), ("hyperlink", "URL")],
+)
+def test_the_mapper_itself_goes_through_the_predicates(
+    declared: str, kind: str,
+) -> None:
+    """A predicate `map_column` does not consult is a second opinion, free to
+    drift from the mapping it claims to describe -- which is the bug #101 is
+    about, relocated. These three cases were lifted out of `_scalar`'s match
+    statement precisely so there is one answer, so they are pinned here."""
+    assert map_column(Column(name="X", type=declared), ENUM_NAMES).kind == kind
+
+
+def test_the_mapper_refuses_legacy_choice_through_the_predicate() -> None:
+    with pytest.raises(ValueError, match="legacy 'choice' type"):
+        map_column(Column(name="Status", type="choice"), ENUM_NAMES)
+

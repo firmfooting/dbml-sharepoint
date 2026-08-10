@@ -322,7 +322,7 @@ def _check_column(
             f"{table}.{name}: name exceeds {MAX_INTERNAL_NAME} chars.",
         ))
 
-    if col.type == "choice":
+    if typemap.is_legacy_choice(col.type):
         findings.append(Finding(
             FindingCode.LEGACY_CHOICE_TYPE,
             f"{table}.{name}: legacy 'choice' type -- migrate to a named DBML enum.",
