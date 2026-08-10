@@ -2090,6 +2090,33 @@ def test_membership_on_a_single_value_column_is_refused(op: str) -> None:
     assert "eq" in finding.message
 
 
+@pytest.mark.parametrize("declared", ["nvarchar", "int", "audit_event"])
+def test_the_array_remedy_names_a_form_rather_than_this_column_s_type(
+    declared: str,
+) -> None:
+    """A message whose job is to end one error must not start the next.
+
+    It used to suggest `{declared_type}[]`, which is advice a text column
+    cannot take -- `nvarchar[]` is refused as an unknown type, because
+    `map_column` accepts `<enum>[]` and nothing else.
+
+    Deciding it by "is this a known scalar" would be wrong in the other
+    direction: an enum may be NAMED like a scalar, `_resolve_column` checks
+    enum names before scalar mapping, and `nvarchar[]` is therefore legal for
+    a schema declaring `Enum nvarchar`. So the sentence claims nothing about
+    this column and names the shape instead, which is true for every type.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Col", "includes", "x"),)), types={"Col": declared},
+    )
+
+    message = only(
+        findings, FindingCode.MULTI_VALUE_MEMBERSHIP_ON_A_SINGLE_VALUE_COLUMN,
+    ).message
+    assert "`<enum>[]`" in message
+    assert f"`{declared}[]`" not in message
+
+
 @pytest.mark.parametrize("target", [EXPRESSION, VALIDATION])
 def test_membership_has_no_rendering_on_the_formula_targets(target: str) -> None:
     """Only a view filter can read a multi-value column at all -- measured, a
