@@ -122,6 +122,23 @@ flag's job here is to reject a role the mapping does not declare, moving
 a typo's discovery earlier. Pinned by
 `test_validate_checks_every_role_not_just_the_selected_one`.
 
+### `explain`
+
+```python
+def explain(code: str = ...) -> None
+```
+
+Say what a finding code means, without leaving the terminal.
+
+The code is a finding's identity -- stable, and what the catalogue is
+keyed by -- while the message beside it is prose that may be reworded in
+any release. So the code is the only part worth looking up, and until
+now the only place to look it up was a website.
+
+Reads `FINDING_HELP`, which ships inside the package. The published
+reference at `reference/findings.md` is generated from the same data, so
+the two cannot disagree.
+
 ### `report`
 
 ```python
