@@ -348,7 +348,7 @@ def _check_column(
             f"name exceeds {MAX_INTERNAL_NAME} chars.",
         ))
 
-    if col.type == "choice":
+    if typemap.is_legacy_choice(col.type):
         findings.append(_report(
             FindingCode.LEGACY_CHOICE_TYPE,
             at,
