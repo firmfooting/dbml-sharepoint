@@ -883,6 +883,55 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
     assert "[archive/default]" in reported
 
 
+def test_a_mapping_with_no_role_called_default_is_offered_no_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Enter key must not answer with a role nobody declared.
+
+    `Prompt.ask` returns its default WITHOUT checking it against `choices`:
+    rich short-circuits an empty answer in `PromptBase.__call__` before
+    `process_response` ever runs. So a fixed `default="default"` on a
+    mapping whose roles are `branch` and `hq` made Enter produce an
+    undeclared role, and `execute_build` then refused it -- the wizard
+    offered a dead end as its safest-looking answer, on exactly the
+    multi-site mapping `--site-role` exists for.
+
+    The script presses Enter FIRST and answers properly second. That is
+    what makes the branch observable: restore the fixed default and this
+    captures `default` with `hq` still sitting unread, rather than merely
+    failing on a prompt that looks different.
+    """
+    solution = _fake_family(
+        tmp_path / "fake",
+        mapping=(
+            'prefix: "OLD_"\n'
+            "entities:\n"
+            "  Risk: { kind: List, base_template: 100, site_role: hq }\n"
+            "  Archive: { kind: List, base_template: 100, site_role: branch }\n"
+        ),
+    )
+    _offer_only(monkeypatch, solution)
+    captured = _capture_build(monkeypatch)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "fake-template",
+        str(destination),
+        "NEW_",
+        "https://contoso.sharepoint.com/sites/x",
+        "y",     # write
+        "y",     # build
+        "",      # Enter -- must not be taken as an answer at all
+        "hq",
+    ])
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["site_role"] == "hq"
+    reported = _collapsed(console)
+    assert "[branch/hq]" in reported
+    assert "(default)" not in reported
+
+
 def test_the_shipped_template_is_never_written_to(tmp_path: Path) -> None:
     """The wizard rewrites the COPY, and only the copy.
 

@@ -425,9 +425,23 @@ def _run(console: Console) -> int:
         return 0
 
     roles = _site_roles(mapping_path)
-    site_role = roles[0] if len(roles) == 1 else Prompt.ask(
-        "[bold]Site role[/bold]", choices=roles, default="default", console=console,
-    )
+    if len(roles) == 1:
+        site_role = roles[0]
+    elif "default" in roles:
+        # Every shipped family declares `default`, so Enter is a real answer
+        # whenever the mapping declares it too.
+        site_role = Prompt.ask(
+            "[bold]Site role[/bold]", choices=roles, default="default", console=console,
+        )
+    else:
+        # No default offered, because `Prompt.ask` returns one WITHOUT
+        # checking it against `choices` -- rich short-circuits an empty
+        # answer in `PromptBase.__call__` before `process_response` runs.
+        # A fixed `default="default"` therefore let Enter answer a mapping
+        # whose roles are `hq` and `branch` with a role it never declared,
+        # and `execute_build` refused it: a dead end behind the key that
+        # looks safest. Here Enter is not an answer and the prompt repeats.
+        site_role = Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
 
     from dbml_sharepoint.cli import execute_build
 
