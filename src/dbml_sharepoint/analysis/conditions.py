@@ -668,6 +668,36 @@ def _looks_like_a_date(value: object) -> bool:
     return False
 
 
+def _reject_meaningless_now(
+    value: object, column_type: str, field: str, target: str, where: Location,
+) -> None:
+    """`now` on a DATE column would silently render as the literal string
+    "now" inside a DateTime value, which SharePoint accepts and answers with
+    the wrong rows. Caught here, named, and pointed at `today`.
+
+    A function rather than an inline guard because it has to run from two
+    places. `in` recurses through `_leaf` per member and so met it; CAML
+    renders `not_in` by looping the members itself, and that loop called only
+    `_check_date_literal`, for which `now` on a non-datetime column is merely
+    an unparseable literal. Both spellings refused, so nothing wrong was ever
+    emitted -- but only one of the two messages named `today`, which is the
+    fix (#21).
+    """
+    if (
+        isinstance(value, str)
+        and _NOW.match(value)
+        and column_type in _DATE_TYPES
+        and column_type not in _DATETIME_TYPES
+    ):
+        raise _reject(
+            FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
+            target,
+            f"the 'now' sentinel needs a datetime column; {field!r} is "
+            f"{column_type!r}, which has no time of day -- use 'today'",
+            where,
+        )
+
+
 def _reject_sentinel_with_a_substring_operator(
     value: object, column_type: str, op: str, target: str, where: Location,
 ) -> None:
@@ -952,6 +982,10 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             # conjunction rather than once per set member.
             ref = f'<FieldRef Name="{leaf.field}"/>'
             for item in leaf.value:
+                # Same order as the leaf path below, so `not_in [now]` and
+                # `in [now]` answer identically rather than differing by
+                # which branch of this function happened to loop.
+                _reject_meaningless_now(item, column_type, leaf.field, target, where)
                 _check_date_literal(item, column_type, target, where)
             parts = [
                 f"<Neq>{ref}{_caml_value(column_type, item, where)}</Neq>"
@@ -975,23 +1009,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             where,
         )
 
-    # `now` on a DATE column would silently render as the literal string
-    # "now" inside a DateTime value, which SharePoint accepts and answers
-    # with the wrong rows. Caught here, named, and pointed at `today`.
-    if (
-        isinstance(leaf.value, str)
-        and _NOW.match(leaf.value)
-        and column_type in _DATE_TYPES
-        and column_type not in _DATETIME_TYPES
-    ):
-        raise _reject(
-            FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
-            target,
-            f"the 'now' sentinel needs a datetime column; {leaf.field!r} is "
-            f"{column_type!r}, which has no time of day -- use 'today'",
-            where,
-        )
-
+    _reject_meaningless_now(leaf.value, column_type, leaf.field, target, where)
     _check_date_literal(leaf.value, column_type, target, where)
 
     if _is_now(leaf.value, column_type) and target == EXPRESSION:
