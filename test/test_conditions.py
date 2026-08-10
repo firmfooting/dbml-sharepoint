@@ -452,6 +452,57 @@ def test_now_on_a_date_column_is_refused_and_names_today() -> None:
             render(condition, TYPES)
 
 
+@pytest.mark.parametrize("op", ["in", "not_in"])
+@pytest.mark.parametrize("target", [CAML, VALIDATION, EXPRESSION])
+def test_in_and_not_in_diagnose_now_on_a_date_column_identically(
+    op: str, target: str,
+) -> None:
+    """Two spellings of one mistake got two different explanations, and only
+    one of them named the fix (#21).
+
+        in [now]      -> the 'now' sentinel needs a datetime column; 'Due' is
+                         'date', which has no time of day - use 'today'
+        not_in [now]  -> 'now' is not a date, the sentinel 'today'/'today+/-N',
+                         or 'now'
+
+    The second told the author their value was not one of three things, the
+    third of which was the value they had written.
+
+    The asymmetry was structural rather than accidental. `in` recurses through
+    `_leaf` per member, so every member met the sentinel guard; CAML renders
+    `not_in` by looping the members itself and called only
+    `_check_date_literal`, for which `now` on a non-datetime column is just an
+    unparseable literal. Both refused, so nothing wrong was ever emitted --
+    but rewriting a rule from `not_in` to `in` changed the explanation of the
+    same input, which is the kind of thing that costs somebody an afternoon.
+
+    Parametrised over every target so the CAML-only loop cannot drift from the
+    three that recurse.
+    """
+    findings = _findings(
+        Group("all_of", (Leaf("Due", op, ["now"]),)),
+        target=target,
+        types={"Due": "date"},
+    )
+
+    assert "use 'today'" in only(
+        findings, FindingCode.CONDITION_NOW_ON_A_DATE_COLUMN,
+    ).message
+
+
+def test_a_bad_date_among_good_ones_is_still_caught_per_member() -> None:
+    """The mirror. The per-member sentinel check must not displace the
+    per-member literal check that CAML's `not_in` loop already had -- one bad
+    literal among good ones used to walk straight past it."""
+    findings = _findings(
+        Group("all_of", (Leaf("Due", "not_in", ["2026-07-29", "banana"]),)),
+        target=CAML,
+        types={"Due": "date"},
+    )
+
+    assert only(findings, FindingCode.CONDITION_DATE_UNPARSEABLE).severity == "error"
+
+
 def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
     """`now` is the one sentinel here whose every rendering contradicts a
     published Microsoft source, so the evidence has to stay findable.
