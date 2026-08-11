@@ -322,10 +322,40 @@ def test_a_view_formatter_holding_a_bare_ampersand_is_refused() -> None:
     }
     errors = _project_errors(views=_view("V", "Title", "Status", formatting=wash))
 
-    f = only(errors, FindingCode.VIEW_FORMATTER_AMPERSAND_BREAKS_THE_VIEW_XML)
+    f = only(errors, FindingCode.VIEW_FORMATTER_XML_METACHARACTER)
     assert f.severity == "error"
     assert f.location == Location(Section.VIEWS, entity="Project", view="V")
     assert "additionalRowClass" in f.message
+
+
+def test_a_view_formatter_holding_a_less_than_is_refused() -> None:
+    """MEASURED 2026-08-11, same run as the ampersand: a view formatter
+    containing `<` is refused too, with a different XmlException -- `Name
+    cannot begin with the ']' character`, SharePoint having read the `<` as
+    the start of a tag.
+
+    `vehicle-log` shipped exactly this (`Number([$TripKm]) < 0`) and would
+    have aborted a deploy the same way. `>` is accepted, so the remedy is to
+    flip the comparison rather than to give it up.
+    """
+    wash = {"additionalRowClass": "=if(Number([$SortOrder]) < 0, 'x', '')"}
+    errors = _project_errors(views=_view("V", "Title", "SortOrder", formatting=wash))
+
+    f = only(errors, FindingCode.VIEW_FORMATTER_XML_METACHARACTER)
+    assert f.severity == "error"
+    assert "'<'" in f.message
+
+
+def test_a_view_formatter_using_greater_than_is_left_alone() -> None:
+    """The flipped comparison must not be refused in turn.
+
+    Measured accepted: `>` and `>=` both store and read back (as `&gt;`).
+    A rule that refused them would leave `<` with no remedy at all, which is
+    the shape AGENTS.md warns about -- stronger than the platform.
+    """
+    wash = {"additionalRowClass": "=if(0 > Number([$SortOrder]), 'x', '')"}
+
+    assert _project_errors(views=_view("V", "Title", "SortOrder", formatting=wash)) == []
 
 
 def test_a_view_formatter_using_or_is_left_alone() -> None:

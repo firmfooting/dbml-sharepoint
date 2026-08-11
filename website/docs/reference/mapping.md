@@ -524,37 +524,46 @@ operands already are.
   only, see the
   [style guide](./style-guide.md#styles).
 
-:::danger A view formatter cannot contain `&`
+:::danger A view formatter cannot contain `&` or `<`
 
-A view's `CustomFormatter` is **stored in the view schema XML**, so a bare
-`&` in it opens an XML entity reference and the document SharePoint assembles
-is malformed. Measured on a live tenant 2026-08-11: the view MERGE returns
-HTTP 500, `System.Xml.XmlException: An error occurred while parsing
-EntityName`, at the exact character position of the `&`, and **the whole
-deployment aborts**. It is refused at build time
-(`view_formatter_ampersand_breaks_the_view_xml`).
+A view's `CustomFormatter` is **stored in the view schema XML**, so a raw XML
+metacharacter reaches SharePoint as markup and the document it assembles is
+malformed. The view MERGE returns HTTP 500 with a `System.Xml.XmlException`
+and **the whole deployment aborts** part-way. It is refused at build time
+(`view_formatter_xml_metacharacter`).
 
-In practice this means the `&&` operator. Express the condition another way:
+Measured on a live tenant 2026-08-11 by `test/manual/formatter-xml-probe.js`:
+
+| In a view formatter | Result |
+|---|---|
+| `&` | **refused** — `XmlException`, *parsing EntityName* |
+| `<` | **refused** — `XmlException`, *Name cannot begin with the `']'` character* |
+| `&amp;` | accepted, stored and returned as `&amp;` |
+| `>` | accepted, returned as `&gt;` |
+| `>=` | accepted, returned as `&gt;=` |
+| `"` and `'` | accepted, returned literal |
+
+Two characters, and `>` is not one of them — which is the whole remedy for
+`<`: **flip the comparison**. `vehicle-log`'s row wash was
+`Number([$TripKm]) < 0` and is now `0 > Number([$TripKm])` — the same
+predicate, the same behaviour on a blank, a character SharePoint keeps.
+
+For `&&`, nest an `if()`:
 
 ```json
 "additionalRowClass": "=if([$Authorised] != 'Yes', if([$Stage] == 'Underway' || [$Stage] == 'Closed', 'sp-css-backgroundColor-BgDustRose', ''), '')"
 ```
 
-`||` is safe on its own terms: it contains no XML metacharacter, so nothing
-about XML can reach it.
+`||` is unaffected.
 
-**`<` and `>` are not characterised.** A comment in the deploy template says a
-formatter containing `>=` reads back as `&gt;=`, and `vehicle-log` ships a view
-formatter comparing with `<` — but that comment carries no date or probe and
-arrived with the initial public tree, and no shipped template's view formatter
-has been confirmed deployed. Neither is evidence. They are refused by nothing
-today and may well be fine; nobody has watched one work.
+The deployer does **not** escape on write, although `&amp;` demonstrably
+round-trips. Whether `&lt;` does is untested, and a deployer that escaped one
+metacharacter and not the other would be worse than this refusal — see #179.
 
-Whether an escaped `&amp;` round-trips is equally unestablished. Only the `&`
-failure is measured. If a probe shows `&amp;` is stored and returned as `&`,
-the deployer can escape on write and this restriction goes away entirely.
-
-See issue #179 for the probe that would settle all of it.
+**Form formatting is not affected.** The same probe measured a form's
+`ClientFormCustomFormatter` keeping `&`, `<`, `>` and both quotes literally,
+so it is not XML-stored and carries no restriction. **Column formatting is
+still unmeasured** — the probe's field bootstrap failed on that run.
 
 :::
 

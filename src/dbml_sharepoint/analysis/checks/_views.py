@@ -789,30 +789,46 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # A view's CustomFormatter is stored in the view schema XML,
                 # like ViewQuery -- which is why the deployer XML-DECODES it on
                 # read-back before comparing. It does not ENCODE on write, so a
-                # bare `&` reaches SharePoint as the opening of an entity
-                # reference, `&& [` is not a valid entity name, and the
-                # document SharePoint assembles is malformed.
+                # raw XML metacharacter reaches SharePoint as markup and the
+                # document it assembles is malformed.
                 #
-                # MEASURED 2026-08-11 on a live tenant: the view MERGE returns
-                # HTTP 500, `System.Xml.XmlException: An error occurred while
-                # parsing EntityName. Line 1, position 195` -- position 195
-                # being exactly where the `&&` sat. The deployment aborted.
+                # MEASURED on a live tenant, formatter-xml-probe.js, 2026-08-11:
                 #
-                # Refused here rather than escaped in the deployer, because
-                # whether SharePoint accepts `&amp;` and stores it back as `&`
-                # is NOT established; only the failure is. `||` is untouched:
-                # it carries no XML metacharacter and shipped templates use it.
+                #   &     REFUSED  XmlException, "parsing EntityName"
+                #   <     REFUSED  XmlException, "Name cannot begin with ']'"
+                #   &amp; accepted, stored and returned as `&amp;`
+                #   >     accepted, returned as `&gt;`
+                #   >=    accepted, returned as `&gt;=`
+                #   "     accepted, returned literal
+                #   '     accepted, returned literal
+                #
+                # So exactly two characters are refused, and `>` is not one of
+                # them -- which matters, because the remedy for `<` is to flip
+                # the comparison rather than to give it up. `vehicle-log`'s row
+                # wash was `Number([$TripKm]) < 0` and is now
+                # `0 > Number([$TripKm])`: same predicate, same NaN behaviour,
+                # a character SharePoint keeps.
+                #
+                # Not escaped in the deployer, though `&amp;` demonstrably
+                # round-trips: whether `&lt;` does is UNTESTED, and a half-
+                # escaping deployer that handled one and not the other would be
+                # worse than this refusal. #179 carries that question; if the
+                # answer is yes, this rule is deleted and the deployer escapes.
                 for key, value in _formatter_strings(view.formatting):
-                    if "&" not in value:
+                    bad = sorted({c for c in "&<" if c in value})
+                    if not bad:
                         continue
                     findings.append(Finding(
-                        FindingCode.VIEW_FORMATTER_AMPERSAND_BREAKS_THE_VIEW_XML,
-                        f"{ctx}: formatting {key!r} contains '&', which "
-                        f"SharePoint stores into the view schema XML as the "
-                        f"start of an entity reference -- the view MERGE fails "
-                        f"with an XmlException and the deployment aborts. "
-                        f"Express the condition without it: nest an if(), or "
-                        f"use '||', which carries no XML metacharacter.",
+                        FindingCode.VIEW_FORMATTER_XML_METACHARACTER,
+                        f"{ctx}: formatting {key!r} contains "
+                        f"{' and '.join(repr(c) for c in bad)}, which "
+                        f"SharePoint stores into the view schema XML as markup "
+                        f"-- the view MERGE fails with an XmlException and the "
+                        f"deployment aborts. Measured 2026-08-11. Use '>' "
+                        f"instead of '<' by flipping the comparison, and "
+                        f"express a conjunction by nesting an if() rather than "
+                        f"with '&&'; '>', '>=', '||', quotes and apostrophes "
+                        f"are all kept as they are.",
                         location=at_view,
                     ))
                 refs = formatter_field_refs(view.formatting)

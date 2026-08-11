@@ -241,8 +241,8 @@ class FindingCode(StrEnum):
     # malformed. Measured 2026-08-11: the view MERGE returns HTTP 500,
     # System.Xml.XmlException, at the exact position of the `&`. It aborts the
     # deployment, and nothing in the build or `node --check` can see it.
-    VIEW_FORMATTER_AMPERSAND_BREAKS_THE_VIEW_XML = (
-        "view_formatter_ampersand_breaks_the_view_xml", "error",
+    VIEW_FORMATTER_XML_METACHARACTER = (
+        "view_formatter_xml_metacharacter", "error",
     )
     WIDTH_COLUMN_NOT_DISPLAYED = "width_column_not_displayed", "error"
     WIDTH_OUT_OF_RANGE = "width_out_of_range", "error"
