@@ -49,8 +49,17 @@ class ScriptedConsole(Console):
         return self.file.getvalue()
 
 
-def _answers(destination: Path, *, build: str = "n", **over: str) -> list[str]:
-    """The happy-path script: template, directory, prefix, site, confirm."""
+def _answers(
+    destination: Path, *, build: str = "n", seed: str | None = None, **over: str,
+) -> list[str]:
+    """The happy-path script: template, directory, prefix, site, confirm.
+
+    `seed` answers the demo-rows question, which the wizard asks only after
+    the build is confirmed AND only for a mapping that declares demo items.
+    Left out by default so a script that does not reach it stays honest: a
+    spare answer at the end of the list is invisible, and a missing one
+    surfaces as EOFError rather than as silence.
+    """
     script = {
         "template": "risk-register",
         "destination": str(destination),
@@ -59,7 +68,8 @@ def _answers(destination: Path, *, build: str = "n", **over: str) -> list[str]:
         "write": "y",
     }
     script.update(over)
-    return [*script.values(), build]
+    tail = [build] if seed is None else [build, seed]
+    return [*script.values(), *tail]
 
 
 def _collapsed(console: ScriptedConsole) -> str:
@@ -504,7 +514,7 @@ def test_building_now_produces_a_pasteable_bundle(tmp_path: Path) -> None:
     are ones that build accepts.
     """
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, build="y"))
+    console = ScriptedConsole(_answers(destination, build="y", seed="n"))
 
     assert wizard.run_wizard(console) == 0
 
@@ -522,7 +532,7 @@ def test_the_built_bundle_carries_the_chosen_prefix(tmp_path: Path) -> None:
     from the template's original prefix.
     """
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, prefix="ACME_", build="y"))
+    console = ScriptedConsole(_answers(destination, prefix="ACME_", build="y", seed="n"))
 
     assert wizard.run_wizard(console) == 0
 
@@ -547,7 +557,7 @@ def test_a_refused_build_passes_its_exit_code_through(
     monkeypatch.setattr(cli, "execute_build", refuse)
 
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, build="y"))
+    console = ScriptedConsole(_answers(destination, build="y", seed="n"))
     assert wizard.run_wizard(console) == 2
 
 
@@ -825,7 +835,7 @@ def test_the_only_declared_site_role_is_not_asked_for(
     """
     captured = _capture_build(monkeypatch)
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, build="y"))
+    console = ScriptedConsole(_answers(destination, build="y", seed="n"))
 
     assert wizard.run_wizard(console) == 0
     assert "Site role" not in _collapsed(console)
@@ -952,6 +962,7 @@ def test_the_shipped_template_is_never_written_to(tmp_path: Path) -> None:
             prefix="ACME_",
             site_url="https://contoso.sharepoint.com/sites/ops",
             build="y",
+            seed="n",
         ),
     )
 
@@ -990,3 +1001,95 @@ def test_prompting_needs_both_streams_to_be_a_terminal(
     monkeypatch.setattr(sys, "stdout", Stream(stdout_tty))
 
     assert wizard.stdin_is_interactive() is expected
+
+
+def test_a_template_with_demo_items_is_asked_about_seeding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wizard's whole job is a first look at a template, and every colour
+    map, row wash and declared view is invisible on an empty list.
+
+    `--seed` has been available to `build` since the beginning and the wizard
+    never offered it, so the one path aimed at somebody who has not used this
+    tool before was the one path that could not show them what it does.
+    """
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, build="y", seed="y"))
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["seed"] is True
+
+
+def test_declining_the_seed_builds_without_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """And it is declined by DEFAULT.
+
+    Seeding writes `[DEMO]` rows into somebody's real SharePoint site. The
+    documented flag defaults to off and the wizard must not be more forward
+    than the flag it stands for -- pressing Enter through the wizard should
+    never put demo data on a site.
+    """
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, build="y", seed=""))
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["seed"] is False
+
+
+def test_a_template_declaring_no_demo_items_is_not_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question whose only useful answer is refused is worse than silence.
+
+    `--seed` against a mapping with no `demo_items` raises
+    `SeedRequiresDemoItemsError` and the build exits non-zero, so offering
+    the choice would be offering a dead end -- and the wizard would have
+    walked the operator into it. The script carries no answer for the
+    question, so a wizard that asked would run out of input and exit 130.
+    """
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+    captured = _capture_build(monkeypatch)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, template="fake-template", build="y"),
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert "demo" not in _collapsed(console).lower()
+    assert captured["seed"] is False
+
+
+def test_seeding_sends_the_operator_to_the_file_it_added(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A seeded bundle carries a THIRD script, and pasting the other two
+    leaves the list empty.
+
+    The closing panel names assess and deploy. Adding a file to the bundle
+    without adding it to the instructions is how somebody seeds, sees no
+    rows, and concludes the demo data is broken.
+    """
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, build="y", seed="y"))
+
+    assert wizard.run_wizard(console) == 0
+    assert "demo-data.js.txt" in _collapsed(console)
+
+
+def test_an_unseeded_run_does_not_mention_the_demo_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mirror: no demo file is written, so naming it would send the
+    operator looking for something that is not there."""
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, build="y", seed="n"))
+
+    assert wizard.run_wizard(console) == 0
+    assert "demo-data.js.txt" not in _collapsed(console)
