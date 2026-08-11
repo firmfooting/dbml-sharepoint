@@ -142,6 +142,53 @@ def test_site_group_empty_gate_requires_boolean(tmp_path: Path) -> None:
         load_mapping(tmp_path / "mapping.yaml")
 
 
+def test_a_group_can_declare_itself_the_enterprise_reader_target(
+    tmp_path: Path,
+) -> None:
+    """`--enterprise-reader` needs to know WHICH group to enrol into.
+
+    A name convention would be magic; this mirrors the existing
+    `enroll_operator_during_deploy` flag, which solves the same problem for
+    the operator.
+    """
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "XX Enterprise Readers"
+            enroll_enterprise_reader: true
+    """), name="mapping.yaml")
+
+    bundle = load_mapping(tmp_path / "mapping.yaml")
+    assert bundle.mapping.permissions is not None
+    assert bundle.mapping.permissions.groups[0].enroll_enterprise_reader is True
+
+
+def test_enterprise_reader_enrolment_defaults_to_false(tmp_path: Path) -> None:
+    """Every group shipped before this feature must keep meaning what it did."""
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "Ordinary group"
+    """), name="mapping.yaml")
+
+    bundle = load_mapping(tmp_path / "mapping.yaml")
+    assert bundle.mapping.permissions is not None
+    assert bundle.mapping.permissions.groups[0].enroll_enterprise_reader is False
+
+
+def test_enterprise_reader_enrolment_requires_boolean(tmp_path: Path) -> None:
+    """`bool("false")` is True, so a lenient read would enrol a reporting
+    account into a group whose author wrote the word "false"."""
+    write_mapping(tmp_path, blocks(entities("Project"), """
+        groups:
+          - name: "Ambiguous reader"
+            enroll_enterprise_reader: "false"
+    """), name="mapping.yaml")
+
+    with pytest.raises(
+        ValueError, match="enroll_enterprise_reader must be a boolean",
+    ):
+        load_mapping(tmp_path / "mapping.yaml")
+
+
 def test_invalid_permission_reconcile_mode_is_rejected(tmp_path: Path) -> None:
     write_mapping(tmp_path, blocks(entities("Project"), """
         list_permissions:

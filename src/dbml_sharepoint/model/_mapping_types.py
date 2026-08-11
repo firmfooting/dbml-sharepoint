@@ -347,6 +347,12 @@ class SiteGroup:
     # removes them again at the end of the run — unless they were already a
     # member, in which case membership is left untouched.
     enroll_operator_during_deploy: bool = False
+    # Optional enterprise-reader enrolment target. When true, `build
+    # --enterprise-reader <upn>` adds that ONE named account to this group in
+    # Phase 1.4 and LEAVES IT THERE -- unlike operator enrolment above, which
+    # is undone at the end of the run. Membership is otherwise operator-owned:
+    # the deploy adds, verifies, and never removes anyone.
+    enroll_enterprise_reader: bool = False
 
 
 @dataclass(frozen=True)

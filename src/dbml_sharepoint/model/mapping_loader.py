@@ -142,7 +142,7 @@ _GROUP_KEYS = frozenset({
     "name", "description", "owner_group", "allow_members_edit_membership",
     "allow_request_to_join_leave", "auto_accept_request_to_join_leave",
     "only_allow_members_view_membership", "require_empty_at_deploy",
-    "enroll_operator_during_deploy",
+    "enroll_operator_during_deploy", "enroll_enterprise_reader",
 })
 # `site_role` scopes the DEFAULT policy — which entities it applies to — and
 # is read only there. On an override it was parsed and silently discarded,
@@ -1064,6 +1064,9 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
             ),
             enroll_operator_during_deploy=_optional_bool(
                 grp, "enroll_operator_during_deploy", f"groups[{i}]",
+            ),
+            enroll_enterprise_reader=_optional_bool(
+                grp, "enroll_enterprise_reader", f"groups[{i}]",
             ),
         )
         for i, grp in enumerate(raw_groups)
