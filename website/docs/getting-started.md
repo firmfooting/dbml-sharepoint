@@ -71,6 +71,13 @@ A complete worked example lives in the repository at
 `examples/project-tracker` — schema, mapping and release side by side
 with a guided README.
 
+Before you design your own schema, read [SharePoint limits you must
+know](concepts/sharepoint-limits.md) — a schema that is perfectly ordinary
+as a relational design can silently cross a SharePoint Online ceiling (the
+5,000-item list view threshold, the 12-join lookup/person-column ceiling
+per view, the 20-index-per-list cap) at runtime, after a clean build and a
+green deploy.
+
 ## Build the bundle
 
 ```bash
