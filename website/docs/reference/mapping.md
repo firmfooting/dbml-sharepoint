@@ -523,6 +523,66 @@ operands already are.
   no `calculated: true`: the `string;#` prefix belongs to column formatting
   only, see the
   [style guide](./style-guide.md#styles).
+
+:::danger A view formatter cannot contain `&` or `<`
+
+A view's `CustomFormatter` is **stored in the view schema XML**, so a raw XML
+metacharacter reaches SharePoint as markup and the document it assembles is
+malformed. The view MERGE returns HTTP 500 with a `System.Xml.XmlException`
+and **the whole deployment aborts** part-way. It is refused at build time
+(`view_formatter_xml_metacharacter`).
+
+Measured on a live tenant 2026-08-11 by `test/manual/formatter-xml-probe.js`:
+
+| In a view formatter | Result |
+|---|---|
+| `&` | **refused** — `XmlException`, *parsing EntityName* |
+| `<` | **refused** — `XmlException`, *Name cannot begin with the `']'` character* |
+| `&amp;` | accepted, stored and returned as `&amp;` |
+| `>` | accepted, returned as `&gt;` |
+| `>=` | accepted, returned as `&gt;=` |
+| `"` and `'` | accepted, returned literal |
+
+Two characters, and `>` is not one of them — which is the whole remedy for
+`<`: **flip the comparison**. `vehicle-log`'s row wash was
+`Number([$TripKm]) < 0` and is now `0 > Number([$TripKm])` — the same
+predicate, the same behaviour on a blank, a character SharePoint keeps.
+
+For `&&`, nest an `if()`:
+
+```json
+"additionalRowClass": "=if([$Authorised] != 'Yes', if([$Stage] == 'Underway' || [$Stage] == 'Closed', 'sp-css-backgroundColor-BgDustRose', ''), '')"
+```
+
+`||` is unaffected.
+
+The deployer does **not** escape on write, although `&amp;` demonstrably
+round-trips. Whether `&lt;` does is untested, and a deployer that escaped one
+metacharacter and not the other would be worse than this refusal — see #179.
+
+**Form formatting is not affected.** The same probe measured a form's
+`ClientFormCustomFormatter` keeping `&`, `<`, `>` and both quotes literally,
+so it is not XML-stored and carries no restriction. **Column formatting is
+still unmeasured** — the probe's field bootstrap failed on that run.
+
+:::
+
+:::note What is escaped, and where
+
+Three payloads reach SharePoint as XML, and they are handled in three
+different places — worth knowing before adding a fourth:
+
+| Payload | Escaped by | Where |
+|---|---|---|
+| CAML filter values in `where` | `_xml_escape` — `&`, `<`, `>`, `"` | `analysis/conditions.py`, at render time |
+| Column widths written into `ListViewXml` | `xmlAttr` — `&`, `<`, `"` | the deploy script, at write time |
+| A view's `CustomFormatter` | nothing — **refused instead** | validation, see above |
+
+The first two are escaped because the code can see it is building XML. The
+third is the one that bit: it is sent as a JSON property and becomes XML only
+inside SharePoint, so the obligation is invisible at the call site.
+
+:::
 - `group_by` groups the view by one or two columns — SharePoint's own
   ceiling is two. Write `group_by: { field: Area }` for one level, or
   `group_by: { fields: [SourceType, SourceInstrument], collapsed: true }`

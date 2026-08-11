@@ -879,6 +879,22 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A `watched_lists:` entry names a column the deploy never "
         "creates."
     ),
+    FindingCode.VIEW_FORMATTER_XML_METACHARACTER: (
+        "A view formatter contains a raw `&` or `<`. A view's CustomFormatter "
+        "is stored in the view schema XML, so those reach SharePoint as markup "
+        "and the document it assembles is malformed -- the view MERGE returns "
+        "HTTP 500 with a `System.Xml.XmlException` and the deployment aborts "
+        "part-way. Nothing before that point can see it: the build is clean "
+        "and so is `node --check`. Measured on a live tenant 2026-08-11 by "
+        "`test/manual/formatter-xml-probe.js`: `&` and `<` are refused, while "
+        "`>`, `>=`, `\"` and `'` are all accepted (`>` comes back as `&gt;`). "
+        "So the remedy for `<` is to flip the comparison -- `0 > Number([$Km])` "
+        "rather than `Number([$Km]) < 0`, which is the same predicate and the "
+        "same behaviour on a blank -- and the remedy for `&&` is to nest an "
+        "`if()`. `||` is unaffected. An escaped `&amp;` was measured to "
+        "round-trip, but whether `&lt;` does is untested, so the deployer does "
+        "not escape: half-escaping would be worse than refusing."
+    ),
     FindingCode.WIDTH_COLUMN_NOT_DISPLAYED: (
         "A `widths` entry names a column that is not one of the view's "
         "fields."
