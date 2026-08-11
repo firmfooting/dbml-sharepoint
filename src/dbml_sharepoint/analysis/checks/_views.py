@@ -269,6 +269,37 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 _NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
+def _formatter_strings(node: object, key: str = "") -> list[tuple[str, str]]:
+    """Every (key, string value) pair in a formatter JSON tree, depth first.
+
+    `formatter_field_refs` walks the same shape but returns only the
+    `[$Field]` references it finds. This returns the raw strings, because the
+    question here is about a character anywhere in the value rather than about
+    a reference -- and the key comes with it so the message can say which
+    property to go and look at.
+    """
+    if isinstance(node, str):
+        return [(key, node)]
+    if isinstance(node, dict):
+        # The KEY is inspected as well as the value, and it names itself. Every
+        # formatter written by hand puts its expressions in values, so walking
+        # only those looks complete -- but `jsgen` serialises the whole object
+        # into `CustomFormatter`, keys included, and `{"label&detail": "x"}`
+        # puts the same bare character into the same view schema XML by
+        # another route. Found by review, not by a template doing it.
+        return [
+            pair
+            for child_key, child in node.items()
+            for pair in (
+                (str(child_key), str(child_key)),
+                *_formatter_strings(child, str(child_key)),
+            )
+        ]
+    if isinstance(node, list):
+        return [pair for child in node for pair in _formatter_strings(child, key)]
+    return []
+
+
 def _index_covered(node: Condition, indexed: frozenset[str] | set[str]) -> bool:
     """Whether an index can narrow this filter before SharePoint scans.
 
@@ -764,6 +795,52 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=at_view,
                 ))
             if view.formatting is not None:
+                # A view's CustomFormatter is stored in the view schema XML,
+                # like ViewQuery -- which is why the deployer XML-DECODES it on
+                # read-back before comparing. It does not ENCODE on write, so a
+                # raw XML metacharacter reaches SharePoint as markup and the
+                # document it assembles is malformed.
+                #
+                # MEASURED on a live tenant, formatter-xml-probe.js, 2026-08-11:
+                #
+                #   &     REFUSED  XmlException, "parsing EntityName"
+                #   <     REFUSED  XmlException, "Name cannot begin with ']'"
+                #   &amp; accepted, stored and returned as `&amp;`
+                #   >     accepted, returned as `&gt;`
+                #   >=    accepted, returned as `&gt;=`
+                #   "     accepted, returned literal
+                #   '     accepted, returned literal
+                #
+                # So exactly two characters are refused, and `>` is not one of
+                # them -- which matters, because the remedy for `<` is to flip
+                # the comparison rather than to give it up. `vehicle-log`'s row
+                # wash was `Number([$TripKm]) < 0` and is now
+                # `0 > Number([$TripKm])`: same predicate, same NaN behaviour,
+                # a character SharePoint keeps.
+                #
+                # Not escaped in the deployer, though `&amp;` demonstrably
+                # round-trips: whether `&lt;` does is UNTESTED, and a half-
+                # escaping deployer that handled one and not the other would be
+                # worse than this refusal. #179 carries that question; if the
+                # answer is yes, this rule is deleted and the deployer escapes.
+                for key, value in _formatter_strings(view.formatting):
+                    bad = sorted({c for c in "&<" if c in value})
+                    if not bad:
+                        continue
+                    findings.append(Finding(
+                        FindingCode.VIEW_FORMATTER_XML_METACHARACTER,
+                        f"{ctx}: formatting {key!r} contains "
+                        f"{' and '.join(repr(c) for c in bad)}, which "
+                        f"SharePoint stores into the view schema XML as markup "
+                        f"-- the view MERGE fails with HTTP 500 and a "
+                        f"System.Xml.XmlException, and the deployment aborts "
+                        f"part-way. Measured 2026-08-11. Use '>' "
+                        f"instead of '<' by flipping the comparison, and "
+                        f"express a conjunction by nesting an if() rather than "
+                        f"with '&&'; '>', '>=', '||', quotes and apostrophes "
+                        f"are all kept as they are.",
+                        location=at_view,
+                    ))
                 refs = formatter_field_refs(view.formatting)
                 for ref in sorted(refs - view_rendered):
                     findings.append(Finding(
