@@ -25,23 +25,30 @@ _DEFAULT_POLICY = Location(Section.LIST_PERMISSIONS, sub="default")
 _OVERRIDES = Location(Section.LIST_PERMISSIONS, sub="overrides")
 
 
-def _levels_granted_to_group(perms: PermissionsConfig, name: str) -> set[str]:
-    """Every permission level granted to `name` across all policy blocks.
+def _levels_granted_to_group(
+    perms: PermissionsConfig, name: str,
+) -> list[tuple[str, Location]]:
+    """Every (level, origin) grant to `name` across all policy blocks.
 
     Both the default policy and every override, because an override carries
     its OWN complete assignment list rather than adding to the default -- a
     reader granted Read on the default and nothing on an override cannot read
     that list, and a reader granted Contribute on an override alone would
-    slip past a default-only check.
+    slip past a default-only check. The origin travels with each grant so an
+    over-privileged finding can point at the block that actually granted it
+    (an override-sourced grant must not be reported against the default).
     """
-    policies = [perms.default_policy, *perms.overrides.values()]
-    return {
-        a.level
-        for policy in policies
+    policies: list[tuple[ListPermissionPolicy | None, Location]] = [
+        (perms.default_policy, _DEFAULT_POLICY),
+        *((policy, _OVERRIDES) for policy in perms.overrides.values()),
+    ]
+    return [
+        (a.level, origin)
+        for policy, origin in policies
         if policy is not None
         for a in policy.assignments
         if a.principal.kind == "group" and a.principal.name == name
-    }
+    ]
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -213,8 +220,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
-            levels = _levels_granted_to_group(perms, grp.name)
-            if not levels:
+            grants = _levels_granted_to_group(perms, grp.name)
+            if not grants:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
                     f"groups: {grp.name!r} declares "
@@ -222,13 +229,17 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"enrolling an account into it would grant nothing.",
                     location=_GROUPS,
                 ))
-            for level in sorted(levels - {"Read"}):
+            over_privileged = sorted(
+                {(level, origin) for level, origin in grants if level != "Read"},
+                key=lambda pair: (pair[0], pair[1].path),
+            )
+            for level, origin in over_privileged:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
                     f"list_permissions: {grp.name!r} is an enterprise-reader "
                     f"group granted {level!r}; only the built-in 'Read' is "
                     f"allowed.",
-                    location=_DEFAULT_POLICY,
+                    location=origin,
                 ))
 
         # list_permissions.overrides keys must be unprefixed DBML table names.

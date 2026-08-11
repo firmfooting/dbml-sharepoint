@@ -1408,9 +1408,15 @@ def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
 
 def _reader_findings(
     *, require_empty: bool = False, level: str | None = "Read",
-    second_reader: bool = False,
+    second_reader: bool = False, override_level: str | None = None,
 ) -> list[Finding]:
-    """One correctly-shaped mapping with a single knob turned per test."""
+    """One correctly-shaped mapping with a single knob turned per test.
+
+    `override_level`, when set, adds a `list_permissions.overrides["Risk"]`
+    block granting the first reader group that level -- an override carries
+    its OWN complete assignment list rather than adding to the default, so
+    this is the only way to exercise that path rather than the default one.
+    """
     def reader(name: str) -> SiteGroup:
         return SiteGroup(
             name=name, description="", owner_group="Site Owners",
@@ -1434,6 +1440,15 @@ def _reader_findings(
         )
         for g in groups
     ]
+    overrides = {} if override_level is None else {
+        "Risk": ListPermissionPolicy(
+            break_inheritance=True, reconcile_mode="exact",
+            assignments=[RoleAssignment(
+                principal=Principal(kind="group", name=groups[0].name),
+                level=override_level,
+            )],
+        ),
+    }
     return validate_against_mapping(
         make_schema(make_table("Risk")),
         make_bundle(
@@ -1444,7 +1459,7 @@ def _reader_findings(
                     break_inheritance=True, reconcile_mode="exact",
                     assignments=assignments,
                 ),
-                overrides={},
+                overrides=overrides,
             ),
         ),
     )
@@ -1510,6 +1525,35 @@ def test_restricted_read_is_refused_even_though_it_is_narrower() -> None:
         _reader_findings(level="Restricted Read"),
         FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
     )
+
+
+def test_a_reader_group_over_privileged_via_an_override_is_refused() -> None:
+    """The override path, not just the default.
+
+    An override carries its OWN complete assignment list rather than adding
+    to the default, so a reader clean on `list_permissions.default` can
+    still be handed `Contribute` by an override alone -- exactly the shape
+    `service-evidence-register`'s `ServiceIssue` override will take. Without
+    walking `perms.overrides` this case would look clean and the account
+    would hold more than `Read` on that one list. The finding must also
+    point at the override block, not the default, so an operator looking at
+    `location` lands on the block that actually granted it.
+    """
+    finding = only(
+        _reader_findings(override_level="Contribute"),
+        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+    )
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
+
+
+def test_a_reader_group_granted_read_on_default_and_override_is_clean() -> None:
+    """The shape `service-evidence-register` writes for `ServiceIssue`: Read
+    on the default policy AND Read again on an override. Both grants are
+    the built-in 'Read', so neither the default nor the override path may
+    fire over-privileged."""
+    findings = _reader_findings(override_level="Read")
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
 
 
 def test_a_correctly_declared_reader_group_is_clean() -> None:
