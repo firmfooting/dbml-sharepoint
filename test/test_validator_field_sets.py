@@ -346,6 +346,21 @@ def test_a_view_formatter_holding_a_less_than_is_refused() -> None:
     assert "'<'" in f.message
 
 
+def test_a_view_formatter_metacharacter_in_an_object_key_is_refused() -> None:
+    """The keys are serialised into `CustomFormatter` too.
+
+    Walking only the values looks complete -- every formatter anyone writes
+    by hand puts its expressions in values -- and it leaves the same bare
+    character in the same view schema XML by another route. `jsgen` dumps
+    the whole object, keys included.
+    """
+    wash = {"additionalRowClass": "=if(1 == 1, 'x', '')", "label&detail": "x"}
+    errors = _project_errors(views=_view("V", "Title", formatting=wash))
+
+    f = only(errors, FindingCode.VIEW_FORMATTER_XML_METACHARACTER)
+    assert "label&detail" in f.message
+
+
 def test_a_view_formatter_using_greater_than_is_left_alone() -> None:
     """The flipped comparison must not be refused in turn.
 

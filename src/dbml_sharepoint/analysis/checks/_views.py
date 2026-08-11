@@ -281,10 +281,19 @@ def _formatter_strings(node: object, key: str = "") -> list[tuple[str, str]]:
     if isinstance(node, str):
         return [(key, node)]
     if isinstance(node, dict):
+        # The KEY is inspected as well as the value, and it names itself. Every
+        # formatter written by hand puts its expressions in values, so walking
+        # only those looks complete -- but `jsgen` serialises the whole object
+        # into `CustomFormatter`, keys included, and `{"label&detail": "x"}`
+        # puts the same bare character into the same view schema XML by
+        # another route. Found by review, not by a template doing it.
         return [
             pair
             for child_key, child in node.items()
-            for pair in _formatter_strings(child, str(child_key))
+            for pair in (
+                (str(child_key), str(child_key)),
+                *_formatter_strings(child, str(child_key)),
+            )
         ]
     if isinstance(node, list):
         return [pair for child in node for pair in _formatter_strings(child, key)]
@@ -823,8 +832,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"{ctx}: formatting {key!r} contains "
                         f"{' and '.join(repr(c) for c in bad)}, which "
                         f"SharePoint stores into the view schema XML as markup "
-                        f"-- the view MERGE fails with an XmlException and the "
-                        f"deployment aborts. Measured 2026-08-11. Use '>' "
+                        f"-- the view MERGE fails with HTTP 500 and a "
+                        f"System.Xml.XmlException, and the deployment aborts "
+                        f"part-way. Measured 2026-08-11. Use '>' "
                         f"instead of '<' by flipping the comparison, and "
                         f"express a conjunction by nesting an if() rather than "
                         f"with '&&'; '>', '>=', '||', quotes and apostrophes "
