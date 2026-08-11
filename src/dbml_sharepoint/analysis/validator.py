@@ -494,7 +494,10 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
     this walks them in declared order and concatenates what they report.
     Order is part of the contract — see that package's docstring.
     """
-    from dbml_sharepoint.analysis.checks import CHECK_FAMILIES, ValidationContext
+    # Deferred for a genuine cycle, not a preference: checks/__init__.py
+    # imports Finding from this module, so this cannot move to the top until
+    # that re-export is deleted -- #168.
+    from dbml_sharepoint.analysis.checks import CHECK_FAMILIES, ValidationContext  # noqa: PLC0415
 
     vc = ValidationContext.build(schema, bundle)
     findings: list[Finding] = []
