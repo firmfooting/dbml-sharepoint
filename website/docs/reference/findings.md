@@ -130,6 +130,9 @@ dbml-sharepoint explain unknown_column_type
 | `empty_enum` | warning | An enum declares no members. |
 | `empty_previous_title` | error | A `renamed_from` entry is blank. |
 | `empty_view_url_slug` | error | A view title yields an empty URL slug; it needs at least one letter or digit. |
+| `enterprise_reader_group_not_granted` | error | A group marked `enroll_enterprise_reader` holds no role assignment, so enrolling an account into it grants nothing. The deploy would still report success and the account would see no rows. Grant it `Read` under `list_permissions`. |
+| `enterprise_reader_group_over_privileged` | error | A group marked `enroll_enterprise_reader` is granted something other than the built-in `Read`. Anything wider contradicts the name. `Restricted Read` is refused too, and that half is deliberate: Microsoft Learn's site-permissions table shows it lacks `Use Remote Interfaces`, which an API client needs, so it would be less privilege AND a reporting connector that cannot read anything. |
+| `enterprise_reader_group_requires_empty` | error | A group declares both `enroll_enterprise_reader` and `require_empty_at_deploy`. These contradict across runs: the reader is enrolled in Phase 1.4 and stays, so the next deploy fails its own empty-group gate in Phase 1.2. Drop one. |
 | `entity_not_in_schema` | error | The mapping's `entities:` declares a name the DBML schema has no table for. |
 | `enum_members_differ` | error | A DBML enum's members differ from the choices configured for it in `enum_sources`. |
 | `enum_source_has_no_dbml_enum` | warning | A configured `enum_sources` entry has no matching DBML enum in the schema. |
@@ -183,6 +186,7 @@ dbml-sharepoint explain unknown_column_type
 | `multi_value_style_renders_a_false_neutral` | error | A `severity` or `pill` style sits on a multi-value column. Both compare `@currentField` against quoted strings and a multi-value field is an array, so no branch matches and every cell takes the fallback. Watched on a live site on 2026-08-10: that is a filled grey cell on every row -- a verdict rather than a gap, and invisible to the build and the deploy alike. |
 | `multi_value_unique_unsupported` | error | `[unique]` is declared on a multi-value column. SharePoint cannot enforce unique values on a Choice (multi-valued) column, and measured on 2026-08-10 refuses `EnforceUniqueValues` on one with HTTP 500. |
 | `multiple_default_views` | error | More than one view on an entity is marked default; a SharePoint list has exactly one. |
+| `multiple_enterprise_reader_groups` | error | More than one group is marked `enroll_enterprise_reader`. `build --enterprise-reader` takes one address and needs one unambiguous target. |
 | `orphan_enum` | warning | An enum is defined but no column references it. |
 | `overdue_guard_field_not_rendered` | error | An `overdue-date` style's `guard.field` names a column the entity does not render. |
 | `polymorphic_column_not_rendered` | error | A `polymorphic_patterns:` entry's `field` or `discriminator` names a column the deploy never creates. |

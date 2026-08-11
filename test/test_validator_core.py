@@ -1406,6 +1406,121 @@ def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
     assert "Nobody" in finding.message
 
 
+def _reader_findings(
+    *, require_empty: bool = False, level: str | None = "Read",
+    second_reader: bool = False,
+) -> list[Finding]:
+    """One correctly-shaped mapping with a single knob turned per test."""
+    def reader(name: str) -> SiteGroup:
+        return SiteGroup(
+            name=name, description="", owner_group="Site Owners",
+            allow_members_edit_membership=False,
+            allow_request_to_join_leave=False,
+            auto_accept_request_to_join_leave=False,
+            only_allow_members_view_membership=False,
+            require_empty_at_deploy=require_empty,
+            enroll_operator_during_deploy=False,
+            enroll_enterprise_reader=True,
+        )
+
+    groups = [reader("XX Enterprise Readers")]
+    if second_reader:
+        groups.append(reader("XX Other Readers"))
+    # Grant EVERY declared reader, so a test that adds a second one measures
+    # only the duplicate rule and does not also trip "granted nothing".
+    assignments = [] if level is None else [
+        RoleAssignment(
+            principal=Principal(kind="group", name=g.name), level=level,
+        )
+        for g in groups
+    ]
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[], groups=groups,
+                default_policy=ListPermissionPolicy(
+                    break_inheritance=True, reconcile_mode="exact",
+                    assignments=assignments,
+                ),
+                overrides={},
+            ),
+        ),
+    )
+
+
+def test_a_reader_group_that_must_be_empty_is_refused() -> None:
+    """The two flags contradict each other across runs.
+
+    `require_empty_at_deploy` is proved in Phase 1.2; the reader is enrolled
+    in Phase 1.4 and stays. So the run that enrols the reader succeeds and
+    the NEXT one aborts on its own gate -- on a site nobody touched, which
+    is the worst shape a failure can take.
+    """
+    only(
+        _reader_findings(require_empty=True),
+        FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
+    )
+
+
+def test_two_reader_groups_are_refused() -> None:
+    """`--enterprise-reader` takes one address and must have one target.
+
+    Picking either group would be a coin toss, and picking both would grant
+    an account more than its author declared.
+    """
+    only(
+        _reader_findings(second_reader=True),
+        FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS,
+    )
+
+
+def test_a_reader_group_granted_nothing_is_refused() -> None:
+    """A group with no role assignment anywhere grants nothing.
+
+    Enrolment would succeed, the manifest would report a reader, the deploy
+    would go green, and the account would see no rows. Nothing downstream
+    can tell that apart from an empty register.
+    """
+    only(
+        _reader_findings(level=None),
+        FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
+    )
+
+
+def test_a_reader_group_granted_more_than_read_is_refused() -> None:
+    """An "Enterprise Reader" holding Contribute is the whole point of this
+    guard: the name would go on telling the truth while the grant did not."""
+    only(
+        _reader_findings(level="Contribute"),
+        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+    )
+
+
+def test_restricted_read_is_refused_even_though_it_is_narrower() -> None:
+    """Deliberate, and the surprising half of the rule.
+
+    Microsoft Learn's site-permissions table shows `Restricted Read` lacks
+    `Use Remote Interfaces` -- the permission an API client needs. It is
+    less privilege AND a broken connector, which is the failure this whole
+    feature exists to avoid.
+    """
+    only(
+        _reader_findings(level="Restricted Read"),
+        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+    )
+
+
+def test_a_correctly_declared_reader_group_is_clean() -> None:
+    """The shape Task 3 writes into 31 mappings must pass all four rules."""
+    findings = _reader_findings()
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED)
+    none_of(findings, FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS)
+
+
 def test_an_acl_naming_an_undeclared_group_is_an_error() -> None:
     """A list ACL granting to a group nothing declares would fail at deploy
     time, when `sitegroups/getbyname` cannot resolve it."""

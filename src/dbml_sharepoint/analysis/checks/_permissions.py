@@ -9,7 +9,7 @@ from dbml_sharepoint.analysis.validator import (
     _BUILTIN_SP_GROUPS,
     Finding,
 )
-from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy
+from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, PermissionsConfig
 
 # These messages spell the level or group name with `!r`, so the quotes are
 # inside the bracket -- `permission_levels['Reader']`. A Location holding
@@ -23,6 +23,25 @@ _GROUPS = Location(Section.GROUPS)
 #: paths are `list_permissions.default...` and `list_permissions.overrides`.
 _DEFAULT_POLICY = Location(Section.LIST_PERMISSIONS, sub="default")
 _OVERRIDES = Location(Section.LIST_PERMISSIONS, sub="overrides")
+
+
+def _levels_granted_to_group(perms: PermissionsConfig, name: str) -> set[str]:
+    """Every permission level granted to `name` across all policy blocks.
+
+    Both the default policy and every override, because an override carries
+    its OWN complete assignment list rather than adding to the default -- a
+    reader granted Read on the default and nothing on an override cannot read
+    that list, and a reader granted Contribute on an override alone would
+    slip past a default-only check.
+    """
+    policies = [perms.default_policy, *perms.overrides.values()]
+    return {
+        a.level
+        for policy in policies
+        if policy is not None
+        for a in policy.assignments
+        if a.principal.kind == "group" and a.principal.name == name
+    }
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -166,6 +185,51 @@ def check(vc: ValidationContext) -> list[Finding]:
             _check_policy_assignments(
                 perms.default_policy, "list_permissions.default", _DEFAULT_POLICY,
             )
+
+        # === Enterprise reader tier ===
+        # The flagged group is the target of `build --enterprise-reader`.
+        # Every rule here refuses a mapping that would deploy green and
+        # leave the reporting account seeing nothing.
+        reader_groups = [g for g in perms.groups if g.enroll_enterprise_reader]
+
+        if len(reader_groups) > 1:
+            findings.append(Finding(
+                FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS,
+                f"groups: {len(reader_groups)} groups declare "
+                f"enroll_enterprise_reader "
+                f"({', '.join(repr(g.name) for g in reader_groups)}); "
+                f"--enterprise-reader needs exactly one target.",
+                location=_GROUPS,
+            ))
+
+        for grp in reader_groups:
+            if grp.require_empty_at_deploy:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
+                    f"groups: {grp.name!r} declares both "
+                    f"enroll_enterprise_reader and require_empty_at_deploy. "
+                    f"The reader is enrolled after the empty-group gate and "
+                    f"stays, so the next deploy aborts on that gate.",
+                    location=_GROUPS,
+                ))
+
+            levels = _levels_granted_to_group(perms, grp.name)
+            if not levels:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
+                    f"groups: {grp.name!r} declares "
+                    f"enroll_enterprise_reader but holds no role assignment; "
+                    f"enrolling an account into it would grant nothing.",
+                    location=_GROUPS,
+                ))
+            for level in sorted(levels - {"Read"}):
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+                    f"list_permissions: {grp.name!r} is an enterprise-reader "
+                    f"group granted {level!r}; only the built-in 'Read' is "
+                    f"allowed.",
+                    location=_DEFAULT_POLICY,
+                ))
 
         # list_permissions.overrides keys must be unprefixed DBML table names.
         for entity_name, override_policy in perms.overrides.items():
