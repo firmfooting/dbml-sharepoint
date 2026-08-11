@@ -523,6 +523,50 @@ operands already are.
   no `calculated: true`: the `string;#` prefix belongs to column formatting
   only, see the
   [style guide](./style-guide.md#styles).
+
+:::danger A view formatter cannot contain `&`
+
+A view's `CustomFormatter` is **stored in the view schema XML**, so a bare
+`&` in it opens an XML entity reference and the document SharePoint assembles
+is malformed. Measured on a live tenant 2026-08-11: the view MERGE returns
+HTTP 500, `System.Xml.XmlException: An error occurred while parsing
+EntityName`, at the exact character position of the `&`, and **the whole
+deployment aborts**. It is refused at build time
+(`view_formatter_ampersand_breaks_the_view_xml`).
+
+In practice this means the `&&` operator. Express the condition another way:
+
+```json
+"additionalRowClass": "=if([$Authorised] != 'Yes', if([$Stage] == 'Underway' || [$Stage] == 'Closed', 'sp-css-backgroundColor-BgDustRose', ''), '')"
+```
+
+`||` is fine and shipped templates use it — it carries no XML metacharacter.
+So are `<` and `>`: a formatter containing `>=` was observed to store and read
+back correctly (SharePoint encodes those itself on the way in), and shipped
+view formatters compare with `<`.
+
+Whether an escaped `&amp;` would be accepted and stored back as `&` is **not
+established** — only the failure is. If someone probes it and it round-trips,
+the deployer can escape on write and this restriction goes away.
+
+:::
+
+:::note What is escaped, and where
+
+Three payloads reach SharePoint as XML, and they are handled in three
+different places — worth knowing before adding a fourth:
+
+| Payload | Escaped by | Where |
+|---|---|---|
+| CAML filter values in `where` | `_xml_escape` — `&`, `<`, `>`, `"` | `analysis/conditions.py`, at render time |
+| Column widths written into `ListViewXml` | `xmlAttr` — `&`, `<`, `"` | the deploy script, at write time |
+| A view's `CustomFormatter` | nothing — **refused instead** | validation, see above |
+
+The first two are escaped because the code can see it is building XML. The
+third is the one that bit: it is sent as a JSON property and becomes XML only
+inside SharePoint, so the obligation is invisible at the call site.
+
+:::
 - `group_by` groups the view by one or two columns — SharePoint's own
   ceiling is two. Write `group_by: { field: Area }` for one level, or
   `group_by: { fields: [SourceType, SourceInstrument], collapsed: true }`
