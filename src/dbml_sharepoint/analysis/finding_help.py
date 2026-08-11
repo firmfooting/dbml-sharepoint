@@ -891,9 +891,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "So the remedy for `<` is to flip the comparison -- `0 > Number([$Km])` "
         "rather than `Number([$Km]) < 0`, which is the same predicate and the "
         "same behaviour on a blank -- and the remedy for `&&` is to nest an "
-        "`if()`. `||` is unaffected. An escaped `&amp;` was measured to "
-        "round-trip, but whether `&lt;` does is untested, so the deployer does "
-        "not escape: half-escaping would be worse than refusing."
+        "`if()`. `||` is unaffected. Both `&amp;` and `&lt;` were measured to "
+        "write and read back unchanged, so each refused character has a "
+        "working escaped spelling. The deployer still does not escape, and "
+        "the reason is no longer that it is untested: what nobody has "
+        "watched is whether the escaped form still RENDERS as the author "
+        "meant. A formatter that stores `&amp;&amp;` and paints `&amp;&amp;` on "
+        "the page is not a working formatter, and no API round-trip can "
+        "tell the difference -- see issue #179."
     ),
     FindingCode.WIDTH_COLUMN_NOT_DISPLAYED: (
         "A `widths` entry names a column that is not one of the view's "

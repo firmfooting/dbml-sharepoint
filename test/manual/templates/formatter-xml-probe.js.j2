@@ -150,8 +150,30 @@
  *      still true) and paste once more to recycle the probe list — or
  *      delete 'dbmlsp Probe FormatterXML' by hand.
  *
- * STATUS: NOT YET RUN. Every question below is NOT ESTABLISHED until an
- * operator pastes this revision into a tenant.
+ * STATUS: RUN 2026-08-11, control held. Every API question answered; the
+ * EYES-ON half is still open, and it is the half that decides whether the
+ * build-time refusal can be deleted.
+ *
+ *   VIEW CustomFormatter
+ *     &      REFUSED   XmlException, 'parsing EntityName'
+ *     <      REFUSED   XmlException, "Name cannot begin with ']'"
+ *     &amp;  accepted, read back unchanged
+ *     &lt;   accepted, read back unchanged
+ *     >  >=  accepted, read back entity-encoded as &gt;
+ *     "  '   accepted, read back literal
+ *
+ *   COLUMN CustomFormatter, and FORM ClientFormCustomFormatter
+ *     every character above accepted and read back LITERAL. Neither is
+ *     XML-stored. This is why the deploy script XML-decodes a view
+ *     formatter's readback and does NOT decode a column formatter's.
+ *
+ *   D rows: a field Title, that Title reused as a widths key, a view
+ *     Title, a ValidationMessage and a column Description, each carrying
+ *     a bare '&' -- all accepted and round-tripped.
+ *
+ * WHAT IS STILL OPEN: whether any of it RENDERS. Every row above says
+ * only that SharePoint kept the text. The A/B/C_COMBINED writes exist so
+ * one look answers it; the checklist this prints is unanswered so far.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}

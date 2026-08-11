@@ -16,6 +16,17 @@
   // The view CustomFormatter is stored in the view schema XML like
   // ViewQuery, so its readback is XML-entity-encoded ('>=' returns as
   // '&gt;='): decode before the canonical JSON comparison, both sides.
+  //
+  // That claim arrived with the initial public tree and carried no date or
+  // probe for a year. MEASURED at last on 2026-08-11 by
+  // test/manual/formatter-xml-probe.js, and it is correct: '>' is written
+  // back as '&gt;' and '>=' as '&gt;='.
+  //
+  // The same run establishes why the COLUMN formatter below is compared
+  // WITHOUT this decode, which reads like an oversight and is not. A column's
+  // CustomFormatter keeps '&', '<', '>' and both quotes literally -- it is not
+  // XML-stored. Decoding it would corrupt a formatter that legitimately
+  // contains '&amp;' as text.
   const canonicalViewFormatter = (value) => canonicalJson(typeof value === 'string' ? xmlDecode(value) : value);
   async function mergeView(viewUrl, body, viewDigest) {
     const r = await fetchWithRetry(viewUrl, {
