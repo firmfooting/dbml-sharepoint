@@ -1109,3 +1109,51 @@ def test_an_unseeded_run_does_not_mention_the_demo_script(
 
     assert wizard.run_wizard(console) == 0
     assert "demo-data.js.txt" not in _collapsed(console)
+
+
+def test_the_seed_question_carries_its_caution_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shipped family may seed data its own guide forbids on a live site.
+
+    `equipment-maintenance` seeds ONE genuinely overdue infusion pump --
+    eighteen days past its annual service -- because a view that demonstrates
+    empty teaches the adopter it does not work. Its guide says plainly: do
+    not seed a site that already holds a real schedule, and governance treats
+    an overdue row as work to explain within five business days.
+
+    So the caution has to reach the operator BEFORE the prompt they answer.
+    Offering to create that and mentioning the guide afterwards is offering
+    it too late.
+    """
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n"), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    caution = shown.index("before seeding")
+    question = shown.index("Add the template's demo rows")
+    assert caution < question, "the caution must precede the question"
+    assert "deploy.md" in shown
+
+
+def test_a_seeded_run_names_the_guide_before_the_demo_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Same argument, one screen later: the closing panel is an instruction
+    list, and an instruction read first is the only one that can prevent
+    anything."""
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="y"), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert shown.index("deploy.md", shown.index("Next")) < shown.index(
+        "demo-data.js.txt", shown.index("Next"),
+    )

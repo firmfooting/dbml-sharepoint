@@ -474,12 +474,37 @@ def _run(console: Console) -> int:
     # Offered only where the mapping HAS demo items, and declined by default:
     # seeding writes `[DEMO]` rows into a real site, and the wizard must not
     # be more forward than the documented flag it stands for.
-    seed = _declares_demo_items(mapping_path) and Confirm.ask(
-        "Add the template's demo rows, so the views and colours have "
-        "something to show?",
-        default=False,
-        console=console,
-    )
+    seed = False
+    if _declares_demo_items(mapping_path):
+        # The caution goes BEFORE the question, because the question is where
+        # the decision is made. A shipped family may seed deliberately alarming
+        # data to make a view render at all -- equipment-maintenance ships one
+        # genuinely overdue infusion pump, eighteen days past its annual
+        # service, and its guide says in as many words not to seed a site that
+        # already holds a real schedule. Governance there treats an overdue row
+        # as work to explain within five business days. Offering to create that
+        # and mentioning the guide afterwards is offering it too late.
+        #
+        # The escape before [DEMO] is rich's documented way to mean a
+        # literal bracket. MEASURED 2026-08-11: rich prints it identically
+        # with or without, because DEMO is not a style it knows. Kept
+        # anyway -- it is the documented spelling and costs one character
+        # -- but NOT because an unescaped one was seen to break. An
+        # earlier version of this comment claimed rich swallowed it, which
+        # was never measured and is false.
+        console.print(
+            r"[dim]Demo rows are titled \[DEMO] and rollback treats a list of "
+            "them as demo-only. Some families seed deliberately alarming data "
+            "so a view renders at all -- read "
+            f"{answers.destination / '30-deploy' / 'deploy.md'} before seeding "
+            "a site that already holds real data.[/dim]",
+        )
+        seed = Confirm.ask(
+            "Add the template's demo rows, so the views and colours have "
+            "something to show?",
+            default=False,
+            console=console,
+        )
 
     try:
         execute_build(
@@ -510,9 +535,15 @@ def _run(console: Console) -> int:
             # somebody seeds, sees no rows, and concludes the demo data
             # is broken.
             + (
-                f"\n\nThen [bold]"
-                f"{answers.destination / 'build' / DEMO_SCRIPT}[/bold]"
-                " for the demo rows."
+                # The guide is named BEFORE the demo script, not after it:
+                # a family may seed data its own procedure tells you not
+                # to put on a live site, and an instruction read first is
+                # the only one that can prevent that.
+                f"\n\nRead [bold]"
+                f"{answers.destination / '30-deploy' / 'deploy.md'}[/bold]"
+                " for this template's seeding conditions, then paste "
+                f"[bold]{answers.destination / 'build' / DEMO_SCRIPT}"
+                "[/bold] for the demo rows."
                 if seed
                 else ""
             )
