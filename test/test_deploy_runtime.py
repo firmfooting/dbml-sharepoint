@@ -1314,9 +1314,9 @@ def test_an_unexpected_member_on_a_later_page_still_aborts() -> None:
     SharePoint pages `sitegroups(N)/users` and hands back a `__next`. A gate
     that stopped at page one would be defeated by the group simply being
     big — and it would look like it worked, because the small groups every
-    test uses fit in one page. Page one here holds nobody but the named
-    reader, so a first-page-only read sees an idempotent redeploy and
-    proceeds.
+    test uses fit in one page. Page one here is EMPTY and the stranger is
+    alone on page two, so a first-page-only read sees a group with no
+    members at all and enrols straight past them.
     """
     summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, member_pages=[
         [],

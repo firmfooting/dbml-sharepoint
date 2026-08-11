@@ -207,8 +207,8 @@
           throw new Error(
             `group '${grp.name}' already holds ${others.length} principal(s) other than `
             + `'${READER_ADDRESS}': ${listed}. That group grants Read on EVERY list this `
-            + `bundle provisions, so each of them can read all of it. Nothing was changed and `
-            + `nothing was removed — this needs a human decision. Either remove them by hand in `
+            + `bundle provisions, so each of them can read all of it. Nothing was granted and `
+            + `nobody was removed — this needs a human decision. Either remove them by hand in `
             + `Site permissions > Groups and run this script again, or rebuild WITHOUT `
             + `--enterprise-reader, which leaves the membership exactly as it is and still `
             + `deploys the group and its declared Read grant.`,

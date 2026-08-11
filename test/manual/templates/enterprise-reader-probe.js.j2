@@ -201,6 +201,8 @@
     return;
   }
 
+  // Everything measured sits inside this try; see the `finally` at the end.
+  try {
   // ---- SP.BasePermissions decoding -------------------------------------
   // MIRRORED, NOT INVENTED. Every value below is copied character for
   // character from src/dbml_sharepoint/analysis/permissions.py's
@@ -590,7 +592,25 @@
             // transcript — this repository has leaked one twice. Whether it
             // WAS absolute is still recorded, because that is the part the
             // deploy's `membersUrl = json.d.__next` depends on.
-            const redacted = typeof next === 'string' ? next.split(WEB).join('<site>') : next;
+            // Case-INSENSITIVE, and deliberately not a RegExp: SharePoint may
+            // echo the host or path in a different case than
+            // _spPageContextInfo reports, and a case-sensitive split would
+            // leave the tenant in the transcript. Building a RegExp from a URL
+            // would mean escaping it correctly, which is one more thing to get
+            // wrong in the code whose whole job is not leaking the tenant.
+            const redactWeb = (s) => {
+              const hay = s.toLowerCase();
+              const needle = WEB.toLowerCase();
+              let out = '';
+              let from = 0;
+              for (;;) {
+                const at = hay.indexOf(needle, from);
+                if (at === -1) { return out + s.slice(from); }
+                out += s.slice(from, at) + '<site>';
+                from = at + needle.length;
+              }
+            };
+            const redacted = typeof next === 'string' ? redactWeb(next) : next;
             const present = typeof next === 'string' && next !== '';
             record('C2', CLAIM_SHAPE_Q,
                    `OBSERVED — d.__next ${present ? 'PRESENT' : 'ABSENT'}`,
@@ -708,8 +728,13 @@
     }
   }
 
-  // ---- Report ----------------------------------------------------------
-  report();
+  } finally {
+    // ---- Report --------------------------------------------------------
+    // In a `finally`, so a throw anywhere in A/B/C still prints every
+    // question answered before it. A probe that loses its whole transcript
+    // to one failed call has wasted the operator's paste.
+    report();
+  }
 
   console.log('\n============ WHAT TO SEND BACK ============');
   console.log('1. The whole RESULTS block above, verbatim, including the evidence');
