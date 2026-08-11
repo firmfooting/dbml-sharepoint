@@ -1433,15 +1433,45 @@ rejects the pair (`enterprise_reader_group_enrols_the_operator`), and the
 combination has no legitimate use in any case — a reader group is held to
 `Read`, while an operator self-enrols in order to write.
 
-**That route is not yet verified end-to-end.** Before you rely on it: the
-reader account holds `Read` on each list, and only SharePoint's derived
+**That route is still not verified end-to-end**, but the specific mechanism
+it was hedged against has now been measured, and measured absent. The reader
+account holds `Read` on each list and only SharePoint's derived
 `Limited Access` at web scope — it is never added to Site Visitors or any
 web-scoped group. Microsoft Learn documents that *lockdown mode* strips
 `Use Remote Interfaces` from `Limited Access`, and that lockdown mode is on
-by default for publishing sites. Whether a given tenant's lockdown-mode
-setting leaves this path open has not been checked against a live site.
-What has been established, and only this: the grant is declared, it is
-reconcilable, and it survives a redeploy that would erase a hand-added one.
+by default for publishing sites.
+
+Measured on **2026-08-11**, on **one** Microsoft 365 group-connected Team
+Site, with `test/manual/enterprise-reader-probe.js`:
+
+- At **web** scope the enrolled account held exactly `ViewFormPages`,
+  `Open`, `BrowseUserInfo`, `UseClientIntegration` and **`UseRemoteAPIs`** —
+  precisely Learn's documented `Limited Access` set, with `Use Remote
+  Interfaces` intact. Lockdown mode did **not** strip it on that site, and
+  the `ViewFormPagesLockDown` site collection feature was absent from the
+  features read.
+- At **list** scope, on a list with `HasUniqueRoleAssignments=true`, it held
+  `ViewListItems`, `OpenItems`, `ViewVersions`, `ViewFormPages`, `Open`,
+  `ViewPages`, `CreateSSCSite`, `BrowseUserInfo`, `UseClientIntegration`,
+  `UseRemoteAPIs` and `CreateAlerts` — the built-in `Read`. The declared
+  grant therefore does reach through broken inheritance, which is the
+  mechanism this tier depends on.
+
+Two things remain unverified, and neither is a formality:
+
+- **Publishing sites.** Lockdown mode is on by default there, and that is
+  the one configuration the run above did not sample. Nothing here says
+  what happens on such a site.
+- **Connector-level list enumeration.** At web scope the account has
+  neither `ViewPages` nor `ViewListItems`, so whether it can enumerate
+  `_api/web/lists` — which the SharePoint Online List connector does once
+  you give it a site URL — is unknown. Answering it means signing in *as*
+  the service account; no probe run in an operator's own session can.
+
+So: the grant is declared, reconcilable, survives a redeploy that would
+erase a hand-added one, and — on one non-publishing site — leaves the
+account with `Read` on the list and `Use Remote Interfaces` on the web.
+That is not the same as the reporting client working.
 
 The level is the built-in `Read` and nothing else. It is tempting to reach
 for `Restricted Read` instead, since it looks like even less privilege —

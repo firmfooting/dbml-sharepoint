@@ -144,6 +144,10 @@ If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody — clear it in Site
 permissions > Groups and paste again, or rebuild without the flag.
 
-The end-to-end reporting path this grant enables (Power BI or any other
-API client) is not yet verified — see the danger block in the mapping
-reference's Security section for why.
+On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
+enrolled account ends up with the built-in `Read` on each list and
+`Use Remote Interfaces` intact at web scope. Publishing sites — where
+lockdown mode is on by default — and the reporting client's own list
+enumeration are still unverified, so the end-to-end path (Power BI or any
+other API client) is not yet proven. See the danger block in the mapping
+reference's Security section.
