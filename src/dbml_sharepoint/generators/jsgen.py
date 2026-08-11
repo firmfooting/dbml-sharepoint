@@ -108,8 +108,8 @@ def generate_deploy_js(
         # `execute_build` has already refused a malformed address and a
         # mapping declaring no `enroll_enterprise_reader` group by the time
         # this runs, so a non-None value here always names a real target.
-        # Resolving which declared group that is stays the template's job
-        # (added alongside its consuming logic), not this function's.
+        # Which declared group that is stays the template's job: it filters
+        # SCHEMA.groups on the flag emitted in build_schema_json.
         enterprise_reader=enterprise_reader,
     )
 
@@ -720,6 +720,11 @@ def build_schema_json(
                 "only_allow_members_view_membership": grp.only_allow_members_view_membership,
                 "require_empty_at_deploy": grp.require_empty_at_deploy,
                 "enroll_operator_during_deploy": grp.enroll_operator_during_deploy,
+                # The reader-enrolment phase finds ITS group by this flag,
+                # exactly as operator enrolment finds its own above. Omitting
+                # it leaves the phase with a `--enterprise-reader` address
+                # and nowhere to put it.
+                "enroll_enterprise_reader": grp.enroll_enterprise_reader,
             })
 
         # Build list_assignments for every list in this site role.

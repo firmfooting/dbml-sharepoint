@@ -20,11 +20,14 @@ import subprocess
 import tempfile
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _builders import ID_PK, table
 from _packs import blocks, entities, pack
 from _paths import FIXTURES
+
+from dbml_sharepoint.analysis.phases import phase_number as pn
 
 NODE = shutil.which("node")
 
@@ -424,7 +427,10 @@ def test_the_adopted_run_reaches_the_write_phases() -> None:
     )
     reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
                if "Starting Phase " in ln]
-    for phase in ("1.1", "1.2", "1.3", "1.4", "2.1"):
+    # `unseal` by key, not by number: the enterprise-reader step renumbered
+    # it once already, and this test is about REACH, not about numbering
+    # (which test_phases pins).
+    for phase in ("1.1", "1.2", "1.3", pn("unseal"), "2.1"):
         assert phase in reached, f"phase {phase} not reached: {reached}"
 
 
@@ -543,7 +549,7 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
     )
     reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
                if "Starting Phase " in ln]
-    assert "1.4" in reached, f"the maintenance unseal never ran: {reached}"
+    assert pn("unseal") in reached, f"the maintenance unseal never ran: {reached}"
     assert "4.1" not in reached, f"the run reached PROTECTION, so it did not abort early: {reached}"
 
     calls_line = next(
@@ -630,7 +636,7 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     assert summary.get("errors") == [], summary["errors"]
     reached = [ln.split("Starting Phase ")[1][:3] for ln in output.splitlines()
                if "Starting Phase " in ln]
-    for phase in ("1.1", "1.4", "2.1", "3.1", "4.1", "5.1"):
+    for phase in ("1.1", pn("unseal"), "2.1", "3.1", "4.1", "5.1"):
         assert phase in reached, f"phase {phase} not reached: {reached}"
 
 
@@ -932,3 +938,341 @@ def test_a_refused_clear_still_retries_the_client_properties() -> None:
     assert "return;" not in tolerant, (
         "the tolerant branch must fall through to the read-back, not return"
     )
+
+
+# === Enterprise reader enrolment (the reader_enrolment phase) ===
+#
+# This phase grants Read on a customer's register to a named account, and
+# the membership is PERMANENT — unlike the operator's, which the run
+# removes on the way out. Two resolutions must never be enrolled: a
+# security GROUP (everyone in it gets Read) and one of SharePoint's
+# everyone-claims (every user in the tenant gets Read). Neither is visible
+# afterwards, because the deploy reads back byte-identical either way.
+#
+# So every test below RUNS the emitted script and asserts on what the run
+# DOES — did it abort, and above all was a membership POST ever issued.
+# `assert "PrincipalType !== 1" in js` would pass with the guard sitting in
+# a comment; "no POST to sitegroups(N)/users happened" cannot.
+
+_READER_ADDRESS = "svc-reporting@example.org"
+
+# A well-formed resolution of _READER_ADDRESS. Every refusal test below
+# starts from this and varies exactly ONE attribute, so the guard under
+# test is the only one that can fire — otherwise deleting it would leave
+# the test green for a neighbouring reason and prove nothing.
+_RESOLVED_USER: dict[str, Any] = {
+    "Id": 42,
+    "LoginName": "i:0#.f|membership|svc-reporting@example.org",
+    "Title": "Reporting Service",
+    "Email": _READER_ADDRESS,
+    "PrincipalType": 1,
+}
+
+_MEMBERSHIP_URL = re.compile(r"sitegroups\(\d+\)/users")
+
+
+def _reader_deploy_js(enterprise_reader: str | None = _READER_ADDRESS) -> str:
+    """deploy.js for the mapping that declares an enterprise-reader group."""
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js
+    from dbml_sharepoint.model.mapping_loader import load_mapping
+    from dbml_sharepoint.model.parser import parse_dbml
+    from dbml_sharepoint.model.release import load_release
+
+    return generate_deploy_js(
+        schema=parse_dbml(FIXTURES / "simple.dbml"),
+        bundle=load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=enterprise_reader,
+    )
+
+
+def _reader_harness(
+    ensure_user: dict[str, Any],
+    *,
+    members: list[dict[str, Any]] | None = None,
+    drop_readback: bool = False,
+) -> str:
+    """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
+
+    `ensureuser` answers `ensure_user` verbatim — that is the whole point of
+    the harness, since what a tenant resolves an address to is exactly what
+    the guards have to judge. The flagged group's membership is real state:
+    the POST appends to it and the verification re-read sees the result, so
+    a run cannot satisfy the read-back by asserting its own success.
+    `drop_readback` accepts the POST and drops the write, which is what a
+    silently-refused membership looks like from the script's side.
+    """
+    return _ADOPTED_HARNESS + textwrap.dedent(r"""
+        const ENSURED = __ENSURE_USER__;
+        const READER_MEMBERS = __MEMBERS__;
+        const DROP_READBACK = __DROP_READBACK__;
+        const _beforeReader = globalThis.fetch;
+        globalThis.fetch = async (url, opts = {}) => {
+          const u = String(url);
+          const method = opts.method || 'GET';
+          const respond = (payload) => {
+            calls.push({ url: u, method,
+                         body: opts.body === undefined ? null : opts.body });
+            return { ok: true, status: 200, headers: { get: () => null },
+                     json: async () => payload,
+                     text: async () => JSON.stringify(payload) };
+          };
+          if (u.toLowerCase().includes('/ensureuser')) return respond({ d: ENSURED });
+          // The flagged group's own membership, keyed off the BY-ID form of
+          // the path so the 1.2 empty-group gate — which asks by name —
+          // still reaches the adopted mock underneath and still sees empty.
+          if (/sitegroups\(\d+\)\/users/.test(u)) {
+            if (method === 'POST') {
+              const added = JSON.parse(opts.body);
+              if (!DROP_READBACK) {
+                READER_MEMBERS.push({ Id: ENSURED.Id, Title: ENSURED.Title || '',
+                                      LoginName: added.LoginName });
+              }
+              return respond({ d: { Id: ENSURED.Id, LoginName: added.LoginName } });
+            }
+            return respond({ d: { results: READER_MEMBERS } });
+          }
+          return _beforeReader(url, opts);
+        };
+    """).replace(
+        "__ENSURE_USER__", json.dumps(ensure_user),
+    ).replace(
+        "__MEMBERS__", json.dumps(members or []),
+    ).replace(
+        "__DROP_READBACK__", "true" if drop_readback else "false",
+    )
+
+
+def _run_reader_deploy(
+    ensure_user: dict[str, Any],
+    *,
+    members: list[dict[str, Any]] | None = None,
+    drop_readback: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run the emitted deploy against the reader harness.
+
+    Returns (summary, calls, output). The phase must actually have STARTED:
+    a refusal test would otherwise pass against a run that aborted in 1.2
+    and never reached the code under test at all.
+    """
+    script = _reader_harness(
+        ensure_user, members=members, drop_readback=drop_readback,
+    ) + "\n" + _reader_deploy_js().replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
+    assert f"Starting Phase {pn('reader_enrolment')}" in output, (
+        f"the reader-enrolment phase never ran:\n{output[-3000:]}"
+    )
+    return (
+        json.loads(result_line.removeprefix("__RESULT__")),
+        json.loads(calls_line.removeprefix("__CALLS__")),
+        output,
+    )
+
+
+def _membership_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every POST that adds somebody to a site group, by parsed body."""
+    return [
+        json.loads(c["body"]) for c in calls
+        if c["method"] == "POST" and c.get("body") and _MEMBERSHIP_URL.search(c["url"])
+    ]
+
+
+def _reader_errors(summary: dict[str, Any]) -> list[Any]:
+    return [
+        err for err in (summary.get("errors") or [])
+        if str(err.get("phase")) == pn("reader_enrolment")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_security_group_is_refused_as_an_enterprise_reader() -> None:
+    """Microsoft Learn: PrincipalType is None 0, User 1, DistributionList 2,
+    SecurityGroup 4, SharePointGroup 8, and it carries [Flags] — so the
+    check is strict equality to 1, never a bitwise AND.
+
+    `ensureuser` resolves a security group happily. Enrolling one would hand
+    Read to everybody in it, and nothing downstream could tell: the deploy
+    reads back byte-identical either way. Only the type differs from the
+    success payload, so the type check is the only guard that can fire.
+    """
+    summary, calls, _ = _run_reader_deploy({
+        **_RESOLVED_USER,
+        "PrincipalType": 4,
+        "LoginName": "c:0t.c|tenant|4d4a4d54-0b2e-4a1f-9b6c-2f0d7a0b1c3e",
+        "Title": "Reporting Readers",
+    })
+    # The grant first: that is the damage, and the abort is only how the
+    # script avoids it. Asserted in this order so removing the guard fails
+    # on "a group was enrolled" rather than on a summary key.
+    assert not _membership_writes(calls), (
+        "a security group was enrolled: every member of it now holds Read"
+    )
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert _reader_errors(summary), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_everyone_claim_is_refused_even_though_it_types_as_a_user() -> None:
+    """`spo-grid-all-users` is the one mistake here with no cheap undo, and
+    it can come back typed as a plain user (PrincipalType 1). Belt and
+    braces behind the type check.
+
+    The payload keeps the matching Email deliberately, so neither the type
+    check nor the identity check can be what refuses it — the claims check
+    is on its own here, which is the only way removing it can be watched
+    failing.
+    """
+    summary, calls, _ = _run_reader_deploy({
+        **_RESOLVED_USER,
+        "LoginName": "c:0-.f|rolemanager|spo-grid-all-users/contoso",
+        "Title": "Everyone except external users",
+    })
+    assert not _membership_writes(calls), (
+        "an everyone-claim was enrolled: every user in the tenant now holds Read"
+    )
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_mismatched_identity_is_refused() -> None:
+    """`ensureuser` resolving something other than what was asked for is the
+    quiet failure: the deploy succeeds and the wrong account holds Read.
+
+    A real user, correctly typed, with a real login — only the address
+    differs from the one the build asked for.
+    """
+    summary, calls, _ = _run_reader_deploy({
+        **_RESOLVED_USER,
+        "Id": 43,
+        "LoginName": "i:0#.f|membership|someone-else@example.org",
+        "Title": "Someone Else",
+        "Email": "someone-else@example.org",
+    })
+    assert not _membership_writes(calls), (
+        "an account other than the one asked for was enrolled"
+    )
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_resolved_user_is_enrolled_and_the_membership_read_back() -> None:
+    """The success path: the account IS added, by its resolved LoginName,
+    and the run re-reads the membership afterwards rather than trusting the
+    POST's own answer."""
+    summary, calls, output = _run_reader_deploy(_RESOLVED_USER)
+    assert not _reader_errors(summary), summary
+    writes = _membership_writes(calls)
+    assert [w["LoginName"] for w in writes] == [_RESOLVED_USER["LoginName"]], writes
+    membership = [
+        i for i, c in enumerate(calls) if _MEMBERSHIP_URL.search(c["url"])
+    ]
+    posted = next(
+        i for i in membership
+        if calls[i]["method"] == "POST" and calls[i].get("body")
+    )
+    assert any(
+        i > posted and calls[i]["method"] == "GET" for i in membership
+    ), f"the membership was never re-read after the write: {[calls[i] for i in membership]}"
+    assert _RESOLVED_USER["Title"] in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_alias_mailbox_still_matches_the_requested_upn() -> None:
+    """The identity check accepts the Email OR the LoginName's UPN part.
+
+    An account whose mailbox address differs from its UPN is ordinary, and
+    refusing it would send an operator looking for a fault that is not
+    there. The account here is the right one — its claims login ends in the
+    requested UPN — so it must be enrolled, not refused.
+    """
+    summary, calls, _ = _run_reader_deploy({
+        **_RESOLVED_USER, "Email": "svc.reporting.alias@example.org",
+    })
+    assert not _reader_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [
+        _RESOLVED_USER["LoginName"],
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_membership_that_does_not_read_back_aborts() -> None:
+    """The house rule: anything that writes reads back and verifies.
+
+    SharePoint answering 200 is not evidence the membership exists — the
+    harness accepts the POST and drops it, which is what a silently refused
+    write looks like from the script's side. Reporting that as success is
+    worse than failing, because the operator stops looking.
+    """
+    summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, drop_readback=True)
+    assert _membership_writes(calls), "the run never attempted the enrolment"
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unrelated_member_is_logged_and_never_removed() -> None:
+    """Membership stays an operator-owned concern. The phase adds one
+    account; anybody else it finds is reported and left exactly alone."""
+    other_title = "Data Team"
+    other: dict[str, Any] = {
+        "Id": 7, "Title": other_title,
+        "LoginName": "i:0#.f|membership|data-team@example.org",
+    }
+    summary, calls, output = _run_reader_deploy(_RESOLVED_USER, members=[other])
+    assert not _reader_errors(summary), summary
+    assert [w["LoginName"] for w in _membership_writes(calls)] == [
+        _RESOLVED_USER["LoginName"],
+    ]
+    removals = [
+        c for c in calls
+        if "removebyid" in c["url"].lower() or "removebyloginname" in c["url"].lower()
+        or c["method"] == "DELETE"
+    ]
+    assert not removals, f"the phase removed an existing member: {removals}"
+    assert other_title in output, (
+        f"an existing member was not reported:\n{output[-3000:]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_already_enrolled_reader_is_not_added_twice() -> None:
+    """Idempotence: a redeploy must not POST a membership that is already
+    there, and must not treat the existing one as a failure."""
+    summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, members=[{
+        "Id": _RESOLVED_USER["Id"], "Title": _RESOLVED_USER["Title"],
+        "LoginName": _RESOLVED_USER["LoginName"],
+    }])
+    assert not _reader_errors(summary), summary
+    assert not _membership_writes(calls), "an existing membership was re-POSTed"
+
+
+def test_no_reader_no_enrolment_code() -> None:
+    """Opt-in: the code path must not exist unless asked for.
+
+    Absence, asserted on the emitted text, is the one thing a text
+    assertion states exactly — a guard that is present but unreachable is
+    the failure mode this file avoids elsewhere; a call site that is not
+    emitted at all cannot run.
+    """
+    js = _deploy_js()
+    assert "ensureuser" not in js
+    assert f"Starting Phase {pn('reader_enrolment')}" not in js
+    # And the same mapping, WITH a reader, does emit it — otherwise the two
+    # assertions above would also hold for a template that never works.
+    assert "ensureuser" in _reader_deploy_js()

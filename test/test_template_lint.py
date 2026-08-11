@@ -48,6 +48,9 @@ KNOWN_CONTEXT = {
     "site_url", "site_role", "release", "source_dbml", "source_mtime", "generated_at",
     # jsgen (deploy.js)
     "schema_json", "phases",
+    # The single named account `build --enterprise-reader` enrols read-only,
+    # or None to emit no enrolment code at all.
+    "enterprise_reader",
     # The marker distinguishing "clear this value" from "not managed here".
     # Passed in rather than hard-coded on both sides so the two can never
     # disagree about what unmanaged looks like.
