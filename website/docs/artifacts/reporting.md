@@ -23,6 +23,21 @@ deployed lists.
   descriptions and enum values, generated from the same schema the
   deploy used.
 
+## Empty lists load
+
+The first refresh after a deploy runs against lists with no rows in them,
+and a zero-row SharePoint feed comes back without the expanded person and
+lookup record columns at all. Measured on a live tenant on 2026-08-11, an
+unguarded expand step failed the whole query with `Expression.Error: The
+column 'Owner' of the table wasn't found` — an error that names a column
+and so reads as a broken query rather than an empty list, and that fixes
+itself the moment anybody adds a row.
+
+Every expand step is now guarded: the column is expanded when the record
+is there and added as typed nulls when it is not, so the shape of the
+table is the same either way and the rest of the query — typing, keys,
+display-name renames — does not care.
+
 ## Where the site URL comes from
 
 `build` is already told the target with `--site-url`, so it writes that
@@ -79,9 +94,10 @@ A template is deployed one site at a time, but a report usually wants all
 of them — every region, service or committee running the same lists,
 sliced by site.
 
-Every table carries **`Site Url`** and **`Site Name`** for that, and the
-name is read from the site rather than configured: nothing to type in,
-and a site renamed in SharePoint shows its new name at the next refresh.
+Every table carries **`Site Url`**, **`Site Name`** and **`List Title`**
+for that, so an appended model slices by site and by list. The site name
+is read from the site rather than configured: nothing to type in, and a
+site renamed in SharePoint shows its new name at the next refresh.
 
 Each query resolves that name itself, from whichever URL it was given —
 deliberately, rather than sharing one lookup query. A shared query binds
@@ -98,14 +114,23 @@ instead; nothing below it cares which it is.)
 
 :::warning Join on the Key columns, not on `Id`
 `Id` is unique within one list on one site and nowhere wider. Append three
-sites and three different rows all have `Id = 1`, so a relationship on
-`Id` cannot be many-to-one — Power BI degrades it to many-to-many and
-joins each child to the same-numbered parent on *every* site. The report
-still renders; the numbers are wrong.
+sites and three different rows all have `Id = 1` — and so do the first
+rows of any two lists on a single site, because every SharePoint list
+numbers its items from 1. A relationship on `Id` cannot be many-to-one —
+Power BI degrades it to many-to-many and joins each child to the
+same-numbered parent everywhere. The report still renders; the numbers
+are wrong.
 
-Each table exposes `<Entity> Key` (`Site Url` and the id together) and a
-matching `<Target> Key` for every lookup. The relationship table in
-`guide.md` already names these.
+Each table exposes `<Entity> Key` — `Site Url`, the list title and the id
+joined with `|` — and a matching `<Target> Key` for every lookup, spelled
+with the *target's* list title so the two sides meet. The relationship
+table in `guide.md` already names these.
+
+The list *title* rather than its GUID, deliberately: a GUID would survive
+a rename, but each query already addresses its list by title
+(`getbytitle('<title>')`), so a rename breaks the query outright either
+way. The title adds no failure mode the query does not already have, and
+it saves a round trip to the site on every refresh.
 :::
 
 ## Schema-only reports

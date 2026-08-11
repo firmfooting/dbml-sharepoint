@@ -55,8 +55,14 @@ class _ListPlan:
     list_title: str
     selects: list[str] = field(default_factory=list)
     expands: list[str] = field(default_factory=list)
-    # (record column, inner field, expanded output column)
-    record_expands: list[tuple[str, str, str]] = field(default_factory=list)
+    # (record column, inner field, expanded output column, M type token)
+    #
+    # The type is carried here rather than looked up in `m_types` because the
+    # expand is emitted GUARDED (see `_render_m`): when the source record
+    # column is absent — which is what an EMPTY list gives you — the output
+    # column is added as nulls instead, and that fallback has to ascribe a
+    # type at the point it is written.
+    record_expands: list[tuple[str, str, str, str]] = field(default_factory=list)
     # (output column, M type token)
     m_types: list[tuple[str, str]] = field(default_factory=list)
     # Multi-value columns joined to one text cell. Deliberately NOT in
@@ -209,14 +215,18 @@ def _build_plans(
                 case "URL":
                     # SP.FieldUrlValue arrives as a record; keep the Url part.
                     plan.selects.append(sp.name)
-                    plan.record_expands.append((sp.name, "Url", f"{sp.name}Url"))
+                    plan.record_expands.append(
+                        (sp.name, "Url", f"{sp.name}Url", "type text"),
+                    )
                     plan.m_types.append((f"{sp.name}Url", "type text"))
                     plan.sql_columns.append((sp.name, "NVARCHAR(2000)"))
                 case "User":
                     plan.selects.append(f"{sp.name}Id")
                     plan.selects.append(f"{sp.name}/Title")
                     plan.expands.append(sp.name)
-                    plan.record_expands.append((sp.name, "Title", f"{sp.name}Title"))
+                    plan.record_expands.append(
+                        (sp.name, "Title", f"{sp.name}Title", "type text"),
+                    )
                     plan.m_types.append((f"{sp.name}Id", "Int64.Type"))
                     plan.m_types.append((f"{sp.name}Title", "type text"))
                     plan.sql_columns.append((sp.name, "NVARCHAR(255)"))
@@ -227,7 +237,7 @@ def _build_plans(
                     plan.selects.append(f"{sp.name}/{display}")
                     plan.expands.append(sp.name)
                     plan.record_expands.append(
-                        (sp.name, display, f"{sp.name}{display}"),
+                        (sp.name, display, f"{sp.name}{display}", "type text"),
                     )
                     plan.m_types.append((f"{sp.name}Id", "Int64.Type"))
                     plan.m_types.append((f"{sp.name}{display}", "type text"))
@@ -347,6 +357,38 @@ def _fk_key_column(fk_col: str) -> str:
 def _m_string(text: str) -> str:
     """An M string literal: double quotes are escaped by doubling."""
     return '"' + text.replace('"', '""') + '"'
+
+
+def _row_key_m(list_title: str, id_expression: str) -> str:
+    """The M expression for one row key: site, LIST, and item id.
+
+    THE ONE definition of the key format, used for both a table's own
+    ``<Entity> Key`` and the ``<Target> Key`` every lookup carries. Those two
+    are what a Power BI relationship joins, so a format written twice is a
+    relationship that matches nothing — and matching nothing renders as
+    empty visuals rather than as an error.
+
+    MEASURED implicitly on a live tenant, 2026-08-11: the key was site + id
+    with nothing naming the list. Every SharePoint list numbers its items
+    from 1, so two lists on ONE site produce colliding keys the moment their
+    queries are appended — the multi-site, multi-list model this pack's own
+    guide tells the operator to build. Wrong row counts and wrong
+    relationships, and nothing anywhere raises.
+
+    The list TITLE, not its GUID, and deliberately: a GUID would survive a
+    rename, but the query addresses the list by title in
+    ``getbytitle('<title>')`` two steps above, so a rename breaks the query
+    outright regardless. The title therefore adds no failure mode the query
+    does not already have, and it costs no second round trip to the site.
+
+    ``SiteRoot`` rather than the raw ``SiteUrl``: two operators pasting the
+    same site in different shapes must produce the SAME key, or appending
+    their copies breaks the relationship rather than the URL.
+    """
+    return (
+        f'SiteRoot & "|" & {_m_string(list_title)} & "|" '
+        f"& Number.ToText({id_expression})"
+    )
 
 
 def _site_url_binding_m(site_url: str | None) -> list[str]:
@@ -478,12 +520,33 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         "    ),",
     ]
     prev = "Source"
-    for i, (record_col, inner, out) in enumerate(plan.record_expands, start=1):
+    if plan.record_expands:
+        lines += [
+            "    // MEASURED on a live tenant, 2026-08-11: a freshly deployed",
+            "    // list with ZERO rows answers without the expanded record",
+            "    // columns at all, and a bare Table.ExpandRecordColumn then",
+            "    // fails the whole query with \"The column '<name>' of the table",
+            "    // wasn't found\" — which reads as a broken query rather than an",
+            "    // empty list. A fresh deploy produces empty lists, so that is",
+            "    // the FIRST refresh every adopter runs; adding one row makes it",
+            "    // work again, so it is invisible anywhere data already exists.",
+            "    //",
+            "    // Skipping the step instead is not an option: the typing step",
+            "    // and the model-facing rename below both name these output",
+            "    // columns. So the column is always produced — expanded when the",
+            "    // record is there, nulls of the same type when it is not.",
+        ]
+    for i, (record_col, inner, out, m_type) in enumerate(
+        plan.record_expands, start=1,
+    ):
         step = f"Expand{i}"
-        lines.append(
-            f'    {step} = Table.ExpandRecordColumn({prev}, "{record_col}", '
-            f'{{"{inner}"}}, {{"{out}"}}),',
-        )
+        lines += [
+            f"    {step} =",
+            f'        if List.Contains(Table.ColumnNames({prev}), "{record_col}")',
+            (f'        then Table.ExpandRecordColumn({prev}, "{record_col}", '
+             f'{{"{inner}"}}, {{"{out}"}})'),
+            f'        else Table.AddColumn({prev}, "{out}", each null, {m_type}),',
+        ]
         prev = step
     # The separator, and why it is that string, live in `analysis/exports.py` --
     # the check that refuses a member containing it needs the same fact, and a
@@ -541,23 +604,30 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         "    WithSiteName = Table.AddColumn(",
         '        WithSiteUrl, "Site Name", each SiteName, type text',
         "    ),",
-        # THE reason a multi-site report can be trusted. `Id` is unique
-        # only within one list on one site, so appending three sites puts
-        # three rows with Id = 1 in this table. A relationship on Id then
-        # cannot be many-to-one; Power BI degrades it to many-to-many and
-        # joins a child row to the same-numbered parent on EVERY site. The
-        # report renders and the numbers are wrong.
+        # Which LIST the row came from — the other half of the same problem
+        # the two columns above solve. A model that appends several lists
+        # needs to slice by list as well as by site, and the key below is
+        # opaque.
+        "    WithListTitle = Table.AddColumn(",
+        '        WithSiteName, "List Title",',
+        f"        each {_m_string(plan.list_title)},",
+        "        type text",
+        "    ),",
+        # THE reason an appended report can be trusted. `Id` is unique only
+        # within one list on one site: appending three sites puts three rows
+        # with Id = 1 in this table, and appending two LISTS on one site does
+        # the same. A relationship on such a key cannot be many-to-one; Power
+        # BI degrades it to many-to-many and joins a child row to the
+        # same-numbered parent everywhere. The report renders and the numbers
+        # are wrong. Format and rationale: `_row_key_m`.
         "    WithRowKey = Table.AddColumn(",
-        f'        WithSiteName, "{plan.entity} Key",',
-        # SiteRoot, not the raw parameter: two operators pasting the same
-        # site in different shapes must produce the SAME key, or appending
-        # their copies breaks the relationship rather than the URL.
-        '        each SiteRoot & "|" & Number.ToText([Id]),',
+        f'        WithListTitle, "{plan.entity} Key",',
+        f"        each {_row_key_m(plan.list_title, '[Id]')},",
         "        type text",
         "    )",
     ]
     prev = "WithRowKey"
-    for i, (fk_col, _target_title, _display) in enumerate(plan.joins, start=1):
+    for i, (fk_col, target_title, _display) in enumerate(plan.joins, start=1):
         step = f"WithFkKey{i}"
         lines[-1] += ","
         lines += [
@@ -567,7 +637,11 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
             # Number.ToText(null) RAISES rather than returning null, which
             # would fail the whole refresh on one blank field.
             f"        each if [{fk_col}] = null then null",
-            f'              else SiteRoot & "|" & Number.ToText([{fk_col}]),',
+            # The TARGET list's title, never this one's: this key is joined
+            # against the row key the target table publishes, so it has to be
+            # spelled the way the TARGET spells it. Both come from
+            # `_row_key_m`, which is the point of that function.
+            f"              else {_row_key_m(target_title, f'[{fk_col}]')},",
             "        type text",
             "    )",
         ]
@@ -795,10 +869,12 @@ def generate_reporting_md(
          "needs all of them together — every region, service or committee "
          "running the same lists, in one model, sliced by site."),
         "",
-        ("Every table already carries **`Site Url`** and **`Site Name`** for "
-         "that. The name is read from the site's own title at refresh time, "
-         "so nothing has to be typed in and a site renamed in SharePoint "
-         "shows its new name at the next refresh."),
+        ("Every table already carries **`Site Url`**, **`Site Name`** and "
+         "**`List Title`** for that, so a model that appends several "
+         "deployments can slice by site and by list. The site name is read "
+         "from the site's own title at refresh time, so nothing has to be "
+         "typed in and a site renamed in SharePoint shows its new name at "
+         "the next refresh."),
         "",
         ("Each query works that out for itself, from whichever URL it was "
          "given. That is deliberate: a single shared site-name query would "
@@ -815,12 +891,15 @@ def generate_reporting_md(
         "",
         (">  **`Id` is unique within one list on one site, and nowhere "
          "wider.** Append three sites and three different rows all have "
-         "`Id = 1`. A relationship on `Id` cannot then be many-to-one; Power "
-         "BI degrades it to many-to-many and joins each child to the "
-         "same-numbered parent on *every* site. The report still renders — "
-         "the numbers are just wrong. The `… Key` columns are `Site Url` and "
-         "the id together, which is unique across any number of sites, and "
-         "they are why the relationships below are safe to append."),
+         "`Id = 1` — and so do the first rows of any two lists on a single "
+         "site, because every list numbers its items from 1. A relationship "
+         "on `Id` cannot then be many-to-one; Power BI degrades it to "
+         "many-to-many and joins each child to the same-numbered parent "
+         "everywhere. The report still renders — the numbers are just "
+         "wrong. The `… Key` columns are `Site Url`, the **list title** and "
+         "the id together, which is unique across any number of sites and "
+         "lists, and they are why the relationships below are safe to "
+         "append."),
         "",
         "## Relationships (Power BI model)",
         "",
