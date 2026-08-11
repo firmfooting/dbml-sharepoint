@@ -1076,7 +1076,15 @@ def test_seeding_sends_the_operator_to_the_file_it_added(
     """
     _capture_build(monkeypatch)
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, build="y", seed="y"))
+    # Wide, because this assertion reads a PATH out of the rendered
+    # panel. `_collapsed` rejoins rich's wrapping at whitespace, and a
+    # long path has none -- rich folds it mid-word, so
+    # 'demo-data.js.txt' arrives split and the substring is not there.
+    # It passed locally and failed on CI purely because the temp path
+    # is longer there, which is the worst way to learn it.
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="y"), width=400,
+    )
 
     assert wizard.run_wizard(console) == 0
     assert "demo-data.js.txt" in _collapsed(console)
@@ -1089,7 +1097,15 @@ def test_an_unseeded_run_does_not_mention_the_demo_script(
     operator looking for something that is not there."""
     _capture_build(monkeypatch)
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, build="y", seed="n"))
+    # Wide, because this assertion reads a PATH out of the rendered
+    # panel. `_collapsed` rejoins rich's wrapping at whitespace, and a
+    # long path has none -- rich folds it mid-word, so
+    # 'demo-data.js.txt' arrives split and the substring is not there.
+    # It passed locally and failed on CI purely because the temp path
+    # is longer there, which is the worst way to learn it.
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n"), width=400,
+    )
 
     assert wizard.run_wizard(console) == 0
     assert "demo-data.js.txt" not in _collapsed(console)
