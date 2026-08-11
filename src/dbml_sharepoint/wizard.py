@@ -197,6 +197,44 @@ def _ask_site_url(console: Console) -> str:
         return site_url
 
 
+def _ask_enterprise_reader(console: Console) -> str:
+    """Prompt until the answer is blank or passes the CLI's own validator.
+
+    The same re-ask loop as `_ask_site_url`, for a sharper reason. This
+    answer used to travel unchecked all the way into `execute_build`, and
+    `validate_enterprise_reader` raises `typer.BadParameter` -- which is a
+    `click.UsageError`, NOT a `typer.Exit`. The wizard's one `except
+    typer.Exit` around the build therefore could not catch it, so a
+    mistyped UPN (`svc.reporting`, no `@`) left `run_wizard` as an
+    unhandled exception and printed a raw traceback -- on top of a project
+    directory the wizard had already written. Validating at the prompt
+    keeps the refusal where the answer was given, and keeps it recoverable.
+
+    Blank is deliberately NOT validated. It is the default and it means
+    "enrol nobody"; `validate_enterprise_reader` refuses an empty string,
+    so passing it through would make the safest answer the question offers
+    the one answer that cannot be given.
+    """
+    # Deferred for the same cycle as `validate_site_url` above -- #171.
+    from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
+
+    while True:
+        reader = Prompt.ask(
+            "Reporting service account to enrol read-only (UPN), or blank "
+            "for none",
+            default="",
+            console=console,
+        ).strip()
+        if not reader:
+            return ""
+        try:
+            validate_enterprise_reader(reader)
+        except typer.BadParameter as exc:
+            console.print(f"[red]{exc.message}[/red]")
+            continue
+        return reader
+
+
 def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
     """Set `prefix:` in the copied mapping, then read it back and verify.
 
@@ -487,15 +525,12 @@ def _run(console: Console) -> int:
     # default and must map to None, never "": an empty string would reach
     # `validate_enterprise_reader` and abort a run where the operator simply
     # pressed Enter, which is exactly the safe answer this question exists
-    # to allow.
+    # to allow. Anything NON-blank is validated at the prompt and re-asked
+    # on refusal -- see `_ask_enterprise_reader`; the `except typer.Exit`
+    # below cannot catch what that validator raises.
     reader = ""
     if _declares_reader_group(mapping_path):
-        reader = Prompt.ask(
-            "Reporting service account to enrol read-only (UPN), or blank "
-            "for none",
-            default="",
-            console=console,
-        ).strip()
+        reader = _ask_enterprise_reader(console)
 
     # Every colour map, row wash and declared view is invisible on an empty
     # list, and the wizard is the one path aimed at somebody who has not seen
