@@ -331,6 +331,8 @@ class FindingCode(StrEnum):
     # --- permission levels, groups and policies (checks/_permissions.py) ----
     DUPLICATE_GROUP_NAME = "duplicate_group_name", "error"
     DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name", "error"
+    ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR = (
+        "enterprise_reader_group_enrols_the_operator", "error")
     ENTERPRISE_READER_GROUP_NOT_GRANTED = (
         "enterprise_reader_group_not_granted", "error")
     ENTERPRISE_READER_GROUP_OVER_PRIVILEGED = (

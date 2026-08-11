@@ -1409,6 +1409,7 @@ def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
 def _reader_findings(
     *, require_empty: bool = False, level: str | None = "Read",
     second_reader: bool = False, override_level: str | None = None,
+    enroll_operator: bool = False,
 ) -> list[Finding]:
     """One correctly-shaped mapping with a single knob turned per test.
 
@@ -1425,7 +1426,7 @@ def _reader_findings(
             auto_accept_request_to_join_leave=False,
             only_allow_members_view_membership=False,
             require_empty_at_deploy=require_empty,
-            enroll_operator_during_deploy=False,
+            enroll_operator_during_deploy=enroll_operator,
             enroll_enterprise_reader=True,
         )
 
@@ -1477,6 +1478,28 @@ def test_a_reader_group_that_must_be_empty_is_refused() -> None:
         _reader_findings(require_empty=True),
         FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
     )
+
+
+def test_a_reader_group_that_also_enrols_the_operator_is_refused() -> None:
+    """The two enrolment flags on ONE group deadlock the deploy.
+
+    Phase 1.3 adds the pasting operator to a group flagged
+    `enroll_operator_during_deploy`. Phase 1.4 aborts the run when the
+    reader group holds any principal other than the named reader. Put both
+    flags on one group and 1.3 manufactures exactly what 1.4 refuses, so
+    every deploy fails -- on a correct address, for a reason nothing in the
+    mapping states.
+
+    There is no legitimate use to weigh against that:
+    `enterprise_reader_group_over_privileged` already holds a reader group
+    to `Read`, and an operator self-enrols precisely in order to write.
+    """
+    finding = only(
+        _reader_findings(enroll_operator=True),
+        FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
+    )
+    assert finding.severity == "error"
+    assert "XX Enterprise Readers" in finding.message
 
 
 def test_two_reader_groups_are_refused() -> None:
@@ -1563,6 +1586,7 @@ def test_a_correctly_declared_reader_group_is_clean() -> None:
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED)
     none_of(findings, FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR)
 
 
 def test_an_acl_naming_an_undeclared_group_is_an_error() -> None:

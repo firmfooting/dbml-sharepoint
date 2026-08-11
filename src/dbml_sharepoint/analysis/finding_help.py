@@ -419,6 +419,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`List Title`. Give the column a different display title, or rename "
         "the schema column so the auto-split lands somewhere else."
     ),
+    FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR: (
+        "A group declares both `enroll_enterprise_reader` and "
+        "`enroll_operator_during_deploy`. Phase 1.3 adds the pasting "
+        "operator to that group, so by Phase 1.4 the group holds somebody "
+        "other than the named reader, and 1.4 aborts the run when it "
+        "does. Every deploy of this mapping would fail, on a correct "
+        "address, for a reason nothing in the mapping names. The "
+        "combination has no legitimate use either: a reader group is "
+        "restricted to `Read` (`enterprise_reader_group_over_privileged`), "
+        "while an operator self-enrols in order to write. Put the two "
+        "flags on two groups."
+    ),
     FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED: (
         "A group marked `enroll_enterprise_reader` holds no role "
         "assignment, so enrolling an account into it grants nothing. The "

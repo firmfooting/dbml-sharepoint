@@ -226,6 +226,18 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
 
         for grp in reader_groups:
+            if grp.enroll_operator_during_deploy:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
+                    f"groups: {grp.name!r} declares both "
+                    f"enroll_enterprise_reader and "
+                    f"enroll_operator_during_deploy. Phase 1.3 puts the "
+                    f"operator in the group, so Phase 1.4 finds a principal "
+                    f"other than the named reader and aborts the run -- "
+                    f"every run, on a correct address.",
+                    location=_GROUPS,
+                ))
+
             if grp.require_empty_at_deploy:
                 findings.append(Finding(
                     FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
