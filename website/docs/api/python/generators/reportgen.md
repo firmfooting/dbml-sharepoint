@@ -29,12 +29,6 @@ reporting.md. Person columns land differently per extract tool, so the SQL
 views carry them as display-name text while the M queries expand both the
 site-user id and display name.
 
-### `MULTI_VALUE_JOIN`
-
-```python
-MULTI_VALUE_JOIN = '; '
-```
-
 ### `generate_powerquery`
 
 ```python

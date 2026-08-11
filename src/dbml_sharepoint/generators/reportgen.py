@@ -28,6 +28,7 @@ from typing import Any
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
+from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
@@ -36,36 +37,6 @@ from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
-
-# THE SEPARATOR BETWEEN MEMBERS in every joined multi-value cell, and the one
-# place it is spelled — the Power Query transform that builds the cell and the
-# dictionary entry that tells a reader how to split it back apart must not be
-# able to come to disagree.
-#
-# Chosen for the EXPORT rather than from SharePoint. A comma is out twice
-# over: a multi-value member is a phrase and not a token ("Permission change"),
-# so a comma reads as punctuation inside one; and a comma inside a cell is the
-# one character every CSV consumer downstream of a Power BI export handles
-# differently. A bare space is out for the same phrase reason. A semicolon is
-# what SharePoint itself puts between the members of a set on the wire —
-# measured 2026-08-10, an `<Eq>` against the `;#`-delimited string matched the
-# whole set — so it is the separator a reader already associates with one of
-# these columns, and the trailing space is for the eye only.
-#
-# A MEMBER CONTAINING IT is refused, by `_refuse_ambiguous_members` below.
-# `{"Permission change; revoked"}` and `{"Permission change", "revoked"}` join
-# to the same text, so the cell stops being reconstructible and a downstream
-# count of selections is wrong with nothing able to see it -- silent
-# wrongness in a production export, which is the failure class this
-# repository exists to close. An escape is not the answer: the dictionary
-# tells a reader to `Text.Split` the cell, and a human reading it splits by
-# eye, so an encoding only they two do not understand is worse than a refusal.
-#
-# A finding would be better than an exception, and belongs in `analysis/`,
-# which this module must not import from. Until one exists the generator
-# refuses to emit an export it cannot describe -- the same thing
-# `_sp_type_cell` does for a field kind it has no words for.
-MULTI_VALUE_JOIN = "; "
 
 
 @dataclass
@@ -117,16 +88,27 @@ def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> l
 def _refuse_ambiguous_members(column: str, members: list[str]) -> None:
     """Refuse a choice set the joined cell could not be split back into.
 
-    Called from both places a multi-value column is described -- the plan
-    builder behind the queries and the SQL views, and `_sp_type_cell` behind
-    the data dictionary -- because the dictionary page is the one entry point
-    that never builds a plan.
+    A BACKSTOP, not the primary control. `MULTI_VALUE_MEMBER_CONTAINS_THE_
+    EXPORT_SEPARATOR` is the rule an author should meet, and `build` reaches
+    it before this can fire.
 
-    Only `MULTI_VALUE_JOIN` itself is refused. A bare `;` inside a member
-    joins and splits back perfectly well, and refusing it would cost a
-    legitimate schema for a fault it does not have.
+    This exists because `report` does not validate. It is a supported
+    command with no site URL, it renders straight from the schema, and
+    without this guard it emits a Power Query cell joined on `"; "` from
+    members that themselves contain `"; "` -- while the data dictionary
+    beside it tells the reader to split on that string. The artifact is
+    well-formed, the command exits 0, and any count taken from the export
+    is wrong with nothing able to notice.
+
+    So do NOT delete this on the reasoning that the validator now covers it.
+    It was deleted once for exactly that reason and `report` silently
+    started shipping the lossy bundle; the deletion was reverted with a test
+    (`test_report_refuses_a_member_the_export_cannot_split_back`) that fails
+    when it goes again. The knowledge is not duplicated -- both this and the
+    validator ask `analysis/exports.ambiguous_members`, which is the one
+    place the rule is written.
     """
-    offending = [member for member in members if MULTI_VALUE_JOIN in member]
+    offending = ambiguous_members(members)
     if not offending:
         return
     raise ValueError(
@@ -272,6 +254,7 @@ def _build_plans(
                     #
                     # Which only works while the cell can be split back apart,
                     # so the members are checked before anything is planned.
+                    # `report` does not validate, so this is its only guard.
                     _refuse_ambiguous_members(
                         sp.name, enum_members.get(sp.choices_enum or "", []),
                     )
@@ -407,6 +390,9 @@ def _render_m(plan: _ListPlan) -> str:
             f'{{"{inner}"}}, {{"{out}"}}),',
         )
         prev = step
+    # The separator, and why it is that string, live in `analysis/exports.py` --
+    # the check that refuses a member containing it needs the same fact, and a
+    # generator is the wrong place for `analysis/` to import from.
     if plan.multi_value_joins:
         lines += [
             "    // A multi-value column arrives as a LIST, so it is joined to",
@@ -823,6 +809,9 @@ def _sp_type_cell(
             # at one text cell holding several members finds out that it is
             # several members and what to split on.
             members = enum_members.get(sp.choices_enum or "", [])
+            # The dictionary is the one entry point that never builds a plan,
+            # so the plan builder's guard does not cover it. It is also the
+            # page that tells a reader to split on the separator.
             _refuse_ambiguous_members(sp.name, members)
             joined = ", ".join(
                 f"{i}. {member}" for i, member in enumerate(members, 1)
