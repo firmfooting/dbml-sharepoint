@@ -465,22 +465,37 @@ def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
     assert not (out / "deploy.js.txt").exists()
 
 
-@pytest.mark.parametrize("bad", [
-    "not-an-address",
-    "two@at@signs.example",
-    "has space@example.org",
-    "i:0#.f|membership|svc@example.org",
+@pytest.mark.parametrize(("bad", "guard_fragment"), [
+    # No '@' at all: the one-'@' guard.
+    ("not-an-address", "one '@'"),
+    # Two '@': the same one-'@' guard, from the other side.
+    ("two@at@signs.example", "one '@'"),
+    # One '@', but whitespace: the whitespace/'|' guard.
+    ("has space@example.org", "no whitespace"),
+    # The one that matters: a claims login name contains exactly one '@'
+    # and would sail past an '@'-only check, then hand `web/ensureuser` a
+    # principal other than the user it appears to name. Same guard as the
+    # whitespace case, fired for '|' instead.
+    ("i:0#.f|membership|svc@example.org", "no '|'"),
 ])
-def test_a_malformed_reader_address_is_refused(tmp_path: Path, bad: str) -> None:
-    """The `|` case is the one that matters: a claims login name such as
-    `i:0#.f|membership|svc@example.org` contains an `@` and would sail past
-    a naive check, then hand `web/ensureuser` a principal other than the
-    user it appears to name."""
+def test_a_malformed_reader_address_is_refused(
+    tmp_path: Path, bad: str, guard_fragment: str,
+) -> None:
+    """Pointed at a mapping that DOES declare an enroll_enterprise_reader
+    group, so a refusal here can only come from `validate_enterprise_reader`
+    itself -- against `sharepoint-mapping.yaml` (no such group), all four
+    cases would refuse identically via the "no group to enrol into" check
+    regardless of the address, and gutting the validator would leave every
+    case here green. Asserting the guard-specific message fragment, not just
+    a nonzero exit code, is what makes that failure mode visible: a message
+    naming the wrong guard (or no message at all, from a deleted validator)
+    fails this even when the exit code alone would not.
+    """
     out = tmp_path / "build"
     result = runner.invoke(app, [
         "build",
         "--schema", str(FIXTURES / "simple.dbml"),
-        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
         "--release", str(FIXTURES / "release.yaml"),
         "--site-url", "https://example.sharepoint.com/sites/test",
         "--site-role", "default",
@@ -488,6 +503,11 @@ def test_a_malformed_reader_address_is_refused(tmp_path: Path, bad: str) -> None
         "--enterprise-reader", bad,
     ])
     assert result.exit_code != 0
+    assert "enroll_enterprise_reader" not in result.output, (
+        "refused via the wrong guard (missing group, not a bad address)"
+    )
+    assert guard_fragment in result.output, result.output
+    assert not (out / "deploy.js.txt").exists()
 
 
 def test_no_reader_flag_emits_no_enrolment(
@@ -530,6 +550,46 @@ def test_no_reader_flag_emits_no_enrolment(
     assert result.exit_code == 0, result.output
     assert captured["enterprise_reader"] is None
     assert "enterprise-reader" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
+
+
+def test_a_valid_reader_flag_reaches_emit_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mirror of `test_no_reader_flag_emits_no_enrolment`: proves the
+    literal address, not just `None`, survives the trip through
+    `execute_build` into `emit_bundle`.
+
+    Every OTHER test with a well-formed address either hits the "no group"
+    refusal (`sharepoint-mapping.yaml`) or replaces `execute_build` wholesale
+    (the wizard's `_capture_build`), so nothing before this proved a
+    non-None value ever reaches `emit_bundle` -- a build that hard-coded
+    `enterprise_reader=None` at that call site would still pass every other
+    test in this file.
+    """
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    out = tmp_path / "build"
+    address = "svc-reporting@example.org"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", address,
+    ])
+    assert result.exit_code == 0, result.output
+    assert captured["enterprise_reader"] == address
 
 
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
