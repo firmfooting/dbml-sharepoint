@@ -185,7 +185,16 @@ all lists exist. SharePoint cannot span webs with a lookup; cross-site
 relationships use the mapping's `cross_site_reference_columns` pattern
 (a Choice + URL pair) instead.
 
+Every Ref also spends part of the per-view join budget and the target
+list's index budget — see [SharePoint limits you must
+know](../concepts/sharepoint-limits.md) before a schema accumulates more
+refs and person columns than a single view can render.
+
 ## Indexes
+
+See [SharePoint limits you must know](../concepts/sharepoint-limits.md) for
+why this budget exists — 20 per list, two of them often spent before you
+declare a single entry — before reading the declaration rules below.
 
 Declare ordinary SharePoint column indexes in the table's DBML `indexes`
 block. Each entry is one column name:
@@ -282,6 +291,11 @@ Surfaced at build time by the validator, not discovered at deploy time:
   entity is refused, naming the reference.
 
 :::warning Calculated-formula operand types
+
+See also [SharePoint limits you must know: calculated-column operand
+rules](../concepts/sharepoint-limits.md#the-calculated-column-operand-rules)
+for the Microsoft citation behind this rule and how it fits the other
+platform ceilings.
 
 The build refuses a calculated formula whose operand SharePoint will not
 accept. The error names the calculated column and the operand before any

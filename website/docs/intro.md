@@ -41,7 +41,9 @@ schema.dbml + mapping.yaml + release.yaml
   site's own console under your own login, calling SharePoint REST/CSOM
   endpoints. No PnP, no CSOM installs, no app registrations, no Graph
   consent, no stored credentials. See the
-  [security model](concepts/security-model.md).
+  [security model](concepts/security-model.md) and, for an honest look at
+  what PnP, site scripts and Graph offer that this tool does not,
+  [why not PnP, site scripts, or Graph?](concepts/comparison.md)
 - **Fail closed, rerun safely.** Every write is preceded by read-only
   preflights: the wrong site aborts, existing lists and fields are adopted
   only when their immutable shape provably matches, mutable drift is

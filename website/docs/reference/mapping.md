@@ -232,6 +232,12 @@ with the sets it expanded from — nothing hides behind the indirection.
 
 ## `views`
 
+See [SharePoint limits you must know](../concepts/sharepoint-limits.md) for
+the two ceilings every view design runs into — the 5,000-item list view
+threshold and the 12-join lookup/person-column ceiling — with their
+Microsoft citations and what this build checks. The boxes below carry the
+live-verified detail behind both.
+
 ```yaml
 views:
   Risk:
