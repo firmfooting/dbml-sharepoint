@@ -72,6 +72,30 @@ ASSESS_SCRIPT = 'assess.js.txt'
 DEMO_SCRIPT = 'demo-data.js.txt'
 ```
 
+### `REPORT_DIR`
+
+```python
+REPORT_DIR = 'reporting'
+```
+
+### `REPORT_GUIDE`
+
+```python
+REPORT_GUIDE = 'guide.md'
+```
+
+### `REPORT_DICTIONARY`
+
+```python
+REPORT_DICTIONARY = 'data-dictionary.md'
+```
+
+### `REPORT_VIEWS_SQL`
+
+```python
+REPORT_VIEWS_SQL = 'views.sql'
+```
+
 ### `GENERATED_FILES`
 
 ```python
