@@ -252,6 +252,47 @@ def test_minimal_mapping_loads_with_empty_extras(tmp_path: Path) -> None:
     assert bundle.mapping.polymorphic_patterns == []
 
 
+def test_retention_policy_rejects_unknown_key(tmp_path: Path) -> None:
+    """`_load_retention` was the one config reader with no `_reject_unknown_keys`
+    call at all -- a typo'd `sp_labl:` loaded silently and the policy kept its
+    empty-string default, indistinguishable from the key never being set."""
+    (tmp_path / "retention.yaml").write_text(
+        "policies:\n"
+        "  Standard7Y:\n"
+        "    sp_labl: Standard 7 Year\n"
+        "    retain_years: 7\n",
+        encoding="utf-8",
+    )
+    write_mapping(
+        tmp_path,
+        blocks(entities("Project"), "retention_policies_source: retention.yaml"),
+    )
+    with pytest.raises(ValueError, match="unknown key") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "policies.Standard7Y" in str(err.value)
+    assert "sp_labl" in str(err.value)
+
+
+def test_retention_policy_rejects_wrong_typed_value(tmp_path: Path) -> None:
+    """`retain_years` is typed `int | None` in `RetentionPolicy`; a quoted
+    number must not load as a `str` living inside that field -- invisible to
+    `mypy --strict` because `spec.get(...)` is `Any`."""
+    (tmp_path / "retention.yaml").write_text(
+        "policies:\n"
+        "  Standard7Y:\n"
+        "    sp_label: Standard 7 Year\n"
+        '    retain_years: "seven"\n',
+        encoding="utf-8",
+    )
+    write_mapping(
+        tmp_path,
+        blocks(entities("Project"), "retention_policies_source: retention.yaml"),
+    )
+    with pytest.raises(ValueError, match="retain_years") as err:
+        load_mapping(tmp_path / "m.yaml")
+    assert "policies.Standard7Y" in str(err.value)
+
+
 def test_enum_sources_loads_choices_with_explicit_fragment(tmp_path: Path) -> None:
     """enum_sources values are `path#fragment`; the fragment names the
     top-level key to read from the target YAML."""
