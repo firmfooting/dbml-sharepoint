@@ -556,9 +556,14 @@ For `&&`, nest an `if()`:
 
 `||` is unaffected.
 
-The deployer does **not** escape on write, although `&amp;` demonstrably
-round-trips. Whether `&lt;` does is untested, and a deployer that escaped one
-metacharacter and not the other would be worse than this refusal — see #179.
+The deployer does **not** escape on write, and the reason is no longer that
+the escaped form is untested — `&amp;` and `&lt;` both write and read back
+unchanged, so each refused character has a working escaped spelling. What
+nobody has watched is whether the escaped form still **renders** as the author
+meant. A formatter that stores `&amp;&amp;` and paints `&amp;&amp;` on the
+page is not a working formatter, and no API round-trip can tell those apart.
+See #179; if the answer is yes, this refusal is deleted and the deployer
+escapes instead.
 
 **Only view formatting is affected.** The same probe measured a column's
 `CustomFormatter` and a form's `ClientFormCustomFormatter` keeping `&`, `<`,
