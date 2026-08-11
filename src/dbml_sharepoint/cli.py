@@ -560,6 +560,12 @@ def execute_build(
         source_mtime=source_mtime,
         generated_at=generated_at,
         manifest_extras=ext.manifest_extras(bundle, parsed_schema),
+        # The manifest is read BEFORE the paste, so this is where the
+        # permanent-membership warning has to be. Rendered even on the
+        # error path below: a build that refuses still writes a manifest,
+        # and the operator reading it should see what the flag would have
+        # done once the errors are fixed.
+        enterprise_reader=enterprise_reader,
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
 

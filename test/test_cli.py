@@ -592,6 +592,35 @@ def test_a_valid_reader_flag_reaches_emit_bundle(
     assert captured["enterprise_reader"] == address
 
 
+def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> None:
+    """`deploy-manifest.md` is written by `execute_build` itself, NOT by
+    `emit_bundle` -- so the spy test above proves nothing about it.
+
+    This is the artefact the operator reviews BEFORE pasting, and the reader
+    enrolment is the one act in the run that `rollback.js.txt` does not
+    undo. The manifest generator was never handed the address, so the whole
+    warning was missing from the only document positioned to carry it.
+    """
+    out = tmp_path / "build"
+    address = "svc-reporting@example.org"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", address,
+    ])
+    assert result.exit_code == 0, result.output
+
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert address in manifest
+    assert "PERMANENT" in manifest
+    assert "does not delete the group" in manifest
+
+
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     """A failed build must leave only its error manifest — a stale script
     or stale INDEX/checksums beside it could send an operator to the wrong

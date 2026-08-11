@@ -199,8 +199,120 @@ def test_manifest_describes_operator_self_enrolment(tmp_path: Path) -> None:
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
     )
-    assert "Operator self-enrol" in md
-    assert "removed automatically at the end of the run" in md
+    assert "Enrolled by this deploy" in md
+    assert "you (the operator) — removed automatically at the end of the run" in md
+
+
+def _reader_manifest(enterprise_reader: str | None) -> str:
+    """The manifest for a mapping that declares an enterprise-reader group,
+    built with and without the flag."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    return generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=enterprise_reader,
+    )
+
+
+def test_manifest_warns_that_the_reader_enrolment_is_permanent() -> None:
+    """The manifest is what an operator reads BEFORE pasting anything, so it
+    is the only place this warning can do its work.
+
+    The reader enrolment is the one thing the bundle does that `rollback.js.
+    txt` does not undo: roll back and the lists are gone, while the group
+    and the named account in it survive. `emit_bundle` passed
+    `enterprise_reader` to `generate_deploy_js` alone, so the manifest could
+    not say any of this -- the operator's review artefact was silent about
+    the single irreversible act in the run.
+    """
+    md = _reader_manifest("svc-reporting@example.org")
+
+    assert "svc-reporting@example.org" in md
+    assert "Enterprise Reader" in md          # the group it goes into
+    assert "PERMANENT" in md
+    assert f"Phase {pn('reader_enrolment')}" in md
+    # And the rollback consequence, in as many words.
+    assert "does not delete the group" in md
+    assert "nothing left for it to read" in md
+
+
+def test_manifest_says_the_reader_group_is_empty_without_the_flag() -> None:
+    """The mirror. A build with no `--enterprise-reader` still creates the
+    group, and an operator who reads only the group table needs to know it
+    is created empty -- otherwise the row looks like an enrolment nobody
+    asked for. Without this the permanent-membership assertions above would
+    pass on a template that printed the warning unconditionally.
+    """
+    md = _reader_manifest(None)
+
+    assert "created empty" in md
+    assert "PERMANENT" not in md
+    assert "svc-reporting@example.org" not in md
+
+
+def test_the_group_table_never_reports_the_reader_group_as_unenrolled() -> None:
+    """The defect this pins: the table's last column asked only about
+    OPERATOR self-enrolment and answered a flat "no" for the enterprise-
+    reader group -- the one group this deploy permanently adds an account
+    to. A reviewer scanning the column read "nothing is added here" about
+    the row where something is.
+
+    Asserted on the ROW rather than on the document, because the file also
+    contains rows that legitimately say nobody.
+    """
+    row = next(
+        line for line in _reader_manifest("svc-reporting@example.org").splitlines()
+        if line.startswith("| Enterprise Reader |")
+    )
+
+    assert "svc-reporting@example.org" in row
+    assert "PERMANENT" in row
+    assert "nobody" not in row
+
+
+def test_the_group_table_marks_the_reader_group_empty_without_the_flag() -> None:
+    """Same row, no flag: it must say nobody is enrolled AND why, so the
+    reader cannot be mistaken for a group the deploy simply ignores."""
+    row = next(
+        line for line in _reader_manifest(None).splitlines()
+        if line.startswith("| Enterprise Reader |")
+    )
+
+    assert "nobody" in row
+    assert "--enterprise-reader" in row
+    assert "PERMANENT" not in row
+
+
+def test_a_mapping_with_no_reader_group_gets_no_reader_prose() -> None:
+    """No group, no paragraph. The narrative is driven off the declared
+    group, not off the flag, so a mapping that declares neither must not
+    grow a section about a group it does not have."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    assert "Enterprise reader" not in md
+    assert "created empty" not in md
 
 
 def test_manifest_lists_declared_views() -> None:
