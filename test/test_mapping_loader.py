@@ -475,6 +475,75 @@ def test_views_section_parsed(tmp_path: Path) -> None:
     assert view.row_limit == 100
 
 
+def test_row_limit_refuses_a_yaml_boolean(tmp_path: Path) -> None:
+    """`row_limit: yes` is a one-row view, built green, on a live site.
+
+    YAML 1.1 reads `yes` as True, and `int(True)` is 1 — which then passes
+    the validator's `1 <= row_limit <= 5000` range check, because 1 is a
+    perfectly ordinary row limit. Reproduced end to end before this guard:
+    the emitted deploy.js.txt carried `"row_limit": 1`, the build exited 0,
+    and the view showed one item forever.
+
+    Exactly the failure AGENTS.md opens with — saves, reads back, passes
+    every phase, and is wrong on the rendered page. `widths`, the adjacent
+    field of this same dataclass, has always rejected `isinstance(px, bool)`
+    for precisely this reason; `row_limit` was simply missed.
+    """
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Everything
+              fields: [Title]
+              row_limit: yes
+    """))
+    with pytest.raises(ValueError, match="row_limit"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_row_limit_refuses_a_non_integer(tmp_path: Path) -> None:
+    """`int("100")` would succeed and `int("many")` would raise ValueError
+    with no context at all — no view title, no entity, no key name."""
+    write_mapping(tmp_path, _views_yaml("""
+        views:
+          Project:
+            - title: Everything
+              fields: [Title]
+              row_limit: many
+    """))
+    with pytest.raises(ValueError, match="row_limit"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_base_template_refuses_a_yaml_boolean(tmp_path: Path) -> None:
+    """`int(True)` is 1, and 1 is not 100.
+
+    Contained today only because a downstream check errors on anything but
+    100 — so the refusal an author sees names the wrong thing entirely.
+    """
+    write_mapping(tmp_path, """
+        entities:
+          Risk: { kind: List, base_template: true, site_role: default }
+    """)
+    with pytest.raises(ValueError, match="base_template"):
+        load_mapping(tmp_path / "m.yaml")
+
+
+def test_site_role_refuses_a_non_string(tmp_path: Path) -> None:
+    """`site_role` is compared for equality against declared roles all over
+    the codebase. A list reaches those comparisons and simply matches
+    nothing, so every entity silently stops being deployed anywhere.
+
+    `display_column`, on the very next line of the same constructor, has
+    always been read through `_optional_str` for this reason.
+    """
+    write_mapping(tmp_path, """
+        entities:
+          Risk: { kind: List, base_template: 100, site_role: [default] }
+    """)
+    with pytest.raises(ValueError, match="site_role"):
+        load_mapping(tmp_path / "m.yaml")
+
+
 def test_views_optional_parts_default(tmp_path: Path) -> None:
     write_mapping(tmp_path, _views_yaml("""
         views:

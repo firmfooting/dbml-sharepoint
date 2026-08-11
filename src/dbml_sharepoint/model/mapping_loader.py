@@ -186,8 +186,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         entities[name] = EntityMapping(
             name=name,
             kind=_parse_entity_kind(spec.get("kind"), f"entities.{name}"),
-            base_template=int(spec["base_template"]),
-            site_role=spec["site_role"],
+            base_template=_require_int(spec, "base_template", f"entities.{name}"),
+            site_role=_require_str(spec, "site_role", f"entities.{name}"),
             singleton=_optional_bool(spec, "singleton", f"entities.{name}"),
             display_column=_optional_str(
                 spec, "display_column", f"entities.{name}",
@@ -696,7 +696,6 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
             fields=[str(name) for name in raw_fields],
             collapsed=_optional_bool(raw_group, "collapsed", f"{context}.group_by"),
         )
-    raw_limit = raw_view.get("row_limit")
     raw_formatting = raw_view.get("formatting")
     raw_widths = raw_view.get("widths")
     widths: dict[str, int] = {}
@@ -736,7 +735,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
         where=where,
         sort=sort,
         group_by=group_by,
-        row_limit=int(raw_limit) if raw_limit is not None else None,
+        row_limit=_optional_int(raw_view, "row_limit", context),
         formatting=(
             _load_json_value(base_dir, raw_formatting, f"{context}.formatting")
             if raw_formatting is not None
@@ -948,6 +947,51 @@ def _optional_str(raw: dict[str, Any], key: str, context: str) -> str | None:
     """
     value = raw.get(key)
     if value is not None and not isinstance(value, str):
+        raise ValueError(f"{context}.{key} must be a string, got {value!r}")
+    return value
+
+
+def _require_int(raw: dict[str, Any], key: str, context: str) -> int:
+    """Read a required integer, refusing the bool YAML hands back for `yes`.
+
+    `isinstance(True, int)` is True in Python, so a plain int check passes a
+    boolean straight through and `int(True)` is 1. Both fields read this way
+    are ones where 1 is a legal-looking value, so nothing downstream can tell
+    the difference.
+
+    Subscripted, not `.get()`: an absent required key stays the KeyError it
+    has always been. Reporting that with a location is the error-model work
+    in #170, and doing it here would change an unrelated message.
+    """
+    value = raw[key]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{context}.{key} must be an integer, got {value!r}")
+    return value
+
+
+def _optional_int(raw: dict[str, Any], key: str, context: str) -> int | None:
+    """Read an optional integer, refusing bools and un-coercible strings.
+
+    `int(raw)` accepted three wrong things silently or badly: `yes` became 1,
+    `"100"` became 100 (so a quoted number worked by accident and taught the
+    wrong lesson), and `many` raised `invalid literal for int() with base 10`
+    — a message naming neither the key, the view, nor the entity.
+    """
+    value = raw.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{context}.{key} must be an integer, got {value!r}")
+    return value
+
+
+def _require_str(raw: dict[str, Any], key: str, context: str) -> str:
+    """Read a required string. The mirror of `_optional_str`.
+
+    Subscripted for the same reason as `_require_int`.
+    """
+    value = raw[key]
+    if not isinstance(value, str):
         raise ValueError(f"{context}.{key} must be a string, got {value!r}")
     return value
 
