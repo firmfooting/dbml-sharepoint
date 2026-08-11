@@ -560,10 +560,22 @@ The deployer does **not** escape on write, although `&amp;` demonstrably
 round-trips. Whether `&lt;` does is untested, and a deployer that escaped one
 metacharacter and not the other would be worse than this refusal — see #179.
 
-**Form formatting is not affected.** The same probe measured a form's
-`ClientFormCustomFormatter` keeping `&`, `<`, `>` and both quotes literally,
-so it is not XML-stored and carries no restriction. **Column formatting is
-still unmeasured** — the probe's field bootstrap failed on that run.
+**Only view formatting is affected.** The same probe measured a column's
+`CustomFormatter` and a form's `ClientFormCustomFormatter` keeping `&`, `<`,
+`>` and both quotes **literally, unchanged**. Neither is XML-stored, neither
+carries any restriction, and a column formatter comparing with `<` — which
+`risk-register` ships — is safe.
+
+That also settles a quiet asymmetry in the deploy script, which XML-decodes a
+view formatter's read-back before comparing and does not decode a column
+formatter's. Measured: the view read-back IS entity-encoded and the column
+read-back is not, so the two comparisons are right to differ.
+
+**Escaped forms are accepted.** `&amp;` and `&lt;` both write and read back
+unchanged, so the two refused characters each have a working escaped
+spelling. Whether the escaped form still *renders* as the author meant is the
+open question — see #179 — and until it is answered the build refuses the raw
+character rather than the deployer escaping it.
 
 :::
 
