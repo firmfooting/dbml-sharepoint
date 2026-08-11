@@ -222,3 +222,12 @@ organisational records, and a register assembled for a service review is
 exactly the kind of thing whose deletion needs to be a deliberate, authorised
 act: export it and follow your records schedule before any decommission.
 Deletion protection is UI friction, not authority to destroy data.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"SE Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

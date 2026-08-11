@@ -121,3 +121,12 @@ demo-marked as demo-only content.
 
 Bump `schema_version`, rebuild, re-paste. Rows untouched; views, forms,
 formatting and save rules reconciled to the declaration.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"OB Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

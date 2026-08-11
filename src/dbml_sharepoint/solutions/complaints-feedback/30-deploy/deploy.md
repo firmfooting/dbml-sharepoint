@@ -135,3 +135,12 @@ site that already holds real feedback.
 
 Bump `schema_version`, rebuild, re-paste. The Record Only level's
 permissions are reconciled every run.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"CF Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

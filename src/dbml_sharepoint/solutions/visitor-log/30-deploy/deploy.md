@@ -114,3 +114,12 @@ site that already holds real visits.
 ## Redeploying
 
 Bump `schema_version`, rebuild, re-paste.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"VI Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

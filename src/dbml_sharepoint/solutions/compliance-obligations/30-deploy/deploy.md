@@ -137,3 +137,12 @@ visible.
 Bump `schema_version`, rebuild, re-paste. Existing rows are untouched;
 drifted settings are reconciled, and declared views are reconciled to the
 declaration — a view retitled by hand comes back under its declared title.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"CO Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

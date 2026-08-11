@@ -134,3 +134,12 @@ Bump `schema_version`, rebuild, re-paste. Changing the scoring formula
 re-scores every row instantly — treat score changes as a governance event.
 The five declared views are reconciled every run; views you create yourself
 are user content and are never touched.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"PP Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

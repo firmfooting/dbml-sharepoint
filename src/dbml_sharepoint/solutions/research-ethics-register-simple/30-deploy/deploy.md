@@ -183,3 +183,12 @@ declaration — a view retitled by hand comes back under its declared title.
 Version history is not touched, which matters more here than on most
 templates: it is the only record of the amendments this design does not give
 rows of their own.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"RG Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

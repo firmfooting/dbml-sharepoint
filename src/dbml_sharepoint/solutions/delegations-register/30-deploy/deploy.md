@@ -141,3 +141,12 @@ declaration — a view retitled by hand comes back under its declared title.
 **Re-check the header link after any redeploy**: the header JSON is
 reconciled from the file, so a URL edited in the SharePoint UI is reverted
 to whatever the file says.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"DG Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

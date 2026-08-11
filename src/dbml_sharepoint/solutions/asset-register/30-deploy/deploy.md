@@ -109,3 +109,12 @@ site that already holds real assets.
 
 Bump `schema_version` in `release.yaml`, rebuild, re-paste. Existing rows
 untouched; declared settings reconciled.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"AS Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.

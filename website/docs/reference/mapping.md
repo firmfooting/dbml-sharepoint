@@ -1321,6 +1321,14 @@ groups:
     only_allow_members_view_membership: true
     require_empty_at_deploy: true        # optional
     enroll_operator_during_deploy: true  # optional, run-scoped
+  - name: "Register Enterprise Readers"
+    description: "Reporting service account, Read only."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_enterprise_reader: true  # optional; target of `build --enterprise-reader`
 
 list_permissions:
   default:
@@ -1330,6 +1338,8 @@ list_permissions:
     assignments:
       - principal: { kind: group, name: "Register Editors" }
         level: "Contribute No Delete"
+      - principal: { kind: group, name: "Register Enterprise Readers" }
+        level: "Read"
       - principal: { kind: associated_owner_group }
         level: "Full Control"
   overrides:                  # per entity; same policy shape as default
@@ -1370,6 +1380,60 @@ implemented.
 `permissions:` is now rejected at load rather than ignored, so the failure
 is loud. The keys above are the real ones, and are what every shipped
 template and example uses.
+
+:::
+
+:::danger A direct share cannot be used to grant reporting access
+
+A tempting shortcut for handing a reporting account read access is to share
+the site or a list with it directly, outside `mapping.yaml`. Three measured
+facts rule that out, together:
+
+- Every shipped family sets `break_inheritance: true` on every list, so a
+  site-scoped grant (adding the account to Site Visitors, for instance)
+  reaches none of the registers the deploy provisions.
+- Every shipped family uses `reconcile: exact`. The generated deploy script's
+  ACL phase (`templates/deploy/_acls.js.j2`) enumerates every role
+  assignment on the list, skips only `Limited Access`, and removes anything
+  not in the declared set, logging it `'unlisted'` — so a hand-added grant
+  is deleted by the very next deploy, surfacing days later as a short line
+  in a report on a site nobody touched.
+- A direct share creates a unique **item** scope. Under `exact`, that same
+  ACL phase detects a leftover item or folder scope and **fails closed**
+  for operator review rather than erasing it. So a direct share does not
+  merely get revoked — it aborts every subsequent deploy of that site until
+  an operator resolves it by hand.
+
+The supported route is the `enroll_enterprise_reader` group above, enrolled
+with `build --enterprise-reader <account>`: a declared, reconcilable grant
+that survives redeploy instead of being deleted or blocking one.
+
+The level is the built-in `Read` and nothing else. It is tempting to reach
+for `Restricted Read` instead, since it looks like even less privilege —
+but Microsoft Learn's site-permissions table shows `Restricted Read` lacks
+`Use Remote Interfaces`, the permission an API or reporting client needs to
+connect at all. It would be less privilege *and* a reporting connector that
+could not read anything. The validator refuses any level other than `Read`
+on a flagged group (`enterprise_reader_group_over_privileged`).
+
+**The end-to-end Power BI (or any API-client) read path is not yet
+verified.** The reader account holds `Read` on each list, and only
+SharePoint's derived `Limited Access` at web scope — it is never added to
+Site Visitors or any web-scoped group. Microsoft Learn documents that
+*lockdown mode* strips `Use Remote Interfaces` from `Limited Access`, and
+that lockdown mode is on by default for publishing sites. Whether a given
+tenant's lockdown-mode setting leaves this path open has not been checked
+against a live site. What has been established, and only this: the grant is
+declared, it is reconcilable, and it survives a redeploy that would erase a
+hand-added one.
+
+A smaller, separate limit: before enrolling the named account, the deploy
+refuses it outright if it resolves to one of SharePoint's tenant-wide
+claims — but only two of the four Microsoft Learn names (*Everyone*,
+*Everyone except external users*). Learn publishes no login-name encoding
+for *All Authenticated Users* or *All Forms Users*, so those two were
+deliberately not guessed rather than guarded with an invented value. See
+the dated comment in `templates/deploy/_reader_enrolment.js.j2`.
 
 :::
 

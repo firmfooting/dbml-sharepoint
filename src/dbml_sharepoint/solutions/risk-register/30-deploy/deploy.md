@@ -130,3 +130,12 @@ A redeploy applies formula changes to the live columns, and SharePoint then
 dangerous for a matrix revision — follow the change-control procedure in
 `50-govern/governance.md` (export a snapshot first, then the
 `MatrixVersion` append-and-re-version steps) before touching any cell.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"RR Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.
