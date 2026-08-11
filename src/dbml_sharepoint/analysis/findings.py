@@ -236,6 +236,14 @@ class FindingCode(StrEnum):
     UNMAPPED_SCHEMA_TABLE = "unmapped_schema_table", "error"
     UNSUPPORTED_BASE_TEMPLATE = "unsupported_base_template", "error"
     WATCHED_COLUMN_NOT_RENDERED = "watched_column_not_rendered", "error"
+    # A view's CustomFormatter is stored in the view schema XML, so a bare `&`
+    # in it opens an entity reference and makes SharePoint's own document
+    # malformed. Measured 2026-08-11: the view MERGE returns HTTP 500,
+    # System.Xml.XmlException, at the exact position of the `&`. It aborts the
+    # deployment, and nothing in the build or `node --check` can see it.
+    VIEW_FORMATTER_AMPERSAND_BREAKS_THE_VIEW_XML = (
+        "view_formatter_ampersand_breaks_the_view_xml", "error",
+    )
     WIDTH_COLUMN_NOT_DISPLAYED = "width_column_not_displayed", "error"
     WIDTH_OUT_OF_RANGE = "width_out_of_range", "error"
 

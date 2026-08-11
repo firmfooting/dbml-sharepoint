@@ -235,6 +235,7 @@ dbml-sharepoint explain unknown_column_type
 | `validation_formula_too_long` | error | A rendered validation formula exceeds SharePoint's 1024-character limit. |
 | `validation_message_too_long` | error | A column validation message exceeds 1024 characters. |
 | `view_emptied_by_retirement` | warning | Retirement stripped every declared field from a view, which would be created with no columns. |
+| `view_formatter_ampersand_breaks_the_view_xml` | error | A view formatter contains a bare `&`. A view's CustomFormatter is stored in the view schema XML, so the `&` opens an XML entity reference and the document SharePoint assembles is malformed. Measured on a live tenant 2026-08-11: the view MERGE returns HTTP 500, `System.Xml.XmlException: An error occurred while parsing EntityName`, at the exact character position of the `&`, and the deployment aborts. Nothing before that point can see it -- the build is clean and so is `node --check`. Express the condition without `&`: nest an `if()`, or use `||`, which carries no XML metacharacter and is used by shipped templates. Whether SharePoint would accept an escaped `&amp;` is not established; only the failure is. |
 | `watched_column_not_rendered` | error | A `watched_lists:` entry names a column the deploy never creates. |
 | `width_column_not_displayed` | error | A `widths` entry names a column that is not one of the view's fields. |
 | `width_out_of_range` | error | A column width is outside 16-2000 pixels. |

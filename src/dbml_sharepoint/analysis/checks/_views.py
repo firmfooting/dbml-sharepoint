@@ -269,6 +269,28 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 _NULL_TEST_OPS = frozenset({"is_null", "is_not_null"})
 
 
+def _formatter_strings(node: object, key: str = "") -> list[tuple[str, str]]:
+    """Every (key, string value) pair in a formatter JSON tree, depth first.
+
+    `formatter_field_refs` walks the same shape but returns only the
+    `[$Field]` references it finds. This returns the raw strings, because the
+    question here is about a character anywhere in the value rather than about
+    a reference -- and the key comes with it so the message can say which
+    property to go and look at.
+    """
+    if isinstance(node, str):
+        return [(key, node)]
+    if isinstance(node, dict):
+        return [
+            pair
+            for child_key, child in node.items()
+            for pair in _formatter_strings(child, str(child_key))
+        ]
+    if isinstance(node, list):
+        return [pair for child in node for pair in _formatter_strings(child, key)]
+    return []
+
+
 def _index_covered(node: Condition, indexed: frozenset[str] | set[str]) -> bool:
     """Whether an index can narrow this filter before SharePoint scans.
 
@@ -764,6 +786,35 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=at_view,
                 ))
             if view.formatting is not None:
+                # A view's CustomFormatter is stored in the view schema XML,
+                # like ViewQuery -- which is why the deployer XML-DECODES it on
+                # read-back before comparing. It does not ENCODE on write, so a
+                # bare `&` reaches SharePoint as the opening of an entity
+                # reference, `&& [` is not a valid entity name, and the
+                # document SharePoint assembles is malformed.
+                #
+                # MEASURED 2026-08-11 on a live tenant: the view MERGE returns
+                # HTTP 500, `System.Xml.XmlException: An error occurred while
+                # parsing EntityName. Line 1, position 195` -- position 195
+                # being exactly where the `&&` sat. The deployment aborted.
+                #
+                # Refused here rather than escaped in the deployer, because
+                # whether SharePoint accepts `&amp;` and stores it back as `&`
+                # is NOT established; only the failure is. `||` is untouched:
+                # it carries no XML metacharacter and shipped templates use it.
+                for key, value in _formatter_strings(view.formatting):
+                    if "&" not in value:
+                        continue
+                    findings.append(Finding(
+                        FindingCode.VIEW_FORMATTER_AMPERSAND_BREAKS_THE_VIEW_XML,
+                        f"{ctx}: formatting {key!r} contains '&', which "
+                        f"SharePoint stores into the view schema XML as the "
+                        f"start of an entity reference -- the view MERGE fails "
+                        f"with an XmlException and the deployment aborts. "
+                        f"Express the condition without it: nest an if(), or "
+                        f"use '||', which carries no XML metacharacter.",
+                        location=at_view,
+                    ))
                 refs = formatter_field_refs(view.formatting)
                 for ref in sorted(refs - view_rendered):
                     findings.append(Finding(

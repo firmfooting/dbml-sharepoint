@@ -879,6 +879,20 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A `watched_lists:` entry names a column the deploy never "
         "creates."
     ),
+    FindingCode.VIEW_FORMATTER_AMPERSAND_BREAKS_THE_VIEW_XML: (
+        "A view formatter contains a bare `&`. A view's CustomFormatter is "
+        "stored in the view schema XML, so the `&` opens an XML entity "
+        "reference and the document SharePoint assembles is malformed. "
+        "Measured on a live tenant 2026-08-11: the view MERGE returns HTTP "
+        "500, `System.Xml.XmlException: An error occurred while parsing "
+        "EntityName`, at the exact character position of the `&`, and the "
+        "deployment aborts. Nothing before that point can see it -- the "
+        "build is clean and so is `node --check`. Express the condition "
+        "without `&`: nest an `if()`, or use `||`, which carries no XML "
+        "metacharacter and is used by shipped templates. Whether SharePoint "
+        "would accept an escaped `&amp;` is not established; only the "
+        "failure is."
+    ),
     FindingCode.WIDTH_COLUMN_NOT_DISPLAYED: (
         "A `widths` entry names a column that is not one of the view's "
         "fields."
