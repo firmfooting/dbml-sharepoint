@@ -1095,19 +1095,33 @@ def _parse_permissions(raw: dict[str, Any]) -> PermissionsConfig | None:
     )
 
 
+_RETENTION_POLICY_KEYS = frozenset(
+    {"description", "sp_label", "retain_years", "retain_days", "trigger"},
+)
+
+
 def _load_retention(path: Path) -> tuple[dict[str, RetentionPolicy], dict[str, str]]:
-    """Load config/retention-policies.yaml; returns (policies, list_defaults)."""
+    """Load config/retention-policies.yaml; returns (policies, list_defaults).
+
+    Guarded like every other reader in this module: unknown keys are refused,
+    not ignored, and every field is type-checked before it reaches the
+    dataclass -- see `_keys._reject_unknown_keys` for why a fail-open level
+    here would make a typo'd file byte-identical to one with the key deleted.
+    """
     raw = _load_yaml(path)
-    policies = {
-        name: RetentionPolicy(
+    raw_policies = _require_mapping(raw.get("policies"), "policies", allow_absent=False)
+    policies: dict[str, RetentionPolicy] = {}
+    for name, raw_spec in raw_policies.items():
+        context = f"policies.{name}"
+        spec = _require_mapping(raw_spec, context, allow_absent=False)
+        _reject_unknown_keys(spec, _RETENTION_POLICY_KEYS, context)
+        policies[name] = RetentionPolicy(
             name=name,
-            description=spec.get("description", ""),
-            sp_label=spec.get("sp_label", ""),
-            retain_years=spec.get("retain_years"),
-            retain_days=spec.get("retain_days"),
-            trigger=spec.get("trigger", "creation"),
+            description=_optional_str(spec, "description", context) or "",
+            sp_label=_optional_str(spec, "sp_label", context) or "",
+            retain_years=_optional_int(spec, "retain_years", context),
+            retain_days=_optional_int(spec, "retain_days", context),
+            trigger=_optional_str(spec, "trigger", context) or "creation",
         )
-        for name, spec in raw["policies"].items()
-    }
     list_defaults = dict(_require_mapping(raw.get("list_defaults"), "list_defaults"))
     return policies, list_defaults
