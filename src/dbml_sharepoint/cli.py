@@ -104,6 +104,7 @@ _EMPTY_SCHEMA_JSON: dict[str, Any] = {
     "permission_levels": [],
     "groups": [],
     "list_assignments": [],
+    "requires_manage_permissions": False,
     "seed_items": [],
 }
 

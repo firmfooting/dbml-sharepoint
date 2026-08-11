@@ -65,7 +65,7 @@ properties. An unsupported or unproven shape aborts for explicit migration.
    empty site** — never against a site containing real records (see the
    fail-closed note above).
 
-Required rights: **Manage Lists**{% if schema_json.permission_levels or schema_json.groups or schema_json.list_assignments %} plus **Manage Permissions** (this
+Required rights: **Manage Lists**{% if schema_json.requires_manage_permissions %} plus **Manage Permissions** (this
 deployment declares permission levels / groups / list ACLs){% endif %} on the target site.
 
 Group ownership is corrected automatically where possible: on an owner

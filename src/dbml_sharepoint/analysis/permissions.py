@@ -1,7 +1,10 @@
 # src/dbml_sharepoint/analysis/permissions.py
 """SP base permissions bitmask + permission-level / group / role-assignment helpers."""
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+
+from dbml_sharepoint.model._mapping_types import Mapping
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
 # positions below 32 land in Low; positions 32..62 land in High. Values
@@ -80,3 +83,33 @@ BUILT_IN_LEVELS: frozenset[str] = frozenset({
     "Read", "Contribute", "Edit", "Design", "Full Control",
     "Limited Access", "Approve", "Manage Hierarchy", "Restricted Read",
 })
+
+
+def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) -> bool:
+    """True when deploying `table_names` performs ANY ACL work, and so needs
+    the ManagePermissions site right.
+
+    Three call sites each used to answer this on their own: assessgen's
+    preflight requirement, the human-readable manifest, and deploy.js's own
+    live preflight abort. The manifest and deploy.js already agreed --
+    "declares custom permission levels, custom groups, or a per-list ACL
+    policy" -- but assessgen tested `declares_break_inheritance` instead of
+    "a policy exists", so a `break_inheritance: false` policy (built-in level,
+    built-in associated group, inheritance left alone) made assess.js predict
+    no ManagePermissions requirement while deploy.js demanded it and aborted.
+    See #166 item 5, reproduced against a from-scratch mapping with zero
+    validator findings.
+
+    A per-list policy counts even with `break_inheritance: false`: deploy.js
+    still binds the declared role assignments on the (inherited) list, which
+    still needs the bit. `table_names` should be the entity names actually in
+    this build (`analysis.ordering.site_tables_in_order`'s output), not every
+    entity in the mapping -- a policy scoped to a site_role this build does
+    not deploy must not demand a right the build never exercises.
+    """
+    perms = mapping.permissions
+    if perms is None:
+        return False
+    if perms.levels or perms.groups:
+        return True
+    return any(mapping.permissions_for_entity(name) is not None for name in table_names)

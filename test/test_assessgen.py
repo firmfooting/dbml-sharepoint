@@ -10,8 +10,11 @@ from dbml_sharepoint.generators.assessgen import (
     derive_requirements,
 )
 from dbml_sharepoint.model.mapping_loader import (
+    ListPermissionPolicy,
     MappingBundle,
     PermissionsConfig,
+    Principal,
+    RoleAssignment,
     SiteGroup,
     Versioning,
     load_mapping,
@@ -95,6 +98,51 @@ def test_styled_pack_requirements() -> None:
     assert reqs["allow_deletion_surface"].level_on_fail == "WARN"
     assert reqs["custom_formatter_surface"].level_on_fail == "WARN"
     assert reqs["version_trim_mode"].level_on_fail == "WARN"
+
+
+def test_manage_permissions_required_even_with_inheritance_left_alone() -> None:
+    """#166 item 5: a per-list ACL policy that leaves inheritance intact
+    (`break_inheritance: false`) still BINDS role assignments on the list, so
+    it still needs ManagePermissions -- deploy.js's own preflight
+    (`_field_reconcile.js.j2`) and the manifest (`manifest.md.j2`) already
+    agreed on that. assess_targets used to test `declares_break_inheritance`
+    instead of "a policy exists", so a mapping with zero custom permission
+    levels/groups but a `break_inheritance: false` default policy made
+    assess.js predict no requirement while deploy.js aborted with
+    `insufficient-permissions` -- assess.js exists precisely to predict what
+    deploy.js will refuse. Reproduced against the real loader with zero
+    validator findings before this test was written; see the PR body for
+    #166 for the full repro.
+
+    Built-in level ("Contribute") and built-in associated group deliberately
+    -- no custom `permission_levels` or `groups` declared -- so this fixture
+    is the minimal one that isolates the `declares_break_inheritance` defect
+    from `declares_groups`/`declares_permission_levels`, which were already
+    correct.
+    """
+    schema = make_schema(make_table("Risk", column("Title", required=True)))
+    bundle = make_bundle(
+        entities=["Risk"],
+        permissions=PermissionsConfig(
+            levels=[],
+            groups=[],
+            default_policy=ListPermissionPolicy(
+                break_inheritance=False,
+                assignments=[
+                    RoleAssignment(
+                        principal=Principal(kind="associated_member_group"),
+                        level="Contribute",
+                    ),
+                ],
+            ),
+            overrides={},
+        ),
+    )
+    t = assess_targets(schema, bundle, "default")
+    assert t["declares_groups"] is False
+    assert t["requires_manage_permissions"] is True
+    keys = {r.key for r in derive_requirements(schema, bundle, "default")}
+    assert "manage_permissions_bit" in keys
 
 
 def _assess_js() -> str:
