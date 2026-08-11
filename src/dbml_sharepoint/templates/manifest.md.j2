@@ -103,10 +103,13 @@ account from it. After a rollback you are left with **{{ reader_group_names }}**
 present, `{{ enterprise_reader }}` still a member, and nothing left for it to read.
 {% elif reader_groups %}
 
-Enterprise reader group: **{{ reader_group_names }}** is created **empty** and stays
-empty. This bundle was built without `--enterprise-reader`, so no account is
-enrolled into it; it holds the built-in **Read** and waits for a membership you
-add by hand, or by rebuilding with the flag.
+Enterprise reader group: **this build enrols nobody into {{ reader_group_names }}**.
+It was built without `--enterprise-reader`, so the group is created if absent and
+its membership is left exactly as it is. That is a statement about this bundle,
+not about the site: an earlier build **with** the flag may have enrolled an
+account, and nothing here checks or reports who is currently a member. The group
+holds the built-in **Read**, so anyone in it can read every list this bundle
+provisions. Check **Site permissions → Groups** if you need to know.
 {% endif %}
 
 ## Summary
