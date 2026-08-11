@@ -174,7 +174,9 @@ def _ask_site_url(console: Console) -> str:
     Calls `validate_site_url` rather than restating its rule, so the wizard
     cannot come to disagree with `--site-url` about what is acceptable.
     """
-    from dbml_sharepoint.cli import validate_site_url
+    # Deferred for a cycle: cli.py imports this module at its top, so this
+    # direction stays lazy until `validate_site_url` leaves the CLI -- #171.
+    from dbml_sharepoint.cli import validate_site_url  # noqa: PLC0415
 
     while True:
         site_url = Prompt.ask(
@@ -443,7 +445,8 @@ def _run(console: Console) -> int:
         # looks safest. Here Enter is not an answer and the prompt repeats.
         site_role = Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
 
-    from dbml_sharepoint.cli import execute_build
+    # Deferred for the same cycle as `validate_site_url` above -- #171.
+    from dbml_sharepoint.cli import execute_build  # noqa: PLC0415
 
     try:
         execute_build(

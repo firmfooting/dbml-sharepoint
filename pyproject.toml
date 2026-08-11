@@ -77,18 +77,66 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
+# ANN, BLE, C901, PLC0415 and TID252 were adopted together as ratchets (#165).
+# The first three stood at ZERO violations at the time, so they cost nothing to
+# turn on and can now never regress -- which is the entire point. A rule that is
+# enforced cannot rot; a rule that lives in a document can.
 select = [
-  "A", "B", "C4", "DTZ", "E", "F", "FURB", "I", "ISC", "N", "PIE",
-  "PTH", "RET", "RUF", "S", "SIM", "T20", "UP", "W",
+  "A", "ANN", "B", "BLE", "C4", "C901", "DTZ", "E", "F", "FURB", "I", "ISC",
+  "N", "PIE", "PLC0415", "PTH", "RET", "RUF", "S", "SIM", "T20", "TID252",
+  "UP", "W",
 ]
 ignore = [
+  # 69 sites, and roughly 100 of the 126 `Any` uses in src/ sit on a genuine
+  # YAML, JSON, Jinja-context or untyped-dependency boundary -- `raw` straight
+  # off `yaml.safe_load` is honestly Any. The rest of ANN is at zero and IS
+  # enforced, so every signature stays annotated; only the `Any` itself is
+  # allowed. The one cluster worth revisiting is extension.py, where
+  # `bundle: Any, schema: Any` erase two types this package defines -- that is
+  # a decision about the public plugin surface, not a lint sweep.
+  "ANN401",
   "B008",  # typer.Option in defaults is the framework idiom
   "C408",  # dict(key=...) literals are deliberate where used
 ]
 
+# NOT adopted, recorded so they are not re-litigated:
+#   TRY003 / EM101 / EM102 (105 sites) -- this project's long, operator-facing
+#     error prose IS the product; enforcing them means inventing 95 exception
+#     subclasses to no benefit.
+#   TRY004 (26 sites) -- raising ValueError after an isinstance check is
+#     deliberate: every config failure funnels into one ValueError-shaped
+#     refusal via `_CONFIG_ERRORS` in cli.py.
+#   FA100 / FA102 -- both push TOWARDS `from __future__ import annotations`,
+#     which is the wrong direction here, and neither can remove one. See #164:
+#     PEP 649 shipped in 3.14, this project supports 3.13, so the quoted
+#     forward references are load-bearing, not legacy.
+
+[tool.ruff.lint.flake8-tidy-imports]
+# Default is "parents", which bans `..` and leaves `from . import x` alone.
+# There was exactly one such import and it had no reason to be relative.
+ban-relative-imports = "all"
+
+[tool.ruff.lint.mccabe]
+# A RATCHET, exactly like coverage's `fail_under` and `_reachability`'s
+# NOT_YET_REACHED: set ABOVE today's worst so it blocks nothing now, and
+# lowered as the offenders are split. Never raised to make a build pass.
+#
+# 72 is `analysis/checks/_structure.py::check`. The other two over 40 are
+# `_views.py::check` (58) and `_formatting.py::check` (48); #168 decomposes
+# all three, and each PR that lands should bring this number down with it.
+#
+# Deliberately NOT the default of 10. That flags 25 functions at once, which
+# blocks every unrelated change until a large refactor lands -- so it would be
+# turned off again within a week, and the rule would teach nothing.
+max-complexity = 72
+
 [tool.ruff.lint.per-file-ignores]
-"test/**" = ["S101"]           # pytest asserts
-"website/scripts/**" = ["T20"] # generator scripts report via print
+# S101: pytest asserts. PLC0415: 159 function-level imports in the test tree,
+# 67 of them in test_jsgen.py -- a mechanical cleanup tracked in #172, not a
+# gate. PLC0415 IS enforced in src/, where the eight remaining sites are
+# documented cycle-breakers carrying a `noqa` and a reason.
+"test/**" = ["S101", "PLC0415"]
+"website/scripts/**" = ["T20", "PLC0415"] # generator scripts report via print
 "test/manual/render_probes.py" = ["T20"]     # generator script, reports via print
 "test/manual/make_threshold_rows.py" = ["T20"]  # generator script, reports via print
 "test/test_probes.py" = ["S603", "S607"]     # runs `node --check` on our own files

@@ -4,6 +4,8 @@
 import hashlib
 from pathlib import Path
 
+from _paths import PACKAGE
+
 from dbml_sharepoint.bundle import (
     ASSESS_SCRIPT,
     DEMO_SCRIPT,
@@ -239,3 +241,53 @@ def test_write_index_reporting_row(tmp_path: Path) -> None:
     out.mkdir()
     write_index(out, reporting=True)
     assert "`reporting/`" in (out / "index.md").read_text(encoding="utf-8")
+
+
+def test_the_package_has_exactly_one_writer() -> None:
+    """`write_artifact` is the only thing in the package allowed to write.
+
+    `Path.write_text` defaults to text mode, so on Windows it emits CRLF while
+    `.gitattributes` declares `* text=auto eol=lf`. A writer that omits
+    `newline="\\n"` therefore rewrites every file it touches, and the one real
+    change hides among a hundred phantom ones. AGENTS.md records this; both
+    committed-output generators and the bundle artifacts were fixed for it.
+
+    The trap is PER-CALL-SITE, which is what makes it worth a test rather than
+    a note: the fix does not generalise, so the next writer someone adds
+    reintroduces it, and nothing in ruff, mypy or the suite would say so.
+
+    Static, in the same way `test_every_finding_site_carries_a_location` is:
+    a property of the source, not of any particular run. It is deliberately
+    AST-based -- `grep` finds five more hits in this package, and all five are
+    the word `write_text` inside a docstring or a comment explaining this very
+    trap.
+    """
+    import ast
+
+    def is_a_write_call(func: ast.expr) -> bool:
+        """`path.write_text(...)`, however `path` was spelled."""
+        return isinstance(func, ast.Attribute) and func.attr == "write_text"
+
+    writers: list[str] = []
+    for path in sorted(PACKAGE.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and is_a_write_call(node.func):
+                keywords = {kw.arg for kw in node.keywords}
+                writers.append(
+                    f"{path.relative_to(PACKAGE)}:{node.lineno} "
+                    f"(keywords: {sorted(k for k in keywords if k)})",
+                )
+
+    # Exactly one, not "at most one". Zero would mean `write_artifact` has been
+    # renamed or moved out of the package, at which point this test would be
+    # green while guarding nothing -- the same failure the `sites > 100` guard
+    # in test_findings.py exists to prevent.
+    assert len(writers) == 1, (
+        "the package must write through `bundle.write_artifact` alone, which "
+        'passes newline="\\n". Found:\n  ' + "\n  ".join(writers)
+    )
+    assert writers[0].startswith("bundle.py:"), writers[0]
+    assert "'newline'" in writers[0], (
+        f"the one writer must pass newline: {writers[0]}"
+    )
