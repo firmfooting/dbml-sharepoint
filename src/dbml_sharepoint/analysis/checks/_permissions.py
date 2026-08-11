@@ -31,12 +31,28 @@ def _levels_granted_to_group(
     """Every (level, origin) grant to `name` across all policy blocks.
 
     Both the default policy and every override, because an override carries
-    its OWN complete assignment list rather than adding to the default -- a
-    reader granted Read on the default and nothing on an override cannot read
-    that list, and a reader granted Contribute on an override alone would
-    slip past a default-only check. The origin travels with each grant so an
-    over-privileged finding can point at the block that actually granted it
-    (an override-sourced grant must not be reported against the default).
+    its OWN complete assignment list rather than adding to the default. The
+    union is what lets `ENTERPRISE_READER_GROUP_OVER_PRIVILEGED` see a
+    reader granted Contribute on an override alone, which a default-only
+    read would miss entirely; and it lets
+    `ENTERPRISE_READER_GROUP_NOT_GRANTED` mean what it says -- the group
+    that NO block grants anything, so enrolling an account into it would
+    grant nothing anywhere.
+
+    What the union deliberately does NOT catch is the mirror case: Read on
+    the default and silence on some override. `check` tests `if not grants`
+    over the union, so one grant anywhere satisfies it. That is allowed on
+    purpose -- an override exists to differ, and may exclude the reader
+    from one list intentionally, so a rule firing on it would be stronger
+    than the mapping format's own meaning. For the SHIPPED families, where
+    such an omission would be a hole in fleet-wide reporting rather than a
+    choice, it is pinned separately by
+    `test_the_reader_group_is_granted_read_on_every_policy_block` in
+    test/test_template_standard.py.
+
+    The origin travels with each grant so an over-privileged finding can
+    point at the block that actually granted it (an override-sourced grant
+    must not be reported against the default).
     """
     policies: list[tuple[ListPermissionPolicy | None, Location]] = [
         (perms.default_policy, _DEFAULT_POLICY),

@@ -145,7 +145,7 @@ A matching display name is not proof that an existing list or field was created 
 
 *Phase 1.4 (PREPARE) — enterprise reader enrolment*
 
-Phase body: enrol the ONE account named by `build --enterprise-reader` into the mapping's `enroll_enterprise_reader` group, which holds Read. Emitted only when that flag was given, so an ordinary build carries no enrolment code at all. Unlike the operator's run-scoped enrolment, this membership is PERMANENT — nothing removes it at the end of the run. Every resolution is refused unless it is a single user (PrincipalType strictly 1), is not one of SharePoint's tenant-wide claims, and matches the address the build asked for; the membership is then read back before the run is allowed to call it done.
+Phase body: enrol the ONE account named by `build --enterprise-reader` into the mapping's `enroll_enterprise_reader` group, which holds Read. Emitted only when that flag was given, so an ordinary build carries no enrolment code at all. Unlike the operator's run-scoped enrolment, this membership is PERMANENT — nothing removes it at the end of the run. Every resolution is refused unless it is a single user (PrincipalType strictly 1), does not match one of the three tenant-wide-claim needles at step 3, and matches the address the build asked for; the membership is then read back before the run is allowed to call it done. Those needles are NOT full coverage of the tenant-wide claims: they cover two of the four Learn names. Read the dated KNOWN LIMIT at step 3 before treating this as a closed door -- it records which two, why the other two are deliberately not guessed, and which of the guards here the residual risk actually rests on.
 
 ### `deploy/_seal.js.j2`
 
