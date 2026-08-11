@@ -878,3 +878,76 @@ def test_reporting_md_states_the_multi_value_landing_contract() -> None:
 
     assert "Multi-value choice columns are a landing contract" in md
     assert "land such a column as text" in md
+
+
+def _ambiguous() -> tuple[Schema, MappingBundle]:
+    """A member carrying the separator the joined cell is split on.
+
+    `{"Permission change; revoked"}` and `{"Permission change", "revoked"}`
+    both join to the same string, so the export is lossy and no reader --
+    human or `Text.Split` -- can tell which the row held.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            column("Title", required=True),
+            column("AuditEvents", "audit_event[]"),
+        ),
+        enums=[make_enum("audit_event", "View", "Permission change; revoked")],
+    )
+    return schema, make_bundle(entities=["Platform"])
+
+
+@pytest.mark.parametrize("generate", [
+    generate_powerquery,
+    generate_sql_views,
+    generate_dictionary_powerquery,
+    generate_dictionary_sql,
+    generate_data_dictionary,
+])
+def test_a_member_containing_the_separator_is_refused(
+    generate: object,
+) -> None:
+    """Every entry point, because the export is lossy at all of them.
+
+    A joined cell is only reconstructible while no member contains the
+    string it is split on. This one does, so `{"Permission change; revoked"}`
+    and `{"Permission change", "revoked"}` land as the same text and a
+    downstream count of selections is wrong with nothing to notice it --
+    the silent-wrongness failure this repository exists to close, in a
+    production export.
+
+    Refused rather than escaped: an escape would have to be understood by
+    every consumer of the cell, including a human reading it, and the
+    dictionary's advice is `Text.Split`. Naming the member is the whole
+    value of the error, so it is asserted.
+    """
+    schema, bundle = _ambiguous()
+
+    with pytest.raises(ValueError, match="AuditEvents") as err:
+        generate(schema, bundle, "default")  # type: ignore[operator]
+
+    assert "Permission change; revoked" in str(err.value)
+    assert '"; "' in str(err.value)
+
+
+def test_a_member_containing_only_a_bare_semicolon_is_allowed() -> None:
+    """The separator is `"; "`, and only that string makes a cell ambiguous.
+
+    Refusing every semicolon would refuse `"Approved;pending review"`, which
+    joins and splits back perfectly well. A guard stronger than the fault it
+    guards against costs a legitimate schema for nothing.
+    """
+    schema = make_schema(
+        make_table(
+            "Platform",
+            column("Title", required=True),
+            column("AuditEvents", "audit_event[]"),
+        ),
+        enums=[make_enum("audit_event", "View", "Approved;pending")],
+    )
+    bundle = make_bundle(entities=["Platform"])
+
+    q = generate_powerquery(schema, bundle, "default")["APP_Platform.pq"]
+
+    assert 'Text.Combine(_, "; ")' in q

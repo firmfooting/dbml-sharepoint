@@ -28,7 +28,7 @@ from typing import Any
 
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
-from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN
+from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
@@ -85,6 +85,44 @@ def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> l
     return out
 
 
+def _refuse_ambiguous_members(column: str, members: list[str]) -> None:
+    """Refuse a choice set the joined cell could not be split back into.
+
+    A BACKSTOP, not the primary control. `MULTI_VALUE_MEMBER_CONTAINS_THE_
+    EXPORT_SEPARATOR` is the rule an author should meet, and `build` reaches
+    it before this can fire.
+
+    This exists because `report` does not validate. It is a supported
+    command with no site URL, it renders straight from the schema, and
+    without this guard it emits a Power Query cell joined on `"; "` from
+    members that themselves contain `"; "` -- while the data dictionary
+    beside it tells the reader to split on that string. The artifact is
+    well-formed, the command exits 0, and any count taken from the export
+    is wrong with nothing able to notice.
+
+    So do NOT delete this on the reasoning that the validator now covers it.
+    It was deleted once for exactly that reason and `report` silently
+    started shipping the lossy bundle; the deletion was reverted with a test
+    (`test_report_refuses_a_member_the_export_cannot_split_back`) that fails
+    when it goes again. The knowledge is not duplicated -- both this and the
+    validator ask `analysis/exports.ambiguous_members`, which is the one
+    place the rule is written.
+    """
+    offending = ambiguous_members(members)
+    if not offending:
+        return
+    raise ValueError(
+        f"{column}: multi-value choice member(s) "
+        f"{', '.join(repr(member) for member in offending)} contain "
+        f'"{MULTI_VALUE_JOIN}", which is the separator the exported cell '
+        f"joins members with. A set holding such a member joins to the same "
+        f"text as a set holding its parts, so the export cannot be split back "
+        f"into what the row actually held and any count of selections taken "
+        f"from it is wrong with nothing able to notice. Rename the member, or "
+        f"model the column as a child entity with one row per value.",
+    )
+
+
 def _display_column(bundle: MappingBundle, target_entity: str) -> str:
     entity = bundle.mapping.entities.get(target_entity)
     if entity is not None and entity.display_column:
@@ -110,6 +148,7 @@ def _build_plans(
     tables = _tables_for_role(schema, bundle, site_role)
     emitted = {t.name for t in tables}
     enum_names = {e.name for e in schema.enums}
+    enum_members = {e.name: e.members for e in schema.enums}
     cross_site_keys = {
         (xref.entity, xref.column)
         for xref in bundle.mapping.cross_site_reference_columns
@@ -212,6 +251,13 @@ def _build_plans(
                     # CROSS APPLY, no STRING_SPLIT, no OPENJSON — and none is
                     # being added here. One text cell is the only shape both
                     # targets can carry today.
+                    #
+                    # Which only works while the cell can be split back apart,
+                    # so the members are checked before anything is planned.
+                    # `report` does not validate, so this is its only guard.
+                    _refuse_ambiguous_members(
+                        sp.name, enum_members.get(sp.choices_enum or "", []),
+                    )
                     plan.selects.append(sp.name)
                     plan.multi_value_joins.append(sp.name)
                     plan.sql_columns.append((sp.name, "NVARCHAR(MAX)"))
@@ -763,6 +809,10 @@ def _sp_type_cell(
             # at one text cell holding several members finds out that it is
             # several members and what to split on.
             members = enum_members.get(sp.choices_enum or "", [])
+            # The dictionary is the one entry point that never builds a plan,
+            # so the plan builder's guard does not cover it. It is also the
+            # page that tells a reader to split on the separator.
+            _refuse_ambiguous_members(sp.name, members)
             joined = ", ".join(
                 f"{i}. {member}" for i, member in enumerate(members, 1)
             )

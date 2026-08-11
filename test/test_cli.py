@@ -880,6 +880,46 @@ def test_report_replaces_owned_outputs_and_preserves_operator_files(
     assert (out / "operator-notes.txt").read_text(encoding="utf-8") == "preserve me"
 
 
+def test_report_refuses_a_member_the_export_cannot_split_back(
+    tmp_path: Path,
+) -> None:
+    """`report` does not validate, so the generator guard is its only one.
+
+    The rule itself is a finding now
+    (`MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR`), which `build` and
+    `validate` both reach. `report` reaches neither -- it renders straight
+    from the schema with no site URL and never calls `validate_all`.
+
+    So when the generator guard was deleted on the reasoning that the
+    validator had replaced it, `report` began exiting 0 while emitting a
+    Power Query cell joined on "; " from a member that itself contains "; ",
+    with the data dictionary beside it telling the reader to split on that
+    string. Well-formed, green, and lossy -- and reproduced exactly that way
+    before this test existed.
+
+    Pinned at the CLI rather than on the generator because the generator
+    tests were green throughout: what regressed was which entry points reach
+    the guard, and only a command-level test can see that.
+    """
+    schema = write_dbml(tmp_path, blocks(
+        'enum audit_event {\n  "View"\n  "Permission change; revoked"\n}\n',
+        table("Platform", ID_PK, TITLE, "Events audit_event[]"),
+    ))
+    mapping = write_mapping(tmp_path, entities("Platform"))
+    out = tmp_path / "reports"
+
+    result = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+
+    assert result.returncode == 1, result.stdout
+    assert "Permission change; revoked" in result.stderr
+    assert not (out / "powerquery").exists(), (
+        "report wrote an export it had already been told it cannot describe"
+    )
+
+
 def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> None:
     mapping = write_mapping(tmp_path, entities("Risk"))
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status nvarchar"))
