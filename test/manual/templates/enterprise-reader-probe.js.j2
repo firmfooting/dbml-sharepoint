@@ -2,14 +2,92 @@
 /**
  * dbml-sharepoint PROBE — THE ENTERPRISE READER TIER
  *
- * STATUS: NOT YET RUN. Every question below is NOT ESTABLISHED until an
- * operator pastes this into a live tenant and reports the transcript.
- * Nothing in this file records an answer yet, and nothing in it predicts
- * one. When it has been run, record the date and the findings HERE, the
- * way formatter-xml-probe.js.j2 and threshold-index-probe.js.j2 do.
+ * STATUS: RUN ONCE, 2026-08-11, on ONE live site. Groups A and C ran with
+ * the write flag OFF. GROUP B DID NOT RUN and every question in it is
+ * still unmeasured.
  *
- *   RUN:      (not yet)
- *   FINDINGS: (not yet)
+ *   RUN:      2026-08-11, probe revision 0e565ebc, pasted into ONE
+ *             Microsoft 365 group-connected Team Site — NOT a publishing
+ *             site. Read-only: ALLOW_WRITES was off.
+ *   FINDINGS: A1-A5 below, in full. C1 held. C2 and C3 AS THEY WERE
+ *             WRITTEN FOR THAT RUN WERE AN INVALID EXPERIMENT and have
+ *             been rewritten since; see GROUP C below for what was wrong
+ *             and what replaced it. B1-B4 NOT ESTABLISHED (write flag).
+ *
+ * ---- WHAT THE 2026-08-11 RUN MEASURED ---------------------------------
+ *   A1  The nominated service account resolved READ-ONLY out of the site's
+ *       existing users, to a claims LoginName. Prerequisite met, so A3 and
+ *       A4 are about that account.
+ *   A2  THE CONTROL HELD. getusereffectivepermissions answered for the
+ *       account pasting the probe and decoded to a full permission set —
+ *       so a narrow A3 is a fact about the READER, not about an endpoint
+ *       the caller cannot use.
+ *   A3  THE HEADLINE. At WEB scope the reader account held EXACTLY:
+ *           ViewFormPages, Open, BrowseUserInfo, UseClientIntegration,
+ *           UseRemoteAPIs
+ *       That is precisely Learn's documented `Limited Access` set, and
+ *       UseRemoteAPIs IS PRESENT. The lockdown-mode failure mode this
+ *       whole feature was hedged against DID NOT OCCUR ON THIS SITE.
+ *   A4  At LIST scope, on a list that read back
+ *       HasUniqueRoleAssignments=true, the reader held:
+ *           ViewListItems, OpenItems, ViewVersions, ViewFormPages, Open,
+ *           ViewPages, CreateSSCSite, BrowseUserInfo,
+ *           UseClientIntegration, UseRemoteAPIs, CreateAlerts
+ *       That is the built-in `Read`. So the declared grant DOES reach
+ *       through broken inheritance — which is the mechanism the entire
+ *       tier depends on — measured, on one site.
+ *   A5  The ViewFormPagesLockDown feature GUID was ABSENT from the 15 site
+ *       collection features that came back. Consistent with A3. The REST
+ *       spelling used to read them is undocumented, so this CORROBORATES
+ *       A3; it does not independently prove lockdown mode is off.
+ *
+ * ---- THE SCOPE LIMIT, AND IT IS NOT A FORMALITY ------------------------
+ * ONE SITE, and it is a Microsoft 365 GROUP-CONNECTED TEAM SITE. Lockdown
+ * mode is ON BY DEFAULT FOR PUBLISHING SITES, so A3 DOES NOT CLEAR THAT
+ * CASE — the configuration most likely to break this feature is the one
+ * configuration this run did not sample. One site is one data point. State
+ * both of those every time this run is cited.
+ *
+ * ---- STILL OPEN AFTER THIS RUN ----------------------------------------
+ *   - WHETHER THE POWER BI CONNECTOR ITSELF WORKS. At web scope the
+ *     account holds no ViewPages and no ViewListItems (see A3), so
+ *     enumerating `_api/web/lists` — which the SharePoint Online List
+ *     connector does once you hand it a site URL — is UNPROVEN either way.
+ *     It can only be answered by SIGNING IN AS the service account. The
+ *     operator's own session cannot answer it, and this probe runs in the
+ *     operator's session, so no revision of this file can close it.
+ *   - The same A3/A4 measurement on a PUBLISHING site.
+ *   - GROUP B entirely: the two tenant-wide claim encodings Learn does not
+ *     publish. Needs ALLOW_WRITES = true on a disposable site.
+ *   - Server-driven paging on a site group's members: see GROUP C.
+ *
+ * ---- C2/C3 WERE AN INVALID EXPERIMENT; THEY HAVE BEEN REWRITTEN --------
+ * As run on 2026-08-11, C2 asked `web/sitegroups(id)/users?$top=1` against
+ * a two-member group, found no `d.__next`, and C3 concluded from that that
+ * both deploy templates "would have read only the first page of this
+ * group." THAT CONCLUSION DOES NOT FOLLOW. It is removed rather than left
+ * in the file where somebody could quote it.
+ *
+ * `$top` is CLIENT-DRIVEN paging. Learn, "PageSize, Top and MaxTop": "In
+ * client-driven paging, we request the server to return the specified
+ * number of results. There is no `nextLink` that is returned." And Learn,
+ * "Server-driven Paging in ASP.NET Core OData 8": if `$top` is below the
+ * page size, the server returns that many items "with no next link." So an
+ * absent `__next` at `$top=1` says NOTHING about whether a collection
+ * larger than the server page size returns one — the experiment could not
+ * have produced a `__next` even if the endpoint pages perfectly.
+ *
+ * What the run DID establish about paging is C1, and that stands: both
+ * members arrived in ONE page at `$top=5000`, in the `d.results` shape
+ * both deploy templates assume.
+ *
+ * A VALID experiment needs a group with MORE MEMBERS THAN THE SERVER PAGE
+ * SIZE, read WITHOUT a `$top` below that — the deploy sends `$top=5000`.
+ * That is what C2 and C3 do now. SharePoint does not document the server
+ * page size for this collection, so C2 assumes no number: it reads with no
+ * `$top` at all and compares the row count against C1's, which lets it
+ * tell "the server paged" from "the group fitted in one page". The second
+ * is recorded as NOT ESTABLISHED, never as a finding about the endpoint.
  *
  * WHY THIS EXISTS. The `feat/enterprise-reader` branch gives each of the 31
  * shipped families an empty '<XX> Enterprise Readers' site group holding the
@@ -87,10 +165,18 @@
  *   `_security_principals.js.j2` and `_reader_enrolment.js.j2` both page a
  *   site group's members with `web/sitegroups(<id>)/users?$top=5000` and
  *   follow `d.__next`. Nobody has confirmed that endpoint pages with
- *   `__next` at all, or in that shape. C1 checks the group has enough
- *   members for the question to mean anything; C2 asks for $top=1 and
- *   reports whether `d.__next` came back and what shape it is; C3 follows
- *   it and reports whether the second member arrives.
+ *   `__next` at all, or in that shape. C1 reads the whole membership the
+ *   way the deploy does and records how many members came back, which is
+ *   the yardstick for C2; C2 reads the SAME collection with NO `$top`, so
+ *   only the SERVER decides where a page ends, and reports whether it
+ *   returned a short page and a `d.__next`; C3 follows that `__next` and
+ *   reports whether a further page of different members arrives.
+ *
+ *   C2 CAN ONLY ANSWER ON A GROUP BIGGER THAN THE SERVER PAGE SIZE, which
+ *   SharePoint does not document. On a small group it records NOT
+ *   ESTABLISHED and says so — see the C2/C3 note in STATUS above for the
+ *   invalid version of this experiment and why an absent `__next` under a
+ *   small `$top` proves nothing.
  *
  * ---- WHAT THE WRITE FLAG GUARDS ---------------------------------------
  * ALLOW_WRITES gates GROUP B AND NOTHING ELSE. Groups A and C are pure
@@ -166,10 +252,12 @@
   // A4: web scope and list scope are expected to differ.
   const LIST_TITLE = 'CHANGE ME - a list this bundle provisioned';
 
-  // The site group to measure paging against, for group C. Any group with
-  // at least two members will do; it does NOT have to be the readers group,
-  // and C1 says so if the one you picked is too small.
-  const GROUP_NAME = 'CHANGE ME - a site group with 2+ members';
+  // The site group to measure paging against, for group C. It does NOT have
+  // to be the readers group. PICK THE BIGGEST GROUP YOU HAVE: C2 can only
+  // answer on a group with MORE members than SharePoint's undocumented
+  // server page size, and it records NOT ESTABLISHED — not a finding — when
+  // the whole membership arrives in one page.
+  const GROUP_NAME = 'CHANGE ME - the largest site group available';
 
   const PLACEHOLDER = /CHANGE ME|reporting-service-account@contoso\.com/;
 
@@ -183,15 +271,16 @@
   expect('B2', 'What does web/ensureuser return for "Everyone except external users"?');
   expect('B3', 'What does web/ensureuser return for "All Authenticated Users"?');
   expect('B4', 'What does web/ensureuser return for "All Forms Users"?');
-  expect('C1', 'Does the nominated site group hold at least two members?');
-  expect('C2', 'With $top=1, does web/sitegroups(id)/users return d.__next, and in what shape?');
-  expect('C3', 'Does following d.__next return the SECOND member?');
+  expect('C1', 'How many members does web/sitegroups(id)/users return at $top=5000, as the deploy reads it?');
+  expect('C2', 'With NO $top, does web/sitegroups(id)/users return a short page and a d.__next?');
+  expect('C3', 'Does following d.__next return a further page of DIFFERENT members?');
 
   if (!CONFIRMED) {
     log('INFO', 'Would READ, writing nothing: the nominated account\'s effective');
     log('INFO', 'permissions at web scope and at list scope, decoded into named');
     log('INFO', 'permissions; the lockdown-mode site collection feature; and one');
-    log('INFO', 'site group\'s membership at $top=1 to see whether it pages.');
+    log('INFO', 'site group\'s membership twice — once the way the deploy reads it,');
+    log('INFO', 'once with no $top at all — to see whether the SERVER pages it.');
     log('INFO', 'Would ADDITIONALLY, only with ALLOW_WRITES = true, call');
     log('INFO', 'web/ensureuser for four tenant-wide claim display names. That is a');
     log('INFO', 'WRITE — it materialises each principal in this site\'s User');
@@ -537,54 +626,73 @@
   // Placed before group B so that a run with ALLOW_WRITES off still ends
   // having answered everything it can.
   {
-    const CLAIM_SHAPE_Q = 'With $top=1, does web/sitegroups(id)/users return d.__next, and in what shape?';
+    const C1_Q = 'How many members does web/sitegroups(id)/users return at $top=5000, as the deploy reads it?';
+    const C2_Q = 'With NO $top, does web/sitegroups(id)/users return a short page and a d.__next?';
+    const C3_Q = 'Does following d.__next return a further page of DIFFERENT members?';
     if (PLACEHOLDER.test(GROUP_NAME)) {
-      const why = 'GROUP_NAME is still the placeholder. Set it to a site group with at least two members.';
-      record('C1', 'Does the nominated site group hold at least two members?', 'NOT ESTABLISHED (prerequisite)', why);
-      record('C2', CLAIM_SHAPE_Q, 'NOT ESTABLISHED (prerequisite)', why);
-      record('C3', 'Does following d.__next return the SECOND member?', 'NOT ESTABLISHED (prerequisite)', why);
+      const why = 'GROUP_NAME is still the placeholder. Set it to a site group — and see C2: only a group '
+        + 'with MORE members than the server page size can answer C2 and C3.';
+      record('C1', C1_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
     } else {
       const grpRes = await spGetVerbose(`web/sitegroups/getbyname('${odataLiteral(GROUP_NAME)}')?$select=Id`);
       const groupId = (grpRes.ok && grpRes.body && grpRes.body.d && grpRes.body.d.Id);
       if (!Number.isInteger(groupId)) {
         const why = `could not resolve site group ${JSON.stringify(GROUP_NAME)}: ${httpDetail(grpRes)}`;
-        record('C1', 'Does the nominated site group hold at least two members?', 'NOT ESTABLISHED (prerequisite)', why);
-        record('C2', CLAIM_SHAPE_Q, 'NOT ESTABLISHED (prerequisite)', why);
-        record('C3', 'Does following d.__next return the SECOND member?', 'NOT ESTABLISHED (prerequisite)', why);
+        record('C1', C1_Q, 'NOT ESTABLISHED (prerequisite)', why);
+        record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
+        record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
       } else {
-        // C1 — the prerequisite, read exactly the way the deploy templates
-        // read it. A group with fewer than two members cannot answer C2 or
-        // C3 either way, and reporting "no __next" from a one-member group
-        // as a finding about the ENDPOINT would be a false negative.
+        // C1 — read exactly the way the deploy templates read it. Its row
+        // count is the YARDSTICK C2 needs: without it, C2 cannot tell a
+        // page the server truncated from the whole membership arriving at
+        // once, and those two look identical in the response.
         const allRes = await spGetVerbose(`web/sitegroups(${groupId})/users?$select=Id,LoginName,Title&$top=5000`);
         const all = (allRes.ok && allRes.body && allRes.body.d && Array.isArray(allRes.body.d.results))
           ? allRes.body.d.results : null;
         if (all === null) {
           const why = `membership read failed or was not in the d.results shape: ${httpDetail(allRes)}`;
-          record('C1', 'Does the nominated site group hold at least two members?', failureOutcome(allRes), why);
-          record('C2', CLAIM_SHAPE_Q, 'NOT ESTABLISHED (prerequisite)', why);
-          record('C3', 'Does following d.__next return the SECOND member?', 'NOT ESTABLISHED (prerequisite)', why);
-        } else if (all.length < 2) {
-          const why = `group ${JSON.stringify(GROUP_NAME)} holds ${all.length} member(s) at $top=5000. `
-            + 'C2 and C3 need at least two: with one member there is nothing to page to, so an absent '
-            + '__next would say nothing about the endpoint. Pick a bigger group and run again.';
-          record('C1', 'Does the nominated site group hold at least two members?', 'NOT ESTABLISHED (prerequisite)', why);
-          record('C2', CLAIM_SHAPE_Q, 'NOT ESTABLISHED (prerequisite)', why);
-          record('C3', 'Does following d.__next return the SECOND member?', 'NOT ESTABLISHED (prerequisite)', why);
+          record('C1', C1_Q, failureOutcome(allRes), why);
+          record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
+          record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
         } else {
-          record('C1', 'Does the nominated site group hold at least two members?',
-                 'OBSERVED — enough members',
-                 `${all.length} member(s) read in one page at $top=5000, in the d.results shape both deploy `
-                 + 'templates assume');
+          const allNext = allRes.body.d.__next;
+          record('C1', C1_Q, `OBSERVED — ${all.length} member(s)`,
+                 `${all.length} member(s) came back at $top=5000, in the d.results shape both deploy `
+                 + `templates assume; d.__next on that read: ${JSON.stringify(
+                   typeof allNext === 'string' && allNext !== '')}. This is the count C2 compares against.`);
 
-          // C2 — identical to the deploy's request except for $top.
-          const firstRes = await spGetVerbose(`web/sitegroups(${groupId})/users?$select=Id,LoginName,Title&$top=1`);
+          // C2 — THE SAME REQUEST WITH NO $top AT ALL, which is the only
+          // form that can answer the question. $top is CLIENT-driven
+          // paging: Learn ("PageSize, Top and MaxTop") says there is no
+          // nextLink returned for it, and ("Server-driven Paging in
+          // ASP.NET Core OData 8") that a $top below the page size returns
+          // that many items with no next link. So a small $top cannot
+          // produce a __next however well the endpoint pages, and the
+          // earlier $top=1 version of this question was measuring nothing.
+          // With no $top the SERVER alone decides where the page ends.
+          const firstRes = await spGetVerbose(`web/sitegroups(${groupId})/users?$select=Id,LoginName,Title`);
           const firstPage = (firstRes.ok && firstRes.body && firstRes.body.d
                              && Array.isArray(firstRes.body.d.results)) ? firstRes.body.d.results : null;
           if (firstPage === null) {
-            const why = `$top=1 read failed or was not in the d.results shape: ${httpDetail(firstRes)}`;
-            record('C2', CLAIM_SHAPE_Q, failureOutcome(firstRes), why);
-            record('C3', 'Does following d.__next return the SECOND member?', 'NOT ESTABLISHED (prerequisite)', why);
+            const why = `the no-$top read failed or was not in the d.results shape: ${httpDetail(firstRes)}`;
+            record('C2', C2_Q, failureOutcome(firstRes), why);
+            record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
+          } else if (firstPage.length >= all.length) {
+            // The whole membership fitted in one server page, so the
+            // server never had to page and an absent __next is expected.
+            // THIS IS NOT A FINDING ABOUT THE ENDPOINT — recording it as
+            // one is exactly the mistake the 2026-08-11 run made.
+            const why = `the no-$top read returned ${firstPage.length} row(s), which is every member C1 `
+              + `counted (${all.length}). The server never had to page, so whether d.__next came back `
+              + `(${JSON.stringify(typeof firstRes.body.d.__next === 'string'
+                                   && firstRes.body.d.__next !== '')}) says NOTHING about whether this `
+              + 'endpoint pages. A valid answer needs a site group with MORE members than the server page '
+              + 'size, which SharePoint does not document — pick the largest group in the tenant and run '
+              + 'again. Do NOT read this row as "the endpoint does not page".';
+            record('C2', C2_Q, 'NOT ESTABLISHED (group not larger than the server page size)', why);
+            record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
           } else {
             const next = firstRes.body.d.__next;
             // The site host is stripped before printing. __next is an
@@ -612,20 +720,25 @@
             };
             const redacted = typeof next === 'string' ? redactWeb(next) : next;
             const present = typeof next === 'string' && next !== '';
-            record('C2', CLAIM_SHAPE_Q,
-                   `OBSERVED — d.__next ${present ? 'PRESENT' : 'ABSENT'}`,
-                   `$top=1 returned ${firstPage.length} row(s); typeof d.__next = ${typeof next}; `
-                   + `absolute (starts with this site's URL): ${present ? String(next.startsWith(WEB)) : 'n/a'}; `
-                   + `value with the site host redacted: ${JSON.stringify(redacted)}`);
+            // The server truncated: fewer rows than C1 counted, with no
+            // $top asked for. So this run CAN discriminate, and both
+            // outcomes are real answers about the endpoint.
+            record('C2', C2_Q,
+                   `OBSERVED — server paged at ${firstPage.length} of ${all.length}; d.__next `
+                   + `${present ? 'PRESENT' : 'ABSENT'}`,
+                   `no $top was sent; ${firstPage.length} row(s) came back against the ${all.length} C1 `
+                   + `counted, so the SERVER ended the page. typeof d.__next = ${typeof next}; absolute `
+                   + `(starts with this site's URL): ${present ? String(next.startsWith(WEB)) : 'n/a'}; `
+                   + `value with the site host redacted: ${JSON.stringify(redacted)}`
+                   + `${present ? '' : '. A truncated page with NO continuation is a finding about the '
+                       + 'deploy templates: both stop when __next is absent, so they would silently read '
+                       + 'a PARTIAL membership of a group this size.'}`);
 
             // C3 — follow it. The deploy passes d.__next straight back to
             // fetch, so this does too, rather than rebuilding a URL.
-            const q3 = 'Does following d.__next return the SECOND member?';
             if (!present) {
-              record('C3', q3, 'NOT ESTABLISHED (prerequisite)',
-                     'there was no d.__next to follow; see C2. NOTE: both _security_principals.js.j2 and '
-                     + '_reader_enrolment.js.j2 stop paging when __next is absent, so this run says their '
-                     + 'loops would have read only the first page of this group.');
+              record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)',
+                     'there was no d.__next to follow; see C2, which records what that means.');
             } else {
               const res2 = await fetch(next, { headers: { Accept: 'application/json;odata=verbose' } });
               const text2 = await res2.text();
@@ -633,19 +746,21 @@
               try { body2 = JSON.parse(text2); } catch { /* not JSON */ }
               const page2 = (res2.ok && body2 && body2.d && Array.isArray(body2.d.results)) ? body2.d.results : null;
               if (page2 === null) {
-                record('C3', q3,
+                record('C3', C3_Q,
                        isRefusal(res2.status) ? `REFUSED (HTTP ${res2.status})` : `NOT ESTABLISHED (HTTP ${res2.status})`,
                        `following d.__next returned HTTP ${res2.status}: ${text2.slice(0, 400)}`);
               } else {
-                const firstId = firstPage.length ? firstPage[0].Id : null;
-                const secondId = page2.length ? page2[0].Id : null;
-                const isSecond = page2.length > 0 && secondId !== firstId;
-                record('C3', q3,
-                       `OBSERVED — second page ${page2.length ? 'returned' : 'empty'}`
-                       + `${page2.length ? (isSecond ? ', a DIFFERENT member' : ', the SAME member again') : ''}`,
-                       `page 1 member Id ${JSON.stringify(firstId)}; page 2 held ${page2.length} row(s), `
-                       + `first Id ${JSON.stringify(secondId)}; page 2 __next present: `
-                       + `${JSON.stringify(typeof body2.d.__next === 'string' && body2.d.__next !== '')}`);
+                // Whole-set comparison, not first-row: a second page that
+                // repeats the first would still have a different first Id
+                // if the order changed, and that would read as success.
+                const seen = new Set(firstPage.map((u) => u.Id));
+                const fresh = page2.filter((u) => !seen.has(u.Id)).length;
+                record('C3', C3_Q,
+                       `OBSERVED — page 2 held ${page2.length} row(s), ${fresh} of them NOT on page 1`,
+                       `page 1 held ${firstPage.length} row(s); page 2 held ${page2.length}, of which `
+                       + `${fresh} carried an Id page 1 did not; page 2 __next present: `
+                       + `${JSON.stringify(typeof body2.d.__next === 'string' && body2.d.__next !== '')}; `
+                       + `running total ${seen.size + fresh} against the ${all.length} C1 counted`);
               }
             }
           }
