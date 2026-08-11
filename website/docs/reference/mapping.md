@@ -1383,7 +1383,7 @@ template and example uses.
 
 :::
 
-:::danger A direct share cannot be used to grant reporting access
+:::danger A direct share cannot be used — and the supported route is not yet verified end-to-end
 
 A tempting shortcut for handing a reporting account read access is to share
 the site or a list with it directly, outside `mapping.yaml`. Three measured
@@ -1408,6 +1408,16 @@ The supported route is the `enroll_enterprise_reader` group above, enrolled
 with `build --enterprise-reader <account>`: a declared, reconcilable grant
 that survives redeploy instead of being deleted or blocking one.
 
+**That route is not yet verified end-to-end.** Before you rely on it: the
+reader account holds `Read` on each list, and only SharePoint's derived
+`Limited Access` at web scope — it is never added to Site Visitors or any
+web-scoped group. Microsoft Learn documents that *lockdown mode* strips
+`Use Remote Interfaces` from `Limited Access`, and that lockdown mode is on
+by default for publishing sites. Whether a given tenant's lockdown-mode
+setting leaves this path open has not been checked against a live site.
+What has been established, and only this: the grant is declared, it is
+reconcilable, and it survives a redeploy that would erase a hand-added one.
+
 The level is the built-in `Read` and nothing else. It is tempting to reach
 for `Restricted Read` instead, since it looks like even less privilege —
 but Microsoft Learn's site-permissions table shows `Restricted Read` lacks
@@ -1415,17 +1425,6 @@ but Microsoft Learn's site-permissions table shows `Restricted Read` lacks
 connect at all. It would be less privilege *and* a reporting connector that
 could not read anything. The validator refuses any level other than `Read`
 on a flagged group (`enterprise_reader_group_over_privileged`).
-
-**The end-to-end Power BI (or any API-client) read path is not yet
-verified.** The reader account holds `Read` on each list, and only
-SharePoint's derived `Limited Access` at web scope — it is never added to
-Site Visitors or any web-scoped group. Microsoft Learn documents that
-*lockdown mode* strips `Use Remote Interfaces` from `Limited Access`, and
-that lockdown mode is on by default for publishing sites. Whether a given
-tenant's lockdown-mode setting leaves this path open has not been checked
-against a live site. What has been established, and only this: the grant is
-declared, it is reconcilable, and it survives a redeploy that would erase a
-hand-added one.
 
 A smaller, separate limit: before enrolling the named account, the deploy
 refuses it outright if it resolves to one of SharePoint's tenant-wide

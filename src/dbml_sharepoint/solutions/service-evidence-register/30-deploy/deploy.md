@@ -231,3 +231,7 @@ every list in this family. It stays empty unless the build was run with
 and nothing else. `rollback.js.txt` does not remove it: rollback deletes
 lists, not site groups or role assignments, so the group and any account
 enrolled in it survive a rollback.
+
+The end-to-end reporting path this grant enables (Power BI or any other
+API client) is not yet verified — see the danger block in the mapping
+reference's Security section for why.
