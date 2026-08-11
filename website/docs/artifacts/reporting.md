@@ -11,11 +11,10 @@ deployed lists.
 ## Contents
 
 - **One Power Query (M) file per list**, plus dictionary, model-info and
-  user-added-column audit queries. Point the queries' `SiteUrl`
-  parameter at the deployed site — the **site root**, not a list or a
-  page — and load them in Power BI or Excel. Each query is
-  self-contained, including the lookup of the site's own display title —
-  see below.
+  user-added-column audit queries. Paste each one into a blank query in
+  Power BI or Excel and load it — there is nothing to configure. Each
+  query is self-contained, including the site it reads and the lookup of
+  that site's own display title — see below.
 - **`sql/views.sql`** — a SQLCMD views script for warehouse-landed
   copies of the lists.
 - **`guide.md`** — includes the Power BI relationship table
@@ -24,7 +23,29 @@ deployed lists.
   descriptions and enum values, generated from the same schema the
   deploy used.
 
-## Which URL goes in `SiteUrl`
+## Where the site URL comes from
+
+`build` is already told the target with `--site-url`, so it writes that
+site into every query it ships. The first line of each `.pq` is the
+binding:
+
+```
+let
+    SiteUrl = "https://tenant.sharepoint.com/sites/YourSite",
+    SiteRoot = …
+```
+
+There is no parameter to create and nothing to type in. The
+`sql/views.sql` script is the same: its `:setvar SiteUrl` line already
+holds the real site.
+
+`dbml-sharepoint report` is the exception. It generates from a schema
+alone and has no site to name, so its queries open with a header asking
+for a *Text* parameter called `SiteUrl`, and its SQL script leaves a
+`https://yourtenant.sharepoint.com/sites/YourSite` placeholder. Everything
+below that first line is identical in both shapes.
+
+### Which URL, if you are typing one
 
 The **site** root — `https://tenant.sharepoint.com/sites/YourSite` — and
 not the URL of a list, a form or a page.
@@ -38,14 +59,19 @@ list title twice over and `_api` hung off a list rather than a web — and
 SharePoint answered `DataSource.NotFound: OData: Request failed (404)`,
 which names neither the parameter at fault nor the fix.
 
-The queries now trim that back for you: each one cuts the value at the
-first `/_api/`, `/_layouts/`, `/lists/` or `/sitepages/` segment and
-drops any trailing `/`, so a list, form, site-page or API URL all resolve
-to the same site root. A correct site URL passes through untouched, and a
-root site collection (`https://tenant.sharepoint.com`, no `/sites/`
-segment) is left alone rather than rejected. The `Site Url` and `… Key`
-columns carry the trimmed value, so two people who pasted the same site
-in different shapes still append cleanly.
+The queries trim that back for you: each one cuts the value at the first
+`/_api/`, `/_layouts/`, `/lists/` or `/sitepages/` segment and drops any
+trailing `/`, so a list, form, site-page or API URL all resolve to the
+same site root. A correct site URL passes through untouched, and a root
+site collection (`https://tenant.sharepoint.com`, no `/sites/` segment)
+is left alone rather than rejected. The `Site Url` and `… Key` columns
+carry the trimmed value, so two people who pasted the same site in
+different shapes still append cleanly.
+
+The trim still runs when the URL was baked in. A URL `build` supplied is
+already a site root, but that one line is now the documented place to
+edit for a second site (below), so it is more likely to receive a pasted
+list URL than the parameter ever was, not less.
 
 ## Several sites in one report
 
@@ -62,10 +88,13 @@ deliberately, rather than sharing one lookup query. A shared query binds
 to a single `SiteUrl`, so every copy of a list pointed at a different
 site would still be stamped with the *first* site's name.
 
-So: add one text parameter per site, duplicate each list query and change
-its `SiteUrl` reference, append the copies, and build relationships on the
-**`… Key`** columns. Nothing else in a duplicate needs editing — the rows,
-the item links, the site name and the keys all follow that one reference.
+So: duplicate each list query once per site, change the single
+`SiteUrl = "…"` line in each copy to that site's URL, append the copies,
+and build relationships on the **`… Key`** columns. Nothing else in a
+duplicate needs editing — the rows, the item links, the site name and the
+keys all follow that one line. (If you would rather manage the URLs in
+one place, point each copy's `SiteUrl` at a per-site text parameter
+instead; nothing below it cares which it is.)
 
 :::warning Join on the Key columns, not on `Id`
 `Id` is unique within one list on one site and nowhere wider. Append three
@@ -82,6 +111,7 @@ matching `<Target> Key` for every lookup. The relationship table in
 ## Schema-only reports
 
 `dbml-sharepoint report` emits the same queries without needing a site
-URL (layout: `powerquery/`, `sql/`, `guide.md`,
+URL — which is why those queries, and only those, ask for the `SiteUrl`
+parameter described above (layout: `powerquery/`, `sql/`, `guide.md`,
 `data-dictionary.md`) — useful for warehouse or BI work that starts
 before any site exists. See the [CLI reference](../reference/cli.md).
