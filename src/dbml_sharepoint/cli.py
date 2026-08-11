@@ -17,6 +17,9 @@ from dbml_sharepoint.analysis.finding_help import FINDING_HELP
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
+    REPORT_DICTIONARY,
+    REPORT_GUIDE,
+    REPORT_VIEWS_SQL,
     SeedRequiresDemoItemsError,
     clear_generated,
     emit_bundle,
@@ -117,8 +120,8 @@ _CONFIG_ERRORS = (ValueError, KeyError, OSError, yaml.YAMLError, ParseBaseExcept
 # always written reporting/data-dictionary.md -- which is the
 # inconsistency the rename closed.
 _REPORT_FILES = (
-    "guide.md",
-    "data-dictionary.md",
+    REPORT_GUIDE,
+    REPORT_DICTIONARY,
     # Superseded names, newest first. `reporting.md` existed only briefly
     # between the case normalisation and this rename, but "briefly" is not
     # "never" for anyone tracking main.
@@ -127,7 +130,7 @@ _REPORT_FILES = (
     "DATA-DICTIONARY.md",
 )
 # (subdirectory, glob) pairs naming everything `report` writes below `out`.
-_REPORT_DIRECTORY_CONTENTS = (("powerquery", "*.pq"), ("sql", "views.sql"))
+_REPORT_DIRECTORY_CONTENTS = (("powerquery", "*.pq"), ("sql", REPORT_VIEWS_SQL))
 
 
 def _clear_report_output(out: Path) -> None:
@@ -686,7 +689,7 @@ def report(
 ) -> None:
     """Generate reporting queries (Power Query M + SQL views) from the schema.
 
-    Emits one .pq file per list, a SQLCMD views script, reporting.md with
+    Emits one .pq file per list, a SQLCMD views script, guide.md with
     usage instructions and the Power BI relationship table, and a
     data-dictionary.md companion. Assumes a schema that `build` accepts;
     run `build --dry-run` first if unsure.
@@ -778,12 +781,12 @@ def report(
     sql_dir.mkdir(parents=True, exist_ok=True)
     for filename, content in queries.items():
         write_artifact(pq_dir / filename, content)
-    write_artifact(sql_dir / "views.sql", views_sql)
-    write_artifact(out / "guide.md", reporting_md)
-    write_artifact(out / "data-dictionary.md", dictionary_md)
+    write_artifact(sql_dir / REPORT_VIEWS_SQL, views_sql)
+    write_artifact(out / REPORT_GUIDE, reporting_md)
+    write_artifact(out / REPORT_DICTIONARY, dictionary_md)
     typer.echo(
-        f"Generated {len(queries)} Power Query file(s), sql/views.sql, "
-        f"reporting.md and data-dictionary.md in {out}.",
+        f"Generated {len(queries)} Power Query file(s), sql/{REPORT_VIEWS_SQL}, "
+        f"{REPORT_GUIDE} and {REPORT_DICTIONARY} in {out}.",
     )
 
 

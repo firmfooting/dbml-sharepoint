@@ -920,6 +920,43 @@ def test_report_refuses_a_member_the_export_cannot_split_back(
     )
 
 
+def test_report_success_message_names_only_files_it_wrote(tmp_path: Path) -> None:
+    """The success line is an instruction, and it named a file that was
+    never written.
+
+    `report` writes `guide.md`; the message said `reporting.md`, as did the
+    bundle INDEX row and -- worse -- a comment inside the emitted T-SQL,
+    which is read by a warehouse engineer who does not have this repository
+    open. Six references survived a rename that changed the byte on disk.
+
+    `bundle.py` already prescribes the cure for exactly this ("Named
+    constants rather than literals at each write site ... those four
+    drifting apart is how a manifest comes to tell somebody to paste a file
+    the build did not write"); the reporting artifacts had never adopted it.
+
+    Parsed out of the message rather than asserted against a fixed list, so
+    this keeps holding when the set of artifacts changes -- a list would
+    just be a seventh place to update.
+    """
+    mapping = write_mapping(tmp_path, entities("Risk"))
+    schema = write_dbml(tmp_path, table("Risk", ID_PK))
+    out = tmp_path / "reports"
+
+    result = _cli(
+        "report", "--schema", str(schema), "--mapping", str(mapping),
+        "--out", str(out),
+    )
+    assert result.returncode == 0, result.stderr
+
+    named = re.findall(r"[\w./-]+\.(?:md|sql)", result.stdout)
+    assert named, f"the message names no artifact at all: {result.stdout!r}"
+    missing = [name for name in named if not (out / name).is_file()]
+    assert not missing, (
+        f"the success message names {missing}, which `report` did not "
+        f"write. It said: {result.stdout.strip()!r}"
+    )
+
+
 def test_report_refusal_clears_previous_generated_outputs(tmp_path: Path) -> None:
     mapping = write_mapping(tmp_path, entities("Risk"))
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status nvarchar"))

@@ -70,6 +70,16 @@ ROLLBACK_SCRIPT = "rollback.js.txt"
 ASSESS_SCRIPT = "assess.js.txt"
 DEMO_SCRIPT = "demo-data.js.txt"
 
+# The reporting artifacts, for the reason given directly above -- they were
+# the one set still spelled as literals at each write site, and they drifted
+# exactly as that comment predicts: `guide.md` was written while six places,
+# including the INDEX row and the emitted T-SQL header, still said
+# `reporting.md`.
+REPORT_DIR = "reporting"
+REPORT_GUIDE = "guide.md"
+REPORT_DICTIONARY = "data-dictionary.md"
+REPORT_VIEWS_SQL = "views.sql"
+
 GENERATED_FILES: tuple[str, ...] = (
     DEPLOY_SCRIPT,
     ROLLBACK_SCRIPT,
@@ -124,8 +134,8 @@ _INDEX_ROWS: tuple[tuple[str, str], ...] = (
 )
 
 _REPORTING_ROW: tuple[str, str] = (
-    "reporting/",
-    ("Power Query M, SQL views, reporting.md and the data dictionary for "
+    f"{REPORT_DIR}/",
+    (f"Power Query M, SQL views, {REPORT_GUIDE} and the data dictionary for "
      "reporting onboarding."),
 )
 

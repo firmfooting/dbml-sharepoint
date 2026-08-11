@@ -20,12 +20,12 @@ report on them. This module emits:
   variables for the landing/report schemas): a typed view per list plus an
   ``_Enriched`` view joining each lookup to its display column, for lists
   landed in a warehouse by any extract process;
-- reporting.md with usage instructions and the Power BI relationship table
+- guide.md with usage instructions and the Power BI relationship table
   derived from the DBML refs.
 
 Cross-site reference columns are extension-expanded at deploy time into
 shapes the core cannot know; they are skipped here and listed in
-reporting.md. Person columns land differently per extract tool, so the SQL
+guide.md. Person columns land differently per extract tool, so the SQL
 views carry them as display-name text while the M queries expand both the
 site-user id and display name.
 
@@ -102,5 +102,5 @@ POSIX relpaths written (for checksums.txt).
 Shared by the core and extension CLIs so the shipped reporting
 artifact set cannot drift between them: per-list Power Query (M)
 plus the dictionary/model/audit queries, the SQL views script,
-reporting.md and data-dictionary.md.
+the reporting guide and the data dictionary.
 
