@@ -119,6 +119,10 @@ and nothing else. `rollback.js.txt` does not remove it: rollback deletes
 lists, not site groups or role assignments, so the group and any account
 enrolled in it survive a rollback.
 
+If the group already holds anyone other than that account, the deploy
+**aborts before enrolling** and removes nobody — clear it in Site
+permissions > Groups and paste again, or rebuild without the flag.
+
 The end-to-end reporting path this grant enables (Power BI or any other
 API client) is not yet verified — see the danger block in the mapping
 reference's Security section for why.

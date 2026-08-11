@@ -1408,6 +1408,31 @@ The supported route is the `enroll_enterprise_reader` group above, enrolled
 with `build --enterprise-reader <account>`: a declared, reconcilable grant
 that survives redeploy instead of being deleted or blocking one.
 
+**The flagged group must hold nobody but the named account.** Before enrolling
+anything, the deploy enumerates the group's membership — every page — and
+**aborts the run** if it finds any principal other than the one
+`--enterprise-reader` named, listing each by title and login name. It removes
+nobody: membership is an operator-owned concern, and a second holder of `Read`
+on every list in the bundle is a decision for a human, not for a script. The
+named account already being a member is not a finding, so re-running the same
+build stays green.
+
+The sequence that motivates it is ordinary. Enrol a mistyped-but-valid address,
+notice, redeploy with the correct one — and without the gate *both* accounts
+now hold `Read` on every list this bundle provisions, permanently, with an INFO
+line in a successful run as the only record. To resolve an abort, either remove
+the unexpected principals in **Site permissions → Groups** and run the script
+again, or rebuild **without** `--enterprise-reader`: that build leaves the
+membership exactly as it is and still deploys the group and its `Read` grant.
+
+One consequence for mapping authors: a group cannot declare both
+`enroll_enterprise_reader` and `enroll_operator_during_deploy`. Phase 1.3 puts
+the pasting operator into the second, which is precisely what the gate in Phase
+1.4 refuses, so every deploy would abort on a correct address. The validator
+rejects the pair (`enterprise_reader_group_enrols_the_operator`), and the
+combination has no legitimate use in any case — a reader group is held to
+`Read`, while an operator self-enrols in order to write.
+
 **That route is not yet verified end-to-end.** Before you rely on it: the
 reader account holds `Read` on each list, and only SharePoint's derived
 `Limited Access` at web scope — it is never added to Site Visitors or any
