@@ -35,7 +35,8 @@ philosophy.
 - **Deploy with nothing but a browser.** The generated script runs in the
   site's own console under your own login, calling only documented SharePoint
   REST/CSOM endpoints. No PnP, no CSOM installs, no app registrations, no
-  Graph consent.
+  Graph consent — see [why not PnP, site scripts, or
+  Graph?](website/docs/concepts/comparison.md) for an honest comparison.
 - **Fail closed, rerun safely.** Every write is preceded by read-only
   preflights: wrong site aborts, existing lists/fields are adopted only when
   their immutable shape provably matches, mutable drift is narrowly

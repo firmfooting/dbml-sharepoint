@@ -80,9 +80,11 @@ Every hit that is not one of those two is worth stopping on.
 There are no calls to Microsoft Graph, PnP services, package registries,
 telemetry or analytics endpoints. There are no third-party hosts and no
 dynamic script imports, `eval`, remote modules or code downloads. This
-inventory was derived from `src/dbml_sharepoint/templates/` on 2026-07-30;
-the source of truth remains the generated script being reviewed for a
-particular release.
+inventory was derived from `src/dbml_sharepoint/templates/` on 2026-07-30
+and re-derived, independently, on 2026-08-11 — same seven families, no
+drift; `test/test_template_lint.py`'s endpoint-inventory tests pin this
+going forward. The source of truth remains the generated script being
+reviewed for a particular release.
 
 ## Why this is different from an unsolicited console paste
 
