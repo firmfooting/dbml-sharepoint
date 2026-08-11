@@ -27,7 +27,12 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 
-from dbml_sharepoint.bundle import ASSESS_SCRIPT, DEPLOY_SCRIPT, write_artifact
+from dbml_sharepoint.bundle import (
+    ASSESS_SCRIPT,
+    DEMO_SCRIPT,
+    DEPLOY_SCRIPT,
+    write_artifact,
+)
 from dbml_sharepoint.catalogue import (
     PLACEHOLDER_SITE_URL,
     Solution,
@@ -349,6 +354,21 @@ def _site_roles(mapping_path: Path) -> list[str]:
     return sorted({e.site_role for e in bundle.mapping.entities.values()})
 
 
+def _declares_demo_items(mapping_path: Path) -> bool:
+    """Whether seeding is even offerable for this copied mapping.
+
+    Asked before the question is put, because `--seed` against a mapping with
+    no `demo_items` raises `SeedRequiresDemoItemsError` and the build exits
+    non-zero. Offering the choice there would be offering a dead end, and the
+    wizard would have walked the operator into it.
+
+    Loaded separately from `_site_roles` rather than threading one bundle
+    through both: they answer unrelated questions, the file is small, and a
+    shared parameter is one more thing to keep in step for no gain.
+    """
+    return any(load_mapping(mapping_path).mapping.demo_items.values())
+
+
 def _run(console: Console) -> int:
     solutions = available_solutions()
     if not solutions:
@@ -448,6 +468,44 @@ def _run(console: Console) -> int:
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import execute_build  # noqa: PLC0415
 
+    # Every colour map, row wash and declared view is invisible on an empty
+    # list, and the wizard is the one path aimed at somebody who has not seen
+    # this tool work -- so it was the one path that could not show them.
+    # Offered only where the mapping HAS demo items, and declined by default:
+    # seeding writes `[DEMO]` rows into a real site, and the wizard must not
+    # be more forward than the documented flag it stands for.
+    seed = False
+    if _declares_demo_items(mapping_path):
+        # The caution goes BEFORE the question, because the question is where
+        # the decision is made. A shipped family may seed deliberately alarming
+        # data to make a view render at all -- equipment-maintenance ships one
+        # genuinely overdue infusion pump, eighteen days past its annual
+        # service, and its guide says in as many words not to seed a site that
+        # already holds a real schedule. Governance there treats an overdue row
+        # as work to explain within five business days. Offering to create that
+        # and mentioning the guide afterwards is offering it too late.
+        #
+        # The escape before [DEMO] is rich's documented way to mean a
+        # literal bracket. MEASURED 2026-08-11: rich prints it identically
+        # with or without, because DEMO is not a style it knows. Kept
+        # anyway -- it is the documented spelling and costs one character
+        # -- but NOT because an unescaped one was seen to break. An
+        # earlier version of this comment claimed rich swallowed it, which
+        # was never measured and is false.
+        console.print(
+            r"[dim]Demo rows are titled \[DEMO] and rollback treats a list of "
+            "them as demo-only. Some families seed deliberately alarming data "
+            "so a view renders at all -- read "
+            f"{answers.destination / '30-deploy' / 'deploy.md'} before seeding "
+            "a site that already holds real data.[/dim]",
+        )
+        seed = Confirm.ask(
+            "Add the template's demo rows, so the views and colours have "
+            "something to show?",
+            default=False,
+            console=console,
+        )
+
     try:
         execute_build(
             schema=schema_path,
@@ -456,6 +514,7 @@ def _run(console: Console) -> int:
             site_url=answers.site_url,
             site_role=site_role,
             out=answers.destination / "build",
+            seed=seed,
         )
     except typer.Exit as exc:
         # The build refused and has already said why on stderr. Its exit
@@ -469,7 +528,26 @@ def _run(console: Console) -> int:
             "[/bold] into the target site's console first -- it is read-only "
             "and tells you what is already there.\n\n"
             "Then [bold]"
-            f"{answers.destination / 'build' / DEPLOY_SCRIPT}[/bold].\n\n"
+            f"{answers.destination / 'build' / DEPLOY_SCRIPT}[/bold]."
+            # A seeded bundle carries a THIRD script, and pasting the
+            # other two leaves the list empty. Adding a file to the
+            # bundle without adding it to the instructions is how
+            # somebody seeds, sees no rows, and concludes the demo data
+            # is broken.
+            + (
+                # The guide is named BEFORE the demo script, not after it:
+                # a family may seed data its own procedure tells you not
+                # to put on a live site, and an instruction read first is
+                # the only one that can prevent that.
+                f"\n\nRead [bold]"
+                f"{answers.destination / '30-deploy' / 'deploy.md'}[/bold]"
+                " for this template's seeding conditions, then paste "
+                f"[bold]{answers.destination / 'build' / DEMO_SCRIPT}"
+                "[/bold] for the demo rows."
+                if seed
+                else ""
+            )
+            + "\n\n"
             f"[dim]{answers.destination / '30-deploy' / 'deploy.md'} has the "
             "full procedure for this template.[/dim]",
             title="Next",
