@@ -16,7 +16,10 @@ from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.joins import all_items_hidden
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
-from dbml_sharepoint.analysis.permissions import base_permissions_to_high_low
+from dbml_sharepoint.analysis.permissions import (
+    base_permissions_to_high_low,
+    requires_manage_permissions,
+)
 from dbml_sharepoint.analysis.phases import phases_context
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
@@ -362,7 +365,8 @@ def build_schema_json(
     form_formatting_out: list[dict[str, Any]] = []
     field_defaults_out: list[dict[str, Any]] = []
 
-    for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
+    role_tables = site_tables_in_order(schema, bundle.mapping.entities, site_role)
+    for table_name in role_tables:
         entity = bundle.mapping.entities[table_name]
         list_title = bundle.mapping.prefix + table_name
         versioning_o = bundle.mapping.versioning_overrides.get(table_name, {})
@@ -758,6 +762,13 @@ def build_schema_json(
         "permission_levels": permission_levels_out,
         "groups": groups_out,
         "list_assignments": list_assignments_out,
+        # The single boolean the manifest and deploy.js's own preflight
+        # abort both key off, instead of each re-deriving "declares levels /
+        # groups / a per-list policy" independently -- see
+        # requires_manage_permissions and #166 item 5.
+        "requires_manage_permissions": requires_manage_permissions(
+            bundle.mapping, role_tables,
+        ),
         "seed_items": seed_items,
     }
 

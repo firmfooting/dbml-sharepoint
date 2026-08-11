@@ -8,16 +8,12 @@ not-assessable honesty block). STRICTLY read-only — see the read-only
 guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 """
 
-from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
 
 from dbml_sharepoint.analysis.ordering import site_tables_in_order
-from dbml_sharepoint.model.mapping_loader import (
-    ListPermissionPolicy,
-    Mapping,
-    MappingBundle,
-)
+from dbml_sharepoint.analysis.permissions import requires_manage_permissions
+from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -30,15 +26,6 @@ class Requirement:
     level_on_fail: str  # BLOCKED | WARN | INFO
 
 
-def _iter_policies(mapping: Mapping) -> Iterator[ListPermissionPolicy]:
-    perms = mapping.permissions
-    if perms is None:
-        return
-    if perms.default_policy is not None:
-        yield perms.default_policy
-    yield from perms.overrides.values()
-
-
 def assess_targets(
     schema: Schema, bundle: MappingBundle, site_role: str,
 ) -> dict[str, Any]:
@@ -46,10 +33,12 @@ def assess_targets(
     prefix = bundle.mapping.prefix
     titles: list[str] = []
     templates: set[int] = set()
+    table_names: list[str] = []
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(prefix + table_name)
         templates.add(int(entity.base_template))
+        table_names.append(table_name)
     m = bundle.mapping
     perms = m.permissions
     versioning_on = bool(m.versioning_default.enable_versioning) or any(
@@ -64,10 +53,10 @@ def assess_targets(
         "declares_column_formatting": bool(m.column_formatting),
         "declares_form_formatting": bool(m.form_formatting),
         "declares_versioning": versioning_on,
-        "declares_break_inheritance": any(
-            p.break_inheritance for p in _iter_policies(m)
-        ),
-        "declares_permission_levels": bool(perms and perms.levels),
+        # Shared with manifestgen/jsgen's schema_json and deploy.js's own
+        # live preflight, so the three cannot independently drift again --
+        # see requires_manage_permissions's docstring and #166 item 5.
+        "requires_manage_permissions": requires_manage_permissions(m, table_names),
     }
 
 
@@ -93,8 +82,7 @@ def derive_requirements(
             f"List '{title}' is absent or a redeploy target (not a foreign list)",
             "BLOCKED",
         ))
-    if (t["declares_groups"] or t["declares_permission_levels"]
-            or t["declares_break_inheritance"]):
+    if t["requires_manage_permissions"]:
         reqs.append(Requirement("manage_permissions_bit",
                                 "Operator holds ManagePermissions", "BLOCKED"))
     if t["declares_groups"]:

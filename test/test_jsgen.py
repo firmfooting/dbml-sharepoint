@@ -667,6 +667,11 @@ def test_schema_json_has_permission_keys() -> None:
     assert "APP_Task" in list_names
     assert "APP_AppSettings" in list_names
 
+    # The single boolean deploy.js's own preflight and the manifest both
+    # key off (#166 item 5) -- this fixture declares levels, groups AND
+    # assignments, so it must be True regardless of which one drove it.
+    assert schema_json["requires_manage_permissions"] is True
+
 
 def test_deploy_js_phase1_reliability_hardening() -> None:
     """A4: the generated deploy.js must (a) carry a Retry-After-aware retry
