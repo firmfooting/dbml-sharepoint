@@ -369,6 +369,20 @@ def _declares_demo_items(mapping_path: Path) -> bool:
     return any(load_mapping(mapping_path).mapping.demo_items.values())
 
 
+def _declares_reader_group(mapping_path: Path) -> bool:
+    """Whether the copied mapping has anything `--enterprise-reader` could
+    enrol into.
+
+    Asked before the question is put, mirroring `_declares_demo_items`:
+    `execute_build` refuses `--enterprise-reader` outright against a mapping
+    declaring no `enroll_enterprise_reader` group, so offering the question
+    where none exists would be offering a dead end the wizard would then
+    have to walk the operator into.
+    """
+    perms = load_mapping(mapping_path).mapping.permissions
+    return any(g.enroll_enterprise_reader for g in (perms.groups if perms else []))
+
+
 def _run(console: Console) -> int:
     solutions = available_solutions()
     if not solutions:
@@ -468,6 +482,21 @@ def _run(console: Console) -> int:
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import execute_build  # noqa: PLC0415
 
+    # Offered only where the mapping declares a group `--enterprise-reader`
+    # could enrol into -- see `_declares_reader_group`. Blank stays the
+    # default and must map to None, never "": an empty string would reach
+    # `validate_enterprise_reader` and abort a run where the operator simply
+    # pressed Enter, which is exactly the safe answer this question exists
+    # to allow.
+    reader = ""
+    if _declares_reader_group(mapping_path):
+        reader = Prompt.ask(
+            "Reporting service account to enrol read-only (UPN), or blank "
+            "for none",
+            default="",
+            console=console,
+        ).strip()
+
     # Every colour map, row wash and declared view is invisible on an empty
     # list, and the wizard is the one path aimed at somebody who has not seen
     # this tool work -- so it was the one path that could not show them.
@@ -515,6 +544,7 @@ def _run(console: Console) -> int:
             site_role=site_role,
             out=answers.destination / "build",
             seed=seed,
+            enterprise_reader=reader or None,
         )
     except typer.Exit as exc:
         # The build refused and has already said why on stderr. Its exit

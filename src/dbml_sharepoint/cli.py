@@ -330,6 +330,35 @@ def validate_site_url(site_url: str) -> None:
         )
 
 
+def validate_enterprise_reader(address: str) -> None:
+    """Refuse anything that is not a plain UPN.
+
+    The `|` check is the one doing real work. A claims login name --
+    `i:0#.f|membership|svc@example.org` -- contains an `@` and would pass a
+    naive check, then hand `web/ensureuser` a principal other than the user
+    it appears to name. Refusing the character outright is cheaper than
+    parsing claims, and no legitimate UPN contains one.
+    """
+    if address != address.strip() or not address:
+        raise typer.BadParameter(
+            "--enterprise-reader must not be empty or padded with whitespace.",
+        )
+    if address.count("@") != 1:
+        raise typer.BadParameter(
+            f"--enterprise-reader must be a single UPN with one '@' "
+            f"(got {address!r}).",
+        )
+    if any(c.isspace() for c in address) or "|" in address:
+        raise typer.BadParameter(
+            f"--enterprise-reader must be a plain UPN with no whitespace and "
+            f"no '|' (got {address!r}). A claims login name is not accepted.",
+        )
+    if any(ord(c) < 0x20 or ord(c) == 0x7F for c in address):
+        raise typer.BadParameter(
+            "--enterprise-reader must not contain control characters.",
+        )
+
+
 @app.command()
 def build(
     schema: Path | None = typer.Option(
@@ -352,6 +381,11 @@ def build(
         "--seed",
         help="Also emit demo-data.js.txt from the mapping's demo_items -- "
         "'[DEMO] '-marked sample rows pasted after deploy.js.txt.",
+    ),
+    enterprise_reader: str | None = typer.Option(
+        None,
+        help="UPN of a reporting service account to enrol, read-only, into "
+        "the mapping's enterprise-reader group. Omit to enrol nobody.",
     ),
     extension: str | None = typer.Option(
         None,
@@ -404,6 +438,7 @@ def build(
         dry_run=dry_run,
         seed=seed,
         extension=extension,
+        enterprise_reader=enterprise_reader,
     )
 
 
@@ -418,6 +453,7 @@ def execute_build(
     dry_run: bool = False,
     seed: bool = False,
     extension: str | None = None,
+    enterprise_reader: str | None = None,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
 
@@ -446,6 +482,24 @@ def execute_build(
         raise typer.Exit(code=2)
 
     _require_known_site_role(bundle, site_role)
+
+    if enterprise_reader is not None:
+        validate_enterprise_reader(enterprise_reader)
+        perms = bundle.mapping.permissions
+        targets = [
+            g for g in (perms.groups if perms else [])
+            if g.enroll_enterprise_reader
+        ]
+        if not targets:
+            # Fail closed rather than emitting a bundle that quietly enrols
+            # nobody. The operator would not find out until a report came
+            # back short, weeks later. `MULTIPLE_ENTERPRISE_READER_GROUPS`
+            # (a validator rule) already refuses more than one such group,
+            # so there is nothing to re-check on that side here.
+            raise typer.BadParameter(
+                "--enterprise-reader was given but the mapping declares no "
+                "group with enroll_enterprise_reader: true.",
+            )
 
     # Everything above this line is a pure read that can refuse: a malformed
     # URL, an unreadable input file, an extension needing its own CLI, a role
@@ -542,6 +596,7 @@ def execute_build(
             seed=seed,
             extension=ext,
             site_context=site_context,
+            enterprise_reader=enterprise_reader,
         )
     except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)

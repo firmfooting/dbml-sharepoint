@@ -76,6 +76,7 @@ def generate_deploy_js(
     generated_at: str,
     extension: DeploymentExtension | None = None,
     site_context: SiteContext | None = None,
+    enterprise_reader: str | None = None,
 ) -> str:
     env = script_env()
     ext: DeploymentExtension = extension if extension is not None else NullExtension()
@@ -102,6 +103,14 @@ def generate_deploy_js(
         schema_json=schema_json,
         phases=phases_context(),
         unmanaged_sentinel=UNMANAGED,
+        # The single named account `build --enterprise-reader` enrols read-
+        # only into the mapping's flagged group, or None to enrol nobody.
+        # `execute_build` has already refused a malformed address and a
+        # mapping declaring no `enroll_enterprise_reader` group by the time
+        # this runs, so a non-None value here always names a real target.
+        # Resolving which declared group that is stays the template's job
+        # (added alongside its consuming logic), not this function's.
+        enterprise_reader=enterprise_reader,
     )
 
 
