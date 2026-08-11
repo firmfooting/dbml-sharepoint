@@ -127,26 +127,17 @@ def formatter_field_refs(node: object) -> frozenset[str]:
     return frozenset(refs)
 
 
-# Declared-view DSL operators. is_null/is_not_null take no value; the rest
-# require one. Date/datetime values additionally accept the today sentinel.
-# List validation: SP resolves ValidationFormula references at MERGE
-# time and silently rejects unsupported column types — fail at build.
-_VALIDATION_FORBIDDEN_TYPES = {
-    "person": "a person column",
-    "richtext": "a multi-line column",
-    "longtext": "a multi-line column",
-}
-
 # Built-in SP groups a declared group's owner_group may reference.
 _BUILTIN_SP_GROUPS = frozenset({
     "Site Owners", "Site Members", "Site Visitors",
     "Owners", "Members", "Visitors",
 })
 
-VIEW_OPERATORS = frozenset({
-    "eq", "neq", "lt", "leq", "gt", "geq", "is_null", "is_not_null",
-})
-_VIEW_VALUELESS_OPERATORS = frozenset({"is_null", "is_not_null"})
+# The operand denylist and the declared-view operator set used to be spelled
+# here as well as in `conditions.py`. Both copies were dead, and both had
+# already drifted from the live answer -- see the deletion commit. The
+# operator vocabulary is `conditions.NEGATION`; the forbidden operand types
+# are `conditions._FORBIDDEN_OPERAND_TYPES`. Do not restate either here.
 _TODAY_SENTINEL = typemap.TODAY_SENTINEL      # one home: analysis/typemap.py
 _DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})

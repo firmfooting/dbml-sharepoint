@@ -48,12 +48,6 @@ def formatter_field_refs(node: object) -> frozenset[str]
 Every `[$Field]` reference in a formatter JSON structure — walks
 nested dicts/lists and scans every string value.
 
-### `VIEW_OPERATORS`
-
-```python
-VIEW_OPERATORS = frozenset({'eq', 'geq', 'gt', 'is_not_null', 'is_null', 'leq', 'lt', 'neq'})
-```
-
 ### `formula_column_refs`
 
 ```python
