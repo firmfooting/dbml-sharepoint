@@ -6,8 +6,9 @@
    membership is PERMANENT — nothing removes it at the end of the run.
    Every resolution is refused unless it is a single user (PrincipalType
    strictly 1), does not match one of the three tenant-wide-claim needles
-   at step 3, and matches the address the build asked for; the membership
-   is then read back before the run is allowed to call it done.
+   at step 3, and matches the address the build asked for; the group must
+   hold nobody but that account already (step 7); and the membership is
+   then read back before the run is allowed to call it done.
 
    Those needles are NOT full coverage of the tenant-wide claims: they
    cover two of the four Learn names. Read the dated KNOWN LIMIT at step 3
@@ -26,6 +27,11 @@
   // before this one) removes itself on the way out because it exists to
   // let this run write. A reporting account exists between runs, so
   // nothing removes it — remove it by hand in Site permissions > Groups.
+  //
+  // The group must hold nobody but the named account. If it already holds
+  // anyone else, this phase ABORTS the run before adding anything and
+  // removes nobody — a second reader is a permanent grant nothing here can
+  // safely undo, so it goes to a human.
   //
   // Everything below is a guard against granting Read to the wrong
   // principal, which is the failure this phase can cause and cannot show:
@@ -146,8 +152,10 @@
           throw new Error(`group probe for '${grp.name}' returned an invalid response`);
         }
 
-        // 6. Membership, enumerated in full: the phase reports who else is
-        // in the group, and the same read verifies the write below.
+        // 6. Membership, enumerated in full — every page, because the gate
+        // at step 7 is only as good as the weakest page of the read: a
+        // stranger on page two that this loop never fetched would read as
+        // an empty group. The same read verifies the write below.
         const readMembers = async () => {
           const found = [];
           let membersUrl = apiUrl(`web/sitegroups(${groupId})/users?$select=Id,LoginName,Title&$top=5000`);
@@ -173,12 +181,38 @@
         const isReader = (u) => nameKey(u && u.LoginName) === nameKey(resolved.LoginName);
         const before = await readMembers();
 
-        // 7. Anybody else in the group is REPORTED, never removed:
-        // membership is an operator-owned concern and this phase owns one
-        // account only.
+        // 7. Anybody else in the group ABORTS the phase, and does so BEFORE
+        // anything is added. Two rules meet here and neither bends:
+        //
+        // - Nobody is ever removed. Membership is an operator-owned concern
+        //   and this is a gate, not a reconciler.
+        // - The operator must be shown a state this run did not just change,
+        //   so the abort comes before the enrolment POST, not after it.
+        //
+        // This used to be an INFO line and the run carried on. That made a
+        // mistyped-but-valid address permanent: enrol it, notice, redeploy
+        // with the right address, and BOTH accounts hold Read on every list
+        // this bundle provisions, for as long as the group exists. The only
+        // record was one INFO line in a run that reported success, which is
+        // to say no record at all.
+        //
+        // The named account already being a member is NOT this case — a
+        // redeploy with the same flag has to stay green — so it is filtered
+        // out by isReader before the count is taken.
         const others = before.filter(u => !isReader(u));
         if (others.length > 0) {
-          log('INFO', `Group '${grp.name}' also contains ${others.length} other member(s), left untouched: ${others.map(u => u.Title || u.LoginName).join(', ')}.`);
+          const listed = others
+            .map(u => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
+            .join('; ');
+          throw new Error(
+            `group '${grp.name}' already holds ${others.length} principal(s) other than `
+            + `'${READER_ADDRESS}': ${listed}. That group grants Read on EVERY list this `
+            + `bundle provisions, so each of them can read all of it. Nothing was changed and `
+            + `nothing was removed — this needs a human decision. Either remove them by hand in `
+            + `Site permissions > Groups and run this script again, or rebuild WITHOUT `
+            + `--enterprise-reader, which leaves the membership exactly as it is and still `
+            + `deploys the group and its declared Read grant.`,
+          );
         }
         if (before.some(isReader)) {
           log('INFO', `'${resolved.Title || READER_ADDRESS}' is already a member of '${grp.name}'; membership left untouched.`);

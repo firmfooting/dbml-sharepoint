@@ -97,6 +97,15 @@ reporting account has to keep reading between runs, so nothing removes this one.
 Remove it by hand in **Site permissions → Groups** when the account no longer
 needs access.
 
+**Check that group's membership before you paste.** Phase {{ phase_num['reader_enrolment'] }} enrols nobody and
+**aborts the whole run** if **{{ reader_group_names }}** already holds any principal
+other than `{{ enterprise_reader }}` — it names each one and removes none, because a
+second holder of **Read** on every list here is your decision, not the script's.
+If that stops you: remove them in **Site permissions → Groups** and paste again,
+or rebuild without `--enterprise-reader`, which leaves the membership untouched
+and still deploys the group and its grant. `{{ enterprise_reader }}` already being a
+member is fine — a repeat paste of this bundle is a no-op there.
+
 Read that alongside the rollback note: `rollback.js.txt` deletes the lists this
 bundle provisioned, but it does not delete the group and it does not remove the
 account from it. After a rollback you are left with **{{ reader_group_names }}** still

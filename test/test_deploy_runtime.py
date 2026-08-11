@@ -995,6 +995,7 @@ def _reader_harness(
     ensure_user: dict[str, Any],
     *,
     members: list[dict[str, Any]] | None = None,
+    member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
@@ -1006,10 +1007,20 @@ def _reader_harness(
     a run cannot satisfy the read-back by asserting its own success.
     `drop_readback` accepts the POST and drops the write, which is what a
     silently-refused membership looks like from the script's side.
+
+    `member_pages` serves the membership across SEVERAL OData pages, each
+    but the last carrying a `__next`. A group whose membership arrives in
+    one page cannot distinguish a gate that reads every page from one that
+    reads the first and stops — and the second is a gate that a large
+    group defeats simply by being large. `members=[...]` is the one-page
+    case, and is exactly `member_pages=[[...]]`.
     """
+    pages = [list(members or [])] if member_pages is None else [
+        list(page) for page in member_pages
+    ]
     return _ADOPTED_HARNESS + textwrap.dedent(r"""
         const ENSURED = __ENSURE_USER__;
-        const READER_MEMBERS = __MEMBERS__;
+        const READER_MEMBER_PAGES = __MEMBER_PAGES__;
         const DROP_READBACK = __DROP_READBACK__;
         const _beforeReader = globalThis.fetch;
         globalThis.fetch = async (url, opts = {}) => {
@@ -1030,19 +1041,32 @@ def _reader_harness(
             if (method === 'POST') {
               const added = JSON.parse(opts.body);
               if (!DROP_READBACK) {
-                READER_MEMBERS.push({ Id: ENSURED.Id, Title: ENSURED.Title || '',
-                                      LoginName: added.LoginName });
+                READER_MEMBER_PAGES[READER_MEMBER_PAGES.length - 1].push(
+                  { Id: ENSURED.Id, Title: ENSURED.Title || '',
+                    LoginName: added.LoginName });
               }
               return respond({ d: { Id: ENSURED.Id, LoginName: added.LoginName } });
             }
-            return respond({ d: { results: READER_MEMBERS } });
+            // Page 0 unless the caller followed a __next we handed out.
+            // The follow-on URL keeps the sitegroups(N)/users shape so it
+            // lands back here rather than falling through to the adopted
+            // mock, which would answer an unrelated empty membership.
+            const marked = /[?&]page=(\d+)/.exec(u);
+            const page = marked ? Number(marked[1]) : 0;
+            const payload = { d: { results: READER_MEMBER_PAGES[page] || [] } };
+            if (page + 1 < READER_MEMBER_PAGES.length) {
+              payload.d.__next =
+                'https://example.sharepoint.com/_api/web/sitegroups(9)/users?page='
+                + (page + 1);
+            }
+            return respond(payload);
           }
           return _beforeReader(url, opts);
         };
     """).replace(
         "__ENSURE_USER__", json.dumps(ensure_user),
     ).replace(
-        "__MEMBERS__", json.dumps(members or []),
+        "__MEMBER_PAGES__", json.dumps(pages),
     ).replace(
         "__DROP_READBACK__", "true" if drop_readback else "false",
     )
@@ -1052,6 +1076,7 @@ def _run_reader_deploy(
     ensure_user: dict[str, Any],
     *,
     members: list[dict[str, Any]] | None = None,
+    member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
@@ -1061,7 +1086,8 @@ def _run_reader_deploy(
     and never reached the code under test at all.
     """
     script = _reader_harness(
-        ensure_user, members=members, drop_readback=drop_readback,
+        ensure_user, members=members, member_pages=member_pages,
+        drop_readback=drop_readback,
     ) + "\n" + _reader_deploy_js().replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -1225,40 +1251,121 @@ def test_a_membership_that_does_not_read_back_aborts() -> None:
     assert summary.get("aborted") == "reader-enrolment-errors", summary
 
 
-@pytest.mark.skipif(NODE is None, reason="node is not installed")
-def test_an_unrelated_member_is_logged_and_never_removed() -> None:
-    """Membership stays an operator-owned concern. The phase adds one
-    account; anybody else it finds is reported and left exactly alone."""
-    other_title = "Data Team"
-    other: dict[str, Any] = {
-        "Id": 7, "Title": other_title,
-        "LoginName": "i:0#.f|membership|data-team@example.org",
-    }
-    summary, calls, output = _run_reader_deploy(_RESOLVED_USER, members=[other])
-    assert not _reader_errors(summary), summary
-    assert [w["LoginName"] for w in _membership_writes(calls)] == [
-        _RESOLVED_USER["LoginName"],
-    ]
-    removals = [
+_OTHER_MEMBER: dict[str, Any] = {
+    "Id": 7, "Title": "Data Team",
+    "LoginName": "i:0#.f|membership|data-team@example.org",
+}
+
+
+def _removals(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every call that could take somebody OUT of a site group."""
+    return [
         c for c in calls
         if "removebyid" in c["url"].lower() or "removebyloginname" in c["url"].lower()
         or c["method"] == "DELETE"
     ]
-    assert not removals, f"the phase removed an existing member: {removals}"
-    assert other_title in output, (
-        f"an existing member was not reported:\n{output[-3000:]}"
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unexpected_member_aborts_the_run_and_is_never_removed() -> None:
+    """A principal in the group that is not the named reader stops the run.
+
+    This replaced an INFO line that let the run continue, and the case that
+    forced the change is mundane: enrol a mistyped-but-valid address, notice,
+    redeploy with the right one, and BOTH accounts hold Read on every list
+    this bundle provisions — permanently, since nothing here removes anyone.
+    The only trace was one INFO line in a run that reported success.
+
+    Three things are asserted, and the ORDER matters. The damage is the
+    grant, so "nothing was POSTed" comes first: deleting the gate must fail
+    on a second reader having been enrolled, not on a summary key. Then the
+    abort. Then, still, that nobody was removed — that half of the old
+    behaviour is unchanged and this is the test pinning it. A gate that
+    "fixed" the problem by evicting the stranger would pass the first two
+    assertions and be a far worse tool.
+    """
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, members=[_OTHER_MEMBER],
     )
+    assert not _membership_writes(calls), (
+        "a second account was enrolled into a group that already held "
+        "somebody else; both now hold Read on every list in the bundle"
+    )
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert not _removals(calls), (
+        f"the phase removed an existing member: {_removals(calls)}"
+    )
+    # Actionable: the operator has to be able to go and find the principal,
+    # which needs the login name, not just a display title.
+    errors = _reader_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert _OTHER_MEMBER["Title"] in message, message
+    assert _OTHER_MEMBER["LoginName"] in message, message
+    assert "Site permissions" in message, message
+    assert "--enterprise-reader" in message, message
+    assert _OTHER_MEMBER["Title"] in output
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unexpected_member_on_a_later_page_still_aborts() -> None:
+    """The gate reads every page of the membership, not the first one.
+
+    SharePoint pages `sitegroups(N)/users` and hands back a `__next`. A gate
+    that stopped at page one would be defeated by the group simply being
+    big — and it would look like it worked, because the small groups every
+    test uses fit in one page. Page one here holds nobody but the named
+    reader, so a first-page-only read sees an idempotent redeploy and
+    proceeds.
+    """
+    summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, member_pages=[
+        [],
+        [_OTHER_MEMBER],
+    ])
+    assert not _membership_writes(calls), (
+        "a member on page two was missed and the enrolment went ahead"
+    )
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert not _removals(calls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_named_reader_plus_a_stranger_still_aborts() -> None:
+    """The named account already being a member does not excuse the other one.
+
+    Ordering guard: the idempotence check ("already a member — skip") must
+    not run before the gate, or the very redeploy that follows a mistyped
+    address would sail through, which is the exact sequence this feature
+    exists to catch.
+    """
+    summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, members=[
+        {"Id": _RESOLVED_USER["Id"], "Title": _RESOLVED_USER["Title"],
+         "LoginName": _RESOLVED_USER["LoginName"]},
+        _OTHER_MEMBER,
+    ])
+    assert not _membership_writes(calls)
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert not _removals(calls)
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_an_already_enrolled_reader_is_not_added_twice() -> None:
     """Idempotence: a redeploy must not POST a membership that is already
-    there, and must not treat the existing one as a failure."""
+    there, and must not treat the existing one as a failure.
+
+    The gate above counts principals that are not the named reader, so this
+    is the case that says it counts them CORRECTLY: a re-run with the same
+    flag has to stay green, or the feature is unusable after its first use.
+    """
     summary, calls, _ = _run_reader_deploy(_RESOLVED_USER, members=[{
         "Id": _RESOLVED_USER["Id"], "Title": _RESOLVED_USER["Title"],
         "LoginName": _RESOLVED_USER["LoginName"],
     }])
     assert not _reader_errors(summary), summary
+    # Not `aborted is None`: this harness's run stops later in Phase 1 for
+    # reasons that have nothing to do with the reader. What must be true is
+    # that the reader phase is not what stopped it.
+    assert summary.get("aborted") != "reader-enrolment-errors", summary
     assert not _membership_writes(calls), "an existing membership was re-POSTed"
 
 
