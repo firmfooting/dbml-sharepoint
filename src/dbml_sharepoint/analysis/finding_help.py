@@ -621,6 +621,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "meanings from the other side. Use `eq`/`neq`, or declare the column "
         "as an array of its enum if it really does hold many."
     ),
+    FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR: (
+        "An enum member used by a multi-value column contains `; `, the "
+        "separator the exported cell joins members with. A set holding that "
+        "member exports to the same text as a set holding its parts, so the "
+        "cell cannot be split back into what the row actually held and any "
+        "count of selections taken from it is wrong with nothing able to "
+        "notice. The deploy is unaffected -- the list, the column and the "
+        "form all work -- but every build emits the reporting bundle, so the "
+        "ambiguous export is always produced. Rename the member, or model "
+        "the column as a child entity with one row per value. Only `; ` is "
+        "refused; a bare `;` joins and splits back perfectly well."
+    ),
     FindingCode.MULTI_VALUE_OPERAND_UNSUPPORTED: (
         "A calculated formula, a validation formula or a conditional "
         "show/hide rule reads a multi-value column. Measured on 2026-08-10: "

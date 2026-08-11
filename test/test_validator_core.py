@@ -721,6 +721,68 @@ def test_dbml_indexes_reject_a_multi_value_column() -> None:
     none_of(findings, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
 
 
+def test_a_multi_value_member_holding_the_separator_is_refused() -> None:
+    """The export joins members with "; ", so a member containing it makes
+    the cell impossible to split back. Green build, clean deploy, and a
+    silently wrong number in somebody's report.
+
+    Schema-only: reads nothing but `schema` and its own enums, so it fires
+    from `validate()` rather than `validate_against_mapping` -- no bundle
+    needed to reach it."""
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]")),
+        enums=[make_enum("audit_event", "View", "Permission change; revoked")],
+    )
+
+    finding = only(
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+    )
+    assert finding.severity == "error"
+    assert "Permission change; revoked" in finding.message
+    assert "audit_event" in finding.message
+
+
+def test_the_same_enum_on_a_scalar_column_is_not_refused() -> None:
+    """Column-driven, not enum-driven. Only a multi-value cell is joined, so
+    a scalar Choice using the same enum is harmless -- and a rule stronger
+    than the implementation requires refuses a legitimate schema."""
+    schema = make_schema(
+        make_table("Platform", make_column("Event", "audit_event")),
+        enums=[make_enum("audit_event", "View", "Permission change; revoked")],
+    )
+
+    none_of(
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+    )
+
+
+def test_a_bare_semicolon_in_a_member_is_not_refused() -> None:
+    """`"Edit;Export"` joins to `"View; Edit;Export"` and splits back on
+    `"; "` exactly right."""
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]")),
+        enums=[make_enum("audit_event", "View", "Edit;Export")],
+    )
+
+    none_of(
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+    )
+
+
+def test_every_offending_member_is_named_once_per_column() -> None:
+    """Naming one of two sends the author round the loop twice."""
+    schema = make_schema(
+        make_table("Platform", make_column("Events", "audit_event[]")),
+        enums=[make_enum("audit_event", "a; b", "ok", "c; d")],
+    )
+
+    finding = only(
+        validate(schema), FindingCode.MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR,
+    )
+    assert "a; b" in finding.message
+    assert "c; d" in finding.message
+
+
 def test_dbml_indexes_reject_duplicates_and_more_than_twenty() -> None:
     # Col0 is listed twice on purpose -- that is the duplicate this asserts.
     schema = make_schema(make_table(

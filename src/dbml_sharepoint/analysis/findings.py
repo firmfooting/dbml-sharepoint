@@ -428,6 +428,9 @@ class FindingCode(StrEnum):
     # constraint, and there is no generic "default: is not supported" rule
     # for the second to widen. One declaration still produces one finding.
     MULTI_VALUE_DEFAULT_UNSUPPORTED = "multi_value_default_unsupported", "error"
+    MULTI_VALUE_MEMBER_CONTAINS_THE_EXPORT_SEPARATOR = (
+        "multi_value_member_contains_the_export_separator", "error",
+    )
     MULTI_VALUE_UNIQUE_UNSUPPORTED = "multi_value_unique_unsupported", "error"
     ORPHAN_ENUM = "orphan_enum", "warning"
     RESERVED_COLUMN_NAME = "reserved_column_name", "error"
