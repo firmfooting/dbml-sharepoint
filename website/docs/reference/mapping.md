@@ -540,14 +540,21 @@ In practice this means the `&&` operator. Express the condition another way:
 "additionalRowClass": "=if([$Authorised] != 'Yes', if([$Stage] == 'Underway' || [$Stage] == 'Closed', 'sp-css-backgroundColor-BgDustRose', ''), '')"
 ```
 
-`||` is fine and shipped templates use it — it carries no XML metacharacter.
-So are `<` and `>`: a formatter containing `>=` was observed to store and read
-back correctly (SharePoint encodes those itself on the way in), and shipped
-view formatters compare with `<`.
+`||` is safe on its own terms: it contains no XML metacharacter, so nothing
+about XML can reach it.
 
-Whether an escaped `&amp;` would be accepted and stored back as `&` is **not
-established** — only the failure is. If someone probes it and it round-trips,
-the deployer can escape on write and this restriction goes away.
+**`<` and `>` are not characterised.** A comment in the deploy template says a
+formatter containing `>=` reads back as `&gt;=`, and `vehicle-log` ships a view
+formatter comparing with `<` — but that comment carries no date or probe and
+arrived with the initial public tree, and no shipped template's view formatter
+has been confirmed deployed. Neither is evidence. They are refused by nothing
+today and may well be fine; nobody has watched one work.
+
+Whether an escaped `&amp;` round-trips is equally unestablished. Only the `&`
+failure is measured. If a probe shows `&amp;` is stored and returned as `&`,
+the deployer can escape on write and this restriction goes away entirely.
+
+See issue #179 for the probe that would settle all of it.
 
 :::
 
