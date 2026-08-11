@@ -1447,3 +1447,62 @@ def test_every_deploy_doc_spells_the_site_url_placeholder_the_same_way() -> None
         "will leave it pointing at a site the operator never chose:\n"
         + "\n".join(offenders)
     )
+
+
+@pytest.mark.parametrize("template", _uplifted())
+def test_every_family_declares_exactly_one_enterprise_reader_group(
+    template: str,
+) -> None:
+    """A reporting account reads across the whole fleet, so a family that
+    forgets the tier is a hole in the aggregate that nothing else reports.
+
+    Pinned per family rather than left to review: the grant is invisible on
+    the rendered page, so a missing one looks exactly like a register with
+    no rows in it.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    readers = [g for g in mapping.permissions.groups if g.enroll_enterprise_reader]
+    assert len(readers) == 1, (
+        f"{template}: expected exactly one enterprise-reader group, "
+        f"got {[g.name for g in readers]}"
+    )
+    assert readers[0].name.endswith(" Enterprise Readers")
+
+
+@pytest.mark.parametrize("template", _uplifted())
+def test_the_reader_group_is_granted_read_on_every_policy_block(
+    template: str,
+) -> None:
+    """An override carries its own complete assignment list.
+
+    `service-evidence-register` has a `ServiceIssue` override; a reader
+    granted Read only on the default cannot read that list, and no gate
+    below this one would notice.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    perms = mapping.permissions
+    reader = next(g for g in perms.groups if g.enroll_enterprise_reader)
+    policies = [perms.default_policy, *perms.overrides.values()]
+    for policy in policies:
+        assert policy is not None
+        granted = {
+            a.level for a in policy.assignments
+            if a.principal.kind == "group" and a.principal.name == reader.name
+        }
+        assert granted == {"Read"}, (
+            f"{template}: policy block grants {reader.name} {granted or 'nothing'}"
+        )
+
+
+@pytest.mark.parametrize("template", _uplifted())
+def test_the_reader_group_uses_the_family_prefix(template: str) -> None:
+    """`improvement-register` is `CI`, not `IM`. The prefix comes from the
+    family's own List Administrators group, never from its folder name."""
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    names = [g.name for g in mapping.permissions.groups]
+    admin = next(n for n in names if n.endswith(" List Administrators"))
+    reader = next(n for n in names if n.endswith(" Enterprise Readers"))
+    assert reader.split()[0] == admin.split()[0]
