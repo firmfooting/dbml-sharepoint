@@ -79,6 +79,23 @@
         // type check above does not catch them, and granting one hands Read
         // on this register to every account in the tenant — the one mistake
         // in this phase with no cheap undo.
+        //
+        // KNOWN LIMIT, 2026-08-11. Learn ("Grant the Everyone claim to
+        // external users in Microsoft 365") names FOUR tenant-wide claims:
+        // Everyone, Everyone except external users, All Authenticated Users,
+        // All Forms Users. The three needles below cover the first two. Learn
+        // publishes no login-name encoding for the other two, and they are
+        // deliberately NOT guessed here — a needle invented from plausibility
+        // would read like a guard and catch nothing, which is worse than an
+        // acknowledged gap.
+        //
+        // The residual risk is small but not zero, and rests on two things,
+        // not on this list: `validate_enterprise_reader` refuses any '|' at
+        // build time, so a claim string cannot be supplied as the address;
+        // and step 4 below requires the RESOLVED identity to equal the
+        // address that was asked for, which a claim principal does not. To
+        // close it properly, establish the two missing forms with a probe
+        // under test/manual/ and add them here.
         const login = resolved.LoginName.toLowerCase();
         const claim = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager']
           .find(c => login.includes(c));
