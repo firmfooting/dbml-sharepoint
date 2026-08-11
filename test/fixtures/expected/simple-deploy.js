@@ -775,6 +775,7 @@
     }
   ],
   "phase2_lookups": [],
+  "requires_manage_permissions": true,
   "seed_items": [],
   "views": [
     {
@@ -1459,12 +1460,11 @@
   // (Previous check incorrectly tested High; ManageLists lives in Low.)
   // ManagePermissions is only demanded when the schema actually performs
   // Phase 1.2/4 permission work, so an operator who can manage lists but not
-  // ACLs is not rejected on a list-only deployment.
-  const needsPermissions = (
-    SCHEMA.permission_levels.length > 0 ||
-    SCHEMA.groups.length > 0 ||
-    SCHEMA.list_assignments.length > 0
-  );
+  // ACLs is not rejected on a list-only deployment. SCHEMA.requires_manage_permissions
+  // is computed once in Python (requires_manage_permissions in
+  // analysis/permissions.py) and shared with assess.js's own preflight and
+  // the manifest, rather than re-derived here -- see #166 item 5.
+  const needsPermissions = SCHEMA.requires_manage_permissions;
   const permsResp = await fetchWithRetry(apiUrl('web?$select=EffectiveBasePermissions'), {
     headers: { 'Accept': 'application/json;odata=verbose' },
   });

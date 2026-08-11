@@ -41,3 +41,30 @@ SP REST expects on SP.BasePermissions.
 BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit', 'Full Control', 'Limited Access', 'Manage Hierarchy', 'Read', 'Restricted Read'})
 ```
 
+### `requires_manage_permissions`
+
+```python
+def requires_manage_permissions(mapping: dbml_sharepoint.model._mapping_types.Mapping, table_names: collections.abc.Iterable[str]) -> bool
+```
+
+True when deploying `table_names` performs ANY ACL work, and so needs
+the ManagePermissions site right.
+
+Three call sites each used to answer this on their own: assessgen's
+preflight requirement, the human-readable manifest, and deploy.js's own
+live preflight abort. The manifest and deploy.js already agreed --
+"declares custom permission levels, custom groups, or a per-list ACL
+policy" -- but assessgen tested `declares_break_inheritance` instead of
+"a policy exists", so a `break_inheritance: false` policy (built-in level,
+built-in associated group, inheritance left alone) made assess.js predict
+no ManagePermissions requirement while deploy.js demanded it and aborted.
+See #166 item 5, reproduced against a from-scratch mapping with zero
+validator findings.
+
+A per-list policy counts even with `break_inheritance: false`: deploy.js
+still binds the declared role assignments on the (inherited) list, which
+still needs the bit. `table_names` should be the entity names actually in
+this build (`analysis.ordering.site_tables_in_order`'s output), not every
+entity in the mapping -- a policy scoped to a site_role this build does
+not deploy must not demand a right the build never exercises.
+
