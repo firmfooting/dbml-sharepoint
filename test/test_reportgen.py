@@ -1,4 +1,5 @@
 # test/test_reportgen.py
+import re
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -54,7 +55,10 @@ def test_powerquery_one_query_per_entity_with_odata_feed() -> None:
     task = queries["APP_Task.pq"]
     assert "OData.Feed(" in task
     assert "getbytitle('APP_Task')" in task
-    assert "SiteUrl &" in task  # parameterised, not hardcoded
+    # Parameterised, not hardcoded -- via the normalised SiteRoot, never the
+    # raw parameter; see test_no_query_builds_an_endpoint_from_raw_site_url.
+    assert "SiteRoot &" in task
+    assert 'Text.TrimEnd(SiteUrl, "/")' in task
 
 
 def test_powerquery_lookup_selects_join_key_and_expands_title() -> None:
@@ -117,7 +121,7 @@ def test_every_list_query_carries_the_site_it_came_from() -> None:
     schema, bundle = _simple()
     queries = generate_powerquery(schema, bundle, "default")
     for name, query in queries.items():
-        assert '"Site Url", each SiteUrl' in query, name
+        assert '"Site Url", each SiteRoot' in query, name
         assert '"Site Name", each SiteName' in query, name
 
 
@@ -164,7 +168,7 @@ def test_the_site_name_lookup_fails_soft() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert "try" in task
-    assert "otherwise SiteUrl," in task
+    assert "otherwise SiteRoot," in task
 
 
 def test_row_keys_are_site_qualified() -> None:
@@ -172,7 +176,167 @@ def test_row_keys_are_site_qualified() -> None:
     schema, bundle = _simple()
     task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
     assert '"Task Key",' in task
-    assert 'each SiteUrl & "|" & Number.ToText([Id])' in task
+    assert 'each SiteRoot & "|" & Number.ToText([Id])' in task
+
+
+# --------------------------------------------------- SiteUrl normalisation
+#
+# Measured on a live tenant, 2026-08-11. An operator set the SiteUrl
+# parameter to the URL the address bar shows while VIEWING a list
+# (.../sites/<site>/Lists/RC_CheckPoint) rather than the site root, so the
+# queries requested .../Lists/RC_CheckPoint/_api/web/lists/getbytitle(
+# 'RC_CheckPoint')/items -- the title twice and _api hung off a list, which
+# is not a web -- and SharePoint answered 404 DataSource.NotFound. The
+# generated header already said "site URL"; correct documentation did not
+# prevent it, which is why the queries now normalise the value themselves.
+
+# An M identifier is letters/digits/underscore, so these boundaries stop
+# `SiteUrl` matching inside the `WithSiteUrl` STEP name, which is not a use
+# of the parameter at all.
+_RAW_SITE_URL = re.compile(r"(?<![A-Za-z0-9_])SiteUrl(?![A-Za-z0-9_])")
+
+# The one place the raw parameter is legitimately read: the seed of the
+# normalisation itself.
+_NORMALISING_USE = 'Text.TrimEnd(SiteUrl, "/")'
+
+
+def _all_powerquery(schema: Schema, bundle: MappingBundle) -> dict[str, str]:
+    """Every generated .pq for the role -- list queries and dictionary alike."""
+    return {
+        **generate_powerquery(schema, bundle, "default"),
+        **generate_dictionary_powerquery(schema, bundle, "default"),
+    }
+
+
+def _site_url_consumers(schema: Schema, bundle: MappingBundle) -> dict[str, str]:
+    """The generated queries that read the SiteUrl parameter.
+
+    _DataDictionary and _ModelInfo are static `#table` literals that never
+    touch a site, so requiring the normalisation of them would be noise.
+    Selection is on either name: a consumer that skipped normalisation
+    still says `SiteUrl`, so it cannot filter itself out of the check.
+    """
+    return {
+        name: query
+        for name, query in _all_powerquery(schema, bundle).items()
+        if _RAW_SITE_URL.search(query) or "SiteRoot" in query
+    }
+
+
+def _code_lines(query: str) -> list[str]:
+    """Query lines with whole-line `//` comments dropped.
+
+    The emitted M never puts a comment on the same line as code, so this is
+    exact rather than approximate -- and it is checked, below, that the
+    normalisation prose does not smuggle a passing assertion.
+    """
+    return [
+        line for line in query.splitlines()
+        if not line.lstrip().startswith("//")
+    ]
+
+
+def test_site_url_is_normalised_to_the_site_root_before_use() -> None:
+    """A pasted list/form/page/API URL is trimmed back to the site.
+
+    Signatures confirmed on Microsoft Learn (2026-08-11): Text.PositionOf
+    answers -1 when the substring is absent, and Text.TrimEnd's second
+    argument may be a single character to strip from the end.
+    """
+    schema, bundle = _simple()
+    consumers = _site_url_consumers(schema, bundle)
+    # Every list query plus the live drift audit -- named, so a selection
+    # that quietly narrowed to nothing could not pass this vacuously.
+    assert set(consumers) == {
+        "APP_Project.pq", "APP_Task.pq", "APP_AppSettings.pq",
+        "_UserAddedColumns.pq",
+    }
+    for name, query in consumers.items():
+        assert "SiteRoot = Text.TrimEnd(" in query, name
+        assert _NORMALISING_USE in query, name
+        assert (
+            '{"/_api/", "/_layouts/", "/lists/", "/sitepages/"}' in query
+        ), name
+        # -1 when absent, and a marker can never sit at position 0 of an
+        # https:// URL, so the guard is `> 0` rather than `<> -1`.
+        assert "if at > 0 then Text.Start(url, at) else url" in query, name
+
+
+def test_the_normalisation_markers_are_lowercase() -> None:
+    """The URL is lowered for the search, so a mixed-case marker never
+    matches -- and the failure is silent: the 404 comes back exactly as it
+    did before the fix. `/Lists/` is how SharePoint actually spells it in
+    the address bar, so this is the plausible way to get it wrong.
+    """
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+    assert "Text.PositionOf(Text.Lower(url), marker)" in task
+    markers = re.search(r"\{(\"/[^}]*?)\}", task)
+    assert markers is not None
+    for marker in re.findall(r'"([^"]+)"', markers.group(1)):
+        assert marker == marker.lower(), marker
+
+
+def test_no_query_builds_an_endpoint_from_raw_site_url() -> None:
+    """The regression that matters, and the reason this is not a
+    string-presence test.
+
+    Normalising is worthless if the next consumer added to a query reaches
+    for the parameter instead. Rather than enumerate today's consumers --
+    which would pass forever while a new one went unnormalised -- assert the
+    invariant: OUTSIDE the normalisation step, no generated query mentions
+    `SiteUrl` in code at all. Every endpoint, link and key is therefore
+    built from `SiteRoot`.
+    """
+    schema, bundle = _simple()
+    for name, query in _all_powerquery(schema, bundle).items():
+        for line in _code_lines(query):
+            if not _RAW_SITE_URL.search(line):
+                continue
+            assert _NORMALISING_USE in line, (
+                f"{name}: uses the raw SiteUrl parameter outside the "
+                f"normalisation step -- {line.strip()!r}"
+            )
+        # The specific shape that was measured failing.
+        assert 'SiteUrl & "/_api' not in query, name
+
+
+def test_the_raw_site_url_check_can_actually_fail() -> None:
+    """The guard above is only worth having if it fires.
+
+    A comment-stripping helper that swallowed everything, or a boundary
+    regex that matched nothing, would leave the test passing over any input
+    -- indistinguishable from a clean bundle. So run it over a query with
+    the defect deliberately reintroduced, plus one where the only mention is
+    prose, and check it separates them.
+    """
+    schema, bundle = _simple()
+    task = generate_powerquery(schema, bundle, "default")["APP_Task.pq"]
+
+    def offending_lines(query: str) -> list[str]:
+        return [
+            line for line in _code_lines(query)
+            if _RAW_SITE_URL.search(line) and _NORMALISING_USE not in line
+        ]
+
+    assert offending_lines(task) == []
+    # The 2026-08-11 defect, put back.
+    assert offending_lines(task.replace("SiteRoot &", "SiteUrl &")) != []
+    # A comment naming the parameter is not a use of it.
+    assert offending_lines(task + "\n    // SiteUrl is the site root\n") == []
+    # ...and the STEP name WithSiteUrl must not be read as one either.
+    assert "WithSiteUrl = Table.AddColumn(" in task
+
+
+def test_the_normalisation_records_the_live_run_that_prompted_it() -> None:
+    """A bare Text.TrimEnd chain reads as superstition to the next person,
+    who then "simplifies" it away and reopens a 404 nobody can place."""
+    schema, bundle = _simple()
+    consumers = _site_url_consumers(schema, bundle)
+    assert consumers
+    for name, query in consumers.items():
+        assert "2026-08-11" in query, name
+        assert "404" in query, name
 
 
 def test_a_null_lookup_does_not_break_the_refresh() -> None:

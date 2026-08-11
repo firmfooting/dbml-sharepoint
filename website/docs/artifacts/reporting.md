@@ -12,9 +12,10 @@ deployed lists.
 
 - **One Power Query (M) file per list**, plus dictionary, model-info and
   user-added-column audit queries. Point the queries' `SiteUrl`
-  parameter at the deployed site and load them in Power BI or Excel.
-  Each query is self-contained, including the lookup of the site's own
-  display title — see below.
+  parameter at the deployed site — the **site root**, not a list or a
+  page — and load them in Power BI or Excel. Each query is
+  self-contained, including the lookup of the site's own display title —
+  see below.
 - **`sql/views.sql`** — a SQLCMD views script for warehouse-landed
   copies of the lists.
 - **`guide.md`** — includes the Power BI relationship table
@@ -22,6 +23,29 @@ deployed lists.
 - **`data-dictionary.md`** — every list and column with types,
   descriptions and enum values, generated from the same schema the
   deploy used.
+
+## Which URL goes in `SiteUrl`
+
+The **site** root — `https://tenant.sharepoint.com/sites/YourSite` — and
+not the URL of a list, a form or a page.
+
+This is easy to get wrong, because the address bar shows the *list* URL
+(`https://tenant.sharepoint.com/sites/YourSite/Lists/YourList`) the whole
+time you are looking at a list, which is exactly when you are most likely
+to copy it. Pasted as `SiteUrl`, it used to build endpoints like
+`.../Lists/YourList/_api/web/lists/getbytitle('YourList')/items` — the
+list title twice over and `_api` hung off a list rather than a web — and
+SharePoint answered `DataSource.NotFound: OData: Request failed (404)`,
+which names neither the parameter at fault nor the fix.
+
+The queries now trim that back for you: each one cuts the value at the
+first `/_api/`, `/_layouts/`, `/lists/` or `/sitepages/` segment and
+drops any trailing `/`, so a list, form, site-page or API URL all resolve
+to the same site root. A correct site URL passes through untouched, and a
+root site collection (`https://tenant.sharepoint.com`, no `/sites/`
+segment) is left alone rather than rejected. The `Site Url` and `… Key`
+columns carry the trimmed value, so two people who pasted the same site
+in different shapes still append cleanly.
 
 ## Several sites in one report
 
