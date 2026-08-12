@@ -5,9 +5,11 @@ The same DBML + mapping that provisions the lists also describes how to
 report on them. This module emits:
 
 - one Power Query (M) query per list — ``OData.Feed`` against the list's
-  REST endpoint, parameterised by a ``SiteUrl`` text parameter, with lookup
-  and person columns expanded to a join key plus display column, and column
-  types applied from the deployer's own typemap;
+  REST endpoint, with lookup and person columns expanded to a join key plus
+  display column, and column types applied from the deployer's own typemap.
+  ``build`` knows the site (``--site-url``) and bakes it into every query,
+  so a shipped bundle has nothing to configure; the standalone ``report``
+  command knows no site and falls back to a ``SiteUrl`` text parameter;
 - a single T-SQL script of ``CREATE OR ALTER VIEW`` statements (SQLCMD
   variables for the landing/report schemas): a typed view per list plus an
   ``_Enriched`` view joining each lookup to its display column, for lists
@@ -30,6 +32,10 @@ from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
+from dbml_sharepoint.analysis.report_columns import (
+    REPORT_FIXED_COLUMNS,
+    REPORT_KEY_SUFFIX,
+)
 from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
 from dbml_sharepoint.bundle import (
@@ -53,8 +59,14 @@ class _ListPlan:
     list_title: str
     selects: list[str] = field(default_factory=list)
     expands: list[str] = field(default_factory=list)
-    # (record column, inner field, expanded output column)
-    record_expands: list[tuple[str, str, str]] = field(default_factory=list)
+    # (record column, inner field, expanded output column, M type token)
+    #
+    # The type is carried here rather than looked up in `m_types` because the
+    # expand is emitted GUARDED (see `_render_m`): when the source record
+    # column is absent — which is what an EMPTY list gives you — the output
+    # column is added as nulls instead, and that fallback has to ascribe a
+    # type at the point it is written.
+    record_expands: list[tuple[str, str, str, str]] = field(default_factory=list)
     # (output column, M type token)
     m_types: list[tuple[str, str]] = field(default_factory=list)
     # Multi-value columns joined to one text cell. Deliberately NOT in
@@ -207,14 +219,18 @@ def _build_plans(
                 case "URL":
                     # SP.FieldUrlValue arrives as a record; keep the Url part.
                     plan.selects.append(sp.name)
-                    plan.record_expands.append((sp.name, "Url", f"{sp.name}Url"))
+                    plan.record_expands.append(
+                        (sp.name, "Url", f"{sp.name}Url", "type text"),
+                    )
                     plan.m_types.append((f"{sp.name}Url", "type text"))
                     plan.sql_columns.append((sp.name, "NVARCHAR(2000)"))
                 case "User":
                     plan.selects.append(f"{sp.name}Id")
                     plan.selects.append(f"{sp.name}/Title")
                     plan.expands.append(sp.name)
-                    plan.record_expands.append((sp.name, "Title", f"{sp.name}Title"))
+                    plan.record_expands.append(
+                        (sp.name, "Title", f"{sp.name}Title", "type text"),
+                    )
                     plan.m_types.append((f"{sp.name}Id", "Int64.Type"))
                     plan.m_types.append((f"{sp.name}Title", "type text"))
                     plan.sql_columns.append((sp.name, "NVARCHAR(255)"))
@@ -225,7 +241,7 @@ def _build_plans(
                     plan.selects.append(f"{sp.name}/{display}")
                     plan.expands.append(sp.name)
                     plan.record_expands.append(
-                        (sp.name, display, f"{sp.name}{display}"),
+                        (sp.name, display, f"{sp.name}{display}", "type text"),
                     )
                     plan.m_types.append((f"{sp.name}Id", "Int64.Type"))
                     plan.m_types.append((f"{sp.name}{display}", "type text"))
@@ -342,19 +358,138 @@ def _fk_key_column(fk_col: str) -> str:
     return f"{fk_col.removesuffix('Id')} Key"
 
 
-def _render_m(plan: _ListPlan) -> str:
+def _m_string(text: str) -> str:
+    """An M string literal: double quotes are escaped by doubling."""
+    return '"' + text.replace('"', '""') + '"'
+
+
+def _row_key_m(list_title: str, id_expression: str) -> str:
+    """The M expression for one row key: site, LIST, and item id.
+
+    THE ONE definition of the key format, used for both a table's own
+    ``<Entity> Key`` and the ``<Target> Key`` every lookup carries. Those two
+    are what a Power BI relationship joins, so a format written twice is a
+    relationship that matches nothing — and matching nothing renders as
+    empty visuals rather than as an error.
+
+    MEASURED implicitly on a live tenant, 2026-08-11: the key was site + id
+    with nothing naming the list. Every SharePoint list numbers its items
+    from 1, so two lists on ONE site produce colliding keys the moment their
+    queries are appended — the multi-site, multi-list model this pack's own
+    guide tells the operator to build. Wrong row counts and wrong
+    relationships, and nothing anywhere raises.
+
+    The list TITLE, not its GUID, and deliberately: a GUID would survive a
+    rename, but the query addresses the list by title in
+    ``getbytitle('<title>')`` two steps above, so a rename breaks the query
+    outright regardless. The title therefore adds no failure mode the query
+    does not already have, and it costs no second round trip to the site.
+
+    ``SiteRoot`` rather than the raw ``SiteUrl``: two operators pasting the
+    same site in different shapes must produce the SAME key, or appending
+    their copies breaks the relationship rather than the URL.
+    """
+    return (
+        f'SiteRoot & "|" & {_m_string(list_title)} & "|" '
+        f"& Number.ToText({id_expression})"
+    )
+
+
+def _site_url_binding_m(site_url: str | None) -> list[str]:
+    """The literal ``SiteUrl`` binding for a top-level ``let``, or nothing.
+
+    ``build`` is given the site (``--site-url``), so a bundle it produces
+    can bind the URL here and the operator has nothing to set up. The
+    standalone ``report`` command knows no site; it emits no binding, and
+    the query reads the ``SiteUrl`` text parameter instead — the same name,
+    so everything below is identical either way.
+
+    The URL goes through :func:`_m_string` rather than being interpolated:
+    it is operator input, and a ``"`` in it would otherwise close the
+    literal and rewrite the rest of the query as M code.
+
+    Indented for a top-level ``let`` binding (four spaces), matching
+    :data:`_SITE_ROOT_M`, which is emitted immediately after it.
+    """
+    if site_url is None:
+        return []
+    return [
+        "    // Baked in at build time from `--site-url`; there is nothing to",
+        "    // set up. To report across several sites, duplicate this query",
+        "    // and change this ONE line per copy (or point it at a text",
+        "    // parameter) — everything below, including the site name,",
+        "    // derives from it.",
+        f"    SiteUrl = {_m_string(site_url)},",
+    ]
+
+
+# The site root, derived from the SiteUrl binding above rather than trusted
+# as given, and the first computed step of every query that consumes it.
+# Applied whether the URL was baked in or typed into a parameter: a baked-in
+# URL is already correct, but that one line is now the documented place to
+# hand-edit for a second site, so it is MORE likely to be retyped, not less.
+#
+# Emitted verbatim into both the per-list queries and the user-added-column
+# audit, so there is one definition of what "the site" means across the pack.
+#
+# Indented for a top-level `let` binding (four spaces); both consumers bind it
+# at that level.
+_SITE_ROOT_M: list[str] = [
+    "    // The site root, derived from SiteUrl rather than trusted as typed.",
+    "    //",
+    "    // Measured against a live tenant on 2026-08-11: an operator set",
+    "    // SiteUrl to what the browser address bar shows while VIEWING a list",
+    "    // (.../sites/<site>/Lists/<ListTitle>), so every endpoint below was",
+    "    // built as .../Lists/<ListTitle>/_api/... — _api hung off a list,",
+    "    // which is not a web — and SharePoint answered 404",
+    "    // DataSource.NotFound, naming neither the parameter at fault nor the",
+    "    // correction. The header above already said \"site URL\" and that did",
+    "    // not help, which is why this is done in code.",
+    "    //",
+    "    // Cutting at the first /_api/, /_layouts/, /lists/ or /sitepages/",
+    "    // segment turns a list, form, page or API URL back into the site",
+    "    // root, and leaves a correct site URL untouched. Deliberately no",
+    "    // error is raised: a root site collection is legitimately",
+    "    // https://tenant.sharepoint.com, with no /sites/ segment to check",
+    "    // for, so anything shaped like a validation would refuse valid input.",
+    "    SiteRoot = Text.TrimEnd(",
+    "        List.Accumulate(",
+    '            {"/_api/", "/_layouts/", "/lists/", "/sitepages/"},',
+    '            Text.TrimEnd(SiteUrl, "/"),',
+    "            (url, marker) =>",
+    "                let",
+    "                    at = Text.PositionOf(Text.Lower(url), marker)",
+    "                in",
+    "                    // Text.PositionOf answers -1 when the marker is",
+    "                    // absent, and a marker can never sit at position 0",
+    "                    // of an https:// URL, so > 0 covers both.",
+    "                    if at > 0 then Text.Start(url, at) else url",
+    "        ),",
+    '        "/"',
+    "    ),",
+]
+
+
+def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
     query_string = "?$select=" + ",".join(plan.selects)
-    lines = [
-        (f"// {plan.list_title} — generated by dbml-sharepoint; regenerate "
-         "rather than hand-edit."),
+    header = [] if site_url is not None else [
         "// Requires a text parameter named SiteUrl holding the site URL,",
-        "// e.g. https://tenant.sharepoint.com/sites/YourSite",
+        "// e.g. https://tenant.sharepoint.com/sites/YourSite — the SITE, not",
+        "// a list or a page. A list URL is trimmed back to the site for you;",
+        "// see the SiteRoot step below.",
         "//",
         "// To report on several sites at once, duplicate this query per site",
         "// and point each copy at its own SiteUrl parameter — everything",
         "// below, including the site name, derives from whichever URL that",
         "// copy uses. Then append the copies.",
+    ]
+    lines = [
+        (f"// {plan.list_title} — generated by dbml-sharepoint; regenerate "
+         "rather than hand-edit."),
+        *header,
         "let",
+        *_site_url_binding_m(site_url),
+        *_SITE_ROOT_M,
         # Deliberately inline rather than a shared _SiteName query. A shared
         # query binds to ONE SiteUrl parameter, so every duplicate of this
         # list -- one per site, which is exactly how a multi-site report is
@@ -371,13 +506,13 @@ def _render_m(plan: _ListPlan) -> str:
         "    SiteName =",
         "        try",
         "            OData.Feed(",
-        '                SiteUrl & "/_api/web?$select=Title",',
+        '                SiteRoot & "/_api/web?$select=Title",',
         "                null,",
         '                [Implementation = "2.0"]',
         "            )[Title]",
-        "        otherwise SiteUrl,",
+        "        otherwise SiteRoot,",
         "    Source = OData.Feed(",
-        f"        SiteUrl & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
+        f"        SiteRoot & \"/_api/web/lists/getbytitle('{plan.list_title}')/items\"",
         f'            & "{query_string}"',
     ]
     if plan.expands:
@@ -389,12 +524,33 @@ def _render_m(plan: _ListPlan) -> str:
         "    ),",
     ]
     prev = "Source"
-    for i, (record_col, inner, out) in enumerate(plan.record_expands, start=1):
+    if plan.record_expands:
+        lines += [
+            "    // MEASURED on a live tenant, 2026-08-11: a freshly deployed",
+            "    // list with ZERO rows answers without the expanded record",
+            "    // columns at all, and a bare Table.ExpandRecordColumn then",
+            "    // fails the whole query with \"The column '<name>' of the table",
+            "    // wasn't found\" — which reads as a broken query rather than an",
+            "    // empty list. A fresh deploy produces empty lists, so that is",
+            "    // the FIRST refresh every adopter runs; adding one row makes it",
+            "    // work again, so it is invisible anywhere data already exists.",
+            "    //",
+            "    // Skipping the step instead is not an option: the typing step",
+            "    // and the model-facing rename below both name these output",
+            "    // columns. So the column is always produced — expanded when the",
+            "    // record is there, nulls of the same type when it is not.",
+        ]
+    for i, (record_col, inner, out, m_type) in enumerate(
+        plan.record_expands, start=1,
+    ):
         step = f"Expand{i}"
-        lines.append(
-            f'    {step} = Table.ExpandRecordColumn({prev}, "{record_col}", '
-            f'{{"{inner}"}}, {{"{out}"}}),',
-        )
+        lines += [
+            f"    {step} =",
+            f'        if List.Contains(Table.ColumnNames({prev}), "{record_col}")',
+            (f'        then Table.ExpandRecordColumn({prev}, "{record_col}", '
+             f'{{"{inner}"}}, {{"{out}"}})'),
+            f'        else Table.AddColumn({prev}, "{out}", each null, {m_type}),',
+        ]
         prev = step
     # The separator, and why it is that string, live in `analysis/exports.py` --
     # the check that refuses a member containing it needs the same fact, and a
@@ -440,32 +596,42 @@ def _render_m(plan: _ListPlan) -> str:
         "    ),",
         '    WithItemURL = Table.AddColumn(',
         '        Typed, "ItemURL",',
-        f'        each SiteUrl & "{plan.item_url_path}" & Number.ToText([Id]),',
+        f'        each SiteRoot & "{plan.item_url_path}" & Number.ToText([Id]),',
         "        type text",
         "    ),",
         # Where the row came from. One build covers one site, but a report
         # routinely appends several deployments of the same template, and
         # without these two columns there is nothing to slice by.
         "    WithSiteUrl = Table.AddColumn(",
-        '        WithItemURL, "Site Url", each SiteUrl, type text',
+        f'        WithItemURL, "{REPORT_FIXED_COLUMNS[0]}", each SiteRoot, type text',
         "    ),",
         "    WithSiteName = Table.AddColumn(",
-        '        WithSiteUrl, "Site Name", each SiteName, type text',
+        f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
         "    ),",
-        # THE reason a multi-site report can be trusted. `Id` is unique
-        # only within one list on one site, so appending three sites puts
-        # three rows with Id = 1 in this table. A relationship on Id then
-        # cannot be many-to-one; Power BI degrades it to many-to-many and
-        # joins a child row to the same-numbered parent on EVERY site. The
-        # report renders and the numbers are wrong.
+        # Which LIST the row came from — the other half of the same problem
+        # the two columns above solve. A model that appends several lists
+        # needs to slice by list as well as by site, and the key below is
+        # opaque.
+        "    WithListTitle = Table.AddColumn(",
+        f'        WithSiteName, "{REPORT_FIXED_COLUMNS[2]}",',
+        f"        each {_m_string(plan.list_title)},",
+        "        type text",
+        "    ),",
+        # THE reason an appended report can be trusted. `Id` is unique only
+        # within one list on one site: appending three sites puts three rows
+        # with Id = 1 in this table, and appending two LISTS on one site does
+        # the same. A relationship on such a key cannot be many-to-one; Power
+        # BI degrades it to many-to-many and joins a child row to the
+        # same-numbered parent everywhere. The report renders and the numbers
+        # are wrong. Format and rationale: `_row_key_m`.
         "    WithRowKey = Table.AddColumn(",
-        f'        WithSiteName, "{plan.entity} Key",',
-        '        each SiteUrl & "|" & Number.ToText([Id]),',
+        f'        WithListTitle, "{plan.entity}{REPORT_KEY_SUFFIX}",',
+        f"        each {_row_key_m(plan.list_title, '[Id]')},",
         "        type text",
         "    )",
     ]
     prev = "WithRowKey"
-    for i, (fk_col, _target_title, _display) in enumerate(plan.joins, start=1):
+    for i, (fk_col, target_title, _display) in enumerate(plan.joins, start=1):
         step = f"WithFkKey{i}"
         lines[-1] += ","
         lines += [
@@ -475,7 +641,11 @@ def _render_m(plan: _ListPlan) -> str:
             # Number.ToText(null) RAISES rather than returning null, which
             # would fail the whole refresh on one blank field.
             f"        each if [{fk_col}] = null then null",
-            f'              else SiteUrl & "|" & Number.ToText([{fk_col}]),',
+            # The TARGET list's title, never this one's: this key is joined
+            # against the row key the target table publishes, so it has to be
+            # spelled the way the TARGET spells it. Both come from
+            # `_row_key_m`, which is the point of that function.
+            f"              else {_row_key_m(target_title, f'[{fk_col}]')},",
             "        type text",
             "    )",
         ]
@@ -512,6 +682,8 @@ def _render_m(plan: _ListPlan) -> str:
 
 def generate_powerquery(
     schema: Schema, bundle: MappingBundle, site_role: str,
+    *,
+    site_url: str | None = None,
 ) -> dict[str, str]:
     """One M query per list for the site role: {filename: query text}.
 
@@ -520,9 +692,14 @@ def generate_powerquery(
     copy at another site's URL, and the name follows the rows. A shared
     lookup query would bind to one URL and stamp that site's name onto
     every copy.
+
+    ``site_url``, when given, is bound as the first step of each query so
+    the pack works with nothing to configure. Omitted — the standalone
+    ``report`` command has no site to name — the queries read a ``SiteUrl``
+    text parameter instead, and are otherwise identical.
     """
     return {
-        f"{plan.list_title}.pq": _render_m(plan)
+        f"{plan.list_title}.pq": _render_m(plan, site_url=site_url)
         for plan in _build_plans(schema, bundle, site_role)
     }
 
@@ -530,17 +707,41 @@ def generate_powerquery(
 # ------------------------------------------------------------------ SQL views
 
 
-_SQL_HEADER = f"""\
--- Generated by dbml-sharepoint; regenerate rather than hand-edit.
--- T-SQL views over SharePoint list data landed in a warehouse.
+_SQL_SITE_URL_PLACEHOLDER = "https://yourtenant.sharepoint.com/sites/YourSite"
+
+
+def _sql_header(site_url: str | None) -> str:
+    """The SQLCMD preamble, with SiteUrl set to the real site when known.
+
+    Same rule as the M queries: ``build`` was given ``--site-url`` and bakes
+    it in, ``report`` was not and leaves the placeholder to be edited. The
+    trailing slash is dropped because ItemURL concatenates a path that
+    already starts with one — ``$(SiteUrl)`` is a raw prefix here, with no
+    normalisation step of the kind the M queries have to absorb it later.
+    """
+    setvar = (
+        _SQL_SITE_URL_PLACEHOLDER if site_url is None else site_url.rstrip("/")
+    )
+    aim = (
+        """\
 -- Run in SQLCMD mode; point the variables at your landing/reporting schemas
 -- and SiteUrl at the site the lists were deployed to (no trailing slash) —
--- it feeds the ItemURL helper column linking each row back to SharePoint.
+-- it feeds the ItemURL helper column linking each row back to SharePoint."""
+        if site_url is None else
+        """\
+-- Run in SQLCMD mode; point the variables at your landing/reporting schemas.
+-- SiteUrl is already set to the site this bundle was built for — it feeds
+-- the ItemURL helper column linking each row back to SharePoint."""
+    )
+    return f"""\
+-- Generated by dbml-sharepoint; regenerate rather than hand-edit.
+-- T-SQL views over SharePoint list data landed in a warehouse.
+{aim}
 -- Assumes each list lands as a table named after the list, with columns
 -- named after the SharePoint internal column names (see {REPORT_GUIDE}).
 :setvar LandingSchema landing
 :setvar ReportSchema rpt
-:setvar SiteUrl https://yourtenant.sharepoint.com/sites/YourSite
+:setvar SiteUrl {setvar}
 GO
 """
 
@@ -583,10 +784,18 @@ def _render_sql_enriched(plan: _ListPlan) -> str:
     )
 
 
-def generate_sql_views(schema: Schema, bundle: MappingBundle, site_role: str) -> str:
-    """A single SQLCMD script: typed view per list + _Enriched join views."""
+def generate_sql_views(
+    schema: Schema, bundle: MappingBundle, site_role: str,
+    *,
+    site_url: str | None = None,
+) -> str:
+    """A single SQLCMD script: typed view per list + _Enriched join views.
+
+    ``site_url``, when known, is written into the ``:setvar SiteUrl`` line
+    so the script needs no editing; otherwise a placeholder is left there.
+    """
     plans = _build_plans(schema, bundle, site_role)
-    parts = [_SQL_HEADER]
+    parts = [_sql_header(site_url)]
     parts += [_render_sql_view(plan) for plan in plans]
     parts += [_render_sql_enriched(plan) for plan in plans if plan.joins]
     return "\n".join(parts)
@@ -595,9 +804,48 @@ def generate_sql_views(schema: Schema, bundle: MappingBundle, site_role: str) ->
 # ------------------------------------------------------------ reporting guide
 
 
-def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str) -> str:
-    """Usage instructions + the Power BI relationship table."""
+def generate_reporting_md(
+    schema: Schema, bundle: MappingBundle, site_role: str,
+    *,
+    site_url: str | None = None,
+) -> str:
+    """Usage instructions + the Power BI relationship table.
+
+    ``site_url`` must be passed whenever the queries beside this guide were
+    built with it: the setup step it documents is the difference between
+    "create a parameter" and "there is nothing to create", and a guide that
+    is wrong about that costs the operator the whole first hour.
+    """
     plans = _build_plans(schema, bundle, site_role)
+    setup_step = (
+        ("1. **Manage Parameters → New parameter**: a *Text* parameter named "
+         "`SiteUrl` holding the **site** URL, e.g. "
+         "`https://tenant.sharepoint.com/sites/YourSite` (no trailing slash) "
+         "— the site, not a list or a page. Note the address bar shows the "
+         "*list* URL (`.../Lists/YourList`) while you are looking at a list; "
+         "each query trims that back to the site for you, so a pasted list, "
+         "form, page or API URL still works.")
+        if site_url is None else
+        ("1. **Nothing to configure.** Each query already carries the site it "
+         f"was built for (`{site_url}`) as its first line — see *Reporting on "
+         "several sites at once* below to point a copy somewhere else.")
+    )
+    combine_steps = (
+        [("1. Add one text parameter per site — `SiteUrl_North`, "
+          "`SiteUrl_South`, and so on."),
+         ("2. Duplicate each list query once per site (*right-click → "
+          "Duplicate*) and change `SiteUrl` in the duplicate to that site's "
+          "parameter. Nothing else needs editing: the rows, the item links, "
+          "the site name and the keys all follow that one reference.")]
+        if site_url is None else
+        [("1. Duplicate each list query once per site (*right-click → "
+          "Duplicate*)."),
+         ("2. In each duplicate, change the one `SiteUrl = \"…\"` line to "
+          "that site's URL — or replace it with a text parameter per site, "
+          "if you would rather manage them in one place. Nothing else needs "
+          "editing: the rows, the item links, the site name and the keys "
+          "all follow that one line.")]
+    )
     lines = [
         "# Reporting queries",
         "",
@@ -609,9 +857,7 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
         "",
         "## Power Query (M) — Power BI Desktop / Excel",
         "",
-        ("1. **Manage Parameters → New parameter**: a *Text* parameter named "
-         "`SiteUrl` holding the site URL, e.g. "
-         "`https://tenant.sharepoint.com/sites/YourSite` (no trailing slash)."),
+        setup_step,
         ("2. For each `.pq` file: **Get Data → Blank Query → Advanced "
          "Editor**, paste the file contents, and rename the query to the "
          "list name (the first line of the file)."),
@@ -627,10 +873,12 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
          "needs all of them together — every region, service or committee "
          "running the same lists, in one model, sliced by site."),
         "",
-        ("Every table already carries **`Site Url`** and **`Site Name`** for "
-         "that. The name is read from the site's own title at refresh time, "
-         "so nothing has to be typed in and a site renamed in SharePoint "
-         "shows its new name at the next refresh."),
+        ("Every table already carries **`Site Url`**, **`Site Name`** and "
+         "**`List Title`** for that, so a model that appends several "
+         "deployments can slice by site and by list. The site name is read "
+         "from the site's own title at refresh time, so nothing has to be "
+         "typed in and a site renamed in SharePoint shows its new name at "
+         "the next refresh."),
         "",
         ("Each query works that out for itself, from whichever URL it was "
          "given. That is deliberate: a single shared site-name query would "
@@ -639,12 +887,7 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
         "",
         "To combine deployments:",
         "",
-        ("1. Add one text parameter per site — `SiteUrl_North`, "
-         "`SiteUrl_South`, and so on."),
-        ("2. Duplicate each list query once per site (*right-click → "
-         "Duplicate*) and change `SiteUrl` in the duplicate to that site's "
-         "parameter. Nothing else needs editing: the rows, the item links, "
-         "the site name and the keys all follow that one reference."),
+        *combine_steps,
         ("3. **Append** the copies of a list into one table — *Home → Append "
          "Queries as New*."),
         ("4. Build the relationships below on the **Key** columns, not on "
@@ -652,12 +895,15 @@ def generate_reporting_md(schema: Schema, bundle: MappingBundle, site_role: str)
         "",
         (">  **`Id` is unique within one list on one site, and nowhere "
          "wider.** Append three sites and three different rows all have "
-         "`Id = 1`. A relationship on `Id` cannot then be many-to-one; Power "
-         "BI degrades it to many-to-many and joins each child to the "
-         "same-numbered parent on *every* site. The report still renders — "
-         "the numbers are just wrong. The `… Key` columns are `Site Url` and "
-         "the id together, which is unique across any number of sites, and "
-         "they are why the relationships below are safe to append."),
+         "`Id = 1` — and so do the first rows of any two lists on a single "
+         "site, because every list numbers its items from 1. A relationship "
+         "on `Id` cannot then be many-to-one; Power BI degrades it to "
+         "many-to-many and joins each child to the same-numbered parent "
+         "everywhere. The report still renders — the numbers are just "
+         "wrong. The `… Key` columns are `Site Url`, the **list title** and "
+         "the id together, which is unique across any number of sites and "
+         "lists, and they are why the relationships below are safe to "
+         "append."),
         "",
         "## Relationships (Power BI model)",
         "",
@@ -1154,11 +1400,6 @@ def _dictionary_rows(
     return rows
 
 
-def _m_string(text: str) -> str:
-    """An M string literal: double quotes are escaped by doubling."""
-    return '"' + text.replace('"', '""') + '"'
-
-
 def _render_m_table(
     query_name: str, purpose: str, type_spec: str, row_literals: list[str],
 ) -> str:
@@ -1183,7 +1424,9 @@ def _render_m_table(
     return "\n".join(lines)
 
 
-def _render_user_added_columns_m(plans: list[_ListPlan]) -> str:
+def _render_user_added_columns_m(
+    plans: list[_ListPlan], *, site_url: str | None = None,
+) -> str:
     """The live drift-audit query: every visible, deletable field on the
     deployed lists that the schema does not declare. Expected EMPTY.
 
@@ -1225,8 +1468,16 @@ def _render_user_added_columns_m(plans: list[_ListPlan]) -> str:
         "// Live drift audit: every visible, deletable column on the deployed",
         "// lists that the schema does not declare. Expected EMPTY — any row",
         "// is a column added outside this generation; investigate it.",
-        "// Requires the same SiteUrl text parameter as the list queries.",
+        *([
+            "// Requires the same SiteUrl text parameter as the list queries,",
+            "// normalised here the same way — see the SiteRoot step.",
+        ] if site_url is None else [
+            "// Carries the same baked-in site URL as the list queries,",
+            "// normalised here the same way — see the SiteRoot step.",
+        ]),
         "let",
+        *_site_url_binding_m(site_url),
+        *_SITE_ROOT_M,
         "    // Added by a tenant compliance feature outside operator",
         "    // control; a standing row here would erode the",
         "    // \"any row = investigate\" meaning of this table.",
@@ -1234,7 +1485,7 @@ def _render_user_added_columns_m(plans: list[_ListPlan]) -> str:
         "    Audit = (listTitle as text, expected as list) as table =>",
         "        let",
         "            Fields = OData.Feed(",
-        "                SiteUrl & \"/_api/web/lists/getbytitle('\" & listTitle & \"')/fields\"",
+        "                SiteRoot & \"/_api/web/lists/getbytitle('\" & listTitle & \"')/fields\"",
         # The two formula properties ride along on a call this query already
         # makes on every refresh, turning the drift audit into a refresh-time
         # check that the DEPLOYED form contract still matches the dictionary
@@ -1285,11 +1536,17 @@ def generate_dictionary_powerquery(
     generated_at: str = "",
     source_schema: str = "",
     source_mapping: str = "",
+    site_url: str | None = None,
 ) -> dict[str, str]:
     """The data dictionary as report-loadable M queries, so any report can
     surface it as a page: _DataDictionary (one row per column), _ModelInfo
     (deployment/schema metadata as field/value rows) and _UserAddedColumns
-    (live drift audit — undeclared columns on the deployed lists)."""
+    (live drift audit — undeclared columns on the deployed lists).
+
+    ``site_url`` reaches only _UserAddedColumns, the one query here that
+    talks to the site; it takes the same binding as the list queries, so a
+    bundle needs the ``SiteUrl`` parameter everywhere or nowhere.
+    """
     dd_rows = [
         "{" + ", ".join([str(i)] + [_m_string(cell) for cell in row]) + "}"
         for i, row in enumerate(_dictionary_rows(schema, bundle, site_role), start=1)
@@ -1321,7 +1578,7 @@ def generate_dictionary_powerquery(
             mi_rows,
         ),
         "_UserAddedColumns.pq": _render_user_added_columns_m(
-            _build_plans(schema, bundle, site_role),
+            _build_plans(schema, bundle, site_role), site_url=site_url,
         ),
     }
 
@@ -1435,6 +1692,7 @@ def emit_reporting(
     generated_at: str,
     source_schema: str,
     source_mapping: str,
+    site_url: str | None = None,
 ) -> list[str]:
     """Write the reporting bundle under ``out/reporting/`` and return the
     POSIX relpaths written (for checksums.txt).
@@ -1443,6 +1701,11 @@ def emit_reporting(
     artifact set cannot drift between them: per-list Power Query (M)
     plus the dictionary/model/audit queries, the SQL views script,
     the reporting guide and the data dictionary.
+
+    ``site_url`` is the deployment target, which ``build`` always has.
+    Passing it bakes the site into every query, the SQL script and the
+    guide, so the pack loads with nothing configured. It is optional only
+    because ``report`` runs without a site at all.
     """
     reporting_dir = out / REPORT_DIR
     pq_dir = reporting_dir / "powerquery"
@@ -1456,22 +1719,24 @@ def emit_reporting(
         source_mapping=source_mapping,
     )
     relpaths: list[str] = []
-    queries = generate_powerquery(schema, bundle, site_role)
+    queries = generate_powerquery(schema, bundle, site_role, site_url=site_url)
     queries.update(
-        generate_dictionary_powerquery(schema, bundle, site_role, **dictionary_kwargs),
+        generate_dictionary_powerquery(
+            schema, bundle, site_role, site_url=site_url, **dictionary_kwargs,
+        ),
     )
     for filename, content in queries.items():
         write_artifact(pq_dir / filename, content)
         relpaths.append(f"reporting/powerquery/{filename}")
     write_artifact(
         sql_dir / REPORT_VIEWS_SQL,
-        generate_sql_views(schema, bundle, site_role)
+        generate_sql_views(schema, bundle, site_role, site_url=site_url)
         + "\n"
         + generate_dictionary_sql(schema, bundle, site_role, **dictionary_kwargs),
     )
     write_artifact(
         reporting_dir / REPORT_GUIDE,
-        generate_reporting_md(schema, bundle, site_role),
+        generate_reporting_md(schema, bundle, site_role, site_url=site_url),
     )
     write_artifact(
         reporting_dir / REPORT_DICTIONARY,

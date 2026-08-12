@@ -372,6 +372,10 @@ def emit_bundle(
         out, schema, mapping_bundle, site_role,
         release=release, generated_at=generated_at,
         source_schema=schema_name, source_mapping=mapping_name,
+        # The build knows where this is going, so the reporting pack does
+        # not have to ask. Only `report`, which has no site, falls back to
+        # the SiteUrl parameter.
+        site_url=site_url,
     )
     write_index(out, reporting=True, demo=seed)
     relpaths.append("index.md")
