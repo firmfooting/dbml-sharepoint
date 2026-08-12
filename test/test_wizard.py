@@ -1695,8 +1695,10 @@ def test_the_only_declared_site_role_is_not_asked_for(
     destination = tmp_path / "proj"
     console = ScriptedConsole(_answers(destination, build="y", seed="n"))
 
-    assert wizard.run_wizard(console) == 0
-    assert "Site role" not in _collapsed(console)
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "Site role" not in shown
+    assert code == 0
     assert captured["site_role"] == "default"
     assert captured["mapping"] == destination / "20-configure" / "mapping.yaml"
     assert captured["schema"] == destination / "10-design" / "schema.dbml"
@@ -1916,9 +1918,11 @@ def test_an_empty_reader_answer_means_no_flag(
     console = ScriptedConsole(
         _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
     )
-    assert wizard.run_wizard(console) == 0
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "must not be empty" not in shown
+    assert code == 0
     assert captured["enterprise_reader"] is None
-    assert "must not be empty" not in _collapsed(console)
 
 
 def test_a_reader_answer_is_passed_through(
@@ -2006,8 +2010,10 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
         _answers(destination, template="fake-template", build="y", reader=None),
     )
 
-    assert wizard.run_wizard(console) == 0
-    assert "enrol" not in _collapsed(console).lower()
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console).lower()
+    assert "enrol" not in shown
+    assert code == 0
     assert captured["enterprise_reader"] is None
 
 
@@ -2042,10 +2048,11 @@ def test_a_template_declaring_no_demo_items_is_not_asked(
         _answers(destination, template="fake-template", build="y", reader=None),
     )
 
-    assert wizard.run_wizard(console) == 0
+    code = wizard.run_wizard(console)
     shown = _collapsed(console)
     assert "Add the demo rows?" not in shown
     assert "Demo rows are titled" not in shown
+    assert code == 0
     assert captured["seed"] is False
 
 
@@ -2092,8 +2099,10 @@ def test_an_unseeded_run_does_not_mention_the_demo_script(
         _answers(destination, build="y", seed="n"), width=400,
     )
 
-    assert wizard.run_wizard(console) == 0
-    assert "demo-data.js.txt" not in _collapsed(console)
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "demo-data.js.txt" not in shown
+    assert code == 0
 
 
 def test_the_seed_question_carries_its_caution_first(
