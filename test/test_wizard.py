@@ -57,7 +57,8 @@ class ScriptedConsole(Console):
 def _answers(
     destination: Path, *, build: str = "n", seed: str | None = None,
     reader: str | None = "", confirm: str = "y", prefix: str = "RR_",
-    **over: str,
+    template: str = "risk-register",
+    site_url: str = "https://contoso.sharepoint.com/sites/x",
 ) -> list[str]:
     """The happy-path script, in the order the wizard now asks.
 
@@ -98,13 +99,15 @@ def _answers(
     The site role is absent because every shipped family declares exactly one
     role, so the question is not put -- a family with two needs it inserted
     by hand.
+
+    `template` and `site_url` are explicit keyword parameters, not a
+    `**over: str` dict merged over a default -- that shape let a typo'd
+    keyword (`site_urlz=...`) vanish silently, which is exactly the kind of
+    drift this docstring is about. `script.update(over)` accepted ANY key,
+    so a misspelled one was simply discarded rather than raising, leaving
+    the script one answer short of what the caller thought they asked for.
+    Plain parameters make the same typo a `TypeError` at the call site.
     """
-    script = {
-        "template": "risk-register",
-        "destination": str(destination),
-        "site_url": "https://contoso.sharepoint.com/sites/x",
-    }
-    script.update(over)
     prefix_answers = ["n"] if not prefix else ["y", prefix]
     tail = [build]
     if build == "y":
@@ -113,8 +116,7 @@ def _answers(
         if seed is not None:
             tail.append(seed)
     return [
-        script["template"], *prefix_answers, script["destination"],
-        script["site_url"], *tail, confirm,
+        template, *prefix_answers, str(destination), site_url, *tail, confirm,
     ]
 
 
@@ -940,17 +942,36 @@ def test_pressing_enter_at_the_prefix_gate_means_no_prefix(
 
     Scripted as `""`, not `"n"`: `Confirm.ask(default=False)` returns its
     default whenever the raw answer is exactly empty
-    (`PromptBase.__call__`), so this proves Enter specifically -- a wizard
-    whose gate defaulted to `True` would instead proceed to the value
-    prompt, consume the next scripted answer (the destination path) as if it
-    were a prefix, and fail closed rather than quietly passing.
+    (`PromptBase.__call__`), so this proves Enter specifically.
+
+    `"List name prefix" not in shown` is the assertion that actually
+    distinguishes a `default=True` mutation, and it is checked BEFORE the
+    exit code on purpose: under `default=True` the run does not fail
+    cleanly, it fails CLOSED -- the value prompt appears, consumes the
+    destination path as a candidate prefix, and the script exhausts several
+    prompts later -- so `code == 0` alone would report a SYMPTOM (exit 130)
+    with the assertion message naming the wrong line, rather than the
+    substantive check naming the actual defect (the value prompt appeared
+    at all).
+
+    The last two assertions pin the required strings POSITIVELY, not only
+    by their absence elsewhere in the suite: MEASURED, renaming the gate's
+    own prompt text, or reverting the guidance wording to the superseded
+    "colliding with others on the same site", both leave every OTHER
+    assertion in this file green. These two lines are the only place either
+    string is required to be exactly right.
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(
         ["risk-register", "", str(destination),
          "https://contoso.sharepoint.com/sites/x", "n", "y"],
     )
-    assert wizard.run_wizard(console) == 0
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "List name prefix" not in shown
+    assert code == 0
+    assert "colliding with others named the same thing" in shown
+    assert "Give these lists a name prefix?" in shown
 
     mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
     assert mapping.mapping.prefix == ""
@@ -968,20 +989,49 @@ def test_declining_the_prefix_gate_skips_the_value_prompt(
     anyway, the next scripted answer (the destination path) would be read as
     the prefix, fail `_PREFIX_REJECTED` (it contains `\\` and `:`), loop, and
     exhaust the script.
+
+    `code == 0` is checked AFTER the substantive assertion, not before: a
+    run that fails closed under a broken gate exits 130, and asserting the
+    exit code first reports that symptom rather than the fact that the
+    value prompt appeared at all.
+
+    The Review panel's `Lists` row is asserted here too, and separately from
+    the mapping: `TemplateChoice.list_titles` is what the panel actually
+    renders, and it is a DIFFERENT code path from `_rewrite_prefix`, which is
+    what the mapping check exercises. MEASURED: changing `list_titles` to
+    `(self.prefix or self.solution.prefix) + name` -- falling back to the
+    template's own declared prefix whenever the operator's answer is blank
+    -- leaves `mapping.mapping.prefix == ""` true and every other test in
+    this file green, while the panel displays `Lists  RR_Risk` for a
+    decision that was actually "no prefix". That row is the ONLY safety net
+    the design names for the reversed Enter default, so it has to be
+    checked directly rather than inferred from the file the wizard wrote.
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(_answers(destination, prefix="", build="n"))
-    assert wizard.run_wizard(console) == 0
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "List name prefix" not in shown
+    assert code == 0
 
     mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
     assert mapping.mapping.prefix == ""
-    assert "List name prefix" not in _collapsed(console)
+    assert "Lists Risk" in _review(console)
 
 
 def test_declining_the_prefix_gate_repoints_the_docs_to_the_bare_list_name(
     tmp_path: Path,
 ) -> None:
-    """`RR_Risk` in deploy.md becomes `Risk`, not `_Risk` or `RR_Risk`."""
+    """`RR_Risk` in deploy.md becomes `Risk`, not `_Risk` or `RR_Risk`.
+
+    `"_Risk"` is asserted absent too, not only `"RR_Risk"`: a substitution
+    bug that replaced the prefix with `""` via naive concatenation rather
+    than an actual empty string could leave a stray underscore behind
+    (`RR_` -> `_`, `_` + `Risk` -> `_Risk`), and the original two-assertion
+    version could not have told that apart from success. `"Risk" in docs` on
+    its own was near-vacuous: "Risk register" appears in every one of these
+    files regardless of the prefix, so it was passing on unrelated text.
+    """
     destination = tmp_path / "out"
     console = ScriptedConsole(_answers(destination, prefix="", build="n"))
     assert wizard.run_wizard(console) == 0
@@ -990,6 +1040,7 @@ def test_declining_the_prefix_gate_repoints_the_docs_to_the_bare_list_name(
         p.read_text(encoding="utf-8") for p in destination.rglob("*.md")
     )
     assert "RR_Risk" not in docs
+    assert "_Risk" not in docs
     assert "Risk" in docs
 
 
@@ -1024,14 +1075,19 @@ def test_a_template_declaring_no_prefix_is_not_asked_for_one(
         [solution.id, str(destination),
          "https://contoso.sharepoint.com/sites/x", "n", "y"],
     )
-    assert wizard.run_wizard(console) == 0
-    assert destination.is_dir()
-    # The PROMPTS, not the word "prefix" alone. `_describe` legitimately
-    # mentions the template's declared prefix, and asserting on a bare
-    # substring would make this pass or fail on unrelated wording.
+    # Substantive checks BEFORE the exit code, and the exit code checked
+    # last: a wizard that asks either question consumes the directory
+    # answer as its own, cascades into refusals, and exits 130 -- reporting
+    # that first would name the symptom rather than which question got
+    # asked. The PROMPTS, not the word "prefix" alone. `_describe`
+    # legitimately mentions the template's declared prefix, and asserting on
+    # a bare substring would make this pass or fail on unrelated wording.
+    code = wizard.run_wizard(console)
     shown = _collapsed(console)
     assert "Give these lists a name prefix?" not in shown
     assert "List name prefix" not in shown
+    assert code == 0
+    assert destination.is_dir()
 
 
 def test_a_whitespace_only_prefix_at_the_value_prompt_is_refused_and_reprompted(
@@ -1048,6 +1104,12 @@ def test_a_whitespace_only_prefix_at_the_value_prompt_is_refused_and_reprompted(
     as `test_a_bad_prefix_is_refused_and_reprompted` and
     `test_a_prefix_with_an_interior_space_is_refused` below show for
     whitespace WITHIN a prefix.
+
+    The refusal message is asserted, matching its sibling
+    `test_a_prefix_with_an_interior_space_is_refused`: without it, a wizard
+    that re-asked for a completely different reason -- or printed no
+    explanation at all -- would still pass on the exit code and the final
+    mapping alone.
     """
     destination = tmp_path / "out"
     console = ScriptedConsole([
@@ -1061,6 +1123,7 @@ def test_a_whitespace_only_prefix_at_the_value_prompt_is_refused_and_reprompted(
         "y",   # confirm
     ])
     assert wizard.run_wizard(console) == 0
+    assert "cannot be empty or contain whitespace" in _collapsed(console)
 
     mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
     assert mapping.mapping.prefix == "RR_"
@@ -1584,6 +1647,38 @@ def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
     assert "Fake - 2 lists: Risk, Control" in _collapsed(without)
     assert "A whole sentence." in _collapsed(with_detail)
     assert without.text.count("\n") < with_detail.text.count("\n")
+
+
+def test_the_describe_detail_sentence_indents_every_wrapped_line() -> None:
+    """C5, pinned: `_describe` routes `solution.detail` through `_guidance`,
+    not a hand-written indent -- MEASURED: reverting the `if solution.
+    detail:` branch to `console.print(f"  [dim]{solution.detail}[/dim]")`
+    leaves the whole suite green today, because every OTHER test that reads
+    this text goes through `_collapsed`, which normalises whitespace and so
+    cannot see how a line wrapped.
+
+    Same shape as `test_guidance_indents_every_wrapped_line`, applied to the
+    CALLER rather than the helper: a width narrow enough to wrap the detail
+    sentence but not the header line above it. MEASURED at width 50, for
+    this solution, the header renders on exactly one line (index 1, after a
+    blank line 0 from the header print's own leading `"\\n"`) and the detail
+    block starts at index 2 -- so the header can be skipped by index rather
+    than guessed at, and is deliberately NOT asserted on here: it is printed
+    literally, not through `_guidance`, and is not what this test is about.
+    """
+    solution = Solution(
+        id="x", title="T", summary="s",
+        detail="A genuinely long detail sentence written to wrap across "
+        "several lines once the console is narrow enough to force it.",
+        lists=("Risk",), prefix="RR_", root=Path("unused"),
+    )
+    console = ScriptedConsole([], width=50)
+    wizard._describe(console, solution)
+    detail_lines = [
+        line for line in console.text.splitlines()[2:] if line.strip()
+    ]
+    assert len(detail_lines) > 1, "the detail must actually wrap to prove anything"
+    assert all(line.startswith("  ") for line in detail_lines), detail_lines
 
 
 def test_the_only_declared_site_role_is_not_asked_for(
