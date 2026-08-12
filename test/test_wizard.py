@@ -56,7 +56,8 @@ class ScriptedConsole(Console):
 
 def _answers(
     destination: Path, *, build: str = "n", seed: str | None = None,
-    reader: str | None = "", confirm: str = "y", **over: str,
+    reader: str | None = "", confirm: str = "y", prefix: str = "RR_",
+    **over: str,
 ) -> list[str]:
     """The happy-path script, in the order the wizard now asks.
 
@@ -64,23 +65,35 @@ def _answers(
     the sequence: the operator reviews the whole decision once instead of
     confirming a write and then being asked three more questions.
 
-    The order is: template, prefix, directory, site URL, [site role], build?,
-    [reporting], [demo rows], confirm. The prefix sits with the template
-    because it is a property of the template; the directory, site URL and
-    site role describe the site.
+    The order is: template, [prefix gate, [prefix value]], directory, site
+    URL, [site role], build?, [reporting], [demo rows], confirm. The prefix
+    question sits with the template because it is a property of the
+    template; the directory, site URL and site role describe the site.
+
+    `prefix` answers the two-part prefix question, and its shape carries the
+    branch: `""` answers the gate `n` (one scripted answer, and the value
+    prompt is never reached), any other value answers the gate `y` and then
+    supplies that value at the follow-up prompt (two scripted answers). This
+    is not a new convention -- `solution.prefix` and `TemplateChoice.prefix`
+    already use `""` to mean "no prefix" everywhere else in this module; the
+    parameter just moves that meaning one layer up, to the SCRIPT rather
+    than the result.
 
     **A spare answer is no longer invisible, and that is why `seed` and
-    `reader` both take `None`.** While the confirmation was the fifth answer,
-    an unread answer sat at the END of the list and did nothing. It is now
-    the LAST answer, so a spare one in the middle is read by the confirmation
-    instead -- blank confirms by default, and the scripted `confirm` value is
-    then never consumed at all. A test whose template declares no
-    `enroll_enterprise_reader` group but which still passes `reader=""`
-    therefore runs to completion whether or not the wizard asked, which is
-    exactly the shape of test that proves nothing. Pass `reader=None` (as
-    `seed` already defaults) so the script carries no answer the wizard
-    should not ask for: a wizard that asks then reads the CONFIRMATION's
-    answer as a UPN, is refused, re-asks, runs out and exits 130.
+    `reader` both take `None`, and why `prefix` changes the ANSWER COUNT
+    rather than padding with a value the wizard would refuse.** While the
+    confirmation was the fifth answer, an unread answer sat at the END of
+    the list and did nothing. It is now the LAST answer, so a spare one in
+    the middle is read by a LATER prompt instead -- which has bitten this
+    file twice: once for `reader`/`seed` (the confirmation's `y` mistaken for
+    a UPN or a seed answer) and once for the two-question prefix gate itself,
+    where a script written for the old single-prompt shape leaves either a
+    `y`/`n` unconsumed or a directory path fed to `_PREFIX_REJECTED` as a
+    prefix. Pass `reader=None` (as `seed` already defaults) so the script
+    carries no answer the wizard should not ask for: a wizard that asks then
+    reads the CONFIRMATION's answer as a UPN, is refused, re-asks, runs out
+    and exits 130. `prefix=""` gets the analogous property for free, because
+    it produces exactly the one answer the gate actually consumes.
 
     The site role is absent because every shipped family declares exactly one
     role, so the question is not put -- a family with two needs it inserted
@@ -88,18 +101,21 @@ def _answers(
     """
     script = {
         "template": "risk-register",
-        "prefix": "RR_",
         "destination": str(destination),
         "site_url": "https://contoso.sharepoint.com/sites/x",
     }
     script.update(over)
+    prefix_answers = ["n"] if not prefix else ["y", prefix]
     tail = [build]
     if build == "y":
         if reader is not None:
             tail.append(reader)
         if seed is not None:
             tail.append(seed)
-    return [*script.values(), *tail, confirm]
+    return [
+        script["template"], *prefix_answers, script["destination"],
+        script["site_url"], *tail, confirm,
+    ]
 
 
 def _collapsed(console: ScriptedConsole) -> str:
@@ -376,6 +392,7 @@ def test_refuses_a_non_empty_destination_and_reprompts(tmp_path: Path) -> None:
 
     console = ScriptedConsole([
         "risk-register",
+        "y",   # prefix gate
         "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
@@ -623,6 +640,7 @@ def test_a_bad_site_url_is_refused_by_the_cli_rule(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        "y",   # prefix gate
         "RR_",
         str(destination),
         "http://insecure.example.com/sites/x",       # refused
@@ -677,6 +695,7 @@ def test_a_bad_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
+        "y",   # prefix gate
         "has a space",   # refused
         "RR_",
         str(destination),
@@ -706,6 +725,7 @@ def test_an_unknown_template_reprompts_rather_than_exiting(tmp_path: Path) -> No
     console = ScriptedConsole([
         "no-such-template",
         "risk-register",
+        "y",   # prefix gate
         "RR_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
@@ -736,6 +756,7 @@ def test_a_blank_template_answer_reprompts_rather_than_picking_the_first(
     console = ScriptedConsole([
         "",   # Enter -- must not be taken as an answer at all
         "audit-actions",
+        "y",   # prefix gate
         "AU_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
@@ -894,6 +915,7 @@ def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
 
     console = ScriptedConsole([
         "risk-register",
+        "y",   # prefix gate
         "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
@@ -908,44 +930,60 @@ def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
     assert (destination / "README.md").is_file()
 
 
-def test_a_blank_prefix_is_accepted_and_reaches_the_mapping(
+def test_pressing_enter_at_the_prefix_gate_means_no_prefix(
     tmp_path: Path,
 ) -> None:
-    """Blank means "no prefix", exactly as it means "enrol nobody" above.
+    """The direction of this project is that prefixes go away, so Enter at
+    the new gate is deliberately the SAFEST answer -- unlike the old single
+    prompt it replaces, whose own default was the template's declared
+    prefix. This reverses that: pressing Enter now produces unprefixed lists.
 
-    MEASURED 2026-08-12: `prefix: ""` builds and emits `"Risk"` as the list
-    title throughout deploy.js.txt, and no validator rule requires one. The
-    wizard was the only thing refusing it.
-
-    The scripted answer is `" "`, not `""`. risk-register declares `RR_`, so
-    `_ask_prefix`'s `Prompt.ask(default=solution.prefix, ...)` carries a
-    NON-blank default -- and MEASURED against this checkout's rich: a truly
-    empty raw answer never reaches `_ask_prefix`'s own code at all, because
-    `PromptBase.__call__` returns `default` outright whenever the raw input
-    is exactly `""`, before `process_response` or our own `.strip()` ever
-    runs. A single space is not literally empty, so rich passes it through
-    unaltered and `_ask_prefix`'s `.strip()` reduces it to blank exactly as
-    a deliberately cleared field would.
+    Scripted as `""`, not `"n"`: `Confirm.ask(default=False)` returns its
+    default whenever the raw answer is exactly empty
+    (`PromptBase.__call__`), so this proves Enter specifically -- a wizard
+    whose gate defaulted to `True` would instead proceed to the value
+    prompt, consume the next scripted answer (the destination path) as if it
+    were a prefix, and fail closed rather than quietly passing.
     """
     destination = tmp_path / "out"
-    console = ScriptedConsole(_answers(destination, prefix=" ", build="n"))
+    console = ScriptedConsole(
+        ["risk-register", "", str(destination),
+         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+    )
     assert wizard.run_wizard(console) == 0
 
     mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
     assert mapping.mapping.prefix == ""
 
 
-def test_a_blank_prefix_repoints_the_docs_to_the_bare_list_name(
+def test_declining_the_prefix_gate_skips_the_value_prompt(
     tmp_path: Path,
 ) -> None:
-    """`RR_Risk` in deploy.md becomes `Risk`, not `_Risk` or `RR_Risk`.
+    """The explicit answer, complementing the Enter case above.
 
-    `" "`, not `""` -- see `test_a_blank_prefix_is_accepted_and_reaches_the_
-    mapping` for why a literal empty answer cannot reach blank against
-    risk-register's non-blank declared prefix.
+    `_answers(prefix="")` scripts a single `"n"` -- not blank -- so this
+    proves the typed answer takes the same path as the default, and that the
+    value prompt is genuinely SKIPPED rather than asked and its answer
+    discarded: if the gate's `return ""` fell through to the value prompt
+    anyway, the next scripted answer (the destination path) would be read as
+    the prefix, fail `_PREFIX_REJECTED` (it contains `\\` and `:`), loop, and
+    exhaust the script.
     """
     destination = tmp_path / "out"
-    console = ScriptedConsole(_answers(destination, prefix=" ", build="n"))
+    console = ScriptedConsole(_answers(destination, prefix="", build="n"))
+    assert wizard.run_wizard(console) == 0
+
+    mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
+    assert mapping.mapping.prefix == ""
+    assert "List name prefix" not in _collapsed(console)
+
+
+def test_declining_the_prefix_gate_repoints_the_docs_to_the_bare_list_name(
+    tmp_path: Path,
+) -> None:
+    """`RR_Risk` in deploy.md becomes `Risk`, not `_Risk` or `RR_Risk`."""
+    destination = tmp_path / "out"
+    console = ScriptedConsole(_answers(destination, prefix="", build="n"))
     assert wizard.run_wizard(console) == 0
 
     docs = "\n".join(
@@ -960,9 +998,13 @@ def test_a_template_declaring_no_prefix_is_not_asked_for_one(
 ) -> None:
     """A question with one possible answer is not a question.
 
-    Same gate as the reporting and demo questions. The script here carries no
-    prefix answer at all, so if the wizard asks, the destination answer is
-    consumed by the prefix prompt and the run fails.
+    Same gate as the reporting and demo questions -- and this is the OUTER
+    gate, in `_run`, distinct from the gate `_ask_prefix` now asks
+    internally: a template declaring no prefix skips BOTH the yes/no
+    question and the value prompt, never reaching `_ask_prefix` at all. The
+    script here carries no prefix answer whatsoever, so if the wizard asks
+    either question, the directory answer is consumed by it and the run
+    fails.
     """
     family = tmp_path / "family"
     solution = _fake_family(
@@ -974,7 +1016,7 @@ def test_a_template_declaring_no_prefix_is_not_asked_for_one(
     _offer_only(monkeypatch, replace(solution, prefix=""))
 
     destination = tmp_path / "out"
-    # Final order minus the prefix answer: template, directory, site URL,
+    # Final order minus both prefix answers: template, directory, site URL,
     # build?, confirm. If the wizard asks for a prefix anyway, the directory
     # answer is swallowed by that prompt and everything after it shifts, so
     # this fails loudly rather than quietly proving nothing.
@@ -984,38 +1026,44 @@ def test_a_template_declaring_no_prefix_is_not_asked_for_one(
     )
     assert wizard.run_wizard(console) == 0
     assert destination.is_dir()
-    # The PROMPT, not the word. `_describe` legitimately mentions the
-    # template's declared prefix, and asserting on a bare substring would
-    # make this pass or fail on unrelated wording.
-    assert "List name prefix" not in _collapsed(console)
+    # The PROMPTS, not the word "prefix" alone. `_describe` legitimately
+    # mentions the template's declared prefix, and asserting on a bare
+    # substring would make this pass or fail on unrelated wording.
+    shown = _collapsed(console)
+    assert "Give these lists a name prefix?" not in shown
+    assert "List name prefix" not in shown
 
 
-def test_a_whitespace_only_prefix_means_no_prefix(tmp_path: Path) -> None:
-    """A DELIBERATE behaviour change, replacing the old refusal.
+def test_a_whitespace_only_prefix_at_the_value_prompt_is_refused_and_reprompted(
+    tmp_path: Path,
+) -> None:
+    """The value prompt no longer has a "no prefix" meaning of its own.
 
-    `_ask_prefix` has always `.strip()`ed the answer, so `"   "` reached the
-    emptiness check as `""` and was refused along with a genuinely empty
-    answer. Now that blank is a real answer meaning "no prefix", an
-    all-whitespace answer is an empty one and means the same thing -- the
-    operator cannot see the difference on screen, so the wizard should not
-    invent one.
-
-    This REPLACES `test_a_whitespace_only_prefix_is_refused_and_reprompted`,
-    which pinned the old refusal -- verified against this checkout on
-    2026-08-12 that the old test still existed before it was deleted here;
-    the two cannot both hold.
-
-    A prefix with whitespace INSIDE it -- `"AC ME_"` -- is still refused by
-    `_PREFIX_REJECTED`, which is what
-    `test_a_bad_prefix_is_refused_and_reprompted` and
-    `test_a_prefix_with_an_interior_space_is_refused` below cover.
+    For one round, `_ask_prefix` treated a whitespace-only answer as
+    equivalent to blank, meaning "no prefix" -- but that meaning has moved
+    to the new yes/no gate, and "no sentinel word, no whitespace trick" is
+    the design decision that retired it. Past the gate, the value prompt
+    reverts to requiring an actual value: `"   "` strips to `""`, which is
+    refused exactly as it was before this whole feature existed, and exactly
+    as `test_a_bad_prefix_is_refused_and_reprompted` and
+    `test_a_prefix_with_an_interior_space_is_refused` below show for
+    whitespace WITHIN a prefix.
     """
     destination = tmp_path / "out"
-    console = ScriptedConsole(_answers(destination, prefix="   ", build="n"))
+    console = ScriptedConsole([
+        "risk-register",
+        "y",       # prefix gate
+        "   ",     # refused: strips to empty
+        "RR_",
+        str(destination),
+        "https://contoso.sharepoint.com/sites/x",
+        "n",   # build
+        "y",   # confirm
+    ])
     assert wizard.run_wizard(console) == 0
 
     mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
-    assert mapping.mapping.prefix == ""
+    assert mapping.mapping.prefix == "RR_"
 
 
 def test_a_prefix_with_an_interior_space_is_refused(tmp_path: Path) -> None:
@@ -1023,18 +1071,17 @@ def test_a_prefix_with_an_interior_space_is_refused(tmp_path: Path) -> None:
 
     `test_a_bad_prefix_is_refused_and_reprompted` already scripts a refused
     answer containing interior spaces (`"has a space"`), so this is
-    deliberately redundant with it: dropping the whitespace-only refusal
-    above must not quietly drop the interior-whitespace one too, and a
-    second test naming that case explicitly is cheaper than trusting the
-    other test's string to keep meaning what it means.
+    deliberately redundant with it: a second test naming this case
+    explicitly is cheaper than trusting the other test's string to keep
+    meaning what it means.
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        ["risk-register", "AC ME_", "RR_", str(destination),
+        ["risk-register", "y", "AC ME_", "RR_", str(destination),
          "https://contoso.sharepoint.com/sites/x", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
-    assert "cannot contain whitespace" in _collapsed(console)
+    assert "cannot be empty or contain whitespace" in _collapsed(console)
 
 
 def test_guidance_indents_every_wrapped_line() -> None:
@@ -1073,6 +1120,7 @@ def test_a_number_outside_the_table_reprompts_rather_than_indexing(
         "0",     # refused
         "999",   # refused
         "risk-register",
+        "y",   # prefix gate
         "RR_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
@@ -1400,7 +1448,7 @@ def test_the_panel_bounds_survive_a_template_named_after_a_panel(
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(
-        [solution.id, "NEW_", str(destination),
+        [solution.id, "y", "NEW_", str(destination),
          "https://contoso.sharepoint.com/sites/x", "y", "y"],
         width=400,
     )
@@ -1481,7 +1529,7 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
 
     destination = tmp_path / "out"
     console = ScriptedConsole(
-        [solution.id, "NEW_", str(destination),
+        [solution.id, "y", "NEW_", str(destination),
          "https://contoso.sharepoint.com/sites/x", "branch", "n", "y"],
     )
     assert wizard.run_wizard(console) == 0
@@ -1593,6 +1641,7 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
+        "y",   # prefix gate
         "NEW_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
@@ -1641,6 +1690,7 @@ def test_a_mapping_with_no_role_called_default_is_offered_no_default(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
+        "y",   # prefix gate
         "NEW_",
         str(destination),
         "https://contoso.sharepoint.com/sites/x",
@@ -1819,6 +1869,7 @@ def test_a_bad_reader_address_is_refused_and_reprompted(
     console = ScriptedConsole(
         [
             "risk-register",
+            "y",                            # prefix gate
             "RR_",
             str(tmp_path / "proj"),
             "https://contoso.sharepoint.com/sites/x",
@@ -2043,13 +2094,13 @@ def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
     _offer_only(monkeypatch, solution)
 
     destination = tmp_path / "out"
-    # Two answers only -- the template and its prefix. The guard runs
-    # straight after the prefix, so a third scripted answer would never be
-    # consumed, and a spare answer at the end of a script is invisible, which
-    # is exactly how a test comes to assert less than it looks like it does.
-    # Under-scripting is the honest failure mode here: it surfaces as
-    # EOFError and exit 130, not silence.
-    console = ScriptedConsole([solution.id, "NEW_"])
+    # Three answers only -- the template and the two-part prefix question
+    # (gate, then value). The guard runs straight after the prefix, so a
+    # fourth scripted answer would never be consumed, and a spare answer at
+    # the end of a script is invisible, which is exactly how a test comes to
+    # assert less than it looks like it does. Under-scripting is the honest
+    # failure mode here: it surfaces as EOFError and exit 130, not silence.
+    console = ScriptedConsole([solution.id, "y", "NEW_"])
     assert wizard.run_wizard(console) == 1
     assert not destination.exists()
     assert "fake-template" in _collapsed(console)

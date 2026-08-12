@@ -272,41 +272,62 @@ def _ask_destination(console: Console, solution: Solution) -> Path:
 
 
 def _ask_prefix(console: Console, solution: Solution) -> str:
-    """The prefix this template's lists will carry. Blank is an answer.
+    """Whether this template's lists carry a prefix, and if so, which.
 
-    Blank means "no prefix" -- the lists are named exactly as the template
-    declares them -- exactly as blank means "enrol nobody" in
-    `_ask_enterprise_reader`. This used to loop until the answer was
-    non-empty, which made the wizard the only thing in the project requiring
-    a prefix: no validator rule asks for one, and MEASURED 2026-08-12 a
-    mapping with `prefix: ""` builds and emits `"Risk"` as the list title
-    throughout deploy.js.txt.
+    A yes/no gate, DEFAULTING TO NO, in front of the value prompt -- not a
+    blank answer AT the value prompt meaning "no prefix", which is what this
+    function did for one round. MEASURED then, and still the reason the gate
+    exists rather than a sentinel answer: rich's `PromptBase.__call__` reads
 
-    The prefix is a governance device -- you register yours so nobody else
-    takes it, which is what `prefix_owner` and `prefix_registry` record --
-    and it is on its way out. Making blank answerable means removing it is a
-    change to the templates, not to this file.
+        if value == "" and default != ...:
+            return default
 
-    `_PREFIX_REJECTED` still applies to a non-blank answer: a prefix of " "
-    would name a list " Risk", which is a typo, not a decision.
+    -- so a truly empty raw answer at a prompt carrying `default=solution.
+    prefix` (non-empty, since this function only runs when the template
+    declares one) can NEVER resolve to blank. It always resolves to the
+    declared prefix, before this function's own code runs at all. There was
+    no answer an operator could type at a single prompt that reliably meant
+    "no prefix" without also being indistinguishable from a typo -- a
+    whitespace trick worked only by accident of `.strip()`, and typing a
+    real value versus typing "nothing, on purpose" are different decisions
+    that deserve different questions.
+
+    Defaulting to NO is deliberate and reverses the old single-prompt
+    behaviour, where Enter accepted the template's declared prefix: the
+    direction of this project is that prefixes go away, so pressing Enter
+    now produces UNPREFIXED lists. The Review panel's `Lists` row is the
+    safety net that shows `Risk` versus `RR_Risk` before anything is
+    written -- see `_review_panel`.
+
+    Only reached when `solution.prefix` is truthy -- `_run` gates the call
+    itself, the same way it gates the reporting and demo-rows questions --
+    so a template declaring no prefix asks NEITHER question.
+
+    Once past the gate, the value prompt reverts to requiring a real,
+    well-formed value: blank there is refused exactly as it was before this
+    function ever grew a "no prefix" meaning, since "no prefix" is now
+    answered by the gate and never reaches this prompt at all.
     """
     _guidance(
         console,
-        "A prefix keeps these lists from colliding with others on the same "
-        "site. Blank names them exactly as the template declares them.",
+        "A prefix keeps these lists from colliding with others named the "
+        "same thing. Say no to use the template's own names.",
     )
+    if not Confirm.ask(
+        "Give these lists a name prefix?", default=False, console=console,
+    ):
+        return ""
     while True:
         prefix = Prompt.ask(
             "[bold]List name prefix[/bold]",
             default=solution.prefix,
             console=console,
         ).strip()
-        if not prefix or not _PREFIX_REJECTED.search(prefix):
+        if prefix and not _PREFIX_REJECTED.search(prefix):
             return prefix
         console.print(
-            "[red]A prefix cannot contain whitespace or any of "
-            '[/red][bold]/ \\ : * ? " < > |[/bold][red]. '
-            "Leave it blank for no prefix.[/red]",
+            "[red]A prefix cannot be empty or contain whitespace or any of "
+            '[/red][bold]/ \\ : * ? " < > |[/bold][red].[/red]',
         )
 
 
