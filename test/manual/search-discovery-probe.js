@@ -303,10 +303,35 @@
  * how many times they came back. Here CLEANUP is a pure tidy-up switch —
  * it recycles and does not recreate.
  *
- * ---- HOW TO RUN -------------------------------------------------------
- *   0. SIGN IN AS THE REPORTING SERVICE ACCOUNT. That is the run this file
- *      is now for; see the STATUS block. An operator run is still useful
- *      for S1-S9 and S11-S12, but it cannot answer S10.
+ * ---- HOW TO RUN: TWO RUNS, BY TWO DIFFERENT IDENTITIES -----------------
+ * This file asks two kinds of question and they do NOT want the same
+ * account. Running it once, as either identity, leaves half of it open.
+ *
+ *   S1-S10 measure WHO IS ASKING. Search trims on the caller's identity,
+ *   so only the reporting service account's own result set answers them.
+ *   An operator sees everything and would produce a confident wrong
+ *   answer -- which is why S10 refuses to read an operator run as a pass.
+ *
+ *   S11-S12 measure WHAT THE SERVER DOES: whether SharePoint emits a
+ *   continuation token when it truncates a 6,000-row read. The identity is
+ *   IRRELEVANT to that. An operator measures it exactly as well.
+ *
+ *   RUN A -- as the REPORTING SERVICE ACCOUNT, on a site holding lists it
+ *   has actually been granted. Set RUNNING_AS_READER = true and point
+ *   LIST_TITLE at one of those granted lists. S11/S12 will report an unmet
+ *   prerequisite because that account cannot read the paging fixture. THAT
+ *   IS CORRECT, not a failure -- take S1-S10 from this run.
+ *
+ *   RUN B -- as an OPERATOR, on the site holding PAGING_FIXTURE_LIST. Leave
+ *   RUNNING_AS_READER = false. The search rows will show an untrimmed view
+ *   and S10 will say so rather than claiming an answer -- take S11/S12 from
+ *   this run.
+ *
+ *   DO NOT GRANT THE READER ACCESS TO THE PAGING FIXTURE to collapse this
+ *   into one run. It would not make the paging answer any truer, because
+ *   server-side truncation does not depend on who is asking, and it would
+ *   put a reporting account on a development fixture for nothing.
+ *
  *   1. Edit the constants under CONFIGURATION. LIST_TITLE and MARKER_TOKEN
  *      ship as obvious placeholders, and the questions that need them
  *      refuse to run and say which constant to set, so an unedited paste
@@ -314,9 +339,9 @@
  *      RUNNING_AS_READER = true if and only if you are signed in as the
  *      reporting service account. There is deliberately NO SITE URL: the
  *      probe reads the site it was pasted into.
- *   2. Open the target SharePoint site — for S11 and S12 to answer, the
- *      site holding PAGING_FIXTURE_LIST. F12 -> Console -> paste -> Enter.
- *      It prints its plan and stops.
+ *   2. Open the site for whichever run this is -- a site with granted
+ *      lists for RUN A, the site holding PAGING_FIXTURE_LIST for RUN B.
+ *      F12 -> Console -> paste -> Enter. It prints its plan and stops.
  *   3. Set CONFIRMED = true and paste again. That answers everything
  *      except S6 and writes nothing.
  *   4. Optionally, on a site you are content to leave a list on: set
@@ -527,7 +552,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 51c370ac — quote this when reporting results.');
+  log('INFO', 'probe revision 1c65a683 — quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // NO SITE URL, deliberately — see the harness.
