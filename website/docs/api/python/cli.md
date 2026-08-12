@@ -40,10 +40,10 @@ for explicitly and so it appears in `--help`.
 ### `validate_site_url`
 
 ```python
-def validate_site_url(site_url: str) -> None
+def validate_site_url(site_url: str) -> str
 ```
 
-Reject a malformed or non-https ``--site-url`` at parse time.
+Reject a malformed or non-https ``--site-url``, and return it cleaned.
 
 The URL is interpolated into the generated deploy.js.txt (as ``SITE_URL`` and in
 the site-match preflight comparison), so it must be a well-formed absolute
@@ -51,6 +51,21 @@ the site-match preflight comparison), so it must be a well-formed absolute
 missing host) before the operator pastes into a privileged console. Shared
 by the core CLI and any extension project CLIs that compose it. Raises
 ``typer.BadParameter`` (exit 2) on failure.
+
+RETURNS the URL with any query or fragment removed, rather than refusing
+it. SharePoint's own **Copy link** puts `?web=1` on the clipboard, so the
+most common paste carried one, and nothing downstream stripped it: the
+reporting pack bakes this value into the Power Query `SiteRoot` and the
+SQLCMD `SiteUrl`, producing endpoints like
+`https://tenant/sites/X?web=1/_api/web`. Every consumer reads the value
+`execute_build` holds after this call, so cleaning it once here reaches
+all of them.
+
+Normalising rather than refusing follows the precedent already on this
+branch -- `_SITE_ROOT_M` trims a pasted LIST url back to the site root
+rather than making the operator edit it. But a silent rewrite of what
+somebody typed is its own defect, so the caller is expected to compare
+and say so; see `_site_url_notice`.
 
 ### `validate_enterprise_reader`
 

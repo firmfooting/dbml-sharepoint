@@ -816,6 +816,78 @@ def test_build_rejects_non_https_site_url(tmp_path: Path) -> None:
     assert not (out / "deploy.js.txt").exists()
 
 
+@pytest.mark.parametrize(
+    ("given", "used"),
+    [
+        ("https://example.sharepoint.com/sites/test?web=1",
+         "https://example.sharepoint.com/sites/test"),
+        ("https://example.sharepoint.com/sites/test#Overview",
+         "https://example.sharepoint.com/sites/test"),
+        ("https://example.sharepoint.com/sites/test?web=1#Overview",
+         "https://example.sharepoint.com/sites/test"),
+    ],
+)
+def test_a_query_or_fragment_never_reaches_the_generated_bundle(
+    tmp_path: Path, given: str, used: str,
+) -> None:
+    """SharePoint's own Copy link puts `?web=1` on the clipboard.
+
+    Nothing downstream stripped it, and the site URL is baked into the
+    reporting pack -- the Power Query `SiteRoot` and the SQLCMD `SiteUrl` --
+    so the generated endpoints came out as
+    `https://tenant/sites/X?web=1/_api/web`.
+
+    Asserted against the EMITTED artefacts, not the validator, because the
+    validator returning something clean proves nothing about what the build
+    wrote. The operator is told, because a silent rewrite of what they typed
+    is indistinguishable from one that went wrong.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", given,
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+
+    emitted = [p for p in out.rglob("*") if p.is_file()]
+    assert emitted, "the build produced nothing to check"
+    offenders = [
+        p.relative_to(out).as_posix() for p in emitted
+        if "?web=1" in p.read_text(encoding="utf-8", errors="replace")
+        or "#Overview" in p.read_text(encoding="utf-8", errors="replace")
+    ]
+    assert not offenders, offenders
+    # And the cleaned form really is what was baked in, so this cannot pass
+    # by the URL being absent altogether.
+    assert any(
+        used in p.read_text(encoding="utf-8", errors="replace") for p in emitted
+    )
+    assert "Ignoring the query or fragment" in result.output
+
+
+def test_a_clean_site_url_is_passed_through_and_not_announced(
+    tmp_path: Path,
+) -> None:
+    """The complement: no rewrite, and nothing said about one."""
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "Ignoring the query or fragment" not in result.output
+
+
 def test_build_reports_validation_errors_without_crashing(tmp_path: Path) -> None:
     """Regression: a schema with an unsupported column type must exit via the
     validation-error path (writing a findings manifest, exit 1), not crash
