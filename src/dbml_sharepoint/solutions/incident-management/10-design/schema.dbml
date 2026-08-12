@@ -57,6 +57,8 @@ Table Incident {
     Category
     ReportedDate
   }
+
+  Note: 'Things that went wrong and were reported: what happened, how serious, who is running the response and when it was resolved. Any member of staff may add one.'
 }
 
 Table CorrectiveAction {
@@ -75,4 +77,6 @@ Table CorrectiveAction {
     Incident
     DueDate
   }
+
+  Note: 'The fixes agreed after an incident, each linked to the one it came from, with somebody named and a date. Completing them is what stops a recurrence.'
 }

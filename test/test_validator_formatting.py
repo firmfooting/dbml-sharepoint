@@ -169,6 +169,9 @@ def test_today_offset_valid_on_calculated_date() -> None:
         "Risk",
         make_column("Title", required=True),
         make_column("NextReviewDue", "calculated_date"),
+        # The table needs a note or ENTITY_HAS_NO_NOTE joins the error list
+        # this test asserts is empty.
+        note="The fixture risk list.",
     ))
     bundle = make_bundle(
         entities=["Risk"],
@@ -331,6 +334,7 @@ def test_calculated_formula_referencing_a_phase_two_lookup_is_rejected() -> None
 def test_calculated_formula_referencing_a_phase_one_column_is_fine() -> None:
     schema = make_schema(make_table(
         "Risk", make_column("Title", required=True), make_column("Label", "calculated_text"),
+        note="The fixture risk list.",
     ))
     bundle = make_bundle(
         entities=["Risk"], calculated_formulas={"Risk": {"Label": "=CONCATENATE([Title])"}},

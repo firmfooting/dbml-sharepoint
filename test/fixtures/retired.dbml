@@ -14,4 +14,6 @@ Table Board {
   BoardDate date [not null]
   OperationsStatus rag
   SiteServicesStatus rag
+
+  Note: 'Retirement fixture huddle boards, one row per board date with a stream rating each.'
 }

@@ -5,4 +5,6 @@ Table Node {
   Id     int       [pk, increment]
   Title  nvarchar  [not null]
   Parent int       [ref: > Node.Id]
+
+  Note: 'Self-reference fixture nodes, each optionally naming a parent node.'
 }

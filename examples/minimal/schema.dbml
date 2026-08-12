@@ -17,4 +17,6 @@ Table Ticket {
   indexes {
     Status
   }
+
+  Note: 'Requests raised by staff and tracked to completion, each one owned by a named person and carrying the status and due date the queue is worked from.'
 }

@@ -7,6 +7,8 @@ Table Project {
   Id        int        [pk, increment]
   Title     nvarchar   [not null]
   ReportsTo int        [ref: > Project.Id]
+
+  Note: 'Cross-site fixture projects, each optionally reporting to another project.'
 }
 
 Table Task {
@@ -16,4 +18,6 @@ Table Task {
   Status    status     [not null]
   OrgUnitCode nvarchar [not null]
   SchemaVersion         nvarchar [not null]
+
+  Note: 'Cross-site fixture tasks, each owned by a project and tagged with an org unit code.'
 }

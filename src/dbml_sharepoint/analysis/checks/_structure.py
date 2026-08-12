@@ -3,6 +3,14 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
+    NAME_BUDGET,
+    family_for,
+    marker_for,
+    note_budget,
+)
 from dbml_sharepoint.analysis.lookups import (
     DEFAULT_DISPLAY_COLUMN,
     lookup_target_entities,
@@ -22,6 +30,7 @@ from dbml_sharepoint.analysis.validator import (
     _rendered_columns,
     formula_column_refs,
 )
+from dbml_sharepoint.model.parser import Table
 
 # Calculated fields accept only a subset of column types as operands.
 # Microsoft lists Single line of text, Number, Currency, Date and Time,
@@ -71,6 +80,214 @@ _SUPPORTED_CALCULATED_OPERANDS = (
 # which refusing a specific list of templates would.
 _GENERIC_LIST_TEMPLATE = 100
 
+# Characters a table `Note:` may not contain, each with the name to call it in
+# a message and the thing to write instead.
+#
+# NOT A STYLE RULE, and not a claim about SharePoint either. It is a rule about
+# what this tool can PROVE. `reconcileListDescription` in
+# `templates/deploy/_field_reconcile.js.j2` writes the composed Description,
+# reads it straight back and compares it byte for byte -- and that the value
+# comes back unchanged is INFERRED from the long-standing field-description
+# case, not measured. Learn documents `SP.List.Description` as a plain
+# read/write string and says nothing about normalisation in either direction,
+# and no probe has been run. ValidationFormula is the standing proof that the
+# inference can be wrong: SharePoint demonstrably normalises those, which is
+# why `canonicalFormula` had to exist at all.
+#
+# `\r` earns its own entry rather than being folded into `\n`: a DBML file
+# saved with CRLF endings puts one in the note on its own, and a rule that
+# checked only `\n` would pass a note the reconcile could still trip over.
+#
+# WHY IT IS AN ERROR AT BUILD TIME. If a list Description IS normalised --
+# `&` returned as `&amp;`, a newline rewritten, a run of spaces collapsed --
+# then the read-back never matches what was sent and the deploy aborts. It
+# fails closed, which is the right failure, but it fails PART-WAY THROUGH A
+# PASTE against a partially provisioned site, and it does so on every re-paste
+# forever, with no way forward but re-authoring the schema. Refusing the note
+# here costs an author one word; the alternative strands an operator.
+#
+# TEMPORARY BY CONSTRUCTION. The restriction lifts the day a `test/manual/`
+# probe measures it: set a description containing a newline, an `&` and a run
+# of spaces, read it straight back, compare bytes. If it survives, delete this
+# rule and the note in `website/docs/reference/dbml.md`; if it does not, this
+# rule is what stopped it reaching a live site.
+_UNPROVEN_NOTE_CHARACTERS: tuple[tuple[str, str, str], ...] = (
+    ("&", "an ampersand", 'write "and"'),
+    ("\n", "a line break", "keep the note to a single paragraph"),
+    ("\r", "a line break", "keep the note to a single paragraph"),
+)
+
+
+def _no_room_for_any_note(family: str, entity_name: str) -> str:
+    """The remedy to offer when the note budget is ZERO.
+
+    At `len(family) + len(entity)` of 184 or more the marker plus the reserve
+    fill the Description on their own, and `note_budget` clamps to zero. The
+    two note rules are then JOINTLY UNSATISFIABLE: no note fires
+    `ENTITY_HAS_NO_NOTE`, and any note at all fires
+    `ENTITY_NOTE_TOO_LONG_FOR_MARKER`. Neither rule is wrong -- the list really
+    is anonymous, and the note really does not fit -- but their ordinary advice
+    is not: "add a note of up to 0 characters" and "shorten the note by N" are
+    both instructions the author cannot carry out.
+
+    So when the budget is zero, both messages say the actionable thing instead,
+    which is that the NAMES are what has to change. It takes absurd names to
+    reach -- no shipped family is within a hundred characters of it -- but a
+    message that sends someone in a circle is worse the rarer it is, because
+    nobody will have seen it before.
+    """
+    return (
+        f"No note of any length can be accepted here: the family name "
+        f"{family!r} ({len(family)} characters) and the entity name "
+        f"{entity_name!r} ({len(entity_name)} characters) leave the "
+        f"{DESCRIPTION_LIMIT}-character list Description with no room beside "
+        f"the marker and the {MARKER_GROWTH_RESERVE} characters reserved for "
+        f"it to grow into. Shorten the DBML `Project` name or the table name; "
+        f"together they must come to under {NAME_BUDGET} characters for a note "
+        f"to fit at all."
+    )
+
+
+def _note_is_present(table: Table | None, entity_name: str, family: str) -> list[Finding]:
+    """Refuse an entity whose table carries no `Note:` at all.
+
+    A list Description is the one list-level sentence this tool writes, and a
+    table with no note deploys a list whose Description is the provenance
+    marker and nothing else. The list works, the marker is intact and fleet
+    reporting still finds it -- so nothing downstream ever complains. What is
+    lost is the only place an adopter opening list settings is told what the
+    list is for, and that loss is invisible from every direction except the
+    settings page itself.
+
+    Skipped when the table is missing: `ENTITY_NOT_IN_SCHEMA` already reports
+    that, and "your table has no note" is unhelpful advice about a table that
+    does not exist.
+
+    A whitespace-only note counts as absent, because that is what
+    `list_description` does with it -- it strips, and an all-space note
+    composes exactly the same Description an empty one does.
+    """
+    if table is None or table.note.strip():
+        return []
+    budget = note_budget(family, entity_name)
+    remedy = (
+        f"Add a Note: to the {entity_name} table -- up to {budget} characters "
+        f"fit beside the marker -- saying what the list is for and who uses it."
+        if budget > 0
+        else _no_room_for_any_note(family, entity_name)
+    )
+    return [Finding(
+        FindingCode.ENTITY_HAS_NO_NOTE,
+        f"{entity_name}: the table has no Note:, so this list deploys with "
+        f"{marker_for(family, entity_name)!r} as its entire Description and "
+        f"nothing telling an adopter what it holds. {remedy}",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
+
+def _note_round_trips(table: Table | None, entity_name: str) -> list[Finding]:
+    """Refuse a table `Note:` whose round trip through SharePoint is unproven.
+
+    See `_UNPROVEN_NOTE_CHARACTERS` for the whole argument. The short version:
+    the deploy writes the Description and compares the read-back byte for
+    byte, that comparison is an INFERENCE rather than a measurement, and a
+    character that does not survive turns every paste of the bundle into a
+    mid-deploy abort on a partially provisioned site. This rule moves that
+    failure to build time, where it costs an edit rather than a stranded
+    operator.
+
+    Measured against the STRIPPED note, because that is what
+    `list_description` composes with: a note that is merely indented, or that
+    ends with the newline before its closing quote, carries nothing into the
+    Description and must not be refused for it.
+
+    Skipped when the table is missing, like the two rules either side:
+    `ENTITY_NOT_IN_SCHEMA` is the whole story there.
+    """
+    if table is None:
+        return []
+    note = table.note.strip()
+    # `dict` rather than a set: it de-duplicates `\n` and `\r`, which share a
+    # name, while keeping the declaration order so the message is stable.
+    offenders = {
+        name: remedy
+        for char, name, remedy in _UNPROVEN_NOTE_CHARACTERS
+        if char in note
+    }
+    if not offenders:
+        return []
+    named = " and ".join(offenders)
+    remedy = "; ".join(dict.fromkeys(offenders.values()))
+    return [Finding(
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+        f"{entity_name}: the table's Note: contains {named}, and this tool "
+        f"cannot prove that survives the deploy. The list Description is "
+        f"written, read straight back and compared byte for byte -- but that "
+        f"it comes back unchanged is INFERRED from the field case, not "
+        f"measured, and Microsoft Learn documents no normalisation either "
+        f"way. If SharePoint returns `&` as `&amp;` or rewrites a line break, "
+        f"the comparison never matches and EVERY paste of this bundle aborts "
+        f"part-way through the deploy, against a site that is already half "
+        f"provisioned, with no way forward. Refused at build time so that "
+        f"cannot happen: {remedy}. The restriction lifts when a test/manual/ "
+        f"probe measures the round trip.",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
+
+def _note_fits_beside_marker(
+    table: Table | None, entity_name: str, family: str,
+) -> list[Finding]:
+    """Refuse a table `Note:` too long to leave room for the provenance marker.
+
+    The deployed list Description is the note followed by a marker, and fleet
+    reporting discovers the list BY that marker. So the marker is never
+    truncated and the note is refused here instead.
+
+    Truncating the note would lose prose, which anyone who opens list settings
+    can see. Truncating the marker loses the list from every fleet report --
+    and NOTHING can see that: the list provisions, the Description the deploy
+    reads back matches the truncated one it sent, and every deploy phase
+    passes. Build time is the last point at which the mistake is still
+    observable.
+
+    Note what that does NOT claim. Whether a list Description survives the
+    round trip byte for byte is an inference here, not a measurement -- see
+    `_UNPROVEN_NOTE_CHARACTERS`. It makes no difference to this rule: a
+    truncated marker is invisible whether the read-back compares equal or
+    aborts the run, so the note is refused either way.
+
+    The budget is computed rather than a constant, because it depends on the
+    length of the family and entity names inside the marker. It comes from the
+    same module `generators.jsgen` composes the description with, so the rule
+    and the emitter cannot disagree about what fits.
+    """
+    note = table.note.strip() if table is not None else ""
+    budget = note_budget(family, entity_name)
+    if len(note) <= budget:
+        return []
+    remedy = (
+        f"Shorten the note by {len(note) - budget} character(s). "
+        f"{MARKER_GROWTH_RESERVE} further characters of the "
+        f"{DESCRIPTION_LIMIT}-character list Description would fit but are "
+        f"held in reserve, so that the marker can grow without invalidating "
+        f"notes already written."
+        if budget > 0
+        # At a budget of zero "shorten it by 41 characters" means "delete all
+        # of it", which the other note rule then refuses. See
+        # `_no_room_for_any_note`.
+        else _no_room_for_any_note(family, entity_name)
+    )
+    return [Finding(
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+        f"{entity_name}: the table's Note: is {len(note)} characters, but the "
+        f"budget beside the provenance marker "
+        f"{marker_for(family, entity_name)!r} is {budget}. The marker is how "
+        f"fleet reporting finds this list, so it is never truncated. "
+        f"{remedy}",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
 
 def check(vc: ValidationContext) -> list[Finding]:
     schema = vc.schema
@@ -86,6 +303,11 @@ def check(vc: ValidationContext) -> list[Finding]:
     # for one it does — and it did: a list reached only by a CROSS-SITE ref has
     # no picker at all, so it was told its picker would stop working.
     lookup_targets = lookup_target_entities(schema, vc.cross_site_pairs)
+
+    # The family the emitter will stamp into every list Description. Resolved
+    # once, from the same helper `generators.jsgen` uses, so the budget this
+    # rule enforces is the budget the emitter actually has.
+    family = family_for(schema)
 
     # `kind: DocumentLibrary` is REFUSED, and refused here so that it fails
     # at build rather than part-way through a paste.
@@ -140,6 +362,14 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"refused outright -- see issue #14.",
                 location=Location(Section.ENTITIES, entity=entity_name),
             ))
+
+        findings += _note_is_present(
+            tables_by_name.get(entity_name), entity_name, family,
+        )
+        findings += _note_fits_beside_marker(
+            tables_by_name.get(entity_name), entity_name, family,
+        )
+        findings += _note_round_trips(tables_by_name.get(entity_name), entity_name)
 
         # A lookup's picker enumerates its target list. A calculated display
         # column cannot be indexed, so the enumeration is refused once the

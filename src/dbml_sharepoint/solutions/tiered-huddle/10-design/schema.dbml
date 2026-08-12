@@ -108,6 +108,8 @@ Table Tier1Board {
     OverallStatus
     HuddleHeld
   }
+
+  Note: 'One row per day for the frontline team huddle, with a status against each stream. A blank stream records that it did not report, which is not the same as green.'
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +146,8 @@ Table Tier2Board {
     OverallStatus
     HuddleHeld
   }
+
+  Note: 'One row per day for the department or service huddle. The same discipline as the team board, over the eight streams a service reports on rather than six.'
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +199,8 @@ Table Tier3Board {
     OverallStatus
     HuddleHeld
   }
+
+  Note: 'One row per day for the site or executive huddle, across ten reporting streams. This is the board a leadership team reads its own last fortnight back from.'
 }
 
 // ---------------------------------------------------------------------------
@@ -240,4 +246,6 @@ Table Escalation {
     TargetTier
     Owner
   }
+
+  Note: 'Anything a huddle could not settle at its own tier, with the tier it went to, an owner and a date to come back. Items travel down and sideways as well as up.'
 }

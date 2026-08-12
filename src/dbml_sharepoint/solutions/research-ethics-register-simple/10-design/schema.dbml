@@ -268,4 +268,6 @@ Table Project {
     ProjectStage
     NextReportDue
   }
+
+  Note: 'Research and quality projects reviewed by a partner ethics committee. Both gates: the committee decision and authorisation to begin at this site.'
 }

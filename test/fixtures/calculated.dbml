@@ -14,4 +14,6 @@ Table Risk {
   Severity  severity
   RiskScore calculated_number [note: 'Derived from Severity; formula in mapping.']
   RiskBand  calculated_text   [note: 'Derived from Severity; formula in mapping.']
+
+  Note: 'Calculated-column fixture risks, each with a severity and two columns derived from it.'
 }

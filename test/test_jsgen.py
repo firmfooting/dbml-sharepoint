@@ -6,6 +6,14 @@ from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
+    UNNAMED_FAMILY,
+    list_description,
+    marker_for,
+    note_budget,
+)
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
@@ -3110,3 +3118,169 @@ def test_an_entity_declaring_no_views_still_gets_all_items(tmp_path: Path) -> No
     # asserted in test_schema_json_carries_declared_views.
     assert all_items["set_default"] is True
     assert all_items["hidden"] is False
+
+
+# --- the list Description: a human note, then the provenance marker ---------
+
+
+def test_the_list_description_carries_the_note_then_the_marker() -> None:
+    """The description is for a human first. The marker follows it so the
+    settings page reads as prose, not as a machine tag."""
+    desc = list_description("Scheduled checks and their ranges.",
+                            family="routine-checks", entity="CheckPoint")
+    assert desc.startswith("Scheduled checks and their ranges.")
+    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks/CheckPoint.")
+
+
+def test_a_note_without_a_marker_is_never_emitted() -> None:
+    """Discovery keys on the marker. A description without one deploys a list
+    that is invisible to reporting, with no error anywhere."""
+    desc = list_description("", family="routine-checks", entity="CheckPoint")
+    assert "Provisioned by dbml-sharepoint" in desc
+
+
+def test_the_marker_is_never_truncated_away() -> None:
+    """The 255 budget truncates the NOTE, never the marker.
+
+    Appending a marker after a 250-character note and cutting at 255 removes
+    the marker: the list deploys, the deploy reads back the truncated
+    description it sent, and the list is invisible to discovery forever.
+    Nothing downstream can see that.
+    """
+    desc = list_description("x" * 400, family="routine-checks", entity="CheckPoint")
+    assert len(desc) <= 255
+    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks/CheckPoint.")
+
+
+def test_the_marker_survives_a_note_that_lands_exactly_on_the_budget() -> None:
+    """The boundary, both sides of it.
+
+    A note of exactly `note_budget` characters must survive whole AND keep the
+    marker; one character more must lose a character of NOTE, never a
+    character of marker. A naive `[:255]` after appending passes neither.
+
+    The full description lands on 255 LESS `MARKER_GROWTH_RESERVE`, not on
+    255: the budget holds that much back so the marker can grow later without
+    invalidating notes already written. The unused tail is deliberate, and
+    `test_validator_core` pins the reserve itself.
+    """
+    budget = note_budget("routine-checks", "CheckPoint")
+    marker = "Provisioned by dbml-sharepoint from routine-checks/CheckPoint."
+    full = DESCRIPTION_LIMIT - MARKER_GROWTH_RESERVE
+
+    exact = list_description("y" * budget, family="routine-checks", entity="CheckPoint")
+    assert exact == f"{'y' * budget} {marker}"
+    assert len(exact) == full
+
+    over = list_description("y" * (budget + 1), family="routine-checks", entity="CheckPoint")
+    assert over == f"{'y' * budget} {marker}"
+    assert len(over) == full
+
+
+def test_the_emitted_list_description_names_the_family_from_the_dbml_project(
+    tmp_path: Path,
+) -> None:
+    """End to end through the emitter: the family is the DBML `Project` name,
+    so a deployed list says which template family produced it.
+
+    The composer is unit-tested above; this pins that `build_schema_json`
+    actually calls it, because the emitter is where the silent truncation
+    lived.
+    """
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            "Project routine_checks { database_type: 'SharePoint Online' }",
+            table("CheckPoint", ID_PK, TITLE, "Note: 'Scheduled checks.'"),
+        ),
+        mapping=entities("CheckPoint"),
+        preamble=False,
+    )
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    assert schema_json["lists"][0]["description"] == (
+        "Scheduled checks. Provisioned by dbml-sharepoint from routine-checks/CheckPoint."
+    )
+
+
+def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
+    tmp_path: Path,
+) -> None:
+    """A hand-written DBML need not declare a `Project`. The family is then
+    unknown, but the list must still be discoverable -- an undiscoverable list
+    is the whole failure this marker exists to prevent.
+
+    `notes=False` so the description is the marker and nothing else, which is
+    what makes the equality below say what it means. It also matches the
+    emitter contract being pinned: `list_description` returns the marker alone
+    for a note-less table, and the generator has to keep doing that whatever
+    the validator says about it.
+    """
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE),
+        mapping=entities("Risk"),
+        preamble=False,
+        notes=False,
+    )
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    assert schema_json["lists"][0]["description"] == (
+        f"Provisioned by dbml-sharepoint from {UNNAMED_FAMILY}/Risk."
+    )
+
+
+def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
+    """The backstop's own edge, where a negative slice would silently invert it.
+
+    A family and entity long enough to fill the 255 on their own drive the
+    budget to zero and below. `note[:-1]` is not "keep nothing" -- it is "keep
+    all but the last character" -- so an unclamped budget makes the backstop
+    return the note plus the marker, LONGER than the limit, in exactly the case
+    it exists to handle.
+
+    Unreachable through the CLI today: `ENTITY_NOTE_TOO_LONG_FOR_MARKER` fires
+    first and errors gate generation. Pinned anyway, because a backstop that is
+    wrong when reached is not a backstop.
+
+    Both cases pin that the result is the marker ALONE rather than " " +
+    marker, which is what a naive join would leave on the settings page.
+
+    WHAT THE TWO FAMILIES ARE, measured rather than described from the
+    arithmetic that predates `MARKER_GROWTH_RESERVE`. A marker is
+    `len(family) + len(entity) + 38` characters, so at combined lengths of 216
+    and 217 it is 254 and 255 -- the second is the LONGEST marker that fits in
+    the 255-character Description, and 218 would be the first that does not.
+    Both are far past the point where `note_budget` clamps: with the reserve
+    taken off, it reaches zero at a combined length of 184 and would be -32
+    and -33 here if it did not clamp.
+
+    So the pair is not a boundary in today's arithmetic -- either family alone
+    would exercise the clamp. It is kept because it is the boundary in the
+    RESERVE-LESS arithmetic the backstop was written against, where 216 and 217
+    gave a budget of exactly 0 and exactly -1, and -1 is the value that makes
+    `note[:-1]` slice from the wrong end. Removing the reserve tomorrow puts
+    these two back on either side of that edge.
+    """
+    entity = "e" * 10
+
+    # Marker 254 characters, one to spare. Reserve-less budget exactly 0.
+    family_zero = "f" * (216 - len(entity))
+    zero = list_description("some note", family=family_zero, entity=entity)
+    assert zero == marker_for(family_zero, entity)
+    assert len(zero) == 254
+    assert not zero.startswith(" ")
+
+    # Marker exactly 255, the longest that fits. Reserve-less budget -1, which
+    # is the case a negative slice inverts.
+    family_negative = "f" * (217 - len(entity))
+    negative = list_description("some note", family=family_negative, entity=entity)
+    assert negative == marker_for(family_negative, entity)
+    assert len(negative) == 255
+    assert "some note" not in negative
+
+    assert note_budget(family_negative, entity) == 0, "the budget must never go negative"

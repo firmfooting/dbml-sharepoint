@@ -14,6 +14,8 @@ Table Project {
   Title     nvarchar   [not null, note: 'Project name.']
   Status    status     [not null, default: 'Open']
   SortOrder int        [not null, default: 0]
+
+  Note: 'Parser-fixture projects, each with a status and a sort order.'
 }
 
 Table Task {
@@ -25,9 +27,13 @@ Table Task {
   indexes {
     DueDate
   }
+
+  Note: 'Parser-fixture tasks, each belonging to one project and optionally due on a date.'
 }
 
 Table AppSettings {
   Id        int        [pk, increment]
   Title     nvarchar   [not null, note: 'App Settings singleton.']
+
+  Note: 'Parser-fixture singleton settings list, one row holding the fixture configuration.'
 }

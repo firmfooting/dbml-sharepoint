@@ -39,4 +39,6 @@ Table Delegation {
     Status
     RoleHolder
   }
+
+  Note: 'Who may approve what, and up to what limit. Each authority is held by a role, not a person, and traces back to a clause in the instrument of delegation.'
 }

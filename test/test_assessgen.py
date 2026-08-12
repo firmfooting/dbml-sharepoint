@@ -1,14 +1,23 @@
 # test/test_assessgen.py
+import json
+import re
+import textwrap
+from typing import Any
+
+import pytest
 from _model import bundle as make_bundle
 from _model import column
 from _model import schema as make_schema
 from _model import table as make_table
+from _node import NODE, run_node
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.list_description import family_for, marker_for
 from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
 )
+from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.model.mapping_loader import (
     ListPermissionPolicy,
     MappingBundle,
@@ -159,7 +168,6 @@ def _assess_js() -> str:
 
 
 def test_assess_is_read_only() -> None:
-    import re
     js = _assess_js()
     assert "'X-HTTP-Method'" not in js and '"X-HTTP-Method"' not in js
     posts = re.findall(r"method:\s*'POST'", js)
@@ -215,3 +223,267 @@ def test_assess_header_carries_full_provenance() -> None:
     assert "Schema:       v0.8" in js
     assert "Deployer:     vdbml-sharepoint/0.1.0" in js
     assert "Generated at: 2026-05-04T00:00:00Z" in js
+
+
+# === The provenance marker (read-only) ======================================
+#
+# Every test above this line is string presence against the generated text.
+# That cannot tell a probe that RUNS from one that throws, reads the wrong
+# property, or never fires. The marker check is exactly the kind of rule this
+# repository's evidence rule is about -- it would emit, lint, and stay silent
+# forever -- so it is asserted by executing the emitted script.
+
+
+def _declared_descriptions() -> dict[str, str]:
+    """List title -> the Description a real deploy leaves on that list.
+
+    Read out of the DEPLOY generator, not out of assess's own `list_markers`.
+    Building the "correct" fixture from the code under test would make the
+    quiet run agree with whatever assess happens to believe; taking it from
+    `build_schema_json` is the point -- it is what the site actually holds
+    after a deploy, so this pins assess against the deploy.
+    """
+    schema, bundle = _simple()
+    schema_json = build_schema_json(schema, bundle, "default")
+    return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
+
+
+def test_assess_targets_carry_the_marker_from_the_shared_speller() -> None:
+    """Imported, never re-spelled.
+
+    A second spelling of the marker would let assess.js disagree with
+    deploy.js about the very same list: the deploy writes one string, assess
+    looks for another, and the operator is told a correctly provisioned list
+    has lost its provenance (or, worse, is told nothing about one that has).
+    Compared against `marker_for` itself rather than against a literal, so a
+    deliberate change to the marker moves both sides together.
+    """
+    schema, bundle = _simple()
+    family = family_for(schema)
+    assert assess_targets(schema, bundle, "default")["list_markers"] == {
+        "APP_Project": marker_for(family, "Project"),
+        "APP_Task": marker_for(family, "Task"),
+        # The settings list the mapping adds. Every list this pack provisions
+        # needs a marker, not only the ones the DBML declares.
+        "APP_AppSettings": marker_for(family, "AppSettings"),
+    }
+
+
+def test_every_provisioned_list_has_a_degrading_marker_requirement() -> None:
+    """A list whose Description an owner rewrote is still a good list, and
+    deploying over it is the repair. Only reporting is broken -- blocking the
+    deploy on it would block the one thing that fixes it.
+
+    Over EVERY list the deploy provisions, not over two named ones: a rule
+    that covers all but one list is indistinguishable from a rule that works,
+    right up until the uncovered list is the one that drifts.
+    """
+    schema, bundle = _simple()
+    reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
+    for title in _declared_descriptions():
+        key = f"{_MARKER_KEY}{title}"
+        assert key in reqs, f"no marker requirement for '{title}': {sorted(reqs)}"
+        assert reqs[key].level_on_fail == "WARN", reqs[key]
+
+
+# The key prefix the marker check owns. Findings are selected by KEY, never by
+# the word "marker" turning up in a detail string: an unrelated WARN that
+# happens to mention one would otherwise join the set and fail assertions
+# about keys it has nothing to do with.
+_MARKER_KEY = "provenance_marker:"
+
+# A site whose declared lists all exist. Everything the assessment asks for
+# beyond that answers as an empty, healthy shape -- the thin-mock findings
+# that follow from it are not what these tests measure.
+_ASSESS_HARNESS = textwrap.dedent(r"""
+    globalThis.window = { location: { origin: 'https://example.sharepoint.com' } };
+    globalThis._spPageContextInfo = {
+      webServerRelativeUrl: '/sites/test',
+      userLoginName: 'probe@example.com',
+      userId: 1,
+    };
+    // What each declared list HOLDS in its Description before the run. A
+    // title absent from this map is a list that does not exist, answered 404
+    // exactly as SharePoint would. Rewritten by _run_assess.
+    const LIST_DESCRIPTIONS = {};
+    // The list title out of a URL, back in the spelling the declaration uses.
+    // Non-greedy to the first `')`, then undo odataName's two encodings in
+    // the order it applied them: percent first, apostrophe-doubling second.
+    // `[^']+` would stop at the first apostrophe of an OData-escaped title
+    // and bucket its state under the wrong key -- silently, and in the
+    // direction where a check looks like it passed.
+    const listOf = (url) => {
+      const raw = (url.match(/getbytitle\('(.*?)'\)/) || [])[1];
+      return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
+    };
+    // A GET of the LIST OBJECT itself: the path ends at getbytitle(...) with
+    // nothing after it. `[^/]*` and the `$` anchor together. `.*` would
+    // backtrack across `')/fields/getbyinternalnameortitle('`, so a field
+    // enumeration would be answered with the LIST payload -- and a check that
+    // read Description off the wrong response would still appear to work. A
+    // SharePoint list title cannot contain `/`, and encodeURIComponent would
+    // percent-encode one anyway.
+    const LIST_OBJECT = /\/lists\/getbytitle\('[^/]*'\)$/;
+    const respond = (status, payload) => ({
+      ok: status < 400, status,
+      headers: { get: () => null },
+      json: async () => payload,
+      text: async () => JSON.stringify(payload),
+    });
+    const body = (url) => {
+      if (url.includes('contextinfo')) {
+        return { d: { GetContextWebInformation: {
+          FormDigestValue: 'digest', FormDigestTimeoutSeconds: 1800,
+          LibraryVersion: '16.0.0.0' } } };
+      }
+      if (url.toLowerCase().includes('effectivebasepermissions')) {
+        return { d: { EffectiveBasePermissions: { High: 4294967295, Low: 4294967295 } } };
+      }
+      return { d: { results: [] } };
+    };
+    globalThis.fetch = async (url) => {
+      const u = String(url);
+      const path = u.split('?')[0];
+      if (LIST_OBJECT.test(path)) {
+        const title = listOf(path);
+        if (!Object.prototype.hasOwnProperty.call(LIST_DESCRIPTIONS, title)) {
+          return respond(404, { error: { message: { value: `List '${title}' not found` } } });
+        }
+        return respond(200, { d: {
+          Title: title, BaseTemplate: 100, Description: LIST_DESCRIPTIONS[title],
+        } });
+      }
+      return respond(200, body(u));
+    };
+""")
+
+
+def test_the_assess_harness_matcher_separates_a_list_from_what_nests_under_it() -> None:
+    """The harness's own matcher, pinned in BOTH directions.
+
+    It decides which response a probe gets, so getting it wrong does not look
+    like a broken mock -- it looks like a passing check. `[^']+` cannot match
+    an OData-escaped apostrophe (`odataName` doubles `'` and
+    encodeURIComponent leaves it alone), and `.*` backtracks far enough to
+    answer a field enumeration with the list payload.
+    """
+    matcher = re.compile(r"/lists/getbytitle\('[^/]*'\)$")
+    escaped = "/sites/x/_api/web/lists/getbytitle('O''Brien%20Register')"
+    plain = "/sites/x/_api/web/lists/getbytitle('APP_Project')"
+    assert matcher.search(escaped), "an escaped apostrophe was not matched"
+    assert matcher.search(plain)
+    for nested in (
+        f"{escaped}/fields",
+        f"{plain}/fields/getbyinternalnameortitle('Note')",
+        f"{plain}/contenttypes",
+    ):
+        assert not matcher.search(nested), f"a nested path read as the list object: {nested}"
+    assert _ASSESS_HARNESS.count(r"/\/lists\/getbytitle\('[^/]*'\)$/") == 1, (
+        "the harness no longer uses the matcher this test pins"
+    )
+
+
+def _run_assess(list_description: str | dict[str, str]) -> dict[str, Any]:
+    """Execute the emitted assess.js against a site holding `list_description`.
+
+    One string applies to every declared list; a mapping sets them per title.
+    Returns the summary the script resolves with.
+    """
+    held = (
+        dict.fromkeys(_declared_descriptions(), list_description)
+        if isinstance(list_description, str) else dict(list_description)
+    )
+    js = _assess_js()
+    assert js.count("})();") == 1, "the IIFE terminator is no longer unique"
+    harness = _ASSESS_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = {};",
+        f"const LIST_DESCRIPTIONS = {json.dumps(held)};",
+    )
+    script = harness + "\n" + js.replace(
+        "})();", "}))().then(r => console.log('__RESULT__' + JSON.stringify(r)))",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = run_node(script)
+    line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert line is not None, f"assess.js did not return a summary:\n{output[-3000:]}"
+    summary: dict[str, Any] = json.loads(line.removeprefix("__RESULT__"))
+    # Without this, "no marker warning was raised" would also be true of a run
+    # that aborted in the site guard and probed nothing at all.
+    assert summary.get("verdict"), f"assess.js reached no verdict:\n{output[-3000:]}"
+    return summary
+
+
+def _marker_findings(
+    summary: dict[str, Any], *, levels: set[str],
+) -> list[dict[str, Any]]:
+    """The marker check's own findings at `levels`, selected by key.
+
+    WARN and BLOCKED are the levels the verdict consumes; PASS and INFO are
+    not. See `_MARKER_KEY` for why the key rather than the detail.
+    """
+    return [
+        f for f in summary["findings"]
+        if f["key"].startswith(_MARKER_KEY) and f["level"] in levels
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
+    """Between deploys nothing else can see this.
+
+    The deploy repairs a drifted description at the NEXT run. Until then the
+    fleet query returns fewer rows and cannot know it should have returned
+    more, so this read-only check is the only thing standing between an
+    edited description and a silently short report.
+    """
+    titles = list(_declared_descriptions())
+    summary = _run_assess("an owner rewrote this")
+    warned = _marker_findings(summary, levels={"WARN", "BLOCKED"})
+    assert warned, (
+        "a declared list carrying no provenance marker drew no finding: "
+        f"{summary['findings']}"
+    )
+    # EVERY list, not the first one. A `break` in the collision loop leaves a
+    # site where list one is checked and lists two through forty are not, and
+    # an `any(...)` assertion cannot tell that from a working check.
+    for title in titles:
+        assert any(title in f["detail"] for f in warned), (
+            f"'{title}' drifted and nothing said so; the warning must name "
+            f"the list, and it must name every one of them: {warned}"
+        )
+    # DEGRADED, not BLOCKED: the list is fine and the deploy is the repair.
+    assert all(f["level"] == "WARN" for f in warned), warned
+    # And it must actually REACH the verdict. That loop walks the requirement
+    # keys, so a WARN nobody declared a requirement for is logged and then
+    # ignored -- the operator reads COMPATIBLE on a site that is not.
+    schema, bundle = _simple()
+    declared = {r.key for r in derive_requirements(schema, bundle, "default")}
+    assert {f["key"] for f in warned} <= declared, (
+        "warned on keys no requirement covers, so the verdict ignores them: "
+        f"{sorted({f['key'] for f in warned} - declared)}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_assess_is_quiet_when_every_marker_is_present() -> None:
+    """A check that always fires is noise, and noise gets ignored."""
+    declared = _declared_descriptions()
+    # Without this the run is vacuous: if the deploy generator stopped
+    # emitting markers altogether, an empty description would also draw no
+    # complaint and nothing here would notice.
+    assert declared and all(
+        "Provisioned by dbml-sharepoint" in value for value in declared.values()
+    ), declared
+    summary = _run_assess(declared)
+    noisy = _marker_findings(summary, levels={"WARN", "BLOCKED"})
+    assert not noisy, f"a correctly marked list was reported as drifted: {noisy}"
+    # Silence has to come from the check PASSING, not from its never having
+    # run: deleting it outright would satisfy the assertion above. Per list,
+    # for the same reason the sibling test is -- a check that stops after the
+    # first list is silent about the rest, which looks exactly like this.
+    passed = _marker_findings(summary, levels={"PASS"})
+    for title in declared:
+        assert any(title in f["detail"] for f in passed), (
+            f"the marker check never ran for '{title}': {summary['findings']}"
+        )

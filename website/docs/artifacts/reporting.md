@@ -23,6 +23,65 @@ deployed lists.
   descriptions and enum values, generated from the same schema the
   deploy used.
 
+## The provenance marker
+
+Every list this tool provisions carries a marker at the end of its
+SharePoint **Description**:
+
+```
+Provisioned by dbml-sharepoint from routine-checks/CheckPoint.
+```
+
+It is appended to the table's own note — see [the table note is
+required](../reference/dbml.md#the-table-note-is-required) — on every
+list, on both the created and the adopted path, and it is never
+truncated: a note too long to leave room for it is refused at build time
+instead. `assess.js` reports a provisioned list whose marker has gone
+missing as DEGRADED, naming the list.
+
+**What it is for.** A deployed list otherwise carries no record of what
+produced it. Reporting across a fleet — a hundred sites running the same
+families — needs to be able to ask "which lists did this tool provision,
+and from which template family" without a hand-maintained registry. The
+Description is the one list-level string this tool already writes, a
+human reads it in list settings, and it survives a rename of the list.
+
+### What is not true yet
+
+The marker is inert. It is stamped and verified; nothing reads it.
+
+- **No fleet query exists.** Phase 1 only puts the marker there. The
+  query that finds lists by it is Phase 2, and until that ships the
+  marker changes nothing about how you report on a deployment. The
+  per-list Power Query output described on this page is unaffected.
+- **That a list Description is queryable in SharePoint search is an
+  inference this repository has not verified.** Learn documents a
+  `Description` managed property as Queryable and not Searchable, but the
+  crawled properties it is mapped from — `Description`, `Office:6`,
+  `DESCRIPTION` — are Office *document* metadata, and nothing on that
+  page says a SharePoint **list's** description feeds it. Learn documents
+  no `ows_Description` crawled property and no `ListDescription`
+  analogue. What has actually been measured is weaker: a `Description`
+  cell comes back on `contentclass:STS_List` rows, and 15 of 50 lists on
+  one tenant had a non-empty one. Nobody has verified those values *are*
+  the lists' own descriptions, nor that a `Description:"…"` restriction
+  filters on them. Question **S6A** in
+  `test/manual/search-discovery-probe.js` is what closes this; it needs
+  no writes. Enumerating lists with `GET /_api/web/lists` and reading
+  `Description` needs no search index at all, and is the mechanism the
+  marker is designed for.
+  Note also that Queryable and Searchable are *defaults* a tenant admin
+  can change in the search schema, so they are not invariants of the
+  platform even where they do apply.
+- **Byte-identical round-trip of a list Description is also inferred.**
+  Learn does not document it, and the deploy's reconcile compares what it
+  wrote against what it read back. That is why the shipped notes avoid
+  `&` and newlines: if SharePoint normalises whitespace or entity-encodes
+  there, the comparison never matches and that list aborts on every
+  re-paste, forever. It fails closed and loud, which is the right
+  failure — but it is a failure, and no adopter should meet it. The
+  restriction lifts when a `test/manual/` line closes the question.
+
 ## Empty lists load
 
 The first refresh after a deploy runs against lists with no rows in them,

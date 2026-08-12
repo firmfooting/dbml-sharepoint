@@ -34,4 +34,6 @@ Table Visit {
     VisitorType
     VisitLocation
   }
+
+  Note: 'People on site who do not work here, who hosts them and when they arrived. Anyone not signed out is still in the building, which is what an evacuation muster reads.'
 }

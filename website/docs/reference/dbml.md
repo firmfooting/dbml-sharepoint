@@ -10,6 +10,140 @@ same file renders as an ERD on dbdiagram.io. The deployer consumes the
 subset below; the validator rejects anything outside it with a named
 finding rather than guessing.
 
+## The table note is required
+
+Every `Table` must carry a table-level `Note:`. A table without one fails
+the build with `entity_has_no_note` — an **error**, so the family stops
+building.
+
+```dbml
+Table CheckPoint {
+  Id          int       [pk, increment]
+  Title       nvarchar  [not null, note: 'What is being checked.']
+  Frequency   cadence
+
+  Note: 'The things that have to be checked on a schedule, how often, what counts as being in range, and who is accountable for the checking actually happening.'
+}
+```
+
+Mind the two different notes. A **column** `note:` is a field
+description; the **table** `Note:` — a statement inside the table body,
+not a column setting — is the one this section is about.
+
+:::warning Upgrading an existing schema
+
+**This requirement is new, it is an error, and there is no grace period.**
+From this version every `Table` must carry a `Note:`. A hand-written
+schema that built cleanly against an earlier version and has a table
+without one **will not build** — `entity_has_no_note` is an error, so
+`dbml-sharepoint build` refuses the bundle rather than warning about it.
+Nothing on an already-deployed site changes until you paste a new
+`deploy.js.txt`.
+
+The fix is one sentence per table, and the build names every table that
+needs one in a single run, so you can work through the list in one pass.
+Write them to the guidance in [Writing one worth
+reading](#writing-one-worth-reading) below rather than restating the
+title — the sentence is the only list-level description this tool emits,
+and a placeholder spends it.
+
+Two smaller rules apply to the sentence you write, both errors and both
+described below: it must leave room for the [provenance
+marker](#the-budget-and-why-a-long-note-is-refused-rather-than-truncated),
+and it may not contain `&` or a line break
+(`entity_note_may_not_round_trip`).
+
+:::
+
+### What it becomes
+
+The table note becomes the provisioned SharePoint list's **Description**.
+That is the sentence an adopter reads under list settings, and on a list
+somebody else deployed it is frequently the only explanation they get:
+the schema, the mapping and this documentation are all somewhere they are
+not. It survives a rename of the list.
+
+The deploy writes it, reads it back, and aborts if the write did not take
+— see [the deploy script](../artifacts/deploy.md).
+
+### A provenance marker is appended
+
+The emitted Description is the note, a space, then a marker naming the
+template the list came from:
+
+```
+Provisioned by dbml-sharepoint from routine-checks/CheckPoint.
+```
+
+You do not write the marker and cannot suppress it. The family is the
+DBML `Project` name with underscores and `/` folded to hyphens
+(`Project routine_checks` → `routine-checks`), or `custom` for a schema
+that declares no `Project`. What the marker is for, and what has and has
+not been established about finding lists by it, is in the [reporting
+pack](../artifacts/reporting.md#the-provenance-marker).
+
+### The budget, and why a long note is refused rather than truncated
+
+A SharePoint list Description holds 255 characters, so the note's budget
+is what the marker leaves:
+
+```
+255 − len(marker) − 1 (the separating space) − 32 (reserved, below)
+```
+
+Around 190 characters for a typical family, and the exact number depends
+on the family and entity names — a longer `Project` name shortens every
+note under it. Exceeding it is `entity_note_too_long_for_marker`, also an
+error.
+
+**The note is refused; the marker is never cut.** This is the whole point
+of the rule and it is worth being explicit about why, because truncating
+instead would be the friendlier-looking choice. A Description assembled
+note-first and then clamped loses its *tail*, and the tail is the marker.
+That list would deploy clean, satisfy the deploy's own read-back of the
+truncated description it sent, pass every deploy phase, and show a
+perfectly sensible description on its settings page — while being
+permanently invisible to fleet discovery. Nothing in the build, the
+deploy or the page can see the difference. Refusing the note at build
+time is the only place that failure is catchable.
+
+**32 characters are held in reserve** on top of the marker's current
+length. The marker may grow — a version suffix, or a family renamed to
+something more descriptive — and the reserve is what lets it, without
+every note already written having to be re-edited. Two consequences for
+an author: a note measured against the marker you can actually see will
+be refused while still appearing to fit, and the finding reports the real
+budget; and the emitted Description deliberately stops short of 255
+rather than filling it.
+
+### Writing one worth reading
+
+The 54 notes across the shipped families were written to these rules, and
+they are what makes those descriptions worth an adopter's attention
+rather than noise they learn to skip:
+
+- **Say what the list holds and who it is for**, in one or two sentences.
+- **Never restate the title.** "A list of check points" on a list called
+  Check Points has spent the only list-level sentence this tool writes
+  and said nothing.
+- **Write for somebody who has just opened the list** and does not know
+  the template, has not read this documentation, and was not in the room
+  when it was chosen.
+- **No `&`, no line breaks; keep it to one paragraph.** Enforced, not
+  advised: `entity_note_may_not_round_trip` is an **error**. Not a style
+  preference either — byte-identical round-trip of a list Description is
+  *inferred*, not measured, and the reconcile compares what it wrote
+  against what came back. If the inference is wrong, the deploy aborts
+  part-way through a paste and does so on every re-paste; see [the
+  reporting pack](../artifacts/reporting.md#the-provenance-marker). Write
+  "and". The rule lifts if a `test/manual/` probe measures the round trip
+  and finds it exact.
+
+The 31 shipped families are the worked examples — every
+`src/dbml_sharepoint/solutions/*/10-design/schema.dbml` carries one note
+per table. Read a few before writing your own; the column notes already
+in each schema are the model for tone.
+
 ## Column types
 
 | DBML type | SharePoint field | Notes |

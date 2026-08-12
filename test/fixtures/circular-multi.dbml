@@ -8,9 +8,13 @@ Table A {
   Id     int       [pk, increment]
   BRef1  int       [ref: > B.Id]
   BRef2  int       [ref: > B.Id]
+
+  Note: 'Cycle-deferral fixture, the side carrying two lookups into B.'
 }
 
 Table B {
   Id     int       [pk, increment]
   ARef   int       [ref: > A.Id]
+
+  Note: 'Cycle-deferral fixture, the side carrying the lookup back into A.'
 }

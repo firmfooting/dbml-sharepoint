@@ -164,8 +164,14 @@ def schema(
     *tables: Table,
     enums: list[EnumDef] | None = None,
     project_note: str = "",
+    project_name: str = "",
 ) -> Schema:
-    return Schema(tables=list(tables), enums=enums or [], project_note=project_note)
+    return Schema(
+        tables=list(tables),
+        enums=enums or [],
+        project_note=project_note,
+        project_name=project_name,
+    )
 
 
 # --- Mapping ----------------------------------------------------------------

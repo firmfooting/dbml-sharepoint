@@ -33,6 +33,8 @@ Table Course {
   indexes {
     Category
   }
+
+  Note: 'The catalogue of training and certifications the organisation requires, how long each stays valid and who delivers it. Completions go in the other list.'
 }
 
 Table TrainingRecord {
@@ -54,4 +56,6 @@ Table TrainingRecord {
     Status
     ExpiryDate
   }
+
+  Note: 'One row per person per completed course, with the date done, the date it lapses and a link to the certificate. This is the evidence an auditor asks for.'
 }

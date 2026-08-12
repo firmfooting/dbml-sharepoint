@@ -52,4 +52,6 @@ Table Contract {
     EndDate
     ContractType
   }
+
+  Note: 'Every agreement the organisation is party to: who with, its value, when it ends and the notice needed to leave. The signed document lives elsewhere, linked.'
 }

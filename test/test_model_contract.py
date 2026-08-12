@@ -35,8 +35,8 @@ from _model import (
     schema,
     table,
 )
+from _packs import PREAMBLE_PROJECT, pack
 from _packs import entities as yaml_entities
-from _packs import pack
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -49,11 +49,19 @@ def test_builders_and_loader_agree_on_a_representative_document(
     built_schema = schema(
         table("Risk", column("Title", "nvarchar"), person("Owner")),
         table("FollowUp", ref("Risk", "Risk.Id")),
+        project_name=PREAMBLE_PROJECT,
     )
     built_bundle = bundle(entities=["Risk", "FollowUp"])
 
+    # `notes=False` throughout this module: `write_dbml` gives an un-noted
+    # table a default `Note:` so the suite's fixtures satisfy
+    # `ENTITY_HAS_NO_NOTE`, and that convenience is not part of the contract
+    # between the builders and the loader. Leaving it on would compare a
+    # parsed table carrying the helper's note against a built one carrying
+    # none, and the disagreement would be the helper's, not the builders'.
     parsed_schema, parsed_bundle = pack(
         tmp_path,
+        notes=False,
         dbml="""
             Table Risk {
               Id int [pk, increment]
@@ -102,10 +110,12 @@ def test_builders_and_loader_agree_on_every_column_attribute(tmp_path: Path) -> 
             indexes=["Code"],
         ),
         enums=[enum("status", "Open", "Closed")],
+        project_name=PREAMBLE_PROJECT,
     )
 
     parsed, _ = pack(
         tmp_path,
+        notes=False,
         dbml="""
             Enum status {
               "Open"
@@ -243,11 +253,12 @@ def test_any_built_table_survives_the_yaml_round_trip(
             for i, (kind, required, unique) in enumerate(kinds)
         ))
         for name in names
-    ))
+    ), project_name=PREAMBLE_PROJECT)
     built_bundle = bundle(entities=names)
 
     parsed_schema, parsed_bundle = pack(
         workdir,
+        notes=False,
         dbml="".join(
             dbml_table(name, ID_PK, *(
                 f"C{i} {kind}{_attributes(required=required, unique=unique)}"
