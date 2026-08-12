@@ -54,6 +54,8 @@ Table Equipment {
     Status
     EquipmentType
   }
+
+  Note: 'Items that must be tested, serviced or calibrated to stay safe to use, each with how often that is due and the date the next one falls. The schedule is worked from this list.'
 }
 
 Table MaintenanceEvent {
@@ -73,4 +75,6 @@ Table MaintenanceEvent {
     EventDate
     Result
   }
+
+  Note: 'Every service, test, calibration or repair actually performed, who did it, what the result was, and a link to the certificate or report that proves it happened.'
 }

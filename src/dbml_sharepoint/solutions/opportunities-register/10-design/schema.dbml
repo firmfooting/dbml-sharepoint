@@ -191,4 +191,6 @@ Table Opportunity {
     BenefitPotential
     EffortBand
   }
+
+  Note: 'Problems a project runs into but is not funded to fix. Each is captured once, routed to the team or system that should own it, and closed here when that destination takes it.'
 }

@@ -138,4 +138,6 @@ Table Risk {
     ToleranceEndDate
     LastReviewedDate
   }
+
+  Note: 'Uncertain events that could stop the organisation meeting its objectives, each rated against the risk matrix, owned by somebody, and reviewed on a cadence set by that rating.'
 }

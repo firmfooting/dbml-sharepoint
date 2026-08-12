@@ -56,4 +56,6 @@ Table BusinessProcess {
     DigitisationStatus
     CurrentState
   }
+
+  Note: 'An inventory of how work actually gets done today, whether by paper, email, a spreadsheet or a real system, with a score ranking which ones are worth digitising first.'
 }

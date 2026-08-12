@@ -52,4 +52,6 @@ Table Contract {
     EndDate
     ContractType
   }
+
+  Note: 'Every agreement the organisation is party to: who with, what it is worth, when it ends and what notice is needed to leave it. The signed document stays in its own system, linked.'
 }

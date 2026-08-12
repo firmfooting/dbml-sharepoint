@@ -61,4 +61,6 @@ Table Feedback {
     Severity
     ReceivedDate
   }
+
+  Note: 'Complaints, compliments, suggestions and enquiries from the people the organisation serves, with who is handling each one, when it was acknowledged and what changed as a result.'
 }

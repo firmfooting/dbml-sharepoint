@@ -42,6 +42,8 @@ Table Audit {
     AuditType
     ReportDate
   }
+
+  Note: 'Each audit, accreditation survey or regulator review the organisation has been through, with its report date, who performed it and the executive answering for the response.'
 }
 
 Table Recommendation {
@@ -70,4 +72,6 @@ Table Recommendation {
     DueDate
     FindingRating
   }
+
+  Note: 'Every recommendation those reviews produced, with the agreed management action, the person delivering it, the committed date and the evidence that closed it.'
 }

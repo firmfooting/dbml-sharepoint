@@ -45,4 +45,6 @@ Table Measure {
     MeasureArea
     Frequency
   }
+
+  Note: 'The numbers the organisation reports on, and for each one the definition it is calculated by, so that two people working from different data arrive at the same figure.'
 }

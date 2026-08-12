@@ -41,4 +41,6 @@ Table Obligation {
     ReviewDate
     Owner
   }
+
+  Note: 'Duties the organisation must meet under law, standards, funding agreements and its own commitments, each with an owner, the evidence of compliance and a date to reassess it.'
 }

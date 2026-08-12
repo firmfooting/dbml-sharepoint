@@ -35,6 +35,8 @@ Table Organisation {
   indexes {
     OrgType
   }
+
+  Note: 'The external bodies this organisation deals with: government, suppliers, partners, community groups and media, each with the person here who owns the relationship.'
 }
 
 Table Contact {
@@ -52,6 +54,8 @@ Table Contact {
     Organisation
     IsActive
   }
+
+  Note: 'The individual people at those organisations, with their role and how to reach them. Anyone who moves on is marked inactive rather than deleted, so past interactions still read.'
 }
 
 Table Interaction {
@@ -69,4 +73,6 @@ Table Interaction {
     InteractionDate
     InteractionType
   }
+
+  Note: 'A note of every meeting, call, email or visit, so that a relationship is remembered by the organisation rather than by whoever happened to be in the room.'
 }

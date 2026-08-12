@@ -33,6 +33,8 @@ Table Meeting {
     MeetingDate
     MeetingType
   }
+
+  Note: 'One row per meeting held, with its date, who chaired it and a link to the minutes. The decisions and actions it produced are recorded separately and point back here.'
 }
 
 Table Decision {
@@ -45,6 +47,8 @@ Table Decision {
   indexes {
     Meeting
   }
+
+  Note: 'What each meeting actually decided, recorded as a decision rather than as a discussion, so it can be found later without anybody re-reading the minutes.'
 }
 
 Table ActionItem {
@@ -64,4 +68,6 @@ Table ActionItem {
     Meeting
     DueDate
   }
+
+  Note: 'Tasks a meeting handed to somebody, each with the person responsible and a date. The open items here are the follow-up list the next meeting reads from.'
 }

@@ -43,6 +43,8 @@ Table CheckPoint {
     CheckType
     Active
   }
+
+  Note: 'The things that have to be checked on a schedule, how often, what counts as being in range, and who is accountable for the checking actually happening.'
 }
 
 Table CheckEntry {
@@ -62,4 +64,6 @@ Table CheckEntry {
     CheckedAt
     Result
   }
+
+  Note: 'One row each time a check is performed: what was observed, whether it was in range, and what was done about it if not. Entered at the time, not written up afterwards.'
 }
