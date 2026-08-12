@@ -356,7 +356,7 @@ class _Substitution:
 
 
 def _repoint_docs(
-    destination: Path, substitutions: Sequence[_Substitution],
+    root: Path, substitutions: Sequence[_Substitution],
 ) -> tuple[list[Path], list[_Substitution]]:
     """Point the copied documentation at what the operator actually chose.
 
@@ -393,11 +393,17 @@ def _repoint_docs(
     Returns the files it changed and the substitutions it applied, so the
     caller can report both rather than editing the operator's new
     documentation silently.
+
+    Scoped to ONE template's tree, not the whole project directory. The
+    prefix substitution belongs to the template that declared it, so a
+    project holding two templates must not have the first one's prefix
+    rewritten through the second one's deploy.md. Identical while the picker
+    collects one template, which is why it is worth fixing before it does not.
     """
     wanted = [s for s in substitutions if s.applies]
     changed: list[Path] = []
     applied: list[_Substitution] = []
-    for path in sorted(destination.rglob("*.md")):
+    for path in sorted(root.rglob("*.md")):
         text = path.read_text(encoding="utf-8")
         rewritten = text
         for substitution in wanted:
@@ -418,29 +424,34 @@ def _repoint_docs(
 
 
 def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
-    solution = answers.templates[0].solution
-    prefix = answers.templates[0].prefix
-    shutil.copytree(
-        solution.root,
-        answers.destination,
-        ignore=shutil.ignore_patterns(*_NEVER_COPY),
-        # The destination may already exist: `_ask_destination` accepts an
-        # existing EMPTY directory, and without this copytree raises
-        # FileExistsError and the wizard reports a scaffold failure for a
-        # path it had just told the user was fine.
-        dirs_exist_ok=True,
-    )
-    _rewrite_prefix(
-        answers.destination / solution.mapping_path.relative_to(solution.root),
-        prefix,
-    )
-    return _repoint_docs(
-        answers.destination,
-        (
-            _Substitution("prefix", solution.prefix, prefix),
-            _Substitution("site URL", PLACEHOLDER_SITE_URL, answers.site_url),
-        ),
-    )
+    changed: list[Path] = []
+    applied: list[_Substitution] = []
+    for choice in answers.templates:
+        root = _template_root(answers, choice)
+        shutil.copytree(
+            choice.solution.root,
+            root,
+            ignore=shutil.ignore_patterns(*_NEVER_COPY),
+            # The destination may already exist: `_ask_destination` accepts an
+            # existing EMPTY directory, and without this copytree raises
+            # FileExistsError and the wizard reports a scaffold failure for a
+            # path it had just told the user was fine.
+            dirs_exist_ok=True,
+        )
+        _rewrite_prefix(
+            root / choice.solution.mapping_path.relative_to(choice.solution.root),
+            choice.prefix,
+        )
+        template_changed, template_applied = _repoint_docs(
+            root,
+            (
+                _Substitution("prefix", choice.solution.prefix, choice.prefix),
+                _Substitution("site URL", PLACEHOLDER_SITE_URL, answers.site_url),
+            ),
+        )
+        changed.extend(template_changed)
+        applied.extend(s for s in template_applied if s not in applied)
+    return changed, applied
 
 
 @dataclass(frozen=True)

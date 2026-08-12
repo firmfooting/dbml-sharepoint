@@ -442,6 +442,35 @@ def test_the_chosen_site_url_reaches_the_copied_documentation(
     assert f"--site-url {site_url}" in deploy_md
 
 
+def test_each_template_repoints_only_its_own_documentation(
+    tmp_path: Path,
+) -> None:
+    """Prefix substitution is per-template, so its blast radius must be too.
+
+    Only reachable by calling `_scaffold` directly -- the picker collects one
+    template. Written now because the moment it collects two, a repoint
+    scoped to the whole destination would rewrite the other template's
+    deploy.md with this template's prefix, silently.
+    """
+    destination = tmp_path / "site"
+    risk = wizard.TemplateChoice(load_solution("risk-register"), "ACME_")
+    audit = wizard.TemplateChoice(load_solution("audit-actions"), "ZZ_")
+    answers = wizard.Answers(
+        destination=destination,
+        site_url="https://contoso.sharepoint.com/sites/x",
+        templates=(risk, audit),
+    )
+
+    wizard._scaffold(answers)
+
+    audit_docs = "\n".join(
+        p.read_text(encoding="utf-8")
+        for p in (destination / "audit-actions").rglob("*.md")
+    )
+    assert "ACME_" not in audit_docs
+    assert risk.solution.prefix not in audit_docs
+
+
 def test_a_cross_site_link_in_the_docs_is_not_repointed(tmp_path: Path) -> None:
     """Only the deploy target is substituted, not every SharePoint URL.
 
