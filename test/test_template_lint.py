@@ -51,6 +51,7 @@ KNOWN_CONTEXT = {
     # The single named account `build --enterprise-reader` enrols read-only,
     # or None to emit no enrolment code at all.
     "enterprise_reader",
+    "reader_excluded_lists",
     # The marker distinguishing "clear this value" from "not managed here".
     # Passed in rather than hard-coded on both sides so the two can never
     # disagree about what unmanaged looks like.

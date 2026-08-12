@@ -6,7 +6,7 @@ from difflib import get_close_matches
 from pathlib import Path
 from textwrap import wrap
 from typing import Any, NoReturn
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import typer
 import yaml
@@ -312,8 +312,8 @@ def _load_config(
     return parsed_schema, bundle, release_obj
 
 
-def validate_site_url(site_url: str) -> None:
-    """Reject a malformed or non-https ``--site-url`` at parse time.
+def validate_site_url(site_url: str) -> str:
+    """Reject a malformed or non-https ``--site-url``, and return it cleaned.
 
     The URL is interpolated into the generated deploy.js.txt (as ``SITE_URL`` and in
     the site-match preflight comparison), so it must be a well-formed absolute
@@ -321,6 +321,21 @@ def validate_site_url(site_url: str) -> None:
     missing host) before the operator pastes into a privileged console. Shared
     by the core CLI and any extension project CLIs that compose it. Raises
     ``typer.BadParameter`` (exit 2) on failure.
+
+    RETURNS the URL with any query or fragment removed, rather than refusing
+    it. SharePoint's own **Copy link** puts `?web=1` on the clipboard, so the
+    most common paste carried one, and nothing downstream stripped it: the
+    reporting pack bakes this value into the Power Query `SiteRoot` and the
+    SQLCMD `SiteUrl`, producing endpoints like
+    `https://tenant/sites/X?web=1/_api/web`. Every consumer reads the value
+    `execute_build` holds after this call, so cleaning it once here reaches
+    all of them.
+
+    Normalising rather than refusing follows the precedent already on this
+    branch -- `_SITE_ROOT_M` trims a pasted LIST url back to the site root
+    rather than making the operator edit it. But a silent rewrite of what
+    somebody typed is its own defect, so the caller is expected to compare
+    and say so; see `_site_url_notice`.
     """
     parsed = urlparse(site_url)
     if parsed.scheme != "https" or not parsed.netloc:
@@ -328,6 +343,24 @@ def validate_site_url(site_url: str) -> None:
             f"--site-url must be an absolute https:// URL with a host "
             f"(got {site_url!r}).",
         )
+    if not parsed.query and not parsed.fragment:
+        return site_url
+    return urlunparse(parsed._replace(query="", fragment=""))
+
+
+def _site_url_notice(given: str, used: str) -> str:
+    """What to tell the operator when the site URL was cleaned, or "".
+
+    A rewrite nobody is told about is indistinguishable from a rewrite that
+    went wrong. Returned rather than printed so the CLI and the wizard can
+    each render it in their own voice.
+    """
+    if given == used:
+        return ""
+    return (
+        f"Ignoring the query or fragment on the site URL: building against "
+        f"{used} rather than {given}."
+    )
 
 
 def validate_enterprise_reader(address: str) -> None:
@@ -466,7 +499,14 @@ def execute_build(
     an exception of its own here would give the wizard a second vocabulary
     for the same failures. The wizard catches it.
     """
-    validate_site_url(site_url)
+    # Reassigned, not merely checked: everything below -- SiteContext, the
+    # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
+    # reads this variable, so cleaning it here is what keeps a pasted
+    # `?web=1` out of every generated endpoint.
+    cleaned_site_url = validate_site_url(site_url)
+    if notice := _site_url_notice(site_url, cleaned_site_url):
+        typer.echo(notice, err=True)
+    site_url = cleaned_site_url
     parsed_schema, bundle, release_obj = _load_config(schema, mapping, release)
     if release_obj is None:  # unreachable: --release is a required option
         raise typer.BadParameter("--release is required for `build`.")

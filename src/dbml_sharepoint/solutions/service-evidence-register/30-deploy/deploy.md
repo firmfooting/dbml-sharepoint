@@ -107,12 +107,13 @@ Delete the rows before go-live.
 ### Security and boundaries
 
 - [ ] All three lists have broken inheritance and exact ACL reconciliation.
-- [ ] Only **SE Evidence Contributors**, **SE Evidence Curators** and
-      **SE List Administrators** hold declared direct grants on
-      `SE_ServiceEvent` and `SE_FollowUp`. Associated Site Members and Site
-      Owners have no declared list grant on any of the three.
+- [ ] Only **SE Evidence Contributors**, **SE Evidence Curators**,
+      **SE List Administrators** and **SE Enterprise Readers** hold declared
+      direct grants on `SE_ServiceEvent` and `SE_FollowUp`. Associated Site
+      Members and Site Owners have no declared list grant on any of the three.
 - [ ] **`SE_ServiceIssue` grants nothing to Contributors** — only Curators
-      (Contribute) and Administrators (Full Control).
+      (Contribute), Administrators (Full Control) and Enterprise Readers
+      (`Read`).
 - [ ] Contributors hold `SE Log Only`; Curators hold Contribute;
       Administrators hold Full Control.
 - [ ] Both contributor lists are on **Read all items** and **Create and edit
@@ -231,6 +232,11 @@ every list in this family. It stays empty unless the build was run with
 and nothing else. `rollback.js.txt` does not remove it: rollback deletes
 lists, not site groups or role assignments, so the group and any account
 enrolled in it survive a rollback.
+
+A later build that omits the flag does not put the group back to empty:
+enrolment only runs when `--enterprise-reader` is given, so an account
+enrolled by an earlier build keeps its membership and its `Read` grant on
+every list. Removing it is manual — clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody — clear it in Site

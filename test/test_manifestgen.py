@@ -1,4 +1,5 @@
 # test/test_manifestgen.py
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, ClassVar, Unpack
 
@@ -221,6 +222,69 @@ def _reader_manifest(enterprise_reader: str | None) -> str:
         generated_at="2026-05-04T00:00:00Z",
         enterprise_reader=enterprise_reader,
     )
+
+
+def test_the_manifest_names_a_list_the_reader_group_is_not_granted_on() -> None:
+    """The unconditional "reads every list" promise was not verified.
+
+    `permissions_for_entity` resolves an override INSTEAD of the default
+    policy, and an override carries its own complete assignment list -- so a
+    mapping may grant the reader on the default and leave it out of one
+    override. `_levels_granted_to_group`'s docstring records that the
+    validator permits this deliberately, because an override exists to
+    differ. The manifest then told an operator the reporting account had
+    fleet-wide read while one list was silently unreadable.
+
+    Built by taking the reader fixture and dropping the reader from ONE
+    list's override, so the only thing that changed is the fact under test.
+    """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping-with-reader.yaml")
+    perms = bundle.mapping.permissions
+    assert perms is not None
+    reader_group = next(g.name for g in perms.groups if g.enroll_enterprise_reader)
+
+    entity = next(iter(bundle.mapping.entities))
+    default = perms.default_policy
+    assert default is not None
+    perms.overrides[entity] = replace(
+        default,
+        assignments=[
+            a for a in default.assignments
+            if not (a.principal.kind == "group" and a.principal.name == reader_group)
+        ],
+    )
+
+    manifest = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=None,
+    )
+    excluded = f"{bundle.mapping.prefix}{entity}"
+    assert excluded in manifest, manifest
+    assert "EXCEPT" in manifest, manifest
+
+
+def test_the_manifest_claims_every_list_when_every_block_grants_the_reader(
+) -> None:
+    """The complement, so the qualification cannot fire for everything.
+
+    Every shipped family grants the reader on every block -- pinned by
+    `test_the_reader_group_is_granted_read_on_every_policy_block` -- so the
+    common case must keep reading as it did.
+    """
+    # Collapsed, because the claim is hard-wrapped into the paragraph and a
+    # raw substring would be asserting about where the line happens to break.
+    manifest = " ".join(_reader_manifest(None).split())
+    assert "read every list this bundle provisions" in manifest, manifest
+    assert "EXCEPT" not in manifest
 
 
 def test_manifest_warns_that_the_reader_enrolment_is_permanent() -> None:

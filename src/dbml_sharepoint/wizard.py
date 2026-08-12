@@ -181,7 +181,10 @@ def _ask_site_url(console: Console) -> str:
     """
     # Deferred for a cycle: cli.py imports this module at its top, so this
     # direction stays lazy until `validate_site_url` leaves the CLI -- #171.
-    from dbml_sharepoint.cli import validate_site_url  # noqa: PLC0415
+    from dbml_sharepoint.cli import (  # noqa: PLC0415
+        _site_url_notice,
+        validate_site_url,
+    )
 
     while True:
         site_url = Prompt.ask(
@@ -190,11 +193,16 @@ def _ask_site_url(console: Console) -> str:
             console=console,
         ).strip()
         try:
-            validate_site_url(site_url)
+            cleaned = validate_site_url(site_url)
         except typer.BadParameter as exc:
             console.print(f"[red]{exc.message}[/red]")
             continue
-        return site_url
+        # Said out loud, because the operator is about to see this URL in the
+        # Review panel and in the printed rebuild command, and a value that
+        # silently differs from what they typed reads as a bug in those.
+        if notice := _site_url_notice(site_url, cleaned):
+            console.print(f"[dim]  {notice}[/dim]")
+        return cleaned
 
 
 def _ask_enterprise_reader(console: Console) -> str:

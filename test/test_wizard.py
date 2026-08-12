@@ -471,6 +471,44 @@ def test_a_bad_site_url_is_refused_by_the_cli_rule(tmp_path: Path) -> None:
     assert "https" in console.text
 
 
+def test_a_pasted_site_url_keeps_its_query_out_of_the_copied_docs(
+    tmp_path: Path,
+) -> None:
+    """SharePoint's Copy link puts `?web=1` on the clipboard.
+
+    `_ask_site_url` cleans the answer and returns the cleaned value; this
+    pins that the wizard USES the return rather than the raw response. A
+    build would survive the difference -- `execute_build` cleans again --
+    but `_repoint_docs` bakes this value into every scaffolded deploy.md's
+    rebuild command, and the operator comes back to that command on every
+    schema change. Documentation disagreeing with what was built is the
+    failure `_repoint_docs`' own docstring exists to prevent.
+
+    MEASURED: reverting `_ask_site_url` to return the raw answer left all
+    2200 tests green, and `wizard.py` carried its only uncovered line.
+    """
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "risk-register",
+        str(destination),
+        "RR_",
+        "https://contoso.sharepoint.com/sites/x?web=1",
+        "y",   # write
+        "n",   # do not build
+    ])
+
+    assert wizard.run_wizard(console) == 0
+
+    docs = "\n".join(
+        p.read_text(encoding="utf-8") for p in destination.rglob("*.md")
+    )
+    assert "?web=1" not in docs, "the query reached the copied documentation"
+    assert "https://contoso.sharepoint.com/sites/x" in docs
+    # And the operator was told, rather than silently handed a different URL.
+    shown = " ".join(console.text.split())
+    assert "Ignoring the query or fragment" in shown, shown
+
+
 def test_a_bad_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([

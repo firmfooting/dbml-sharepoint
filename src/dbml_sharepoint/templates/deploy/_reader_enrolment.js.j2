@@ -43,6 +43,10 @@
   log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  // Declared outside the block below so the abort at the end of this phase
+  // can read it. See that abort for why a local count and not
+  // `summary.errors.length`.
+  let readerEnrolmentErrors = 0;
   {
     const READER_ADDRESS = {{ enterprise_reader | tojson }};
     // The build refuses --enterprise-reader against a mapping that declares
@@ -228,11 +232,16 @@
         // The named account already being a member is NOT this case — a
         // redeploy with the same flag has to stay green — so it is filtered
         // out by isReader before the count is taken.
-        const others = before.filter(u => !isReader(u));
+        // ONE spelling of the invariant, because it is checked twice: here
+        // against the state this run found, and again against the state it
+        // left. Two hand-written copies would be two things to keep in step.
+        const foreign = members => members.filter(u => !isReader(u));
+        const listMembers = members => members
+          .map(u => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
+          .join('; ');
+        const others = foreign(before);
         if (others.length > 0) {
-          const listed = others
-            .map(u => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
-            .join('; ');
+          const listed = listMembers(others);
           throw new Error(
             `group '${grp.name}' already holds ${others.length} principal(s) other than `
             + `'${READER_ADDRESS}': ${listed}. That group grants Read on EVERY list this `
@@ -266,14 +275,64 @@
         if (!after.some(isReader)) {
           throw new Error(`'${READER_ADDRESS}' was accepted into '${grp.name}' but is absent when the membership is read back; the grant did not take effect`);
         }
+        // The SAME exclusivity invariant the before-read enforced, applied to
+        // the state this run LEFT. Checking only presence made the gate above
+        // a check on a stale snapshot: another administrator adding a
+        // principal between the two reads passed unnoticed, and the run
+        // reported success on a group whose entire purpose is that it holds
+        // one account. The window is small and a live site is exactly where
+        // small windows get hit -- a deploy is pasted while people are
+        // working in the site.
+        //
+        // Nothing is removed here either, for the reason the before-read
+        // gives: membership is an operator-owned concern and this is a gate.
+        // It fails closed AFTER the write, which is deliberate -- the write
+        // is already done and cannot be un-done safely, so the operator is
+        // told exactly what the group now holds rather than left to find out.
+        const strays = foreign(after);
+        if (strays.length > 0) {
+          throw new Error(
+            `'${READER_ADDRESS}' was enrolled into '${grp.name}', but that group now also holds `
+            + `${strays.length} other principal(s) that were not there when this run checked: `
+            + `${listMembers(strays)}. Somebody added them while this script was running. That `
+            + `group grants Read on EVERY list this bundle provisions, so each of them can read `
+            + `all of it. Nothing was removed -- review the membership in Site permissions > `
+            + `Groups and remove whoever should not be there, then run this script again.`,
+          );
+        }
         log('INFO', `Enrolled '${resolved.Title || READER_ADDRESS}' into '${grp.name}' with the group's read-only grants. This membership is PERMANENT: remove it in Site permissions > Groups when the account no longer needs access.`);
       } catch (err) {
         log('ERROR', `Enterprise reader enrolment for '${grp.name}': ${err.message}`);
         summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });
+        readerEnrolmentErrors += 1;
       }
     }
   }
-  if (summary.errors.length > 0) {
+  // THIS phase's errors, not the run's. `summary.errors` accumulates across
+  // every phase, so reading the whole array would claim an earlier phase's
+  // failure as a reader-enrolment one -- logging 'Enterprise reader
+  // enrolment failed' and returning `aborted: 'reader-enrolment-errors'` for
+  // something this phase never touched.
+  //
+  // LATENT, NOT LIVE, and the distinction is worth writing down. TRACED
+  // 2026-08-12: every PREPARE phase ahead of this one -- preflight,
+  // security, operator enrolment -- ends with the same whole-array check and
+  // RETURNS. So an earlier error aborts at its own phase and this array is
+  // necessarily empty by the time control reaches here. A reviewer reported
+  // the misattribution and the reasoning was sound in the abstract; the
+  // chain is what makes it unreachable today.
+  //
+  // Fixed anyway, because "correct only because of what four other files
+  // happen to do" is not a property this phase can see or keep. The day one
+  // of those phases records a non-fatal error, this abort starts lying.
+  //
+  // Counted locally rather than filtered on the `phase` key, because a count
+  // needs no agreement with how errors are SHAPED elsewhere -- that key is
+  // set by the push above, and a change to it would quietly widen this check
+  // again. Untested for the same reason it is latent: the state cannot be
+  // reached without hand-editing the emitted script, and a test that
+  // fabricates it would be asserting about a scenario, not a behaviour.
+  if (readerEnrolmentErrors > 0) {
     log('ERROR', 'Enterprise reader enrolment failed; aborting before list creation.');
     return { ...summary, aborted: 'reader-enrolment-errors' };
   }
