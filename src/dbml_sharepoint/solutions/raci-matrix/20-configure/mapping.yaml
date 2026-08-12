@@ -1,0 +1,183 @@
+# RACI matrix — physical mapping.
+#
+# Three lists, and the shape is forced by the platform as much as by the
+# method. Consulted and Informed are inherently many-valued, and the mapper
+# resolves no multi-value person or lookup type (see typemap.py:321 — only a
+# DBML enum becomes MultiChoice). A wide, one-row-per-activity RACI therefore
+# cannot be built here except with free text. The child list that follows is
+# also what makes the most-cited RACI failure impossible: Accountable is a
+# single-valued person column, so a row cannot carry two of them.
+prefix: "RACI_"
+
+entities:
+  Party: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+calculated_formulas: {}
+
+# Security: the matrix is maintained centrally and read by everyone. Nobody
+# edits their own row — a register whose subjects can rewrite their own
+# accountability is not a register.
+groups:
+  - name: "RACI Matrix Maintainers"
+    description: "Staff who maintain the activity register, its involvements and the party vocabulary."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "RACI List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+  - name: "RACI Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "RACI Matrix Maintainers" }
+        level: "Contribute"
+      - principal: { kind: group, name: "RACI List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Read"
+      - principal: { kind: group, name: "RACI Enterprise Readers" }
+        level: "Read"
+
+seal_columns: true
+prevent_list_deletion: true
+
+display_names:
+  mode: auto
+
+column_formatting:
+  Party:
+    # A category, not a lifecycle, so the pill separates kinds rather than
+    # ranking them: the two person-shaped kinds share neutral, a Forum reads
+    # as a body, and External is visibly outside the organisation.
+    PartyKind: { style: pill, map: { Individual: neutral, Role: neutral,
+                                     Forum: low, External: muted } }
+    Status: { style: severity, map: { Active: low, Inactive: muted } }
+
+views:
+  Party:
+    - title: "Active parties"
+      default: true
+      fields: [Title, PartyKind, Contact, Notes]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        PartyKind: 130
+        Contact: 160
+        Notes: 200
+    - title: "By kind"
+      fields: [Title, PartyKind, Contact, Notes]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      group_by: { field: PartyKind, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        PartyKind: 130
+        Contact: 160
+        Notes: 200
+    - title: "Retired parties"
+      fields: [Title, PartyKind, Contact, Status, Notes]
+      where:
+        - { field: Status, op: eq, value: "Inactive" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        PartyKind: 130
+        Contact: 160
+        Status: 110
+        Notes: 200
+
+form_formatting:
+  Party:
+    header: formatting/party-form-header.json
+    body: formatting/party-form-body.json
+
+form_visibility: {}
+column_validation: {}
+list_validation: {}
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). All four
+# PartyKind members appear among the ACTIVE rows, because "By kind" filters on
+# Active — a member that only exists on the retired row would leave its group
+# absent from the only view that groups them. Two forums, so the activity
+# register's grouped view has two groups to show.
+demo_items:
+  Party:
+    - key: party-exec-director
+      values:
+        Title: "[DEMO] Executive Director"
+        PartyKind: "Individual"
+        Contact: "@me"
+        Status: "Active"
+        Notes: "Demo row. Carries accountability to the board for service delivery and finance."
+    - key: party-practice-manager
+      values:
+        Title: "[DEMO] Practice Manager"
+        PartyKind: "Role"
+        Contact: "@me"
+        Status: "Active"
+        Notes: "Demo row. A position, not a person - whoever holds it inherits every row that names it."
+    - key: party-clinical-governance
+      values:
+        Title: "[DEMO] Clinical Governance Committee"
+        PartyKind: "Forum"
+        Status: "Active"
+        Notes: "Demo row. Meets monthly. Terms of reference cover clinical risk, incidents and practice standards."
+    - key: party-finance-audit
+      values:
+        Title: "[DEMO] Finance and Audit Committee"
+        PartyKind: "Forum"
+        Status: "Active"
+        Notes: "Demo row. Meets quarterly. Holds delegated authority for expenditure above the executive threshold."
+    - key: party-external-auditor
+      values:
+        Title: "[DEMO] External auditor"
+        PartyKind: "External"
+        Status: "Active"
+        Notes: "Demo row. Outside the organisation. Consulted, never accountable - accountability cannot be outsourced."
+    - key: party-former-forum
+      values:
+        Title: "[DEMO] Regional Partnership Forum"
+        PartyKind: "Forum"
+        Status: "Inactive"
+        Notes: "Demo row. Disbanded in the last restructure. Retired rather than deleted, so the rows that referenced it still read."

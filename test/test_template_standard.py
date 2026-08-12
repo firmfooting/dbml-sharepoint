@@ -478,6 +478,13 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Ownership and closure": "Govern",
         "System": "System",
     },
+    # A vocabulary list, not a process one: it collapses to Identify ->
+    # Govern. There is no Assess beat because nothing about a party is
+    # rated, and no System beat because nothing is auto-stamped.
+    ("raci-matrix", "Party"): {
+        "Name the party": "Identify",
+        "Status and notes": "Govern",
+    },
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a
@@ -1388,13 +1395,18 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
     and is still the same opportunities-register entity, re-derived rather
     than assumed.
 
+    RE-MEASURED 2026-08-12 across 32 templates / 55 entities, when
+    raci-matrix's Party list joined the roster: 2 -> 7, 3 -> 29, 4 -> 18,
+    5 -> 1. Party lands at 3 (Contact plus Author and Editor). The worst is
+    unchanged and is still the same opportunities-register entity.
+
     If this fails at 6, that is a template growing a join column — update the
     number here DELIBERATELY, and check the spec's survey paragraph with it."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 31, (
-        f"{len(templates)} templates discovered, not the 31 this survey was "
+    assert len(templates) == 32, (
+        f"{len(templates)} templates discovered, not the 32 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster — re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -1659,8 +1671,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     """Unprefixed list names must stay unique across the shipped families.
 
     The prefix is a governance device -- you register yours so nobody else
-    takes it -- and it is on its way out. MEASURED 2026-08-12: 54 entity
-    names across 31 families, zero duplicated, so several families can
+    takes it -- and it is on its way out. MEASURED 2026-08-12: 55 entity
+    names across 32 families, zero duplicated, so several families can
     already share one site with no prefix at all.
 
     That is only true while it stays true. Two families both declaring
@@ -1668,8 +1680,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     nothing else in the build would notice: each family validates alone.
     """
     solutions = available_solutions()
-    assert len(solutions) == 31, (
-        f"{len(solutions)} templates discovered, not the 31 this collision "
+    assert len(solutions) == 32, (
+        f"{len(solutions)} templates discovered, not the 32 this collision "
         "sweep was measured against -- re-verify the invariant before "
         "trusting an empty collision set."
     )
@@ -1677,8 +1689,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     for solution in solutions:
         for entity in solution.lists:
             owners.setdefault(entity, []).append(solution.id)
-    assert len(owners) == 54, (
-        f"{len(owners)} unique entity names found, not the 54 this collision "
+    assert len(owners) == 55, (
+        f"{len(owners)} unique entity names found, not the 55 this collision "
         "sweep was measured against -- re-verify the invariant before "
         "trusting an empty collision set."
     )

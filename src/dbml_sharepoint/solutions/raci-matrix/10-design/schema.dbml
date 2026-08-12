@@ -1,0 +1,35 @@
+// ============================================================================
+// RACI matrix — activities, the parties involved in them, and the party
+// vocabulary both point at.
+// Render the ERD by pasting this file into https://dbdiagram.io
+// ============================================================================
+
+Project raci_matrix { database_type: 'SharePoint Online Lists' }
+
+Enum party_kind {
+  "Individual"
+  "Role"
+  "Forum"
+  "External"
+}
+
+Enum party_status {
+  "Active"
+  "Inactive"
+}
+
+Table Party {
+  Id        int          [pk, increment]
+  Title     nvarchar     [not null, unique, note: 'The party as everyone refers to it: "Executive Director", "Clinical Governance Committee"']
+  PartyKind party_kind   [not null, default: 'Individual', note: 'Individual is one named person; Role is a position whoever holds it; Forum is a committee or meeting; External is outside the organisation']
+  Contact   person       [note: 'For an Individual, themselves. For a Role, whoever holds it now. For a Forum, its chair or secretariat. Update this instead of renaming the party when the holder changes']
+  Status    party_status [not null, default: 'Active', note: 'Set Inactive when a person leaves or a forum is disbanded. Never delete a party — activities and involvements point at it and would be orphaned']
+  Notes     nvarchar     [note: 'Anything a reader needs to interpret this party correctly — its terms of reference, its meeting cadence, who it reports to']
+
+  indexes {
+    PartyKind
+    Status
+  }
+
+  Note: 'The vocabulary of everyone who can hold a role in the matrix: individuals, roles, forums and external bodies. Retire a party by setting its Status, not by deleting it.'
+}
