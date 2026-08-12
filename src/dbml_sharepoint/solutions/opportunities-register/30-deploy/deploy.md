@@ -100,11 +100,12 @@ starts `[DEMO]`; delete the rows before go-live.
 ### Security and boundaries
 
 - [ ] The list has broken inheritance and exact ACL reconciliation.
-- [ ] Only **OR Opportunity Submitters**, **OR Opportunity Stewards** and
-      **OR List Administrators** have declared direct grants. Associated Site
-      Members and Site Owners have no declared list grant.
+- [ ] Only **OR Opportunity Submitters**, **OR Opportunity Stewards**,
+      **OR List Administrators** and **OR Enterprise Readers** have declared
+      direct grants. Associated Site Members and Site Owners have no declared
+      list grant.
 - [ ] Submitters hold `OR Submit Only`; Stewards hold `OR Steward No Delete`;
-      Administrators hold Full Control.
+      Administrators hold Full Control; Enterprise Readers hold `Read`.
 - [ ] `OR Steward No Delete` includes `Manage Lists`, which SharePoint requires
       for Stewards to see every item despite read-own filtering. It does not
       include Delete Items. Keep the group small and verify sealed columns and
@@ -201,6 +202,11 @@ every list in this family. It stays empty unless the build was run with
 and nothing else. `rollback.js.txt` does not remove it: rollback deletes
 lists, not site groups or role assignments, so the group and any account
 enrolled in it survive a rollback.
+
+A later build that omits the flag does not put the group back to empty:
+enrolment only runs when `--enterprise-reader` is given, so an account
+enrolled by an earlier build keeps its membership and its `Read` grant on
+every list. Removing it is manual — clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody — clear it in Site

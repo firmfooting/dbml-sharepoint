@@ -140,6 +140,11 @@ and nothing else. `rollback.js.txt` does not remove it: rollback deletes
 lists, not site groups or role assignments, so the group and any account
 enrolled in it survive a rollback.
 
+A later build that omits the flag does not put the group back to empty:
+enrolment only runs when `--enterprise-reader` is given, so an account
+enrolled by an earlier build keeps its membership and its `Read` grant on
+every list. Removing it is manual — clear it in Site permissions > Groups.
+
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody — clear it in Site
 permissions > Groups and paste again, or rebuild without the flag.
