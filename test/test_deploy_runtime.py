@@ -1156,9 +1156,16 @@ def test_a_security_group_is_refused_as_an_enterprise_reader() -> None:
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_the_everyone_claim_is_refused_even_though_it_types_as_a_user() -> None:
-    """`spo-grid-all-users` is the one mistake here with no cheap undo, and
-    it can come back typed as a plain user (PrincipalType 1). Belt and
-    braces behind the type check.
+    """`spo-grid-all-users` is the one mistake here with no cheap undo.
+
+    On the one tenant this has been measured on (2026-08-12, group B of
+    `test/manual/enterprise-reader-probe.js`) it came back typed 4, which
+    the strict type check refuses by itself — so the needle is belt and
+    braces behind that check, not the thing holding the door. This test
+    hands it PrincipalType 1 anyway, because ONE TENANT IS ONE DATA POINT
+    and the needle exists for the tenant that types it differently. That is
+    also the only payload under which removing the needle can be watched
+    failing.
 
     The payload keeps the matching Email deliberately, so neither the type
     check nor the identity check can be what refuses it — the claims check

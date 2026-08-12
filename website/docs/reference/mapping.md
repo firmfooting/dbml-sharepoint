@@ -1483,11 +1483,23 @@ on a flagged group (`enterprise_reader_group_over_privileged`).
 
 A smaller, separate limit: before enrolling the named account, the deploy
 refuses it outright if it resolves to one of SharePoint's tenant-wide
-claims — but only two of the four Microsoft Learn names (*Everyone*,
-*Everyone except external users*). Learn publishes no login-name encoding
-for *All Authenticated Users* or *All Forms Users*, so those two were
-deliberately not guessed rather than guarded with an invented value. See
-the dated comment in `templates/deploy/_reader_enrolment.js.j2`.
+claims — but the login-name needles cover only two of the four Microsoft
+Learn names (*Everyone*, *Everyone except external users*). Learn publishes
+no login-name encoding for *All Authenticated Users* or *All Forms Users*,
+so those two were deliberately not guessed rather than guarded with an
+invented value.
+
+Measured on **2026-08-12**, on the same single tenant, by group B of
+`test/manual/enterprise-reader-probe.js`: *Everyone* and *Everyone except
+external users* both resolve to **one** `spo-grid-all-users` principal typed
+`PrincipalType` 4, which the strict single-user check refuses on its own —
+the needles are defence in depth behind it, not the only thing standing
+there. `web/ensureuser` **refused** *All Authenticated Users* and *All Forms
+Users* outright, HTTP 400, "the specified user could not be found", so on
+that tenant neither is reachable by display name. That narrows the gap; it
+does not close it, since another tenant may resolve them and a display-name
+refusal is not proof that no encoding exists. See the dated comment in
+`templates/deploy/_reader_enrolment.js.j2`.
 
 :::
 

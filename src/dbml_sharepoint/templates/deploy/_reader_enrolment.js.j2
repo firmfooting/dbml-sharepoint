@@ -87,35 +87,56 @@
           );
         }
 
-        // 3. The tenant-wide claims. They resolve as ordinary users, so the
-        // type check above does not catch them, and granting one hands Read
-        // on this register to every account in the tenant — the one mistake
-        // in this phase with no cheap undo.
+        // 3. The tenant-wide claims. Granting one hands Read on this
+        // register to every account in the tenant — the one mistake in this
+        // phase with no cheap undo.
         //
-        // KNOWN LIMIT, 2026-08-11. Learn ("Grant the Everyone claim to
-        // external users in Microsoft 365") names FOUR tenant-wide claims:
-        // Everyone, Everyone except external users, All Authenticated Users,
-        // All Forms Users. The three needles below cover the first two. Learn
-        // publishes no login-name encoding for the other two, and they are
-        // deliberately NOT guessed here — a needle invented from plausibility
-        // would read like a guard and catch nothing, which is worse than an
+        // MEASURED 2026-08-12, on ONE tenant, by group B of
+        // `test/manual/enterprise-reader-probe.js`: `web/ensureuser` for
+        // BOTH display names — "Everyone" and "Everyone except external
+        // users" — resolved to the SAME principal, a
+        // `c:0-.f|rolemanager|spo-grid-all-users/<tenantid>` login typed
+        // PrincipalType 4 (SecurityGroup). So the strict `!== 1` check
+        // above refuses them on its own, before this list is consulted.
+        // An earlier version of this comment said these claims "resolve as
+        // ordinary users, so the type check above does not catch them".
+        // That was written from plausibility and the live run contradicts
+        // it.
+        //
+        // THE NEEDLES STAY, and neither they nor the type check are to be
+        // softened. Two of the three matched that principal
+        // (`spo-grid-all-users`, `c:0-.f|rolemanager`), and ONE TENANT IS
+        // ONE DATA POINT: another tenant may type the same claim
+        // differently, and a claim typed 1 with no needle matching it is
+        // exactly the case this defence in depth exists for.
+        //
+        // KNOWN LIMIT, opened 2026-08-11, NARROWED 2026-08-12. Learn
+        // ("Grant the Everyone claim to external users in Microsoft 365")
+        // names FOUR tenant-wide claims: Everyone, Everyone except external
+        // users, All Authenticated Users, All Forms Users. The three
+        // needles below cover the first two. Learn publishes no login-name
+        // encoding for the other two, and they are still deliberately NOT
+        // guessed here — a needle invented from plausibility would read
+        // like a guard and catch nothing, which is worse than an
         // acknowledged gap.
         //
-        // The residual risk is small but not zero, and rests on two things,
-        // not on this list: `validate_enterprise_reader` refuses any '|' at
-        // build time, so a claim string cannot be supplied as the address;
-        // and step 4 below requires the RESOLVED identity to equal the
-        // address that was asked for, which a claim principal does not.
+        // They were SOUGHT on 2026-08-12: rows B3 and B4 of that probe
+        // asked `web/ensureuser` for both display names and it REFUSED
+        // both, HTTP 400 SPException "The specified user ... could not be
+        // found", under odata=nometadata and odata=verbose alike. So on
+        // that tenant neither is reachable by display name, and
+        // `validate_enterprise_reader` refuses any '|' at build time, so a
+        // claim string cannot be supplied through the CLI either.
         //
-        // STILL UNMEASURED as of 2026-08-11. The probe that answers this now
-        // exists — `test/manual/enterprise-reader-probe.js`, group B, which
-        // calls `web/ensureuser` for all four display names and records the
-        // LoginName each resolves to. It was RUN on 2026-08-11 with the
-        // write flag OFF, so group B did not execute and the two missing
-        // encodings are exactly as unknown as they were. To close this,
-        // re-run that probe with ALLOW_WRITES = true on a DISPOSABLE site
-        // (`ensureuser` materialises the principal in the site's User
-        // Information List; it grants nothing) and add what comes back.
+        // THAT NARROWS THE GAP; IT DOES NOT CLOSE IT. Another tenant may
+        // resolve those display names, and a refusal by display name is not
+        // proof that no login-name encoding exists.
+        //
+        // The residual risk therefore still rests on the guards rather than
+        // on this list: the '|' refusal at build time; the strict type
+        // check above; and step 4 below, which requires the RESOLVED
+        // identity to equal the address that was asked for, which a claim
+        // principal does not.
         const login = resolved.LoginName.toLowerCase();
         const claim = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager']
           .find(c => login.includes(c));
