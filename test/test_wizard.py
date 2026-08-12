@@ -56,32 +56,31 @@ class ScriptedConsole(Console):
 
 def _answers(
     destination: Path, *, build: str = "n", seed: str | None = None,
-    reader: str = "", **over: str,
+    reader: str = "", confirm: str = "y", **over: str,
 ) -> list[str]:
-    """The happy-path script: template, directory, prefix, site, confirm.
+    """The happy-path script, in the order the wizard now asks.
 
-    `seed` answers the demo-rows question, which the wizard asks only after
-    the build is confirmed AND only for a mapping that declares demo items.
-    Left out by default so a script that does not reach it stays honest: a
-    spare answer at the end of the list is invisible, and a missing one
-    surfaces as EOFError rather than as silence.
+    Everything is asked BEFORE the single confirmation, which is the point of
+    the sequence: the operator reviews the whole decision once instead of
+    confirming a write and then being asked three more questions.
 
-    `reader` answers the enterprise-reader question, asked (only when the
-    copied mapping declares an `enroll_enterprise_reader` group) right after
-    the build confirmation, before `seed`. Unlike `seed` it defaults to a
-    real answer -- blank, "enrol nobody" -- rather than `None`, because
-    every shipped family declares such a group today (unlike demo items),
-    so most callers reach the question and a `None` default would silently
-    break them. Reader's default answer sits unread when the copied
-    mapping declares no such group, which is exactly what "a spare answer
-    is invisible" already covers.
+    The order is: template, prefix, directory, site URL, [site role], build?,
+    [reporting], [demo rows], confirm. The prefix sits with the template
+    because it is a property of the template; the directory, site URL and
+    site role describe the site.
+
+    `seed` stays `None` by default so a script that does not reach the
+    question stays honest: a spare answer at the end of the list is
+    invisible, and a missing one surfaces as EOFError rather than as silence.
+    The site role is absent because every shipped family declares exactly one
+    role, so the question is not put -- a family with two needs it inserted
+    by hand.
     """
     script = {
         "template": "risk-register",
-        "destination": str(destination),
         "prefix": "RR_",
+        "destination": str(destination),
         "site_url": "https://contoso.sharepoint.com/sites/x",
-        "write": "y",
     }
     script.update(over)
     tail = [build]
@@ -89,7 +88,7 @@ def _answers(
         tail.append(reader)
         if seed is not None:
             tail.append(seed)
-    return [*script.values(), *tail]
+    return [*script.values(), *tail, confirm]
 
 
 def _collapsed(console: ScriptedConsole) -> str:
@@ -159,10 +158,20 @@ def _choice(prefix: str = "RR_", *, lists: tuple[str, ...] = ("Risk",),
 
 
 def _answers_for(*choices: wizard.TemplateChoice, destination: Path) -> wizard.Answers:
+    """An `Answers` for the pure-function tests.
+
+    The build fields are filled with the "copy the files only" answers
+    because none of these tests is about the build: `_template_root` and
+    `_within` read the destination and the templates and nothing else.
+    """
     return wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        site_role="default",
         templates=choices,
+        build=False,
+        reader="",
+        seed=False,
     )
 
 
@@ -356,12 +365,12 @@ def test_refuses_a_non_empty_destination_and_reprompts(tmp_path: Path) -> None:
 
     console = ScriptedConsole([
         "risk-register",
+        "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
-        "RR_",
         "https://contoso.sharepoint.com/sites/x",
-        "y",
-        "n",
+        "n",   # build
+        "y",   # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -411,7 +420,7 @@ def test_changing_the_prefix_repoints_the_copied_documentation(
     deploy_md = (destination / "30-deploy" / "deploy.md").read_text(encoding="utf-8")
     assert "ACME_Risk" in deploy_md
     # And it says so rather than editing the user's docs silently.
-    assert "Repointed" in console.text
+    assert "Updated" in console.text
 
 
 def test_the_chosen_site_url_reaches_the_copied_documentation(
@@ -486,7 +495,11 @@ def test_each_template_repoints_only_its_own_documentation(
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
+        site_role="default",
         templates=(risk, audit),
+        build=False,
+        reader="",
+        seed=False,
     )
 
     changed, _ = wizard._scaffold(answers)
@@ -575,7 +588,7 @@ def test_a_long_prefix_is_accepted(tmp_path: Path) -> None:
 
 def test_declining_the_write_leaves_nothing_behind(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
-    console = ScriptedConsole(_answers(destination, write="n"))
+    console = ScriptedConsole(_answers(destination, confirm="n"))
 
     assert wizard.run_wizard(console) == 0
     assert not destination.exists()
@@ -590,12 +603,12 @@ def test_a_bad_site_url_is_refused_by_the_cli_rule(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
-        str(destination),
         "RR_",
+        str(destination),
         "http://insecure.example.com/sites/x",       # refused
         "https://contoso.sharepoint.com/sites/x",    # accepted
-        "y",
-        "n",
+        "n",   # build
+        "y",   # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -644,12 +657,12 @@ def test_a_bad_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
-        str(destination),
         "has a space",   # refused
         "RR_",
+        str(destination),
         "https://contoso.sharepoint.com/sites/x",
-        "y",
-        "n",
+        "n",   # build
+        "y",   # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -673,15 +686,49 @@ def test_an_unknown_template_reprompts_rather_than_exiting(tmp_path: Path) -> No
     console = ScriptedConsole([
         "no-such-template",
         "risk-register",
-        str(destination),
         "RR_",
+        str(destination),
         "https://contoso.sharepoint.com/sites/x",
-        "y",
-        "n",
+        "n",   # build
+        "y",   # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
     assert "No template" in console.text
+
+
+def test_a_blank_template_answer_reprompts_rather_than_picking_the_first(
+    tmp_path: Path,
+) -> None:
+    """Enter is not an answer to the template question.
+
+    It used to default to `solutions[0].id` -- whatever sorts first, which
+    is `asset-register` -- so pressing Enter through the wizard scaffolded a
+    family nobody chose. Blank is not a mistake worth an error message, so
+    the prompt simply repeats; the assertion is therefore that the run ends
+    on the template the SECOND answer names, not on the alphabetical first.
+
+    The script would be one answer shorter for a wizard that took the
+    default, so the regression shows up as a leftover answer and a
+    `risk-register` project rather than as EOF.
+    """
+    destination = tmp_path / "proj"
+    console = ScriptedConsole([
+        "",   # Enter -- must not be taken as an answer at all
+        "audit-actions",
+        "AU_",
+        str(destination),
+        "https://contoso.sharepoint.com/sites/x",
+        "n",   # build
+        "y",   # confirm
+    ])
+
+    assert wizard.run_wizard(console) == 0
+    # The identity of what was written, not just what was printed: the
+    # catalogue table names every template, so a console assertion alone
+    # would hold whichever family the blank answer scaffolded.
+    copied = load_mapping(destination / "20-configure" / "mapping.yaml")
+    assert tuple(copied.mapping.entities) == load_solution("audit-actions").lists
 
 
 def test_running_out_of_input_exits_without_a_traceback(tmp_path: Path) -> None:
@@ -827,12 +874,12 @@ def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
 
     console = ScriptedConsole([
         "risk-register",
+        "RR_",
         str(occupied),      # refused
         str(destination),   # accepted
-        "RR_",
         "https://contoso.sharepoint.com/sites/x",
-        "y",
-        "n",
+        "n",   # build
+        "y",   # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -849,12 +896,12 @@ def test_a_whitespace_only_prefix_is_refused_and_reprompted(tmp_path: Path) -> N
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "risk-register",
-        str(destination),
         "   ",   # refused: strips to empty
         "RR_",
+        str(destination),
         "https://contoso.sharepoint.com/sites/x",
-        "y",
-        "n",
+        "n",   # build
+        "y",   # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -877,11 +924,11 @@ def test_a_number_outside_the_table_reprompts_rather_than_indexing(
         "0",     # refused
         "999",   # refused
         "risk-register",
-        str(destination),
         "RR_",
+        str(destination),
         "https://contoso.sharepoint.com/sites/x",
-        "y",
-        "n",
+        "n",   # build
+        "y",   # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -1026,38 +1073,155 @@ def test_a_template_whose_lists_could_not_be_read_is_still_described(
     assert "(none declared)" in _collapsed(console)
 
 
-def test_the_summary_names_every_answer_before_the_write_is_confirmed(
+def test_every_question_is_asked_before_anything_is_written(
     tmp_path: Path,
 ) -> None:
-    """The confirm is the only chance to catch a mistyped answer.
+    """The whole point of the sequence.
 
-    Four questions back, "Write these files?" is not enough on its own to
-    review -- the panel above it is what the operator actually checks, and
-    a panel that omitted one of the four would be worse than no panel,
-    because it looks like a complete summary.
+    `Build it now?` used to be answered and then followed by three more
+    questions -- site role, reporting account, demo rows -- with nothing
+    summarising them before a deploy bundle was generated against a real
+    site. Declining at the single confirmation must leave no directory
+    behind, no matter how many questions preceded it.
     """
-    destination = tmp_path / "proj"
-    site_url = "https://contoso.sharepoint.com/sites/ops"
-    # Wide, so the destination path cannot be folded mid-word by the wrap.
+    destination = tmp_path / "out"
     console = ScriptedConsole(
-        _answers(destination, prefix="ACME_", site_url=site_url), width=400,
+        _answers(destination, build="y", seed="n", confirm="n"),
     )
-
     assert wizard.run_wizard(console) == 0
-    reported = _collapsed(console)
-    # Bounded at BOTH ends. Stopping at the confirm is not enough for the
-    # template: `risk-register` is a row in the catalogue table and the
-    # default of the project-directory prompt, so that assertion held with
-    # or without the panel line it claims to cover. The prefix, directory
-    # and site URL are all answers that differ from their defaults, so they
-    # appear nowhere but the panel -- but the bound belongs on all four,
-    # since the next value added here will not necessarily be chosen that
-    # way.
-    panel = reported.split("About to write")[1].split("Write these files?")[0]
-    assert "risk-register" in panel
-    assert str(destination) in panel
-    assert "ACME_" in panel
-    assert site_url in panel
+    assert not destination.exists()
+    assert "Nothing written" in _collapsed(console)
+
+
+def test_the_review_names_the_lists_that_will_be_created(
+    tmp_path: Path,
+) -> None:
+    """The one thing the wizard never told you.
+
+    You answer `ACME_` and it confirmed `Prefix ACME_`, never `ACME_Risk`.
+    Now that a blank prefix is a valid answer this is the only place the
+    difference between `Risk` and `ACME_Risk` is visible before the write.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        _answers(destination, prefix="ACME_", build="n", confirm="n"),
+    )
+    assert wizard.run_wizard(console) == 0
+    assert "ACME_Risk" in _collapsed(console)
+
+
+def test_the_review_names_every_answer(tmp_path: Path) -> None:
+    """Supersedes the old `About to write` summary, which named four answers
+    and could not name the other three because they had not been asked."""
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        _answers(
+            destination, build="y", seed="y",
+            reader="svc.reporting@contoso.com", confirm="n",
+        ),
+        # Wide, so a destination path cannot be folded mid-word by the wrap:
+        # `_collapsed` rejoins at whitespace and a long path has none.
+        width=400,
+    )
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    for expected in (
+        "risk-register", "RR_Risk", str(destination),
+        "https://contoso.sharepoint.com/sites/x",
+        "svc.reporting@contoso.com", "default",
+    ):
+        assert expected in shown, expected
+
+
+def test_the_confirmation_does_not_promise_a_build_that_was_declined(
+    tmp_path: Path,
+) -> None:
+    """`Write the project and build it?` when it will, `Write the project?`
+    when it will not."""
+    destination = tmp_path / "out"
+    console = ScriptedConsole(_answers(destination, build="n", confirm="n"))
+    assert wizard.run_wizard(console) == 0
+    assert "Write the project?" in _collapsed(console)
+
+
+def test_the_confirmation_promises_the_build_that_was_accepted(
+    tmp_path: Path,
+) -> None:
+    """The other arm. A fixed `Write the project?` would understate what the
+    Enter key is about to do: generate a deploy bundle, not just copy files."""
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", confirm="n"),
+    )
+    assert wizard.run_wizard(console) == 0
+    assert "Write the project and build it?" in _collapsed(console)
+
+
+def test_the_declined_build_prints_a_command_carrying_the_site_role(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The escape hatch used to omit `--site-role` because it had not asked.
+
+    Against a mapping declaring `hq` and `branch` and no `default`, the
+    printed command therefore fell back to `--site-role default`, which
+    `_require_known_site_role` refuses. Moving the question into the site
+    section is what fixes it: the role is known whether or not the build runs.
+    """
+    family = tmp_path / "family"
+    solution = _fake_family(
+        family,
+        mapping='prefix: "OLD_"\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: hq }\n"
+        "  Note: { kind: List, base_template: 100, site_role: branch }\n",
+    )
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        [solution.id, "NEW_", str(destination),
+         "https://contoso.sharepoint.com/sites/x", "branch", "n", "y"],
+    )
+    assert wizard.run_wizard(console) == 0
+    assert "--site-role branch" in _collapsed(console)
+
+
+def test_the_seed_caution_still_comes_before_the_question(
+    tmp_path: Path,
+) -> None:
+    """A family may seed data its own procedure says not to put on a live
+    site. An instruction read after the decision cannot prevent that."""
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", confirm="n"),
+    )
+    assert wizard.run_wizard(console) == 0
+    shown = _collapsed(console)
+    assert shown.index("deploy.md") < shown.index("Add the demo rows?")
+
+
+def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
+    """`_lead_sentence` returns "" for a README it cannot parse.
+
+    Every shipped family has one, so nothing else reaches the empty arm --
+    but a new template whose README opens with a table would print a blank
+    dim line under its title, which reads like a rendering fault. Asserted
+    as a LINE COUNT against the same solution with a detail, because the
+    difference between the two arms is a line that is there or is not:
+    a substring assertion cannot see a blank one.
+    """
+    solution = Solution(
+        id="x", title="Fake", summary="s", detail="",
+        lists=("Risk", "Control"), prefix="", root=Path("unused"),
+    )
+    without = ScriptedConsole([])
+    wizard._describe(without, solution)
+    with_detail = ScriptedConsole([])
+    wizard._describe(with_detail, replace(solution, detail="A whole sentence."))
+
+    assert "Fake - 2 lists: Risk, Control" in _collapsed(without)
+    assert "A whole sentence." in _collapsed(with_detail)
+    assert without.text.count("\n") < with_detail.text.count("\n")
 
 
 def test_the_only_declared_site_role_is_not_asked_for(
@@ -1115,12 +1279,12 @@ def test_a_mapping_declaring_two_site_roles_asks_which_to_build(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
-        str(destination),
         "NEW_",
+        str(destination),
         "https://contoso.sharepoint.com/sites/x",
-        "y",          # write
-        "y",          # build
         "default",    # site role -- NOT roles[0], see the docstring
+        "y",          # build
+        "y",          # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -1163,13 +1327,13 @@ def test_a_mapping_with_no_role_called_default_is_offered_no_default(
     destination = tmp_path / "proj"
     console = ScriptedConsole([
         "fake-template",
-        str(destination),
         "NEW_",
+        str(destination),
         "https://contoso.sharepoint.com/sites/x",
-        "y",     # write
-        "y",     # build
         "",      # Enter -- must not be taken as an answer at all
         "hq",
+        "y",     # build
+        "y",     # confirm
     ])
 
     assert wizard.run_wizard(console) == 0
@@ -1328,21 +1492,27 @@ def test_a_bad_reader_address_is_refused_and_reprompted(
     exception, on top of a project directory already written to disk.
 
     The script answers the question twice: once with the typo, once with a
-    real address. A wizard that did not re-ask would consume the second
-    answer as the seed answer and then run out of input (exit 130), and one
-    that raised would fail this test as an error rather than an assertion
-    -- so both regressions are distinguishable from a pass.
+    real address. A wizard that did not re-ask would take the typo as the
+    answer and hand it to the build -- which the captured assertion below
+    catches -- and one that raised would fail this test as an error rather
+    than an assertion, so both regressions are distinguishable from a pass.
+
+    Written out rather than built from `_answers`, because the re-ask is an
+    EXTRA answer in the middle of the script and the helper appends only at
+    the end.
     """
     captured = _capture_build(monkeypatch)
     console = ScriptedConsole(
-        # `seed` left off so `_answers` stops after the typo; the re-ask
-        # and the seed answer are appended in the order the wizard asks
-        # them, which is what makes an absent re-ask show up as EOFError
-        # rather than as the seed question silently eating a UPN.
         [
-            *_answers(tmp_path / "proj", build="y", reader="svc.reporting"),
-            "svc-reporting@example.org",
-            "n",
+            "risk-register",
+            "RR_",
+            str(tmp_path / "proj"),
+            "https://contoso.sharepoint.com/sites/x",
+            "y",                            # build
+            "svc.reporting",                # refused: no '@'
+            "svc-reporting@example.org",    # re-asked, accepted
+            "n",                            # demo rows
+            "y",                            # confirm
         ],
         width=400,
     )
@@ -1383,6 +1553,13 @@ def test_a_template_declaring_no_demo_items_is_not_asked(
     the choice would be offering a dead end -- and the wizard would have
     walked the operator into it. The script carries no answer for the
     question, so a wizard that asked would run out of input and exit 130.
+
+    This read `"demo" not in shown` while the closing panel was the only
+    place the word could appear. The Review panel now reports `Demo rows no`
+    for every build -- accurately, and deliberately, since the point of that
+    panel is to state the whole decision -- so the assertion names the
+    caution and the QUESTION instead. Both are what "is not asked" means,
+    and a wizard that put either would still be caught.
     """
     solution = _fake_family(tmp_path / "fake")
     _offer_only(monkeypatch, solution)
@@ -1394,7 +1571,9 @@ def test_a_template_declaring_no_demo_items_is_not_asked(
     )
 
     assert wizard.run_wizard(console) == 0
-    assert "demo" not in _collapsed(console).lower()
+    shown = _collapsed(console)
+    assert "Add the demo rows?" not in shown
+    assert "Demo rows are titled" not in shown
     assert captured["seed"] is False
 
 
@@ -1469,7 +1648,7 @@ def test_the_seed_question_carries_its_caution_first(
     assert wizard.run_wizard(console) == 0
     shown = _collapsed(console)
     caution = shown.index("before seeding")
-    question = shown.index("Add the template's demo rows")
+    question = shown.index("Add the demo rows?")
     assert caution < question, "the caution must precede the question"
     assert "deploy.md" in shown
 
@@ -1526,12 +1705,13 @@ def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
     _offer_only(monkeypatch, solution)
 
     destination = tmp_path / "out"
-    # One answer only. The guard runs straight after the template pick, so a
-    # second scripted answer would never be consumed -- and a spare answer at
-    # the end of a script is invisible, which is exactly how a test comes to
-    # assert less than it looks like it does. Under-scripting is the honest
-    # failure mode here: it surfaces as EOFError and exit 130, not silence.
-    console = ScriptedConsole([solution.id])
+    # Two answers only -- the template and its prefix. The guard runs
+    # straight after the prefix, so a third scripted answer would never be
+    # consumed, and a spare answer at the end of a script is invisible, which
+    # is exactly how a test comes to assert less than it looks like it does.
+    # Under-scripting is the honest failure mode here: it surfaces as
+    # EOFError and exit 130, not silence.
+    console = ScriptedConsole([solution.id, "NEW_"])
     assert wizard.run_wizard(console) == 1
     assert not destination.exists()
     assert "fake-template" in _collapsed(console)

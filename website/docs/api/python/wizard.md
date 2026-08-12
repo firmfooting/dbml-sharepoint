@@ -65,10 +65,18 @@ rather than predicting it.
 class Answers:
     destination: Path
     site_url: str
+    site_role: str
     templates: tuple[dbml_sharepoint.wizard.TemplateChoice, ...]
+    build: bool
+    reader: str
+    seed: bool
 ```
 
 What the wizard collected, before anything is written.
+
+Every field is filled before the single confirmation, which is the
+point: the operator reviews the whole decision once rather than
+confirming a write and then being asked three more questions.
 
 ### `run_wizard`
 

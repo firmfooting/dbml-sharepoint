@@ -99,11 +99,20 @@ class TemplateChoice:
 
 @dataclass(frozen=True)
 class Answers:
-    """What the wizard collected, before anything is written."""
+    """What the wizard collected, before anything is written.
+
+    Every field is filled before the single confirmation, which is the
+    point: the operator reviews the whole decision once rather than
+    confirming a write and then being asked three more questions.
+    """
 
     destination: Path
     site_url: str
+    site_role: str
     templates: tuple[TemplateChoice, ...]
+    build: bool
+    reader: str
+    seed: bool
 
 
 def _template_root(answers: Answers, choice: TemplateChoice) -> Path:
@@ -159,10 +168,15 @@ def _pick_solution(console: Console, solutions: list[Solution]) -> Solution:
     by_name = {s.id: s for s in solutions}
     while True:
         answer = Prompt.ask(
-            "\n[bold]Pick a template[/bold] (number or name)",
-            default=solutions[0].id,
+            "[bold]Template[/bold] (number or name)",
             console=console,
         ).strip()
+        if not answer:
+            # No default. `solutions[0].id` is whatever sorts first --
+            # `asset-register` -- which is not an answer, and Enter used to
+            # scaffold it silently. Blank is not a mistake worth an error
+            # message; just ask again.
+            continue
         if answer in by_name:
             return by_name[answer]
         if answer.isdigit() and 1 <= int(answer) <= len(solutions):
@@ -171,16 +185,23 @@ def _pick_solution(console: Console, solutions: list[Solution]) -> Solution:
 
 
 def _describe(console: Console, solution: Solution) -> None:
+    """What the chosen template is, in two lines rather than a box.
+
+    A Panel here competed with the Review panel four questions later, and
+    the operator has just chosen this template off a table that already
+    named it -- so the point is confirmation, not presentation.
+    """
     lists = ", ".join(solution.lists) or "(none declared)"
+    count = len(solution.lists)
     console.print(
-        Panel(
-            f"{solution.summary}\n\n"
-            f"[bold]Lists[/bold]  {lists}\n"
-            f"[bold]Prefix[/bold] {solution.prefix}",
-            title=solution.title,
-            border_style="cyan",
-        ),
+        f"\n  [bold]{solution.title}[/bold]  -  {count} list"
+        f"{'' if count == 1 else 's'}: {lists}",
     )
+    # `detail`, not `summary`: `summary` is capped at `_SUMMARY_MAX` so it
+    # fits the table cell above, and reusing it here cut risk-register's
+    # sentence at `...SharePoint calculates Resi...`.
+    if solution.detail:
+        console.print(f"  [dim]{solution.detail}[/dim]\n")
 
 
 def _ask_destination(console: Console, solution: Solution) -> Path:
@@ -258,6 +279,32 @@ def _ask_site_url(console: Console) -> str:
         return cleaned
 
 
+def _ask_site_role(console: Console, roles: list[str]) -> str:
+    """Which site role to build under. Not asked when there is only one.
+
+    Asked in the site section rather than the build section, because the role
+    describes the site and because the command printed when the build is
+    declined has to carry `--site-role`. It could not, while the question
+    came after `Build it now?`.
+    """
+    if len(roles) == 1:
+        return roles[0]
+    if "default" in roles:
+        # Every shipped family declares `default`, so Enter is a real answer
+        # whenever the mapping declares it too.
+        return Prompt.ask(
+            "[bold]Site role[/bold]", choices=roles, default="default",
+            console=console,
+        )
+    # No default offered, because `Prompt.ask` returns one WITHOUT checking it
+    # against `choices` -- rich short-circuits an empty answer in
+    # `PromptBase.__call__` before `process_response` runs. A fixed
+    # `default="default"` therefore let Enter answer a mapping whose roles are
+    # `hq` and `branch` with a role it never declared, and `execute_build`
+    # refused it: a dead end behind the key that looks safest.
+    return Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
+
+
 def _ask_enterprise_reader(console: Console) -> str:
     """Prompt until the answer is blank or passes the CLI's own validator.
 
@@ -294,6 +341,43 @@ def _ask_enterprise_reader(console: Console) -> str:
             console.print(f"[red]{exc.message}[/red]")
             continue
         return reader
+
+
+def _ask_seed(console: Console) -> bool:
+    """Offer the template's demo rows, caution first.
+
+    Every colour map, row wash and declared view is invisible on an empty
+    list, and the wizard is the one path aimed at somebody who has not seen
+    this tool work -- so it was the one path that could not show them.
+    Declined by default: seeding writes `[DEMO]` rows into a real site, and
+    the wizard must not be more forward than the documented flag it stands
+    for.
+
+    The caution goes BEFORE the question, because the question is where the
+    decision is made. A shipped family may seed deliberately alarming data to
+    make a view render at all -- equipment-maintenance ships one genuinely
+    overdue infusion pump, eighteen days past its annual service, and its
+    guide says in as many words not to seed a site that already holds a real
+    schedule.
+
+    The guide is named by its path INSIDE the project, not absolutely: this
+    runs before the destination has been written, and the operator is told
+    where the project is by the Review panel a moment later.
+
+    The escape before [DEMO] is rich's documented way to mean a literal
+    bracket. MEASURED 2026-08-11: rich prints it identically with or without,
+    because DEMO is not a style it knows. Kept anyway -- it is the documented
+    spelling and costs one character -- but NOT because an unescaped one was
+    seen to break.
+    """
+    guide = "30-deploy/deploy.md"
+    console.print(
+        r"[dim]  Demo rows are titled \[DEMO] and rollback treats a list of "
+        "them as demo-only.\n  Some families seed deliberately alarming data "
+        f"so a view renders at all -- read\n  {guide} before seeding a site "
+        "that already holds real data.[/dim]",
+    )
+    return Confirm.ask("Add the demo rows?", default=False, console=console)
 
 
 def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
@@ -525,19 +609,122 @@ def _site_roles(facts: Sequence[_TemplateFacts]) -> list[str]:
     return sorted(shared)
 
 
+#: Wide enough for `Reporting`, the longest label.
+_REVIEW_LABEL = 10
+
+
+def _review_row(label: str, value: str) -> str:
+    return f"[bold]{label:<{_REVIEW_LABEL}}[/bold] {value}"
+
+
+def _review_panel(answers: Answers) -> Panel:
+    """Every answer, once, before the single confirmation.
+
+    `Lists` is the load-bearing row. A blank prefix is a valid answer now, so
+    this is the only place the operator sees whether they are about to create
+    `Risk` or `ACME_Risk`. The titles are `prefix + entity`, which is what
+    the generators do -- reported, not predicted.
+    """
+    rows = []
+    for choice in answers.templates:
+        rows.append(
+            _review_row(
+                "Template", f"{choice.solution.id} - {choice.solution.title}",
+            ),
+        )
+        rows.append(_review_row("Lists", ", ".join(choice.list_titles())))
+    rows.append(_review_row("Directory", str(answers.destination)))
+    rows.append(_review_row("Site", answers.site_url))
+    if not answers.build:
+        rows.append(_review_row("Build", "no, copy the files only"))
+    else:
+        rows.append(_review_row("Build", f"yes, site role {answers.site_role}"))
+        rows.append(_review_row("Reporting", answers.reader or "nobody"))
+        rows.append(_review_row("Demo rows", "yes" if answers.seed else "no"))
+    return Panel("\n".join(rows), title="Review", border_style="yellow")
+
+
+def _rebuild_command(answers: Answers) -> str:
+    """What to run later, complete enough to actually work.
+
+    `--site-role` is always present. It used to be absent because the wizard
+    printed this before asking, so against a mapping declaring `hq` and
+    `branch` the command it handed the operator was one
+    `_require_known_site_role` refuses.
+    """
+    choice = answers.templates[0]
+    inside = _within(_template_root(answers, choice), answers.destination)
+    return (
+        "\nWhen you are ready:\n\n"
+        f"  [bold]cd {answers.destination}[/bold]\n"
+        "  [bold]dbml-sharepoint build \\\n"
+        f"    --schema {inside}10-design/schema.dbml \\\n"
+        f"    --mapping {inside}20-configure/mapping.yaml \\\n"
+        f"    --release {inside}20-configure/release.yaml \\\n"
+        f"    --site-url {answers.site_url} \\\n"
+        f"    --site-role {answers.site_role} \\\n"
+        f"    --out ./{inside}build[/bold]"
+    )
+
+
+def _next_panel(answers: Answers) -> Panel:
+    """The procedure, numbered, with paths relative to the project.
+
+    Absolute paths inside the steps wrapped and broke the box, and the
+    operator is told where the project is by the panel's own first line, so
+    only that one is absolute.
+
+    OBSERVED 2026-08-12 on a real run: an unseeded panel names `deploy.md`
+    once, in the footer; a seeded one names it again in step 3. That is two
+    mentions, not one -- kept, because a caution that does not carry the path
+    it points at is not a caution, and the footer's claim ("the full
+    procedure") is a different claim from step 3's ("this template's seeding
+    conditions").
+    """
+    choice = answers.templates[0]
+    inside = _within(_template_root(answers, choice), answers.destination)
+    guide = f"{inside}30-deploy/deploy.md"
+    steps = [
+        (
+            f" 1. Paste [bold]{inside}build/{ASSESS_SCRIPT}[/bold] into the "
+            "target site's console. It is read-only, and it is how you find "
+            "out whether these list names are already taken."
+        ),
+        f" 2. Paste [bold]{inside}build/{DEPLOY_SCRIPT}[/bold].",
+    ]
+    if answers.seed:
+        # The guide is named BEFORE the demo script, not after it: a family
+        # may seed data its own procedure tells you not to put on a live
+        # site, and an instruction read first is the only one that can
+        # prevent that. A seeded bundle carries a THIRD script, and pasting
+        # the other two leaves the list empty.
+        steps.append(
+            f" 3. Read [bold]{guide}[/bold] for this template's seeding "
+            f"conditions, then paste [bold]{inside}build/{DEMO_SCRIPT}"
+            "[/bold] for the demo rows.",
+        )
+    return Panel(
+        f"In [bold]{answers.destination}[/bold]:\n\n"
+        + "\n\n".join(steps)
+        + f"\n\n[dim]{guide} has the full procedure for this template.[/dim]",
+        title="Next",
+        border_style="green",
+    )
+
+
 def _run(console: Console) -> int:
     solutions = available_solutions()
     if not solutions:
         console.print(
-            "[red]No solution templates found.[/red] This build of "
-            "dbml-sharepoint shipped without them.",
+            "[red]No templates found.[/red] This build of dbml-sharepoint "
+            "shipped without them.",
         )
         return 1
 
     console.print(
         Panel(
-            "Copy a shipped list template into a project of your own, then "
-            "build it into a pasteable deploy script.\n\n"
+            "Copy a shipped template into a project of your own, then build "
+            "it into a pasteable deploy script.\n\n"
             "[dim]Everything here is also available as flags -- run "
             "`dbml-sharepoint build --help`.[/dim]",
             title="dbml-sharepoint",
@@ -545,35 +732,73 @@ def _run(console: Console) -> int:
         ),
     )
 
+    # rich degrades a rule to ASCII by itself: `Rule.__rich_console__`
+    # substitutes "-" when `options.ascii_only` and the configured characters
+    # are not. VERIFIED against rich 15.0.0 on 2026-08-12, which is why no
+    # `characters=` argument is passed. The section TITLES are literals in
+    # this module and must stay ASCII regardless.
+    console.rule("Template")
     solution = _pick_solution(console, solutions)
+    _describe(console, solution)
+    # Unconditional here. Task 7 makes the prefix optional and gates this
+    # call on `solution.prefix`; keeping the two changes apart keeps this
+    # task's diff about the SEQUENCE and nothing else.
+    prefix = _ask_prefix(console, solution)
+    choice = TemplateChoice(solution, prefix)
+
     try:
         facts = _read_facts(solution)
+        roles = _site_roles([facts])
     except WizardError as exc:
+        # Before anything is written. This used to happen after the copy and
+        # outside any guard, so a template the loader rejected produced a
+        # traceback on top of a project directory that already existed.
         console.print(f"[red]{exc}[/red]")
         return 1
-    _describe(console, solution)
 
+    console.rule("Site")
     destination = _ask_destination(console, solution)
-    prefix = _ask_prefix(console, solution)
     site_url = _ask_site_url(console)
+    site_role = _ask_site_role(console, roles)
+
+    console.rule("Build")
+    build = Confirm.ask(
+        "Build the deploy scripts now?", default=True, console=console,
+    )
+    reader = ""
+    seed = False
+    if build:
+        # Offered only where the mapping declares a group
+        # `--enterprise-reader` could enrol into. Blank stays the default and
+        # must map to None below, never "": an empty string would reach
+        # `validate_enterprise_reader` and abort a run where the operator
+        # simply pressed Enter, which is the safe answer the question exists
+        # to allow. Anything NON-blank is validated at the prompt and re-asked
+        # on refusal -- the `except typer.Exit` below cannot catch what
+        # `validate_enterprise_reader` raises, because `typer.BadParameter` is
+        # a `click.UsageError`.
+        if facts.reader_group:
+            reader = _ask_enterprise_reader(console)
+        if facts.demo_items:
+            seed = _ask_seed(console)
+
     answers = Answers(
         destination=destination,
         site_url=site_url,
-        templates=(TemplateChoice(solution, prefix),),
+        site_role=site_role,
+        templates=(choice,),
+        build=build,
+        reader=reader,
+        seed=seed,
     )
 
-    console.print()
-    console.print(
-        Panel(
-            f"[bold]Template[/bold]  {answers.templates[0].solution.id}\n"
-            f"[bold]Directory[/bold] {answers.destination}\n"
-            f"[bold]Prefix[/bold]    {answers.templates[0].prefix}\n"
-            f"[bold]Site[/bold]      {answers.site_url}",
-            title="About to write",
-            border_style="yellow",
-        ),
-    )
-    if not Confirm.ask("Write these files?", default=True, console=console):
+    console.rule("Review")
+    console.print(_review_panel(answers))
+    if not Confirm.ask(
+        "Write the project and build it?" if build else "Write the project?",
+        default=True,
+        console=console,
+    ):
         console.print("[yellow]Nothing written.[/yellow]")
         return 0
 
@@ -583,155 +808,46 @@ def _run(console: Console) -> int:
         console.print(f"[red]Could not scaffold the project:[/red] {exc}")
         return 1
 
-    mapping_path = answers.destination / "20-configure" / "mapping.yaml"
-    schema_path = answers.destination / "10-design" / "schema.dbml"
-    release_path = answers.destination / "20-configure" / "release.yaml"
     console.print(f"\n[green]Wrote[/green] {answers.destination}")
     if repointed:
-        # Say so, and say WHICH, rather than editing the user's new
-        # documentation silently. Naming the substitutions matters now that
-        # there is more than one: reporting a file count and a prefix pair
-        # when only the site URL moved read as "Repointed 1 doc(s) from RR_
-        # to RR_", which is worse than saying nothing.
+        # Said plainly, and NOT dimmed: this reports edits the wizard made to
+        # the operator's own new files. Naming the substitutions matters
+        # because there is more than one -- reporting a file count and a
+        # prefix pair when only the site URL moved read as "Repointed 1
+        # doc(s) from RR_ to RR_", which is worse than saying nothing.
         console.print(
-            f"[dim]Repointed {len(repointed)} doc(s): "
-            f"{', '.join(s.describe() for s in applied)}.[/dim]",
+            f"Updated {len(repointed)} documentation file(s): "
+            f"{', '.join(s.describe() for s in applied)}.",
         )
 
-    if not Confirm.ask("\nBuild it now?", default=True, console=console):
-        console.print(
-            "\nWhen you are ready:\n\n"
-            f"  [bold]cd {answers.destination}[/bold]\n"
-            "  [bold]dbml-sharepoint build \\\n"
-            "    --schema 10-design/schema.dbml \\\n"
-            "    --mapping 20-configure/mapping.yaml \\\n"
-            "    --release 20-configure/release.yaml \\\n"
-            f"    --site-url {answers.site_url} \\\n"
-            "    --out ./build[/bold]",
-        )
+    if not build:
+        console.print(_rebuild_command(answers))
         return 0
 
-    roles = _site_roles([facts])
-    if len(roles) == 1:
-        site_role = roles[0]
-    elif "default" in roles:
-        # Every shipped family declares `default`, so Enter is a real answer
-        # whenever the mapping declares it too.
-        site_role = Prompt.ask(
-            "[bold]Site role[/bold]", choices=roles, default="default", console=console,
-        )
-    else:
-        # No default offered, because `Prompt.ask` returns one WITHOUT
-        # checking it against `choices` -- rich short-circuits an empty
-        # answer in `PromptBase.__call__` before `process_response` runs.
-        # A fixed `default="default"` therefore let Enter answer a mapping
-        # whose roles are `hq` and `branch` with a role it never declared,
-        # and `execute_build` refused it: a dead end behind the key that
-        # looks safest. Here Enter is not an answer and the prompt repeats.
-        site_role = Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
-
-    # Deferred for the same cycle as `validate_site_url` above -- #171.
+    # Deferred for a cycle: cli.py imports this module at its top, so this
+    # direction stays lazy until `execute_build` leaves the CLI -- #171.
     from dbml_sharepoint.cli import execute_build  # noqa: PLC0415
 
-    # Offered only where the mapping declares a group `--enterprise-reader`
-    # could enrol into -- see `_TemplateFacts.reader_group`. Blank stays the
-    # default and must map to None, never "": an empty string would reach
-    # `validate_enterprise_reader` and abort a run where the operator simply
-    # pressed Enter, which is exactly the safe answer this question exists
-    # to allow. Anything NON-blank is validated at the prompt and re-asked
-    # on refusal -- see `_ask_enterprise_reader`; the `except typer.Exit`
-    # below cannot catch what that validator raises.
-    reader = ""
-    if facts.reader_group:
-        reader = _ask_enterprise_reader(console)
-
-    # Every colour map, row wash and declared view is invisible on an empty
-    # list, and the wizard is the one path aimed at somebody who has not seen
-    # this tool work -- so it was the one path that could not show them.
-    # Offered only where the mapping HAS demo items, and declined by default:
-    # seeding writes `[DEMO]` rows into a real site, and the wizard must not
-    # be more forward than the documented flag it stands for.
-    seed = False
-    if facts.demo_items:
-        # The caution goes BEFORE the question, because the question is where
-        # the decision is made. A shipped family may seed deliberately alarming
-        # data to make a view render at all -- equipment-maintenance ships one
-        # genuinely overdue infusion pump, eighteen days past its annual
-        # service, and its guide says in as many words not to seed a site that
-        # already holds a real schedule. Governance there treats an overdue row
-        # as work to explain within five business days. Offering to create that
-        # and mentioning the guide afterwards is offering it too late.
-        #
-        # The escape before [DEMO] is rich's documented way to mean a
-        # literal bracket. MEASURED 2026-08-11: rich prints it identically
-        # with or without, because DEMO is not a style it knows. Kept
-        # anyway -- it is the documented spelling and costs one character
-        # -- but NOT because an unescaped one was seen to break. An
-        # earlier version of this comment claimed rich swallowed it, which
-        # was never measured and is false.
-        console.print(
-            r"[dim]Demo rows are titled \[DEMO] and rollback treats a list of "
-            "them as demo-only. Some families seed deliberately alarming data "
-            "so a view renders at all -- read "
-            f"{answers.destination / '30-deploy' / 'deploy.md'} before seeding "
-            "a site that already holds real data.[/dim]",
-        )
-        seed = Confirm.ask(
-            "Add the template's demo rows, so the views and colours have "
-            "something to show?",
-            default=False,
-            console=console,
-        )
-
-    try:
-        execute_build(
-            schema=schema_path,
-            mapping=mapping_path,
-            release=release_path,
-            site_url=answers.site_url,
-            site_role=site_role,
-            out=answers.destination / "build",
-            seed=seed,
-            enterprise_reader=reader or None,
-        )
-    except typer.Exit as exc:
-        # The build refused and has already said why on stderr. Its exit
-        # code is the documented contract; pass it through rather than
-        # flattening every refusal to 1.
-        return int(exc.exit_code)
-
-    console.print(
-        Panel(
-            f"Paste [bold]{answers.destination / 'build' / ASSESS_SCRIPT}"
-            "[/bold] into the target site's console first -- it is read-only "
-            "and tells you what is already there.\n\n"
-            "Then [bold]"
-            f"{answers.destination / 'build' / DEPLOY_SCRIPT}[/bold]."
-            # A seeded bundle carries a THIRD script, and pasting the
-            # other two leaves the list empty. Adding a file to the
-            # bundle without adding it to the instructions is how
-            # somebody seeds, sees no rows, and concludes the demo data
-            # is broken.
-            + (
-                # The guide is named BEFORE the demo script, not after it:
-                # a family may seed data its own procedure tells you not
-                # to put on a live site, and an instruction read first is
-                # the only one that can prevent that.
-                f"\n\nRead [bold]"
-                f"{answers.destination / '30-deploy' / 'deploy.md'}[/bold]"
-                " for this template's seeding conditions, then paste "
-                f"[bold]{answers.destination / 'build' / DEMO_SCRIPT}"
-                "[/bold] for the demo rows."
-                if seed
-                else ""
+    for template in answers.templates:
+        root = _template_root(answers, template)
+        try:
+            execute_build(
+                schema=root / "10-design" / "schema.dbml",
+                mapping=root / "20-configure" / "mapping.yaml",
+                release=root / "20-configure" / "release.yaml",
+                site_url=answers.site_url,
+                site_role=answers.site_role,
+                out=root / "build",
+                seed=answers.seed,
+                enterprise_reader=answers.reader or None,
             )
-            + "\n\n"
-            f"[dim]{answers.destination / '30-deploy' / 'deploy.md'} has the "
-            "full procedure for this template.[/dim]",
-            title="Next",
-            border_style="green",
-        ),
-    )
+        except typer.Exit as exc:
+            # The build refused and has already said why on stderr. Its exit
+            # code is the documented contract; pass it through rather than
+            # flattening every refusal to 1.
+            return int(exc.exit_code)
+
+    console.print(_next_panel(answers))
     return 0
 
 
