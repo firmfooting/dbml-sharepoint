@@ -1667,10 +1667,21 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     `Actions` would collide the moment either is deployed prefix-less, and
     nothing else in the build would notice: each family validates alone.
     """
+    solutions = available_solutions()
+    assert len(solutions) == 31, (
+        f"{len(solutions)} templates discovered, not the 31 this collision "
+        "sweep was measured against -- re-verify the invariant before "
+        "trusting an empty collision set."
+    )
     owners: dict[str, list[str]] = {}
-    for solution in available_solutions():
+    for solution in solutions:
         for entity in solution.lists:
             owners.setdefault(entity, []).append(solution.id)
+    assert len(owners) == 54, (
+        f"{len(owners)} unique entity names found, not the 54 this collision "
+        "sweep was measured against -- re-verify the invariant before "
+        "trusting an empty collision set."
+    )
     collisions = {
         entity: families
         for entity, families in owners.items()
