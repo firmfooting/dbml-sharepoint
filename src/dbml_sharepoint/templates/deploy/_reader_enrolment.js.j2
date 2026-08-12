@@ -228,11 +228,16 @@
         // The named account already being a member is NOT this case — a
         // redeploy with the same flag has to stay green — so it is filtered
         // out by isReader before the count is taken.
-        const others = before.filter(u => !isReader(u));
+        // ONE spelling of the invariant, because it is checked twice: here
+        // against the state this run found, and again against the state it
+        // left. Two hand-written copies would be two things to keep in step.
+        const foreign = members => members.filter(u => !isReader(u));
+        const listMembers = members => members
+          .map(u => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
+          .join('; ');
+        const others = foreign(before);
         if (others.length > 0) {
-          const listed = others
-            .map(u => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
-            .join('; ');
+          const listed = listMembers(others);
           throw new Error(
             `group '${grp.name}' already holds ${others.length} principal(s) other than `
             + `'${READER_ADDRESS}': ${listed}. That group grants Read on EVERY list this `
@@ -265,6 +270,31 @@
         const after = await readMembers();
         if (!after.some(isReader)) {
           throw new Error(`'${READER_ADDRESS}' was accepted into '${grp.name}' but is absent when the membership is read back; the grant did not take effect`);
+        }
+        // The SAME exclusivity invariant the before-read enforced, applied to
+        // the state this run LEFT. Checking only presence made the gate above
+        // a check on a stale snapshot: another administrator adding a
+        // principal between the two reads passed unnoticed, and the run
+        // reported success on a group whose entire purpose is that it holds
+        // one account. The window is small and a live site is exactly where
+        // small windows get hit -- a deploy is pasted while people are
+        // working in the site.
+        //
+        // Nothing is removed here either, for the reason the before-read
+        // gives: membership is an operator-owned concern and this is a gate.
+        // It fails closed AFTER the write, which is deliberate -- the write
+        // is already done and cannot be un-done safely, so the operator is
+        // told exactly what the group now holds rather than left to find out.
+        const strays = foreign(after);
+        if (strays.length > 0) {
+          throw new Error(
+            `'${READER_ADDRESS}' was enrolled into '${grp.name}', but that group now also holds `
+            + `${strays.length} other principal(s) that were not there when this run checked: `
+            + `${listMembers(strays)}. Somebody added them while this script was running. That `
+            + `group grants Read on EVERY list this bundle provisions, so each of them can read `
+            + `all of it. Nothing was removed -- review the membership in Site permissions > `
+            + `Groups and remove whoever should not be there, then run this script again.`,
+          );
         }
         log('INFO', `Enrolled '${resolved.Title || READER_ADDRESS}' into '${grp.name}' with the group's read-only grants. This membership is PERMANENT: remove it in Site permissions > Groups when the account no longer needs access.`);
       } catch (err) {

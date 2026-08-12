@@ -1305,6 +1305,7 @@ def _reader_harness(
     members: list[dict[str, Any]] | None = None,
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
+    stray_on_write: dict[str, Any] | None = None,
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
@@ -1315,6 +1316,13 @@ def _reader_harness(
     a run cannot satisfy the read-back by asserting its own success.
     `drop_readback` accepts the POST and drops the write, which is what a
     silently-refused membership looks like from the script's side.
+
+    `stray_on_write` appends a FOREIGN principal at the same moment, which
+    is what another administrator adding somebody between the before-read
+    and the read-back looks like. It cannot be modelled by seeding
+    `members`, because a principal present before the run is caught by the
+    gate that runs first -- the whole point is that this one arrives after
+    that gate has already passed.
 
     `member_pages` serves the membership across SEVERAL OData pages, each
     but the last carrying a `__next`. A group whose membership arrives in
@@ -1330,6 +1338,7 @@ def _reader_harness(
         const ENSURED = __ENSURE_USER__;
         const READER_MEMBER_PAGES = __MEMBER_PAGES__;
         const DROP_READBACK = __DROP_READBACK__;
+        const STRAY_ON_WRITE = __STRAY_ON_WRITE__;
         const _beforeReader = globalThis.fetch;
         globalThis.fetch = async (url, opts = {}) => {
           const u = String(url);
@@ -1352,6 +1361,11 @@ def _reader_harness(
                 READER_MEMBER_PAGES[READER_MEMBER_PAGES.length - 1].push(
                   { Id: ENSURED.Id, Title: ENSURED.Title || '',
                     LoginName: added.LoginName });
+              }
+              // Somebody else's write landing in the same window.
+              if (STRAY_ON_WRITE) {
+                READER_MEMBER_PAGES[READER_MEMBER_PAGES.length - 1].push(
+                  STRAY_ON_WRITE);
               }
               return respond({ d: { Id: ENSURED.Id, LoginName: added.LoginName } });
             }
@@ -1377,6 +1391,8 @@ def _reader_harness(
         "__MEMBER_PAGES__", json.dumps(pages),
     ).replace(
         "__DROP_READBACK__", "true" if drop_readback else "false",
+    ).replace(
+        "__STRAY_ON_WRITE__", json.dumps(stray_on_write),
     )
 
 
@@ -1386,6 +1402,7 @@ def _run_reader_deploy(
     members: list[dict[str, Any]] | None = None,
     member_pages: list[list[dict[str, Any]]] | None = None,
     drop_readback: bool = False,
+    stray_on_write: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against the reader harness.
 
@@ -1395,7 +1412,7 @@ def _run_reader_deploy(
     """
     script = _reader_harness(
         ensure_user, members=members, member_pages=member_pages,
-        drop_readback=drop_readback,
+        drop_readback=drop_readback, stray_on_write=stray_on_write,
     ) + "\n" + _reader_deploy_js().replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -1659,6 +1676,42 @@ def test_the_named_reader_plus_a_stranger_still_aborts() -> None:
         _OTHER_MEMBER,
     ])
     assert not _membership_writes(calls)
+    assert summary.get("aborted") == "reader-enrolment-errors", summary
+    assert not _removals(calls)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_principal_added_during_the_run_is_caught_by_the_read_back() -> None:
+    """The gate above reads the state this run FOUND; this reads what it LEFT.
+
+    The before-read gate cannot see a principal that arrives after it has
+    already passed. Checking only that the reader is present made the
+    read-back a presence check, so another administrator adding somebody
+    between the two reads left the run reporting success on a group whose
+    entire purpose is that it holds one account.
+
+    A deploy is pasted into a site while people are working in it, so the
+    window is not theoretical. `stray_on_write` models exactly that and
+    nothing else: the membership is empty when the gate runs, and the
+    foreign principal appears at the moment of the write.
+
+    Nothing is removed -- the same reason the before-read gives. The run
+    fails closed AFTER the write, which is the point: the write cannot be
+    safely undone, so the operator is told what the group now holds.
+    """
+    summary, calls, output = _run_reader_deploy(
+        _RESOLVED_USER, members=[], stray_on_write=_OTHER_MEMBER,
+    )
+    # The enrolment really happened -- otherwise this would be re-testing
+    # the before-read gate under a new name.
+    assert _membership_writes(calls), output[-2000:]
+    # The message assertion comes FIRST deliberately. Without the read-back
+    # invariant the run carries on and aborts later for an unrelated reason,
+    # so asserting the abort code first reports that later reason and buries
+    # the defect. This one names it.
+    errors = _reader_errors(summary)
+    assert errors, summary
+    assert "while this script was running" in str(errors), errors
     assert summary.get("aborted") == "reader-enrolment-errors", summary
     assert not _removals(calls)
 
