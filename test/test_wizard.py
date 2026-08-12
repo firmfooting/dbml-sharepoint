@@ -137,6 +137,70 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
     )
 
 
+def _choice(prefix: str = "RR_", *, lists: tuple[str, ...] = ("Risk",),
+            id_: str = "risk-register") -> wizard.TemplateChoice:
+    """A `TemplateChoice` with no files behind it.
+
+    These four functions are pure -- they read `Solution` fields and nothing
+    from disk -- so a scaffolded family would only slow the test down.
+    """
+    return wizard.TemplateChoice(
+        solution=Solution(
+            id=id_, title="T", summary="s", detail="s",
+            lists=lists, prefix=prefix, root=Path("unused"),
+        ),
+        prefix=prefix,
+    )
+
+
+def _answers_for(*choices: wizard.TemplateChoice, destination: Path) -> wizard.Answers:
+    return wizard.Answers(
+        destination=destination,
+        site_url="https://contoso.sharepoint.com/sites/x",
+        templates=choices,
+    )
+
+
+def test_list_titles_are_the_prefix_concatenated() -> None:
+    """What jsgen.py:380 and four other generators actually do."""
+    assert _choice("ACME_", lists=("Risk", "Control")).list_titles() == (
+        "ACME_Risk", "ACME_Control",
+    )
+
+
+def test_a_blank_prefix_names_the_lists_as_declared() -> None:
+    """MEASURED 2026-08-12: `prefix: ""` builds and emits `"Risk"`."""
+    assert _choice("").list_titles() == ("Risk",)
+
+
+def test_one_template_lands_directly_in_the_destination(tmp_path: Path) -> None:
+    """Every documented path and printed command depends on this.
+
+    Nesting a single template under its own id would move
+    `10-design/schema.dbml` for no gain and break the deploy.md the wizard
+    sends the operator to.
+    """
+    choice = _choice()
+    answers = _answers_for(choice, destination=tmp_path)
+    assert wizard._template_root(answers, choice) == tmp_path
+    assert wizard._within(wizard._template_root(answers, choice), tmp_path) == ""
+
+
+def test_several_templates_nest_by_id(tmp_path: Path) -> None:
+    """Two templates cannot share one root.
+
+    The picker collects one today, so this is the only place the branch is
+    exercised. It is a pure function; testing it directly is honest.
+    """
+    first, second = _choice(id_="risk-register"), _choice(id_="audit-actions")
+    answers = _answers_for(first, second, destination=tmp_path)
+    assert wizard._template_root(answers, first) == tmp_path / "risk-register"
+    assert wizard._template_root(answers, second) == tmp_path / "audit-actions"
+    assert wizard._within(
+        wizard._template_root(answers, second), tmp_path,
+    ) == "audit-actions/"
+
+
 def _offer_only(monkeypatch: pytest.MonkeyPatch, solution: Solution) -> None:
     monkeypatch.setattr(wizard, "available_solutions", lambda: [solution])
 

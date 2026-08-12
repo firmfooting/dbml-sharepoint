@@ -67,13 +67,65 @@ class WizardError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class TemplateChoice:
+    """One chosen template, and the prefix its lists will carry.
+
+    Separate from `Answers` because the two answer different questions. A
+    prefix belongs to a template -- it renames that template's lists and
+    nothing else -- while the directory, the site URL and the site role
+    describe one SharePoint site. Several templates deployed to one site is
+    the direction this is headed, and that boundary is the part of it worth
+    drawing now.
+    """
+
+    solution: Solution
+    #: "" is a real answer meaning "no prefix", not a missing one. MEASURED
+    #: 2026-08-12: `prefix: ""` builds and emits `"Risk"` as the list title
+    #: throughout deploy.js.txt. Nothing outside this wizard requires one.
+    prefix: str
+
+    def list_titles(self) -> tuple[str, ...]:
+        """The SharePoint list titles this template will create.
+
+        A method rather than a property because it iterates. The rule it
+        obeys is plain concatenation, which is what `jsgen.py:380`,
+        `assessgen.py:39`, `demogen.py:109`, `manifestgen.py:77` and
+        `reportgen.py:176` all do -- so this reports the build's behaviour
+        rather than predicting it.
+        """
+        return tuple(self.prefix + name for name in self.solution.lists)
+
+
+@dataclass(frozen=True)
 class Answers:
     """What the wizard collected, before anything is written."""
 
-    solution: Solution
     destination: Path
-    prefix: str
     site_url: str
+    templates: tuple[TemplateChoice, ...]
+
+
+def _template_root(answers: Answers, choice: TemplateChoice) -> Path:
+    """Where one template's files land inside the project directory.
+
+    The destination itself while there is one template, so every documented
+    path, every printed command and every existing test stays exactly as it
+    is. Several templates cannot share one root, so they nest by template id.
+    """
+    if len(answers.templates) == 1:
+        return answers.destination
+    return answers.destination / choice.solution.id
+
+
+def _within(root: Path, destination: Path) -> str:
+    """`root` as a path fragment relative to `destination`, or "" if equal.
+
+    Used to build the relative paths the wizard prints. Absolute paths wrap
+    and break the panel boxes, and the operator has just been told where the
+    project is -- repeating it on every line of the procedure is noise.
+    """
+    relative = root.relative_to(destination).as_posix()
+    return "" if relative == "." else f"{relative}/"
 
 
 def _catalogue_table(solutions: list[Solution]) -> Table:
@@ -365,8 +417,10 @@ def _repoint_docs(
 
 
 def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
+    solution = answers.templates[0].solution
+    prefix = answers.templates[0].prefix
     shutil.copytree(
-        answers.solution.root,
+        solution.root,
         answers.destination,
         ignore=shutil.ignore_patterns(*_NEVER_COPY),
         # The destination may already exist: `_ask_destination` accepts an
@@ -376,15 +430,13 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
         dirs_exist_ok=True,
     )
     _rewrite_prefix(
-        answers.destination / answers.solution.mapping_path.relative_to(
-            answers.solution.root,
-        ),
-        answers.prefix,
+        answers.destination / solution.mapping_path.relative_to(solution.root),
+        prefix,
     )
     return _repoint_docs(
         answers.destination,
         (
-            _Substitution("prefix", answers.solution.prefix, answers.prefix),
+            _Substitution("prefix", solution.prefix, prefix),
             _Substitution("site URL", PLACEHOLDER_SITE_URL, answers.site_url),
         ),
     )
@@ -455,14 +507,18 @@ def _run(console: Console) -> int:
     destination = _ask_destination(console, solution)
     prefix = _ask_prefix(console, solution)
     site_url = _ask_site_url(console)
-    answers = Answers(solution, destination, prefix, site_url)
+    answers = Answers(
+        destination=destination,
+        site_url=site_url,
+        templates=(TemplateChoice(solution, prefix),),
+    )
 
     console.print()
     console.print(
         Panel(
-            f"[bold]Template[/bold]  {answers.solution.id}\n"
+            f"[bold]Template[/bold]  {answers.templates[0].solution.id}\n"
             f"[bold]Directory[/bold] {answers.destination}\n"
-            f"[bold]Prefix[/bold]    {answers.prefix}\n"
+            f"[bold]Prefix[/bold]    {answers.templates[0].prefix}\n"
             f"[bold]Site[/bold]      {answers.site_url}",
             title="About to write",
             border_style="yellow",

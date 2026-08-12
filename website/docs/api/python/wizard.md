@@ -26,15 +26,46 @@ the wizard produces, the documented flags could have produced.
 
 The wizard cannot safely continue. Always names what went wrong.
 
+### `TemplateChoice`
+
+```python
+@dataclass(frozen=True)
+class TemplateChoice:
+    solution: Solution
+    prefix: str
+```
+
+One chosen template, and the prefix its lists will carry.
+
+Separate from `Answers` because the two answer different questions. A
+prefix belongs to a template -- it renames that template's lists and
+nothing else -- while the directory, the site URL and the site role
+describe one SharePoint site. Several templates deployed to one site is
+the direction this is headed, and that boundary is the part of it worth
+drawing now.
+
+#### `TemplateChoice.list_titles`
+
+```python
+def list_titles(self) -> tuple[str, ...]
+```
+
+The SharePoint list titles this template will create.
+
+A method rather than a property because it iterates. The rule it
+obeys is plain concatenation, which is what `jsgen.py:380`,
+`assessgen.py:39`, `demogen.py:109`, `manifestgen.py:77` and
+`reportgen.py:176` all do -- so this reports the build's behaviour
+rather than predicting it.
+
 ### `Answers`
 
 ```python
 @dataclass(frozen=True)
 class Answers:
-    solution: Solution
     destination: Path
-    prefix: str
     site_url: str
+    templates: tuple[dbml_sharepoint.wizard.TemplateChoice, ...]
 ```
 
 What the wizard collected, before anything is written.
