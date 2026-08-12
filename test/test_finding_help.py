@@ -61,6 +61,30 @@ def test_no_help_text_is_empty() -> None:
     assert not blank, f"no meaning recorded for: {blank}"
 
 
+def test_no_help_text_contains_a_line_break() -> None:
+    """Every entry is ONE markdown table cell, so a newline in one breaks the
+    table under it -- and none of the page guards can see that.
+
+    Found the hard way while writing `entity_note_may_not_round_trip`, whose
+    first draft was four paragraphs of perfectly good prose. The generated
+    page came out with the row opened, three paragraphs sitting outside the
+    table, and the closing `|` stranded on its own line -- which is the exact
+    shape of the collapse that once hid all 194 rules on the published site.
+
+    Nothing existing caught it. `test_generated_findings_page_is_current`
+    compares the file against the generator, and the generator produced the
+    broken page. `test_the_page_is_one_document_with_one_table` counts rows
+    matching `| \\`code\\` |`, and a broken entry still contributes exactly
+    one of those -- its first line. The defect is in the CELL, so the guard
+    has to be on the cell.
+    """
+    offenders = sorted(c.value for c, m in FINDING_HELP.items() if "\n" in m)
+    assert not offenders, (
+        f"these entries contain a line break and would break the findings.md "
+        f"table: {offenders}. Write the entry as one paragraph."
+    )
+
+
 def test_every_severity_is_a_declared_one() -> None:
     assert {c.severity for c in FindingCode} <= {"error", "warning"}
 
