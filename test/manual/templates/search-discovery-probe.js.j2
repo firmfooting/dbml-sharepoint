@@ -22,6 +22,13 @@
  * a row it does not say was measured, and do not let a plausible-sounding
  * expectation in a comment be read as a result.
  *
+ * THE OLD SINGLE S6 HAS BEEN REPLACED BY A FAMILY — S6A, S6 AND S6C — and
+ * NONE OF THE THREE HAS EVER RUN. S6 keeps the identifier so the wording
+ * either side of it still points somewhere. The two 2026-08-12 runs did not
+ * reach any of them: both had ALLOW_WRITES off, and the two read-only rows
+ * did not exist yet. Treat every S6* row below as an open question with a
+ * written-down method and no data.
+ *
  * ---- WHAT RUN 1 MEASURED (2026-08-12, on the account's OneDrive) -------
  *   S1  CONTROL HELD. `_api/search/query` answered this caller: a trivial
  *       query came back with a reported TotalRows in the low thousands. So
@@ -341,6 +348,27 @@
  *       is an unmet prerequisite and is recorded as one. It is NOT
  *       "descriptions are not crawled", and the two look identical from
  *       the result set alone.
+ *   S6A IS `Description` ACTUALLY FILTERABLE HERE? The most valuable row in
+ *       the file and it needs no writes at all. This site already has lists
+ *       carrying descriptions (S5 counted 15 of 50 on one site), so for
+ *       several of them it takes a distinctive phrase out of the LIVE
+ *       description and asks `contentclass:STS_List Description:"<phrase>"`
+ *       whether that list comes back. SEVERAL LISTS, NOT ONE: a single miss
+ *       is as likely to be an uncrawled list as an unfilterable property.
+ *       It then runs ONE free-text query for the same phrase with NO
+ *       `Description:` restriction. Learn says Searchable = No, so a
+ *       NON-match there is the expected and DESIRABLE result — it would
+ *       mean a planted marker cannot pollute ordinary user searches. Either
+ *       way it is recorded. If no list in reach has a description, that is
+ *       an unmet PREREQUISITE and never "Description is not filterable".
+ *   S6C THE MIGRATION QUESTION, and the one most expected to bite. Every
+ *       already-deployed site would get its marker by RE-PASTE, which EDITS
+ *       an existing list rather than creating one — a different code path,
+ *       and S9 only ever measured creation. Measured without carrying state
+ *       between runs: for each described list it reads the LIVE description
+ *       from REST and the INDEXED one out of the search row, and reports how
+ *       many are CURRENT, how many STALE, and how the stale ones differ.
+ *       Its second half is write-gated; see the S6 family section below.
  *   S7  The row-limit ceiling and how the result set pages. Returned row
  *       count against reported total, at several limits including one
  *       above Learn's documented 500-row boundary.
@@ -369,9 +397,21 @@
  *
  * WRITE-GATED. Default OFF; the run is useful without it.
  *
- *   S6  The marker question. CREATES A LIST whose Description carries a
- *       distinctive machine-readable token, then queries for that token
- *       and records whether it matched EXACTLY, PARTIALLY, or NOT AT ALL.
+ *   S6  WHICH MARKER SPELLING SURVIVES WORD-BREAKING? Creates ONE list
+ *       whose Description carries SEVERAL candidate spellings of the same
+ *       marker at once — space-separated, hyphen-separated, colon-
+ *       separated, dot-separated, run-together camel case, and one opaque
+ *       token with no separators — so a SINGLE CRAWL answers the whole
+ *       matrix instead of one spelling per crawl interval. Each spelling is
+ *       then queried twice, as a quoted phrase and bare.
+ *       IT RECORDS THE MATRIX AND ASSERTS NOTHING ABOUT WHICH ONE SHOULD
+ *       WIN. The point is to learn which spelling to standardise on, and a
+ *       probe that expected an answer would only be able to confirm itself.
+ *       ONLY THE CREATE IS GATED. Once the list exists, the matrix is pure
+ *       reading — so the follow-up paste that actually answers S6 needs no
+ *       write flag at all.
+ *   S6C's SECOND HALF appends a fresh DATED token to the probe's OWN list
+ *       description, and records when. It only ever touches that one list.
  *       See the two warnings below — they are the difference between an
  *       answer and a fabricated one.
  *
@@ -490,32 +530,85 @@
  * zero-row read is never recorded as a truncation finding: it records NOT
  * ESTABLISHED with item-level trimming named as the leading hypothesis.
  *
- * ---- S6: TWO WARNINGS -------------------------------------------------
- * FIRST: THIS CREATES A LIST. One list, on the site you pasted into,
- * titled by MARKER_LIST_TITLE below. It is RECYCLED, NOT PURGED, when you
- * finally clean up — it goes to the site recycle bin and is restorable.
- * Use a site you are content to leave a probe list on.
+ * ---- THE S6 FAMILY: WHY DESCRIPTION, AND WHAT LEARN ALREADY SETTLES ----
+ * The fleet reporting design intends to discover deployed lists by putting
+ * a machine-readable provenance marker in each list's DESCRIPTION and then
+ * querying `contentclass:STS_List Description:"<marker>"`. S6A, S6 and S6C
+ * are the three things that have to be measured before that is committed
+ * to. They are not three phrasings of one question.
  *
- * SECOND, AND IT DECIDES WHETHER S6 MEANS ANYTHING: CRAWL LATENCY ALMOST
- * CERTAINLY MEANS THE ANSWER NEEDS A SECOND PASTE, LATER. A brand-new
- * list's Description is not in the search index the instant it is written.
- * So the expected first-run outcome is "the marker did not match yet", and
- * THAT IS NOT AN ANSWER TO S6. Reporting it as "markers do not work" would
- * be a fabricated platform verdict of exactly the kind this repository
- * exists to prevent.
+ * CITED FROM MICROSOFT LEARN, NOT RE-DERIVED HERE, and none of it is what
+ * these rows measure:
+ *   - `Description` is a DEFAULT managed property with Queryable = Yes,
+ *     Searchable = No, Retrievable = Yes, mapped from the crawled
+ *     properties `Description`, `Office:6` and `DESCRIPTION`. ("Overview of
+ *     crawled and managed properties in SharePoint Server", the default
+ *     managed property table.) QUERYABLE is what lets it carry a property
+ *     restriction at all. SEARCHABLE = NO means it is NOT in the full-text
+ *     index, so a FREE-TEXT query should not match it — which is why S6A
+ *     runs one deliberately.
+ *   - KQL text properties are WORD-BROKEN, and "Complete matching" is an
+ *     opt-in per-property setting requiring a reindex. That is the whole
+ *     reason S6 tests SPELLINGS rather than one token.
+ *   - A property-bag value would need a crawled-to-managed mapping made in
+ *     the admin centre plus a reindex. That is why Description is the
+ *     chosen surface and a property bag is not.
+ *
+ * WHAT EACH ROW ADDS ON TOP OF THAT: S6A asks whether the Queryable bit
+ * actually behaves as documented ON THIS TENANT, FOR THIS CALLER — and it
+ * needs NO writes, because lists here already carry descriptions. S6 asks
+ * which SPELLING survives word-breaking well enough to be a reliable key.
+ * S6C asks whether an EDIT to an existing description is reindexed, and how
+ * fast, because that is the code path every already-deployed site would
+ * take and nothing here has ever measured it.
+ *
+ * ---- S6 AND S6C: THREE WARNINGS ---------------------------------------
+ * FIRST: S6 CREATES A LIST. One list, on the site you pasted into, titled
+ * by MARKER_LIST_TITLE below. It is RECYCLED, NOT PURGED, when you finally
+ * clean up — it goes to the site recycle bin and is restorable. Use a site
+ * you are content to leave a probe list on. S6A needs no such thing and
+ * runs whatever the write flag says.
+ *
+ * SECOND, AND IT DECIDES WHETHER S6 AND S6C MEAN ANYTHING: BOTH NEED A
+ * SECOND PASTE, SOME TIME LATER. A brand-new list's Description is not in
+ * the search index the instant it is written, and S9 has already bracketed
+ * this tenant's crawl interval at roughly 2.4 to 15 hours — so plan the
+ * follow-up for the NEXT DAY, not the same afternoon. The expected
+ * first-run outcome for S6 is "no spelling matched yet", and THAT IS NOT AN
+ * ANSWER. Reporting it as "markers do not work" would be a fabricated
+ * platform verdict of exactly the kind this repository exists to prevent.
+ * S6C is the same shape: the edit it stamps today can only be looked for on
+ * a later paste. QUOTE BOTH TRANSCRIPTS when you report — the first paste
+ * carries the create and the edit timestamps, the second carries whether
+ * either was found, and neither half is readable without the other.
  *
  * So the run RECORDS THAT EXPECTATION rather than a verdict, and the
  * procedure is:
- *   - Run once with ALLOW_WRITES = true. The list is created and the
- *     marker query almost certainly finds nothing. S6 records the create,
- *     the list's Created timestamp, and NOT ESTABLISHED (awaiting a second
- *     paste).
- *   - LEAVE THE LIST IN PLACE. Come back hours or a day later and paste
- *     the SAME FILE with the SAME MARKER_TOKEN. The second run finds the
- *     list already present, does not recreate it, and queries again. That
- *     run is the one that can answer S6.
+ *   - Run once with ALLOW_WRITES = true. The list is created with every
+ *     candidate spelling in its Description, and the matrix almost
+ *     certainly matches nothing. S6 records the create, the list's Created
+ *     timestamp and NOT ESTABLISHED (awaiting a later run).
+ *   - LEAVE THE LIST IN PLACE. Come back a day later and paste the SAME
+ *     FILE with the SAME MARKER_BASE. The second run finds the list already
+ *     present, DOES NOT RECREATE IT, and queries again. THE SECOND PASTE
+ *     NEEDS NO WRITE FLAG for S6: only creating the list was ever gated.
+ *     That run is the one that can answer S6, and — if it is at least a day
+ *     after the edit — S6C.
  *   - Only when you are finished, set CLEANUP = true for a final tidy-up
  *     run, which recycles the list and answers nothing.
+ *
+ * THIRD: S6C ONLY EVER EDITS THE PROBE'S OWN LIST. It appends a dated token
+ * to MARKER_LIST_TITLE's description and nothing else, ever. If that list
+ * is absent it says so and skips — it does not go looking for another list
+ * to write to. Its read-only half, the current-versus-stale census, reads
+ * other lists but never writes to one.
+ *
+ * THE DATED TOKEN IS IDEMPOTENT BY DATE, on purpose. A run appends today's
+ * stamp only if the live description does not already carry it, so pasting
+ * twice in one day does not re-edit and restart the very clock the row is
+ * measuring. It also makes the measurement STATELESS: the description
+ * itself carries every past edit date, so a later paste can bound the
+ * reindex interval without anyone having written a timestamp down.
  *
  * NOTE THE DEVIATION FROM THE OTHER PROBES HERE. Elsewhere CLEANUP resets
  * before the run so every question is answered by creating something
@@ -523,7 +616,7 @@
  * a pre-run reset would destroy the very thing being measured and restart
  * the crawl clock, and the operator would never get an answer no matter
  * how many times they came back. Here CLEANUP is a pure tidy-up switch —
- * it recycles and does not recreate.
+ * it recycles and DOES NOT RECREATE.
  *
  * ---- HOW TO RUN: TWO RUNS, BY TWO DIFFERENT IDENTITIES -----------------
  * This file asks two kinds of question and they do NOT want the same
@@ -538,6 +631,34 @@
  *   continuation token when it truncates a 6,000-row read. The identity is
  *   IRRELEVANT to that. An operator measures it exactly as well.
  *
+ *   THE S6 FAMILY SPLITS ACROSS BOTH, so here is which identity each row
+ *   wants and why:
+ *
+ *     S6A WANTS THE READER, AND AN OPERATOR RUN IS ALSO WORTH HAVING. It is
+ *     identity-sensitive in a useful way: search trims per caller, so the
+ *     reader may see FEWER described lists than an operator, and the design
+ *     only cares whether the RESULT SET THE READER GETS can be filtered by
+ *     Description. Run it on RUN A for the answer that matters. An operator
+ *     run gives a broader census and a second sample of the same platform
+ *     behaviour — take it as corroboration, not as the design's answer.
+ *     If the reader can see no described list at all, that is an unmet
+ *     PREREQUISITE for RUN A and the operator run is how you find out
+ *     whether the property is filterable here at all.
+ *
+ *     S6 WANTS THE OPERATOR, at least for its first paste. It CREATES A
+ *     LIST, and the reporting service account is unlikely to be able to.
+ *     If it is refused, that refusal is itself a recorded observation and
+ *     not a failure. The FOLLOW-UP paste is read-only and either identity
+ *     can do it — but a reader who cannot see the probe list will report
+ *     that it did not come back, which is trimming rather than a marker
+ *     finding, so prefer the operator for both pastes and say which
+ *     identity produced each transcript.
+ *
+ *     S6C WANTS BOTH, for different halves. Its census half is read-only
+ *     and answers from either identity; the reader's version is the one the
+ *     design will live with. Its EDIT half is write-gated and wants the
+ *     operator, on the site holding the probe list.
+ *
  *   S11 AND S12 MUST BE RUN BY AN OPERATOR WHO CAN READ THE FIXTURE'S
  *   ITEMS, not merely reach the list. SharePoint trims list items PER ITEM,
  *   so a caller with no grant on them is served an empty collection at HTTP
@@ -549,7 +670,8 @@
  *   has actually been granted. Set RUNNING_AS_READER = true and point
  *   LIST_TITLE at one of those granted lists. S11/S12 will report an unmet
  *   prerequisite because that account cannot read the paging fixture's
- *   items. THAT IS CORRECT, not a failure -- take S1-S10 from this run.
+ *   items. THAT IS CORRECT, not a failure -- take S1-S10 and S6A from this
+ *   run, and S6C's census half.
  *
  *   RUN A MUST BE PASTED ON A SITE WHERE THE REPORTING ACCOUNT IS NOT AN
  *   ADMINISTRATOR -- i.e. one of the REGISTER SITES it was granted lists
@@ -568,15 +690,16 @@
  *   RUN B -- as an OPERATOR WHO CAN READ THE ITEMS OF PAGING_FIXTURE_LIST,
  *   on the site holding it. Leave RUNNING_AS_READER = false. The search
  *   rows will show an untrimmed view and S10 will say so rather than
- *   claiming an answer -- take S11/S12 from this run. STILL OUTSTANDING as
- *   of 2026-08-12: both 2026-08-12 runs were RUN A.
+ *   claiming an answer -- take S11/S12 from this run, and S6 and S6C's edit
+ *   half if you are willing to leave a probe list on that site. STILL
+ *   OUTSTANDING as of 2026-08-12: both 2026-08-12 runs were RUN A.
  *
  *   DO NOT GRANT THE READER ACCESS TO THE PAGING FIXTURE to collapse this
  *   into one run. It would not make the paging answer any truer, because
  *   server-side truncation does not depend on who is asking, and it would
  *   put a reporting account on a development fixture for nothing.
  *
- *   1. Edit the constants under CONFIGURATION. LIST_TITLE and MARKER_TOKEN
+ *   1. Edit the constants under CONFIGURATION. LIST_TITLE and MARKER_BASE
  *      ship as obvious placeholders, and the questions that need them
  *      refuse to run and say which constant to set, so an unedited paste
  *      never produces a row that looks like a measurement. Set
@@ -587,15 +710,25 @@
  *      lists for RUN A, the site holding PAGING_FIXTURE_LIST for RUN B.
  *      F12 -> Console -> paste -> Enter. It prints its plan and stops.
  *   3. Set CONFIRMED = true and paste again. That answers everything
- *      except S6 and writes nothing.
+ *      except S6 and S6C's edit half, and writes nothing. S6A IS FULLY
+ *      ANSWERED BY THIS STEP -- it is the most valuable row here and it
+ *      never needs a write.
  *   4. Optionally, on a site you are content to leave a list on: set
  *      ALLOW_WRITES = true as well and paste once more. Then read the S6
- *      warnings above — you will need to come back. The reporting service
- *      account is unlikely to be able to create a list at all; if it is
- *      refused, that refusal is itself a recorded observation.
- *   5. Copy the whole RESULTS block back verbatim, including the evidence
- *      lines. The property dump IS the finding for S3 and S8; a summary of
- *      it is not. The transcript stays OUT of this repository.
+ *      warnings above — YOU WILL NEED TO COME BACK, and S6 and S6C are
+ *      unanswerable until you do. The reporting service account is unlikely
+ *      to be able to create a list at all; if it is refused, that refusal
+ *      is itself a recorded observation.
+ *   5. COME BACK THE NEXT DAY and paste the SAME FILE with the SAME
+ *      MARKER_BASE. ALLOW_WRITES can go back to false for this one: the
+ *      spelling matrix and the edit-stamp lookup are both reads. This is
+ *      the paste that answers S6 and S6C.
+ *   6. Copy the whole RESULTS block back verbatim, including the evidence
+ *      lines, FOR BOTH PASTES. The property dump IS the finding for S3 and
+ *      S8; a summary of it is not. For S6 and S6C the first transcript
+ *      carries the timestamps and the second carries the lookups, so
+ *      quoting one without the other answers nothing. The transcript stays
+ *      OUT of this repository.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -612,14 +745,19 @@
   // that is the case that decides whether a title is usable as a key.
   const LIST_TITLE = 'CHANGE ME - a real list title on this tenant';
 
-  // The marker token S6 stamps into a list Description. Replace CHANGEME
-  // with something random — hex, a short GUID fragment — so no earlier run
-  // and no unrelated content can answer for it.
+  // The BASE token every candidate marker spelling is built from. Replace
+  // CHANGEME with something random — hex, a short GUID fragment — so no
+  // earlier run and no unrelated content can answer for it. Nothing
+  // tenant-specific belongs here; a random string is the point.
   //
-  // KEEP THE VALUE YOU PICK. The follow-up paste MUST use the same token
-  // or it is measuring a different, freshly written marker and the crawl
-  // clock starts again from zero. Write it down.
-  const MARKER_TOKEN = 'dbmlspmarkerCHANGEME';
+  // S6 does NOT plant this value on its own. It builds SIX spellings of the
+  // same marker from it (see SPELLINGS below) and puts all of them in ONE
+  // description, so a single crawl answers the whole matrix.
+  //
+  // KEEP THE VALUE YOU PICK. The follow-up paste MUST use the same base or
+  // it is measuring a different, freshly written marker and the crawl clock
+  // starts again from zero. Write it down.
+  const MARKER_BASE = 'CHANGEME';
 
   // The probe's own list. Not a placeholder — the probe owns this name,
   // and CLEANUP only ever touches this one list.
@@ -660,7 +798,9 @@
   expect('S3', 'For the first STS_List row: EVERY property name returned, and its value.');
   expect('S4', 'Querying for a list title: EVERY title that comes back, not just the expected one.');
   expect('S5', 'Is a list Description returned at all by an STS_List query?');
-  expect('S6', 'Does a marker token planted in a list Description match exactly, partially, or not at all?');
+  expect('S6A', 'Is Description FILTERABLE here: does Description:"<phrase>" return the list that carries it?');
+  expect('S6', 'Which marker SPELLING in a Description is findable, as a quoted phrase and bare?');
+  expect('S6C', 'Is the INDEXED description current with the live one, and does an EDIT get reindexed?');
   expect('S7', 'The row-limit ceiling: returned row count against reported total, and behaviour at a high limit.');
   expect('S8', 'Does the contentclass:"STS_Site" fallback work, and what identity comes back per site?');
   expect('S9', 'Crawl latency: is recently created content in the index yet, at this run timestamp?');
@@ -678,12 +818,19 @@
     log('INFO', `and the items of '${PAGING_FIXTURE_LIST}' with no $top, to see`);
     log('INFO', 'whether the SERVER emits a continuation link. That list is read and');
     log('INFO', 'never written, and it must not be recycled.');
+    log('INFO', 'Also, for S6A and S6C and WITHOUT WRITING ANYTHING: for several lists');
+    log('INFO', 'on this site that already carry a Description, a query by TITLE (to');
+    log('INFO', 'read back the INDEXED description) and a query by a PHRASE taken from');
+    log('INFO', 'the LIVE one, plus ONE free-text query for the same phrase with no');
+    log('INFO', 'Description: restriction. Those lists are READ ONLY and never edited.');
     log('INFO', 'Every recorded URL has the site host stripped first.');
     log('INFO', 'Would ADDITIONALLY, only with ALLOW_WRITES = true, CREATE ONE LIST');
-    log('INFO', `named '${MARKER_LIST_TITLE}' carrying a marker token in its`);
-    log('INFO', 'Description, and query for that token. That list is RECYCLED, not');
-    log('INFO', 'purged, and only on a later run with CLEANUP = true — read the S6');
-    log('INFO', 'warnings in the docblock, because it needs a SECOND paste later.');
+    log('INFO', `named '${MARKER_LIST_TITLE}' carrying SIX candidate marker spellings`);
+    log('INFO', 'in its Description, and query each of them; and APPEND a dated token');
+    log('INFO', 'to THAT LIST AND NO OTHER, so a later run can time the reindex of an');
+    log('INFO', 'EDIT. That list is RECYCLED, not purged, and only on a later run with');
+    log('INFO', 'CLEANUP = true — read the S6 warnings in the docblock, because S6 and');
+    log('INFO', 'S6C both need a SECOND paste a day later.');
     log('INFO', 'Nothing has been read or written. Set CONFIRMED = true.');
     return;
   }
@@ -1152,10 +1299,16 @@
     ? localLists.body.value.filter((l) => l.Hidden === false)
     : null;
 
+  // The lists on THIS site that carry a non-empty Description, read once and
+  // shared by S5 and by the whole S6 family. It is the single fact that
+  // separates "nothing here HAS a description" — an unmet prerequisite —
+  // from "descriptions are not findable", which would be a finding. The two
+  // are indistinguishable from a search result set alone.
+  const described = localRows ? localRows.filter((l) => nonEmpty(l.Description)) : [];
+
   // ================= S5 — IS DESCRIPTION RETURNED? ======================
   {
     const S5_Q = 'Is a list Description returned at all by an STS_List query?';
-    const described = localRows ? localRows.filter((l) => nonEmpty(l.Description)) : [];
     if (localRows === null) {
       record('S5', S5_Q, 'NOT ESTABLISHED (prerequisite)',
              `could not read web/lists to establish whether any list here HAS a description: `
@@ -1670,132 +1823,546 @@
     }
   }
 
-  // ================= S6 — THE MARKER, WRITE-GATED =======================
-  const S6_Q = 'Does a marker token planted in a list Description match exactly, partially, or not at all?';
+  // ================= THE S6 FAMILY — DESCRIPTION AS A DISCOVERY KEY =====
+  // Three questions about ONE surface. The fleet reporting design wants to
+  // find deployed lists by planting a machine-readable provenance marker in
+  // each list's Description and querying
+  // `contentclass:STS_List Description:"<marker>"`.
+  //
+  // What Learn already settles — `Description` is a DEFAULT managed
+  // property, Queryable = Yes, Searchable = No, Retrievable = Yes, mapped
+  // from the crawled properties Description, Office:6 and DESCRIPTION — is
+  // cited in the docblock and is NOT what these rows measure. They measure
+  // whether it holds ON THIS TENANT FOR THIS CALLER (S6A), which SPELLING
+  // of a marker survives word-breaking (S6), and whether EDITING an
+  // existing description gets it reindexed (S6C).
+  //
+  // ONLY S6 AND HALF OF S6C WRITE. S6A writes nothing and needs nothing
+  // planted: this site already has lists carrying descriptions.
+  const S6A_Q = 'Is Description FILTERABLE here: does Description:"<phrase>" return the list that carries it?';
+  const S6_Q = 'Which marker SPELLING in a Description is findable, as a quoted phrase and bare?';
+  const S6C_Q = 'Is the INDEXED description current with the live one, and does an EDIT get reindexed?';
   const listPath = `web/lists/getbytitle('${MARKER_LIST_TITLE.replace(/'/g, "''")}')`;
 
-  if (CLEANUP && ALLOW_WRITES) {
-    // Tidy-up mode, and nothing else. Unlike the other probes here, this
-    // does NOT go on to recreate the list: the S6 measurement spans two
-    // pastes, so a reset-then-recreate would restart the crawl clock and
-    // the operator would never reach an answer. See the docblock.
-    log('INFO', 'CLEANUP is on: this is a TIDY-UP run. S6 will be recycled, not measured.');
-    const found = await spGet(listPath);
-    if (!found.ok) {
-      record('S6', S6_Q, 'NOT ESTABLISHED (cleanup run)',
-             `CLEANUP was on, so nothing was measured. There was no list named `
-             + `${JSON.stringify(MARKER_LIST_TITLE)} to remove (${httpDetail(found)}).`);
+  // A distinctive phrase out of a description, for a `Description:"..."`
+  // restriction. WORD CHARACTERS ONLY, single-spaced: a phrase carrying a
+  // double quote or a colon would change how KQL PARSES the query rather
+  // than what it asks, and the row would then be measuring this probe's
+  // quoting instead of the platform. Words under three characters are
+  // dropped as too common to be distinctive, and fewer than two usable
+  // words means NO phrase — recorded as such rather than guessed at.
+  //
+  // WORDS THAT APPEAR IN THE HOST ARE DROPPED, and that is a leak guard
+  // rather than tuning. A description containing a site URL would be split
+  // into bare words here, so `redact` — which matches the whole origin as
+  // one string — could not catch the tenant name once it stood alone. The
+  // phrase is printed in the evidence, so the tenant must never reach it.
+  const ORIGIN_LOWER = ORIGIN.toLowerCase();
+  const phraseFrom = (text) => {
+    const words = String(text == null ? '' : text)
+      .split(/[^A-Za-z0-9]+/)
+      .filter((w) => w.length >= 3 && !ORIGIN_LOWER.includes(w.toLowerCase()));
+    return words.length >= 2 ? words.slice(0, 5).join(' ') : null;
+  };
+
+  // Whitespace-insensitive comparison for the live-versus-indexed diff.
+  // Search may hand back a description with its line breaks or runs of
+  // spaces normalised, and reporting THAT as a stale index entry would be a
+  // formatting artefact filed as a currency finding.
+  const sameText = (a, b) => String(a == null ? '' : a).replace(/\s+/g, ' ').trim()
+    === String(b == null ? '' : b).replace(/\s+/g, ' ').trim();
+
+  // ---- ONE census of this site's described lists, read TWO ways --------
+  // S6A and S6C ask different questions of the SAME two queries per list,
+  // so the queries run once. Twice would cost twice and would invite a
+  // reader to treat the second pass as corroboration of the first.
+  //
+  //   by TITLE  — the Description cell that comes back IS THE INDEXED
+  //               description. Comparing it against the live one is S6C.
+  //   by PHRASE — a phrase from the LIVE description used as a
+  //               `Description:` restriction. That is S6A.
+  //
+  // No selectproperties is sent. S5 established that a Description cell
+  // comes back on a default STS_List row, and the title query has to be
+  // able to show a Description cell that is MISSING as well as one that is
+  // stale — naming the property would decide half of that.
+  //
+  // SEVERAL LISTS, NOT ONE, and that is the point of the cap rather than a
+  // budget: one miss is as likely to be an uncrawled list as an unfilterable
+  // property, and only a spread of lists can tell those apart.
+  const CENSUS_LIMIT = 6;
+  const census = [];
+  const censusUsable = described.filter((l) => !String(l.Title).includes('"'));
+  const censusUnusable = described.length - censusUsable.length;
+  for (const list of censusUsable.slice(0, CENSUS_LIMIT)) {
+    const title = String(list.Title);
+    const entry = {
+      title,
+      live: String(list.Description),
+      phrase: null,
+      inIndex: null,
+      indexed: null,
+      titleFailure: null,
+      byPhrase: null,
+      phraseRows: null,
+      phraseFailure: null,
+    };
+    entry.phrase = phraseFrom(entry.live);
+
+    const byTitle = await runQuery(`contentclass:STS_List Title:"${title}"`, '&rowlimit=50');
+    if (!byTitle.ok) {
+      entry.titleFailure = queryFailure(byTitle);
     } else {
-      const digest = await getDigest();
-      const gone = await spPost(`${listPath}/recycle`, {}, digest);
-      record('S6', S6_Q, 'NOT ESTABLISHED (cleanup run)',
-             `CLEANUP was on, so nothing was measured. Recycling ${JSON.stringify(MARKER_LIST_TITLE)}: `
-             + `${gone.ok ? 'done — it is restorable from the site recycle bin, not purged' : httpDetail(gone)}. `
-             + 'Turn CLEANUP off to measure S6 again.');
+      const row = byTitle.rows.find((r) => String(cellValue(r, 'Title')) === title);
+      entry.inIndex = row !== undefined;
+      if (row !== undefined) {
+        const cell = cellValue(row, 'Description');
+        entry.indexed = String(cell == null ? '' : cell);
+      }
     }
-  } else if (!ALLOW_WRITES) {
-    record('S6', S6_Q, 'NOT ESTABLISHED (write flag off)',
-           `S6 CREATES A LIST named ${JSON.stringify(MARKER_LIST_TITLE)} on the site you paste into, `
-           + 'carrying a marker token in its Description, so it is gated. The list is RECYCLED, not '
-           + 'purged, on a later CLEANUP run. Set ALLOW_WRITES = true on a site you are content to '
-           + 'leave a probe list on — and read the S6 warnings first, because crawl latency means the '
-           + 'answer needs a SECOND paste some time later.');
-  } else if (PLACEHOLDER.test(MARKER_TOKEN)) {
-    record('S6', S6_Q, 'NOT ESTABLISHED (prerequisite)',
-           'MARKER_TOKEN is still the placeholder. Replace CHANGEME with something random, write the '
-           + 'value down, and use the SAME value on the follow-up paste — a fresh token restarts the '
-           + 'crawl clock and the follow-up would measure nothing.');
-  } else {
-    const DESCRIPTION = `dbml-sharepoint search discovery probe. Marker: ${MARKER_TOKEN}. Safe to delete.`;
-    let created = null;
-    let listInfo = await spGet(`${listPath}?$select=Id,Title,Description,Created`);
-    if (!listInfo.ok) {
+
+    if (entry.phrase !== null) {
+      const byPhrase = await runQuery(
+        `contentclass:STS_List Description:"${entry.phrase}"`, '&rowlimit=50');
+      if (!byPhrase.ok) {
+        entry.phraseFailure = queryFailure(byPhrase);
+      } else {
+        entry.phraseRows = byPhrase.rows.length;
+        entry.byPhrase = byPhrase.rows.some((r) => String(cellValue(r, 'Title')) === title);
+      }
+    }
+    census.push(entry);
+  }
+  const phraseAnswered = census.filter((e) => e.byPhrase !== null);
+  const phraseHits = phraseAnswered.filter((e) => e.byPhrase === true);
+
+  // ================= S6A — IS DESCRIPTION FILTERABLE HERE? ==============
+  // depends on: this site having at least one list with a description.
+  // observes:   whether a phrase out of a live description brings its list
+  //             back through a Description: restriction, and whether the
+  //             same phrase matches with no restriction at all.
+  {
+    if (localRows === null) {
+      record('S6A', S6A_Q, 'NOT ESTABLISHED (prerequisite)',
+             'web/lists could not be read, so there was no LIVE description to take a phrase out of: '
+             + `${httpDetail(localLists)}${privilegeNote(localLists)} Nothing is concluded about whether `
+             + 'Description can carry a query restriction.');
+    } else if (described.length === 0) {
+      record('S6A', S6A_Q, 'NOT ESTABLISHED (prerequisite: no list in reach has a description)',
+             `${localRows.length} visible list(s) were read from web/lists and NOT ONE has a non-empty `
+             + 'Description, so there was nothing to query for. THIS IS AN UNMET PREREQUISITE AND NOT '
+             + '"Description is not filterable" — recording it the second way would be a fabricated '
+             + 'verdict about a managed property. Run this on a site whose lists have descriptions, or '
+             + 'as an identity that can see some, and paste again.');
+    } else if (census.length === 0) {
+      record('S6A', S6A_Q, 'NOT ESTABLISHED (prerequisite: no usable list in the sample)',
+             `${described.length} list(s) here carry a description but none could be sampled — `
+             + `${censusUnusable} had a double quote in the title, which cannot be put into a KQL phrase `
+             + 'without changing how the query parses. Nothing was measured.');
+    } else if (phraseAnswered.length === 0) {
+      const lines = census.map((e) => `      ${JSON.stringify(show(e.title, 60))}: `
+        + `${e.phrase === null
+             ? 'no usable phrase — the description held fewer than two words of three or more characters'
+             : `phrase ${JSON.stringify(e.phrase)}; the query did not answer: ${e.phraseFailure}`}`);
+      searchRecord('S6A', S6A_Q, 'NOT ESTABLISHED (no phrase query answered)',
+             `${census.length} list(s) were sampled and not one Description restriction came back with a `
+             + `result set.\n${lines.join('\n')}`);
+    } else {
+      // ONE free-text control, on the first phrase available. No
+      // `Description:` restriction and no contentclass filter either —
+      // this is meant to be an ORDINARY USER SEARCH, because the question
+      // is whether a planted marker would pollute one.
+      const control = census.find((e) => e.phrase !== null);
+      let freeTextLine;
+      const ft = await runQuery(`"${control.phrase}"`, '&rowlimit=50');
+      if (!ft.ok) {
+        freeTextLine = `it did not answer: ${queryFailure(ft)}`;
+      } else {
+        const hit = ft.rows.some((r) => String(cellValue(r, 'Title')) === control.title);
+        freeTextLine = `the SAME phrase ${JSON.stringify(control.phrase)}, quoted, with NO Description: `
+          + `restriction and no contentclass filter, returned ${ft.rows.length} row(s). The list that `
+          + `carries it, ${JSON.stringify(show(control.title, 60))}, ${hit ? 'WAS' : 'was NOT'} among `
+          + `them. Titles returned: ${JSON.stringify(ft.rows.map((r) => show(cellValue(r, 'Title'), 60)))}`;
+      }
+
+      const censusLines = census.map((e) => `      ${JSON.stringify(show(e.title, 60))}: `
+        + `${e.phrase === null
+             ? 'no usable phrase — the description held fewer than two words of three or more characters'
+             : e.phraseFailure !== null
+               ? `phrase ${JSON.stringify(e.phrase)}; the query did not answer: ${e.phraseFailure}`
+               : `phrase ${JSON.stringify(e.phrase)} → ${e.phraseRows} row(s), and this list `
+                 + `${e.byPhrase ? 'WAS' : 'was NOT'} among them`}`);
+
+      searchRecord('S6A', S6A_Q,
+             `OBSERVED — ${phraseHits.length} of ${phraseAnswered.length} sampled list(s) came back from `
+             + 'a Description restriction',
+             `PREREQUISITE MET: ${described.length} of ${localRows.length} visible list(s) on this site `
+             + `carry a Description. ${census.length} were sampled (cap ${CENSUS_LIMIT}`
+             + `${censusUnusable ? `; ${censusUnusable} skipped for a double quote in the title` : ''}).\n`
+             + `${censusLines.join('\n')}\n`
+             + `      FREE-TEXT CONTROL: ${freeTextLine}\n`
+             + '      HOW TO READ THIS. Learn documents Description as Queryable = YES and Searchable = '
+             + 'NO. Hits on the restriction say the property CAN carry one here, for this caller. A MISS '
+             + 'ON THE FREE-TEXT CONTROL IS THE EXPECTED AND DESIRABLE RESULT: it means a planted marker '
+             + 'would not surface in ordinary user searches. A free-text HIT is the one worth reporting '
+             + 'loudly — it would mean the marker pollutes what everyone else searches, and the design '
+             + 'would need a different surface.\n'
+             + '      A MISS ON THE RESTRICTION IS NOT PROOF THE PROPERTY IS UNFILTERABLE. An uncrawled '
+             + 'list, a stale index entry (S6C) and an unfilterable property look identical from a '
+             + 'single miss. That is why several lists were sampled, and it is why the counts rather '
+             + 'than any one row are the answer.');
+    }
+  }
+
+  // ================= S6 — WHICH SPELLING SURVIVES WORD-BREAKING? ========
+  // SIX candidate spellings of the SAME marker, all in ONE description, so
+  // a SINGLE CRAWL answers the whole matrix. Spelling them one per list
+  // would cost one crawl interval each, and this tenant's interval is
+  // bracketed by S9 at roughly 2.4 to 15 hours.
+  //
+  // Each candidate carries its OWN leading token — dbmlspwords, dbmlsphyphen
+  // and so on — and not merely a different separator. Word-breaking would
+  // otherwise make every candidate a rearrangement of the same tokens, and a
+  // hit could not be attributed to the spelling that produced it.
+  //
+  // Built from MARKER_BASE so nothing tenant-specific is hard-coded.
+  //
+  // NOTHING BELOW ASSERTS WHICH SPELLING SHOULD WIN. The matrix IS the
+  // answer; the design reads it and picks one.
+  const SPELLINGS = [
+    ['space-separated words', `dbmlspwords marker ${MARKER_BASE}`],
+    ['hyphen-separated', `dbmlsphyphen-marker-${MARKER_BASE}`],
+    ['colon-separated', `dbmlspcolon:marker:${MARKER_BASE}`],
+    ['dot-separated', `dbmlspdot.marker.${MARKER_BASE}`],
+    ['camel case, run together', `dbmlspCamelMarker${MARKER_BASE}`],
+    ['opaque, no separators', `dbmlspopaque${MARKER_BASE}`],
+  ];
+  const MARKER_DESCRIPTION = 'dbml-sharepoint search discovery probe. Safe to delete. Marker candidates: '
+    + SPELLINGS.map(([, token]) => token).join(' | ');
+
+  // ---- The S6C edit stamp ----------------------------------------------
+  // DATE-DERIVED AND IDEMPOTENT. A run appends today's token only if the
+  // live description does not already carry it, so pasting twice in one day
+  // does not re-edit and restart the clock the row exists to measure.
+  //
+  // It also makes S6C STATELESS ACROSS RUNS: the description itself carries
+  // every past edit date, so a later paste can bound the reindex interval
+  // without anyone having written a timestamp down between pastes.
+  const EDIT_PREFIX = 'dbmlspedit';
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const stampNow = new Date();
+  const TODAY_TOKEN = `${EDIT_PREFIX}${stampNow.getUTCFullYear()}`
+    + `${pad2(stampNow.getUTCMonth() + 1)}${pad2(stampNow.getUTCDate())}`;
+  const editTokensIn = (text) => String(text == null ? '' : text).match(/dbmlspedit[0-9]{8}/g) || [];
+  // Hours since UTC MIDNIGHT of the day a stamp names — an UPPER bound on
+  // how long ago the edit was made, never the elapsed time itself. The token
+  // deliberately carries a date and not a clock time, so that a second paste
+  // on the same day is a no-op.
+  const stampAgeHours = (token) => {
+    const at = Date.UTC(Number(token.slice(10, 14)), Number(token.slice(14, 16)) - 1,
+                        Number(token.slice(16, 18)));
+    const hours = (Date.now() - at) / 3600000;
+    return Number.isFinite(hours) ? hours.toFixed(1) : '?';
+  };
+
+  // ---- The probe's own list --------------------------------------------
+  // READ FIRST, ALWAYS. Creating it is the only write-gated part of S6:
+  // once the list exists the whole spelling matrix is a READ, so the
+  // follow-up paste that actually answers S6 needs no write flag.
+  //
+  // CLEANUP recycles and DOES NOT RECREATE — see the docblock. Recreating
+  // on every run would restart the crawl clock and make S6 and S6C
+  // unanswerable no matter how many times the operator came back.
+  let markerBody = null;     // the read-back list, or null if there is none
+  let markerCreated = null;  // 'this run' | 'an earlier run'
+  let markerProblem = null;  // evidence for why there is no usable list
+  let cleanupRan = false;
+  {
+    if (CLEANUP && !ALLOW_WRITES) {
+      log('INFO', 'CLEANUP is on but ALLOW_WRITES is false — nothing will be recycled.');
+    }
+    const first = await spGet(`${listPath}?$select=Id,Title,Description,Created`);
+    if (CLEANUP && ALLOW_WRITES) {
+      cleanupRan = true;
+      log('INFO', 'CLEANUP is on: this is a TIDY-UP run. The probe list is recycled and NOT recreated.');
+      if (!first.ok) {
+        markerProblem = 'CLEANUP was on and there was no list named '
+          + `${JSON.stringify(MARKER_LIST_TITLE)} to remove (${httpDetail(first)}).`;
+      } else {
+        const digest = await getDigest();
+        const gone = await spPost(`${listPath}/recycle`, {}, digest);
+        markerProblem = `CLEANUP was on, so ${JSON.stringify(MARKER_LIST_TITLE)} was `
+          + `${gone.ok
+               ? 'RECYCLED — restorable from the site recycle bin, not purged'
+               : `NOT recycled: ${httpDetail(gone)}`}`
+          + '. Nothing was measured against it. Turn CLEANUP off to start a fresh two-paste cycle.';
+      }
+    } else if (first.ok) {
+      markerBody = first.body;
+      markerCreated = 'an earlier run';
+    } else if (!ALLOW_WRITES) {
+      markerProblem = `there is no list named ${JSON.stringify(MARKER_LIST_TITLE)} on this site `
+        + `(${httpDetail(first)}) and CREATING it is write-gated. Set ALLOW_WRITES = true on a site you `
+        + 'are content to leave a probe list on — and read the S6 warnings in the docblock first, '
+        + 'because the answer needs a SECOND paste a day later. Only the CREATE is gated: once the list '
+        + 'exists, every query below is a read.';
+    } else if (PLACEHOLDER.test(MARKER_BASE)) {
+      markerProblem = 'MARKER_BASE is still the placeholder, so no list was created. Replace CHANGEME '
+        + 'with something random, WRITE THE VALUE DOWN, and use the SAME value on the follow-up paste — '
+        + 'a fresh base restarts the crawl clock and the follow-up would measure nothing.';
+    } else {
       const digest = await getDigest();
       const made = await spPost('web/lists', {
         Title: MARKER_LIST_TITLE,
         BaseTemplate: 100,
-        Description: DESCRIPTION,
+        Description: MARKER_DESCRIPTION,
       }, digest);
       if (!made.ok) {
         // The reporting service account is unlikely to be able to create a
         // list at all. That refusal is an observation about this caller,
         // recorded as one — not a fact about markers, and not a broken run.
-        record('S6', S6_Q, outcomeFor(made),
-               `could not create ${JSON.stringify(MARKER_LIST_TITLE)}: ${httpDetail(made)}`
-               + `${privilegeNote(made)} Nothing is concluded about crawling or about markers.`);
-        listInfo = null;
+        markerProblem = `could not create ${JSON.stringify(MARKER_LIST_TITLE)}: ${httpDetail(made)}`
+          + `${privilegeNote(made)} Nothing is concluded about markers or about crawling.`;
       } else {
-        created = 'this run';
-        // Read back and verify, rather than trusting the write.
-        listInfo = await spGet(`${listPath}?$select=Id,Title,Description,Created`);
+        // Read back and verify rather than trusting the write.
+        const back = await spGet(`${listPath}?$select=Id,Title,Description,Created`);
+        if (!back.ok) {
+          markerProblem = `the list was created but could NOT be read back: ${httpDetail(back)}`
+            + `${privilegeNote(back)} The fixture is unverified, so nothing was measured against it.`;
+        } else {
+          markerBody = back.body;
+          markerCreated = 'this run';
+        }
       }
+    }
+  }
+  const markerDescription = markerBody === null
+    ? '' : String(markerBody.Description == null ? '' : markerBody.Description);
+
+  {
+    if (markerBody === null) {
+      record('S6', S6_Q,
+             cleanupRan ? 'NOT ESTABLISHED (cleanup run)' : 'NOT ESTABLISHED (no probe list to measure)',
+             `${markerProblem}`);
+    } else if (SPELLINGS.some(([, token]) => !markerDescription.includes(token))) {
+      const missing = SPELLINGS.filter(([, token]) => !markerDescription.includes(token))
+        .map(([label]) => label);
+      record('S6', S6_Q, 'NOT ESTABLISHED (prerequisite: the stored description is missing spellings)',
+             `the list exists but its Description read back as ${show(markerDescription, 300)}, which `
+             + `does not carry these candidate(s): ${missing.join('; ')}. The likeliest cause by far is `
+             + 'an earlier run with a DIFFERENT MARKER_BASE. Either restore that base, or set CLEANUP = '
+             + 'true for one tidy-up run and start the two-paste cycle again. Nothing is concluded about '
+             + 'crawling or about spellings.');
     } else {
-      created = 'an earlier run';
+      const ageHours = (Date.now() - Date.parse(markerBody.Created)) / 3600000;
+      const lines = [];
+      let answered = 0;
+      let hits = 0;
+      for (const [label, token] of SPELLINGS) {
+        const forms = [
+          ['quoted phrase', `contentclass:STS_List Description:"${token}"`],
+          ['bare', `contentclass:STS_List Description:${token}`],
+        ];
+        const parts = [];
+        for (const [form, kql] of forms) {
+          const q = await runQuery(kql, '&rowlimit=20');
+          if (!q.ok) {
+            // AS THE STATUS, WITH THE BODY. A bare colon-separated token in
+            // particular reads as a property restriction to KQL, so an error
+            // here is a real result about that spelling — but only if the
+            // status and the server's own words travel with it.
+            parts.push(`${form}: did not answer — ${queryFailure(q)}`);
+            continue;
+          }
+          answered += 1;
+          const hit = q.rows.some((r) => String(cellValue(r, 'Title')) === MARKER_LIST_TITLE);
+          if (hit) hits += 1;
+          parts.push(`${form}: ${q.rows.length} row(s); the probe list `
+            + `${hit ? 'CAME BACK' : 'did NOT come back'}`
+            + `${q.rows.length
+                 ? `; titles ${JSON.stringify(q.rows.map((r) => show(cellValue(r, 'Title'), 60)))}`
+                 : ''}`);
+        }
+        lines.push(`      ${label} — ${JSON.stringify(token)}\n        ${parts.join('\n        ')}`);
+      }
+      const young = !Number.isFinite(ageHours) || ageHours < 24;
+      searchRecord('S6', S6_Q,
+             hits > 0
+               ? `OBSERVED — the probe list came back for ${hits} of ${answered} query form(s) that answered`
+               : `NOT ESTABLISHED (no spelling matched yet${young ? '; the list is too new to read as an answer' : ''})`,
+             `the list was created by ${markerCreated}; Created ${JSON.stringify(markerBody.Created)}, `
+             + `about ${Number.isFinite(ageHours) ? ageHours.toFixed(1) : '?'} hour(s) before this run at `
+             + `${RUN_AT}. Its stored Description read back as ${show(markerDescription, 400)}, so the `
+             + `fixture is verified and every candidate below is really present.\n${lines.join('\n')}\n`
+             + '      THE MATRIX IS THE ANSWER AND NOTHING HERE ASSERTS WHICH SPELLING SHOULD WIN. Read '
+             + 'it and pick the one the design standardises on.\n'
+             + '      ONE CAVEAT THAT MUST TRAVEL WITH IT: all six candidates sit in ONE description, so '
+             + 'a hit is evidence that THAT QUERY FORM finds THIS LIST — not that the spelling would be '
+             + 'the only thing matching if it stood alone. Each candidate carries its own leading token '
+             + 'to keep them apart under word-breaking, which is as far as one crawl can separate them.\n'
+             + `      ${hits === 0
+                  ? 'NO MATCH IS THE EXPECTED FIRST-RUN RESULT AND IS NOT AN ANSWER. A new list\'s '
+                    + 'description is not in the index the instant it is written, and S9 brackets this '
+                    + 'tenant at roughly 2.4 to 15 hours. DO NOT RECORD THIS AS "markers do not work". '
+                    + 'Leave the list in place, keep MARKER_BASE exactly as it is, and paste this file '
+                    + 'again the next day — with ALLOW_WRITES back off if you prefer, because the '
+                    + 'follow-up is a read.'
+                  : 'Compare this against S9 and S6C: a match here bounds crawl latency from above for '
+                    + 'this list, and the titles above say whether anything OTHER than the probe list '
+                    + 'came back, which is the word-breaking half of the question.'}`);
+    }
+  }
+
+  // ================= S6C — THE MIGRATION QUESTION =======================
+  // Every already-deployed site would get its marker by RE-PASTE, which
+  // EDITS an existing list rather than creating one. That is a different
+  // code path, and S9 and S6 only ever measure CREATION.
+  //
+  // Two halves, and the first needs no state carried between runs:
+  //
+  //   CENSUS (read-only). For each described list, the INDEXED description
+  //   — the Description cell search returned for it — against the LIVE one
+  //   from REST. Equal is CURRENT; different is STALE; not in the index at
+  //   all is neither. This does NOT depend on S6A: it reads Description as
+  //   RETRIEVABLE, which S5 already measured, rather than as queryable.
+  //
+  //   EDIT STAMPS (the append is write-gated; the lookup is not). Every
+  //   dated stamp in the probe list's own description is queried, so a
+  //   later paste bounds how long an EDIT took to reach the index.
+  //
+  // IT ONLY EVER EDITS THE PROBE'S OWN LIST. If that list is absent it says
+  // so and skips; it never goes looking for another list to write to.
+  {
+    const looked = census.filter((e) => e.inIndex !== null);
+    const inIndex = census.filter((e) => e.inIndex === true);
+    const current = inIndex.filter((e) => sameText(e.indexed, e.live));
+    const stale = inIndex.filter((e) => !sameText(e.indexed, e.live));
+    const absent = census.filter((e) => e.inIndex === false);
+    const failed = census.filter((e) => e.titleFailure !== null);
+
+    const staleLines = stale.map((e) => `        ${JSON.stringify(show(e.title, 60))}\n`
+      + `          LIVE    : ${show(e.live, 200)}\n`
+      + `          INDEXED : ${e.indexed === '' ? '(the cell came back EMPTY)' : show(e.indexed, 200)}`);
+    const censusHalf = localRows === null
+      ? `web/lists could not be read, so there was no live description to compare against: `
+        + `${httpDetail(localLists)}${privilegeNote(localLists)}`
+      : described.length === 0
+        ? `${localRows.length} visible list(s) here and NOT ONE carries a description, so there was `
+          + 'nothing to compare. UNMET PREREQUISITE, not a currency finding.'
+        : looked.length === 0
+          ? `${census.length} list(s) were sampled and not one title lookup answered`
+            + `${failed.length ? `. First failure: ${failed[0].titleFailure}` : '.'}`
+          : `${looked.length} described list(s) were looked up in the index by title: ${current.length} `
+            + `CURRENT (the indexed description equals the live one), ${stale.length} STALE (it does `
+            + `not), ${absent.length} NOT IN THE INDEX AT ALL`
+            + `${failed.length ? `, and ${failed.length} whose lookup did not answer` : ''}.`
+            + `${stale.length ? `\n      HOW THE STALE ONES DIFFER, host redacted:\n${staleLines.join('\n')}`
+                              : ' No sampled list differed.'}`
+            + `${absent.length ? `\n      NOT IN THE INDEX: ${JSON.stringify(
+                 absent.map((e) => show(e.title, 60)))} — which is uncrawled content, not a stale entry, `
+                 + 'and the two must not be pooled.' : ''}`;
+
+    // ---- The edit stamps ------------------------------------------------
+    const stamps = editTokensIn(markerDescription);
+    const stampLines = [];
+    let stampsAsked = 0;
+    let stampsFound = 0;
+    for (const token of stamps) {
+      const q = await runQuery(`contentclass:STS_List Description:"${token}"`, '&rowlimit=20');
+      if (!q.ok) {
+        stampLines.push(`        ${token} (stamped no more than ${stampAgeHours(token)} hour(s) ago): `
+          + `the query did not answer — ${queryFailure(q)}`);
+        continue;
+      }
+      stampsAsked += 1;
+      const hit = q.rows.some((r) => String(cellValue(r, 'Title')) === MARKER_LIST_TITLE);
+      if (hit) stampsFound += 1;
+      stampLines.push(`        ${token} (stamped no more than ${stampAgeHours(token)} hour(s) ago): `
+        + `${q.rows.length} row(s); the probe list ${hit ? 'CAME BACK' : 'did NOT come back'}`);
     }
 
-    if (listInfo && !listInfo.ok) {
-      record('S6', S6_Q, outcomeFor(listInfo),
-             `the list could not be read back after being created: ${httpDetail(listInfo)}`
-             + `${privilegeNote(listInfo)} Nothing is concluded about the marker — the fixture itself `
-             + 'is unverified.');
-    } else if (listInfo) {
-      const storedDescription = String(listInfo.body.Description == null ? '' : listInfo.body.Description);
-      const stampedOk = storedDescription.includes(MARKER_TOKEN);
-      const createdAt = listInfo.body.Created;
-      const ageHours = (Date.now() - Date.parse(createdAt)) / 3600000;
-      if (!stampedOk) {
-        record('S6', S6_Q, 'NOT ESTABLISHED (prerequisite: the marker is not in the stored description)',
-               `the list exists but its Description read back as ${show(storedDescription, 200)}, which `
-               + `does not contain ${JSON.stringify(MARKER_TOKEN)}. Most likely it was created by an `
-               + 'earlier run with a DIFFERENT token. Either restore that token, or set CLEANUP = true '
-               + 'for one tidy-up run and start again. Nothing is concluded about crawling.');
+    let editLine;
+    if (markerBody === null) {
+      editLine = `THE PROBE LIST IS NOT AVAILABLE, so NOTHING WAS EDITED and nothing was attempted. `
+        + `${markerProblem} This row never edits a list it did not create.`;
+    } else if (markerCreated === 'this run') {
+      editLine = 'the probe list was CREATED THIS RUN, so it was deliberately NOT edited. An edit to a '
+        + 'brand-new list could not be told apart from its creation, which is what S6 already measures. '
+        + 'Come back on a later day and this row will stamp it then.';
+    } else if (!ALLOW_WRITES) {
+      editLine = 'the edit is WRITE-GATED and ALLOW_WRITES is false, so nothing was written. The stamp '
+        + 'lookup above is read-only and ran anyway — which is the point: the paste that ANSWERS this '
+        + 'row needs no write flag.';
+    } else if (stamps.includes(TODAY_TOKEN)) {
+      editLine = `the live description already carries ${JSON.stringify(TODAY_TOKEN)}, so NO EDIT WAS `
+        + 'MADE. The stamp is date-derived and idempotent on purpose: re-editing on every paste would '
+        + 'restart the very clock this row measures.';
+    } else {
+      const digest = await getDigest();
+      const editedAt = new Date().toISOString();
+      // VERBOSE OData for this one call, and it is not optional. The body
+      // carries __metadata, and odata=nometadata REJECTS the type hint
+      // rather than ignoring it — the threshold probe lost a whole live run
+      // to exactly this. `SP.List` is the type Learn's own create-a-list
+      // sample uses, and MERGE + IF-MATCH is the documented update form.
+      const merged = await spPost(listPath, {
+        __metadata: { type: 'SP.List' },
+        Description: `${markerDescription} ${TODAY_TOKEN}`,
+      }, digest, {
+        Accept: 'application/json;odata=verbose',
+        'Content-Type': 'application/json;odata=verbose',
+        'X-HTTP-Method': 'MERGE',
+        'IF-MATCH': '*',
+      });
+      if (!merged.ok) {
+        editLine = `the edit was not accepted: ${httpDetail(merged)}${privilegeNote(merged)} Nothing is `
+          + 'concluded about reindexing an edit.';
       } else {
-        const variants = [
-          ['bare token', MARKER_TOKEN],
-          ['quoted phrase', `"${MARKER_TOKEN}"`],
-          ['Description property', `Description:"${MARKER_TOKEN}"`],
-          ['Description property, within STS_List', `contentclass:STS_List Description:"${MARKER_TOKEN}"`],
-        ];
-        const lines = [];
-        let exactHits = 0;
-        let anyRows = 0;
-        for (const [label, kql] of variants) {
-          const q = await runQuery(kql, '&rowlimit=20');
-          if (!q.ok) { lines.push(`      ${label}: ${queryFailure(q)}`); continue; }
-          anyRows += q.rows.length;
-          // EXACT means: a row came back whose Description actually
-          // contains the token. Rows that come back WITHOUT it are the
-          // partial-match case, and they are recorded rather than filtered
-          // out — a tokeniser that split the marker and matched something
-          // else is exactly the finding this question is for.
-          const withToken = q.rows.filter((r) => String(cellValue(r, 'Description') || '').includes(MARKER_TOKEN));
-          const titles = q.rows.map((r) => show(cellValue(r, 'Title'), 80));
-          exactHits += withToken.length;
-          lines.push(`      ${label}: ${q.rows.length} row(s); ${withToken.length} carried the full token `
-                     + `in a returned Description. Titles: ${JSON.stringify(titles)}`);
-        }
-        const verdict = exactHits > 0 ? 'EXACT — the full token came back in a Description'
-          : anyRows > 0 ? 'PARTIAL — rows matched but none carried the full token'
-          : 'NO MATCH YET';
-        const young = !Number.isFinite(ageHours) || ageHours < 24;
-        searchRecord('S6', S6_Q,
-               exactHits > 0 || anyRows > 0
-                 ? `OBSERVED — ${verdict}`
-                 : `NOT ESTABLISHED (no match yet${young ? '; the list is too new to read as an answer' : ''})`,
-               `the list was created by ${created}; Created ${JSON.stringify(createdAt)}, about `
-               + `${Number.isFinite(ageHours) ? ageHours.toFixed(1) : '?'} hour(s) before this run at `
-               + `${RUN_AT}. Its stored Description read back as ${show(storedDescription, 200)}, `
-               + `so the fixture is verified.\n${lines.join('\n')}\n`
-               + `      ${anyRows === 0
-                    ? 'NO MATCH IS THE EXPECTED FIRST-RUN RESULT AND IS NOT AN ANSWER. A new list\'s '
-                      + 'description is not in the index the instant it is written. DO NOT RECORD THIS AS '
-                      + '"markers do not work". Leave the list in place, keep MARKER_TOKEN exactly as it '
-                      + 'is, and paste this file again in a few hours or a day.'
-                    : 'Compare this against S9: a match here bounds crawl latency from above for this '
-                      + 'list, and the titles above say whether anything OTHER than the marker list came '
-                      + 'back — which is the tokenisation half of the question.'}`);
+        // Read back and verify. A MERGE that returns 200 without taking
+        // effect would leave a later run looking for a stamp that is not
+        // there and reporting it as a reindex failure.
+        const back = await spGet(`${listPath}?$select=Description`);
+        const now = readFailed(back)
+          ? null : String(back.body.Description == null ? '' : back.body.Description);
+        editLine = now === null
+          ? `the MERGE returned HTTP ${merged.status} but the description could not be READ BACK: `
+            + `${httpDetail(back)} The edit is unverified, so do not time anything from it.`
+          : now.includes(TODAY_TOKEN)
+            ? `EDITED AT ${editedAt}. ${JSON.stringify(TODAY_TOKEN)} was appended to the probe list's `
+              + `OWN description and read back from it; it now reads ${show(now, 300)}. THIS RUN CANNOT `
+              + 'ANSWER S6C\'s edit half and does not try — a later paste queries for that stamp, and '
+              + 'whether it is found, at what age, is what bounds the reindex interval FOR AN EDIT.'
+            : `the MERGE returned HTTP ${merged.status} but the description read back as `
+              + `${show(now, 300)}, which does NOT carry the stamp. The write did not take effect and `
+              + 'nothing was measured.';
       }
     }
+
+    const outcomeParts = [];
+    if (looked.length) {
+      outcomeParts.push(`${current.length} current, ${stale.length} stale, ${absent.length} not indexed, `
+        + `of ${looked.length} looked up`);
+    }
+    if (stampsAsked) outcomeParts.push(`${stampsFound} of ${stampsAsked} edit stamp(s) findable`);
+    searchRecord('S6C', S6C_Q,
+           outcomeParts.length
+             ? `OBSERVED — ${outcomeParts.join('; ')}`
+             : 'NOT ESTABLISHED (nothing could be compared — see the evidence)',
+           `run timestamp ${RUN_AT}.\n      CENSUS (read-only, no list was written to): ${censusHalf}\n`
+           + `      EDIT STAMPS on ${JSON.stringify(MARKER_LIST_TITLE)}: `
+           + `${stampLines.length ? `\n${stampLines.join('\n')}` : '(the description carries none yet)'}\n`
+           + `      THIS RUN'S EDIT: ${editLine}\n`
+           + '      CURRENT VERSUS STALE IS COMPARED WITH WHITESPACE NORMALISED. A description whose '
+           + 'line breaks came back collapsed is a formatting difference, not an out-of-date index '
+           + 'entry, and filing one as the other would invent a migration risk.\n'
+           + '      A STAMP\'S AGE IS AN UPPER BOUND, not the elapsed time: the token names a DATE, so '
+           + 'the edit happened at some point during that UTC day or later. That is deliberate — a '
+           + 'clock-time stamp would change on every paste and re-edit the list each time.\n'
+           + '      WHAT A STALE COUNT DOES AND DOES NOT MEAN. A list whose INDEXED description differs '
+           + 'from its LIVE one has an index entry older than the object, which is exactly the risk the '
+           + 'migration path runs: every deployed site would gain its marker by an EDIT. It does NOT say '
+           + 'how long the entry has been stale, and it does not say edits are never reindexed — only a '
+           + 'second paste, timed against the stamps above, can say that.');
   }
 
   } finally {
@@ -1815,12 +2382,18 @@
   console.log('   means opposite things for the two, and the flag is only believed as');
   console.log('   far as the caller printed beside it agrees with it.');
   console.log('   answer: ______________________________________');
-  console.log('3. Which constants you set, and to what (LIST_TITLE, MARKER_TOKEN, and');
-  console.log('   PAGING_FIXTURE_LIST if you changed it).');
+  console.log('3. Which constants you set, and to what (LIST_TITLE, MARKER_BASE, and');
+  console.log('   PAGING_FIXTURE_LIST if you changed it). MARKER_BASE must be the SAME');
+  console.log('   on both pastes or S6 and S6C are measuring a fresh marker each time.');
   console.log('   answer: ______________________________________');
-  console.log('4. Whether ALLOW_WRITES was on for this run (S6 is blank if not), and');
-  console.log('   whether this was a FIRST paste or the follow-up.');
+  console.log('4. Whether ALLOW_WRITES was on for this run, and whether this was the');
+  console.log('   FIRST paste or the FOLLOW-UP. S6 AND S6C NEED BOTH TRANSCRIPTS: the');
+  console.log('   first carries the create and the edit timestamps, the second carries');
+  console.log('   whether either was found. Quote them together — one alone answers');
+  console.log('   nothing, and the second paste should be a DAY later, not an hour.');
   console.log('   answer: ______________________________________');
+  console.log('4b. S6A needs neither writes nor a second paste. If it is the only row');
+  console.log('   you can run, run it — it is the most valuable question in the file.');
   console.log('5. Which sites this account was actually GRANTED access to. S10 can say');
   console.log('   what came back; only you can say whether that is the right set.');
   console.log('   EXPECT MORE SITES THAN YOU GRANTED, and it is not a leak: intranet and');
