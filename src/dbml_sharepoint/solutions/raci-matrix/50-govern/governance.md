@@ -118,11 +118,21 @@ vague sense of "a lot" is not.
 Somebody leaves, a role is abolished, a committee is disbanded. Work it
 in this order.
 
-1. **Set the `Party` row to Inactive** and update its `Contact` to
-   whoever now holds the role, chairs the successor forum, or is the
-   point of contact in the interim. `Status` drives the *Active parties*
-   and *Retired parties* views, so this is what takes them out of every
-   picker's working view.
+1. **Set the `Party` row to Inactive.** `Status` drives the *Active
+   parties* and *Retired parties* views, so this is what takes them out
+   of every picker's working view.
+
+   **Whether you also update `Contact` depends on `PartyKind`.** For a
+   Role, Forum or External party the row's identity is the position, the
+   committee or the organisation, and that has not changed — so point
+   `Contact` at whoever now holds the role, chairs the successor forum,
+   or is the contact in the interim. For an **Individual** party the row
+   *is* that person: repointing `Contact` at their successor silently
+   rewrites history, because every activity and involvement naming that
+   party now resolves to somebody who never held it. Leave an
+   Individual's `Contact` alone, create a new active Individual party
+   for the successor, and repoint the current activities and
+   involvements at it.
 2. **Never delete a `Party` row.** Every activity's `AccountableForum`
    and every involvement's `Party` is a lookup at it, and deleting the
    row orphans all of them — the child rows survive pointing at nothing,

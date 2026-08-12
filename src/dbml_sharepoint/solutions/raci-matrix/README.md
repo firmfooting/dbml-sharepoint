@@ -109,7 +109,8 @@ Maintainers` should be, which the governance file sets out as a real choice
 with a cost either way.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes eighteen `[DEMO] `-titled rows — six parties covering all four
+that pastes eighteen rows titled with `[DEMO]` followed by a space — six
+parties covering all four
 kinds plus a disbanded forum, six activities including an overdue Statutory
 one flagged *Needs review* and a retired one, and six involvements, three of
 them consulting the same external auditor so the *Consultation load* view
