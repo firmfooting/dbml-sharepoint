@@ -82,8 +82,8 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste
 `deploy.js.txt` first, then `demo-data.js.txt`, from the same bundle. It
-creates eighteen rows: six parties (one of each kind, two forums, and one
-Inactive forum), six activities (an overdue Statutory task marked *Needs
+creates eighteen rows: six parties covering all four kinds, two of them
+active forums and one a disbanded forum kept as Inactive; six activities (an overdue Statutory task marked *Needs
 review*, a Decision, an Approval, two Routine tasks and one Retired row)
 and six involvements, three of them consulting the same external auditor
 so the *Consultation load* view has something to reveal.
