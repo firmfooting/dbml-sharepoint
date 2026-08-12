@@ -1031,6 +1031,16 @@ def test_declining_the_prefix_gate_repoints_the_docs_to_the_bare_list_name(
     version could not have told that apart from success. `"Risk" in docs` on
     its own was near-vacuous: "Risk register" appears in every one of these
     files regardless of the prefix, so it was passing on unrelated text.
+
+    Also pins the printed report line for this same run. `_Substitution.old`
+    is `"RR_"` and `.new` is `""` here -- the removed-prefix case `describe()`
+    exists for -- and the naive `f"{old} -> {new}"` this used to be rendered
+    "prefix RR_ -> " with nothing after the arrow, then a trailing comma
+    before the site-URL substitution: a line that reads as a rendering fault
+    rather than as "no prefix". Bounded the same way as the sibling report
+    assertion above (`test_keeping_the_default_prefix_reports_no_prefix_change`),
+    for the same reason: rich wraps the line at the console width, so an
+    unbounded substring check is a false negative waiting to happen.
     """
     destination = tmp_path / "out"
     console = ScriptedConsole(_answers(destination, prefix="", build="n"))
@@ -1042,6 +1052,12 @@ def test_declining_the_prefix_gate_repoints_the_docs_to_the_bare_list_name(
     assert "RR_Risk" not in docs
     assert "_Risk" not in docs
     assert "Risk" in docs
+
+    reported = " ".join(console.text.split())
+    report = reported.split("documentation files: ", 1)[1].split(
+        "When you are ready", 1,
+    )[0]
+    assert "prefix RR_ -> (none)" in report
 
 
 def test_a_template_declaring_no_prefix_is_not_asked_for_one(
@@ -1600,13 +1616,13 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
 
 
 def test_the_template_summary_names_the_declared_prefix() -> None:
-    """Task 7 is what makes this load-bearing, so it is pinned before then.
+    """The prefix question is conditional, which is what makes this load-bearing.
 
-    The prefix question becomes conditional there: a template declaring no
-    prefix is never asked for one, and this line is then the ONLY place the
-    operator learns what their lists will be called before the Review panel
-    names them. Dropping it back out of `_describe` leaves the whole suite
-    green today, which is exactly why the assertion has to exist today.
+    A template declaring no prefix is never asked for one, so this line is
+    the ONLY place the operator learns what their lists will be called
+    before the Review panel names them. Dropping it back out of `_describe`
+    leaves the whole suite green, which is exactly why this assertion has to
+    exist.
 
     Both spellings, because `(none)` is not a formatting nicety -- a bare
     `prefix ` with nothing after it reads as a template whose prefix could

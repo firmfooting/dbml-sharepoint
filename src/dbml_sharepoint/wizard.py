@@ -221,9 +221,9 @@ def _describe(console: Console, solution: Solution) -> None:
     lists = ", ".join(solution.lists) or "(none declared)"
     count = len(solution.lists)
     # The declared prefix is shown here, not only in the prompt that follows.
-    # Task 7 stops asking for a prefix at all when the template declares
-    # none, and this then becomes the only place the operator learns what the
-    # lists are called before the Review panel names them.
+    # A template declaring no prefix is never asked for one at all, which
+    # makes this the only place the operator learns what the lists are
+    # called before the Review panel names them.
     console.print(
         f"\n  [bold]{solution.title}[/bold]  -  {count} list"
         f"{'' if count == 1 else 's'}: {lists}"
@@ -550,6 +550,15 @@ class _Substitution:
     rather than counting files and leaving the operator to guess. When only
     the site URL changed, "Repointed 1 doc(s) from RR_ to RR_" was both
     wrong and confusing.
+
+    `new` is blank whenever the operator presses Enter at the prefix gate --
+    the DEFAULT since the gate reversed -- so `describe()` renders that case
+    as `(none)` rather than leaving a bare trailing arrow: "prefix RR_ ->"
+    reads as a rendering fault, not as "no prefix". `old` cannot reach
+    `describe()` blank: `applies` below requires `old` to be truthy before a
+    substitution is even attempted, so an empty `old` is filtered out long
+    before there is anything to report. The `(none)` spelling still guards
+    that side too, on the chance `applies` is ever loosened.
     """
 
     label: str
@@ -562,7 +571,7 @@ class _Substitution:
         return bool(self.old) and self.old != self.new
 
     def describe(self) -> str:
-        return f"{self.label} {self.old} -> {self.new}"
+        return f"{self.label} {self.old or '(none)'} -> {self.new or '(none)'}"
 
 
 def _repoint_docs(
@@ -969,6 +978,9 @@ def _run(console: Console) -> int:
         # because there is more than one -- reporting a file count and a
         # prefix pair when only the site URL moved read as "Repointed 1
         # doc(s) from RR_ to RR_", which is worse than saying nothing.
+        # `describe()` also covers the now-default case, pressing Enter at
+        # the prefix gate: with `new` blank, "prefix RR_ -> (none)" reads as
+        # a decision, not as a rendering fault.
         console.print(
             f"Updated {len(repointed)} documentation files: "
             f"{', '.join(s.describe() for s in applied)}.",
