@@ -40,6 +40,12 @@
           __metadata: { type: 'SP.List' },
           Title: list.title,
           BaseTemplate: list.base_template,
+          // Creation is not where the Description is guaranteed. It carries
+          // the provenance marker, and this POST only runs for a list that
+          // does not exist yet — reconcileListDescription (called from
+          // reconcileListShape just below, on both paths) is what reads it
+          // back and what repairs an adopted list whose description predates
+          // markers or was edited by an owner.
           Description: list.description || '',
           ContentTypesEnabled: list.content_types_enabled,
           EnableVersioning: list.enable_versioning,

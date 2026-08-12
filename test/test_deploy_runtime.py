@@ -169,6 +169,17 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       userLoginName: 'probe@example.com',
       userId: 1,
     };
+    // Per-list Description state, mutated by MERGEs exactly as SharePoint
+    // would, so the list probe reads back what was actually written and a
+    // run can never satisfy its own read-back. Default '' is the honest
+    // pre-marker state: a list provisioned before descriptions were written,
+    // or one an owner blanked, which is exactly what the reconcile repairs.
+    // Both constants are rewritten by _run_adopted_deploy.
+    const LIST_DESCRIPTIONS = {};
+    const IGNORE_DESCRIPTION_WRITES = false;
+    const listDescription = (listTitle) => (
+      LIST_DESCRIPTIONS[listTitle] == null ? '' : LIST_DESCRIPTIONS[listTitle]
+    );
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
     const titles = {};
     const titleState = (listTitle) => (titles[listTitle] ||= {
@@ -294,6 +305,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         return { d: {
           Id: '22222222-2222-2222-2222-222222222222',
           Title: 'adopted', BaseTemplate: 100, ContentTypesEnabled: false,
+          Description: listDescription(listOf(url)),
           EnableVersioning: true, EnableMinorVersions: false,
           MajorVersionLimit: 500, ValidationFormula: null, ValidationMessage: null } };
       }
@@ -301,7 +313,10 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     };
     globalThis.fetch = async (url, opts = {}) => {
       const u = String(url);
-      calls.push({ url: u, method: opts.method || 'GET', body: opts.body });
+      // body is null, never absent: JSON.stringify drops an undefined key,
+      // and the Python side reads c['body'] unconditionally.
+      calls.push({ url: u, method: opts.method || 'GET',
+                   body: opts.body === undefined ? null : opts.body });
       // Apply writes, exactly as SharePoint would, so readbacks converge.
       if ((opts.method || 'GET') === 'POST' && opts.body && u.includes('/fields')) {
         const parsed = JSON.parse(opts.body);
@@ -325,6 +340,19 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
         } else if (parsed.Title) {
           created[`${listTitle} ${parsed.Title}`] = fieldShape(listTitle, parsed.Title, parsed);
+        }
+      }
+      // A MERGE onto the LIST object itself. The URL ends at getbytitle(...)
+      // with nothing after it, which is what separates a list write from a
+      // field or view write under the same list. IGNORE_DESCRIPTION_WRITES
+      // accepts the MERGE and drops it — a write SharePoint reports as 200
+      // and discards, which is the only state in which the read-back can be
+      // watched failing.
+      if ((opts.method || 'GET') === 'POST' && opts.body
+          && /getbytitle\('[^']+'\)$/.test(u)) {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.Description !== undefined && !IGNORE_DESCRIPTION_WRITES) {
+          LIST_DESCRIPTIONS[listOf(u)] = parsed.Description;
         }
       }
       if ((opts.method || 'GET') === 'POST' && u.includes('/views/getbytitle')) {
@@ -465,6 +493,166 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
     ]
     assert seal_writes[0] is False, f"PREPARE did not unseal Title: {seal_writes}"
     assert seal_writes[-1] is True, f"the run left Title unsealed: {seal_writes}"
+
+
+# A POST to the LIST object itself: the path ends at getbytitle(...) with
+# nothing after it. Anchored deliberately. A FIELD MERGE is a POST to
+# `web/lists/getbytitle('X')/fields/getbyinternalnameortitle('Y')` and
+# routinely carries a Description of its own (every column with a note has
+# one), so a filter that only asks for `web/lists` in the URL counts column
+# descriptions as list writes — and then no run can ever be observed NOT
+# writing a list description, which is half of what these tests measure.
+_LIST_WRITE_URL = re.compile(r"web/lists/getbytitle\('[^']+'\)$")
+
+
+def _description_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every request that MERGEs a Description onto a list."""
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"] and "Description" in c["body"]
+        and _LIST_WRITE_URL.search(c["url"])
+    ]
+
+
+def _declared_list_descriptions(tmp_path: Path) -> dict[str, str]:
+    """List title -> the Description `_declared_deploy_js` declares for it.
+
+    Read out of the generator, off the SAME pack the script is built from,
+    rather than re-spelled here: a second copy of the fixture would drift,
+    and a declared-against-live test comparing two different fixtures proves
+    nothing. Returns a mapping rather than one string because the marker
+    embeds the entity name, so no single value can be "the declared
+    description" for more than one list.
+    """
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = _declared_pack(tmp_path, "")
+    schema_json = build_schema_json(schema, bundle, "default")
+    return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
+
+
+def _run_adopted_deploy(
+    tmp_path: Path,
+    list_description: str | dict[str, str],
+    *,
+    ignore_description_writes: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run the emitted deploy against a site whose lists already exist.
+
+    Built on `_declared_deploy_js`, not on the shipped `simple.dbml` fixture.
+    That matters for the abort assertion: `test_a_declared_run_completes_every
+    _phase_cleanly` pins this schema as finishing with NO errors and NO abort
+    against `_ADOPTED_HARNESS`, whereas the simple fixture's adopted run
+    already aborts on `phase-1-schema-errors` (the mock is too thin for its
+    renamed and indexed columns). On that base `summary['aborted']` is truthy
+    no matter what the description does, and the read-back test could not
+    fail — which is worse than not having it.
+
+    `list_description` is what the site HOLDS before the run: one string for
+    every list, or a per-title mapping. `ignore_description_writes` makes the
+    mock accept the MERGE with a 200 and keep serving the old value — a
+    silently discarded write, which is the only state in which the read-back
+    can be watched failing.
+
+    Returns (summary, calls, output). Phase 2.1 must actually have started:
+    otherwise a "nothing was written" assertion would pass against a run that
+    aborted in the preflight and never reached the reconcile at all.
+    """
+    held = (
+        dict.fromkeys(_declared_list_descriptions(tmp_path), list_description)
+        if isinstance(list_description, str) else dict(list_description)
+    )
+    harness = _ADOPTED_HARNESS.replace(
+        "const LIST_DESCRIPTIONS = {};",
+        f"const LIST_DESCRIPTIONS = {json.dumps(held)};",
+    ).replace(
+        "const IGNORE_DESCRIPTION_WRITES = false;",
+        f"const IGNORE_DESCRIPTION_WRITES = {json.dumps(ignore_description_writes)};",
+    )
+    script = harness + "\n" + _declared_deploy_js(tmp_path, "").replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
+    assert "Starting Phase 2.1" in output, (
+        f"the list reconcile phase never ran:\n{output[-3000:]}"
+    )
+    return (
+        json.loads(result_line.removeprefix("__RESULT__")),
+        json.loads(calls_line.removeprefix("__CALLS__")),
+        output,
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_existing_list_with_the_wrong_description_is_corrected(
+    tmp_path: Path,
+) -> None:
+    """The adoption path is the one that matters.
+
+    A list provisioned before markers existed, or one an owner edited, holds
+    a description discovery cannot match. Creation-only writing leaves it
+    that way forever and reports success.
+    """
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path, "something an owner typed",
+    )
+    writes = _description_writes(calls)
+    assert writes, (
+        "an existing list kept a description with no marker and the run "
+        f"reported success; it is now invisible to fleet reporting\n{output[-2000:]}"
+    )
+    assert "Provisioned by dbml-sharepoint" in writes[0]["body"]
+    # The repair has to CONVERGE, not merely be attempted: a MERGE whose
+    # read-back then failed would satisfy the assertions above while leaving
+    # the operator with an aborted run.
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_correct_description_is_not_rewritten(tmp_path: Path) -> None:
+    """Idempotence: a re-paste must not churn every list it looks at."""
+    declared = _declared_list_descriptions(tmp_path)
+    # Without this the test is vacuous: an empty declared description would
+    # also never be rewritten, and nothing else here would notice the marker
+    # had gone missing from the generator entirely.
+    assert declared and all(
+        "Provisioned by dbml-sharepoint" in value for value in declared.values()
+    ), declared
+    _, calls, output = _run_adopted_deploy(tmp_path, declared)
+    assert not _description_writes(calls), (
+        f"a list already carrying its declared description was rewritten"
+        f"\n{output[-2000:]}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_description_that_does_not_read_back_aborts(tmp_path: Path) -> None:
+    """`AGENTS.md`: anything that writes must read back and verify.
+
+    A MERGE that returns 200 while the stored value stays stale is the exact
+    shape this repository exists to catch -- the deploy reports success and
+    the list is still undiscoverable.
+    """
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path, "stale", ignore_description_writes=True,
+    )
+    assert _description_writes(calls), f"nothing was even attempted\n{output[-2000:]}"
+    assert summary.get("aborted"), (
+        f"the description never took and the run still reported success"
+        f"\n{output[-2000:]}"
+    )
+    assert "did not retain its declared Description" in output, output[-2000:]
 
 
 # The adopted site again, but every field CREATION is refused. STRUCTURE
@@ -657,6 +845,21 @@ def test_generated_deploy_js_carries_no_control_characters() -> None:
     assert not stray, f"control characters in generated deploy.js: {[hex(ord(c)) for c in stray]}"
 
 
+def _declared_pack(tmp_path: Path, section: str) -> tuple[Any, Any]:
+    """The (schema, bundle) behind `_declared_deploy_js`.
+
+    Split out so a test can ask what the generator DECLARES for these lists
+    without re-spelling the fixture. A second copy of the schema here would
+    drift from the one the script is built from, and the tests that compare
+    declared-against-live would then be comparing two different fixtures.
+    """
+    return pack(
+        tmp_path,
+        dbml=table("Escalation", ID_PK, "Title nvarchar", "Note nvarchar"),
+        mapping=blocks(entities("Escalation"), section),
+    )
+
+
 def _declared_deploy_js(tmp_path: Path, section: str) -> str:
     """deploy.js for an all-text schema that actually declares a formula.
 
@@ -674,11 +877,7 @@ def _declared_deploy_js(tmp_path: Path, section: str) -> str:
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
     from dbml_sharepoint.model.release import load_release
 
-    schema, bundle = pack(
-        tmp_path,
-        dbml=table("Escalation", ID_PK, "Title nvarchar", "Note nvarchar"),
-        mapping=blocks(entities("Escalation"), section),
-    )
+    schema, bundle = _declared_pack(tmp_path, section)
     return generate_deploy_js(
         schema=schema,
         bundle=bundle,

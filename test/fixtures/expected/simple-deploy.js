@@ -171,8 +171,12 @@
       const titles = await ensureKnownListTitles();
       if (titles && !hasName(titles, name)) return null;
     }
+    // Description rides along on a request already being made: it is a
+    // declared, reconciled setting (it carries the provenance marker), so
+    // reading it here is what lets reconcileListDescription compare without
+    // spending a probe of its own.
     const select = [
-      'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
+      'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled', 'Description',
       'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit', 'ValidationFormula', 'ValidationMessage',
     ].join(',');
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=${select}`), {
@@ -189,6 +193,7 @@
         || typeof shape.Id !== 'string'
         || typeof shape.Title !== 'string'
         || !Number.isInteger(shape.BaseTemplate)
+        || !(shape.Description == null || typeof shape.Description === 'string')
         || typeof shape.ContentTypesEnabled !== 'boolean'
         || typeof shape.EnableVersioning !== 'boolean'
         || typeof shape.EnableMinorVersions !== 'boolean'
@@ -1118,6 +1123,51 @@
     log('INFO', `List '${list.title}' deletion block applied (AllowDeletion = false).`);
   }
 
+  // The declared list Description, which carries the provenance marker: the
+  // one list-level string recording which template family and entity
+  // produced this list, and the only thing fleet reporting has to find it
+  // by. It is written in the creation POST AND reconciled here, because a
+  // list provisioned before markers existed — or one whose description an
+  // owner edited in list settings — otherwise keeps a description discovery
+  // cannot match, forever, while every deploy phase reports success.
+  //
+  // There is no lock to lean on. Fields have Sealed and lists have
+  // AllowDeletion; SharePoint offers no equivalent for a Description —
+  // SP.List.Description is a plain read-write property updated by the same
+  // MERGE as any other list setting (Learn, checked 2026-08-12:
+  // learn.microsoft.com/dotnet/api/microsoft.sharepoint.client.list.description
+  // and .../sp-add-ins/working-with-lists-and-list-items-with-rest). So
+  // reconcile-and-read-back is the entire control, and the read-back is
+  // load-bearing rather than ceremonial: a MERGE that answers 200 while the
+  // stored value stays stale reports success on a list that is still
+  // invisible, which is precisely the failure class this repository exists
+  // to catch.
+  //
+  // `actual` is the shape reconcileListShape already holds, so an unchanged
+  // description costs no request at all — a re-paste must not churn every
+  // list it looks at. Only a repair pays the MERGE and its fresh re-read.
+  async function reconcileListDescription(list, actual, digest) {
+    const desired = normalizeDescription(list.description);
+    if (normalizeDescription(actual.Description) === desired) return actual;
+    await patchList(list.title, {
+      __metadata: { type: 'SP.List' },
+      Description: desired,
+    }, digest);
+    const verify = await readListShape(list.title, true);
+    if (!verify) {
+      throw new Error(`Declared list '${list.title}' disappeared after the Description MERGE`);
+    }
+    if (normalizeDescription(verify.Description) !== desired) {
+      throw new Error(
+        `List '${list.title}' did not retain its declared Description `
+        + `(declared ${JSON.stringify(desired)}; readback ${JSON.stringify(verify.Description)}). `
+        + 'Without it the list carries no provenance marker and no report can find it.',
+      );
+    }
+    log('INFO', `List '${list.title}' description reconciled (was ${JSON.stringify(normalizeDescription(actual.Description))}).`);
+    return verify;
+  }
+
   async function reconcileListShape(list, digest) {
     let actual = await readListShape(list.title);
     if (!actual) throw new Error(`Declared list '${list.title}' disappeared during deployment`);
@@ -1139,6 +1189,10 @@
     } else {
       log('INFO', `List '${list.title}' immutable template and declared settings verified.`);
     }
+    // After the settings MERGE, so it compares against the freshest shape,
+    // and on BOTH paths: a list created moments ago had its Description in
+    // the creation POST, and nothing had ever read that write back.
+    actual = await reconcileListDescription(list, actual, digest);
     await reconcileListDeletionBlock(list, digest);
     return actual;
   }
@@ -2027,6 +2081,12 @@
           __metadata: { type: 'SP.List' },
           Title: list.title,
           BaseTemplate: list.base_template,
+          // Creation is not where the Description is guaranteed. It carries
+          // the provenance marker, and this POST only runs for a list that
+          // does not exist yet — reconcileListDescription (called from
+          // reconcileListShape just below, on both paths) is what reads it
+          // back and what repairs an adopted list whose description predates
+          // markers or was edited by an owner.
           Description: list.description || '',
           ContentTypesEnabled: list.content_types_enabled,
           EnableVersioning: list.enable_versioning,
