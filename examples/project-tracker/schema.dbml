@@ -50,6 +50,8 @@ Table Project {
   indexes {
     Status
   }
+
+  Note: 'Pieces of work the organisation has proposed or is delivering, each with an accountable sponsor, an approved budget and the spend recorded against it.'
 }
 
 Table Task {
@@ -70,6 +72,8 @@ Table Task {
     Status
     Project
   }
+
+  Note: 'Individual pieces of work belonging to a project, assigned to somebody, prioritised, and optionally nested under a parent task to break larger work down.'
 }
 
 Table TimeLog {
@@ -86,4 +90,6 @@ Table TimeLog {
     Task
     WorkDate
   }
+
+  Note: 'Hours worked against a task, one row per person per day, which is what turns an estimate into an actual and lets spend be compared with the budget.'
 }
