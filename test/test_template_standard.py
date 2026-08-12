@@ -44,7 +44,7 @@ from dbml_sharepoint.analysis.list_description import (
     note_budget,
 )
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
-from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL
+from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, available_solutions
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -1653,3 +1653,31 @@ def test_no_shipped_note_contains_a_character_of_unproven_round_trip(
             f"than measured, so this would abort a paste part-way through. "
             f"Fix the note, not the rule."
         )
+
+
+def test_no_two_templates_declare_the_same_entity_name() -> None:
+    """Unprefixed list names must stay unique across the shipped families.
+
+    The prefix is a governance device -- you register yours so nobody else
+    takes it -- and it is on its way out. MEASURED 2026-08-12: 54 entity
+    names across 31 families, zero duplicated, so several families can
+    already share one site with no prefix at all.
+
+    That is only true while it stays true. Two families both declaring
+    `Actions` would collide the moment either is deployed prefix-less, and
+    nothing else in the build would notice: each family validates alone.
+    """
+    owners: dict[str, list[str]] = {}
+    for solution in available_solutions():
+        for entity in solution.lists:
+            owners.setdefault(entity, []).append(solution.id)
+    collisions = {
+        entity: families
+        for entity, families in owners.items()
+        if len(families) > 1
+    }
+    assert not collisions, (
+        "these entity names are declared by more than one family, so they "
+        "would collide on a shared site without a prefix:\n"
+        + "\n".join(f"  {e}: {', '.join(f)}" for e, f in sorted(collisions.items()))
+    )
