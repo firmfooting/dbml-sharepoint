@@ -2,13 +2,109 @@
 /**
  * dbml-sharepoint PROBE — SEARCH AS A FLEET DISCOVERY MECHANISM
  *
- * STATUS: NOT YET RUN. Nothing below has been measured on any tenant.
- * EVERY question in this file is NOT ESTABLISHED until somebody pastes it
- * into a live site and sends the transcript back. Until then this file is
- * a list of things nobody here knows — do not cite any row of it, and do
- * not let a plausible-sounding expectation in a comment be read as a
- * result. When it has run, quote the findings into this block, dated, and
- * say which site kind they came from AND WHICH ACCOUNT PASTED IT.
+ * STATUS: RUN ONCE, on ONE live site — 2026-08-12, probe revision 1c65a683,
+ * pasted BY THE REPORTING SERVICE ACCOUNT, read-only (ALLOW_WRITES off) with
+ * RUNNING_AS_READER = true. S1-S9 ANSWERED. S10 REFUSED — correctly, and for
+ * a reason nobody had anticipated. S11/S12 unmet prerequisite, unchanged.
+ *
+ * THE RUN LANDED ON THE ACCOUNT'S OWN ONEDRIVE rather than on a register
+ * site. Read "WHERE THE 2026-08-12 RUN WAS PASTED" below before quoting
+ * anything from it: it changes what S10 means and what the sites in the
+ * result set mean, and it is why RUN A has to be repeated.
+ *
+ * Everything this block does not list is still NOT ESTABLISHED. Do not cite
+ * a row it does not say was measured, and do not let a plausible-sounding
+ * expectation in a comment be read as a result.
+ *
+ * ---- WHAT THE 2026-08-12 RUN MEASURED ---------------------------------
+ *   S1  CONTROL HELD. `_api/search/query` answered this caller: a trivial
+ *       query came back with a reported TotalRows in the low thousands. So
+ *       the rows below are about the questions they asked rather than about
+ *       the endpoint — and the reporting identity is NOT refused search.
+ *   S2  `contentclass:STS_List` RETURNS ROWS. Reported total 1665. The
+ *       mechanism enumerates LISTS; Learn only ever sampled STS_Site.
+ *   S3  THE DECISIVE ONE, AND IT WENT THE CHEAP WAY. A single STS_List row
+ *       carries a stable list GUID AND a web URL TOGETHER. Present BY
+ *       DEFAULT, with no `selectproperties` at all: ListId, WebId, SiteId,
+ *       SPWebUrl, Path, OriginalPath, Title, Description, WebTemplate,
+ *       contentclass, LastModifiedTime, ParentLink. SPSiteUrl was ABSENT by
+ *       default but returned a non-empty value when REQUESTED explicitly
+ *       through selectproperties. So a consumer can build a REST path from
+ *       ONE search row with NO SECOND CALL — which is precisely what
+ *       separated this from the N+1 per-site approach the design exists to
+ *       avoid.
+ *   S4  NO FALSE POSITIVES OBSERVED, ON A TENANT THAT DID NOT CONTAIN THE
+ *       CASE THAT WOULD PRODUCE THEM. Three query variants — Title as a
+ *       quoted phrase, Title bare, and free-text quoted — each returned
+ *       exactly ONE row, whose title equalled the sought title character
+ *       for character, and zero non-matching rows.
+ *       THE EVIDENCE IS WEAK AND MUST BE QUOTED AS SUCH. This tenant holds
+ *       no list whose title is a PREFIX of another list's title, and that
+ *       is the case word-breaking would expose. THIS RUN DOES NOT ESTABLISH
+ *       THAT TITLE MATCHING IS EXACT; it establishes that nothing spurious
+ *       came back on a tenant that had nothing spurious to give. Learn
+ *       still documents KQL text properties as word-broken unless
+ *       "Complete matching" is turned on.
+ *   S5  LIST `Description` IS CRAWLED AND RETURNED. Of 50 rows, all 50
+ *       carried a Description cell and 15 carried a NON-EMPTY value. So a
+ *       marker token planted in a list description is a viable discovery
+ *       key. Whether such a token matches EXACTLY is S6, still unrun.
+ *   S7  THE ROW CEILING IS 500, AND DISCOVERY MUST PAGE. rowlimit=1 gave 1,
+ *       10 gave 10, 500 gave 500, and 1000 GAVE 500. The reported total was
+ *       1665, far above the ceiling, so a fleet discovery query on this
+ *       tenant CANNOT be a single call. `startrow` PAGING WORKED: page 2
+ *       held rows none of which were on page 1, compared over the whole
+ *       row rather than on one property.
+ *   S8  THE `STS_Site` FALLBACK WORKS TOO. 36 sites reported, each carrying
+ *       SPSiteUrl, Title, WebTemplate, and Description where one was set.
+ *       Plan B exists and has been measured, not assumed.
+ *   S9  CRAWL LATENCY IS GREATER THAN ~2.4 HOURS, AND THAT IS A LOWER BOUND
+ *       ONLY. A list created about 2.4 hours before the run was NOT in the
+ *       index at run time. That bounds latency FROM BELOW and says nothing
+ *       about how much longer than 2.4 hours it is. A SECOND RUN — this
+ *       same file, unchanged, quoting both timestamps — is what closes the
+ *       interval. Anyone quoting "2.4 hours" as the latency is quoting the
+ *       bound as the value.
+ *   S10 NOT ESTABLISHED, and the refusal was RIGHT. See the next section.
+ *   S11 NOT ESTABLISHED, and S12 with it: unmet prerequisite, unchanged.
+ *       PAGING_FIXTURE_LIST is not on the site that was pasted into. Both
+ *       still need the operator run, RUN B.
+ *   S6  Did not run: ALLOW_WRITES was off.
+ *
+ * ---- WHERE THE 2026-08-12 RUN WAS PASTED, AND WHY IT MATTERS ----------
+ * ON THE SERVICE ACCOUNT'S OWN ONEDRIVE — a personal site, on the `-my.`
+ * host under a `/personal/<account>` path — and NOT on a register site it
+ * had been granted lists on. A USER IS ALWAYS SITE COLLECTION ADMINISTRATOR
+ * OF THEIR OWN ONEDRIVE, so web/currentuser reported IsSiteAdmin=true, and
+ * S10 refused to file the run as a least-privilege measurement.
+ *
+ * THE REFUSAL STANDS AND HAS NOT BEEN WEAKENED. What changed is its
+ * REASONING. As written, S10 read IsSiteAdmin=true as evidence that the
+ * caller was not the least-privilege identity — and on a personal site that
+ * inference is simply wrong. Every account is an administrator there, so
+ * the bit carries NO information about tenant-wide privilege. Left as it
+ * was, S10 would have refused every future run for the wrong reason and
+ * sent the operator hunting a privilege problem that does not exist. It now
+ * detects a personal site and says which of the two cases it is in.
+ *
+ * RUN A THEREFORE HAS TO BE REPEATED, on a NON-PERSONAL site where the
+ * reporting account is not an administrator. See HOW TO RUN.
+ *
+ * ---- AN OBSERVATION ABOUT THE RESULT SET, NOT A COMPLAINT --------------
+ * The rows spanned MANY SITES THE ACCOUNT WAS NEVER DELIBERATELY GRANTED:
+ * intranet and hub content that is broadly readable by any authenticated
+ * user on this tenant.
+ *
+ * THAT IS EXPECTED, AND IT IS NOT EVIDENCE THE READER TIER LEAKS. Broadly
+ * readable content is readable by a reader — that is what "broadly
+ * readable" means — and none of it was granted by this feature.
+ *
+ * What it DOES mean is a design constraint, and it is a hard one: A BARE
+ * `contentclass:STS_List` QUERY IS NOT SELF-LIMITING. What comes back is
+ * not "our lists"; it is everything this identity may see, which on a real
+ * tenant is very much more. Fleet discovery must CONSTRAIN the query by
+ * something specific — an exact title, a planted marker token, a path
+ * prefix — and must never treat the rows it gets back as the fleet.
  *
  * IT IS NOW MEANT TO BE PASTED BY THE REPORTING SERVICE ACCOUNT, not by an
  * operator. This file was written assuming the opposite, and the change is
@@ -101,20 +197,41 @@
  *     and a full crawl or reindex after changing it.
  *
  * ---- WHAT IS *NOT* ESTABLISHED, AND IS THE POINT OF THIS FILE ----------
+ * THE ORIGINAL FIVE UNKNOWNS, ANNOTATED WITH WHAT THE 2026-08-12 RUN DID
+ * AND DID NOT CLOSE. They are kept rather than deleted, because the shape
+ * of the question is what makes the answer readable.
+ *
  *   1. That `contentclass:STS_List` enumerates LISTS at all. Learn samples
  *      STS_Site. It says nothing here about STS_List.
+ *      CLOSED 2026-08-12 — it does, on one tenant, for one identity (S2).
  *   2. What identity properties come back WITH a list row. The design
  *      needs a stable list GUID and a site/web URL IN THE SAME ROW, so a
  *      consumer can build a REST path without a second call per hit. If
  *      that costs a second call, the mechanism has not bought anything.
+ *      CLOSED 2026-08-12 — ListId and SPWebUrl both arrive by default, no
+ *      second call needed (S3).
  *   3. Whether a list's Description is crawled, and whether a marker token
  *      planted in one is exact-matchable — the candidate way to tag which
  *      lists are ours without relying on titles.
+ *      HALF CLOSED 2026-08-12 — Description IS crawled and returned (S5).
+ *      Whether a token in one is EXACT-matchable is S6 and is still open;
+ *      it needs the two-paste procedure and a crawl interval bounded below
+ *      by S9's >2.4 hours.
  *   4. Whether ANY of it is reachable by the reporting service account —
  *      the identity the whole design would run as. See the STATUS block.
+ *      CLOSED FOR THE ENDPOINT, OPEN FOR THE GRANT — the account was served
+ *      by search (S1), but the run was pasted on its own OneDrive, so
+ *      whether a LIST-SCOPED GRANT makes a register list discoverable is
+ *      exactly what the repeat of RUN A has to answer.
  *   5. Whether SharePoint REST on this tenant emits a SERVER-DRIVEN
  *      continuation at all. Unrelated to search; see the paging section
  *      below for why it is asked here.
+ *      STILL OPEN — S11/S12 had an unmet prerequisite on the 2026-08-12
+ *      run and need RUN B.
+ *
+ * And one unknown the run ADDED, which nobody had written down: whether a
+ * discovery query can be constrained tightly enough to return only the
+ * fleet. See the observation about the result set in the STATUS block.
  *
  * ---- THE ONE RULE THIS FILE IS BUILT AROUND ---------------------------
  * A measurement's inputs and its outputs are different kinds of value.
@@ -234,6 +351,17 @@
  * NOT ESTABLISHED and names the contradiction rather than filing a
  * privileged result set as a least-privilege measurement.
  *
+ * AND IsSiteAdmin MEANS TWO DIFFERENT THINGS DEPENDING ON THE SITE, which
+ * the 2026-08-12 run found out the hard way. A USER IS ALWAYS SITE
+ * COLLECTION ADMINISTRATOR OF THEIR OWN ONEDRIVE. So on a PERSONAL site —
+ * the `-my.` host, a `/personal/<account>` path — IsSiteAdmin=true is
+ * universal and expected, and it is NOT evidence of privilege of any kind.
+ * S10 detects that case and says so in those words. IT STILL REFUSES: the
+ * pasted site is the wrong site, not the wrong account, and the fix is to
+ * repeat the run on a register site rather than to reason about the bit.
+ * On a NON-personal site IsSiteAdmin=true keeps its stronger meaning and
+ * the original wording.
+ *
  * ---- S11/S12: SERVER-DRIVEN PAGING, AND WHY IT IS ASKED HERE ----------
  * `_security_principals.js.j2` and `_reader_enrolment.js.j2` both page a
  * collection with `$top=5000` and follow `d.__next`. NOBODY HAS CONFIRMED
@@ -322,6 +450,20 @@
  *   LIST_TITLE at one of those granted lists. S11/S12 will report an unmet
  *   prerequisite because that account cannot read the paging fixture. THAT
  *   IS CORRECT, not a failure -- take S1-S10 from this run.
+ *
+ *   RUN A MUST BE PASTED ON A SITE WHERE THE REPORTING ACCOUNT IS NOT AN
+ *   ADMINISTRATOR -- i.e. one of the REGISTER SITES it was granted lists
+ *   on. Navigate to that site's URL explicitly and check the address bar
+ *   before pasting.
+ *
+ *   THE TRAP, and it is the one that swallowed the 2026-08-12 run: OPENING
+ *   THE MICROSOFT LISTS APP LANDS ON THE ACCOUNT'S OWN ONEDRIVE. The URL is
+ *   on the `-my.` host under `/personal/<account>`, it looks like a
+ *   perfectly ordinary SharePoint site, and A USER IS ALWAYS SITE
+ *   COLLECTION ADMINISTRATOR OF THEIR OWN ONEDRIVE -- so the run reads back
+ *   IsSiteAdmin=true and S10 cannot answer. S1-S9 still measured fine from
+ *   there, because search trims on the IDENTITY rather than on the site
+ *   pasted into; S10 is the row that needs the right site.
  *
  *   RUN B -- as an OPERATOR, on the site holding PAGING_FIXTURE_LIST. Leave
  *   RUNNING_AS_READER = false. The search rows will show an untrimmed view
@@ -671,7 +813,33 @@
     ? `the caller is LoginName ${JSON.stringify(callerLogin)}, Title `
       + `${JSON.stringify(callerRes.body.Title)}, IsSiteAdmin=${JSON.stringify(callerIsSiteAdmin)}`
     : `web/currentuser could not be read (${httpDetail(callerRes)})`;
+  // ---- Is this a PERSONAL site? ----------------------------------------
+  // ADDED 2026-08-12, after a run was pasted onto the reporting account's
+  // OWN ONEDRIVE. A USER IS ALWAYS SITE COLLECTION ADMINISTRATOR OF THEIR
+  // OWN ONEDRIVE, so IsSiteAdmin came back true and S10 refused — rightly,
+  // but for a reason that would have been wrong: it read the bit as
+  // evidence of tenant-wide privilege, and on a personal site the bit
+  // carries no such information. Detecting the site kind is what lets S10
+  // refuse for the true reason.
+  //
+  // TWO SIGNALS, EITHER SUFFICIENT, and neither is a documented contract:
+  // a `-my.` OneDrive host, and a `/personal/` path segment. Both are
+  // observed spellings, so this is a HEURISTIC and it is only ever used to
+  // choose which REFUSAL to print — never to admit a run that would
+  // otherwise be refused. A false positive costs a differently worded
+  // refusal; a false negative costs the old wording. Neither can turn a
+  // non-answer into an answer.
+  const PERSONAL_HOST = ORIGIN.toLowerCase().includes('-my.');
+  const PERSONAL_PATH = WEB.toLowerCase().includes('/personal/');
+  const isPersonalSite = PERSONAL_HOST || PERSONAL_PATH;
+  const siteKind = isPersonalSite
+    ? `this looks like a PERSONAL (OneDrive) site — ${PERSONAL_HOST ? 'the host carries "-my."' : ''}`
+      + `${PERSONAL_HOST && PERSONAL_PATH ? ' and ' : ''}`
+      + `${PERSONAL_PATH ? 'the path carries "/personal/"' : ''}`
+    : 'this does not look like a personal (OneDrive) site';
+
   log('INFO', `RUNNING_AS_READER = ${RUNNING_AS_READER}; ${whoRan}`);
+  log('INFO', `Site kind: ${siteKind}.`);
   if (!callerOk) {
     log('INFO', 'The caller could not be identified. S10 will not answer without that — see its row.');
   }
@@ -1064,6 +1232,10 @@
   // identity the result set IS the trimmed view and therefore IS the
   // measurement — which is why RUNNING_AS_READER exists, and why the flag
   // is cross-checked against the caller rather than believed.
+  //
+  // THE CROSS-CHECK ITSELF IS CROSS-CHECKED, as of 2026-08-12: IsSiteAdmin
+  // is universal on a personal site, so on one it is reported as expected
+  // and NOT as evidence of privilege. The refusal is unchanged either way.
   {
     const S10_Q = 'Is the result set security-trimmed for the querying identity?';
 
@@ -1100,6 +1272,24 @@
              + 'while SIGNED IN AS THE REPORTING SERVICE ACCOUNT and set RUNNING_AS_READER = true. That '
              + 'account holds list-scoped Read and nothing else, so whatever comes back to it IS the '
              + `trimmed view. For the re-run to compare against: ${seenLine}`);
+    } else if (callerIsSiteAdmin === true && isPersonalSite) {
+      // MEASURED 2026-08-12: this is the branch the first run hit, and
+      // before this branch existed it fell into the one below and blamed
+      // the account. The refusal is identical; only the diagnosis changed.
+      record('S10', S10_Q, 'NOT ESTABLISHED (pasted on the caller\'s own personal site)',
+             `${whoRan}, and ${siteKind}. IsSiteAdmin IS TRUE HERE AND THAT IS EXPECTED AND UNIVERSAL: `
+             + 'A USER IS ALWAYS SITE COLLECTION ADMINISTRATOR OF THEIR OWN ONEDRIVE. So this bit says '
+             + 'NOTHING about tenant-wide privilege, IT IS NOT EVIDENCE THAT THIS ACCOUNT HAS BROAD '
+             + 'ACCESS, and it must not be reported as such — it is a property of the site that was '
+             + 'pasted into, not of the account that pasted.\n'
+             + '      THE ROW STILL REFUSES, for the real reason: a caller who administers the site it '
+             + 'is querying from is not the configuration this question is about, and no trimming '
+             + 'verdict can be read off it either way.\n'
+             + '      WHAT TO DO: REPEAT THIS RUN ON A NON-PERSONAL SITE where this account is NOT an '
+             + 'administrator — one of the register sites it was actually granted lists on. Navigate to '
+             + 'that site explicitly and check the address bar first. OPENING THE MICROSOFT LISTS APP '
+             + 'LANDS ON YOUR OWN ONEDRIVE, which is how this run ended up here. S1-S9 are unaffected: '
+             + `search trims on the identity, not on the site pasted into. ${seenLine}`);
     } else if (callerIsSiteAdmin === true) {
       record('S10', S10_Q, 'NOT ESTABLISHED (the flag contradicts the caller)',
              `RUNNING_AS_READER was set to true, but ${whoRan} — IsSiteAdmin is true, so this is not `
@@ -1477,6 +1667,10 @@
   console.log('   answer: ______________________________________');
   console.log('5. Which sites this account was actually GRANTED access to. S10 can say');
   console.log('   what came back; only you can say whether that is the right set.');
+  console.log('   EXPECT MORE SITES THAN YOU GRANTED, and it is not a leak: intranet and');
+  console.log('   hub content readable by any authenticated user shows up too (observed');
+  console.log('   2026-08-12). It does mean a bare contentclass:STS_List query is NOT');
+  console.log('   self-limiting — say which of the rows you recognise as yours.');
   console.log('   answer: ______________________________________');
   console.log('6. Any 401 or 403 above is a FINDING, not a failed run — send it. Those');
   console.log('   rows say what the reporting identity is refused, which is half of');
