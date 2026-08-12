@@ -451,9 +451,37 @@ def test_each_template_repoints_only_its_own_documentation(
     template. Written now because the moment it collects two, a repoint
     scoped to the whole destination would rewrite the other template's
     deploy.md with this template's prefix, silently.
+
+    An earlier version of this test picked arbitrary prefixes (`ACME_`,
+    `ZZ_`) and asserted they never leaked into the other template's docs.
+    That proved nothing: with `_repoint_docs` reverted to scan
+    `answers.destination` (the bug this test exists to catch), the test
+    still passed, because each iteration's substitution list only ever
+    contains that template's OWN old/new strings -- `ACME_` and `RR_` never
+    appear in audit-actions' substitution list at all, so scanning a wider
+    tree for them finds nothing there either way.
+
+    The fix is to make one template's substitution *become* the next
+    template's target text, so a wrongly-scoped scan has something to find.
+    Order matters, which is why risk-register goes first:
+
+    * risk-register ships prefix `RR_`; it is repointed to `AU_` -- the
+      prefix audit-actions ships as. After this step, risk's docs say
+      `AU_Risk` (correct: risk's OWN new prefix) which is also, not
+      coincidentally, the OLD value audit-actions is about to be repointed
+      away from.
+    * audit-actions ships `AU_` and is repointed to `ZZ_`. Correctly scoped,
+      this only touches audit's own tree, so risk's `AU_Risk` is untouched.
+      Scoped to the whole destination, `AU_` also matches the `AU_Risk` this
+      step just produced, silently rewriting risk's docs to `ZZ_Risk`.
+
+    So after `_scaffold`, risk-register's docs must say `AU_Risk` and must
+    never say `ZZ_Risk`. If a future edit "simplifies" these three prefixes
+    back to something arbitrary, this collision -- and the guard -- disappear
+    without a failure to announce it.
     """
     destination = tmp_path / "site"
-    risk = wizard.TemplateChoice(load_solution("risk-register"), "ACME_")
+    risk = wizard.TemplateChoice(load_solution("risk-register"), "AU_")
     audit = wizard.TemplateChoice(load_solution("audit-actions"), "ZZ_")
     answers = wizard.Answers(
         destination=destination,
@@ -461,14 +489,18 @@ def test_each_template_repoints_only_its_own_documentation(
         templates=(risk, audit),
     )
 
-    wizard._scaffold(answers)
+    changed, _ = wizard._scaffold(answers)
 
-    audit_docs = "\n".join(
+    risk_docs = "\n".join(
         p.read_text(encoding="utf-8")
-        for p in (destination / "audit-actions").rglob("*.md")
+        for p in (destination / "risk-register").rglob("*.md")
     )
-    assert "ACME_" not in audit_docs
-    assert risk.solution.prefix not in audit_docs
+    assert "AU_Risk" in risk_docs
+    assert "ZZ_Risk" not in risk_docs
+    # A wrongly-scoped scan also revisits files it already rewrote in an
+    # earlier iteration, so the same path is reported changed twice. Correct
+    # scoping never lets two templates' roots overlap, so no path repeats.
+    assert len(changed) == len(set(changed))
 
 
 def test_a_cross_site_link_in_the_docs_is_not_repointed(tmp_path: Path) -> None:
