@@ -1911,8 +1911,13 @@ def test_an_empty_reader_answer_means_no_flag(
     which refuses the empty string. Validating it would turn the safest
     answer the question offers into the one answer that cannot be given:
     the prompt would refuse, re-ask, run out of script and exit 130 rather
-    than 0. The script carries exactly one blank, so that regression is
-    what the exit-code assertion below catches.
+    than 0.
+
+    The transcript assertion is checked BEFORE the exit code, and that order
+    is what makes the failure name the regression: exit code 130 only
+    reports that the script ran out, while `"must not be empty" not in
+    shown` reports that the wizard asked a question it should not have.
+    Checking the exit code first would report the symptom, not the defect.
     """
     captured = _capture_build(monkeypatch)
     console = ScriptedConsole(
