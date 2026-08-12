@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 from _builders import ID_PK, table
-from _packs import blocks, entities, pack
+from _packs import DEFAULT_PREFIX, blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
@@ -198,7 +198,17 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       7: 'Lookup', 8: 'Boolean', 9: 'Number', 11: 'URL', 20: 'User',
       17: 'Calculated' };
     const created = {};   // `${list} ${title}` -> shape
-    const listOf = (url) => (url.match(/getbytitle\('([^']+)'\)/) || [])[1];
+    // The list title out of a URL, back in the spelling the declaration uses.
+    // `[^']+` would stop at the first apostrophe of an OData-escaped title
+    // (odataName doubles `'`, and encodeURIComponent does not touch it), so
+    // `O'Brien Register` keyed as `O` and every per-list mock state silently
+    // went to the wrong bucket. Non-greedy to the first `')`, then undo the
+    // two encodings in the order odataName applied them: percent first,
+    // doubling second.
+    const listOf = (url) => {
+      const raw = (url.match(/getbytitle\('(.*?)'\)/) || [])[1];
+      return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
+    };
     const views = {};
     const viewOf = (url) => {
       const match = url.match(/\/views\/getbytitle\('([^']+)'\)/);
@@ -344,12 +354,15 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       // A MERGE onto the LIST object itself. The URL ends at getbytitle(...)
       // with nothing after it, which is what separates a list write from a
-      // field or view write under the same list. IGNORE_DESCRIPTION_WRITES
-      // accepts the MERGE and drops it — a write SharePoint reports as 200
-      // and discards, which is the only state in which the read-back can be
-      // watched failing.
+      // field or view write under the same list. `[^/]*` rather than `[^']+`
+      // for the title: odataName DOUBLES an apostrophe, so `[^']+` would miss
+      // every list whose name has one and this mock would silently drop the
+      // write while answering 200 — see _LIST_WRITE_URL for the full note.
+      // IGNORE_DESCRIPTION_WRITES drops it on purpose instead: a write
+      // SharePoint reports as 200 and discards, which is the only state in
+      // which the read-back can be watched failing.
       if ((opts.method || 'GET') === 'POST' && opts.body
-          && /getbytitle\('[^']+'\)$/.test(u)) {
+          && /getbytitle\('[^/]*'\)$/.test(u)) {
         const parsed = JSON.parse(opts.body);
         if (parsed.Description !== undefined && !IGNORE_DESCRIPTION_WRITES) {
           LIST_DESCRIPTIONS[listOf(u)] = parsed.Description;
@@ -502,7 +515,24 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
 # one), so a filter that only asks for `web/lists` in the URL counts column
 # descriptions as list writes — and then no run can ever be observed NOT
 # writing a list description, which is half of what these tests measure.
-_LIST_WRITE_URL = re.compile(r"web/lists/getbytitle\('[^']+'\)$")
+#
+# The title is matched as `[^/]*`, NOT `[^']+` and NOT `.*`, and both of the
+# rejected spellings are wrong in a way that passes:
+#
+#   [^']+  cannot match an OData-escaped apostrophe. `odataName`
+#          (`_site_guard.js.j2`) DOUBLES `'` and encodeURIComponent leaves it
+#          alone, so a list called `O'Brien Register` arrives as
+#          getbytitle('O''Brien%20Register') — no match, so the idempotence
+#          test observes zero writes for the happiest of reasons and passes.
+#   .*     matches too much: greedy backtracking lets it swallow
+#          `X')/fields/getbyinternalnameortitle('Y` and call a FIELD write a
+#          list write, which is the false positive this anchor exists to stop.
+#
+# A SharePoint list title cannot contain `/`, and encodeURIComponent would
+# percent-encode one anyway, so "no slash after the opening quote" separates
+# the list object from everything nested under it. Both directions are pinned
+# by test_the_list_write_matcher_survives_an_apostrophe.
+_LIST_WRITE_URL = re.compile(r"web/lists/getbytitle\('[^/]*'\)$")
 
 
 def _description_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -514,7 +544,9 @@ def _description_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _declared_list_descriptions(tmp_path: Path) -> dict[str, str]:
+def _declared_list_descriptions(
+    tmp_path: Path, prefix: str = DEFAULT_PREFIX,
+) -> dict[str, str]:
     """List title -> the Description `_declared_deploy_js` declares for it.
 
     Read out of the generator, off the SAME pack the script is built from,
@@ -526,7 +558,7 @@ def _declared_list_descriptions(tmp_path: Path) -> dict[str, str]:
     """
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
-    schema, bundle = _declared_pack(tmp_path, "")
+    schema, bundle = _declared_pack(tmp_path, "", prefix)
     schema_json = build_schema_json(schema, bundle, "default")
     return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
 
@@ -536,6 +568,7 @@ def _run_adopted_deploy(
     list_description: str | dict[str, str],
     *,
     ignore_description_writes: bool = False,
+    prefix: str = DEFAULT_PREFIX,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
     """Run the emitted deploy against a site whose lists already exist.
 
@@ -554,12 +587,17 @@ def _run_adopted_deploy(
     silently discarded write, which is the only state in which the read-back
     can be watched failing.
 
-    Returns (summary, calls, output). Phase 2.1 must actually have started:
-    otherwise a "nothing was written" assertion would pass against a run that
-    aborted in the preflight and never reached the reconcile at all.
+    `prefix` reaches the mapping's list-title prefix, which is how a caller
+    deploys to a list whose title needs OData escaping.
+
+    Returns (summary, calls, output). The list phase must actually have
+    started: otherwise a "nothing was written" assertion would pass against a
+    run that aborted in the preflight and never reached the reconcile at all.
     """
     held = (
-        dict.fromkeys(_declared_list_descriptions(tmp_path), list_description)
+        dict.fromkeys(
+            _declared_list_descriptions(tmp_path, prefix), list_description,
+        )
         if isinstance(list_description, str) else dict(list_description)
     )
     harness = _ADOPTED_HARNESS.replace(
@@ -569,7 +607,7 @@ def _run_adopted_deploy(
         "const IGNORE_DESCRIPTION_WRITES = false;",
         f"const IGNORE_DESCRIPTION_WRITES = {json.dumps(ignore_description_writes)};",
     )
-    script = harness + "\n" + _declared_deploy_js(tmp_path, "").replace(
+    script = harness + "\n" + _declared_deploy_js(tmp_path, "", prefix).replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
         " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
@@ -583,7 +621,10 @@ def _run_adopted_deploy(
         (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
     )
     assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
-    assert "Starting Phase 2.1" in output, (
+    # By KEY, not by number: phase numbers derive from position and renumber
+    # themselves the moment anybody inserts a phase, and a hardcoded '2.1'
+    # would then silently stop guarding reach.
+    assert f"Starting Phase {pn('lists')}" in output, (
         f"the list reconcile phase never ran:\n{output[-3000:]}"
     )
     return (
@@ -629,7 +670,13 @@ def test_a_correct_description_is_not_rewritten(tmp_path: Path) -> None:
     assert declared and all(
         "Provisioned by dbml-sharepoint" in value for value in declared.values()
     ), declared
-    _, calls, output = _run_adopted_deploy(tmp_path, declared)
+    summary, calls, output = _run_adopted_deploy(tmp_path, declared)
+    # Same guard as the sibling test, and for the same reason: "no description
+    # was written" is also true of a run that fell over before it got there.
+    # Without this the test would keep passing through an unrelated breakage
+    # that stopped the reconcile from executing at all.
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
     assert not _description_writes(calls), (
         f"a list already carrying its declared description was rewritten"
         f"\n{output[-2000:]}"
@@ -653,6 +700,71 @@ def test_a_description_that_does_not_read_back_aborts(tmp_path: Path) -> None:
         f"\n{output[-2000:]}"
     )
     assert "did not retain its declared Description" in output, output[-2000:]
+
+
+# A list title carrying the one character OData escapes by DOUBLING rather
+# than by percent-encoding. `prefix` is the knob because the rest of a list
+# title is the DBML table name, which the parser will not let hold one.
+_APOSTROPHE_PREFIX = "prefix: \"O'Brien \""
+
+
+def test_the_list_write_matcher_survives_an_apostrophe() -> None:
+    """The matcher must be exact in BOTH directions, and neither is obvious.
+
+    `odataName` doubles an apostrophe and encodeURIComponent leaves it alone,
+    so a title like `O'Brien Register` reaches the wire as
+    getbytitle('O''Brien%20Register'). A `[^']+` title pattern stops at the
+    first quote and matches nothing — which does not look like a broken
+    matcher, it looks like a run that correctly wrote nothing, and the
+    idempotence test passes for that reason forever.
+
+    `.*` is the other trap: greedy backtracking lets it swallow the rest of
+    the path, so a FIELD MERGE (which routinely carries its own Description)
+    is counted as a list write.
+
+    Asserted over the real URL shapes rather than over prose, because both
+    failures are the kind that get reasoned about correctly and coded wrongly.
+    """
+    escaped = "/sites/x/_api/web/lists/getbytitle('O''Brien%20Register')"
+    plain = "/sites/x/_api/web/lists/getbytitle('APP_Plain')"
+    assert _LIST_WRITE_URL.search(escaped), "an escaped apostrophe was not matched"
+    assert _LIST_WRITE_URL.search(plain)
+    for nested in (
+        f"{escaped}/fields/getbyinternalnameortitle('Note')",
+        f"{escaped}/views/getbytitle('All%20Items')",
+        f"{plain}/fields/getbyinternalnameortitle('Note')",
+    ):
+        assert not _LIST_WRITE_URL.search(nested), (
+            f"a write nested under the list was counted as a list write: {nested}"
+        )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_description_is_reconciled_on_a_list_whose_title_needs_escaping(
+    tmp_path: Path,
+) -> None:
+    """End-to-end companion to the matcher test above.
+
+    Pins the whole chain against an OData-escaped title at once: the emitted
+    script builds the URL, the mock recognises it as a list write and applies
+    it, the read-back sees it, and the harness's own `listOf` keys the state
+    by the right list. Any one of those regressing to a `[^']+` title pattern
+    turns this red — where reasoning about it would just leave the other
+    tests quietly passing on a name no fixture happens to use.
+    """
+    declared = _declared_list_descriptions(tmp_path, _APOSTROPHE_PREFIX)
+    assert any("'" in title for title in declared), declared
+    summary, calls, output = _run_adopted_deploy(
+        tmp_path, "typed by an owner", prefix=_APOSTROPHE_PREFIX,
+    )
+    writes = _description_writes(calls)
+    assert writes, (
+        "no list write was seen for a title carrying an apostrophe; either the "
+        f"script or the matcher lost it\n{output[-2000:]}"
+    )
+    assert "Provisioned by dbml-sharepoint" in writes[0]["body"]
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
 
 
 # The adopted site again, but every field CREATION is refused. STRUCTURE
@@ -845,22 +957,32 @@ def test_generated_deploy_js_carries_no_control_characters() -> None:
     assert not stray, f"control characters in generated deploy.js: {[hex(ord(c)) for c in stray]}"
 
 
-def _declared_pack(tmp_path: Path, section: str) -> tuple[Any, Any]:
+def _declared_pack(
+    tmp_path: Path, section: str, prefix: str = DEFAULT_PREFIX,
+) -> tuple[Any, Any]:
     """The (schema, bundle) behind `_declared_deploy_js`.
 
     Split out so a test can ask what the generator DECLARES for these lists
     without re-spelling the fixture. A second copy of the schema here would
     drift from the one the script is built from, and the tests that compare
     declared-against-live would then be comparing two different fixtures.
+
+    `prefix` is the only knob that puts an arbitrary character into a LIST
+    TITLE — the rest of the title is the DBML table name, which the parser
+    constrains. It is what lets a test deploy to a list whose title needs
+    OData escaping.
     """
     return pack(
         tmp_path,
         dbml=table("Escalation", ID_PK, "Title nvarchar", "Note nvarchar"),
         mapping=blocks(entities("Escalation"), section),
+        prefix=prefix,
     )
 
 
-def _declared_deploy_js(tmp_path: Path, section: str) -> str:
+def _declared_deploy_js(
+    tmp_path: Path, section: str, prefix: str = DEFAULT_PREFIX,
+) -> str:
     """deploy.js for an all-text schema that actually declares a formula.
 
     The shipped fixture declares none, so enforceDeclaredFormulas returns
@@ -877,7 +999,7 @@ def _declared_deploy_js(tmp_path: Path, section: str) -> str:
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
     from dbml_sharepoint.model.release import load_release
 
-    schema, bundle = _declared_pack(tmp_path, section)
+    schema, bundle = _declared_pack(tmp_path, section, prefix)
     return generate_deploy_js(
         schema=schema,
         bundle=bundle,

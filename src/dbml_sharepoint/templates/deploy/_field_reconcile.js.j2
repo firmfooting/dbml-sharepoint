@@ -19,6 +19,27 @@
     SCHEMA.indexed_columns.map(idx => `${idx.list}\u0000${idx.field}`),
   );
   const normalizeGuid = (value) => String(value).replace(/[{}]/g, '').toLowerCase();
+  // Null and '' are the same absent description; everything else compares as
+  // stored. Used for FIELD descriptions and, since 2026-08-12, for the LIST
+  // Description that carries the provenance marker.
+  //
+  // WHAT THIS ASSUMES, AND WHAT IS ACTUALLY KNOWN (2026-08-12). Both callers
+  // stake a byte-identical round trip: whatever is MERGEd comes back
+  // character for character. For fields that is long-standing behaviour here.
+  // For LISTS it is an INFERENCE FROM THE FIELD CASE, NOT A MEASUREMENT —
+  // Learn documents SP.List.Description as a plain read/write string and says
+  // nothing about normalisation, and no probe has been run. Contrast
+  // ValidationFormula, where SharePoint demonstrably DOES normalise and
+  // canonicalFormula exists precisely because a raw compare never converged.
+  //
+  // If a list Description is normalised the same way — whitespace collapsed,
+  // newlines rewritten, `&` returned as `&amp;` — then a note containing one
+  // becomes a PERMANENT abort: every re-paste MERGEs, reads back a difference
+  // that is not drift, and fails closed. Loud and safe, which is the right
+  // failure, but it would strand the operator with no way forward. Until
+  // test/manual/ closes it (set a description containing a newline, an `&`
+  // and a run of spaces; read it straight back; compare bytes), the shipped
+  // template notes stay clear of `&` and of newlines.
   const normalizeDescription = (value) => value == null ? '' : String(value);
   const normalizeDefaultValue = (value) => value == null || value === '' ? null : String(value);
   const DERIVED_FIELD_PROPERTIES = [
