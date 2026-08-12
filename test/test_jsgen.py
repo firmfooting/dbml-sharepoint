@@ -3236,7 +3236,7 @@ def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
 def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
     """The backstop's own edge, where a negative slice would silently invert it.
 
-    A family and entity long enough to fill the 255 on their own drive the raw
+    A family and entity long enough to fill the 255 on their own drive the
     budget to zero and below. `note[:-1]` is not "keep nothing" -- it is "keep
     all but the last character" -- so an unclamped budget makes the backstop
     return the note plus the marker, LONGER than the limit, in exactly the case
@@ -3249,28 +3249,37 @@ def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
     Both cases pin that the result is the marker ALONE rather than " " +
     marker, which is what a naive join would leave on the settings page.
 
-    The two families straddle the point at which the MARKER ITSELF stops
-    fitting in 255, which is the boundary the backstop has to survive.
-    `note_budget` clamps to zero well before either of them -- 32 characters
-    earlier, once `len(family) + len(entity)` reaches 184, because
-    `MARKER_GROWTH_RESERVE` comes off the budget too. So these are not the
-    first zero-budget inputs; they are the ones where an UNCLAMPED budget
-    would go negative and slice the note from the wrong end.
+    WHAT THE TWO FAMILIES ARE, measured rather than described from the
+    arithmetic that predates `MARKER_GROWTH_RESERVE`. A marker is
+    `len(family) + len(entity) + 38` characters, so at combined lengths of 216
+    and 217 it is 254 and 255 -- the second is the LONGEST marker that fits in
+    the 255-character Description, and 218 would be the first that does not.
+    Both are far past the point where `note_budget` clamps: with the reserve
+    taken off, it reaches zero at a combined length of 184 and would be -32
+    and -33 here if it did not clamp.
+
+    So the pair is not a boundary in today's arithmetic -- either family alone
+    would exercise the clamp. It is kept because it is the boundary in the
+    RESERVE-LESS arithmetic the backstop was written against, where 216 and 217
+    gave a budget of exactly 0 and exactly -1, and -1 is the value that makes
+    `note[:-1]` slice from the wrong end. Removing the reserve tomorrow puts
+    these two back on either side of that edge.
     """
     entity = "e" * 10
 
-    # Unclamped budget exactly 0: the marker is 254 characters and still fits.
+    # Marker 254 characters, one to spare. Reserve-less budget exactly 0.
     family_zero = "f" * (216 - len(entity))
     zero = list_description("some note", family=family_zero, entity=entity)
     assert zero == marker_for(family_zero, entity)
-    assert len(zero) <= 255
+    assert len(zero) == 254
     assert not zero.startswith(" ")
 
-    # Unclamped budget -1: the case a negative slice inverts.
+    # Marker exactly 255, the longest that fits. Reserve-less budget -1, which
+    # is the case a negative slice inverts.
     family_negative = "f" * (217 - len(entity))
     negative = list_description("some note", family=family_negative, entity=entity)
     assert negative == marker_for(family_negative, entity)
-    assert len(negative) <= 255
+    assert len(negative) == 255
     assert "some note" not in negative
 
     assert note_budget(family_negative, entity) == 0, "the budget must never go negative"

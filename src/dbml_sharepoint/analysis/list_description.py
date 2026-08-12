@@ -99,6 +99,26 @@ MARKER_GROWTH_RESERVE = 32
 UNNAMED_FAMILY = "custom"
 
 
+# The combined length of a family and entity name at which `note_budget`
+# reaches zero -- the marker, the space before it and the growth reserve fill
+# the Description on their own, and no note of any length can be accepted.
+#
+# Equivalently: `note_budget(family, entity)` is this number minus
+# `len(family) + len(entity)`, clamped at zero. Derived from the template
+# rather than written down, so a reworded marker moves it automatically.
+#
+# Absurdly far from anything shipped -- the longest family and entity names in
+# the catalogue come to well under half of it -- but the rules in
+# `analysis/checks/_structure.py` name it when they hit it, because "shorten
+# the note" is not advice an author can act on once the budget is zero.
+NAME_BUDGET = (
+    DESCRIPTION_LIMIT
+    - len(MARKER_TEMPLATE.format(family="", entity=""))
+    - 1
+    - MARKER_GROWTH_RESERVE
+)
+
+
 def normalise_family(project_name: str) -> str:
     """The family slug for a DBML `Project` name.
 
@@ -161,13 +181,7 @@ def note_budget(family: str, entity: str) -> int:
     refuses the note first and the CLI gates errors before generation; but a
     backstop that is wrong in the case it exists for is not a backstop.
     """
-    return max(
-        0,
-        DESCRIPTION_LIMIT
-        - len(marker_for(family, entity))
-        - 1
-        - MARKER_GROWTH_RESERVE,
-    )
+    return max(0, NAME_BUDGET - len(family) - len(entity))
 
 
 def list_description(table_note: str, *, family: str, entity: str) -> str:

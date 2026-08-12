@@ -6,6 +6,7 @@ from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
+    NAME_BUDGET,
     family_for,
     marker_for,
     note_budget,
@@ -80,6 +81,36 @@ _SUPPORTED_CALCULATED_OPERANDS = (
 _GENERIC_LIST_TEMPLATE = 100
 
 
+def _no_room_for_any_note(family: str, entity_name: str) -> str:
+    """The remedy to offer when the note budget is ZERO.
+
+    At `len(family) + len(entity)` of 184 or more the marker plus the reserve
+    fill the Description on their own, and `note_budget` clamps to zero. The
+    two note rules are then JOINTLY UNSATISFIABLE: no note fires
+    `ENTITY_HAS_NO_NOTE`, and any note at all fires
+    `ENTITY_NOTE_TOO_LONG_FOR_MARKER`. Neither rule is wrong -- the list really
+    is anonymous, and the note really does not fit -- but their ordinary advice
+    is not: "add a note of up to 0 characters" and "shorten the note by N" are
+    both instructions the author cannot carry out.
+
+    So when the budget is zero, both messages say the actionable thing instead,
+    which is that the NAMES are what has to change. It takes absurd names to
+    reach -- no shipped family is within a hundred characters of it -- but a
+    message that sends someone in a circle is worse the rarer it is, because
+    nobody will have seen it before.
+    """
+    return (
+        f"No note of any length can be accepted here: the family name "
+        f"{family!r} ({len(family)} characters) and the entity name "
+        f"{entity_name!r} ({len(entity_name)} characters) leave the "
+        f"{DESCRIPTION_LIMIT}-character list Description with no room beside "
+        f"the marker and the {MARKER_GROWTH_RESERVE} characters reserved for "
+        f"it to grow into. Shorten the DBML `Project` name or the table name; "
+        f"together they must come to under {NAME_BUDGET} characters for a note "
+        f"to fit at all."
+    )
+
+
 def _note_is_present(table: Table | None, entity_name: str, family: str) -> list[Finding]:
     """Refuse an entity whose table carries no `Note:` at all.
 
@@ -101,14 +132,18 @@ def _note_is_present(table: Table | None, entity_name: str, family: str) -> list
     """
     if table is None or table.note.strip():
         return []
+    budget = note_budget(family, entity_name)
+    remedy = (
+        f"Add a Note: to the {entity_name} table -- up to {budget} characters "
+        f"fit beside the marker -- saying what the list is for and who uses it."
+        if budget > 0
+        else _no_room_for_any_note(family, entity_name)
+    )
     return [Finding(
         FindingCode.ENTITY_HAS_NO_NOTE,
         f"{entity_name}: the table has no Note:, so this list deploys with "
         f"{marker_for(family, entity_name)!r} as its entire Description and "
-        f"nothing telling an adopter what it holds. Add a Note: to the "
-        f"{entity_name} table -- up to {note_budget(family, entity_name)} "
-        f"characters fit beside the marker -- saying what the list is for and "
-        f"who uses it.",
+        f"nothing telling an adopter what it holds. {remedy}",
         location=Location(Section.ENTITIES, entity=entity_name),
     )]
 
@@ -137,17 +172,25 @@ def _note_fits_beside_marker(
     budget = note_budget(family, entity_name)
     if len(note) <= budget:
         return []
+    remedy = (
+        f"Shorten the note by {len(note) - budget} character(s). "
+        f"{MARKER_GROWTH_RESERVE} further characters of the "
+        f"{DESCRIPTION_LIMIT}-character list Description would fit but are "
+        f"held in reserve, so that the marker can grow without invalidating "
+        f"notes already written."
+        if budget > 0
+        # At a budget of zero "shorten it by 41 characters" means "delete all
+        # of it", which the other note rule then refuses. See
+        # `_no_room_for_any_note`.
+        else _no_room_for_any_note(family, entity_name)
+    )
     return [Finding(
         FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
         f"{entity_name}: the table's Note: is {len(note)} characters, but the "
         f"budget beside the provenance marker "
         f"{marker_for(family, entity_name)!r} is {budget}. The marker is how "
-        f"fleet reporting finds this list, so it is never truncated -- "
-        f"shorten the note by {len(note) - budget} character(s). "
-        f"{MARKER_GROWTH_RESERVE} further characters of the "
-        f"{DESCRIPTION_LIMIT}-character list Description would fit but are "
-        f"held in reserve, so that the marker can grow without invalidating "
-        f"notes already written.",
+        f"fleet reporting finds this list, so it is never truncated. "
+        f"{remedy}",
         location=Location(Section.ENTITIES, entity=entity_name),
     )]
 

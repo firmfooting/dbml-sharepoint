@@ -78,14 +78,23 @@ def test_write_dbml_gives_every_table_a_note(tmp_path: Path) -> None:
     assert [t.note for t in parse_dbml(path).tables] == [DEFAULT_TABLE_NOTE] * 2
 
 
-def test_write_dbml_leaves_a_declared_note_alone(tmp_path: Path) -> None:
-    """A test that authored its own note is about that note."""
-    path = write_dbml(tmp_path, """
-        Table A {
+@pytest.mark.parametrize("keyword", ["Note", "note", "NOTE"])
+def test_write_dbml_leaves_a_declared_note_alone(tmp_path: Path, keyword: str) -> None:
+    """A test that authored its own note is about that note.
+
+    Parametrised over the CASE of the keyword because pydbml ignores it and a
+    case-sensitive detector here would not. `note:` at the start of a line is
+    a table note as surely as `Note:` is; if the detector missed it the helper
+    would append its default afterwards, and pydbml takes the LAST note — so
+    the fixture would read as bespoke prose in the source while `Table.note`
+    held the generic sentence. Nothing would report that.
+    """
+    path = write_dbml(tmp_path, f"""
+        Table A {{
           Id int [pk, increment]
 
-          Note: 'The one this test is about.'
-        }
+          {keyword}: 'The one this test is about.'
+        }}
     """)
     assert [t.note for t in parse_dbml(path).tables] == ["The one this test is about."]
 

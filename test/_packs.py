@@ -87,9 +87,19 @@ DEFAULT_TABLE_NOTE = "Fixture list, for a test that is not about the description
 #: has already dedented, and deliberately NOT matching `Enum` or `Ref`.
 _TABLE_OPEN = re.compile(r"^Table\s")
 
-#: A table-level note. Capitalised and at the start of a line, which a
-#: column's inline `[note: '...']` is not.
-_TABLE_NOTE = re.compile(r"^\s*Note\s*:")
+#: A table-level note: at the START OF A LINE, which a column's inline
+#: `[note: '...']` is not.
+#:
+#: CASE-INSENSITIVE, because pydbml is. A fixture authored as
+#: `note: 'the specific thing this test is about'` parses as the table note
+#: exactly like `Note:` does -- and when a table carries two notes, THE LAST
+#: ONE WINS. So a case-sensitive detector would miss the author's note, append
+#: the default after it, and hand the test `DEFAULT_TABLE_NOTE` while the
+#: source still reads as bespoke prose. The test would look like it exercised
+#: a particular description and would not, with nothing anywhere reporting it
+#: -- the same quietly-green failure the brace counting in
+#: `_with_default_notes` guards against.
+_TABLE_NOTE = re.compile(r"^\s*Note\s*:", re.IGNORECASE)
 
 
 def _noted(block: list[str]) -> list[str]:

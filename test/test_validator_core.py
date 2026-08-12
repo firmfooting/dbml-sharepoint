@@ -23,6 +23,7 @@ from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
+    NAME_BUDGET,
     family_for,
     list_description,
     marker_for,
@@ -1763,6 +1764,48 @@ def test_an_entity_with_no_table_is_not_also_told_its_note_is_missing() -> None:
 
     only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
     none_of(findings, FindingCode.ENTITY_HAS_NO_NOTE)
+
+
+def test_a_zero_budget_is_reported_as_names_too_long_not_as_a_note_to_shorten() -> None:
+    """The one case where the two note rules cannot both be satisfied.
+
+    Once `len(family) + len(entity)` reaches `NAME_BUDGET`, the marker and its
+    growth reserve fill the Description on their own. A missing note is then
+    `ENTITY_HAS_NO_NOTE` and ANY note is `ENTITY_NOTE_TOO_LONG_FOR_MARKER`, so
+    the ordinary advice -- "add a note of up to 0 characters", "shorten the
+    note by 41" -- sends the author round in a circle. Both messages have to
+    name what can actually change, which is the names.
+
+    Both halves are asserted on ONE schema, so advice that is wrong in either
+    direction fails here rather than in whichever half nobody thought to
+    write.
+    """
+    family = "f" * (NAME_BUDGET - len("Risk"))
+    table = make_table("Risk")
+    schema = make_schema(table, project_name=family)
+    assert note_budget(family_for(schema), "Risk") == 0, (
+        "this fixture is only meaningful at a budget of exactly zero"
+    )
+
+    absent = only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_HAS_NO_NOTE,
+    )
+    table.note = "Something an author would reasonably write."
+    too_long = only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+    for finding in (absent, too_long):
+        # The names, and the number they have to come under: nothing else the
+        # author reads is actionable.
+        assert "Shorten the DBML `Project` name or the table name" in finding.message
+        assert str(NAME_BUDGET) in finding.message
+        assert "'Risk'" in finding.message
+        # ...and NOT the advice that cannot be followed.
+        assert "up to 0 characters" not in finding.message
+        assert "Shorten the note by" not in finding.message
 
 
 def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
