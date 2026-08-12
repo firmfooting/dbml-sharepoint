@@ -158,14 +158,58 @@
   // ===================================================================
   log('INFO', 'Tier 2: pack-driven attempt-probes.');
 
-  // Collision probe per declared list.
+  // The provenance marker on an EXISTING declared list. Reported, never
+  // repaired — this script writes nothing, and that is its whole contract.
+  //
+  // WHY IT IS HERE AND NOT ONLY IN THE DEPLOY. deploy.js reconciles a drifted
+  // Description, but only at the NEXT run. In the gap, a list whose
+  // description an owner edited in list settings is absent from every fleet
+  // report: discovery enumerates `Description`, so that site contributes
+  // fewer rows, raises no error, and nothing knows how many there should have
+  // been. assess.js is what an operator runs before touching a site, so it is
+  // the only thing that can surface this between deploys.
+  //
+  // WARN, not BLOCKED: the list itself is fine and deploying over it is the
+  // repair. Only reporting is affected, which is what DEGRADED means here.
+  //
+  // SUBSTRING, not equality. The deploy compares the whole Description
+  // because it owns the note as well; this check owns only discoverability,
+  // and a list whose note was reworded but whose marker survives is still
+  // found by every report. Firing on that would be noise, and noise gets
+  // ignored.
+  //
+  // The expected text arrives in TARGETS from `analysis.list_description`
+  // and is never re-spelled here — see assess_targets' docstring.
+  //
+  // Looked up with hasOwnProperty, not with a bare index: a list titled
+  // `constructor` or `toString` would otherwise resolve to something off
+  // Object.prototype, and this check would report drift on a list whose
+  // marker is perfectly intact.
+  const markerFinding = (title, description) => {
+    if (!Object.prototype.hasOwnProperty.call(TARGETS.list_markers, title)) return;
+    const expected = TARGETS.list_markers[title];
+    if (!expected) return;
+    const key = `provenance_marker:${title}`;
+    const held = description == null ? '' : String(description);
+    if (held.includes(expected)) {
+      finding(2, key, 'PASS', `'${title}' carries its provenance marker.`);
+    } else {
+      finding(2, key, 'WARN',
+        `'${title}' exists but its Description no longer carries the provenance marker `
+        + `"${expected}" — fleet reporting cannot see '${title}' until a deploy restores it.`);
+    }
+  };
+
+  // Collision probe per declared list. Description rides along on a request
+  // already being made, so the marker check above costs no probe of its own.
   for (const title of TARGETS.list_titles) {
     const key = `collision:${title}`;
-    const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate`);
+    const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description`);
     if (!list.ok && list.status === 404) {
       finding(2, key, 'PASS', `'${title}' absent — clean provision target.`);
     } else if (list.ok) {
       finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${list.d.BaseTemplate}) — redeploy/reconcile target.`);
+      markerFinding(title, list.d.Description);
     } else {
       finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
     }

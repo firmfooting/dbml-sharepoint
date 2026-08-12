@@ -15,7 +15,6 @@ is not a dependency of the package.
 
 import json
 import re
-import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -24,12 +23,12 @@ from typing import Any
 
 import pytest
 from _builders import ID_PK, table
+from _node import NODE
+from _node import run_node as _run
 from _packs import DEFAULT_PREFIX, blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.phases import phase_number as pn
-
-NODE = shutil.which("node")
 
 
 def _deploy_js() -> str:
@@ -90,18 +89,6 @@ _HARNESS = textwrap.dedent("""
     };
     globalThis.__calls = calls;
 """)
-
-
-def _run(script: str) -> str:
-    """Via a file: deploy.js is far past the Windows command-line limit."""
-    assert NODE is not None
-    with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "run.js"
-        path.write_text(script, encoding="utf-8")
-        proc = subprocess.run(  # noqa: S603
-            [NODE, str(path)], capture_output=True, text=True, timeout=180, check=False,
-        )
-    return proc.stdout + proc.stderr
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
