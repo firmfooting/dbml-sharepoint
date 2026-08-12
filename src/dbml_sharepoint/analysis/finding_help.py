@@ -405,6 +405,20 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A view title yields an empty URL slug; it needs at least one "
         "letter or digit."
     ),
+    FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN: (
+        "A column's resolved display title is one of the columns the "
+        "reporting pack adds to the same list: `Site Url`, `Site Name`, "
+        "`List Title`, or `<Entity> Key`. The generated Power Query adds "
+        "those columns and THEN runs `Table.RenameColumns` to give every "
+        "schema column its display title. Renaming a column onto a name the "
+        "table already carries is an error in M, so this does not produce a "
+        "wrong report -- it produces a refresh that fails, after the model "
+        "has been published. `display_name_mode: auto` reaches it with no "
+        "override written at all, because the auto-split turns `SiteUrl` "
+        "into `Site Url`, `SiteName` into `Site Name` and `ListTitle` into "
+        "`List Title`. Give the column a different display title, or rename "
+        "the schema column so the auto-split lands somewhere else."
+    ),
     FindingCode.ENTITY_NOT_IN_SCHEMA: (
         "The mapping's `entities:` declares a name the DBML schema has "
         "no table for."

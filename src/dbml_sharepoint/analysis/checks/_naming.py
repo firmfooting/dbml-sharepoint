@@ -3,6 +3,7 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.report_columns import report_columns_for
 from dbml_sharepoint.analysis.validator import Finding, _rendered_columns
 
 
@@ -86,6 +87,29 @@ def check(vc: ValidationContext) -> list[Finding]:
                         FindingCode.DUPLICATE_DISPLAY_TITLE,
                         f"display_names[{table.name}]: duplicate display title "
                         f"{display_title!r} for columns {', '.join(sources)}.",
+                        location=Location(Section.DISPLAY_NAMES, entity=table.name),
+                    ))
+            # The rule above compares the schema's columns with each other and
+            # stops there, so it cannot see the columns the REPORTING PACK adds
+            # to the same table. Those arrive before `Table.RenameColumns`
+            # runs, and renaming a column onto a name the table already carries
+            # is an error in M: the model publishes and the refresh fails.
+            #
+            # `display_name_mode: auto` reaches this with no override at all --
+            # `auto_display_name` splits `SiteUrl` to `Site Url`, `SiteName` to
+            # `Site Name` and `ListTitle` to `List Title`.
+            reserved = set(report_columns_for(table.name))
+            for display_title, sources in sorted(resolved.items()):
+                if display_title in reserved:
+                    findings.append(Finding(
+                        FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+                        f"display_names[{table.name}]: display title "
+                        f"{display_title!r} for column {', '.join(sources)} is "
+                        f"a column the reporting pack adds to this list. The "
+                        f"generated Power Query adds it and then renames the "
+                        f"schema column onto the same name, which fails the "
+                        f"refresh rather than the build. Choose another "
+                        f"display title.",
                         location=Location(Section.DISPLAY_NAMES, entity=table.name),
                     ))
 

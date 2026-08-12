@@ -304,6 +304,43 @@ def test_build_writes_full_bundle(tmp_path: Path) -> None:
     assert "`reporting/`" in (out / "index.md").read_text(encoding="utf-8")
 
 
+def test_a_built_reporting_pack_needs_no_parameter(tmp_path: Path) -> None:
+    """`build` is given `--site-url`, so the queries it ships already know
+    the site. The seam is `emit_bundle` -> `emit_reporting`, and it is
+    threaded rather than reconstructed, so the only way to see it is from
+    the artifact on disk.
+
+    `report` has no site and still emits the parameter form; that shape is
+    covered in `test_reportgen.py`.
+    """
+    site = "https://example.sharepoint.com/sites/test"
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", site,
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    checked = 0
+    for path in sorted((out / "reporting" / "powerquery").glob("*.pq")):
+        text = path.read_text(encoding="utf-8")
+        if "SiteRoot" not in text:
+            continue  # a static #table query, no site in it
+        assert f'    SiteUrl = "{site}",' in text.splitlines(), path.name
+        assert "// Requires" not in text, path.name
+        checked += 1
+    # Three lists plus the drift audit -- named as a count so a build that
+    # emitted no site-reading query could not pass this vacuously.
+    assert checked == 4
+    sql = (out / "reporting" / "sql" / "views.sql").read_text(encoding="utf-8")
+    assert f":setvar SiteUrl {site}" in sql.splitlines()
+    assert "yourtenant" not in sql
+
+
 def test_build_checksums_validate_and_cover_the_bundle(tmp_path: Path) -> None:
     out = tmp_path / "build"
     result = runner.invoke(app, [
