@@ -1669,9 +1669,9 @@ def test_no_shipped_note_contains_a_character_of_unproven_round_trip(
     """No family may reintroduce an `&` or a line break into a table note.
 
     `ENTITY_NOTE_MAY_NOT_ROUND_TRIP` refuses one at build time; this pins the
-    CORPUS, the same pairing the two sweeps above have with their rules. All
-    54 notes were already clean when the rule was written, so this sweep is
-    a ratchet rather than a discovery -- what it stops is the 55th.
+    CORPUS, the same pairing the two sweeps above have with their rules.
+    Every note was already clean when the rule was written, so this sweep is
+    a ratchet rather than a discovery -- what it stops is the next one.
 
     The characters come from the rule's own table rather than being re-spelled
     here. A sweep with its own copy is how a corpus comes to satisfy a rule

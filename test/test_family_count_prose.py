@@ -23,6 +23,7 @@ which AGENTS.md asks for by name ("If a live run teaches you something,
 encode it: a dated comment"). A stale DATE is visible; a stale NUMBER is not.
 """
 
+import bisect
 import re
 import subprocess
 from pathlib import Path
@@ -30,17 +31,30 @@ from pathlib import Path
 import pytest
 from _paths import REPO_ROOT
 
-#: A count qualifying a family noun: "32 shipped templates", "all thirty
-#: families", "the 30 solution templates". Two-digit numerals only -- "one of
-#: three lists" inside a family's own README is not a roster claim, and the
-#: roster has never been under ten.
+#: A count qualifying a catalogue noun: "32 shipped templates", "all thirty
+#: families", "the 54 notes". Two-digit numerals only -- "one of three lists"
+#: inside a family's own README is not a roster claim, and the roster has
+#: never been under ten.
+#:
+#: `notes` and `entities` are in the noun list because they are counts OF the
+#: catalogue and rot with it: `website/docs/reference/dbml.md` said "The 54
+#: notes" while the catalogue carried 57.
 FAMILY_COUNT = re.compile(
     r"\b(?:all\s+|the\s+)?"
     r"(?:[0-9]{2}|twenty|thirty|forty)(?:[- ](?:one|two|three|four|five|six|seven|eight|nine))?"
     r"\s+(?:(?:shipped|solution|list)\s+)*"
-    r"(?:templates|families|solutions|READMEs)\b",
+    r"(?:templates|families|solutions|READMEs|notes|entities)\b",
     re.IGNORECASE,
 )
+
+#: Prose in this repository wraps, and the count wraps with it. A line-by-line
+#: scan misses "The 32 shipped\nfamilies" on both lines, which is the exact
+#: stale claim the gate exists to refuse -- so lines are flattened into one
+#: string before matching, and the offsets mapped back for the report.
+#:
+#: The prefix is stripped so a wrapped comment or docstring joins cleanly
+#: rather than reading "shipped #: families".
+LINE_PREFIX = re.compile(r"^\s*(?:#:|#|//|\*|>|\|)?\s*")
 
 #: A measurement that says when it was taken may keep its numbers. Case
 #: insensitive because the join survey opens "Measured 2026-07-31" and
@@ -85,6 +99,29 @@ def _tracked_prose() -> list[Path]:
     ]
 
 
+def _flatten(lines: list[str]) -> tuple[str, list[int]]:
+    """One string to search, plus the offset each line starts at.
+
+    Returned together so a match found across a line break can still be
+    reported at the line it starts on -- a gate that says "somewhere in this
+    file" is one nobody acts on.
+    """
+    starts: list[int] = []
+    parts: list[str] = []
+    offset = 0
+    for line in lines:
+        cleaned = LINE_PREFIX.sub("", line)
+        starts.append(offset)
+        parts.append(cleaned)
+        offset += len(cleaned) + 1
+    return " ".join(parts), starts
+
+
+def _line_of(offset: int, starts: list[int]) -> int:
+    """The 1-indexed line a flattened offset came from."""
+    return bisect.bisect_right(starts, offset)
+
+
 def test_no_tracked_prose_states_the_family_count() -> None:
     """Adding a family must not require editing a single sentence.
 
@@ -94,15 +131,14 @@ def test_no_tracked_prose_states_the_family_count() -> None:
     offenders = []
     for path in _tracked_prose():
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        for number, line in enumerate(lines, start=1):
-            match = FAMILY_COUNT.search(line)
-            if not match:
-                continue
-            # The marker may sit on the line above, where a docstring wraps.
-            context = line + "\n" + (lines[number - 2] if number > 1 else "")
-            if DATED_MEASUREMENT.search(context):
+        flat, starts = _flatten(lines)
+        for match in FAMILY_COUNT.finditer(flat):
+            # A dated measurement keeps its numbers. The marker leads the
+            # claim, so look behind the match rather than around it.
+            if DATED_MEASUREMENT.search(flat[max(0, match.start() - 120):match.end()]):
                 continue
             relative = path.relative_to(REPO_ROOT).as_posix()
+            number = _line_of(match.start(), starts)
             offenders.append(f"{relative}:{number}: {match.group(0).strip()!r}")
 
     assert not offenders, (
@@ -130,6 +166,8 @@ def test_the_gate_would_catch_a_reintroduced_count() -> None:
         "Fourteen of the thirty READMEs open with a `*Theme: ...*` line",
         "The 30 solution templates are part of the package",
         "over 31 families.",
+        "The 54 notes are the worked examples",
+        "57 entities across the catalogue",
     ]
     assert [line for line in caught if not FAMILY_COUNT.search(line)] == []
 
@@ -140,6 +178,29 @@ def test_the_gate_would_catch_a_reintroduced_count() -> None:
         "assert len(solutions) == 32",  # an assertion is the correct home
     ]
     assert [line for line in ignored if FAMILY_COUNT.search(line)] == []
+
+
+def test_a_count_that_wraps_across_lines_is_still_caught() -> None:
+    """Prose here wraps, and a line-by-line scan cannot see a wrapped count.
+
+    Reported by review on #197: `The 32 shipped\\nfamilies` matches neither
+    line on its own, so the gate would have waved through the exact claim it
+    exists to refuse. Pinned rather than trusted, because the failure is
+    silent -- a gate that matches nothing looks identical to a clean repo.
+    """
+    wrapped = [
+        "    The 32 shipped",
+        "    families are the worked examples -- every",
+    ]
+    flat, starts = _flatten(wrapped)
+    match = FAMILY_COUNT.search(flat)
+    assert match, "a count split over a line break must still match"
+    # Reported where the claim STARTS, not where the noun landed.
+    assert _line_of(match.start(), starts) == 1
+
+    # And the line-by-line scan this replaced would have missed it, which is
+    # what makes the flattening load-bearing rather than decorative.
+    assert not any(FAMILY_COUNT.search(line) for line in wrapped)
 
 
 def test_a_dated_measurement_keeps_its_numbers() -> None:

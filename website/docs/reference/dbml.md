@@ -118,7 +118,7 @@ rather than filling it.
 
 ### Writing one worth reading
 
-The 54 notes across the shipped families were written to these rules, and
+The notes across the shipped families were written to these rules, and
 they are what makes those descriptions worth an adopter's attention
 rather than noise they learn to skip:
 
