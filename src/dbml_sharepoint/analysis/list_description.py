@@ -78,6 +78,18 @@ def normalise_family(project_name: str) -> str:
     `/` is folded too because the marker's grammar is `family/entity` and a
     separator inside the family would make it ambiguous to the reader that
     parses it back out.
+
+    THE FOLD IS NOT INJECTIVE, and that is accepted rather than overlooked.
+    `a_b`, `a/b` and `a-b` all become `a-b`, and a schema declaring
+    `Project custom` is indistinguishable from one declaring no `Project` at
+    all. Both are fail-OPEN: the marker is still present and the list is still
+    discoverable, so the cost is a mis-attributed row in a report rather than
+    a list missing from it. That is the right way round -- the failure this
+    module exists to prevent is a list nobody can find, and no collision here
+    can cause one. Making the fold injective (escaping, or refusing a name
+    that collides) would add a build-time refusal for a problem no shipped
+    family has: the catalogue sweep in `test_template_standard.py` pins all 31
+    to distinct slugs.
     """
     slug = project_name.strip().replace("_", "-").replace("/", "-")
     return slug or UNNAMED_FAMILY
@@ -99,8 +111,16 @@ def note_budget(family: str, entity: str) -> int:
     One character comes off for the space that separates the note from the
     marker. The budget therefore depends on the family and entity names, which
     is why the rule computes it rather than comparing against a constant.
+
+    NEVER NEGATIVE. A family and entity long enough to fill the limit on their
+    own would otherwise produce a negative budget, and `note[:-5]` is not
+    "keep nothing" -- it is "keep everything but the last five characters", so
+    the backstop in `list_description` would return a string LONGER than the
+    limit rather than the marker alone. Unreachable today, because the rule
+    refuses the note first and the CLI gates errors before generation; but a
+    backstop that is wrong in the case it exists for is not a backstop.
     """
-    return DESCRIPTION_LIMIT - len(marker_for(family, entity)) - 1
+    return max(0, DESCRIPTION_LIMIT - len(marker_for(family, entity)) - 1)
 
 
 def list_description(table_note: str, *, family: str, entity: str) -> str:
@@ -116,9 +136,14 @@ def list_description(table_note: str, *, family: str, entity: str) -> str:
     Note the order of operations: the note is clamped BEFORE the marker is
     appended. Appending first and clamping the result is the defect -- it
     cuts the tail, and the tail is the marker.
+
+    A zero budget returns the marker alone rather than a description with a
+    leading space: there is no room for a note, and " Provisioned by ..." is
+    not what "no room" should look like on a settings page.
     """
     marker = marker_for(family, entity)
     note = (table_note or "").strip()
-    if not note:
+    budget = note_budget(family, entity)
+    if not note or budget == 0:
         return marker
-    return f"{note[:note_budget(family, entity)].rstrip()} {marker}"
+    return f"{note[:budget].rstrip()} {marker}"

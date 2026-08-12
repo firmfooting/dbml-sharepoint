@@ -20,7 +20,7 @@ from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.list_description import UNNAMED_FAMILY, note_budget
+from dbml_sharepoint.analysis.list_description import family_for, note_budget
 from dbml_sharepoint.analysis.validator import (
     MAX_INTERNAL_NAME,
     Finding,
@@ -1717,13 +1717,33 @@ def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
 
 
 def test_a_note_that_exactly_fits_beside_the_marker_is_accepted() -> None:
-    """The boundary is inclusive. A rule that refused a note which fits would
-    be stronger than the emitter needs, and an author has no way to tell an
-    off-by-one refusal from a real one."""
-    budget = note_budget(UNNAMED_FAMILY, "Risk")
-    findings = validate_against_mapping(
-        make_schema(make_table("Risk", note="x" * budget)),
-        make_bundle(entities=["Risk"]),
+    """The boundary is inclusive, and measured one character either side of it.
+
+    A rule that refused a note which fits would be stronger than the emitter
+    needs, and an author has no way to tell an off-by-one refusal from a real
+    one.
+
+    Two things keep this from passing for the wrong reason. The budget is
+    derived from the schema THE RULE WILL SEE, via `family_for`, rather than
+    from a hardcoded family: hardcoding one computes a different budget the
+    moment the fixture's default project name changes, and the test would then
+    assert "no finding" for a note with room to spare -- green, and proving
+    nothing. And both sides of the boundary are asserted on the same schema,
+    so a budget that is wrong in either direction fails one half or the other
+    rather than sailing through both.
+    """
+    table = make_table("Risk")
+    schema = make_schema(table)
+    budget = note_budget(family_for(schema), "Risk")
+
+    table.note = "x" * budget
+    none_of(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
     )
 
-    none_of(findings, FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER)
+    table.note = "x" * (budget + 1)
+    only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )

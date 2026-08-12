@@ -9,6 +9,7 @@ from _paths import FIXTURES
 from dbml_sharepoint.analysis.list_description import (
     UNNAMED_FAMILY,
     list_description,
+    marker_for,
     note_budget,
 )
 from dbml_sharepoint.analysis.phases import phase_number as pn
@@ -3214,3 +3215,39 @@ def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
     assert schema_json["lists"][0]["description"] == (
         f"Provisioned by dbml-sharepoint from {UNNAMED_FAMILY}/Risk."
     )
+
+
+def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
+    """The backstop's own edge, where a negative slice would silently invert it.
+
+    A family and entity long enough to fill the 255 on their own drive the raw
+    budget to zero and below. `note[:-1]` is not "keep nothing" -- it is "keep
+    all but the last character" -- so an unclamped budget makes the backstop
+    return the note plus the marker, LONGER than the limit, in exactly the case
+    it exists to handle.
+
+    Unreachable through the CLI today: `ENTITY_NOTE_TOO_LONG_FOR_MARKER` fires
+    first and errors gate generation. Pinned anyway, because a backstop that is
+    wrong when reached is not a backstop.
+
+    Both sides of zero are covered. The budget-0 case also pins that the result
+    is the marker ALONE rather than " " + marker, which is what a naive
+    join would leave on the settings page.
+    """
+    entity = "e" * 10
+
+    # Raw budget exactly 0: no room for a note, marker still fits in 255.
+    family_zero = "f" * (216 - len(entity))
+    zero = list_description("some note", family=family_zero, entity=entity)
+    assert zero == marker_for(family_zero, entity)
+    assert len(zero) <= 255
+    assert not zero.startswith(" ")
+
+    # Raw budget -1: the case a negative slice inverts.
+    family_negative = "f" * (217 - len(entity))
+    negative = list_description("some note", family=family_negative, entity=entity)
+    assert negative == marker_for(family_negative, entity)
+    assert len(negative) <= 255
+    assert "some note" not in negative
+
+    assert note_budget(family_negative, entity) == 0, "the budget must never go negative"
