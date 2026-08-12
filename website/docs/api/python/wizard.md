@@ -55,6 +55,7 @@ The wizard cannot safely continue. Always names what went wrong.
 class TemplateChoice:
     solution: Solution
     prefix: str
+    entity_roles: tuple[tuple[str, str], ...]
 ```
 
 One chosen template, and the prefix its lists will carry.
@@ -69,16 +70,31 @@ drawing now.
 #### `TemplateChoice.list_titles`
 
 ```python
-def list_titles(self) -> tuple[str, ...]
+def list_titles(self, site_role: str) -> tuple[str, ...]
 ```
 
-The SharePoint list titles this template will create.
+The SharePoint list titles this template creates for one site role.
 
 A method rather than a property because it iterates. The rule it
 obeys is plain concatenation, which is what `jsgen.py:380`,
 `assessgen.py:39`, `demogen.py:109`, `manifestgen.py:77` and
 `reportgen.py:176` all do -- so this reports the build's behaviour
 rather than predicting it.
+
+FILTERED BY SITE ROLE, because the build is. Every generator goes
+through `ordering.site_tables_in_order`, which keeps only entities
+whose `site_role` matches the one being built. Reporting
+`Solution.lists` unfiltered made the Review panel promise every list
+in the mapping: a mapping declaring `default: Risk` and
+`archive: Archive` had the panel name both while the bundle created
+only `Risk`. Unreachable with the thirty-one shipped families, which
+declare `default` and nothing else -- but the site-role question
+exists precisely for the mappings where it is not.
+
+The ORDER is the mapping's declaration order, not the dependency
+order `site_tables_in_order` computes from the schema. A review names
+a set; matching the order would mean parsing the DBML here for no
+gain the operator can see.
 
 ### `Answers`
 

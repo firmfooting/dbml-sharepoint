@@ -171,18 +171,25 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
 
 
 def _choice(prefix: str = "RR_", *, lists: tuple[str, ...] = ("Risk",),
-            id_: str = "risk-register") -> wizard.TemplateChoice:
+            id_: str = "risk-register",
+            roles: tuple[str, ...] = ()) -> wizard.TemplateChoice:
     """A `TemplateChoice` with no files behind it.
 
-    These four functions are pure -- they read `Solution` fields and nothing
-    from disk -- so a scaffolded family would only slow the test down.
+    These functions are pure -- they read `Solution` fields and nothing from
+    disk -- so a scaffolded family would only slow the test down.
+
+    `roles` pairs positionally with `lists` and defaults to `default` for
+    every entity, which is what all thirty-one shipped families declare.
+    Pass it to build the multi-role shape none of them has.
     """
+    roles = roles or ("default",) * len(lists)
     return wizard.TemplateChoice(
         solution=Solution(
             id=id_, title="T", summary="s", detail="s",
             lists=lists, prefix=prefix, root=Path("unused"),
         ),
         prefix=prefix,
+        entity_roles=tuple(zip(lists, roles, strict=True)),
     )
 
 
@@ -206,14 +213,34 @@ def _answers_for(*choices: wizard.TemplateChoice, destination: Path) -> wizard.A
 
 def test_list_titles_are_the_prefix_concatenated() -> None:
     """What jsgen.py:380 and four other generators actually do."""
-    assert _choice("ACME_", lists=("Risk", "Control")).list_titles() == (
-        "ACME_Risk", "ACME_Control",
-    )
+    assert _choice("ACME_", lists=("Risk", "Control")).list_titles(
+        "default",
+    ) == ("ACME_Risk", "ACME_Control")
 
 
 def test_a_blank_prefix_names_the_lists_as_declared() -> None:
     """MEASURED 2026-08-12: `prefix: ""` builds and emits `"Risk"`."""
-    assert _choice("").list_titles() == ("Risk",)
+    assert _choice("").list_titles("default") == ("Risk",)
+
+
+def test_list_titles_name_only_the_lists_this_site_role_creates() -> None:
+    """The build filters by site role, so the review has to as well.
+
+    Every generator goes through `ordering.site_tables_in_order`, which
+    keeps only entities whose `site_role` matches the one being built.
+    Reporting `Solution.lists` unfiltered had the Review panel promise both
+    lists of a `default`/`archive` mapping while the bundle created one.
+
+    Unreachable with the shipped families -- all thirty-one declare
+    `default` and nothing else -- which is exactly why it needs a test of
+    its own rather than waiting for a family that has the shape.
+    """
+    choice = _choice(
+        "ACME_", lists=("Risk", "Archive"), roles=("default", "archive"),
+    )
+    assert choice.list_titles("default") == ("ACME_Risk",)
+    assert choice.list_titles("archive") == ("ACME_Archive",)
+    assert choice.list_titles("nobody-declared-this") == ()
 
 
 def test_one_template_lands_directly_in_the_destination(tmp_path: Path) -> None:
@@ -520,8 +547,11 @@ def test_each_template_repoints_only_its_own_documentation(
     without a failure to announce it.
     """
     destination = tmp_path / "site"
-    risk = wizard.TemplateChoice(load_solution("risk-register"), "AU_")
-    audit = wizard.TemplateChoice(load_solution("audit-actions"), "ZZ_")
+    # `entity_roles` is empty because `_scaffold` never reads it -- only the
+    # Review panel does, through `list_titles`. Filling it would imply this
+    # test cares which role deploys what, and it does not.
+    risk = wizard.TemplateChoice(load_solution("risk-register"), "AU_", ())
+    audit = wizard.TemplateChoice(load_solution("audit-actions"), "ZZ_", ())
     answers = wizard.Answers(
         destination=destination,
         site_url="https://contoso.sharepoint.com/sites/x",
@@ -1386,6 +1416,37 @@ def test_the_review_names_the_lists_that_will_be_created(
     assert "ACME_Risk" in _collapsed(console)
 
 
+def test_the_review_shows_a_prefix_rich_would_read_as_markup(
+    tmp_path: Path,
+) -> None:
+    """The panel must show the name the build will create, character for
+    character.
+
+    MEASURED 2026-08-12: `[bold]` passes `_PREFIX_REJECTED` -- which refuses
+    only what breaks a filename or the YAML line, and deliberately invents
+    no SharePoint rule -- so it reaches `list_titles` as a real prefix. Rich
+    then read the brackets as a style tag and rendered the Lists row as a
+    styled `Risk`, while the mapping and deploy.js.txt carried the literal
+    `[bold]Risk`. The operator confirmed one list name and got another, on
+    the one panel the prefix design nominates as its safety net.
+
+    The fix is escaping, not rejecting: a prefix this wizard accepts must be
+    a prefix this wizard can display.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        _answers(destination, prefix="[bold]", build="n", confirm="y"),
+    )
+    assert wizard.run_wizard(console) == 0
+
+    panel = _review(console)
+    assert "[bold]Risk" in panel, panel
+    # And the mapping really does carry it, so the panel is not merely
+    # self-consistent -- it agrees with what the build will read.
+    mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
+    assert mapping.mapping.prefix == "[bold]"
+
+
 def _review(console: ScriptedConsole) -> str:
     """The Review panel alone, sliced out of the transcript at BOTH ends.
 
@@ -2238,10 +2299,10 @@ def test_the_site_roles_are_the_intersection(tmp_path: Path) -> None:
     here. `_site_roles` is a pure fold; testing it directly is honest.
     """
     both = wizard._TemplateFacts(
-        roles=frozenset({"hq", "branch"}), demo_items=False, reader_group=False,
+        roles=frozenset({"hq", "branch"}), entity_roles=(), demo_items=False, reader_group=False,
     )
     one = wizard._TemplateFacts(
-        roles=frozenset({"branch"}), demo_items=False, reader_group=False,
+        roles=frozenset({"branch"}), entity_roles=(), demo_items=False, reader_group=False,
     )
     assert wizard._site_roles([both]) == ["branch", "hq"]
     assert wizard._site_roles([both, one]) == ["branch"]
@@ -2250,10 +2311,10 @@ def test_the_site_roles_are_the_intersection(tmp_path: Path) -> None:
 def test_templates_that_share_no_site_role_are_refused(tmp_path: Path) -> None:
     """Rather than picking one and letting `execute_build` refuse it later."""
     hq = wizard._TemplateFacts(
-        roles=frozenset({"hq"}), demo_items=False, reader_group=False,
+        roles=frozenset({"hq"}), entity_roles=(), demo_items=False, reader_group=False,
     )
     branch = wizard._TemplateFacts(
-        roles=frozenset({"branch"}), demo_items=False, reader_group=False,
+        roles=frozenset({"branch"}), entity_roles=(), demo_items=False, reader_group=False,
     )
     with pytest.raises(wizard.WizardError, match="no site role"):
         wizard._site_roles([hq, branch])

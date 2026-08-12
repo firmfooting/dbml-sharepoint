@@ -197,7 +197,10 @@ def test_detail_is_ascii() -> None:
         for s in available_solutions()
         if not s.detail.isascii()
     ]
-    assert not offenders
+    assert not offenders, (
+        "detail text a terminal may not encode -- give each character an "
+        f"ASCII spelling in `_TERMINAL_SPELLINGS`: {offenders}"
+    )
 
 
 def test_every_catalogue_entry_is_ascii() -> None:

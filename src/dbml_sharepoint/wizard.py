@@ -46,6 +46,7 @@ from pathlib import Path
 import typer
 import yaml
 from rich.console import Console, Group, RenderableType
+from rich.markup import escape
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
@@ -58,7 +59,10 @@ from dbml_sharepoint.bundle import (
     write_artifact,
 )
 from dbml_sharepoint.catalogue import (
+    MAPPING_RELPATH,
     PLACEHOLDER_SITE_URL,
+    RELEASE_RELPATH,
+    SCHEMA_RELPATH,
     Solution,
     available_solutions,
 )
@@ -107,17 +111,41 @@ class TemplateChoice:
     #: 2026-08-12: `prefix: ""` builds and emits `"Risk"` as the list title
     #: throughout deploy.js.txt. Nothing outside this wizard requires one.
     prefix: str
+    #: Every entity the mapping declares, paired with the site role that
+    #: deploys it. Pairs rather than a dict so the dataclass stays hashable
+    #: like its siblings. Sourced from `_TemplateFacts`, which has already
+    #: loaded the mapping, so this costs no second read.
+    entity_roles: tuple[tuple[str, str], ...]
 
-    def list_titles(self) -> tuple[str, ...]:
-        """The SharePoint list titles this template will create.
+    def list_titles(self, site_role: str) -> tuple[str, ...]:
+        """The SharePoint list titles this template creates for one site role.
 
         A method rather than a property because it iterates. The rule it
         obeys is plain concatenation, which is what `jsgen.py:380`,
         `assessgen.py:39`, `demogen.py:109`, `manifestgen.py:77` and
         `reportgen.py:176` all do -- so this reports the build's behaviour
         rather than predicting it.
+
+        FILTERED BY SITE ROLE, because the build is. Every generator goes
+        through `ordering.site_tables_in_order`, which keeps only entities
+        whose `site_role` matches the one being built. Reporting
+        `Solution.lists` unfiltered made the Review panel promise every list
+        in the mapping: a mapping declaring `default: Risk` and
+        `archive: Archive` had the panel name both while the bundle created
+        only `Risk`. Unreachable with the thirty-one shipped families, which
+        declare `default` and nothing else -- but the site-role question
+        exists precisely for the mappings where it is not.
+
+        The ORDER is the mapping's declaration order, not the dependency
+        order `site_tables_in_order` computes from the schema. A review names
+        a set; matching the order would mean parsing the DBML here for no
+        gain the operator can see.
         """
-        return tuple(self.prefix + name for name in self.solution.lists)
+        return tuple(
+            self.prefix + name
+            for name, role in self.entity_roles
+            if role == site_role
+        )
 
 
 @dataclass(frozen=True)
@@ -225,7 +253,7 @@ def _describe(console: Console, solution: Solution) -> None:
     # makes this the only place the operator learns what the lists are
     # called before the Review panel names them.
     console.print(
-        f"\n  [bold]{solution.title}[/bold]  -  {count} list"
+        f"\n  [bold]{escape(solution.title)}[/bold]  -  {count} list"
         f"{'' if count == 1 else 's'}: {lists}"
         f"  -  prefix {solution.prefix or '(none)'}",
     )
@@ -282,11 +310,15 @@ def _ask_destination(console: Console, solution: Solution) -> Path:
         if not destination.exists():
             return destination
         if not destination.is_dir():
-            console.print(f"[red]{destination} exists and is not a directory.[/red]")
+            console.print(
+                f"[red]{escape(str(destination))} exists and is not a "
+                "directory.[/red]",
+            )
             continue
         if any(destination.iterdir()):
             console.print(
-                f"[red]{destination} already exists and is not empty.[/red] "
+                f"[red]{escape(str(destination))} already exists and is not "
+                "empty.[/red] "
                 "Pick a path that does not exist yet.",
             )
             continue
@@ -658,7 +690,7 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
             dirs_exist_ok=True,
         )
         _rewrite_prefix(
-            root / choice.solution.mapping_path.relative_to(choice.solution.root),
+            root / MAPPING_RELPATH,
             choice.prefix,
         )
         template_changed, template_applied = _repoint_docs(
@@ -684,6 +716,11 @@ class _TemplateFacts:
     """
 
     roles: frozenset[str]
+    #: Every entity paired with the site role that deploys it, in mapping
+    #: declaration order. `roles` above answers "which roles exist"; this
+    #: answers "which lists does one role create", which is what the Review
+    #: panel has to report to be true.
+    entity_roles: tuple[tuple[str, str], ...]
     #: `--seed` against a mapping with no `demo_items` raises
     #: `SeedRequiresDemoItemsError` and the build exits non-zero. Offering
     #: the question there would be offering a dead end.
@@ -711,6 +748,9 @@ def _read_facts(solution: Solution) -> _TemplateFacts:
     permissions = bundle.mapping.permissions
     return _TemplateFacts(
         roles=frozenset(e.site_role for e in bundle.mapping.entities.values()),
+        entity_roles=tuple(
+            (name, e.site_role) for name, e in bundle.mapping.entities.items()
+        ),
         demo_items=any(bundle.mapping.demo_items.values()),
         reader_group=any(
             g.enroll_enterprise_reader
@@ -752,7 +792,19 @@ _REVIEW_LABEL = 10
 
 
 def _review_row(label: str, value: str) -> str:
-    return f"[bold]{label:<{_REVIEW_LABEL}}[/bold] {value}"
+    """One label/value line, with the value escaped.
+
+    EVERY value on this panel is operator input or template text: a prefix
+    they typed, a directory, a site URL, a UPN, a title from a README. Rich
+    reads square brackets as markup, so a prefix of `[bold]` rendered the
+    Lists row as a styled `Risk` while the mapping and the deploy script
+    carried the literal `[bold]Risk` -- the panel showing one name and the
+    build creating another. `_PREFIX_REJECTED` does not refuse brackets and
+    should not start to: its comment is explicit that it refuses only what
+    breaks a filename or the YAML line, and inventing a SharePoint rule is
+    the failure AGENTS.md opens with. Escaping is the fix; rejecting is not.
+    """
+    return f"[bold]{label:<{_REVIEW_LABEL}}[/bold] {escape(value)}"
 
 
 def _review_panel(answers: Answers) -> Panel:
@@ -770,7 +822,11 @@ def _review_panel(answers: Answers) -> Panel:
                 "Template", f"{choice.solution.id} - {choice.solution.title}",
             ),
         )
-        rows.append(_review_row("Lists", ", ".join(choice.list_titles())))
+        rows.append(
+            _review_row(
+                "Lists", ", ".join(choice.list_titles(answers.site_role)),
+            ),
+        )
     rows.append(_review_row("Directory", str(answers.destination)))
     rows.append(_review_row("Site", answers.site_url))
     if not answers.build:
@@ -800,12 +856,15 @@ def _rebuild_command(answers: Answers) -> str:
     inside = _within(_template_root(answers, choice), answers.destination)
     return (
         "\nWhen you are ready:\n\n"
-        f"  [bold]cd {answers.destination}[/bold]\n"
+        f"  [bold]cd {escape(str(answers.destination))}[/bold]\n"
         "  [bold]dbml-sharepoint build \\\n"
-        f"    --schema {inside}10-design/schema.dbml \\\n"
-        f"    --mapping {inside}20-configure/mapping.yaml \\\n"
-        f"    --release {inside}20-configure/release.yaml \\\n"
-        f"    --site-url {answers.site_url} \\\n"
+        # `as_posix()` because this is a command line the operator pastes, and
+        # the family standard is one fact -- spelling these paths by hand here
+        # let the wizard drift from the layout `Solution` and `_scaffold` use.
+        f"    --schema {inside}{SCHEMA_RELPATH.as_posix()} \\\n"
+        f"    --mapping {inside}{MAPPING_RELPATH.as_posix()} \\\n"
+        f"    --release {inside}{RELEASE_RELPATH.as_posix()} \\\n"
+        f"    --site-url {escape(answers.site_url)} \\\n"
         f"    --site-role {answers.site_role} \\\n"
         f"    --out ./{inside}build[/bold]"
     )
@@ -849,7 +908,9 @@ def _next_panel(answers: Answers) -> Panel:
         "these list names are already taken.",
     )
     steps.add_row("2.", f"Paste [bold]{inside}build/{DEPLOY_SCRIPT}[/bold].")
-    body: list[RenderableType] = [f"In [bold]{answers.destination}[/bold]:", "", steps]
+    body: list[RenderableType] = [
+        f"In [bold]{escape(str(answers.destination))}[/bold]:", "", steps,
+    ]
     if answers.seed:
         # The guide is named BEFORE the demo script, not after it: a family
         # may seed data its own procedure tells you not to put on a live
@@ -903,7 +964,6 @@ def _run(console: Console) -> int:
     # below. `_describe` above is then the only place the operator learns
     # what their lists will be called before the Review panel names them.
     prefix = _ask_prefix(console, solution) if solution.prefix else ""
-    choice = TemplateChoice(solution, prefix)
 
     try:
         facts = _read_facts(solution)
@@ -912,8 +972,13 @@ def _run(console: Console) -> int:
         # Before anything is written. This used to happen after the copy and
         # outside any guard, so a template the loader rejected produced a
         # traceback on top of a project directory that already existed.
-        console.print(f"[red]{exc}[/red]")
+        console.print(f"[red]{escape(str(exc))}[/red]")
         return 1
+
+    # Built here, not beside the prefix answer, because it carries the
+    # entity/site-role pairs `_read_facts` has just loaded -- that is what
+    # lets `list_titles` report the lists this site role actually creates.
+    choice = TemplateChoice(solution, prefix, facts.entity_roles)
 
     console.rule("Site")
     destination = _ask_destination(console, solution)
@@ -971,7 +1036,7 @@ def _run(console: Console) -> int:
         console.print(f"[red]Could not scaffold the project:[/red] {exc}")
         return 1
 
-    console.print(f"\n[green]Wrote[/green] {answers.destination}")
+    console.print(f"\n[green]Wrote[/green] {escape(str(answers.destination))}")
     if repointed:
         # Said plainly, and NOT dimmed: this reports edits the wizard made to
         # the operator's own new files. Naming the substitutions matters
@@ -983,7 +1048,7 @@ def _run(console: Console) -> int:
         # a decision, not as a rendering fault.
         console.print(
             f"Updated {len(repointed)} documentation files: "
-            f"{', '.join(s.describe() for s in applied)}.",
+            f"{escape(', '.join(s.describe() for s in applied))}.",
         )
 
     if not build:
@@ -998,9 +1063,9 @@ def _run(console: Console) -> int:
         root = _template_root(answers, template)
         try:
             execute_build(
-                schema=root / "10-design" / "schema.dbml",
-                mapping=root / "20-configure" / "mapping.yaml",
-                release=root / "20-configure" / "release.yaml",
+                schema=root / SCHEMA_RELPATH,
+                mapping=root / MAPPING_RELPATH,
+                release=root / RELEASE_RELPATH,
                 site_url=answers.site_url,
                 site_role=answers.site_role,
                 out=root / "build",
