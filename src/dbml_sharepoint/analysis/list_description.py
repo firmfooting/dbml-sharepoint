@@ -189,10 +189,18 @@ def list_description(table_note: str, *, family: str, entity: str) -> str:
 
     Truncating the note loses prose. Truncating the marker loses the list from
     every fleet report, silently and permanently -- the list still deploys,
-    still reads back byte-identical, and still passes every deploy phase. So
-    if the two cannot both fit, `ENTITY_NOTE_TOO_LONG_FOR_MARKER` refuses the
-    note at build time and this never runs on one. The clamp here is a
-    backstop, not the enforcement.
+    the deploy still reads back the truncated description it sent, and every
+    deploy phase still passes. So if the two cannot both fit,
+    `ENTITY_NOTE_TOO_LONG_FOR_MARKER` refuses the note at build time and this
+    never runs on one. The clamp here is a backstop, not the enforcement.
+
+    That is deliberately NOT a claim that a list Description round-trips byte
+    for byte. It is inferred rather than measured -- the honest statement is
+    in `templates/deploy/_field_reconcile.js.j2`, and
+    `ENTITY_NOTE_MAY_NOT_ROUND_TRIP` is the rule that keeps the corpus inside
+    what the inference can carry. Nothing here depends on it: a truncated
+    marker is invisible to fleet reporting whether or not the round trip is
+    exact.
 
     Note the order of operations: the note is clamped BEFORE the marker is
     appended. Appending first and clamping the result is the defect -- it

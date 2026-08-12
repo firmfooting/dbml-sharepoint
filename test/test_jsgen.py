@@ -3143,8 +3143,9 @@ def test_the_marker_is_never_truncated_away() -> None:
     """The 255 budget truncates the NOTE, never the marker.
 
     Appending a marker after a 250-character note and cutting at 255 removes
-    the marker: the list deploys, reads back byte-identical, and is invisible
-    to discovery forever. Nothing downstream can see that.
+    the marker: the list deploys, the deploy reads back the truncated
+    description it sent, and the list is invisible to discovery forever.
+    Nothing downstream can see that.
     """
     desc = list_description("x" * 400, family="routine-checks", entity="CheckPoint")
     assert len(desc) <= 255

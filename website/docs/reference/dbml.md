@@ -100,11 +100,12 @@ error.
 of the rule and it is worth being explicit about why, because truncating
 instead would be the friendlier-looking choice. A Description assembled
 note-first and then clamped loses its *tail*, and the tail is the marker.
-That list would deploy clean, read back byte-identical, pass every deploy
-phase, and show a perfectly sensible description on its settings page —
-while being permanently invisible to fleet discovery. Nothing in the
-build, the deploy or the page can see the difference. Refusing the note
-at build time is the only place that failure is catchable.
+That list would deploy clean, satisfy the deploy's own read-back of the
+truncated description it sent, pass every deploy phase, and show a
+perfectly sensible description on its settings page — while being
+permanently invisible to fleet discovery. Nothing in the build, the
+deploy or the page can see the difference. Refusing the note at build
+time is the only place that failure is catchable.
 
 **32 characters are held in reserve** on top of the marker's current
 length. The marker may grow — a version suffix, or a family renamed to

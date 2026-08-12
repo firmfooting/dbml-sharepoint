@@ -246,9 +246,16 @@ def _note_fits_beside_marker(
 
     Truncating the note would lose prose, which anyone who opens list settings
     can see. Truncating the marker loses the list from every fleet report --
-    and NOTHING can see that: the list provisions, the Description reads back
-    byte-identical to what was sent, and every deploy phase passes. Build time
-    is the last point at which the mistake is still observable.
+    and NOTHING can see that: the list provisions, the Description the deploy
+    reads back matches the truncated one it sent, and every deploy phase
+    passes. Build time is the last point at which the mistake is still
+    observable.
+
+    Note what that does NOT claim. Whether a list Description survives the
+    round trip byte for byte is an inference here, not a measurement -- see
+    `_UNPROVEN_NOTE_CHARACTERS`. It makes no difference to this rule: a
+    truncated marker is invisible whether the read-back compares equal or
+    aborts the run, so the note is refused either way.
 
     The budget is computed rather than a constant, because it depends on the
     length of the family and entity names inside the marker. It comes from the

@@ -1712,8 +1712,8 @@ def test_an_entity_without_a_note_is_refused() -> None:
 
     A list with no description deploys anonymous and, once fleet reporting
     exists, indistinguishable from every other list the same family provisions
-    except by its marker. Both are silent: the list provisions, the Description
-    reads back byte-identical, and every deploy phase passes.
+    except by its marker. Both are silent: the list provisions, the deploy
+    reads back the bare marker it sent, and every deploy phase passes.
     """
     findings = validate_against_mapping(
         make_schema(make_table("Risk")),

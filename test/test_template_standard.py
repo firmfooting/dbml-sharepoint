@@ -1530,7 +1530,11 @@ def test_the_dbml_project_name_resolves_to_the_family_directory(template: str) -
     than assumed, and without this test a new family declaring
     `Project asset_reg` inside `solutions/asset-register/` would deploy lists
     attributing themselves to a family that does not exist -- silently, since
-    the description still saves and still reads back byte-identical.
+    a description naming the wrong family saves and reconciles exactly like
+    one naming the right family. (Not a claim that a list Description
+    round-trips byte for byte -- that is inferred, not measured; see
+    `ENTITY_NOTE_MAY_NOT_ROUND_TRIP`. A wrong family name is invisible either
+    way.)
     """
     schema = _load(template).schema
     assert schema.project_name, f"{template}: schema.dbml declares no `Project` name"
