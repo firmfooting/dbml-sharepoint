@@ -43,6 +43,10 @@
   log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  // Declared outside the block below so the abort at the end of this phase
+  // can read it. See that abort for why a local count and not
+  // `summary.errors.length`.
+  let readerEnrolmentErrors = 0;
   {
     const READER_ADDRESS = {{ enterprise_reader | tojson }};
     // The build refuses --enterprise-reader against a mapping that declares
@@ -300,10 +304,35 @@
       } catch (err) {
         log('ERROR', `Enterprise reader enrolment for '${grp.name}': ${err.message}`);
         summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });
+        readerEnrolmentErrors += 1;
       }
     }
   }
-  if (summary.errors.length > 0) {
+  // THIS phase's errors, not the run's. `summary.errors` accumulates across
+  // every phase, so reading the whole array would claim an earlier phase's
+  // failure as a reader-enrolment one -- logging 'Enterprise reader
+  // enrolment failed' and returning `aborted: 'reader-enrolment-errors'` for
+  // something this phase never touched.
+  //
+  // LATENT, NOT LIVE, and the distinction is worth writing down. TRACED
+  // 2026-08-12: every PREPARE phase ahead of this one -- preflight,
+  // security, operator enrolment -- ends with the same whole-array check and
+  // RETURNS. So an earlier error aborts at its own phase and this array is
+  // necessarily empty by the time control reaches here. A reviewer reported
+  // the misattribution and the reasoning was sound in the abstract; the
+  // chain is what makes it unreachable today.
+  //
+  // Fixed anyway, because "correct only because of what four other files
+  // happen to do" is not a property this phase can see or keep. The day one
+  // of those phases records a non-fatal error, this abort starts lying.
+  //
+  // Counted locally rather than filtered on the `phase` key, because a count
+  // needs no agreement with how errors are SHAPED elsewhere -- that key is
+  // set by the push above, and a change to it would quietly widen this check
+  // again. Untested for the same reason it is latent: the state cannot be
+  // reached without hand-editing the emitted script, and a test that
+  // fabricates it would be asserting about a scenario, not a behaviour.
+  if (readerEnrolmentErrors > 0) {
     log('ERROR', 'Enterprise reader enrolment failed; aborting before list creation.');
     return { ...summary, aborted: 'reader-enrolment-errors' };
   }
