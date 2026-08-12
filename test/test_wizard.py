@@ -908,26 +908,155 @@ def test_a_destination_that_is_an_existing_file_is_refused_and_reprompted(
     assert (destination / "README.md").is_file()
 
 
-def test_a_whitespace_only_prefix_is_refused_and_reprompted(tmp_path: Path) -> None:
-    """The empty half of the prefix guard, which the character class cannot
-    catch: ` ` strips to nothing, and writing `prefix: ""` would rename
-    every list in the template to its bare entity name without ever saying
-    so."""
-    destination = tmp_path / "proj"
-    console = ScriptedConsole([
-        "risk-register",
-        "   ",   # refused: strips to empty
-        "RR_",
-        str(destination),
-        "https://contoso.sharepoint.com/sites/x",
-        "n",   # build
-        "y",   # confirm
-    ])
+def test_a_blank_prefix_is_accepted_and_reaches_the_mapping(
+    tmp_path: Path,
+) -> None:
+    """Blank means "no prefix", exactly as it means "enrol nobody" above.
 
+    MEASURED 2026-08-12: `prefix: ""` builds and emits `"Risk"` as the list
+    title throughout deploy.js.txt, and no validator rule requires one. The
+    wizard was the only thing refusing it.
+
+    The scripted answer is `" "`, not `""`. risk-register declares `RR_`, so
+    `_ask_prefix`'s `Prompt.ask(default=solution.prefix, ...)` carries a
+    NON-blank default -- and MEASURED against this checkout's rich: a truly
+    empty raw answer never reaches `_ask_prefix`'s own code at all, because
+    `PromptBase.__call__` returns `default` outright whenever the raw input
+    is exactly `""`, before `process_response` or our own `.strip()` ever
+    runs. A single space is not literally empty, so rich passes it through
+    unaltered and `_ask_prefix`'s `.strip()` reduces it to blank exactly as
+    a deliberately cleared field would.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(_answers(destination, prefix=" ", build="n"))
     assert wizard.run_wizard(console) == 0
-    assert load_mapping(
-        destination / "20-configure" / "mapping.yaml",
-    ).mapping.prefix == "RR_"
+
+    mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
+    assert mapping.mapping.prefix == ""
+
+
+def test_a_blank_prefix_repoints_the_docs_to_the_bare_list_name(
+    tmp_path: Path,
+) -> None:
+    """`RR_Risk` in deploy.md becomes `Risk`, not `_Risk` or `RR_Risk`.
+
+    `" "`, not `""` -- see `test_a_blank_prefix_is_accepted_and_reaches_the_
+    mapping` for why a literal empty answer cannot reach blank against
+    risk-register's non-blank declared prefix.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(_answers(destination, prefix=" ", build="n"))
+    assert wizard.run_wizard(console) == 0
+
+    docs = "\n".join(
+        p.read_text(encoding="utf-8") for p in destination.rglob("*.md")
+    )
+    assert "RR_Risk" not in docs
+    assert "Risk" in docs
+
+
+def test_a_template_declaring_no_prefix_is_not_asked_for_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question with one possible answer is not a question.
+
+    Same gate as the reporting and demo questions. The script here carries no
+    prefix answer at all, so if the wizard asks, the destination answer is
+    consumed by the prefix prompt and the run fails.
+    """
+    family = tmp_path / "family"
+    solution = _fake_family(
+        family,
+        mapping='prefix: ""\n'
+        "entities:\n"
+        "  Risk: { kind: List, base_template: 100, site_role: default }\n",
+    )
+    _offer_only(monkeypatch, replace(solution, prefix=""))
+
+    destination = tmp_path / "out"
+    # Final order minus the prefix answer: template, directory, site URL,
+    # build?, confirm. If the wizard asks for a prefix anyway, the directory
+    # answer is swallowed by that prompt and everything after it shifts, so
+    # this fails loudly rather than quietly proving nothing.
+    console = ScriptedConsole(
+        [solution.id, str(destination),
+         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+    )
+    assert wizard.run_wizard(console) == 0
+    assert destination.is_dir()
+    # The PROMPT, not the word. `_describe` legitimately mentions the
+    # template's declared prefix, and asserting on a bare substring would
+    # make this pass or fail on unrelated wording.
+    assert "List name prefix" not in _collapsed(console)
+
+
+def test_a_whitespace_only_prefix_means_no_prefix(tmp_path: Path) -> None:
+    """A DELIBERATE behaviour change, replacing the old refusal.
+
+    `_ask_prefix` has always `.strip()`ed the answer, so `"   "` reached the
+    emptiness check as `""` and was refused along with a genuinely empty
+    answer. Now that blank is a real answer meaning "no prefix", an
+    all-whitespace answer is an empty one and means the same thing -- the
+    operator cannot see the difference on screen, so the wizard should not
+    invent one.
+
+    This REPLACES `test_a_whitespace_only_prefix_is_refused_and_reprompted`,
+    which pinned the old refusal -- verified against this checkout on
+    2026-08-12 that the old test still existed before it was deleted here;
+    the two cannot both hold.
+
+    A prefix with whitespace INSIDE it -- `"AC ME_"` -- is still refused by
+    `_PREFIX_REJECTED`, which is what
+    `test_a_bad_prefix_is_refused_and_reprompted` and
+    `test_a_prefix_with_an_interior_space_is_refused` below cover.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(_answers(destination, prefix="   ", build="n"))
+    assert wizard.run_wizard(console) == 0
+
+    mapping = load_mapping(destination / "20-configure" / "mapping.yaml")
+    assert mapping.mapping.prefix == ""
+
+
+def test_a_prefix_with_an_interior_space_is_refused(tmp_path: Path) -> None:
+    """`AC ME_` would name a list `AC ME_Risk`. Still a typo, still refused.
+
+    `test_a_bad_prefix_is_refused_and_reprompted` already scripts a refused
+    answer containing interior spaces (`"has a space"`), so this is
+    deliberately redundant with it: dropping the whitespace-only refusal
+    above must not quietly drop the interior-whitespace one too, and a
+    second test naming that case explicitly is cheaper than trusting the
+    other test's string to keep meaning what it means.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        ["risk-register", "AC ME_", "RR_", str(destination),
+         "https://contoso.sharepoint.com/sites/x", "n", "y"],
+    )
+    assert wizard.run_wizard(console) == 0
+    assert "cannot contain whitespace" in _collapsed(console)
+
+
+def test_guidance_indents_every_wrapped_line() -> None:
+    """`_guidance`'s hanging indent is pinned here, not by any caller.
+
+    Every other assertion in this file reads through `_collapsed`, which
+    normalises whitespace -- so a `_guidance` that reverted to a literal
+    `f"  {text}"` indent (correct on the first line only, per the function's
+    own MEASURED docstring note) would be invisible to the rest of the
+    suite: the words would still all be there, just wrapped wrong. This
+    renders directly at a width narrow enough to force a wrap and reads the
+    RAW text, unjoined, because joining it is exactly what would hide the
+    regression.
+    """
+    console = ScriptedConsole([], width=20)
+    wizard._guidance(
+        console,
+        "A prefix keeps these lists from colliding with others on the site.",
+    )
+    lines = [line for line in console.text.splitlines() if line.strip()]
+    assert len(lines) > 1, "the text must actually wrap to prove anything"
+    assert all(line.startswith("  ") for line in lines), lines
 
 
 def test_a_number_outside_the_table_reprompts_rather_than_indexing(
@@ -1150,9 +1279,19 @@ def _review(console: ScriptedConsole) -> str:
     `research-review` family added later would move the bound to the top of
     the table and silently re-widen every assertion below to the whole
     transcript. That is a test that stops checking without failing, which is
-    the failure this repository exists to close; `rsplit` after cutting at
-    the right-hand bound cannot do it, because the LAST `Review` before the
-    confirmation is always the panel's own title.
+    the failure this repository exists to close.
+
+    `rsplit` after cutting at the right-hand bound can only narrow that
+    slice, NEVER widen it past the title -- it binds to the LAST `Review` at
+    or before the confirmation, which is at or after the panel's own title
+    line. It is not guaranteed to land exactly ON the title line: MEASURED
+    2026-08-12, on a template titled `Design Review, Next steps`, the word
+    `Review` occurs again INSIDE the panel's own Template row, and `rsplit`
+    binds to THAT occurrence instead -- narrowing the slice and amputating
+    the Template row rather than widening past the title. Narrowing is the
+    safe direction: it makes a `row in panel` assertion fail loudly, rather
+    than passing on a bound that has silently widened to swallow the
+    transcript above it.
     """
     head, _, _ = _collapsed(console).partition("Write the project")
     return head.rsplit("Review", 1)[1]
@@ -1237,10 +1376,20 @@ def test_the_panel_bounds_survive_a_template_named_after_a_panel(
     failure this repository exists to close, so the offending template is
     invented here rather than waited for.
 
-    The assertions are EXCLUSIONS, and they have to be: a widened bound still
-    contains every row the panel does, so `"Build ..." in panel` passes
-    either way. Only "the prompts above the panel are NOT in it" separates a
-    bound that holds from one that has quietly swallowed the screen.
+    The EXCLUSION assertions are what catch a bound that has widened: a
+    widened bound still contains every row the real panel does, so
+    `"Build ..." in review` passes whether or not the bound holds -- only
+    "the prompts above the panel are NOT in it" separates a bound that holds
+    from one that has quietly swallowed the screen.
+
+    The positive assertions (`"Build yes, site role default" in review`) are
+    NOT redundant with those, and must not be deleted as if they were: they
+    are the ONLY guard against the opposite failure, a bound that has
+    NARROWED to nothing. An empty string contains no substring, so every
+    exclusion assertion above would pass trivially against a `_review` or
+    `_next` that returned `""` -- the positive assertion is what proves the
+    slice found the panel's real content, not merely the absence of what it
+    should not contain.
     """
     solution = replace(
         _fake_family(tmp_path / "fake"),
@@ -1260,6 +1409,7 @@ def test_the_panel_bounds_survive_a_template_named_after_a_panel(
     review = _review(console)
     assert "Build yes, site role default" in review
     assert "Project directory" not in review
+    assert "Write the project" not in review
 
     closing = _next(console)
     assert "Paste build/deploy.js.txt" in closing

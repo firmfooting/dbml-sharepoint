@@ -210,8 +210,12 @@ def _describe(console: Console, solution: Solution) -> None:
     # `detail`, not `summary`: `summary` is capped at `_SUMMARY_MAX` so it
     # fits the table cell above, and reusing it here cut risk-register's
     # sentence at `...SharePoint calculates Resi...`.
+    #
+    # Routed through `_guidance`, not printed with a hand-written indent:
+    # this was the only dim block on screen that still wrapped to column 0,
+    # once `_ask_prefix` picked up the same helper for its own guidance line.
     if solution.detail:
-        console.print(f"  [dim]{solution.detail}[/dim]\n")
+        _guidance(console, solution.detail)
 
 
 def _guidance(console: Console, text: str) -> None:
@@ -226,9 +230,10 @@ def _guidance(console: Console, text: str) -> None:
     line of the block sits at the same column and the block reads as one
     thing rather than as prose that fell out of its own indent.
 
-    Shared, because there are two of these today and `_ask_prefix` gains a
-    third. A guidance line that indents differently from its neighbours is a
-    worse defect than one that does not indent at all, since it reads as
+    Shared across every dim block in the wizard: the reporting and seed
+    guidance, `_ask_prefix`'s own guidance line, and `_describe`'s detail
+    sentence. A guidance line that indents differently from its neighbours is
+    a worse defect than one that does not indent at all, since it reads as
     though it belongs to something else.
 
     Callers pass ONE unbroken string: line breaks are rich's to choose, and
@@ -267,17 +272,41 @@ def _ask_destination(console: Console, solution: Solution) -> Path:
 
 
 def _ask_prefix(console: Console, solution: Solution) -> str:
+    """The prefix this template's lists will carry. Blank is an answer.
+
+    Blank means "no prefix" -- the lists are named exactly as the template
+    declares them -- exactly as blank means "enrol nobody" in
+    `_ask_enterprise_reader`. This used to loop until the answer was
+    non-empty, which made the wizard the only thing in the project requiring
+    a prefix: no validator rule asks for one, and MEASURED 2026-08-12 a
+    mapping with `prefix: ""` builds and emits `"Risk"` as the list title
+    throughout deploy.js.txt.
+
+    The prefix is a governance device -- you register yours so nobody else
+    takes it, which is what `prefix_owner` and `prefix_registry` record --
+    and it is on its way out. Making blank answerable means removing it is a
+    change to the templates, not to this file.
+
+    `_PREFIX_REJECTED` still applies to a non-blank answer: a prefix of " "
+    would name a list " Risk", which is a typo, not a decision.
+    """
+    _guidance(
+        console,
+        "A prefix keeps these lists from colliding with others on the same "
+        "site. Blank names them exactly as the template declares them.",
+    )
     while True:
         prefix = Prompt.ask(
             "[bold]List name prefix[/bold]",
             default=solution.prefix,
             console=console,
         ).strip()
-        if prefix and not _PREFIX_REJECTED.search(prefix):
+        if not prefix or not _PREFIX_REJECTED.search(prefix):
             return prefix
         console.print(
-            "[red]A prefix cannot be empty or contain whitespace or any of "
-            '[/red][bold]/ \\ : * ? " < > |[/bold][red].[/red]',
+            "[red]A prefix cannot contain whitespace or any of "
+            '[/red][bold]/ \\ : * ? " < > |[/bold][red]. '
+            "Leave it blank for no prefix.[/red]",
         )
 
 
@@ -816,10 +845,12 @@ def _run(console: Console) -> int:
     console.rule("Template")
     solution = _pick_solution(console, solutions)
     _describe(console, solution)
-    # Unconditional here. Task 7 makes the prefix optional and gates this
-    # call on `solution.prefix`; keeping the two changes apart keeps this
-    # task's diff about the SEQUENCE and nothing else.
-    prefix = _ask_prefix(console, solution)
+    # A template declaring no prefix has one possible answer to this
+    # question, and a question with one possible answer is not a question --
+    # the same gate `_run` applies to the reporting and demo-rows prompts
+    # below. `_describe` above is then the only place the operator learns
+    # what their lists will be called before the Review panel names them.
+    prefix = _ask_prefix(console, solution) if solution.prefix else ""
     choice = TemplateChoice(solution, prefix)
 
     try:
