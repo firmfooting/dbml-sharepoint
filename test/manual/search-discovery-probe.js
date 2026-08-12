@@ -1,21 +1,27 @@
 /**
  * dbml-sharepoint PROBE — SEARCH AS A FLEET DISCOVERY MECHANISM
  *
- * STATUS: RUN ONCE, on ONE live site — 2026-08-12, probe revision 1c65a683,
- * pasted BY THE REPORTING SERVICE ACCOUNT, read-only (ALLOW_WRITES off) with
- * RUNNING_AS_READER = true. S1-S9 ANSWERED. S10 REFUSED — correctly, and for
- * a reason nobody had anticipated. S11/S12 unmet prerequisite, unchanged.
+ * STATUS: RUN TWICE, both on 2026-08-12, both BY THE REPORTING SERVICE
+ * ACCOUNT, both read-only (ALLOW_WRITES off) with RUNNING_AS_READER = true,
+ * on two DIFFERENT sites. S1-S10 ANSWERED. S11/S12 still NOT ESTABLISHED.
  *
- * THE RUN LANDED ON THE ACCOUNT'S OWN ONEDRIVE rather than on a register
- * site. Read "WHERE THE 2026-08-12 RUN WAS PASTED" below before quoting
- * anything from it: it changes what S10 means and what the sites in the
- * result set mean, and it is why RUN A has to be repeated.
+ *   RUN 1 — probe revision 1c65a683, pasted ON THE ACCOUNT'S OWN ONEDRIVE
+ *   rather than on a register site. S1-S9 answered. S10 REFUSED, correctly,
+ *   and for a reason nobody had anticipated: a user is ALWAYS site
+ *   collection administrator of their own OneDrive, so IsSiteAdmin came
+ *   back true and carried no information about privilege at all.
+ *
+ *   RUN 2 — probe revision ac2ea2a0, pasted ON A REGISTER SITE, which is
+ *   the configuration RUN A was always meant to use. IsSiteAdmin came back
+ *   FALSE. S10 IS ANSWERED, and it is the central question of this file.
+ *   S9's interval closed from above. And S11 exposed a defect in its own
+ *   prerequisite, since fixed — see the S11/S12 section.
  *
  * Everything this block does not list is still NOT ESTABLISHED. Do not cite
  * a row it does not say was measured, and do not let a plausible-sounding
  * expectation in a comment be read as a result.
  *
- * ---- WHAT THE 2026-08-12 RUN MEASURED ---------------------------------
+ * ---- WHAT RUN 1 MEASURED (2026-08-12, on the account's OneDrive) -------
  *   S1  CONTROL HELD. `_api/search/query` answered this caller: a trivial
  *       query came back with a reported TotalRows in the low thousands. So
  *       the rows below are about the questions they asked rather than about
@@ -60,17 +66,78 @@
  *   S9  CRAWL LATENCY IS GREATER THAN ~2.4 HOURS, AND THAT IS A LOWER BOUND
  *       ONLY. A list created about 2.4 hours before the run was NOT in the
  *       index at run time. That bounds latency FROM BELOW and says nothing
- *       about how much longer than 2.4 hours it is. A SECOND RUN — this
- *       same file, unchanged, quoting both timestamps — is what closes the
- *       interval. Anyone quoting "2.4 hours" as the latency is quoting the
- *       bound as the value.
+ *       about how much longer than 2.4 hours it is. Run 2 supplied the
+ *       upper bound; see below. Anyone quoting "2.4 hours" as the latency
+ *       is quoting the bound as the value.
  *   S10 NOT ESTABLISHED, and the refusal was RIGHT. See the next section.
+ *       Run 2 answered it.
  *   S11 NOT ESTABLISHED, and S12 with it: unmet prerequisite, unchanged.
  *       PAGING_FIXTURE_LIST is not on the site that was pasted into. Both
  *       still need the operator run, RUN B.
  *   S6  Did not run: ALLOW_WRITES was off.
  *
- * ---- WHERE THE 2026-08-12 RUN WAS PASTED, AND WHY IT MATTERS ----------
+ * ---- WHAT RUN 2 MEASURED (2026-08-12, on a register site) -------------
+ * SAME ACCOUNT, SAME FLAG, DIFFERENT SITE — and that is the whole point of
+ * the repeat. Read it alongside run 1 rather than instead of it: the two
+ * corroborate each other where they overlap, and only run 2 can speak to
+ * S10.
+ *
+ *   S10 ANSWERED, AND IT IS THE CENTRAL QUESTION OF THIS PROBE.
+ *       `IsSiteAdmin` came back FALSE, so the caller really was the
+ *       list-only reporting identity: not a member of any site, holding
+ *       Read at list scope plus whatever Limited Access SharePoint derives
+ *       at web scope. The endpoint SERVED it and it RETURNED ROWS.
+ *       PERMISSION-TRIMMED DISCOVERY IS REACHABLE FROM LEAST PRIVILEGE on
+ *       this tenant. That is the finding the design was waiting for.
+ *       AND IT IS ONE ACCOUNT, ONE SITE, ONE MOMENT. It is a data point,
+ *       not a rule about SharePoint trimming, and the probe's own caveat
+ *       travels with it wherever it is quoted.
+ *   S4  THE READER FOUND ITS OWN GRANTED LIST BY TITLE. Run as this
+ *       identity, all three query variants returned exactly ONE row for the
+ *       sought title, character for character, with zero non-matching rows.
+ *       That is the discovery mechanism working END TO END under the
+ *       configuration the design would actually ship. The tokenisation
+ *       caveat from run 1 is UNCHANGED — this tenant still holds no title
+ *       that is a prefix of another — so this says the mechanism works
+ *       here, not that title matching is exact.
+ *   S1  S2  S7  S8  SAME TOTALS AS RUN 1, AND THAT IS THE EXPECTED RESULT.
+ *       STS_List reported 1665, STS_Site 36, and the trivial control query
+ *       1645 — identical to run 1, from a different pasting site. Search
+ *       trims on the IDENTITY, not on the site the console was opened on,
+ *       so identical totals across two sites is what should happen. It
+ *       corroborates both runs rather than adding a new fact.
+ *   S9  CRAWL LATENCY IS NOW BOUNDED ON BOTH SIDES: somewhere between
+ *       roughly 2.4 AND 15 HOURS on this tenant. A list created 15.0 hours
+ *       before run 2 WAS present in the index.
+ *       READ IT AS AN INTERVAL ESTIMATE, NOT AS A MEASUREMENT. The two
+ *       bounds come from TWO DIFFERENT LISTS — one absent at ~2.4 hours in
+ *       run 1, a different one present at 15.0 hours in run 2 — so nothing
+ *       here tracked a single list's journey into the index. The true
+ *       latency for any one list may sit anywhere in that band or outside
+ *       it; what is established is that this tenant does crawl new lists
+ *       within a working day, and does not do it within a couple of hours.
+ *   S11 STILL NOT ESTABLISHED, and S12 with it — but for a reason worth
+ *       recording, because the row as written would have reported it as a
+ *       platform catastrophe. See the next section but one.
+ *   S6  Did not run: ALLOW_WRITES was off.
+ *
+ * ---- THE BREADTH OF THE TRIMMED SET IS A DESIGN CONSTRAINT ------------
+ * The reader's own view spanned MANY SITES — intranet and hub content, and
+ * another user's personal site. Almost certainly because that content is
+ * readable by ANY AUTHENTICATED USER on this tenant.
+ *
+ * RECORD IT NEUTRALLY. It is NOT evidence that the reader tier leaks, and
+ * it is not evidence that it does not: THIS PROBE CANNOT TELL "BROADLY
+ * READABLE" FROM "OVER-GRANTED". Only whoever made the grants can. Saying
+ * more than that from a result set would be inventing a security finding.
+ *
+ * WHAT IT DOES ESTABLISH IS A REQUIREMENT, and it is hard: A BARE
+ * `contentclass:STS_List` QUERY IS NOWHERE NEAR "OUR" LISTS. Fleet
+ * discovery MUST be constrained by something specific — a planted marker
+ * token, an exact title, or a path prefix — and must never treat what a
+ * bare query returns as the fleet.
+ *
+ * ---- WHERE RUN 1 WAS PASTED, AND WHY IT MATTERS -----------------------
  * ON THE SERVICE ACCOUNT'S OWN ONEDRIVE — a personal site, on the `-my.`
  * host under a `/personal/<account>` path — and NOT on a register site it
  * had been granted lists on. A USER IS ALWAYS SITE COLLECTION ADMINISTRATOR
@@ -86,24 +153,10 @@
  * sent the operator hunting a privilege problem that does not exist. It now
  * detects a personal site and says which of the two cases it is in.
  *
- * RUN A THEREFORE HAS TO BE REPEATED, on a NON-PERSONAL site where the
- * reporting account is not an administrator. See HOW TO RUN.
- *
- * ---- AN OBSERVATION ABOUT THE RESULT SET, NOT A COMPLAINT --------------
- * The rows spanned MANY SITES THE ACCOUNT WAS NEVER DELIBERATELY GRANTED:
- * intranet and hub content that is broadly readable by any authenticated
- * user on this tenant.
- *
- * THAT IS EXPECTED, AND IT IS NOT EVIDENCE THE READER TIER LEAKS. Broadly
- * readable content is readable by a reader — that is what "broadly
- * readable" means — and none of it was granted by this feature.
- *
- * What it DOES mean is a design constraint, and it is a hard one: A BARE
- * `contentclass:STS_List` QUERY IS NOT SELF-LIMITING. What comes back is
- * not "our lists"; it is everything this identity may see, which on a real
- * tenant is very much more. Fleet discovery must CONSTRAIN the query by
- * something specific — an exact title, a planted marker token, a path
- * prefix — and must never treat the rows it gets back as the fleet.
+ * RUN A WAS THEREFORE REPEATED, on a NON-PERSONAL register site where the
+ * reporting account is not an administrator. That is run 2, above, and it
+ * is where S10's answer comes from. This section is kept because the trap
+ * is easy to fall into again — see HOW TO RUN.
  *
  * IT IS NOW MEANT TO BE PASTED BY THE REPORTING SERVICE ACCOUNT, not by an
  * operator. This file was written assuming the opposite, and the change is
@@ -196,9 +249,9 @@
  *     and a full crawl or reindex after changing it.
  *
  * ---- WHAT IS *NOT* ESTABLISHED, AND IS THE POINT OF THIS FILE ----------
- * THE ORIGINAL FIVE UNKNOWNS, ANNOTATED WITH WHAT THE 2026-08-12 RUN DID
- * AND DID NOT CLOSE. They are kept rather than deleted, because the shape
- * of the question is what makes the answer readable.
+ * THE ORIGINAL FIVE UNKNOWNS, ANNOTATED WITH WHAT THE TWO 2026-08-12 RUNS
+ * DID AND DID NOT CLOSE. They are kept rather than deleted, because the
+ * shape of the question is what makes the answer readable.
  *
  *   1. That `contentclass:STS_List` enumerates LISTS at all. Learn samples
  *      STS_Site. It says nothing here about STS_List.
@@ -214,23 +267,27 @@
  *      lists are ours without relying on titles.
  *      HALF CLOSED 2026-08-12 — Description IS crawled and returned (S5).
  *      Whether a token in one is EXACT-matchable is S6 and is still open;
- *      it needs the two-paste procedure and a crawl interval bounded below
- *      by S9's >2.4 hours.
+ *      it needs the two-paste procedure and a crawl interval now bracketed
+ *      by S9 at roughly 2.4 to 15 hours, so plan the second paste for the
+ *      next day rather than the same afternoon.
  *   4. Whether ANY of it is reachable by the reporting service account —
  *      the identity the whole design would run as. See the STATUS block.
- *      CLOSED FOR THE ENDPOINT, OPEN FOR THE GRANT — the account was served
- *      by search (S1), but the run was pasted on its own OneDrive, so
- *      whether a LIST-SCOPED GRANT makes a register list discoverable is
- *      exactly what the repeat of RUN A has to answer.
+ *      CLOSED 2026-08-12 BY RUN 2 — pasted on a register site, IsSiteAdmin
+ *      false, the endpoint served the account and returned rows, and the
+ *      list it had been granted came back by title (S10, S4). A LIST-SCOPED
+ *      GRANT IS ENOUGH TO MAKE A LIST DISCOVERABLE, on this tenant, for
+ *      this account, at this moment.
  *   5. Whether SharePoint REST on this tenant emits a SERVER-DRIVEN
  *      continuation at all. Unrelated to search; see the paging section
  *      below for why it is asked here.
- *      STILL OPEN — S11/S12 had an unmet prerequisite on the 2026-08-12
- *      run and need RUN B.
+ *      STILL OPEN — S11/S12 had an unmet prerequisite on BOTH 2026-08-12
+ *      runs and need RUN B, pasted by an operator who can read the
+ *      fixture's ITEMS and not merely its metadata.
  *
- * And one unknown the run ADDED, which nobody had written down: whether a
+ * And one unknown the runs ADDED, which nobody had written down: whether a
  * discovery query can be constrained tightly enough to return only the
- * fleet. See the observation about the result set in the STATUS block.
+ * fleet. Run 2 turned that from a question into a REQUIREMENT — see "the
+ * breadth of the trimmed set" in the STATUS block.
  *
  * ---- THE ONE RULE THIS FILE IS BUILT AROUND ---------------------------
  * A measurement's inputs and its outputs are different kinds of value.
@@ -300,8 +357,11 @@
  *   S11 SERVER-DRIVEN PAGING, measured against a 6,000-row fixture that
  *       already exists. Reads that list's items with NO `$top` at all and
  *       records how many rows came back and whether a continuation link
- *       came with them. See the paging section below for what this does
- *       and does not settle.
+ *       came with them. Guarded by a PREREQUISITE that asks whether this
+ *       caller can see ANY item in the fixture, because a trimmed caller
+ *       and a truncating server look identical from a row count alone.
+ *       See the paging section below for what this does and does not
+ *       settle, and who should run it.
  *   S12 Follows that link once, and records whether the second page holds
  *       DIFFERENT rows — because a second page that repeats the first
  *       would look like paging and would not be.
@@ -315,6 +375,10 @@
  *       answer and a fabricated one.
  *
  * ---- S10: TWO RUNS, TWO MEANINGS, AND ONLY ONE OF THEM IS AN ANSWER ----
+ * ANSWERED ON 2026-08-12 BY RUN 2, and this section is kept because it is
+ * what makes that answer readable. The first branch below is the one run 1
+ * hit; the last is the one run 2 hit.
+ *
  * PASTED BY A PRIVILEGED ACCOUNT, S10 IS NOT ANSWERABLE. Trimming cannot
  * be demonstrated by an account that can see everything: a trimmed result
  * and an untrimmed result ARE IDENTICAL to such a caller — both return
@@ -332,6 +396,7 @@
  *   - Rows come back. Search-driven, permission-trimmed discovery is
  *     REACHABLE from least privilege on this tenant, and the rows say
  *     which sites and lists reached it.
+ *     THIS IS THE OUTCOME RUN 2 OBSERVED, 2026-08-12.
  *   - Zero rows, endpoint answering. The mechanism is reachable and the
  *     account sees nothing through it — which would mean granting list
  *     Read is not enough to make a list discoverable, and the design needs
@@ -351,7 +416,7 @@
  * privileged result set as a least-privilege measurement.
  *
  * AND IsSiteAdmin MEANS TWO DIFFERENT THINGS DEPENDING ON THE SITE, which
- * the 2026-08-12 run found out the hard way. A USER IS ALWAYS SITE
+ * run 1 found out the hard way. A USER IS ALWAYS SITE
  * COLLECTION ADMINISTRATOR OF THEIR OWN ONEDRIVE. So on a PERSONAL site —
  * the `-my.` host, a `/personal/<account>` path — IsSiteAdmin=true is
  * universal and expected, and it is NOT evidence of privilege of any kind.
@@ -395,6 +460,34 @@
  * is already known to truncate silently. So S11 records the row count, the
  * list's ItemCount and the link's presence as three separate observations
  * and draws no conclusion from the absence of the third.
+ *
+ * RUN THESE TWO AS AN OPERATOR WHO CAN READ THE FIXTURE'S ITEMS. S11 and
+ * S12 are IDENTITY-INDEPENDENT PLATFORM QUESTIONS — whether the server
+ * emits a continuation token when it truncates does not depend on who
+ * asked — so the reporting account is simply the wrong identity to ask
+ * them from, and asking anyway produces a row that looks like a platform
+ * finding and is not. This is RUN B; see HOW TO RUN.
+ *
+ * ---- THE S11 PREREQUISITE DEFECT, FOUND AND FIXED 2026-08-12 ----------
+ * ITEMCOUNT IS NOT A PREREQUISITE FOR READING ITEMS, and S11 used to treat
+ * it as one. Run 2 read the fixture's ItemCount as 5614, requested its
+ * items with no `$top`, and got 0 ROWS, HTTP 200, NO CONTINUATION LINK, on
+ * both OData flavours. As the row was written that would have been filed —
+ * and quoted — as CATASTROPHIC SILENT TRUNCATION.
+ *
+ * IT ALMOST CERTAINLY WAS NOT. SharePoint trims the LIST-ITEMS collection
+ * PER ITEM, and run 2's caller was the reporting service account, which
+ * holds no grant on a development fixture. ZERO VISIBLE ITEMS IS THE
+ * CORRECT AND EXPECTED OUTCOME for that caller. `ItemCount` is LIST
+ * METADATA and reads back without any item access at all, so the
+ * prerequisite passed on a signal that does not imply the caller can see a
+ * single row.
+ *
+ * Two changes, both in the code below. The prerequisite now asks the
+ * question directly — can this caller see ANY item here, one is enough —
+ * and a caller who cannot is an unmet PREREQUISITE, not a result. And a
+ * zero-row read is never recorded as a truncation finding: it records NOT
+ * ESTABLISHED with item-level trimming named as the leading hypothesis.
  *
  * ---- S6: TWO WARNINGS -------------------------------------------------
  * FIRST: THIS CREATES A LIST. One list, on the site you pasted into,
@@ -444,18 +537,25 @@
  *   continuation token when it truncates a 6,000-row read. The identity is
  *   IRRELEVANT to that. An operator measures it exactly as well.
  *
+ *   S11 AND S12 MUST BE RUN BY AN OPERATOR WHO CAN READ THE FIXTURE'S
+ *   ITEMS, not merely reach the list. SharePoint trims list items PER ITEM,
+ *   so a caller with no grant on them is served an empty collection at HTTP
+ *   200 — which is correct for that caller and says NOTHING about paging.
+ *   Run 2 on 2026-08-12 hit exactly that; the row now detects it and
+ *   reports an unmet prerequisite instead of a truncation finding.
+ *
  *   RUN A -- as the REPORTING SERVICE ACCOUNT, on a site holding lists it
  *   has actually been granted. Set RUNNING_AS_READER = true and point
  *   LIST_TITLE at one of those granted lists. S11/S12 will report an unmet
- *   prerequisite because that account cannot read the paging fixture. THAT
- *   IS CORRECT, not a failure -- take S1-S10 from this run.
+ *   prerequisite because that account cannot read the paging fixture's
+ *   items. THAT IS CORRECT, not a failure -- take S1-S10 from this run.
  *
  *   RUN A MUST BE PASTED ON A SITE WHERE THE REPORTING ACCOUNT IS NOT AN
  *   ADMINISTRATOR -- i.e. one of the REGISTER SITES it was granted lists
  *   on. Navigate to that site's URL explicitly and check the address bar
  *   before pasting.
  *
- *   THE TRAP, and it is the one that swallowed the 2026-08-12 run: OPENING
+ *   THE TRAP, and it is the one that swallowed run 1 on 2026-08-12: OPENING
  *   THE MICROSOFT LISTS APP LANDS ON THE ACCOUNT'S OWN ONEDRIVE. The URL is
  *   on the `-my.` host under `/personal/<account>`, it looks like a
  *   perfectly ordinary SharePoint site, and A USER IS ALWAYS SITE
@@ -464,10 +564,11 @@
  *   there, because search trims on the IDENTITY rather than on the site
  *   pasted into; S10 is the row that needs the right site.
  *
- *   RUN B -- as an OPERATOR, on the site holding PAGING_FIXTURE_LIST. Leave
- *   RUNNING_AS_READER = false. The search rows will show an untrimmed view
- *   and S10 will say so rather than claiming an answer -- take S11/S12 from
- *   this run.
+ *   RUN B -- as an OPERATOR WHO CAN READ THE ITEMS OF PAGING_FIXTURE_LIST,
+ *   on the site holding it. Leave RUNNING_AS_READER = false. The search
+ *   rows will show an untrimmed view and S10 will say so rather than
+ *   claiming an answer -- take S11/S12 from this run. STILL OUTSTANDING as
+ *   of 2026-08-12: both 2026-08-12 runs were RUN A.
  *
  *   DO NOT GRANT THE READER ACCESS TO THE PAGING FIXTURE to collapse this
  *   into one run. It would not make the paging answer any truer, because
@@ -694,7 +795,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision ac2ea2a0 — quote this when reporting results.');
+  log('INFO', 'probe revision c0c47549 — quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // NO SITE URL, deliberately — see the harness.
@@ -1563,9 +1664,35 @@
       + 'error (2026-07-31). This tenant is already known to truncate silently, so the row count, the '
       + 'ItemCount and the link are three separate observations here and no conclusion is drawn from '
       + 'the absence of the third.';
+    // ADDED 2026-08-12 — see "THE S11 PREREQUISITE DEFECT" in the docblock.
+    const TRIMMING_NOTE = 'SHAREPOINT TRIMS THE LIST-ITEMS COLLECTION PER ITEM, so a caller holding no '
+      + 'grant on this fixture\'s items is served an EMPTY collection at HTTP 200. That is the CORRECT '
+      + 'outcome for such a caller and not a platform defect. ItemCount is LIST METADATA and reads back '
+      + 'without any item access at all, so it cannot stand in for "this caller can see items".';
+    const OPERATOR_NOTE = 'RUN S11 AND S12 AS AN OPERATOR WHO CAN READ THIS FIXTURE\'S ITEMS. They are '
+      + 'IDENTITY-INDEPENDENT platform questions — whether the server offers a continuation token when it '
+      + 'truncates does not depend on who asked — so the reporting service account is the wrong identity '
+      + 'to ask them from. That is RUN B; see HOW TO RUN in the docblock.';
 
     const listRef = `web/lists/getbytitle('${odataLiteral(PAGING_FIXTURE_LIST)}')`;
     const fixture = await spGet(`${listRef}?$select=Title,ItemCount`);
+
+    // THE PREREQUISITE THIS ROW ACTUALLY NEEDS, AND `ItemCount` IS NOT IT.
+    // ADDED 2026-08-12, after run 2 read ItemCount=5614 and then got zero
+    // rows back at HTTP 200 with no continuation link on both flavours —
+    // which the row below would have filed as catastrophic silent
+    // truncation. It was almost certainly nothing of the kind: that caller
+    // was the reporting account, which holds no grant on a development
+    // fixture, and items are trimmed per item.
+    //
+    // So ask directly: can this caller see ANY item here? One is enough.
+    // `$top=1` is legitimate HERE and nowhere else in this block, because
+    // this is not the paging measurement — it is the check that the paging
+    // measurement means anything at all.
+    const visible = readFailed(fixture) ? null : await spGet(`${listRef}/items?$top=1&$select=Id`);
+    const visibleRows = (visible !== null && !readFailed(visible) && Array.isArray(visible.body.value))
+      ? visible.body.value.length : null;
+
     if (readFailed(fixture)) {
       // PREREQUISITE, NEVER A FINDING. A list that is absent, renamed or
       // unreadable by this caller cannot say anything about paging, and
@@ -1577,6 +1704,20 @@
         + 'HOLDS IT, or point PAGING_FIXTURE_LIST at another large list and say which. THIS IS NOT '
         + '"paging does not work"; nothing was measured.';
       record('S11', S11_Q, 'NOT ESTABLISHED (prerequisite: the fixture list could not be read)', why);
+      record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
+    } else if (visibleRows === null || visibleRows === 0) {
+      // PREREQUISITE, NEVER A FINDING — and this is the branch that stops a
+      // trimmed caller producing a truncation verdict.
+      const why = `the fixture list ${JSON.stringify(PAGING_FIXTURE_LIST)} was reachable — it reports `
+        + `ItemCount=${JSON.stringify(fixture.body.ItemCount)} — but THIS CALLER CANNOT READ ITS ITEMS. `
+        + `${visibleRows === null
+             ? `A one-item read did not return an item collection: ${httpDetail(visible)}`
+               + `${privilegeNote(visible)}`
+             : 'A one-item read came back with ZERO items.'}\n`
+        + `      ${TRIMMING_NOTE} So the plain reading is that this caller simply has NO GRANT on this `
+        + 'fixture\'s items. NOTHING ABOUT PAGING WAS MEASURED, and the 6,000-row read was not even '
+        + `attempted.\n      ${OPERATOR_NOTE}\n      ${SCOPE_NOTE}`;
+      record('S11', S11_Q, 'NOT ESTABLISHED (prerequisite: this caller cannot read the fixture\'s items)', why);
       record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
     } else {
       const itemCount = fixture.body.ItemCount;
@@ -1635,7 +1776,22 @@
         const returned = (verboseRows === null ? nometaRows : verboseRows).length;
         const wholeList = Number.isInteger(itemCount) && returned >= itemCount;
 
-        if (wholeList) {
+        if (returned === 0) {
+          // BELT AND BRACES. The prerequisite above should already have
+          // caught this, but a zero-row read must NEVER reach the truncation
+          // wording by any path — that is the whole defect this fixes, and a
+          // caller whose one-item read succeeded while the full read came
+          // back empty is stranger still, not more conclusive.
+          record('S11', S11_Q, 'NOT ESTABLISHED (zero items came back — this caller may see none of them)',
+                 `${JSON.stringify(PAGING_FIXTURE_LIST)} reports ItemCount=${JSON.stringify(itemCount)} and `
+                 + 'the no-$top read returned ZERO rows. THIS IS NOT A TRUNCATION FINDING and must not be '
+                 + `quoted as one.\n      THE LEADING HYPOTHESIS IS ITEM-LEVEL TRIMMING. ${TRIMMING_NOTE} `
+                 + 'Said plainly: THIS CALLER MAY SIMPLY HAVE NO GRANT ON THIS FIXTURE\'S ITEMS, and an '
+                 + 'empty page with no continuation link is exactly what that looks like.\n'
+                 + `      ${perFlavour}\n      ${OPERATOR_NOTE}\n      ${SCOPE_NOTE}\n      ${TRUNCATION_NOTE}`);
+          record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)',
+                 'S11 got no items back, so there is no page to continue from; see its row.');
+        } else if (wholeList) {
           // The server never had to page, so an absent link is expected and
           // says nothing. Recording it as a finding is the mistake the
           // 2026-08-11 enterprise-reader run made and had to withdraw.
