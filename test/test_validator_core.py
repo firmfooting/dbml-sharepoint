@@ -1826,6 +1826,109 @@ def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
     assert "400" in finding.message
 
 
+@pytest.mark.parametrize(
+    ("note", "named"),
+    [
+        ("Risks and issues R&D is carrying.", "an ampersand"),
+        ("Risks this team is carrying.\nOne row per risk.", "a line break"),
+        ("Risks this team is carrying.\r\nOne row per risk.", "a line break"),
+    ],
+    ids=["ampersand", "newline", "carriage-return"],
+)
+def test_a_note_whose_round_trip_is_unproven_is_refused(
+    note: str, named: str,
+) -> None:
+    """The build-time half of a restriction the docs used to state as prose.
+
+    `_field_reconcile.js.j2` writes the list Description, reads it back and
+    compares byte for byte, and that the value survives unchanged is an
+    INFERENCE from the field case rather than a measurement. An author who
+    writes `&` and finds out at deploy time finds out part-way through a
+    paste, against a half-provisioned site, on every re-paste forever. Prose
+    in `dbml.md` asking nicely was the whole enforcement until this rule.
+
+    `\\r` is parametrised separately because a DBML file saved with CRLF
+    endings carries one on its own, and a rule matching only `\\n` would pass
+    a note the reconcile could still trip over.
+    """
+    finding = only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note=note)),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.ENTITIES, entity="Risk")
+    assert named in finding.message
+    # The message has to carry the WHY, not just the what: an author told only
+    # "no ampersands" reads it as a house style and works around it once,
+    # rather than understanding that the rule lifts on evidence.
+    assert "INFERRED" in finding.message
+    assert "test/manual/" in finding.message
+
+
+def test_the_unproven_character_rule_names_a_remedy_for_each_character() -> None:
+    """A note carrying BOTH offenders is told about both, once.
+
+    `\\n` and `\\r` share the name "a line break", so a message assembled
+    without de-duplicating would list it twice on a CRLF note -- "an
+    ampersand and a line break and a line break". Asserted here rather than
+    left to the parametrised cases above, none of which can see it.
+
+    The opening clause is matched whole rather than by counting the phrase
+    over the message: the explanation further down uses "a line break" too,
+    and a count would be asserting about prose that is free to be reworded.
+    """
+    finding = only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note="Risk & issues.\r\nOne per row.")),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+    assert "contains an ampersand and a line break, and" in finding.message
+    assert 'write "and"' in finding.message
+    assert "keep the note to a single paragraph" in finding.message
+    # One remedy per offending character, not one per matching table row.
+    assert finding.message.count("keep the note to a single paragraph") == 1
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "Risks this team is carrying, and what is being done about each.",
+        # Stripped before the check, because that is what `list_description`
+        # composes with. A note indented inside its DBML block, or one whose
+        # closing quote sits on the next line, carries no line break into the
+        # Description and must not be refused for one.
+        "\n  Risks this team is carrying.\r\n",
+    ],
+    ids=["clean", "surrounding-whitespace-only"],
+)
+def test_a_note_with_nothing_unproven_in_it_is_accepted(note: str) -> None:
+    """The other side of the boundary. Without it, a rule that fired on every
+    note at all would pass every case above."""
+    none_of(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note=note)),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+
+def test_an_entity_with_no_table_is_not_told_about_its_notes_characters() -> None:
+    """Like the two note rules either side: `ENTITY_NOT_IN_SCHEMA` is the whole
+    story, and advice about prose in a table that does not exist is noise."""
+    none_of(
+        validate_against_mapping(make_schema(), make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+
 def test_a_note_that_exactly_fits_beside_the_marker_is_accepted() -> None:
     """The boundary is inclusive, and measured one character either side of it.
 

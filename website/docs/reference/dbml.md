@@ -103,12 +103,15 @@ rather than noise they learn to skip:
 - **Write for somebody who has just opened the list** and does not know
   the template, has not read this documentation, and was not in the room
   when it was chosen.
-- **Avoid `&` and newlines, and keep it to one paragraph.** Not a style
-  preference — byte-identical round-trip of a list Description is
+- **No `&`, no line breaks; keep it to one paragraph.** Enforced, not
+  advised: `entity_note_may_not_round_trip` is an **error**. Not a style
+  preference either — byte-identical round-trip of a list Description is
   *inferred*, not measured, and the reconcile compares what it wrote
-  against what came back. See [the reporting
-  pack](../artifacts/reporting.md#the-provenance-marker) for what that
-  costs if the inference is wrong. Write "and".
+  against what came back. If the inference is wrong, the deploy aborts
+  part-way through a paste and does so on every re-paste; see [the
+  reporting pack](../artifacts/reporting.md#the-provenance-marker). Write
+  "and". The rule lifts if a `test/manual/` probe measures the round trip
+  and finds it exact.
 
 The 31 shipped families are the worked examples — every
 `src/dbml_sharepoint/solutions/*/10-design/schema.dbml` carries one note

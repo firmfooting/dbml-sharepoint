@@ -80,6 +80,43 @@ _SUPPORTED_CALCULATED_OPERANDS = (
 # which refusing a specific list of templates would.
 _GENERIC_LIST_TEMPLATE = 100
 
+# Characters a table `Note:` may not contain, each with the name to call it in
+# a message and the thing to write instead.
+#
+# NOT A STYLE RULE, and not a claim about SharePoint either. It is a rule about
+# what this tool can PROVE. `reconcileListDescription` in
+# `templates/deploy/_field_reconcile.js.j2` writes the composed Description,
+# reads it straight back and compares it byte for byte -- and that the value
+# comes back unchanged is INFERRED from the long-standing field-description
+# case, not measured. Learn documents `SP.List.Description` as a plain
+# read/write string and says nothing about normalisation in either direction,
+# and no probe has been run. ValidationFormula is the standing proof that the
+# inference can be wrong: SharePoint demonstrably normalises those, which is
+# why `canonicalFormula` had to exist at all.
+#
+# `\r` earns its own entry rather than being folded into `\n`: a DBML file
+# saved with CRLF endings puts one in the note on its own, and a rule that
+# checked only `\n` would pass a note the reconcile could still trip over.
+#
+# WHY IT IS AN ERROR AT BUILD TIME. If a list Description IS normalised --
+# `&` returned as `&amp;`, a newline rewritten, a run of spaces collapsed --
+# then the read-back never matches what was sent and the deploy aborts. It
+# fails closed, which is the right failure, but it fails PART-WAY THROUGH A
+# PASTE against a partially provisioned site, and it does so on every re-paste
+# forever, with no way forward but re-authoring the schema. Refusing the note
+# here costs an author one word; the alternative strands an operator.
+#
+# TEMPORARY BY CONSTRUCTION. The restriction lifts the day a `test/manual/`
+# probe measures it: set a description containing a newline, an `&` and a run
+# of spaces, read it straight back, compare bytes. If it survives, delete this
+# rule and the note in `website/docs/reference/dbml.md`; if it does not, this
+# rule is what stopped it reaching a live site.
+_UNPROVEN_NOTE_CHARACTERS: tuple[tuple[str, str, str], ...] = (
+    ("&", "an ampersand", 'write "and"'),
+    ("\n", "a line break", "keep the note to a single paragraph"),
+    ("\r", "a line break", "keep the note to a single paragraph"),
+)
+
 
 def _no_room_for_any_note(family: str, entity_name: str) -> str:
     """The remedy to offer when the note budget is ZERO.
@@ -144,6 +181,56 @@ def _note_is_present(table: Table | None, entity_name: str, family: str) -> list
         f"{entity_name}: the table has no Note:, so this list deploys with "
         f"{marker_for(family, entity_name)!r} as its entire Description and "
         f"nothing telling an adopter what it holds. {remedy}",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
+
+def _note_round_trips(table: Table | None, entity_name: str) -> list[Finding]:
+    """Refuse a table `Note:` whose round trip through SharePoint is unproven.
+
+    See `_UNPROVEN_NOTE_CHARACTERS` for the whole argument. The short version:
+    the deploy writes the Description and compares the read-back byte for
+    byte, that comparison is an INFERENCE rather than a measurement, and a
+    character that does not survive turns every paste of the bundle into a
+    mid-deploy abort on a partially provisioned site. This rule moves that
+    failure to build time, where it costs an edit rather than a stranded
+    operator.
+
+    Measured against the STRIPPED note, because that is what
+    `list_description` composes with: a note that is merely indented, or that
+    ends with the newline before its closing quote, carries nothing into the
+    Description and must not be refused for it.
+
+    Skipped when the table is missing, like the two rules either side:
+    `ENTITY_NOT_IN_SCHEMA` is the whole story there.
+    """
+    if table is None:
+        return []
+    note = table.note.strip()
+    # `dict` rather than a set: it de-duplicates `\n` and `\r`, which share a
+    # name, while keeping the declaration order so the message is stable.
+    offenders = {
+        name: remedy
+        for char, name, remedy in _UNPROVEN_NOTE_CHARACTERS
+        if char in note
+    }
+    if not offenders:
+        return []
+    named = " and ".join(offenders)
+    remedy = "; ".join(dict.fromkeys(offenders.values()))
+    return [Finding(
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+        f"{entity_name}: the table's Note: contains {named}, and this tool "
+        f"cannot prove that survives the deploy. The list Description is "
+        f"written, read straight back and compared byte for byte -- but that "
+        f"it comes back unchanged is INFERRED from the field case, not "
+        f"measured, and Microsoft Learn documents no normalisation either "
+        f"way. If SharePoint returns `&` as `&amp;` or rewrites a line break, "
+        f"the comparison never matches and EVERY paste of this bundle aborts "
+        f"part-way through the deploy, against a site that is already half "
+        f"provisioned, with no way forward. Refused at build time so that "
+        f"cannot happen: {remedy}. The restriction lifts when a test/manual/ "
+        f"probe measures the round trip.",
         location=Location(Section.ENTITIES, entity=entity_name),
     )]
 
@@ -275,6 +362,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         findings += _note_fits_beside_marker(
             tables_by_name.get(entity_name), entity_name, family,
         )
+        findings += _note_round_trips(tables_by_name.get(entity_name), entity_name)
 
         # A lookup's picker enumerates its target list. A calculated display
         # column cannot be indexed, so the enumeration is refused once the
