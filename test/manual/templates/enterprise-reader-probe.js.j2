@@ -4,7 +4,7 @@
  *
  * STATUS: RUN TWICE, on ONE live site — 2026-08-11 and 2026-08-12. The
  * second run was pasted BY THE REPORTING SERVICE ACCOUNT ITSELF with the
- * write flag ON, so GROUP B IS ANSWERED. A2, A4 and C1-C3 are still open,
+ * write flag ON, so GROUP B IS ANSWERED. A2, A4 and C2-C3 are still open,
  * and the A2/A3 CONTRADICTION recorded below is UNEXPLAINED — read that
  * note before quoting anything from run 2's group A.
  *
@@ -821,7 +821,17 @@
           ? allRes.body.d.results : null;
         if (all === null) {
           const why = `membership read failed or was not in the d.results shape: ${httpDetail(allRes)}`;
-          record('C1', C1_Q, failureOutcome(allRes), why);
+          // NOT `failureOutcome(allRes)`. That returns `REFUSED (HTTP n)` for
+          // any non-2xx outside 401/403/408/429, and `report()` counts a row
+          // as OPEN only when its outcome starts with NOT ESTABLISHED or
+          // SHORT -- so a 404 or a 500 here was summarised as C1 ANSWERED
+          // while it had measured no member count at all.
+          //
+          // A refusal IS a genuine answer in group B, where the question is
+          // what `web/ensureuser` returns for a display name: being refused
+          // is the finding. C1 asks for a ROW COUNT and a `d.__next`. A read
+          // that returned neither answered nothing, whatever the status.
+          record('C1', C1_Q, `NOT ESTABLISHED (HTTP ${allRes.status})`, why);
           record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
           record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
         } else {
@@ -845,7 +855,9 @@
                              && Array.isArray(firstRes.body.d.results)) ? firstRes.body.d.results : null;
           if (firstPage === null) {
             const why = `the no-$top read failed or was not in the d.results shape: ${httpDetail(firstRes)}`;
-            record('C2', C2_Q, failureOutcome(firstRes), why);
+            // Same reason as C1 above: C2 asks whether the SERVER hands back
+            // a `d.__next`, so a read that did not come back cannot answer it.
+            record('C2', C2_Q, `NOT ESTABLISHED (HTTP ${firstRes.status})`, why);
             record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
           } else if (firstPage.length >= all.length) {
             // The whole membership fitted in one server page, so the
@@ -1020,8 +1032,14 @@
     // question answered before it. A probe that loses its whole transcript
     // to one failed call has wasted the operator's paste.
     report();
-  }
 
+  // The trailer is INSIDE the `finally` too, and that is the point. It used
+  // to sit after the try/finally, so a throw printed the whole RESULTS block
+  // -- site host, account UPN, real principal ids -- and then skipped the
+  // line telling the operator not to commit it, along with questions 2 to 5.
+  // The transcript is at its most sensitive exactly when the run failed, and
+  // that was the one path with no warning attached. A tenant URL has leaked
+  // from this repository twice.
   console.log('\n============ WHAT TO SEND BACK ============');
   console.log('1. The whole RESULTS block above, verbatim, including the evidence');
   console.log('   lines — the decoded permission names are the finding, not the');
@@ -1045,4 +1063,5 @@
   console.log('UPN and real principal ids. Quote the findings into the STATUS block');
   console.log('at the top of enterprise-reader-probe.js.j2 instead.');
   console.log('===========================================');
+  }
 })();

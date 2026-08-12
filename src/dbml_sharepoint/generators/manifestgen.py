@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from dbml_sharepoint.analysis.conditions import describe
+from dbml_sharepoint.analysis.permissions import lists_granting_group
 from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.analysis.validator import Finding
 from dbml_sharepoint.extension import ManifestExtras
@@ -75,6 +76,26 @@ def generate_manifest(
 
     def _deployed(entity: str) -> bool:
         return f"{bundle.mapping.prefix}{entity}" in deployed_titles
+
+    # Which of THIS build's lists the reader group is not granted on. The
+    # manifest used to say it could read every one of them, unconditionally,
+    # which is not something the mapping format guarantees: an override
+    # carries its own complete assignment list and may leave the reader out.
+    # Computed here rather than asserted in the template, and narrowed to the
+    # lists this build deploys -- an exclusion on a list another site role
+    # owns is not something this operator can act on.
+    _perms = bundle.mapping.permissions
+    _reader_groups = [
+        g.name for g in (_perms.groups if _perms else []) if g.enroll_enterprise_reader
+    ]
+    _deployed_entities = [e for e in bundle.mapping.entities if _deployed(e)]
+    reader_excluded_lists = sorted({
+        f"{bundle.mapping.prefix}{entity}"
+        for name in _reader_groups
+        for entity in lists_granting_group(
+            bundle.mapping, name, _deployed_entities,
+        )[1]
+    })
 
     # Every field the deploy actually writes, per list. Iterating
     # fields_phase1 alone made the manifest blind to deferred lookups:
@@ -267,4 +288,5 @@ def generate_manifest(
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
         enterprise_reader=enterprise_reader,
+        reader_excluded_lists=reader_excluded_lists,
     )

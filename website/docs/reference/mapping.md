@@ -1398,11 +1398,25 @@ facts rule that out, together:
   not in the declared set, logging it `'unlisted'` — so a hand-added grant
   is deleted by the very next deploy, surfacing days later as a short line
   in a report on a site nobody touched.
-- A direct share creates a unique **item** scope. Under `exact`, that same
-  ACL phase detects a leftover item or folder scope and **fails closed**
-  for operator review rather than erasing it. So a direct share does not
-  merely get revoked — it aborts every subsequent deploy of that site until
-  an operator resolves it by hand.
+- Sharing a **document or list item** creates a unique **item** scope.
+  Microsoft Learn is explicit that this is what breaks inheritance: "a user
+  can interrupt the default permission inheritance for a list or library
+  item by sharing a document or item with someone who doesn't have access.
+  In that case, SharePoint automatically stops inheritance on the document"
+  ([Permission levels in
+  SharePoint](https://learn.microsoft.com/sharepoint/understanding-permission-levels#overview-and-permissions-inheritance)).
+  Under `exact`, that same ACL phase detects a leftover item or folder scope
+  and **fails closed** for operator review rather than erasing it. So an
+  item share does not merely get revoked — it aborts every subsequent deploy
+  of that site until an operator resolves it by hand.
+- A grant made at **site or list scope** is a different thing and is handled
+  differently. It is a role assignment at that scope, not an item scope, so
+  it is caught by the bullet above rather than this one: `exact` treats the
+  declared principals as an allowlist and the next deploy deletes it. Do not
+  read the item-scope abort as covering a hand-added site or list grant —
+  the two failure modes are not interchangeable, and telling them apart is
+  what decides whether an operator is looking for a stranded item scope or a
+  grant that has already been reconciled away.
 
 The supported route is the `enroll_enterprise_reader` group above, enrolled
 with `build --enterprise-reader <account>`: a declared, reconcilable grant
