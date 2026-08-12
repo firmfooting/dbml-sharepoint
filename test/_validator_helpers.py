@@ -57,6 +57,12 @@ def _project_inputs(
     The mapping sections arrive as keyword arguments rather than as a YAML
     block, which is what removes the indentation -- and the loader -- from the
     test.
+
+    The table carries a `note`, because `ENTITY_HAS_NO_NOTE` is an ERROR and
+    several of the tests built on this fixture assert that the errors are
+    exactly the ones they provoked. `_model.table()` deliberately does NOT
+    default it -- the tests that make that rule fire need a table with none --
+    so the fixtures that want to be clean say so here.
     """
     return (
         _object_schema(
@@ -66,6 +72,7 @@ def _project_inputs(
                 column("Status", "status"),
                 column("SortOrder", "int"),
                 column("DueDate", "date"),
+                note="The standard fixture project list.",
             ),
             enums=[enum("status", "Open", "Closed")],
         ),

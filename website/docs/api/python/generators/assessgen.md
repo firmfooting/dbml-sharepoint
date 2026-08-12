@@ -35,6 +35,13 @@ def assess_targets(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sha
 
 The data-driven inputs the assess.js probes loop over.
 
+`list_markers` maps each declared list title to the exact provenance
+marker its Description must carry. It is IMPORTED from
+`analysis.list_description`, never re-spelled here or in the template: a
+second spelling would let assess.js quietly disagree with deploy.js about
+the same list, reporting drift on a description the deploy considers
+correct (or, worse, staying silent on one it does not).
+
 ### `derive_requirements`
 
 ```python

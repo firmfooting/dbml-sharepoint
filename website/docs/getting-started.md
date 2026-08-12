@@ -67,6 +67,18 @@ exits 0 — so scripts that already call it are unaffected. Use
 | `mapping.yaml` | List prefix, entity kind/template/site-role, views, widths, versioning, calculated formulas, formatting, permission levels, groups, per-list ACLs, demo rows |
 | `release.yaml` | Release tag + schema version stamped into every artifact for provenance |
 
+Every `Table` needs a table-level `Note:` — it becomes the provisioned
+list's Description, so a schema without one fails the build. See [the
+table note is required](reference/dbml.md#the-table-note-is-required) for
+the full rule and the character budget.
+
+```dbml
+Table CheckPoint {
+  Id    int  [pk, increment]
+  Note: 'The things that have to be checked on a schedule, how often, what counts as being in range, and who is accountable for the checking actually happening.'
+}
+```
+
 A complete worked example lives in the repository at
 `examples/project-tracker` — schema, mapping and release side by side
 with a guided README.

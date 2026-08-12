@@ -33,8 +33,16 @@ from typing import Any
 import pytest
 from _paths import SOLUTION_TEMPLATES
 
+from dbml_sharepoint.analysis.checks._structure import _UNPROVEN_NOTE_CHARACTERS
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
+from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
+    family_for,
+    marker_for,
+    note_budget,
+)
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -1506,3 +1514,142 @@ def test_the_reader_group_uses_the_family_prefix(template: str) -> None:
     admin = next(n for n in names if n.endswith(" List Administrators"))
     reader = next(n for n in names if n.endswith(" Enterprise Readers"))
     assert reader.split()[0] == admin.split()[0]
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_the_dbml_project_name_resolves_to_the_family_directory(template: str) -> None:
+    """The provenance marker stamped into every list Description names the
+    family by its DBML `Project` name, underscores swapped for hyphens.
+
+    Parametrised over EVERY template, not just the uplifted ones: a marker
+    naming a family nobody can look up is exactly as useless on a template
+    that has not been uplifted yet.
+
+    This is the check that turns a measurement into an invariant. The
+    underscore-for-hyphen rule was verified across all 31 families rather
+    than assumed, and without this test a new family declaring
+    `Project asset_reg` inside `solutions/asset-register/` would deploy lists
+    attributing themselves to a family that does not exist -- silently, since
+    a description naming the wrong family saves and reconciles exactly like
+    one naming the right family. (Not a claim that a list Description
+    round-trips byte for byte -- that is inferred, not measured; see
+    `ENTITY_NOTE_MAY_NOT_ROUND_TRIP`. A wrong family name is invisible either
+    way.)
+    """
+    schema = _load(template).schema
+    assert schema.project_name, f"{template}: schema.dbml declares no `Project` name"
+    assert family_for(schema) == template, (
+        f"{template}: DBML `Project {schema.project_name}` resolves to family "
+        f"{family_for(schema)!r}, which is not the solution directory name. "
+        f"The marker would attribute this list to a family nobody can look up."
+    )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_entity_describes_itself(template: str) -> None:
+    """Pinned per family so a new template cannot ship anonymous lists.
+
+    This pins the CORPUS, not the rule. `ENTITY_HAS_NO_NOTE` in
+    `analysis/checks/_structure.py` refuses a note-less entity at build time
+    and `test_validator_core.py` is what pins THAT; this sweep reads the
+    schemas directly and would go on failing if the rule were deleted
+    tomorrow. Both exist because either one alone leaves a hole: a rule
+    nothing shipped exercises can be quietly weakened, and a corpus nobody
+    enforces drifts on the next family.
+
+    The description is what an adopter reads in list settings, and from
+    Phase 2 it is also what fleet reporting discovers the list by.
+
+    Parametrised over EVERY template rather than `_uplifted()`, matching the
+    two marker sweeps below: `NOT_YET_UPLIFTED` exempts a template from the
+    FORM standard, and a list with no description is exactly as anonymous
+    whether or not its form header has been through the uplift.
+    """
+    loaded = _load(template)
+    # A "no entity is missing a note" assertion is also satisfied by no
+    # entities at all, and a family whose schema stopped parsing into tables
+    # would sail through it looking conformant.
+    assert loaded.schema.tables, f"{template}: schema.dbml declares no tables"
+    missing = [t.name for t in loaded.schema.tables if not t.note.strip()]
+    assert not missing, f"{template}: entities with no Note: {missing}"
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_table_note_leaves_room_for_the_provenance_marker(template: str) -> None:
+    """No shipped family may carry a note the build would refuse.
+
+    `ENTITY_NOTE_TOO_LONG_FOR_MARKER` is an error, so a note over the budget
+    makes the family unbuildable. Task 4 authors ~60 of these notes; this is
+    the sweep that catches an over-long one at the source rather than when
+    somebody tries to deploy that family.
+    """
+    loaded = _load(template)
+    family = family_for(loaded.schema)
+    for table in loaded.schema.tables:
+        note = table.note.strip()
+        budget = note_budget(family, table.name)
+        assert len(note) <= budget, (
+            f"{template}.{table.name}: Note: is {len(note)} characters, "
+            f"{len(note) - budget} over the {budget} that fit beside the marker."
+        )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_shipped_note_eats_into_the_marker_growth_reserve(template: str) -> None:
+    """Every shipped note leaves `MARKER_GROWTH_RESERVE` spare, catalogue-wide.
+
+    The sweep above says each note fits. This one says the CORPUS still fits
+    after the marker grows -- which is a different property, and the one that
+    decides whether a marker change is a one-line edit or an editorial pass
+    over 31 families.
+
+    It is measured against the raw arithmetic rather than against
+    `note_budget`, so it keeps meaning what it says if the reserve is ever
+    taken out of that function. This is the guard that stops the reserve being
+    spent a few characters at a time by notes nobody measured together: the
+    corpus arrived at a median of 20 characters spare exactly that way.
+    """
+    loaded = _load(template)
+    family = family_for(loaded.schema)
+    for table in loaded.schema.tables:
+        note = table.note.strip()
+        spare = DESCRIPTION_LIMIT - len(marker_for(family, table.name)) - 1 - len(note)
+        assert spare >= MARKER_GROWTH_RESERVE, (
+            f"{template}.{table.name}: Note: leaves {spare} characters beside the "
+            f"marker, under the {MARKER_GROWTH_RESERVE} reserved for the marker to "
+            f"grow into. Shorten it by {MARKER_GROWTH_RESERVE - spare}."
+        )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_shipped_note_contains_a_character_of_unproven_round_trip(
+    template: str,
+) -> None:
+    """No family may reintroduce an `&` or a line break into a table note.
+
+    `ENTITY_NOTE_MAY_NOT_ROUND_TRIP` refuses one at build time; this pins the
+    CORPUS, the same pairing the two sweeps above have with their rules. All
+    54 notes were already clean when the rule was written, so this sweep is
+    a ratchet rather than a discovery -- what it stops is the 55th.
+
+    The characters come from the rule's own table rather than being re-spelled
+    here. A sweep with its own copy is how a corpus comes to satisfy a rule
+    that has since been widened, which would leave the next family free to
+    ship exactly the note the build refuses.
+
+    Measured against the STRIPPED note, matching the rule and matching
+    `list_description`: only what actually reaches the Description counts.
+    """
+    loaded = _load(template)
+    for table in loaded.schema.tables:
+        note = table.note.strip()
+        offenders = sorted({
+            name for char, name, _ in _UNPROVEN_NOTE_CHARACTERS if char in note
+        })
+        assert not offenders, (
+            f"{template}.{table.name}: Note: contains {', '.join(offenders)}. "
+            f"The deploy compares the list Description it writes against the "
+            f"read-back byte for byte and that round trip is inferred rather "
+            f"than measured, so this would abort a paste part-way through. "
+            f"Fix the note, not the rule."
+        )

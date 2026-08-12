@@ -41,6 +41,8 @@ Table Submission {
     Funder
     DueDate
   }
+
+  Note: 'Funding applications from first draft to decision: what was sought, from whom, who owns it and what was awarded. Unsuccessful bids stay here to learn from.'
 }
 
 Table Acquittal {
@@ -60,4 +62,6 @@ Table Acquittal {
     AcqStatus
     DueDate
   }
+
+  Note: 'The reporting and acquittal obligations that come with a grant once won, each with its due date and the report filed. Loaded from the funding agreement.'
 }

@@ -96,6 +96,7 @@ class Schema:
     tables: list[dbml_sharepoint.model.parser.Table] = field(default_factory=list)
     enums: list[dbml_sharepoint.model.parser.EnumDef] = field(default_factory=list)
     project_note: str = ''
+    project_name: str = ''
 ```
 
 In-memory representation of a parsed DBML schema.

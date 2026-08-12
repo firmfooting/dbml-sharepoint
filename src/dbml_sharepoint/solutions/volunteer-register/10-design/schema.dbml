@@ -36,4 +36,6 @@ Table Volunteer {
     PoliceCheckExpiry
     WWCCExpiry
   }
+
+  Note: 'Everyone volunteering with the organisation, what they do, who coordinates them, and the expiry dates of the checks that let them keep doing it.'
 }

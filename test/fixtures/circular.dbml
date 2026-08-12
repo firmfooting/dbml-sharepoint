@@ -4,9 +4,13 @@ Project circ_test { database_type: 'SharePoint Online' }
 Table A {
   Id     int       [pk, increment]
   BRef   int       [ref: > B.Id]
+
+  Note: 'Circular-lookup fixture, the side looking up B.'
 }
 
 Table B {
   Id     int       [pk, increment]
   ARef   int       [ref: > A.Id]
+
+  Note: 'Circular-lookup fixture, the side looking up A.'
 }

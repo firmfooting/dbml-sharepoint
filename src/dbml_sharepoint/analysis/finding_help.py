@@ -29,6 +29,7 @@ same arrangement `generate_api.py` already has for the API reference.
 """
 
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.list_description import MARKER_GROWTH_RESERVE
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 
 #: Every rule this build can report, by code. One entry per `FindingCode`
@@ -452,9 +453,56 @@ FINDING_HELP: dict[FindingCode, str] = {
         "reader is enrolled in Phase 1.4 and stays, so the next deploy "
         "fails its own empty-group gate in Phase 1.2. Drop one."
     ),
+    FindingCode.ENTITY_HAS_NO_NOTE: (
+        "A table has no `Note:`, so the list it provisions deploys with a "
+        "Description holding nothing but the provenance marker. Fleet "
+        "reporting can still find the list, but nobody opening it in "
+        "SharePoint is told what it is for -- and the Description is the "
+        "only list-level sentence this tool writes, so there is nowhere "
+        "else for that to come from. Add a `Note:` to the table saying what "
+        "the list holds and who it is for."
+    ),
     FindingCode.ENTITY_NOT_IN_SCHEMA: (
         "The mapping's `entities:` declares a name the DBML schema has "
         "no table for."
+    ),
+    FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP: (
+        "A table's `Note:` contains an ampersand or a line break, and this "
+        "tool cannot prove either survives a deploy. Write \"and\" instead "
+        "of `&`, and keep the note to a single paragraph. Not a style "
+        "preference: the note becomes the list Description, and the deploy "
+        "writes it, reads it straight back and compares the two byte for "
+        "byte. That it comes back unchanged is INFERRED from the field "
+        "descriptions this tool has always written that way -- Microsoft "
+        "Learn documents `SP.List.Description` as a plain read/write string "
+        "and says nothing about normalisation, and no probe has measured it. "
+        "The same inference has been wrong once already elsewhere: "
+        "SharePoint demonstrably normalises a column's ValidationFormula, "
+        "which is why the deploy has to compare those canonically. If it is "
+        "wrong here -- `&` returned as `&amp;`, or a line break rewritten -- "
+        "the read-back never matches what was sent and the deploy aborts. It "
+        "fails closed, which is right, but it does so part-way through a "
+        "paste, against a site that is already half provisioned, and "
+        "identically on every re-paste after that, with no way forward but "
+        "re-authoring the schema and rebuilding the bundle. A build-time "
+        "refusal costs one word. The restriction is temporary and lifts on "
+        "evidence: a probe under `test/manual/` that sets a Description "
+        "containing a newline, an `&` and a run of spaces, reads it straight "
+        "back and compares bytes settles it in one paste, and if the round "
+        "trip is exact this rule goes away."
+    ),
+    FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER: (
+        "A table's `Note:` is long enough that the provenance marker "
+        "appended after it would not fit in a SharePoint list Description. "
+        "The marker is what fleet reporting discovers the list by, so it is "
+        "never truncated -- the note is refused instead. Shorten the note. "
+        "The budget is deliberately smaller than the space the marker "
+        f"actually leaves: {MARKER_GROWTH_RESERVE} characters are held back "
+        "so that the marker can grow -- gaining a version suffix, or naming "
+        "a longer family -- without invalidating notes already written. So a "
+        "note measured against the marker you can see will be refused while "
+        "still appearing to fit; the budget the finding reports is the real "
+        "limit."
     ),
     FindingCode.ENUM_MEMBERS_DIFFER: (
         "A DBML enum's members differ from the choices configured for "

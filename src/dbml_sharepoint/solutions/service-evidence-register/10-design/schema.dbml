@@ -105,6 +105,8 @@ Table ServiceIssue {
     NextReviewDue
     FirstObserved
   }
+
+  Note: 'Patterns worth raising formally with an external provider, each backed by the logged events behind it, with the response and what was agreed.'
 }
 
 // The switch that decides which fields the form shows. A single occurrence
@@ -247,6 +249,8 @@ Table ServiceEvent {
     ResolvedDate
     RelatedIssue
   }
+
+  Note: 'One row each time an external provider falls short, written while fresh: the facts, the cost and what backs it up. Anecdotes lose at a review.'
 }
 
 Enum contact_channel {
@@ -298,4 +302,6 @@ Table FollowUp {
     EscalationLevel
     Channel
   }
+
+  Note: 'Every chase to get an answer from the provider: what was asked, of whom, how far it went and what came back. The count of these rows is the evidence.'
 }

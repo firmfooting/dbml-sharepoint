@@ -42,8 +42,12 @@
       const titles = await ensureKnownListTitles();
       if (titles && !hasName(titles, name)) return null;
     }
+    // Description rides along on a request already being made: it is a
+    // declared, reconciled setting (it carries the provenance marker), so
+    // reading it here is what lets reconcileListDescription compare without
+    // spending a probe of its own.
     const select = [
-      'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled',
+      'Id', 'Title', 'BaseTemplate', 'ContentTypesEnabled', 'Description',
       'EnableVersioning', 'EnableMinorVersions', 'MajorVersionLimit', 'ValidationFormula', 'ValidationMessage',
     ].join(',');
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=${select}`), {
@@ -60,6 +64,7 @@
         || typeof shape.Id !== 'string'
         || typeof shape.Title !== 'string'
         || !Number.isInteger(shape.BaseTemplate)
+        || !(shape.Description == null || typeof shape.Description === 'string')
         || typeof shape.ContentTypesEnabled !== 'boolean'
         || typeof shape.EnableVersioning !== 'boolean'
         || typeof shape.EnableMinorVersions !== 'boolean'

@@ -149,8 +149,15 @@
  *     this tenant — but a refusal by display name is not proof that no
  *     encoding exists.
  *   - Server-driven paging on a site group's members: see GROUP C. Run 2
- *     could not reach it at all; C2 still needs a group with MORE members
- *     than the server page size.
+ *     could not reach it at all. C2 IS NOT BEING ASKED FOR AGAIN — it
+ *     needs a site group with more members than the server page size, and
+ *     adding one to a site's permissions would expose many real people to
+ *     development work. That objection is accepted and settled. The
+ *     nearest measurable substitute is S11/S12 in
+ *     search-discovery-probe.js.j2, which pages the LIST-ITEMS collection
+ *     against an existing 6,000-row fixture: it can establish whether this
+ *     tenant's REST emits server-driven paging AT ALL, but it does not
+ *     settle the site-group case, which stays unmeasured.
  *
  * ---- C2/C3 WERE AN INVALID EXPERIMENT; THEY HAVE BEEN REWRITTEN --------
  * As run on 2026-08-11, C2 asked `web/sitegroups(id)/users?$top=1` against
@@ -279,6 +286,14 @@
  *   invalid version of this experiment and why an absent `__next` under a
  *   small `$top` proves nothing.
  *
+ *   DO NOT CREATE OR ENROL A LARGE GROUP TO SATISFY THIS. That has been
+ *   declined and the reason stands: it would expose many real people to
+ *   development work. Run C against whatever groups already exist, accept
+ *   NOT ESTABLISHED when they are small, and read S11/S12 in
+ *   search-discovery-probe.js.j2 for the part of the question that CAN be
+ *   measured — server-driven paging on a list-items collection, against a
+ *   fixture that already exists.
+ *
  * ---- WHAT THE WRITE FLAG GUARDS ---------------------------------------
  * ALLOW_WRITES gates GROUP B AND NOTHING ELSE. Groups A and C are pure
  * reads and run with it off.
@@ -354,11 +369,14 @@
   const LIST_TITLE = 'CHANGE ME - a list this bundle provisioned';
 
   // The site group to measure paging against, for group C. It does NOT have
-  // to be the readers group. PICK THE BIGGEST GROUP YOU HAVE: C2 can only
+  // to be the readers group. Use a group THAT ALREADY EXISTS — C2 can only
   // answer on a group with MORE members than SharePoint's undocumented
   // server page size, and it records NOT ESTABLISHED — not a finding — when
   // the whole membership arrives in one page.
-  const GROUP_NAME = 'CHANGE ME - the largest site group available';
+  //
+  // DO NOT ADD PEOPLE OR A LARGE GROUP TO A SITE TO MAKE C2 ANSWERABLE.
+  // That was declined and the reason stands; see GROUP C in the docblock.
+  const GROUP_NAME = 'CHANGE ME - the largest site group that already exists';
 
   const PLACEHOLDER = /CHANGE ME|reporting-service-account@contoso\.com/;
 
@@ -839,8 +857,11 @@
               + `(${JSON.stringify(typeof firstRes.body.d.__next === 'string'
                                    && firstRes.body.d.__next !== '')}) says NOTHING about whether this `
               + 'endpoint pages. A valid answer needs a site group with MORE members than the server page '
-              + 'size, which SharePoint does not document — pick the largest group in the tenant and run '
-              + 'again. Do NOT read this row as "the endpoint does not page".';
+              + 'size, which SharePoint does not document. DO NOT BUILD ONE: enrolling a large group to '
+              + 'satisfy this has been declined, because it would expose many real people to development '
+              + 'work. This row stays open. For the part of the question that CAN be measured, see '
+              + 'S11/S12 in search-discovery-probe.js.j2, which pages a list-items collection against an '
+              + 'existing 6,000-row fixture. Do NOT read this row as "the endpoint does not page".';
             record('C2', C2_Q, 'NOT ESTABLISHED (group not larger than the server page size)', why);
             record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
           } else {

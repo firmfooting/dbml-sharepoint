@@ -589,11 +589,17 @@ def _errors(**sections: Unpack[MappingSections]) -> list[str]:
     Title is deliberately not required here: a required column hidden from
     the New form is already an error, which would mask the silent drop these
     exercise. `_escalation` makes it required, so this builds its own.
+
+    The table-level `note` is here for the same masking reason: without one
+    `ENTITY_HAS_NO_NOTE` is an error on every call, and the tests that assert
+    `_errors(...) == []` would stop saying anything about form declarations.
+    It is unrelated to the column that happens to be called `Note`.
     """
     from dbml_sharepoint.analysis.validator import validate_against_mapping
 
     schema = make_schema(make_table(
         "Escalation", make_column("Title"), make_column("Note"), make_column("Other"),
+        note="The fixture escalation list.",
     ))
     bundle = make_bundle(entities=["Escalation"], **sections)
     return [

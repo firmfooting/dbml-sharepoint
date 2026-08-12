@@ -14,6 +14,7 @@ from dbml_sharepoint.analysis.conditions import (
 )
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.joins import all_items_hidden
+from dbml_sharepoint.analysis.list_description import family_for, list_description
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import (
@@ -374,6 +375,9 @@ def build_schema_json(
     form_formatting_out: list[dict[str, Any]] = []
     field_defaults_out: list[dict[str, Any]] = []
 
+    # One family per schema, so it is resolved once rather than per list.
+    family = family_for(schema)
+
     role_tables = site_tables_in_order(schema, bundle.mapping.entities, site_role)
     for table_name in role_tables:
         entity = bundle.mapping.entities[table_name]
@@ -542,7 +546,9 @@ def build_schema_json(
             "title": list_title,
             "kind": entity.kind,
             "base_template": entity.base_template,
-            "description": (table.note[:255] if table.note else ""),
+            "description": list_description(
+                table.note, family=family, entity=table_name,
+            ),
             "content_types_enabled": False,
             "enable_versioning": enable_versioning,
             "major_version_limit": major_limit,

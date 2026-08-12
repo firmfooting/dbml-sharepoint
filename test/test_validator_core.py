@@ -20,6 +20,15 @@ from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
+    NAME_BUDGET,
+    family_for,
+    list_description,
+    marker_for,
+    note_budget,
+)
 from dbml_sharepoint.analysis.validator import (
     MAX_INTERNAL_NAME,
     Finding,
@@ -1695,3 +1704,310 @@ def test_a_list_default_naming_an_unknown_retention_policy_is_an_error() -> None
     finding = only(findings, FindingCode.UNKNOWN_RETENTION_POLICY)
     assert finding.severity == "error"
     assert "seven-years" in finding.message
+
+
+def test_an_entity_without_a_note_is_refused() -> None:
+    """Pins the RULE (the corpus is pinned separately, in
+    `test_template_standard.py`).
+
+    A list with no description deploys anonymous and, once fleet reporting
+    exists, indistinguishable from every other list the same family provisions
+    except by its marker. Both are silent: the list provisions, the deploy
+    reads back the bare marker it sent, and every deploy phase passes.
+    """
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(entities=["Risk"]),
+    )
+
+    finding = only(findings, FindingCode.ENTITY_HAS_NO_NOTE)
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.ENTITIES, entity="Risk")
+
+
+def test_a_whitespace_only_note_is_refused_like_an_absent_one() -> None:
+    """`list_description` strips, so "  " composes exactly the Description an
+    empty note does. A rule testing truthiness rather than `.strip()` would
+    accept it and provision the anonymous list this rule exists to refuse.
+    """
+    only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note="   \n  ")),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_HAS_NO_NOTE,
+    )
+
+
+def test_a_note_is_all_it_takes_to_satisfy_the_rule() -> None:
+    """The other side of the boundary, on the same fixture the two tests above
+    use. Without it, a rule that fired on EVERY entity would pass both of them.
+    """
+    none_of(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note="Risks this team is carrying.")),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_HAS_NO_NOTE,
+    )
+
+
+def test_an_entity_with_no_table_is_not_also_told_its_note_is_missing() -> None:
+    """`ENTITY_NOT_IN_SCHEMA` is the whole story for an entity the schema has
+    no table for. Advising the author to add a `Note:` to a table that does not
+    exist sends them looking for the wrong thing.
+    """
+    findings = validate_against_mapping(
+        make_schema(),
+        make_bundle(entities=["Risk"]),
+    )
+
+    only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
+    none_of(findings, FindingCode.ENTITY_HAS_NO_NOTE)
+
+
+def test_a_zero_budget_is_reported_as_names_too_long_not_as_a_note_to_shorten() -> None:
+    """The one case where the two note rules cannot both be satisfied.
+
+    Once `len(family) + len(entity)` reaches `NAME_BUDGET`, the marker and its
+    growth reserve fill the Description on their own. A missing note is then
+    `ENTITY_HAS_NO_NOTE` and ANY note is `ENTITY_NOTE_TOO_LONG_FOR_MARKER`, so
+    the ordinary advice -- "add a note of up to 0 characters", "shorten the
+    note by 41" -- sends the author round in a circle. Both messages have to
+    name what can actually change, which is the names.
+
+    Both halves are asserted on ONE schema, so advice that is wrong in either
+    direction fails here rather than in whichever half nobody thought to
+    write.
+    """
+    family = "f" * (NAME_BUDGET - len("Risk"))
+    table = make_table("Risk")
+    schema = make_schema(table, project_name=family)
+    assert note_budget(family_for(schema), "Risk") == 0, (
+        "this fixture is only meaningful at a budget of exactly zero"
+    )
+
+    absent = only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_HAS_NO_NOTE,
+    )
+    table.note = "Something an author would reasonably write."
+    too_long = only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+    for finding in (absent, too_long):
+        # The names, and the number they have to come under: nothing else the
+        # author reads is actionable.
+        assert "Shorten the DBML `Project` name or the table name" in finding.message
+        assert str(NAME_BUDGET) in finding.message
+        assert "'Risk'" in finding.message
+        # ...and NOT the advice that cannot be followed.
+        assert "up to 0 characters" not in finding.message
+        assert "Shorten the note by" not in finding.message
+
+
+def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
+    """Refused at build time rather than truncated at deploy time.
+
+    Silently dropping the tail of somebody's description is bad; silently
+    dropping the marker is worse, because the list then deploys clean and
+    never appears in any fleet report. The author is told to shorten it.
+    """
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", note="x" * 400)),
+        make_bundle(entities=["Risk"]),
+    )
+
+    finding = only(findings, FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER)
+    assert finding.severity == "error"
+    assert "Risk" in finding.message
+    assert "400" in finding.message
+
+
+@pytest.mark.parametrize(
+    ("note", "named"),
+    [
+        ("Risks and issues R&D is carrying.", "an ampersand"),
+        ("Risks this team is carrying.\nOne row per risk.", "a line break"),
+        ("Risks this team is carrying.\r\nOne row per risk.", "a line break"),
+    ],
+    ids=["ampersand", "newline", "carriage-return"],
+)
+def test_a_note_whose_round_trip_is_unproven_is_refused(
+    note: str, named: str,
+) -> None:
+    """The build-time half of a restriction the docs used to state as prose.
+
+    `_field_reconcile.js.j2` writes the list Description, reads it back and
+    compares byte for byte, and that the value survives unchanged is an
+    INFERENCE from the field case rather than a measurement. An author who
+    writes `&` and finds out at deploy time finds out part-way through a
+    paste, against a half-provisioned site, on every re-paste forever. Prose
+    in `dbml.md` asking nicely was the whole enforcement until this rule.
+
+    `\\r` is parametrised separately because a DBML file saved with CRLF
+    endings carries one on its own, and a rule matching only `\\n` would pass
+    a note the reconcile could still trip over.
+    """
+    finding = only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note=note)),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.ENTITIES, entity="Risk")
+    assert named in finding.message
+    # The message has to carry the WHY, not just the what: an author told only
+    # "no ampersands" reads it as a house style and works around it once,
+    # rather than understanding that the rule lifts on evidence.
+    assert "INFERRED" in finding.message
+    assert "test/manual/" in finding.message
+
+
+def test_the_unproven_character_rule_names_a_remedy_for_each_character() -> None:
+    """A note carrying BOTH offenders is told about both, once.
+
+    `\\n` and `\\r` share the name "a line break", so a message assembled
+    without de-duplicating would list it twice on a CRLF note -- "an
+    ampersand and a line break and a line break". Asserted here rather than
+    left to the parametrised cases above, none of which can see it.
+
+    The opening clause is matched whole rather than by counting the phrase
+    over the message: the explanation further down uses "a line break" too,
+    and a count would be asserting about prose that is free to be reworded.
+    """
+    finding = only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note="Risk & issues.\r\nOne per row.")),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+    assert "contains an ampersand and a line break, and" in finding.message
+    assert 'write "and"' in finding.message
+    assert "keep the note to a single paragraph" in finding.message
+    # One remedy per offending character, not one per matching table row.
+    assert finding.message.count("keep the note to a single paragraph") == 1
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "Risks this team is carrying, and what is being done about each.",
+        # Stripped before the check, because that is what `list_description`
+        # composes with. A note indented inside its DBML block, or one whose
+        # closing quote sits on the next line, carries no line break into the
+        # Description and must not be refused for one.
+        "\n  Risks this team is carrying.\r\n",
+    ],
+    ids=["clean", "surrounding-whitespace-only"],
+)
+def test_a_note_with_nothing_unproven_in_it_is_accepted(note: str) -> None:
+    """The other side of the boundary. Without it, a rule that fired on every
+    note at all would pass every case above."""
+    none_of(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note=note)),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+
+def test_an_entity_with_no_table_is_not_told_about_its_notes_characters() -> None:
+    """Like the two note rules either side: `ENTITY_NOT_IN_SCHEMA` is the whole
+    story, and advice about prose in a table that does not exist is noise."""
+    none_of(
+        validate_against_mapping(make_schema(), make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+
+def test_a_note_that_exactly_fits_beside_the_marker_is_accepted() -> None:
+    """The boundary is inclusive, and measured one character either side of it.
+
+    A rule that refused a note which fits would be stronger than the emitter
+    needs, and an author has no way to tell an off-by-one refusal from a real
+    one.
+
+    Two things keep this from passing for the wrong reason. The budget is
+    derived from the schema THE RULE WILL SEE, via `family_for`, rather than
+    from a hardcoded family: hardcoding one computes a different budget the
+    moment the fixture's default project name changes, and the test would then
+    assert "no finding" for a note with room to spare -- green, and proving
+    nothing. And both sides of the boundary are asserted on the same schema,
+    so a budget that is wrong in either direction fails one half or the other
+    rather than sailing through both.
+    """
+    table = make_table("Risk")
+    schema = make_schema(table)
+    budget = note_budget(family_for(schema), "Risk")
+
+    table.note = "x" * budget
+    none_of(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+    table.note = "x" * (budget + 1)
+    only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+
+def test_the_budget_reserves_room_for_the_marker_to_grow_into() -> None:
+    """The boundary is `MARKER_GROWTH_RESERVE` characters SHORT of what fits.
+
+    The rule is deliberately stricter than the 255 arithmetic requires, so a
+    marker that later gains a version suffix does not turn a shipped note into
+    a build error. The reserve is the whole point of the constant, and nothing
+    else in the suite would notice it going missing: every other test asks
+    `note_budget` what the limit is, which is exactly the question a deleted
+    reserve changes the answer to.
+
+    So the budget is spelled out here from the marker instead, and the
+    invariant it buys is asserted directly: a note the rule ACCEPTS still fits
+    beside a marker `MARKER_GROWTH_RESERVE` characters longer than today's.
+    """
+    table = make_table("Risk")
+    schema = make_schema(table)
+    family = family_for(schema)
+    marker = marker_for(family, "Risk")
+
+    reserved = DESCRIPTION_LIMIT - len(marker) - 1 - MARKER_GROWTH_RESERVE
+    assert note_budget(family, "Risk") == reserved, (
+        "note_budget must hold back MARKER_GROWTH_RESERVE beyond the marker"
+    )
+
+    table.note = "x" * reserved
+    none_of(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+    table.note = "x" * (reserved + 1)
+    only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+    # What the rule accepts, the emitter emits whole -- the two derive the
+    # budget from the same helper, and this is the assertion that they agree
+    # rather than the assumption.
+    accepted = "x" * reserved
+    assert list_description(accepted, family=family, entity="Risk") == (
+        f"{accepted} {marker}"
+    )
+
+    # The invariant, stated as the thing it protects.
+    grown = marker + "v" * MARKER_GROWTH_RESERVE
+    assert len(f"{accepted} {grown}") <= DESCRIPTION_LIMIT, (
+        "a note the rule accepted must survive the marker growing by the reserve"
+    )

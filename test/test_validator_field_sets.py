@@ -111,12 +111,17 @@ def _view(title: str, *fields: str, **extra: Any) -> dict[str, list[ViewDef]]:
 def _calculated_project(
     **sections: Unpack[MappingSections],
 ) -> tuple[Schema, MappingBundle]:
-    """A `Band` column calculated from `Score`, as objects."""
+    """A `Band` column calculated from `Score`, as objects.
+
+    The table-level `note` is not decoration: `ENTITY_HAS_NO_NOTE` is an
+    error, and several callers assert on the complete error set.
+    """
     schema = make_schema(make_table(
         "Project",
         make_column("Title", required=True),
         make_column("Score", "int"),
         make_column("Band", "calculated_text"),
+        note="The standard fixture project list.",
     ))
     # Written into `sections` rather than passed beside it: a caller declaring
     # its own `calculated_formulas` would otherwise be two values for one

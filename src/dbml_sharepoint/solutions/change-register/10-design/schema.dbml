@@ -58,4 +58,6 @@ Table ChangeRequest {
     Impact
     RequestedDate
   }
+
+  Note: 'Requests to change a system, process, document or how a team works. Anyone may raise one; change managers triage it, record the decision and see it through.'
 }

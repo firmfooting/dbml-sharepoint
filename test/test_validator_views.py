@@ -357,12 +357,18 @@ def _lookup_filter_inputs(*, indexed: bool) -> tuple[Schema, MappingBundle]:
     """
     return (
         make_schema(
-            make_table("Parent", column("Title", required=True)),
+            # Both tables carry a note because the indexed case asserts
+            # `findings == []`, and ENTITY_HAS_NO_NOTE is an error.
+            make_table(
+                "Parent", column("Title", required=True),
+                note="The fixture parent list.",
+            ),
             make_table(
                 "Child",
                 column("Title", required=True),
                 column("Parent", "int", ref="Parent.Id"),
                 indexes=["Parent"] if indexed else [],
+                note="The fixture child list.",
             ),
         ),
         make_bundle(

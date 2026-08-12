@@ -54,6 +54,8 @@ Table CodeEvent {
     AnnouncedAt
     IsDrill
   }
+
+  Note: 'Emergency code announcements as they happen: which code, where, when called and when stand-down came. Drills go in the same way; that is what they are for.'
 }
 
 Table MessageLog {
@@ -77,6 +79,8 @@ Table MessageLog {
     Urgency
     TakenAt
   }
+
+  Note: 'The after-hours message book: who called, who the message is for, what it said, and whether it has reached them yet. Anything still pending is the live board.'
 }
 
 Table Key {
@@ -90,6 +94,8 @@ Table Key {
   indexes {
     Active
   }
+
+  Note: 'The catalogue of keys and access cards the switchboard holds, what each opens and who may take it. Retired keys stay listed so their movement history still reads.'
 }
 
 Table KeyMovement {
@@ -109,4 +115,6 @@ Table KeyMovement {
     Status
     IssuedAt
   }
+
+  Note: 'One row each time a key leaves the board and each time it comes back, naming who took it. Whatever is still out answers who holds a given key right now.'
 }

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from _builders import ID_PK, TITLE, table
 from _packs import (
+    DEFAULT_TABLE_NOTE,
     blocks,
     entities,
     entity,
@@ -20,6 +21,8 @@ from _packs import (
     write_dbml,
     write_mapping,
 )
+
+from dbml_sharepoint.model.parser import parse_dbml
 
 
 def test_entity_emits_one_indented_line() -> None:
@@ -65,6 +68,63 @@ def test_write_mapping_can_omit_the_prefix(tmp_path: Path) -> None:
 
 def test_write_dbml_honours_a_custom_name(tmp_path: Path) -> None:
     assert write_dbml(tmp_path, table("A", ID_PK), name="other.dbml").name == "other.dbml"
+
+
+def test_write_dbml_gives_every_table_a_note(tmp_path: Path) -> None:
+    """`ENTITY_HAS_NO_NOTE` is an error, so a fixture with no note is a fixture
+    that cannot be built. Parsed back rather than string-matched: the note has
+    to reach `Table.note`, which is where the rule and the emitter read it."""
+    path = write_dbml(tmp_path, blocks(table("A", ID_PK), table("B", ID_PK)))
+    assert [t.note for t in parse_dbml(path).tables] == [DEFAULT_TABLE_NOTE] * 2
+
+
+@pytest.mark.parametrize("keyword", ["Note", "note", "NOTE"])
+def test_write_dbml_leaves_a_declared_note_alone(tmp_path: Path, keyword: str) -> None:
+    """A test that authored its own note is about that note.
+
+    Parametrised over the CASE of the keyword because pydbml ignores it and a
+    case-sensitive detector here would not. `note:` at the start of a line is
+    a table note as surely as `Note:` is; if the detector missed it the helper
+    would append its default afterwards, and pydbml takes the LAST note — so
+    the fixture would read as bespoke prose in the source while `Table.note`
+    held the generic sentence. Nothing would report that.
+    """
+    path = write_dbml(tmp_path, f"""
+        Table A {{
+          Id int [pk, increment]
+
+          {keyword}: 'The one this test is about.'
+        }}
+    """)
+    assert [t.note for t in parse_dbml(path).tables] == ["The one this test is about."]
+
+
+def test_the_default_note_goes_after_an_index_block_not_inside_it(
+    tmp_path: Path,
+) -> None:
+    """The nesting case. A table body opens braces of its own, so inserting at
+    the first `}` would land the note inside `indexes { }` -- which parses, and
+    leaves `Table.note` empty while the fixture looks noted."""
+    path = write_dbml(tmp_path, """
+        Table A {
+          Id int [pk, increment]
+          Code nvarchar
+
+          indexes {
+            Code
+          }
+        }
+    """)
+    table_a = parse_dbml(path).tables[0]
+    assert table_a.note == DEFAULT_TABLE_NOTE
+    assert [index.columns for index in table_a.indexes] == [("Code",)]
+
+
+def test_notes_false_writes_the_body_verbatim(tmp_path: Path) -> None:
+    """The escape the note rule's own tests need."""
+    path = write_dbml(tmp_path, table("A", ID_PK), notes=False)
+    assert parse_dbml(path).tables[0].note == ""
+    assert "Note:" not in path.read_text(encoding="utf-8")
 
 
 def test_blocks_dedents_each_part_against_its_own_margin() -> None:

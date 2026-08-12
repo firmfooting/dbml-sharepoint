@@ -50,4 +50,6 @@ Table Request {
     Priority
     RequestedDate
   }
+
+  Note: 'Requests to the teams who fix and supply things: facilities, IT, admin and grounds. Staff ask here instead of finding somebody, and each team works its queue.'
 }
