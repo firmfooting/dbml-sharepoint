@@ -213,12 +213,14 @@ list a single `ValidationFormula`. The `LastConfirmed` rule reads only its
 own column, so it lives in `column_validation` and keeps a message that
 can be specific.
 
-Note the interaction the deploy guide flags: the escalation rule fires on
-anything Statutory, while the field is only *shown* when the kind is not
-Task. A Statutory Task is therefore refused while naming a field that is
-off the form. It is enterable — set the kind to Approval or Decision,
-type the route, set it back — and `30-deploy/deploy.md` sets out the two
-ways to resolve it if that edge is too sharp for your register.
+**The form's visibility condition and the save rule are kept deliberately
+in step.** `EscalationRoute` appears exactly when one of the two branches
+can bite — a Decision, or anything Statutory — so the register never
+refuses a save while naming a field that is off the form. If you edit
+either the rule or the visibility condition in
+`20-configure/mapping.yaml`, edit both: a condition narrower than its rule
+produces a form that will not save and will not say why, and it will not
+be caught by any gate this project runs.
 
 Every other rule in this document is a governance check, because the
 platform cannot express it. That includes everything in the two sections

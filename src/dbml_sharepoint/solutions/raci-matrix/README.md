@@ -76,7 +76,9 @@ list-view threshold without redesigning it as a persisted field.
 route, and so must anything Statutory — both are cross-column rules and so
 share the list's single validation message. The third reads only its own
 column and keeps a message of its own: `LastConfirmed` is required and
-refuses a date in the future.
+refuses a date in the future. The escalation-route field appears on the
+form in exactly the two cases the first two rules cover, so the register
+never refuses a save while naming a field the author cannot see.
 
 **Work the folders in order:**
 

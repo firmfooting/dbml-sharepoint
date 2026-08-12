@@ -323,13 +323,28 @@ form_visibility:
       # Defaults to today. Showing it at creation invites somebody to
       # back-date the baseline the whole cadence counts from.
       LastConfirmed: { new: false }
-      # Visible where it is expected and mandatory, rather than sitting
-      # blank on every routine task. Changing the kind back to Task does
-      # NOT clear a route already entered — SharePoint has no such
-      # mechanism — so the field hides while keeping its value.
+      # Visible exactly when one of the two save-rule branches below can
+      # bite — a Decision, or anything Statutory — rather than sitting
+      # blank on every routine task. The two conditions must match the
+      # two branches of `list_validation` or the form and the save rule
+      # disagree.
+      #
+      # A bare list is all_of, so the OR needs the `any_of` group. This
+      # read `ActivityKind neq Task` alone, which is narrower than the
+      # rule: a Statutory TASK was refused at save while the field the
+      # message named was off the form, which is the exact failure
+      # conditional visibility exists to prevent. `act-statutory-overdue`
+      # in the demo rows is that shape and only saved because demo data
+      # is written over REST rather than through the form.
+      #
+      # Changing the kind or the criticality back does NOT clear a route
+      # already entered — SharePoint has no such mechanism — so the field
+      # hides while keeping its value.
       EscalationRoute:
         when:
-          - { field: ActivityKind, op: neq, value: "Task" }
+          any_of:
+            - { field: ActivityKind, op: neq, value: "Task" }
+            - { field: Criticality, op: eq, value: "Statutory" }
 
 # Deliberately absent: any rule conditioned on ConfirmationDue. Conditional
 # show/hide cannot read a calculated column — the formula stays syntactically

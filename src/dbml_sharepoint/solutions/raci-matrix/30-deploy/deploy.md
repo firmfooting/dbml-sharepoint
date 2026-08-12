@@ -162,10 +162,12 @@ exist.
       the baseline the whole cadence counts from, and showing it at
       creation only invites somebody to back-date it.
 - [ ] `EscalationRoute` is **absent on a New form while Activity Kind is
-      Task**, and appears the moment you switch to Approval or Decision.
-      Switch back to Task and it disappears again, keeping whatever was
-      typed — SharePoint offers no mechanism to clear a hidden field, so
-      the value survives the field being hidden.
+      Task and Criticality is not Statutory**, and appears the moment
+      either of those changes — switch the kind to Approval or Decision,
+      or the criticality to Statutory. Those are exactly the two cases the
+      save rule refuses without it. Switch back and it disappears again,
+      keeping whatever was typed — SharePoint offers no mechanism to clear
+      a hidden field, so the value survives the field being hidden.
 - [ ] `ConfirmationDue` spot-checks, on a saved test activity:
       - Statutory, confirmed today → due in **6 months**.
       - High → **12 months**. Routine → **24 months**.
@@ -182,25 +184,17 @@ exist.
       only one. Try both: set `Activity Kind` to **Decision** with
       `Escalation Route` empty, and set `Criticality` to **Statutory**
       with it empty. Both are refused with the same message naming both
-      cases — that is the platform limit, not a defect. Note that the
-      Escalation Route field is on screen when the Decision refusal fires:
-      a rejection naming a field the author cannot see is what the
-      visibility rule exists to prevent.
-- [ ] **Check the Statutory Task case deliberately, and tell your
-      maintainers about it.** The escalation rule fires on anything
-      Statutory whatever its kind, but the field is only *shown* when the
-      kind is not Task — so a Statutory **Task** is refused while the
-      field it names is off the form. It is enterable, just not obviously:
-      set Activity Kind to Approval or Decision, type the route, set the
-      kind back to Task (the value survives the field being hidden) and
-      save. Two ways out if that reads as too sharp an edge for your
-      register: widen the visibility condition in
-      `20-configure/mapping.yaml` to an `any_of` group so the route also
-      shows when Criticality is Statutory, or accept it as-is on the
-      argument that a statutory
-      obligation with an escalation route is rarely a plain task. Decide
-      before first deploy either way; changing it afterwards is a redeploy
-      and a re-brief.
+      cases — that is the platform limit, not a defect. In both cases the
+      Escalation Route field is on screen when the refusal fires: a
+      rejection naming a field the author cannot see is what the
+      visibility rule exists to prevent, and the visibility condition
+      covers both branches of the save rule for exactly that reason.
+- [ ] **A Statutory Task shows the Escalation Route**, even though its
+      kind is Task. Set `Criticality` to **Statutory** on a Task and the
+      field appears; set it back to Routine and it disappears again,
+      keeping whatever was typed. This is the case worth checking by hand,
+      because a visibility condition narrower than its save rule produces
+      a form that refuses to save and will not show you why.
 - [ ] `LastConfirmed` refuses a date in the future, with its own message
       rather than the shared one — it reads only its own column, so it
       keeps a message that can be specific.

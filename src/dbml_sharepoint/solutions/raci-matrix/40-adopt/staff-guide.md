@@ -71,13 +71,12 @@ Executive Director, then the Finance and Audit Committee at its next
 sitting" is a route. "Escalate as required" is not — it names nobody and
 resolves nothing at 4pm on a Friday.
 
-> **One sharp edge worth knowing.** The escalation route is only shown on
-> the form when Activity Kind is Approval or Decision, but it is
-> *required* on anything Statutory whatever the kind. So a **Statutory
-> Task** will refuse to save while the field it is complaining about is
-> off the form. To fill it in: set Activity Kind to Approval or Decision,
-> type the route, set the kind back to Task — the value survives — and
-> save.
+The field only appears on the form in those two cases — when the kind is
+Approval or Decision, or when the criticality is Statutory — rather than
+sitting blank on every routine task. If it is on your screen, the register
+will not let you save without it. If it appears while you are part way
+through a row, it is because you just made the activity one that needs
+one.
 
 ## What this register is not: a way to decide
 
