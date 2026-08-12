@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
+import yaml
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
@@ -442,43 +443,69 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
     )
 
 
-def _site_roles(mapping_path: Path) -> list[str]:
-    """The roles the copied mapping actually declares.
+@dataclass(frozen=True)
+class _TemplateFacts:
+    """What a shipped mapping declares that changes which questions are put.
 
-    Same data-driven vocabulary `build` and `report` use: the valid roles
-    are whatever the entities declare, never a hardcoded list.
+    Read from the SHIPPED mapping, before anything is written, so the build
+    questions can be asked alongside the rest. Sound because `_rewrite_prefix`
+    only ever rewrites the `prefix:` line -- pinned by
+    `test_the_facts_match_between_the_shipped_family_and_the_copy`.
     """
-    bundle = load_mapping(mapping_path)
-    return sorted({e.site_role for e in bundle.mapping.entities.values()})
+
+    roles: frozenset[str]
+    #: `--seed` against a mapping with no `demo_items` raises
+    #: `SeedRequiresDemoItemsError` and the build exits non-zero. Offering
+    #: the question there would be offering a dead end.
+    demo_items: bool
+    #: `execute_build` refuses `--enterprise-reader` outright against a
+    #: mapping declaring no `enroll_enterprise_reader` group. Same reason.
+    reader_group: bool
 
 
-def _declares_demo_items(mapping_path: Path) -> bool:
-    """Whether seeding is even offerable for this copied mapping.
+def _read_facts(solution: Solution) -> _TemplateFacts:
+    """Load one template's mapping, or refuse by name.
 
-    Asked before the question is put, because `--seed` against a mapping with
-    no `demo_items` raises `SeedRequiresDemoItemsError` and the build exits
-    non-zero. Offering the choice there would be offering a dead end, and the
-    wizard would have walked the operator into it.
-
-    Loaded separately from `_site_roles` rather than threading one bundle
-    through both: they answer unrelated questions, the file is small, and a
-    shared parameter is one more thing to keep in step for no gain.
+    `load_mapping` raises `ValueError` for anything it dislikes, `KeyError`
+    for an absent required section, and passes through `OSError` and
+    `yaml.YAMLError` from the read. The wizard is the error boundary here, so
+    all four become one `WizardError` naming the template -- which is what
+    the caller prints before writing anything.
     """
-    return any(load_mapping(mapping_path).mapping.demo_items.values())
+    try:
+        bundle = load_mapping(solution.mapping_path)
+    except (OSError, KeyError, ValueError, yaml.YAMLError) as exc:
+        raise WizardError(
+            f"the {solution.id} template's mapping could not be loaded: {exc}",
+        ) from exc
+    permissions = bundle.mapping.permissions
+    return _TemplateFacts(
+        roles=frozenset(e.site_role for e in bundle.mapping.entities.values()),
+        demo_items=any(bundle.mapping.demo_items.values()),
+        reader_group=any(
+            g.enroll_enterprise_reader
+            for g in (permissions.groups if permissions else [])
+        ),
+    )
 
 
-def _declares_reader_group(mapping_path: Path) -> bool:
-    """Whether the copied mapping has anything `--enterprise-reader` could
-    enrol into.
+def _site_roles(facts: Sequence[_TemplateFacts]) -> list[str]:
+    """The roles every chosen template understands, sorted.
 
-    Asked before the question is put, mirroring `_declares_demo_items`:
-    `execute_build` refuses `--enterprise-reader` outright against a mapping
-    declaring no `enroll_enterprise_reader` group, so offering the question
-    where none exists would be offering a dead end the wizard would then
-    have to walk the operator into.
+    An intersection, not a union: the site role is a property of the SITE
+    being deployed to, so a role only one of two templates declares would be
+    refused by `_require_known_site_role` for the other. With one template --
+    which is what the picker collects today -- this is that template's own
+    roles, unchanged.
     """
-    perms = load_mapping(mapping_path).mapping.permissions
-    return any(g.enroll_enterprise_reader for g in (perms.groups if perms else []))
+    shared = frozenset.intersection(*(f.roles for f in facts))
+    if not shared:
+        raise WizardError(
+            "the chosen templates share no site role, so there is none this "
+            "site could be built under. Declared: "
+            + "; ".join(", ".join(sorted(f.roles)) for f in facts),
+        )
+    return sorted(shared)
 
 
 def _run(console: Console) -> int:
@@ -502,6 +529,11 @@ def _run(console: Console) -> int:
     )
 
     solution = _pick_solution(console, solutions)
+    try:
+        facts = _read_facts(solution)
+    except WizardError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return 1
     _describe(console, solution)
 
     destination = _ask_destination(console, solution)
@@ -562,7 +594,7 @@ def _run(console: Console) -> int:
         )
         return 0
 
-    roles = _site_roles(mapping_path)
+    roles = _site_roles([facts])
     if len(roles) == 1:
         site_role = roles[0]
     elif "default" in roles:
@@ -593,7 +625,7 @@ def _run(console: Console) -> int:
     # on refusal -- see `_ask_enterprise_reader`; the `except typer.Exit`
     # below cannot catch what that validator raises.
     reader = ""
-    if _declares_reader_group(mapping_path):
+    if facts.reader_group:
         reader = _ask_enterprise_reader(console)
 
     # Every colour map, row wash and declared view is invisible on an empty
@@ -603,7 +635,7 @@ def _run(console: Console) -> int:
     # seeding writes `[DEMO]` rows into a real site, and the wizard must not
     # be more forward than the documented flag it stands for.
     seed = False
-    if _declares_demo_items(mapping_path):
+    if facts.demo_items:
         # The caution goes BEFORE the question, because the question is where
         # the decision is made. A shipped family may seed deliberately alarming
         # data to make a view render at all -- equipment-maintenance ships one

@@ -18,7 +18,12 @@ import pytest
 from rich.console import Console
 
 from dbml_sharepoint import wizard
-from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, Solution, load_solution
+from dbml_sharepoint.catalogue import (
+    PLACEHOLDER_SITE_URL,
+    Solution,
+    available_solutions,
+    load_solution,
+)
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 
@@ -846,10 +851,20 @@ def test_a_second_prefix_key_defeats_the_rewrite_and_the_read_back_says_so(
 def test_a_template_with_no_prefix_line_is_reported_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`_rewrite_prefix` fails closed, and the wizard has to carry that
-    through to an exit code rather than letting a `WizardError` out of a
-    prompt loop. The user is told what went wrong and nothing half-written
-    is presented as a project."""
+    """A shipped mapping missing `prefix:` entirely is refused up front.
+
+    `entities: {}\n` has no top-level `prefix:` key, so the real loader --
+    called by `_read_facts` right after the template is picked, before the
+    destination is even asked -- raises `KeyError('prefix')`. `_read_facts`
+    turns that into a named `WizardError`, not a traceback and not a
+    half-made project.
+
+    This fixture used to reach `_rewrite_prefix`'s own regex guard,
+    mid-scaffold; `_read_facts` now catches it earlier, which is the point
+    of reading the shipped mapping before anything is written.
+    `_rewrite_prefix`'s guard is still pinned directly by
+    `test_a_mapping_with_no_prefix_line_is_refused` above.
+    """
     solution = _fake_family(tmp_path / "fake", mapping="entities: {}\n")
     _offer_only(monkeypatch, solution)
 
@@ -860,19 +875,20 @@ def test_a_template_with_no_prefix_line_is_reported_not_a_traceback(
 
     assert wizard.run_wizard(console) == 1
     reported = _collapsed(console)
-    assert "Could not scaffold the project" in reported
-    assert "no top-level `prefix:` line" in reported
+    assert "fake-template" in reported
+    assert "could not be loaded" in reported
+    assert not destination.exists()
 
 
 def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The other arm of the same guard: `copytree` raising `OSError`.
-
-    A template the catalogue offered and the filesystem then could not
-    supply is not a case the wizard can recover from, but it is one it must
-    name -- an unhandled `FileNotFoundError` out of `shutil` names the
-    wizard's internals instead of the template.
+    """A template the catalogue offered and the filesystem then could not
+    supply is refused by `_read_facts`, before the destination is even
+    asked -- an unhandled `FileNotFoundError` reading the shipped mapping
+    would otherwise name the wizard's internals instead of the template.
+    `_read_facts` catches `OSError` alongside the loader's own exceptions
+    and turns it into one named `WizardError`.
     """
     solution = _fake_family(tmp_path / "fake")
     _offer_only(monkeypatch, solution)
@@ -882,7 +898,7 @@ def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
     console = ScriptedConsole(_answers(destination, template="fake-template"))
 
     assert wizard.run_wizard(console) == 1
-    assert "Could not scaffold the project" in _collapsed(console)
+    assert "could not be loaded" in _collapsed(console)
     assert not destination.exists()
 
 
@@ -1353,6 +1369,97 @@ def test_the_seed_question_carries_its_caution_first(
     question = shown.index("Add the template's demo rows")
     assert caution < question, "the caution must precede the question"
     assert "deploy.md" in shown
+
+
+def test_the_facts_match_between_the_shipped_family_and_the_copy(
+    tmp_path: Path,
+) -> None:
+    """Why asking the build questions before the write is legitimate.
+
+    The wizard reads roles, demo items and the reader group from the SHIPPED
+    mapping so it can ask about them before writing anything. That is only
+    sound because `_rewrite_prefix` is a single-line regex on `^prefix:` --
+    entities, permissions and demo_items are byte-identical in the copy.
+    Argued once in the spec; pinned here, because a future rewrite that
+    touched a second line would make every gate answer the wrong question.
+    """
+    solutions = available_solutions()
+    # A guard, not a formality: the loop below would pass just as happily
+    # over an empty roster, proving nothing while looking like it walked all
+    # thirty-one families. `test_no_two_templates_declare_the_same_entity_name`
+    # in test_template_standard.py uses the same shape for the same reason.
+    assert len(solutions) == 31, (
+        f"{len(solutions)} templates discovered, not the 31 this walk was "
+        "measured against -- re-verify the invariant before trusting an "
+        "empty roster as a pass."
+    )
+    for solution in solutions:
+        destination = tmp_path / solution.id
+        console = ScriptedConsole(
+            _answers(destination, template=solution.id, build="n"),
+        )
+        assert wizard.run_wizard(console) == 0, solution.id
+
+        copied = wizard._read_facts(
+            replace(solution, root=destination),
+        )
+        assert copied == wizard._read_facts(solution), solution.id
+
+
+def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Named refusal, not a traceback, and no half-made project.
+
+    `_site_roles` used to call `load_mapping` on the copy AFTER the write and
+    outside any guard, so a template the loader dislikes produced a traceback
+    on top of a directory the wizard had just created. The picker tolerates
+    such a template by design -- `_mapping_facts` avoids the loader precisely
+    so one bad family cannot take down the list of thirty-one.
+    """
+    family = tmp_path / "family"
+    # `entities:` absent entirely; `load_mapping` indexes `raw["entities"]`.
+    solution = _fake_family(family, mapping='prefix: "OLD_"\n')
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "out"
+    # Two answers only. The guard runs straight after the template pick, so
+    # a scripted destination would never be consumed -- and a spare answer at
+    # the end of a script is invisible, which is exactly how a test comes to
+    # assert less than it looks like it does. Under-scripting is the honest
+    # failure mode here: it surfaces as EOFError and exit 130, not silence.
+    console = ScriptedConsole([solution.id, "NEW_"])
+    assert wizard.run_wizard(console) == 1
+    assert not destination.exists()
+    assert "fake-template" in _collapsed(console)
+
+
+def test_the_site_roles_are_the_intersection(tmp_path: Path) -> None:
+    """A role you deploy one site under must be one every template knows.
+
+    The picker collects a single template today, so N=2 is only reachable
+    here. `_site_roles` is a pure fold; testing it directly is honest.
+    """
+    both = wizard._TemplateFacts(
+        roles=frozenset({"hq", "branch"}), demo_items=False, reader_group=False,
+    )
+    one = wizard._TemplateFacts(
+        roles=frozenset({"branch"}), demo_items=False, reader_group=False,
+    )
+    assert wizard._site_roles([both]) == ["branch", "hq"]
+    assert wizard._site_roles([both, one]) == ["branch"]
+
+
+def test_templates_that_share_no_site_role_are_refused(tmp_path: Path) -> None:
+    """Rather than picking one and letting `execute_build` refuse it later."""
+    hq = wizard._TemplateFacts(
+        roles=frozenset({"hq"}), demo_items=False, reader_group=False,
+    )
+    branch = wizard._TemplateFacts(
+        roles=frozenset({"branch"}), demo_items=False, reader_group=False,
+    )
+    with pytest.raises(wizard.WizardError, match="no site role"):
+        wizard._site_roles([hq, branch])
 
 
 def test_a_seeded_run_names_the_guide_before_the_demo_script(
