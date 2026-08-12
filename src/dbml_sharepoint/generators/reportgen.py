@@ -32,6 +32,10 @@ from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 from dbml_sharepoint.analysis.lookups import lookup_display_columns
+from dbml_sharepoint.analysis.report_columns import (
+    REPORT_FIXED_COLUMNS,
+    REPORT_KEY_SUFFIX,
+)
 from dbml_sharepoint.analysis.typemap import SPField, map_column
 from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
 from dbml_sharepoint.bundle import (
@@ -599,17 +603,17 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         # routinely appends several deployments of the same template, and
         # without these two columns there is nothing to slice by.
         "    WithSiteUrl = Table.AddColumn(",
-        '        WithItemURL, "Site Url", each SiteRoot, type text',
+        f'        WithItemURL, "{REPORT_FIXED_COLUMNS[0]}", each SiteRoot, type text',
         "    ),",
         "    WithSiteName = Table.AddColumn(",
-        '        WithSiteUrl, "Site Name", each SiteName, type text',
+        f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
         "    ),",
         # Which LIST the row came from — the other half of the same problem
         # the two columns above solve. A model that appends several lists
         # needs to slice by list as well as by site, and the key below is
         # opaque.
         "    WithListTitle = Table.AddColumn(",
-        '        WithSiteName, "List Title",',
+        f'        WithSiteName, "{REPORT_FIXED_COLUMNS[2]}",',
         f"        each {_m_string(plan.list_title)},",
         "        type text",
         "    ),",
@@ -621,7 +625,7 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         # same-numbered parent everywhere. The report renders and the numbers
         # are wrong. Format and rationale: `_row_key_m`.
         "    WithRowKey = Table.AddColumn(",
-        f'        WithListTitle, "{plan.entity} Key",',
+        f'        WithListTitle, "{plan.entity}{REPORT_KEY_SUFFIX}",',
         f"        each {_row_key_m(plan.list_title, '[Id]')},",
         "        type text",
         "    )",

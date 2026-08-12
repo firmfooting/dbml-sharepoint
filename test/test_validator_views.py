@@ -892,3 +892,59 @@ def test_display_names_must_be_unique_and_bounded() -> None:
     # in the location, which is the whole entity.
     assert "'Sort Order'" in only(errors, FindingCode.DUPLICATE_DISPLAY_TITLE).message
     assert "'DueDate'" in only(errors, FindingCode.EMPTY_DISPLAY_TITLE).message
+
+
+def test_a_display_title_may_not_be_a_reporting_column() -> None:
+    """The uniqueness rule above compares schema columns with each other only.
+
+    It cannot see the four columns the reporting pack adds to the same
+    table, which arrive BEFORE `Table.RenameColumns` runs. Renaming a column
+    onto a name the table already carries is an error in M, so the build
+    stays green, the model publishes, and the refresh fails.
+
+    Each of the four is asserted, not just the one a reviewer happened to
+    name: `List Title` was new when this was reported, but `Site Url` and
+    `Site Name` had been reachable the whole time.
+    """
+    for override, expected in (
+        ("Site Url", "Site Url"),
+        ("Site Name", "Site Name"),
+        ("List Title", "List Title"),
+        ("Project Key", "Project Key"),
+    ):
+        errors = _project_errors(
+            display_name_mode="auto",
+            display_name_overrides={"Project": {"Status": override}},
+        )
+        finding = only(
+            errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+        )
+        assert f"{expected!r}" in finding.message
+        assert finding.location == Location(
+            Section.DISPLAY_NAMES, entity="Project",
+        )
+
+
+def test_the_auto_split_alone_reaches_a_reporting_column() -> None:
+    """No override needed, which is why the rule cannot be documentation.
+
+    MEASURED: `auto_display_name` splits `SiteUrl` to `Site Url`. A schema
+    that happens to name a column `SiteUrl`, under the auto mode this
+    project recommends, produces the collision with nothing written in
+    `display_names:` at all.
+    """
+    schema = make_schema(
+        make_table(
+            "Project",
+            column("Title", required=True),
+            column("SiteUrl", "nvarchar"),
+        ),
+    )
+    bundle = make_bundle(entities=["Project"], display_name_mode="auto")
+    errors = [
+        f for f in validate_against_mapping(schema, bundle)
+        if f.severity == "error"
+    ]
+    assert "'Site Url'" in only(
+        errors, FindingCode.DISPLAY_TITLE_COLLIDES_WITH_REPORT_COLUMN,
+    ).message
