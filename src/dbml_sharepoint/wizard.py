@@ -24,6 +24,7 @@ from pathlib import Path
 import typer
 import yaml
 from rich.console import Console, Group, RenderableType
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -213,6 +214,30 @@ def _describe(console: Console, solution: Solution) -> None:
         console.print(f"  [dim]{solution.detail}[/dim]\n")
 
 
+def _guidance(console: Console, text: str) -> None:
+    """A dim explanatory block, indented under the prompt it precedes.
+
+    Indented through `Padding`, NOT by writing two spaces into the string.
+    rich re-wraps at the console width, so a literal indent applies to the
+    first line only and every continuation restarts at column 0 -- MEASURED
+    at width 72 on 2026-08-12: the reporting guidance broke after `template`
+    and put `creates,` hard against the margin, and the seed caution put
+    `-- read` there. `Padding` narrows the render width instead, so every
+    line of the block sits at the same column and the block reads as one
+    thing rather than as prose that fell out of its own indent.
+
+    Shared, because there are two of these today and `_ask_prefix` gains a
+    third. A guidance line that indents differently from its neighbours is a
+    worse defect than one that does not indent at all, since it reads as
+    though it belongs to something else.
+
+    Callers pass ONE unbroken string: line breaks are rich's to choose, and
+    a hand-placed `\\n` is a wrap decision made against a width the author
+    cannot see.
+    """
+    console.print(Padding(f"[dim]{text}[/dim]", (0, 0, 0, 2)))
+
+
 def _ask_destination(console: Console, solution: Solution) -> Path:
     """Where the project goes. Never writes into a non-empty directory.
 
@@ -342,9 +367,10 @@ def _ask_enterprise_reader(console: Console) -> str:
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
 
-    console.print(
-        "[dim]  A service account enrolled read-only across every list this "
-        "template creates,\n  so it can report on them. Blank for none.[/dim]",
+    _guidance(
+        console,
+        "A service account enrolled read-only across every list this "
+        "template creates, so it can report on them. Blank for none.",
     )
     while True:
         reader = Prompt.ask(
@@ -398,11 +424,12 @@ def _ask_seed(console: Console) -> bool:
     seen to break.
     """
     guide = "30-deploy/deploy.md"
-    console.print(
-        r"[dim]  Demo rows are titled \[DEMO] and rollback treats a list of "
-        "them as demo-only.\n  Some families seed deliberately alarming data "
-        f"so a view renders at all -- read\n  {guide} before seeding a site "
-        "that already holds real data.[/dim]",
+    _guidance(
+        console,
+        r"Demo rows are titled \[DEMO] and rollback treats a list of them as "
+        "demo-only. Some families seed deliberately alarming data so a view "
+        f"renders at all -- read {guide} before seeding a site that already "
+        "holds real data.",
     )
     return Confirm.ask("Add the demo rows?", default=False, console=console)
 

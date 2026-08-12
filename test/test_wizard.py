@@ -1139,12 +1139,34 @@ def _review(console: ScriptedConsole) -> str:
     to write` test came to check nothing: `risk-register` is a row in the
     catalogue table AND was the default of the project-directory prompt.
 
-    `Review` is the panel's title and appears nowhere else now the section
-    rule that repeated it has gone; `Write the project` is the confirmation
+    `Review` is the panel's title and `Write the project` is the confirmation
     printed directly beneath it.
+
+    Anchored from the RIGHT, and that is the part not to simplify away. The
+    transcript above the panel carries the whole 31-row catalogue table, so
+    a LEFT-anchored `split("Review", 1)` binds to the first `Review`
+    anywhere on screen. No shipped template's id or title contains the word
+    today -- all 31 checked 2026-08-12 -- but a `design-review` or
+    `research-review` family added later would move the bound to the top of
+    the table and silently re-widen every assertion below to the whole
+    transcript. That is a test that stops checking without failing, which is
+    the failure this repository exists to close; `rsplit` after cutting at
+    the right-hand bound cannot do it, because the LAST `Review` before the
+    confirmation is always the panel's own title.
     """
-    shown = _collapsed(console)
-    return shown.split("Review", 1)[1].split("Write the project", 1)[0]
+    head, _, _ = _collapsed(console).partition("Write the project")
+    return head.rsplit("Review", 1)[1]
+
+
+def _next(console: ScriptedConsole) -> str:
+    """The closing `Next` panel alone.
+
+    Same right-anchored reasoning as `_review` above, for the same reason:
+    `Next` is a common enough word that a future template title could carry
+    it, and the catalogue table renders long before this panel does. There
+    is nothing printed after the panel, so `rsplit` alone is the bound.
+    """
+    return _collapsed(console).rsplit("Next", 1)[1]
 
 
 def test_the_review_names_every_answer(tmp_path: Path) -> None:
@@ -1178,6 +1200,70 @@ def test_the_review_names_every_answer(tmp_path: Path) -> None:
         "Demo rows yes",
     ):
         assert row in panel, row
+
+
+def test_the_review_says_nobody_when_no_reporting_account_was_given(
+    tmp_path: Path,
+) -> None:
+    """Blank is the DEFAULT answer, so this is the row most operators read.
+
+    `answers.reader or "nobody"` short-circuits, so nothing -- not the test
+    suite and not the branch gate, which sees one expression rather than two
+    arms -- noticed when the `or "nobody"` was deleted and the row rendered
+    as a bare label. An empty value there does not read as "nobody was
+    enrolled"; it reads as a field the wizard failed to fill in, on the panel
+    whose whole job is to state the decision.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader="", confirm="n"),
+        width=400,
+    )
+    assert wizard.run_wizard(console) == 0
+    assert "Reporting nobody" in _review(console)
+
+
+def test_the_panel_bounds_survive_a_template_named_after_a_panel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The silent rot `_review` and `_next` are right-anchored to prevent.
+
+    No shipped family's id or title contains `Review` or `Next` today -- all
+    31 checked 2026-08-12 -- so a left-anchored `split(..., 1)` is correct,
+    and would stay correct right up until somebody ships `design-review`. At
+    that point the bound jumps to the catalogue table, every assertion inside
+    it widens to the whole transcript, and the suite stays green while
+    checking nothing. A test that stops checking without failing is the
+    failure this repository exists to close, so the offending template is
+    invented here rather than waited for.
+
+    The assertions are EXCLUSIONS, and they have to be: a widened bound still
+    contains every row the panel does, so `"Build ..." in panel` passes
+    either way. Only "the prompts above the panel are NOT in it" separates a
+    bound that holds from one that has quietly swallowed the screen.
+    """
+    solution = replace(
+        _fake_family(tmp_path / "fake"),
+        id="design-review", title="Design Review, Next steps",
+    )
+    _offer_only(monkeypatch, solution)
+    _capture_build(monkeypatch)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        [solution.id, "NEW_", str(destination),
+         "https://contoso.sharepoint.com/sites/x", "y", "y"],
+        width=400,
+    )
+    assert wizard.run_wizard(console) == 0
+
+    review = _review(console)
+    assert "Build yes, site role default" in review
+    assert "Project directory" not in review
+
+    closing = _next(console)
+    assert "Paste build/deploy.js.txt" in closing
+    assert "Project directory" not in closing
 
 
 def test_the_review_of_a_declined_build_says_files_only(tmp_path: Path) -> None:
@@ -1250,6 +1336,32 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
     )
     assert wizard.run_wizard(console) == 0
     assert "--site-role branch" in _collapsed(console)
+
+
+def test_the_template_summary_names_the_declared_prefix() -> None:
+    """Task 7 is what makes this load-bearing, so it is pinned before then.
+
+    The prefix question becomes conditional there: a template declaring no
+    prefix is never asked for one, and this line is then the ONLY place the
+    operator learns what their lists will be called before the Review panel
+    names them. Dropping it back out of `_describe` leaves the whole suite
+    green today, which is exactly why the assertion has to exist today.
+
+    Both spellings, because `(none)` is not a formatting nicety -- a bare
+    `prefix ` with nothing after it reads as a template whose prefix could
+    not be read, rather than as one that declares none on purpose.
+    """
+    declared = Solution(
+        id="x", title="Fake", summary="s", detail="",
+        lists=("Risk",), prefix="RR_", root=Path("unused"),
+    )
+    with_prefix = ScriptedConsole([])
+    wizard._describe(with_prefix, declared)
+    assert "prefix RR_" in _collapsed(with_prefix)
+
+    without = ScriptedConsole([])
+    wizard._describe(without, replace(declared, prefix=""))
+    assert "prefix (none)" in _collapsed(without)
 
 
 def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
@@ -1864,7 +1976,7 @@ def test_the_next_panel_names_the_guide_exactly_once(
     )
 
     assert wizard.run_wizard(console) == 0
-    panel = _collapsed(console).split("Next", 1)[1]
+    panel = _next(console)
     assert panel.count("30-deploy/deploy.md") == 1
     assert carrier in panel
 
