@@ -1429,7 +1429,7 @@ def test_a_member_containing_only_a_bare_semicolon_is_allowed() -> None:
 #
 # Which matters far more than it looks: a fresh deploy produces EMPTY lists,
 # so that is the FIRST refresh every adopter runs, on every person and lookup
-# column, across all 31 shipped families -- and the error names a column, so
+# column, across every shipped family -- and the error names a column, so
 # it reads as a broken query rather than an empty table. It then fixes itself
 # the moment somebody adds a row, which is why no environment that already
 # has data can see it.

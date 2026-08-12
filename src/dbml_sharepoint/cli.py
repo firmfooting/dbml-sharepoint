@@ -196,7 +196,7 @@ def _project_input(
     """The path the operator gave, or the family standard's, or a refusal.
 
     `catalogue` declares where a project keeps its three inputs and
-    `test_template_standard` enforces it across all thirty shipped families,
+    `test_template_standard` enforces it across every shipped family,
     so inside a scaffolded project these paths are an already-proven fact
     rather than a guess. Making the operator retype them on every rebuild --
     the most repeated action in the tool, since the intended workflow is

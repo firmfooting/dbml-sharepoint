@@ -122,7 +122,7 @@ NAME_BUDGET = (
 def normalise_family(project_name: str) -> str:
     """The family slug for a DBML `Project` name.
 
-    MEASURED against the shipped catalogue, not assumed: for all 31 families
+    MEASURED against the shipped catalogue, not assumed: for every family
     the DBML `Project` name is the solution directory name with underscores
     for hyphens (`Project routine_checks` in `solutions/routine-checks/`), so
     swapping them back makes the marker name the family the way the docs,

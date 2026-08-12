@@ -139,7 +139,7 @@ rather than noise they learn to skip:
   "and". The rule lifts if a `test/manual/` probe measures the round trip
   and finds it exact.
 
-The 32 shipped families are the worked examples — every
+The shipped families are the worked examples — every
 `src/dbml_sharepoint/solutions/*/10-design/schema.dbml` carries one note
 per table. Read a few before writing your own; the column notes already
 in each schema are the model for tone.

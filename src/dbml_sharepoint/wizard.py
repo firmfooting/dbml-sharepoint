@@ -79,7 +79,7 @@ _NEVER_COPY = ("build", "reports", "__pycache__")
 #:
 #: This was `^[A-Za-z0-9_-]{1,16}$`, which invented both a character set
 #: and a 16-character ceiling that nothing in Microsoft Learn, the
-#: validator or the thirty shipped templates supports. That is precisely
+#: validator or the shipped templates supports. That is precisely
 #: the "assert from plausibility" failure AGENTS.md opens with, and it made
 #: the wizard reject prefixes `--build` accepts, looping forever on a
 #: perfectly good answer with no way to proceed.
@@ -138,7 +138,7 @@ class TemplateChoice:
         `Solution.lists` unfiltered made the Review panel promise every list
         in the mapping: a mapping declaring `default: Risk` and
         `archive: Archive` had the panel name both while the bundle created
-        only `Risk`. Unreachable with the thirty-two shipped families, which
+        only `Risk`. Unreachable with the shipped families, which all
         declare `default` and nothing else -- but the site-role question
         exists precisely for the mappings where it is not.
 

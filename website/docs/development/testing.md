@@ -5,29 +5,31 @@ sidebar_position: 3
 
 # The test suite
 
-`uv run pytest` reports around 1,650 tests. That number looks alarming and is
-mostly an artefact of how it is counted. This page records what is actually
-there, why none of it is trimmed, and where the real maintenance cost sits —
-so the next person to look at the number does not have to re-derive it.
+`uv run pytest` reports a case count in the low thousands. That number looks
+alarming and is mostly an artefact of how it is counted. This page records what
+is actually there, why none of it is trimmed, and where the real maintenance
+cost sits — so the next person to look at the number does not have to re-derive
+it.
+
+Run `uv run pytest --collect-only -q` for the current figures. They are
+deliberately not written down here: they were, once, and they drifted by about a
+third before anybody noticed, because nothing reads a number in a sentence.
 
 ## What the number is
 
-| | Count |
-|---|---|
-| Collected cases | 1,646 |
-| **Distinct test functions** | **1,048** |
-| Extra cases from parametrisation | 598 |
+Collected *cases* substantially exceed distinct test *functions*, and the gap is
+concentrated in one file. `test_template_standard.py` is the family-standard
+conformance sweep, and most of its functions are parametrised across the whole
+template library. Its case count is therefore roughly **conformance rules ×
+shipped families**, plus a handful of one-off checks that contribute one case
+each.
 
-The gap is concentrated in one file. `test_template_standard.py` is **23
-functions producing 413 cases**. Thirteen of them are parametrised across the
-whole template library, which is 13 × 31 = 403 of those cases; the other ten
-functions contribute one case each. So the 413 is 13 conformance rules applied
-to 31 templates plus 10 one-off checks, not 413 things anyone maintains — and
-parametrising is what makes a failure say *which* template drifted instead of
-"something under `solutions/` is wrong".
+So the bulk of that file is not a pile of things anyone maintains — it is a
+small set of rules applied to every family. Parametrising is what makes a
+failure say *which* template drifted instead of "something under `solutions/` is
+wrong".
 
-Every other file is close to one case per function: `test_jsgen` 112/112,
-`test_reportgen` 37/37, `test_forms` 35/35.
+Every other file is close to one case per function.
 
 ## Why none of it is trimmed
 
@@ -142,7 +144,7 @@ directories; both were previously called `TEMPLATES` in different modules.
 
 ## The axis that grows
 
-Conformance cases scale as *rules × templates*. At 31 templates that is 413
-cases and about 5s. At 100 templates it would be roughly 1,300 cases and ~16s
-serial — still fine, but worth knowing that the count grows when a **template**
-is added, not when a test is.
+Conformance cases scale as *rules × templates*, and the sweep currently costs a
+few seconds. Tripling the library would roughly triple that — still fine, but
+worth knowing that the count grows when a **template** is added, not when a test
+is. That is the axis to watch if the run ever stops feeling instant.
