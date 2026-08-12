@@ -18,6 +18,61 @@ Enum party_status {
   "Inactive"
 }
 
+Enum activity_domain {
+  "Governance"
+  "Finance"
+  "People"
+  "Service delivery"
+  "Information & technology"
+  "Facilities & assets"
+  "Quality & risk"
+  "External relations"
+}
+
+Enum activity_kind {
+  "Task"
+  "Approval"
+  "Decision"
+}
+
+Enum criticality {
+  "Statutory"
+  "High"
+  "Routine"
+}
+
+Enum review_status {
+  "Current"
+  "Needs review"
+  "Retired"
+}
+
+Table Activity {
+  Id               int             [pk, increment]
+  Title            nvarchar        [not null, note: 'The activity as a verb phrase: "Approve a new supplier", "Publish the quarterly report"']
+  Domain           activity_domain [not null, note: 'The area of the business this activity belongs to. Used to group the register for review']
+  ActivityKind     activity_kind   [not null, default: 'Task', note: 'Task: Responsible does the work, Accountable owns the outcome. Approval: Responsible prepares, Accountable signs. Decision: Responsible runs the process, Accountable makes the call']
+  Criticality      criticality     [not null, default: 'Routine', note: 'Statutory means law, licence or funding agreement requires it. Sets how often this row must be re-confirmed: Statutory 6 months, High 12, Routine 24']
+  Detail           richtext        [note: 'What this activity covers and, just as usefully, what it does not. Write the boundary that stops somebody claiming a neighbouring activity is included']
+  Responsible      person          [not null, note: 'The one person who does the work. A named individual, never a team — a team that is Responsible means nobody is']
+  Accountable      person          [not null, note: 'The one person who answers for the outcome. Exactly one, always: two people accountable means each assumes the other is watching']
+  AccountableForum int             [ref: > Party.Id, note: 'The forum this accountability is exercised through, where there is one. The person above still answers for it — a committee cannot be performance-managed']
+  EscalationRoute  nvarchar        [note: 'Where this goes when Responsible and Accountable cannot agree. Required for a Decision and for anything Statutory']
+  ReviewStatus     review_status   [not null, default: 'Current', note: 'Set Needs review the moment you know a row is wrong — that is what makes it visible. Retired keeps the history without cluttering the register']
+  LastConfirmed    date            [not null, default: '[today]', note: 'The date somebody last checked that this row is still true. Fills automatically when the activity is created - update it each time you re-confirm the row. The whole confirmation cadence counts from here']
+  ConfirmedBy      person          [note: 'Who did that check. Not the same as who last edited the row — an edit is not a confirmation']
+  ConfirmationDue  calculated_date [note: 'When this row must be re-confirmed. Calculated from Last Confirmed and Criticality; blank on a retired row']
+
+  indexes {
+    ReviewStatus
+    Criticality
+    Accountable
+    Domain
+  }
+
+  Note: 'One row per thing done, approved or decided, naming the one person who does it and the one who answers for it. Consulted and informed parties live in Involvement.'
+}
+
 Table Party {
   Id        int          [pk, increment]
   Title     nvarchar     [not null, unique, note: 'The party as everyone refers to it: "Executive Director", "Clinical Governance Committee"']

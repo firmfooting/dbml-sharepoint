@@ -10,6 +10,7 @@
 prefix: "RACI_"
 
 entities:
+  Activity: { kind: List, base_template: 100, site_role: default }
   Party: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
@@ -24,7 +25,26 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
-calculated_formulas: {}
+# The confirmation cadence. Keyed to EXACTLY the three `criticality` members
+# in this order: the nested IF maps the first two by name and treats
+# everything else as Routine, so an added, renamed or reordered member
+# silently gets the LONGEST interval rather than failing. The coupling is
+# recorded here because that is where somebody editing the enum will look.
+# Unreachable by data entry today: every Choice column deploys with
+# FillInChoice false, so a value outside the enum cannot be typed.
+#
+# KNOWN, ACCEPTED, and the same defect risk-register carries: adding months
+# with DATE(YEAR(d), MONTH(d)+N, DAY(d)) OVERFLOWS at month end rather than
+# clamping, so a confirmation recorded 31 August falls due 3 March rather
+# than 28 February. One to three days on a cadence of six months or more,
+# against a column whose own guidance is to re-confirm sooner on any material
+# change. Tracked as issue #5.
+#
+# CHANGE CONTROL: SharePoint recalculates every existing row when a formula
+# changes — read 50-govern/governance.md before editing this.
+calculated_formulas:
+  Activity:
+    ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])))'
 
 # Security: the matrix is maintained centrally and read by everyone. Nobody
 # edits their own row — a register whose subjects can rewrite their own
@@ -80,6 +100,27 @@ display_names:
   mode: auto
 
 column_formatting:
+  Activity:
+    # Criticality is an assessment scale, not a lifecycle, so it takes the
+    # severity tokens the way risk-register's TargetRiskRating does — least
+    # severe to `good`, ascending from there.
+    Criticality: { style: severity, map: { Statutory: severe, High: warning,
+                                           Routine: good } }
+    ReviewStatus: { style: severity, map: { Current: low,
+                                            "Needs review": warning,
+                                            Retired: muted } }
+    # `calculated: true` is REQUIRED here — calculated values arrive prefixed
+    # `string;#`. It is WRONG in a view formatter, where [$Field] arrives
+    # clean. Getting it backwards costs a silently-not-firing format either
+    # way.
+    ConfirmationDue: { style: overdue-date, calculated: true,
+                       guard: { field: ReviewStatus, not: [Retired] } }
+    # ActivityKind is DELIBERATELY unformatted. Task, Approval and Decision
+    # are a category with no ordering, and `pill` requires an explicit token
+    # map — so formatting it at all would mean inventing a colour ranking,
+    # which is the "colour by word, not by role" failure the style standard
+    # exists to prevent. It does its work through the view filter and the
+    # save rule instead.
   Party:
     # A category, not a lifecycle, so the pill separates kinds rather than
     # ranking them: the two person-shaped kinds share neutral, a Forum reads
@@ -89,6 +130,95 @@ column_formatting:
     Status: { style: severity, map: { Active: low, Inactive: muted } }
 
 views:
+  Activity:
+    - title: "Current"
+      default: true
+      fields: [Title, Domain, ActivityKind, Criticality, Responsible,
+               Accountable, AccountableForum, ReviewStatus, ConfirmationDue]
+      where:
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      # ONE row-level signal, reserved for the state nothing else shouts
+      # about. The ConfirmationDue cell is about time passing; this is about
+      # a human having marked the row as wrong, which is worse.
+      formatting: formatting/row-needs-review.json
+      widths:
+        Title: 280
+        Domain: 130
+        ActivityKind: 120
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        AccountableForum: 180
+        ReviewStatus: 160
+        ConfirmationDue: 170
+    - title: "My accountabilities"
+      fields: [Title, Domain, ActivityKind, Criticality, Responsible,
+               ReviewStatus, ConfirmationDue]
+      where:
+        - { field: Accountable, op: eq, value: me }
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      widths:
+        Title: 300
+        Domain: 130
+        ActivityKind: 120
+        Criticality: 160
+        Responsible: 160
+        ReviewStatus: 160
+        ConfirmationDue: 170
+    - title: "Confirmation due"
+      fields: [Title, Criticality, Accountable, ConfirmedBy, LastConfirmed,
+               ConfirmationDue, ReviewStatus]
+      where:
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+        - { field: ConfirmationDue, op: leq, value: today+30 }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      widths:
+        Title: 300
+        Criticality: 160
+        Accountable: 160
+        ConfirmedBy: 160
+        LastConfirmed: 170
+        ConfirmationDue: 170
+        ReviewStatus: 160
+    # Two lenses merged on purpose. A decisions list and a by-forum grouping
+    # are each half a view; the non-Task rows grouped by the forum that owns
+    # them is the governance pack.
+    - title: "Decisions and approvals"
+      fields: [Title, ActivityKind, Criticality, Responsible, Accountable,
+               EscalationRoute, ConfirmationDue]
+      where:
+        - { field: ActivityKind, op: neq, value: "Task" }
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      group_by: { field: AccountableForum, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        ActivityKind: 120
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        EscalationRoute: 240
+        ConfirmationDue: 170
+    - title: "Retired"
+      fields: [Title, Domain, Responsible, Accountable, LastConfirmed,
+               ConfirmedBy]
+      where:
+        - { field: ReviewStatus, op: eq, value: "Retired" }
+      sort:
+        - { field: LastConfirmed, direction: desc }
+      widths:
+        Title: 300
+        Domain: 130
+        Responsible: 160
+        Accountable: 160
+        LastConfirmed: 170
+        ConfirmedBy: 160
   Party:
     - title: "Active parties"
       default: true
@@ -128,13 +258,63 @@ views:
         Notes: 200
 
 form_formatting:
+  Activity:
+    header: formatting/activity-form-header.json
+    body: formatting/activity-form-body.json
   Party:
     header: formatting/party-form-header.json
     body: formatting/party-form-body.json
 
-form_visibility: {}
-column_validation: {}
-list_validation: {}
+form_visibility:
+  Activity:
+    columns:
+      # Defaults to today. Showing it at creation invites somebody to
+      # back-date the baseline the whole cadence counts from.
+      LastConfirmed: { new: false }
+      # Visible where it is expected and mandatory, rather than sitting
+      # blank on every routine task. Changing the kind back to Task does
+      # NOT clear a route already entered — SharePoint has no such
+      # mechanism — so the field hides while keeping its value.
+      EscalationRoute:
+        when:
+          - { field: ActivityKind, op: neq, value: "Task" }
+
+# Deliberately absent: any rule conditioned on ConfirmationDue. Conditional
+# show/hide cannot read a calculated column — the formula stays syntactically
+# valid, it saves, the readback compares equal, the phase passes, and the
+# form never reacts. The build refuses it; see analysis/conditions.py.
+
+# A future date silently pushes ConfirmationDue out and drops the row from
+# every cadence view: no error, no empty cell, just an activity nobody is
+# asked to look at again.
+column_validation:
+  Activity:
+    columns:
+      LastConfirmed:
+        when:
+          - { field: LastConfirmed, op: leq, value: today }
+        message: "A confirmation cannot have happened in the future. Use the date you actually checked this row, or today's date."
+
+# TWO rules sharing the one ValidationFormula slot a list gets. Each is
+# written as an implication: `if A then B` is `any_of[not A, B]`, which is
+# why both branches start with the case the rule does not apply to.
+#
+# Both operands of both rules are Choice or Text on purpose. SharePoint
+# refuses person and lookup operands in validation formulas
+# (analysis/conditions.py:332), so no rule here can reference Responsible,
+# Accountable or AccountableForum — which is why EscalationRoute is typed
+# nvarchar rather than a multi-line column: validation cannot read those
+# either, and a rule that cannot fire is worse than no rule.
+list_validation:
+  Activity:
+    when:
+      - any_of:
+          - { field: ActivityKind, op: neq, value: "Decision" }
+          - { field: EscalationRoute, op: is_not_null }
+      - any_of:
+          - { field: Criticality, op: neq, value: "Statutory" }
+          - { field: EscalationRoute, op: is_not_null }
+    message: "This activity needs an Escalation Route. A Decision must say where it goes when Responsible and Accountable cannot agree, and so must anything Statutory."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). All four
 # PartyKind members appear among the ACTIVE rows, because "By kind" filters on
@@ -142,6 +322,90 @@ list_validation: {}
 # absent from the only view that groups them. Two forums, so the activity
 # register's grouped view has two groups to show.
 demo_items:
+  Activity:
+    # Drives four things at once: the row wash, the overdue ConfirmationDue
+    # cell, the "Confirmation due" view, and the severe Criticality token.
+    # Statutory, so its cadence is 6 months and today-400 is well past due.
+    - key: act-statutory-overdue
+      values:
+        Title: "[DEMO] Lodge the annual regulatory return"
+        Domain: "Quality & risk"
+        ActivityKind: "Task"
+        Criticality: "Statutory"
+        Detail: "Demo row. The annual return to the regulator, covering the full financial year. Does not include the quarterly data submissions, which are a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: party-clinical-governance }
+        EscalationRoute: "Executive Director, then the Finance and Audit Committee at its next sitting."
+        ReviewStatus: "Needs review"
+        LastConfirmed: "today-400"
+        ConfirmedBy: "@me"
+    - key: act-decision-supplier
+      values:
+        Title: "[DEMO] Approve a new supplier above the executive threshold"
+        Domain: "Finance"
+        ActivityKind: "Decision"
+        Criticality: "High"
+        Detail: "Demo row. Any new supplier whose first-year value exceeds the executive spending threshold. Renewals of existing suppliers are a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: party-finance-audit }
+        EscalationRoute: "If Responsible and Accountable cannot agree, the Finance and Audit Committee decides at its next sitting; urgent cases go to the Executive Director under delegation."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-200"
+        ConfirmedBy: "@me"
+    - key: act-approval-policy
+      values:
+        Title: "[DEMO] Approve a revised clinical policy"
+        Domain: "Governance"
+        ActivityKind: "Approval"
+        Criticality: "High"
+        Detail: "Demo row. Sign-off on any revision to a clinical policy after consultation has closed. Drafting the revision is a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: party-clinical-governance }
+        EscalationRoute: "Unresolved objections go to the Clinical Governance Committee, whose decision is final."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-30"
+        ConfirmedBy: "@me"
+    # Routine, so a 24-month cadence: today-700 lands inside the 30-day
+    # window and populates "Confirmation due" without being overdue.
+    - key: act-task-roster
+      values:
+        Title: "[DEMO] Publish the fortnightly staff roster"
+        Domain: "People"
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. The roster for the coming fortnight, published to the team site. Leave approvals that feed it are a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Current"
+        LastConfirmed: "today-700"
+        ConfirmedBy: "@me"
+    - key: act-task-backup
+      values:
+        Title: "[DEMO] Verify the weekly backup restore"
+        Domain: "Information & technology"
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. A test restore from the weekly backup, evidenced with the restore log. Taking the backup is automated and is not this activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Current"
+        LastConfirmed: "today-60"
+        ConfirmedBy: "@me"
+    - key: act-retired-fax
+      values:
+        Title: "[DEMO] Maintain the inbound fax register"
+        Domain: "Service delivery"
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. Retired when the fax line was decommissioned. Kept so that anybody looking for who used to do this can see it, and see that it stopped."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Retired"
+        LastConfirmed: "today-500"
+        ConfirmedBy: "@me"
   Party:
     - key: party-exec-director
       values:
