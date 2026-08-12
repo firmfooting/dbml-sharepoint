@@ -130,6 +130,7 @@ def _fake_family(root: Path, mapping: str = _ONE_ENTITY) -> Solution:
         id="fake-template",
         title="Fake",
         summary="s",
+        detail="s",
         lists=("Risk",),
         prefix="OLD_",
         root=root,
@@ -262,7 +263,7 @@ def test_a_previous_build_is_not_copied_into_the_new_project(
     monkeypatch.setattr(
         wizard, "available_solutions", lambda: [
             type(solution)(
-                id="fake-template", title="Fake", summary="s",
+                id="fake-template", title="Fake", summary="s", detail="s",
                 lists=("Risk",), prefix="OLD_", root=source,
             ),
         ],
