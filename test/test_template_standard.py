@@ -495,6 +495,15 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Keep it current": "Govern",
         "System": "System",
     },
+    # Collapses to Identify -> Act. There is no Assess beat because an
+    # involvement is not rated, and no System beat because nothing is
+    # auto-stamped. "State the input" is Identify and is named as an
+    # instruction on purpose: the mandatory Title is the whole
+    # counter-measure against a consulted list of everyone who asked.
+    ("raci-matrix", "Involvement"): {
+        "State the input": "Identify",
+        "How they are involved": "Act",
+    },
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a
@@ -1415,7 +1424,12 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     4 -> 18, 5 -> 1, 6 -> 1. The new worst is raci-matrix/Activity at 6
     (Accountable, AccountableForum, Author, ConfirmedBy, Editor, Responsible)
     — a register whose subject IS people carries more person columns than
-    most. Still three clear of the nine-column warning band."""
+    most. Still three clear of the nine-column warning band.
+
+    RE-MEASURED 2026-08-12 across 32 templates / 57 entities, when
+    raci-matrix's Involvement child list joined the roster: 2 -> 7, 3 -> 29,
+    4 -> 19, 5 -> 1, 6 -> 1. Involvement lands at 4 (Activity, Party, Author,
+    Editor). The worst is unchanged and is still raci-matrix/Activity at 6."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
@@ -1685,7 +1699,7 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     """Unprefixed list names must stay unique across the shipped families.
 
     The prefix is a governance device -- you register yours so nobody else
-    takes it -- and it is on its way out. MEASURED 2026-08-12: 56 entity
+    takes it -- and it is on its way out. MEASURED 2026-08-12: 57 entity
     names across 32 families, zero duplicated, so several families can
     already share one site with no prefix at all.
 
@@ -1703,8 +1717,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     for solution in solutions:
         for entity in solution.lists:
             owners.setdefault(entity, []).append(solution.id)
-    assert len(owners) == 56, (
-        f"{len(owners)} unique entity names found, not the 56 this collision "
+    assert len(owners) == 57, (
+        f"{len(owners)} unique entity names found, not the 57 this collision "
         "sweep was measured against -- re-verify the invariant before "
         "trusting an empty collision set."
     )

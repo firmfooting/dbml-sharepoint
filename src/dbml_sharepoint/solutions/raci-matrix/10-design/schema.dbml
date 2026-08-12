@@ -47,6 +47,19 @@ Enum review_status {
   "Retired"
 }
 
+Enum involvement_role {
+  "Consulted"
+  "Informed"
+}
+
+Enum involvement_channel {
+  "Standing agenda item"
+  "Meeting"
+  "Email"
+  "Report or dashboard"
+  "Ad hoc"
+}
+
 Table Activity {
   Id               int             [pk, increment]
   Title            nvarchar        [not null, note: 'The activity as a verb phrase: "Approve a new supplier", "Publish the quarterly report"']
@@ -87,4 +100,22 @@ Table Party {
   }
 
   Note: 'The vocabulary of everyone who can hold a role in the matrix: individuals, roles, forums and external bodies. Retire a party by setting its Status, not by deleting it.'
+}
+
+Table Involvement {
+  Id          int                 [pk, increment]
+  Title       nvarchar            [not null, note: 'State the INPUT, not the person: "Pricing tolerance and contract terms". A party you cannot write this sentence for is not Consulted — they are Informed, or nothing']
+  Activity    int                 [not null, ref: > Activity.Id, note: 'The activity this party is involved in']
+  Party       int                 [not null, ref: > Party.Id, note: 'Who is involved. A person, a role, a forum or an external body']
+  Involvement involvement_role    [not null, default: 'Informed', note: 'Consulted means their input is required BEFORE the activity proceeds. Informed means they are told, and cannot hold it up']
+  Channel     involvement_channel [not null, default: 'Email', note: 'How this happens in practice. An involvement with no channel is a promise nobody keeps']
+  Notes       nvarchar            [note: 'Anything a reader needs: timing, the standing item it sits under, what happens if they do not respond']
+
+  indexes {
+    Activity
+    Party
+    Involvement
+  }
+
+  Note: 'One row per party consulted or informed about an activity. The title states the input they give, which stops the list becoming a register of everyone who asked.'
 }

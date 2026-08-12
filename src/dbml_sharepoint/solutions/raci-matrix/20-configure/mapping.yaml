@@ -11,6 +11,7 @@ prefix: "RACI_"
 
 entities:
   Activity: { kind: List, base_template: 100, site_role: default }
+  Involvement: { kind: List, base_template: 100, site_role: default }
   Party: { kind: List, base_template: 100, site_role: default }
 
 cross_site_reference_columns: []
@@ -121,6 +122,11 @@ column_formatting:
     # which is the "colour by word, not by role" failure the style standard
     # exists to prevent. It does its work through the view filter and the
     # save rule instead.
+  Involvement:
+    # The two members differ in what they OBLIGE: a Consulted party's input
+    # is required before the activity proceeds, an Informed party's is not.
+    # `low` against `neutral` says exactly that, without ranking one as worse.
+    Involvement: { style: pill, map: { Consulted: low, Informed: neutral } }
   Party:
     # A category, not a lifecycle, so the pill separates kinds rather than
     # ranking them: the two person-shaped kinds share neutral, a Forum reads
@@ -219,6 +225,49 @@ views:
         Accountable: 160
         LastConfirmed: 170
         ConfirmedBy: 160
+  Involvement:
+    # The matrix read: each group is one activity's consulted and informed
+    # list, which is the shape a RACI is normally drawn in.
+    - title: "By activity"
+      default: true
+      fields: [Title, Activity, Party, Involvement, Channel, Notes]
+      group_by: { field: Activity, collapsed: false }
+      sort:
+        - { field: Involvement, direction: asc }
+      widths:
+        Title: 280
+        Activity: 240
+        Party: 180
+        Involvement: 130
+        Channel: 180
+        Notes: 200
+    - title: "By party"
+      fields: [Title, Party, Activity, Involvement, Channel]
+      group_by: { field: Party, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Party: 180
+        Activity: 240
+        Involvement: 130
+        Channel: 180
+    # The consulted-overload detector. Grouped by party rather than by
+    # activity on purpose: the failure this exists to reveal is one party
+    # made Consulted on everything, and only this grouping shows it.
+    - title: "Consultation load"
+      fields: [Title, Party, Activity, Channel, Notes]
+      where:
+        - { field: Involvement, op: eq, value: "Consulted" }
+      group_by: { field: Party, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Party: 180
+        Activity: 240
+        Channel: 180
+        Notes: 200
   Party:
     - title: "Active parties"
       default: true
@@ -261,6 +310,9 @@ form_formatting:
   Activity:
     header: formatting/activity-form-header.json
     body: formatting/activity-form-body.json
+  Involvement:
+    header: formatting/involvement-form-header.json
+    body: formatting/involvement-form-body.json
   Party:
     header: formatting/party-form-header.json
     body: formatting/party-form-body.json
@@ -406,6 +458,55 @@ demo_items:
         ReviewStatus: "Retired"
         LastConfirmed: "today-500"
         ConfirmedBy: "@me"
+  Involvement:
+    - key: inv-auditor-return
+      values:
+        Title: "[DEMO] Whether the return's figures reconcile to the audited accounts"
+        Activity: { demo_ref: act-statutory-overdue }
+        Party: { demo_ref: party-external-auditor }
+        Involvement: "Consulted"
+        Channel: "Email"
+        Notes: "Demo row. Must be asked before lodgement; a mismatch after lodgement is a correction to the regulator."
+    - key: inv-auditor-supplier
+      values:
+        Title: "[DEMO] Whether the procurement trail meets audit standard"
+        Activity: { demo_ref: act-decision-supplier }
+        Party: { demo_ref: party-external-auditor }
+        Involvement: "Consulted"
+        Channel: "Meeting"
+        Notes: "Demo row. Three consultations on this party across the register - which is what the Consultation load view is for."
+    - key: inv-auditor-policy
+      values:
+        Title: "[DEMO] Whether the policy's evidence requirements are auditable"
+        Activity: { demo_ref: act-approval-policy }
+        Party: { demo_ref: party-external-auditor }
+        Involvement: "Consulted"
+        Channel: "Email"
+        Notes: "Demo row. Asked once per revision, not once per draft."
+    - key: inv-practice-manager-supplier
+      values:
+        Title: "[DEMO] Operational impact on the front desk and ordering"
+        Activity: { demo_ref: act-decision-supplier }
+        Party: { demo_ref: party-practice-manager }
+        Involvement: "Consulted"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. Standing item at the weekly operations meeting, so this consultation has a place to happen."
+    - key: inv-exec-return
+      values:
+        Title: "[DEMO] That the return was lodged and on what date"
+        Activity: { demo_ref: act-statutory-overdue }
+        Party: { demo_ref: party-exec-director }
+        Involvement: "Informed"
+        Channel: "Report or dashboard"
+        Notes: "Demo row. Informed, not consulted - being told afterwards is the whole point of the distinction."
+    - key: inv-clingov-policy
+      values:
+        Title: "[DEMO] That the revised policy is published and from what date"
+        Activity: { demo_ref: act-approval-policy }
+        Party: { demo_ref: party-clinical-governance }
+        Involvement: "Informed"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. Noted at the next committee sitting."
   Party:
     - key: party-exec-director
       values:
