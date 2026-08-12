@@ -80,6 +80,39 @@ _SUPPORTED_CALCULATED_OPERANDS = (
 _GENERIC_LIST_TEMPLATE = 100
 
 
+def _note_is_present(table: Table | None, entity_name: str, family: str) -> list[Finding]:
+    """Refuse an entity whose table carries no `Note:` at all.
+
+    A list Description is the one list-level sentence this tool writes, and a
+    table with no note deploys a list whose Description is the provenance
+    marker and nothing else. The list works, the marker is intact and fleet
+    reporting still finds it -- so nothing downstream ever complains. What is
+    lost is the only place an adopter opening list settings is told what the
+    list is for, and that loss is invisible from every direction except the
+    settings page itself.
+
+    Skipped when the table is missing: `ENTITY_NOT_IN_SCHEMA` already reports
+    that, and "your table has no note" is unhelpful advice about a table that
+    does not exist.
+
+    A whitespace-only note counts as absent, because that is what
+    `list_description` does with it -- it strips, and an all-space note
+    composes exactly the same Description an empty one does.
+    """
+    if table is None or table.note.strip():
+        return []
+    return [Finding(
+        FindingCode.ENTITY_HAS_NO_NOTE,
+        f"{entity_name}: the table has no Note:, so this list deploys with "
+        f"{marker_for(family, entity_name)!r} as its entire Description and "
+        f"nothing telling an adopter what it holds. Add a Note: to the "
+        f"{entity_name} table -- up to {note_budget(family, entity_name)} "
+        f"characters fit beside the marker -- saying what the list is for and "
+        f"who uses it.",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
+
 def _note_fits_beside_marker(
     table: Table | None, entity_name: str, family: str,
 ) -> list[Finding]:
@@ -193,6 +226,9 @@ def check(vc: ValidationContext) -> list[Finding]:
                 location=Location(Section.ENTITIES, entity=entity_name),
             ))
 
+        findings += _note_is_present(
+            tables_by_name.get(entity_name), entity_name, family,
+        )
         findings += _note_fits_beside_marker(
             tables_by_name.get(entity_name), entity_name, family,
         )

@@ -618,7 +618,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "Provisioned by dbml-sharepoint from simple-test/Project.",
+      "description": "Parser-fixture projects, each with a status and a sort order. Provisioned by dbml-sharepoint from simple-test/Project.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [
@@ -683,7 +683,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "Provisioned by dbml-sharepoint from simple-test/Task.",
+      "description": "Parser-fixture tasks, each belonging to one project and optionally due on a date. Provisioned by dbml-sharepoint from simple-test/Task.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [
@@ -751,7 +751,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "Provisioned by dbml-sharepoint from simple-test/AppSettings.",
+      "description": "Parser-fixture singleton settings list, one row holding the fixture configuration. Provisioned by dbml-sharepoint from simple-test/AppSettings.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [],

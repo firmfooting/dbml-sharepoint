@@ -3209,7 +3209,14 @@ def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
 ) -> None:
     """A hand-written DBML need not declare a `Project`. The family is then
     unknown, but the list must still be discoverable -- an undiscoverable list
-    is the whole failure this marker exists to prevent."""
+    is the whole failure this marker exists to prevent.
+
+    `notes=False` so the description is the marker and nothing else, which is
+    what makes the equality below say what it means. It also matches the
+    emitter contract being pinned: `list_description` returns the marker alone
+    for a note-less table, and the generator has to keep doing that whatever
+    the validator says about it.
+    """
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = pack(
@@ -3217,6 +3224,7 @@ def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
         dbml=table("Risk", ID_PK, TITLE),
         mapping=entities("Risk"),
         preamble=False,
+        notes=False,
     )
     schema_json = build_schema_json(schema, bundle, "default")
 
@@ -3238,20 +3246,27 @@ def test_a_budget_of_zero_or_less_still_returns_the_marker_intact() -> None:
     first and errors gate generation. Pinned anyway, because a backstop that is
     wrong when reached is not a backstop.
 
-    Both sides of zero are covered. The budget-0 case also pins that the result
-    is the marker ALONE rather than " " + marker, which is what a naive
-    join would leave on the settings page.
+    Both cases pin that the result is the marker ALONE rather than " " +
+    marker, which is what a naive join would leave on the settings page.
+
+    The two families straddle the point at which the MARKER ITSELF stops
+    fitting in 255, which is the boundary the backstop has to survive.
+    `note_budget` clamps to zero well before either of them -- 32 characters
+    earlier, once `len(family) + len(entity)` reaches 184, because
+    `MARKER_GROWTH_RESERVE` comes off the budget too. So these are not the
+    first zero-budget inputs; they are the ones where an UNCLAMPED budget
+    would go negative and slice the note from the wrong end.
     """
     entity = "e" * 10
 
-    # Raw budget exactly 0: no room for a note, marker still fits in 255.
+    # Unclamped budget exactly 0: the marker is 254 characters and still fits.
     family_zero = "f" * (216 - len(entity))
     zero = list_description("some note", family=family_zero, entity=entity)
     assert zero == marker_for(family_zero, entity)
     assert len(zero) <= 255
     assert not zero.startswith(" ")
 
-    # Raw budget -1: the case a negative slice inverts.
+    # Unclamped budget -1: the case a negative slice inverts.
     family_negative = "f" * (217 - len(entity))
     negative = list_description("some note", family=family_negative, entity=entity)
     assert negative == marker_for(family_negative, entity)

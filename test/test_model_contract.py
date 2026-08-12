@@ -53,8 +53,15 @@ def test_builders_and_loader_agree_on_a_representative_document(
     )
     built_bundle = bundle(entities=["Risk", "FollowUp"])
 
+    # `notes=False` throughout this module: `write_dbml` gives an un-noted
+    # table a default `Note:` so the suite's fixtures satisfy
+    # `ENTITY_HAS_NO_NOTE`, and that convenience is not part of the contract
+    # between the builders and the loader. Leaving it on would compare a
+    # parsed table carrying the helper's note against a built one carrying
+    # none, and the disagreement would be the helper's, not the builders'.
     parsed_schema, parsed_bundle = pack(
         tmp_path,
+        notes=False,
         dbml="""
             Table Risk {
               Id int [pk, increment]
@@ -108,6 +115,7 @@ def test_builders_and_loader_agree_on_every_column_attribute(tmp_path: Path) -> 
 
     parsed, _ = pack(
         tmp_path,
+        notes=False,
         dbml="""
             Enum status {
               "Open"
@@ -250,6 +258,7 @@ def test_any_built_table_survives_the_yaml_round_trip(
 
     parsed_schema, parsed_bundle = pack(
         workdir,
+        notes=False,
         dbml="".join(
             dbml_table(name, ID_PK, *(
                 f"C{i} {kind}{_attributes(required=required, unique=unique)}"

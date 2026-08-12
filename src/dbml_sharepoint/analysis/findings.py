@@ -175,6 +175,7 @@ class FindingCode(StrEnum):
     EMPTY_DISPLAY_TITLE = "empty_display_title", "error"
     EMPTY_PREVIOUS_TITLE = "empty_previous_title", "error"
     EMPTY_VIEW_URL_SLUG = "empty_view_url_slug", "error"
+    ENTITY_HAS_NO_NOTE = "entity_has_no_note", "error"
     ENTITY_NOT_IN_SCHEMA = "entity_not_in_schema", "error"
     ENTITY_NOTE_TOO_LONG_FOR_MARKER = (
         "entity_note_too_long_for_marker", "error"

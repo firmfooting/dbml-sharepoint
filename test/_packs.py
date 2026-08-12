@@ -44,6 +44,7 @@ test was ever about them. Pass ``preamble=False`` or your own ``prefix`` when
 the test *is* about them.
 """
 
+import re
 from pathlib import Path
 from textwrap import dedent
 
@@ -62,6 +63,74 @@ DBML_PREAMBLE = f"Project {PREAMBLE_PROJECT} {{ database_type: 'SharePoint Onlin
 
 #: Likewise the mapping prefix.
 DEFAULT_PREFIX = 'prefix: "APP_"'
+
+#: The table `Note:` a fixture table gets when it declares none.
+#:
+#: Same reasoning as `DBML_PREAMBLE`, and the same arithmetic. Every
+#: provisioned list must describe itself -- `ENTITY_HAS_NO_NOTE` is an ERROR,
+#: so a note-less table makes a schema unbuildable -- and several hundred
+#: fixtures across this suite are about views, formatters, indexes and
+#: retirement rather than about prose in list settings. Without a default,
+#: every one of them would carry a line no test is about, and the next test
+#: that asserts `errors == []` would fail for a reason unrelated to its
+#: subject.
+#:
+#: It is supplied HERE rather than by giving `_model.table()` a default,
+#: because the rule has to stay exercisable at the object level: the tests
+#: that make `ENTITY_HAS_NO_NOTE` fire build a `Table` with no note and would
+#: have nothing to assert if the builder invented one.
+#:
+#: Pass `notes=False` for a test that is about the DBML text itself.
+DEFAULT_TABLE_NOTE = "Fixture list, for a test that is not about the description."
+
+#: A `Table` header opening a block. Anchored at column zero because `_body`
+#: has already dedented, and deliberately NOT matching `Enum` or `Ref`.
+_TABLE_OPEN = re.compile(r"^Table\s")
+
+#: A table-level note. Capitalised and at the start of a line, which a
+#: column's inline `[note: '...']` is not.
+_TABLE_NOTE = re.compile(r"^\s*Note\s*:")
+
+
+def _noted(block: list[str]) -> list[str]:
+    """One `Table { ... }` block, with a default `Note:` if it declares none."""
+    if any(_TABLE_NOTE.match(line) for line in block):
+        return block
+    return [*block[:-1], f"\n  Note: '{DEFAULT_TABLE_NOTE}'\n", block[-1]]
+
+
+def _with_default_notes(text: str) -> str:
+    """Give every `Table` block in a DBML document a note, unless it has one.
+
+    Brace-counted rather than regex-matched over the whole block, because a
+    table body nests: `indexes { }` opens and closes braces of its own, and a
+    pattern reaching for the first `}` would insert the note in the middle of
+    the index list -- where DBML still parses, and the note is then attached to
+    nothing anybody looks at.
+
+    An unbalanced document is emitted UNCHANGED rather than guessed at. The
+    parser is what reports a malformed fixture, and a helper that silently
+    rewrote one would make its complaint point at the wrong line.
+    """
+    out: list[str] = []
+    block: list[str] = []
+    depth = 0
+    for line in text.splitlines(keepends=True):
+        if not block:
+            if _TABLE_OPEN.match(line) and "{" in line:
+                depth = line.count("{") - line.count("}")
+                if depth > 0:
+                    block = [line]
+                    continue
+            out.append(line)
+            continue
+        depth += line.count("{") - line.count("}")
+        block.append(line)
+        if depth == 0:
+            out.extend(_noted(block))
+            block = []
+    out.extend(block)
+    return "".join(out)
 
 
 def _body(text: str) -> str:
@@ -119,14 +188,25 @@ def with_tail(body: str, tail: str = "") -> str:
 
 
 def write_dbml(
-    tmp_path: Path, body: str, *, preamble: bool = True, name: str = "s.dbml",
+    tmp_path: Path,
+    body: str,
+    *,
+    preamble: bool = True,
+    notes: bool = True,
+    name: str = "s.dbml",
 ) -> Path:
     """Write a schema under `tmp_path`, prepending the Project line.
 
     `name` is settable because a handful of tests write more than one schema in
     the same `tmp_path`, and because several already use their own filenames.
+
+    `notes=False` writes the body verbatim, for a test about the DBML text
+    itself or about a table that is meant to have no note. See
+    `DEFAULT_TABLE_NOTE`.
     """
     text = _body(body)
+    if notes:
+        text = _with_default_notes(text)
     if preamble:
         text = f"{DBML_PREAMBLE}\n{text}"
     path = tmp_path / name
@@ -166,6 +246,7 @@ def pack(
     mapping: str,
     *,
     preamble: bool = True,
+    notes: bool = True,
     prefix: str | None = DEFAULT_PREFIX,
     dbml_name: str = "s.dbml",
     mapping_name: str = "m.yaml",
@@ -175,7 +256,9 @@ def pack(
     The pair is what 178 ``parse_dbml`` and 302 ``load_mapping`` calls in this
     suite were spelling out one line at a time.
     """
-    schema_path = write_dbml(tmp_path, dbml, preamble=preamble, name=dbml_name)
+    schema_path = write_dbml(
+        tmp_path, dbml, preamble=preamble, notes=notes, name=dbml_name,
+    )
     mapping_path = write_mapping(tmp_path, mapping, prefix=prefix, name=mapping_name)
     return parse_dbml(schema_path), load_mapping(mapping_path)
 

@@ -1705,6 +1705,66 @@ def test_a_list_default_naming_an_unknown_retention_policy_is_an_error() -> None
     assert "seven-years" in finding.message
 
 
+def test_an_entity_without_a_note_is_refused() -> None:
+    """Pins the RULE (the corpus is pinned separately, in
+    `test_template_standard.py`).
+
+    A list with no description deploys anonymous and, once fleet reporting
+    exists, indistinguishable from every other list the same family provisions
+    except by its marker. Both are silent: the list provisions, the Description
+    reads back byte-identical, and every deploy phase passes.
+    """
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(entities=["Risk"]),
+    )
+
+    finding = only(findings, FindingCode.ENTITY_HAS_NO_NOTE)
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.ENTITIES, entity="Risk")
+
+
+def test_a_whitespace_only_note_is_refused_like_an_absent_one() -> None:
+    """`list_description` strips, so "  " composes exactly the Description an
+    empty note does. A rule testing truthiness rather than `.strip()` would
+    accept it and provision the anonymous list this rule exists to refuse.
+    """
+    only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note="   \n  ")),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_HAS_NO_NOTE,
+    )
+
+
+def test_a_note_is_all_it_takes_to_satisfy_the_rule() -> None:
+    """The other side of the boundary, on the same fixture the two tests above
+    use. Without it, a rule that fired on EVERY entity would pass both of them.
+    """
+    none_of(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note="Risks this team is carrying.")),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_HAS_NO_NOTE,
+    )
+
+
+def test_an_entity_with_no_table_is_not_also_told_its_note_is_missing() -> None:
+    """`ENTITY_NOT_IN_SCHEMA` is the whole story for an entity the schema has
+    no table for. Advising the author to add a `Note:` to a table that does not
+    exist sends them looking for the wrong thing.
+    """
+    findings = validate_against_mapping(
+        make_schema(),
+        make_bundle(entities=["Risk"]),
+    )
+
+    only(findings, FindingCode.ENTITY_NOT_IN_SCHEMA)
+    none_of(findings, FindingCode.ENTITY_HAS_NO_NOTE)
+
+
 def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
     """Refused at build time rather than truncated at deploy time.
 

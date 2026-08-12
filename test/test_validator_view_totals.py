@@ -103,7 +103,12 @@ def _hyperlink_demo(value: object) -> list[Finding]:
     authored value, and a form one accepts and the other refuses never
     reaches generation."""
     schema = make_schema(
-        make_table("Doc", column("Title", required=True), column("Link", "hyperlink")),
+        make_table(
+            "Doc", column("Title", required=True), column("Link", "hyperlink"),
+            # Without a note ENTITY_HAS_NO_NOTE lands in every caller's error
+            # list, and both callers assert that list is empty.
+            note="The fixture document list.",
+        ),
     )
     bundle = make_bundle(
         entities=["Doc"],

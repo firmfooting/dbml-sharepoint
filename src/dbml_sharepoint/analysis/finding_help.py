@@ -453,6 +453,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "reader is enrolled in Phase 1.4 and stays, so the next deploy "
         "fails its own empty-group gate in Phase 1.2. Drop one."
     ),
+    FindingCode.ENTITY_HAS_NO_NOTE: (
+        "A table has no `Note:`, so the list it provisions deploys with a "
+        "Description holding nothing but the provenance marker. Fleet "
+        "reporting can still find the list, but nobody opening it in "
+        "SharePoint is told what it is for -- and the Description is the "
+        "only list-level sentence this tool writes, so there is nowhere "
+        "else for that to come from. Add a `Note:` to the table saying what "
+        "the list holds and who it is for."
+    ),
     FindingCode.ENTITY_NOT_IN_SCHEMA: (
         "The mapping's `entities:` declares a name the DBML schema has "
         "no table for."

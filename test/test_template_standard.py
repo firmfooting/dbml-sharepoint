@@ -1541,6 +1541,35 @@ def test_the_dbml_project_name_resolves_to_the_family_directory(template: str) -
 
 
 @pytest.mark.parametrize("template", _all_templates())
+def test_every_entity_describes_itself(template: str) -> None:
+    """Pinned per family so a new template cannot ship anonymous lists.
+
+    This pins the CORPUS, not the rule. `ENTITY_HAS_NO_NOTE` in
+    `analysis/checks/_structure.py` refuses a note-less entity at build time
+    and `test_validator_core.py` is what pins THAT; this sweep reads the
+    schemas directly and would go on failing if the rule were deleted
+    tomorrow. Both exist because either one alone leaves a hole: a rule
+    nothing shipped exercises can be quietly weakened, and a corpus nobody
+    enforces drifts on the next family.
+
+    The description is what an adopter reads in list settings, and from
+    Phase 2 it is also what fleet reporting discovers the list by.
+
+    Parametrised over EVERY template rather than `_uplifted()`, matching the
+    two marker sweeps below: `NOT_YET_UPLIFTED` exempts a template from the
+    FORM standard, and a list with no description is exactly as anonymous
+    whether or not its form header has been through the uplift.
+    """
+    loaded = _load(template)
+    # A "no entity is missing a note" assertion is also satisfied by no
+    # entities at all, and a family whose schema stopped parsing into tables
+    # would sail through it looking conformant.
+    assert loaded.schema.tables, f"{template}: schema.dbml declares no tables"
+    missing = [t.name for t in loaded.schema.tables if not t.note.strip()]
+    assert not missing, f"{template}: entities with no Note: {missing}"
+
+
+@pytest.mark.parametrize("template", _all_templates())
 def test_every_table_note_leaves_room_for_the_provenance_marker(template: str) -> None:
     """No shipped family may carry a note the build would refuse.
 
