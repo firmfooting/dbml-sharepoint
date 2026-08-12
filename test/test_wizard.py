@@ -56,7 +56,7 @@ class ScriptedConsole(Console):
 
 def _answers(
     destination: Path, *, build: str = "n", seed: str | None = None,
-    reader: str = "", confirm: str = "y", **over: str,
+    reader: str | None = "", confirm: str = "y", **over: str,
 ) -> list[str]:
     """The happy-path script, in the order the wizard now asks.
 
@@ -69,9 +69,19 @@ def _answers(
     because it is a property of the template; the directory, site URL and
     site role describe the site.
 
-    `seed` stays `None` by default so a script that does not reach the
-    question stays honest: a spare answer at the end of the list is
-    invisible, and a missing one surfaces as EOFError rather than as silence.
+    **A spare answer is no longer invisible, and that is why `seed` and
+    `reader` both take `None`.** While the confirmation was the fifth answer,
+    an unread answer sat at the END of the list and did nothing. It is now
+    the LAST answer, so a spare one in the middle is read by the confirmation
+    instead -- blank confirms by default, and the scripted `confirm` value is
+    then never consumed at all. A test whose template declares no
+    `enroll_enterprise_reader` group but which still passes `reader=""`
+    therefore runs to completion whether or not the wizard asked, which is
+    exactly the shape of test that proves nothing. Pass `reader=None` (as
+    `seed` already defaults) so the script carries no answer the wizard
+    should not ask for: a wizard that asks then reads the CONFIRMATION's
+    answer as a UPN, is refused, re-asks, runs out and exits 130.
+
     The site role is absent because every shipped family declares exactly one
     role, so the question is not put -- a family with two needs it inserted
     by hand.
@@ -85,7 +95,8 @@ def _answers(
     script.update(over)
     tail = [build]
     if build == "y":
-        tail.append(reader)
+        if reader is not None:
+            tail.append(reader)
         if seed is not None:
             tail.append(seed)
     return [*script.values(), *tail, confirm]
@@ -561,12 +572,21 @@ def test_keeping_the_default_prefix_reports_no_prefix_change(
     assert wizard.run_wizard(console) == 0
     # Collapsed because rich wraps the report line at the console width, so a
     # substring assertion against the raw text is a false negative waiting to
-    # happen. The prompts themselves say "List name prefix", so the check has
-    # to be against the substitution's own `label old -> new` spelling rather
-    # than the bare word.
+    # happen.
+    #
+    # Bounded at BOTH ends, to the report line itself. This read
+    # `"prefix RR_" not in reported` against the whole transcript, which
+    # worked only while nothing else on screen named the prefix -- `_describe`
+    # now shows the template's declared prefix four questions earlier, so the
+    # unbounded form fails on a correct run. The bound is what the assertion
+    # always meant: the REPORT must not claim a prefix substitution it did
+    # not make.
     reported = " ".join(console.text.split())
-    assert "site URL" in reported
-    assert "prefix RR_" not in reported
+    report = reported.split("documentation files: ", 1)[1].split(
+        "When you are ready", 1,
+    )[0]
+    assert "site URL" in report
+    assert "prefix" not in report
 
 
 def test_a_long_prefix_is_accepted(tmp_path: Path) -> None:
@@ -1110,27 +1130,73 @@ def test_the_review_names_the_lists_that_will_be_created(
     assert "ACME_Risk" in _collapsed(console)
 
 
+def _review(console: ScriptedConsole) -> str:
+    """The Review panel alone, sliced out of the transcript at BOTH ends.
+
+    Every value in that panel was typed by the operator moments earlier, so
+    an unbounded substring assertion holds whether or not the panel renders
+    the row it claims to cover -- which is exactly how the superseded `About
+    to write` test came to check nothing: `risk-register` is a row in the
+    catalogue table AND was the default of the project-directory prompt.
+
+    `Review` is the panel's title and appears nowhere else now the section
+    rule that repeated it has gone; `Write the project` is the confirmation
+    printed directly beneath it.
+    """
+    shown = _collapsed(console)
+    return shown.split("Review", 1)[1].split("Write the project", 1)[0]
+
+
 def test_the_review_names_every_answer(tmp_path: Path) -> None:
     """Supersedes the old `About to write` summary, which named four answers
-    and could not name the other three because they had not been asked."""
+    and could not name the other three because they had not been asked.
+
+    Asserted as whole ROWS inside the panel, not as values anywhere on
+    screen. `Build yes, site role default` is the row that shows why: a bare
+    `"default" in shown` passes on the site-role value alone, and passed even
+    with the whole Build row deleted.
+    """
     destination = tmp_path / "out"
     console = ScriptedConsole(
         _answers(
             destination, build="y", seed="y",
             reader="svc.reporting@contoso.com", confirm="n",
         ),
-        # Wide, so a destination path cannot be folded mid-word by the wrap:
-        # `_collapsed` rejoins at whitespace and a long path has none.
+        # Wide, so no row can be folded by the wrap: `_collapsed` rejoins at
+        # whitespace, and a row broken mid-value never rejoins.
         width=400,
     )
     assert wizard.run_wizard(console) == 0
-    shown = _collapsed(console)
-    for expected in (
-        "risk-register", "RR_Risk", str(destination),
-        "https://contoso.sharepoint.com/sites/x",
-        "svc.reporting@contoso.com", "default",
+    panel = _review(console)
+    for row in (
+        "Template risk-register - Risk register",
+        "Lists RR_Risk",
+        f"Directory {destination}",
+        "Site https://contoso.sharepoint.com/sites/x",
+        "Build yes, site role default",
+        "Reporting svc.reporting@contoso.com",
+        "Demo rows yes",
     ):
-        assert expected in shown, expected
+        assert row in panel, row
+
+
+def test_the_review_of_a_declined_build_says_files_only(tmp_path: Path) -> None:
+    """The other arm, and the two rows that must NOT appear.
+
+    A reporting account and a demo-row answer were never collected, so
+    printing `Reporting nobody` and `Demo rows no` here would state a
+    decision nobody made -- and would look identical to a run that had been
+    asked and had declined both.
+    """
+    destination = tmp_path / "out"
+    console = ScriptedConsole(
+        _answers(destination, build="n", confirm="n"), width=400,
+    )
+    assert wizard.run_wizard(console) == 0
+    panel = _review(console)
+    assert "Build no, copy the files only" in panel
+    assert "Reporting" not in panel
+    assert "Demo rows" not in panel
 
 
 def test_the_confirmation_does_not_promise_a_build_that_was_declined(
@@ -1184,20 +1250,6 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
     )
     assert wizard.run_wizard(console) == 0
     assert "--site-role branch" in _collapsed(console)
-
-
-def test_the_seed_caution_still_comes_before_the_question(
-    tmp_path: Path,
-) -> None:
-    """A family may seed data its own procedure says not to put on a live
-    site. An instruction read after the decision cannot prevent that."""
-    destination = tmp_path / "out"
-    console = ScriptedConsole(
-        _answers(destination, build="y", seed="n", confirm="n"),
-    )
-    assert wizard.run_wizard(console) == 0
-    shown = _collapsed(console)
-    assert shown.index("deploy.md") < shown.index("Add the demo rows?")
 
 
 def test_a_template_with_no_detail_sentence_prints_no_empty_line() -> None:
@@ -1527,15 +1579,23 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
 ) -> None:
     """A question whose only useful answer would be refused by `execute_build`
     is worse than silence -- mirrors `test_a_template_declaring_no_demo_items_
-    is_not_asked`. The script carries no answer for it, so a wizard that
-    asked would run out of input and exit 130."""
+    is_not_asked`.
+
+    `reader=None`, so the script carries no answer for the question. A wizard
+    that asked would read the CONFIRMATION's `y` as a UPN, be refused by
+    `validate_enterprise_reader` for having no `@`, re-ask, run out of input
+    and exit 130. Passing `reader=""` here instead would hand the question a
+    real answer and make the run succeed either way -- the exit-code
+    assertion would then be pinning nothing, which is the whole reason
+    `_answers` grew a `None`.
+    """
     solution = _fake_family(tmp_path / "fake")
     _offer_only(monkeypatch, solution)
     captured = _capture_build(monkeypatch)
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(
-        _answers(destination, template="fake-template", build="y"),
+        _answers(destination, template="fake-template", build="y", reader=None),
     )
 
     assert wizard.run_wizard(console) == 0
@@ -1551,15 +1611,19 @@ def test_a_template_declaring_no_demo_items_is_not_asked(
     `--seed` against a mapping with no `demo_items` raises
     `SeedRequiresDemoItemsError` and the build exits non-zero, so offering
     the choice would be offering a dead end -- and the wizard would have
-    walked the operator into it. The script carries no answer for the
-    question, so a wizard that asked would run out of input and exit 130.
+    walked the operator into it.
 
-    This read `"demo" not in shown` while the closing panel was the only
-    place the word could appear. The Review panel now reports `Demo rows no`
-    for every build -- accurately, and deliberately, since the point of that
-    panel is to state the whole decision -- so the assertion names the
-    caution and the QUESTION instead. Both are what "is not asked" means,
-    and a wizard that put either would still be caught.
+    `reader=None` and `seed` left off, so the script carries an answer for
+    every question the wizard SHOULD put and none for either it should not.
+    A wizard that asked the demo question would take the confirmation's `y`
+    as the seed answer, then run out of input and exit 130.
+
+    The word assertion was `"demo" not in shown` while the closing panel was
+    the only place the word could appear. The Review panel now reports
+    `Demo rows no` for every build -- accurately, and deliberately, since the
+    point of that panel is to state the whole decision -- so the assertion
+    names the caution and the QUESTION instead. Both are what "is not asked"
+    means, and a wizard that put either would still be caught.
     """
     solution = _fake_family(tmp_path / "fake")
     _offer_only(monkeypatch, solution)
@@ -1567,7 +1631,7 @@ def test_a_template_declaring_no_demo_items_is_not_asked(
 
     destination = tmp_path / "proj"
     console = ScriptedConsole(
-        _answers(destination, template="fake-template", build="y"),
+        _answers(destination, template="fake-template", build="y", reader=None),
     )
 
     assert wizard.run_wizard(console) == 0
@@ -1638,6 +1702,14 @@ def test_the_seed_question_carries_its_caution_first(
     So the caution has to reach the operator BEFORE the prompt they answer.
     Offering to create that and mentioning the guide afterwards is offering
     it too late.
+
+    MERGED with a second test that made the same claim about the same path
+    and differed only in confirming `n` rather than `y`. Two tests asserting
+    one ordering is not two guards -- the second could only ever fail when
+    this one did. What the second contributed was the assertion on the
+    PATH's position rather than the caution's, and that is folded in below:
+    naming `deploy.md` after the question would be an instruction the
+    operator cannot act on before deciding.
     """
     _capture_build(monkeypatch)
     destination = tmp_path / "proj"
@@ -1647,10 +1719,14 @@ def test_the_seed_question_carries_its_caution_first(
 
     assert wizard.run_wizard(console) == 0
     shown = _collapsed(console)
-    caution = shown.index("before seeding")
     question = shown.index("Add the demo rows?")
-    assert caution < question, "the caution must precede the question"
-    assert "deploy.md" in shown
+    assert shown.index("before seeding") < question, (
+        "the caution must precede the question"
+    )
+    assert shown.index("30-deploy/deploy.md") < question, (
+        "the guide's path must precede the question, not only follow it in "
+        "the closing panel"
+    )
 
 
 def test_the_facts_match_between_the_shipped_family_and_the_copy(
@@ -1758,6 +1834,39 @@ def test_no_templates_chosen_is_a_named_refusal_not_a_type_error() -> None:
     """
     with pytest.raises(wizard.WizardError, match="no template"):
         wizard._site_roles([])
+
+
+@pytest.mark.parametrize(
+    ("seed", "carrier"),
+    [("y", "seeding conditions"), ("n", "full procedure")],
+)
+def test_the_next_panel_names_the_guide_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, seed: str, carrier: str,
+) -> None:
+    """Once per arm, on a different line in each.
+
+    Seeded, the line is step 3 -- the caution, which has to carry the path it
+    points at -- and the dim footer is dropped: repeating the same path two
+    lines later, inside a six-line panel, is noise the operator has to read
+    past to find out it says nothing new. Unseeded there is no step 3, so the
+    footer is the only pointer at the guide and it stays.
+
+    Counted rather than merely present, because "names it once" is the whole
+    claim and a `in` assertion cannot tell one mention from two.
+    """
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    # Wide, because this reads paths out of a rendered panel; `_collapsed`
+    # rejoins rich's wrapping at whitespace and a path has none, so a folded
+    # one is silently uncountable.
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed=seed), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    panel = _collapsed(console).split("Next", 1)[1]
+    assert panel.count("30-deploy/deploy.md") == 1
+    assert carrier in panel
 
 
 def test_a_seeded_run_names_the_guide_before_the_demo_script(

@@ -23,7 +23,7 @@ from pathlib import Path
 
 import typer
 import yaml
-from rich.console import Console
+from rich.console import Console, Group, RenderableType
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
@@ -140,7 +140,11 @@ def _within(root: Path, destination: Path) -> str:
 
 def _catalogue_table(solutions: list[Solution]) -> Table:
     table = Table(
-        title="Solution templates",
+        # "Templates", not "Solution templates". One word for the thing:
+        # the intro panel, this table and the prompt below it all say
+        # `template`, so a reader never has to work out whether a "solution
+        # template" is the same thing as a "template".
+        title="Templates",
         header_style="bold",
         title_style="bold",
         show_lines=False,
@@ -193,9 +197,14 @@ def _describe(console: Console, solution: Solution) -> None:
     """
     lists = ", ".join(solution.lists) or "(none declared)"
     count = len(solution.lists)
+    # The declared prefix is shown here, not only in the prompt that follows.
+    # Task 7 stops asking for a prefix at all when the template declares
+    # none, and this then becomes the only place the operator learns what the
+    # lists are called before the Review panel names them.
     console.print(
         f"\n  [bold]{solution.title}[/bold]  -  {count} list"
-        f"{'' if count == 1 else 's'}: {lists}",
+        f"{'' if count == 1 else 's'}: {lists}"
+        f"  -  prefix {solution.prefix or '(none)'}",
     )
     # `detail`, not `summary`: `summary` is capped at `_SUMMARY_MAX` so it
     # fits the table cell above, and reusing it here cut risk-register's
@@ -322,14 +331,24 @@ def _ask_enterprise_reader(console: Console) -> str:
     "enrol nobody"; `validate_enterprise_reader` refuses an empty string,
     so passing it through would make the safest answer the question offers
     the one answer that cannot be given.
+
+    The prompt is a bold noun phrase and the guidance sits on a dim line
+    ABOVE it, the shape `_ask_seed` uses. It read "Reporting service account
+    to enrol read-only (UPN), or blank for none", which is a sentence, a
+    definition and an escape hatch in one unbolded line -- the widest prompt
+    in the wizard, and the only one whose label did not survive being read at
+    a glance.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
 
+    console.print(
+        "[dim]  A service account enrolled read-only across every list this "
+        "template creates,\n  so it can report on them. Blank for none.[/dim]",
+    )
     while True:
         reader = Prompt.ask(
-            "Reporting service account to enrol read-only (UPN), or blank "
-            "for none",
+            "[bold]Reporting account (UPN)[/bold]",
             default="",
             console=console,
         ).strip()
@@ -363,6 +382,14 @@ def _ask_seed(console: Console) -> bool:
     The guide is named by its path INSIDE the project, not absolutely: this
     runs before the destination has been written, and the operator is told
     where the project is by the Review panel a moment later.
+
+    That path assumes ONE template, which is what the picker collects: the
+    fragment is spelled literally here while `_next_panel` computes it as
+    `f"{inside}30-deploy/deploy.md"`. The two diverge the day several
+    templates are chosen and nest under their own ids, because this question
+    is asked once for the whole run and there would then be one guide per
+    template. Fixing it needs the multi-template selection that owns the
+    question, so it is named here rather than guessed at.
 
     The escape before [DEMO] is rich's documented way to mean a literal
     bracket. MEASURED 2026-08-11: rich prints it identically with or without,
@@ -609,7 +636,10 @@ def _site_roles(facts: Sequence[_TemplateFacts]) -> list[str]:
     return sorted(shared)
 
 
-#: Wide enough for `Reporting`, the longest label.
+#: One wider than the longest label. `Reporting`, `Directory` and `Demo rows`
+#: are all nine characters, so the column has to be at least ten for a value
+#: to be separated from its label by more than the single space `_review_row`
+#: adds -- and a new label longer than nine needs this raised.
 _REVIEW_LABEL = 10
 
 
@@ -652,6 +682,12 @@ def _rebuild_command(answers: Answers) -> str:
     `branch` the command it handed the operator was one
     `_require_known_site_role` refuses.
     """
+    # `templates[0]`, because the picker collects exactly one. For several,
+    # this has to become one `build` invocation per template -- `_scaffold`
+    # and the build loop in `_run` already iterate the whole tuple, so this
+    # is the one place that would still print a single command. Left as it
+    # is: what the escape hatch should say for N templates is part of
+    # multi-template selection, which is out of scope here.
     choice = answers.templates[0]
     inside = _within(_template_root(answers, choice), answers.destination)
     return (
@@ -674,42 +710,55 @@ def _next_panel(answers: Answers) -> Panel:
     operator is told where the project is by the panel's own first line, so
     only that one is absolute.
 
-    OBSERVED 2026-08-12 on a real run: an unseeded panel names `deploy.md`
-    once, in the footer; a seeded one names it again in step 3. That is two
-    mentions, not one -- kept, because a caution that does not carry the path
-    it points at is not a caution, and the footer's claim ("the full
-    procedure") is a different claim from step 3's ("this template's seeding
-    conditions").
+    Rendered as a two-column grid rather than as text with a leading ` 1. `,
+    because a wrapped step whose continuation restarts at the left margin
+    stops looking like a numbered list at all. The grid hangs the
+    continuation under the step text; `pad_edge=False` is what keeps the
+    blank line BETWEEN steps from also appearing above the first and below
+    the last.
+
+    `deploy.md` is named exactly once either way, and which line carries it
+    differs by arm. Seeded, that line is step 3 -- the caution, which has to
+    carry the path it points at -- and the footer is dropped, because
+    repeating the same path two lines later in a six-line panel is noise.
+    Unseeded there is no step 3, so the footer is the only thing pointing at
+    the guide and it stays.
     """
+    # `templates[0]`, for the same reason as `_rebuild_command` above: one
+    # template, so one `inside` and one guide. Several would need a numbered
+    # section per template, which is a question for multi-template selection
+    # rather than one to answer speculatively here.
     choice = answers.templates[0]
     inside = _within(_template_root(answers, choice), answers.destination)
     guide = f"{inside}30-deploy/deploy.md"
-    steps = [
-        (
-            f" 1. Paste [bold]{inside}build/{ASSESS_SCRIPT}[/bold] into the "
-            "target site's console. It is read-only, and it is how you find "
-            "out whether these list names are already taken."
-        ),
-        f" 2. Paste [bold]{inside}build/{DEPLOY_SCRIPT}[/bold].",
-    ]
+    steps = Table.grid(padding=(1, 1), pad_edge=False)
+    steps.add_column(justify="right", no_wrap=True, style="bold")
+    steps.add_column(overflow="fold")
+    steps.add_row(
+        "1.",
+        f"Paste [bold]{inside}build/{ASSESS_SCRIPT}[/bold] into the target "
+        "site's console. It is read-only, and it is how you find out whether "
+        "these list names are already taken.",
+    )
+    steps.add_row("2.", f"Paste [bold]{inside}build/{DEPLOY_SCRIPT}[/bold].")
+    body: list[RenderableType] = [f"In [bold]{answers.destination}[/bold]:", "", steps]
     if answers.seed:
         # The guide is named BEFORE the demo script, not after it: a family
         # may seed data its own procedure tells you not to put on a live
         # site, and an instruction read first is the only one that can
         # prevent that. A seeded bundle carries a THIRD script, and pasting
         # the other two leaves the list empty.
-        steps.append(
-            f" 3. Read [bold]{guide}[/bold] for this template's seeding "
+        steps.add_row(
+            "3.",
+            f"Read [bold]{guide}[/bold] for this template's seeding "
             f"conditions, then paste [bold]{inside}build/{DEMO_SCRIPT}"
             "[/bold] for the demo rows.",
         )
-    return Panel(
-        f"In [bold]{answers.destination}[/bold]:\n\n"
-        + "\n\n".join(steps)
-        + f"\n\n[dim]{guide} has the full procedure for this template.[/dim]",
-        title="Next",
-        border_style="green",
-    )
+    else:
+        body.extend(
+            ("", f"[dim]{guide} has the full procedure for this template.[/dim]"),
+        )
+    return Panel(Group(*body), title="Next", border_style="green")
 
 
 def _run(console: Console) -> int:
@@ -792,7 +841,11 @@ def _run(console: Console) -> int:
         seed=seed,
     )
 
-    console.rule("Review")
+    # No `console.rule("Review")`. The other three sections are followed by
+    # prompts, which need a break in front of them; this one is followed by a
+    # bordered panel TITLED Review, so a rule would put the word on the
+    # screen twice, three lines apart, and break nothing that was joined.
+    console.print()
     console.print(_review_panel(answers))
     if not Confirm.ask(
         "Write the project and build it?" if build else "Write the project?",
@@ -816,7 +869,7 @@ def _run(console: Console) -> int:
         # prefix pair when only the site URL moved read as "Repointed 1
         # doc(s) from RR_ to RR_", which is worse than saying nothing.
         console.print(
-            f"Updated {len(repointed)} documentation file(s): "
+            f"Updated {len(repointed)} documentation files: "
             f"{', '.join(s.describe() for s in applied)}.",
         )
 
