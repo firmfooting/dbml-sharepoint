@@ -702,14 +702,12 @@ def test_a_pasted_site_url_keeps_its_query_out_of_the_copied_docs(
     2200 tests green, and `wizard.py` carried its only uncovered line.
     """
     destination = tmp_path / "proj"
-    console = ScriptedConsole([
-        "risk-register",
-        str(destination),
-        "RR_",
-        "https://contoso.sharepoint.com/sites/x?web=1",
-        "y",   # write
-        "n",   # do not build
-    ])
+    console = ScriptedConsole(_answers(
+        destination,
+        site_url="https://contoso.sharepoint.com/sites/x?web=1",
+        build="n",
+        confirm="y",
+    ))
 
     assert wizard.run_wizard(console) == 0
 

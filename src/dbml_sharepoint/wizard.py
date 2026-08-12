@@ -121,10 +121,16 @@ class TemplateChoice:
         """The SharePoint list titles this template creates for one site role.
 
         A method rather than a property because it iterates. The rule it
-        obeys is plain concatenation, which is what `jsgen.py:380`,
-        `assessgen.py:39`, `demogen.py:109`, `manifestgen.py:77` and
-        `reportgen.py:176` all do -- so this reports the build's behaviour
-        rather than predicting it.
+        obeys is plain concatenation, which is what every generator that
+        names a list does -- `jsgen`, `assessgen`, `demogen`, `manifestgen`
+        and `reportgen` each build the title as `prefix + entity_name` -- so
+        this reports the build's behaviour rather than predicting it.
+
+        Named by MODULE, not by line. An earlier version of this docstring
+        cited five `file:line` pairs and four of them had drifted within one
+        stack of rebases, pointing at a blank line, a docstring and a list
+        initialiser. A citation that rots is worse than none: it reads as
+        precision and sends the next person to the wrong place.
 
         FILTERED BY SITE ROLE, because the build is. Every generator goes
         through `ordering.site_tables_in_order`, which keeps only entities
