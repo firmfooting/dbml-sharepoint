@@ -498,6 +498,12 @@ def _site_roles(facts: Sequence[_TemplateFacts]) -> list[str]:
     which is what the picker collects today -- this is that template's own
     roles, unchanged.
     """
+    if not facts:
+        # `frozenset.intersection(*())` raises a bare `TypeError`, not a
+        # named refusal -- unreachable from `_run` today, which always
+        # passes exactly one element, but the signature accepts any
+        # `Sequence` and multi-template selection is where this is headed.
+        raise WizardError("no template was chosen, so there is no site role.")
     shared = frozenset.intersection(*(f.roles for f in facts))
     if not shared:
         raise WizardError(
@@ -617,7 +623,7 @@ def _run(console: Console) -> int:
     from dbml_sharepoint.cli import execute_build  # noqa: PLC0415
 
     # Offered only where the mapping declares a group `--enterprise-reader`
-    # could enrol into -- see `_declares_reader_group`. Blank stays the
+    # could enrol into -- see `_TemplateFacts.reader_group`. Blank stays the
     # default and must map to None, never "": an empty string would reach
     # `validate_enterprise_reader` and abort a run where the operator simply
     # pressed Enter, which is exactly the safe answer this question exists

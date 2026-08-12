@@ -848,38 +848,6 @@ def test_a_second_prefix_key_defeats_the_rewrite_and_the_read_back_says_so(
         wizard._rewrite_prefix(mapping, "NEW_")
 
 
-def test_a_template_with_no_prefix_line_is_reported_not_a_traceback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A shipped mapping missing `prefix:` entirely is refused up front.
-
-    `entities: {}\n` has no top-level `prefix:` key, so the real loader --
-    called by `_read_facts` right after the template is picked, before the
-    destination is even asked -- raises `KeyError('prefix')`. `_read_facts`
-    turns that into a named `WizardError`, not a traceback and not a
-    half-made project.
-
-    This fixture used to reach `_rewrite_prefix`'s own regex guard,
-    mid-scaffold; `_read_facts` now catches it earlier, which is the point
-    of reading the shipped mapping before anything is written.
-    `_rewrite_prefix`'s guard is still pinned directly by
-    `test_a_mapping_with_no_prefix_line_is_refused` above.
-    """
-    solution = _fake_family(tmp_path / "fake", mapping="entities: {}\n")
-    _offer_only(monkeypatch, solution)
-
-    destination = tmp_path / "proj"
-    console = ScriptedConsole(
-        _answers(destination, template="fake-template", prefix="NEW_"),
-    )
-
-    assert wizard.run_wizard(console) == 1
-    reported = _collapsed(console)
-    assert "fake-template" in reported
-    assert "could not be loaded" in reported
-    assert not destination.exists()
-
-
 def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -899,6 +867,80 @@ def test_a_template_directory_that_is_not_there_is_reported_not_a_traceback(
 
     assert wizard.run_wizard(console) == 1
     assert "could not be loaded" in _collapsed(console)
+    assert not destination.exists()
+
+
+def test_a_rewrite_that_cannot_find_the_prefix_line_is_reported_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`run_wizard` has no top-level `except WizardError` -- only
+    `KeyboardInterrupt` and `EOFError` are caught there. The `except
+    (WizardError, OSError)` around `_scaffold` in `_run` is the ONLY thing
+    standing between a `WizardError` raised mid-scaffold and a raw traceback
+    on top of a project directory the wizard has already created, and
+    `_read_facts` cannot cover it: that guard runs on the SHIPPED mapping,
+    before the write, so it only catches what the real loader itself
+    refuses.
+
+    This fixture is built to get past `_read_facts` and fail only in
+    `_scaffold`. The whole document is one line of flow-style YAML, so the
+    real loader parses `prefix` and `entities` out of it happily -- but
+    `_rewrite_prefix`'s `^prefix:` regex requires a line that STARTS with
+    `prefix:`, and this line starts with `{`. MEASURED: the real loader
+    accepts it and `_rewrite_prefix` still raises "no top-level `prefix:`
+    line", which is exactly the gap between "the loader will take it" and
+    "the targeted line-rewrite can find where the prefix belongs" that
+    `_rewrite_prefix`'s own docstring exists to explain.
+    """
+    solution = _fake_family(
+        tmp_path / "fake",
+        mapping=(
+            '{prefix: "OLD_", entities: {Risk: {kind: List, base_template: '
+            "100, site_role: default}}}\n"
+        ),
+    )
+    _offer_only(monkeypatch, solution)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, template="fake-template", prefix="NEW_"),
+    )
+
+    assert wizard.run_wizard(console) == 1
+    reported = _collapsed(console)
+    assert "Could not scaffold the project" in reported
+    assert "no top-level `prefix:` line" in reported
+    # NOT `not destination.exists()`: `copytree` runs before the rewrite, so
+    # the failure this test is about happens mid-scaffold, after the tree is
+    # already copied. The wizard does not roll a partial write back -- it is
+    # reported, not silently presented as a finished project, which is what
+    # the two assertions above establish.
+
+
+def test_a_copy_that_cannot_be_made_is_reported_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other arm of the same boundary: `copytree` itself raising
+    `OSError` -- a permissions error, a vanished source directory, anything
+    discovered only at copy time, after `_read_facts` has already accepted
+    the shipped mapping. `run_wizard` has no top-level `except WizardError`,
+    so `_run`'s `except (WizardError, OSError)` around `_scaffold` is the
+    only thing standing between this and a raw traceback on top of a
+    directory the wizard may have already begun writing.
+    """
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+
+    def _refuse_to_copy(*_args: object, **_kwargs: object) -> None:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(shutil, "copytree", _refuse_to_copy)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(_answers(destination, template="fake-template"))
+
+    assert wizard.run_wizard(console) == 1
+    assert "Could not scaffold the project" in _collapsed(console)
     assert not destination.exists()
 
 
@@ -1423,12 +1465,12 @@ def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
     _offer_only(monkeypatch, solution)
 
     destination = tmp_path / "out"
-    # Two answers only. The guard runs straight after the template pick, so
-    # a scripted destination would never be consumed -- and a spare answer at
+    # One answer only. The guard runs straight after the template pick, so a
+    # second scripted answer would never be consumed -- and a spare answer at
     # the end of a script is invisible, which is exactly how a test comes to
     # assert less than it looks like it does. Under-scripting is the honest
     # failure mode here: it surfaces as EOFError and exit 130, not silence.
-    console = ScriptedConsole([solution.id, "NEW_"])
+    console = ScriptedConsole([solution.id])
     assert wizard.run_wizard(console) == 1
     assert not destination.exists()
     assert "fake-template" in _collapsed(console)
@@ -1460,6 +1502,21 @@ def test_templates_that_share_no_site_role_are_refused(tmp_path: Path) -> None:
     )
     with pytest.raises(wizard.WizardError, match="no site role"):
         wizard._site_roles([hq, branch])
+
+
+def test_no_templates_chosen_is_a_named_refusal_not_a_type_error() -> None:
+    """`frozenset.intersection(*())` raises a bare `TypeError` -- confirmed
+    on 3.14, since the star-unpacked call has no arguments at all -- which is
+    not the named, fail-closed error AGENTS.md requires for anything
+    uncertain.
+
+    Unreachable from `_run` today: the picker always passes `_site_roles`
+    exactly one element. But the signature accepts any `Sequence`, and the
+    picker is moving toward collecting several templates, so an empty list
+    must not regress into an unnamed crash the day that lands.
+    """
+    with pytest.raises(wizard.WizardError, match="no template"):
+        wizard._site_roles([])
 
 
 def test_a_seeded_run_names_the_guide_before_the_demo_script(
