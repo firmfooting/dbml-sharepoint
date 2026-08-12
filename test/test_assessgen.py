@@ -17,6 +17,7 @@ from dbml_sharepoint.generators.assessgen import (
     assess_targets,
     derive_requirements,
 )
+from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.model.mapping_loader import (
     ListPermissionPolicy,
     MappingBundle,
@@ -167,7 +168,6 @@ def _assess_js() -> str:
 
 
 def test_assess_is_read_only() -> None:
-    import re
     js = _assess_js()
     assert "'X-HTTP-Method'" not in js and '"X-HTTP-Method"' not in js
     posts = re.findall(r"method:\s*'POST'", js)
@@ -234,6 +234,20 @@ def test_assess_header_carries_full_provenance() -> None:
 # forever -- so it is asserted by executing the emitted script.
 
 
+def _declared_descriptions() -> dict[str, str]:
+    """List title -> the Description a real deploy leaves on that list.
+
+    Read out of the DEPLOY generator, not out of assess's own `list_markers`.
+    Building the "correct" fixture from the code under test would make the
+    quiet run agree with whatever assess happens to believe; taking it from
+    `build_schema_json` is the point -- it is what the site actually holds
+    after a deploy, so this pins assess against the deploy.
+    """
+    schema, bundle = _simple()
+    schema_json = build_schema_json(schema, bundle, "default")
+    return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
+
+
 def test_assess_targets_carry_the_marker_from_the_shared_speller() -> None:
     """Imported, never re-spelled.
 
@@ -255,17 +269,28 @@ def test_assess_targets_carry_the_marker_from_the_shared_speller() -> None:
     }
 
 
-def test_a_missing_marker_is_a_degrading_requirement_not_a_blocking_one() -> None:
+def test_every_provisioned_list_has_a_degrading_marker_requirement() -> None:
     """A list whose Description an owner rewrote is still a good list, and
     deploying over it is the repair. Only reporting is broken -- blocking the
-    deploy on it would block the one thing that fixes it."""
+    deploy on it would block the one thing that fixes it.
+
+    Over EVERY list the deploy provisions, not over two named ones: a rule
+    that covers all but one list is indistinguishable from a rule that works,
+    right up until the uncovered list is the one that drifts.
+    """
     schema, bundle = _simple()
     reqs = {r.key: r for r in derive_requirements(schema, bundle, "default")}
-    assert reqs["provenance_marker:APP_Project"].level_on_fail == "WARN"
-    assert reqs["provenance_marker:APP_Task"].level_on_fail == "WARN"
+    for title in _declared_descriptions():
+        key = f"{_MARKER_KEY}{title}"
+        assert key in reqs, f"no marker requirement for '{title}': {sorted(reqs)}"
+        assert reqs[key].level_on_fail == "WARN", reqs[key]
 
 
-_FIXTURE_LIST_TITLE = "APP_Project"
+# The key prefix the marker check owns. Findings are selected by KEY, never by
+# the word "marker" turning up in a detail string: an unrelated WARN that
+# happens to mention one would otherwise join the set and fail assertions
+# about keys it has nothing to do with.
+_MARKER_KEY = "provenance_marker:"
 
 # A site whose declared lists all exist. Everything the assessment asks for
 # beyond that answers as an empty, healthy shape -- the thin-mock findings
@@ -358,22 +383,6 @@ def test_the_assess_harness_matcher_separates_a_list_from_what_nests_under_it() 
     )
 
 
-def _declared_descriptions() -> dict[str, str]:
-    """List title -> the Description a real deploy leaves on that list.
-
-    Read out of the DEPLOY generator, not out of assess's own `list_markers`.
-    Building the "correct" fixture from the code under test would make the
-    quiet run agree with whatever assess happens to believe; taking it from
-    `build_schema_json` is the point -- it is what the site actually holds
-    after a deploy, so this pins assess against the deploy.
-    """
-    from dbml_sharepoint.generators.jsgen import build_schema_json
-
-    schema, bundle = _simple()
-    schema_json = build_schema_json(schema, bundle, "default")
-    return {entry["title"]: entry["description"] for entry in schema_json["lists"]}
-
-
 def _run_assess(list_description: str | dict[str, str]) -> dict[str, Any]:
     """Execute the emitted assess.js against a site holding `list_description`.
 
@@ -405,9 +414,18 @@ def _run_assess(list_description: str | dict[str, str]) -> dict[str, Any]:
     return summary
 
 
-def _adverse(summary: dict[str, Any]) -> list[dict[str, Any]]:
-    """The findings that reach the verdict: WARN and BLOCKED, not PASS/INFO."""
-    return [f for f in summary["findings"] if f["level"] in {"WARN", "BLOCKED"}]
+def _marker_findings(
+    summary: dict[str, Any], *, levels: set[str],
+) -> list[dict[str, Any]]:
+    """The marker check's own findings at `levels`, selected by key.
+
+    WARN and BLOCKED are the levels the verdict consumes; PASS and INFO are
+    not. See `_MARKER_KEY` for why the key rather than the detail.
+    """
+    return [
+        f for f in summary["findings"]
+        if f["key"].startswith(_MARKER_KEY) and f["level"] in levels
+    ]
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -419,16 +437,21 @@ def test_assess_reports_a_provisioned_list_whose_marker_is_missing() -> None:
     more, so this read-only check is the only thing standing between an
     edited description and a silently short report.
     """
+    titles = list(_declared_descriptions())
     summary = _run_assess("an owner rewrote this")
-    warned = [f for f in _adverse(summary) if "marker" in f["detail"].lower()]
+    warned = _marker_findings(summary, levels={"WARN", "BLOCKED"})
     assert warned, (
         "a declared list carrying no provenance marker drew no finding: "
         f"{summary['findings']}"
     )
-    assert any(_FIXTURE_LIST_TITLE in f["detail"] for f in warned), (
-        "the warning must name the list; an operator with forty lists "
-        f"cannot act on 'a marker is missing': {warned}"
-    )
+    # EVERY list, not the first one. A `break` in the collision loop leaves a
+    # site where list one is checked and lists two through forty are not, and
+    # an `any(...)` assertion cannot tell that from a working check.
+    for title in titles:
+        assert any(title in f["detail"] for f in warned), (
+            f"'{title}' drifted and nothing said so; the warning must name "
+            f"the list, and it must name every one of them: {warned}"
+        )
     # DEGRADED, not BLOCKED: the list is fine and the deploy is the repair.
     assert all(f["level"] == "WARN" for f in warned), warned
     # And it must actually REACH the verdict. That loop walks the requirement
@@ -453,14 +476,14 @@ def test_assess_is_quiet_when_every_marker_is_present() -> None:
         "Provisioned by dbml-sharepoint" in value for value in declared.values()
     ), declared
     summary = _run_assess(declared)
-    noisy = [f for f in _adverse(summary) if "marker" in f["detail"].lower()]
+    noisy = _marker_findings(summary, levels={"WARN", "BLOCKED"})
     assert not noisy, f"a correctly marked list was reported as drifted: {noisy}"
     # Silence has to come from the check PASSING, not from its never having
-    # run: deleting it outright would satisfy the assertion above.
-    passed = [
-        f for f in summary["findings"]
-        if f["level"] == "PASS" and "marker" in f["detail"].lower()
-    ]
-    assert any(_FIXTURE_LIST_TITLE in f["detail"] for f in passed), (
-        f"the marker check never ran: {summary['findings']}"
-    )
+    # run: deleting it outright would satisfy the assertion above. Per list,
+    # for the same reason the sibling test is -- a check that stops after the
+    # first list is silent about the rest, which looks exactly like this.
+    passed = _marker_findings(summary, levels={"PASS"})
+    for title in declared:
+        assert any(title in f["detail"] for f in passed), (
+            f"the marker check never ran for '{title}': {summary['findings']}"
+        )

@@ -22,8 +22,14 @@ def run_node(script: str) -> str:
     """Run `script` under Node and return stdout+stderr.
 
     Via a FILE, never `node -e`: deploy.js is far past the Windows
-    command-line limit. Written with an explicit LF newline so the script
-    Node parses is byte-for-byte the one the generator emitted.
+    command-line limit.
+
+    `newline="\n"` is a DELIBERATE behaviour change made when this moved out
+    of test_deploy_runtime.py, not part of the move. The previous spelling
+    let `write_text` translate on Windows, so the deploy tests were running a
+    CRLF copy of a script the generator emits as LF -- the artefact under
+    test was not the artefact that ships. This makes Node parse the emitted
+    bytes. Kept on review; see AGENTS.md on generated files and LF.
     """
     assert NODE is not None
     with tempfile.TemporaryDirectory() as tmp:
