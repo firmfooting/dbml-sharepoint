@@ -30,6 +30,31 @@ Mind the two different notes. A **column** `note:` is a field
 description; the **table** `Note:` — a statement inside the table body,
 not a column setting — is the one this section is about.
 
+:::warning Upgrading an existing schema
+
+**This requirement is new, it is an error, and there is no grace period.**
+From this version every `Table` must carry a `Note:`. A hand-written
+schema that built cleanly against an earlier version and has a table
+without one **will not build** — `entity_has_no_note` is an error, so
+`dbml-sharepoint build` refuses the bundle rather than warning about it.
+Nothing on an already-deployed site changes until you paste a new
+`deploy.js.txt`.
+
+The fix is one sentence per table, and the build names every table that
+needs one in a single run, so you can work through the list in one pass.
+Write them to the guidance in [Writing one worth
+reading](#writing-one-worth-reading) below rather than restating the
+title — the sentence is the only list-level description this tool emits,
+and a placeholder spends it.
+
+Two smaller rules apply to the sentence you write, both errors and both
+described below: it must leave room for the [provenance
+marker](#the-budget-and-why-a-long-note-is-refused-rather-than-truncated),
+and it may not contain `&` or a line break
+(`entity_note_may_not_round_trip`).
+
+:::
+
 ### What it becomes
 
 The table note becomes the provisioned SharePoint list's **Description**.
