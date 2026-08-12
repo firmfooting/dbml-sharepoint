@@ -2,12 +2,53 @@
  * dbml-sharepoint PROBE — SEARCH AS A FLEET DISCOVERY MECHANISM
  *
  * STATUS: NOT YET RUN. Nothing below has been measured on any tenant.
- * EVERY question in this file is NOT ESTABLISHED until an operator pastes
- * it into a live site and sends the transcript back. Until then this file
- * is a list of things nobody here knows — do not cite any row of it, and
- * do not let a plausible-sounding expectation in a comment be read as a
+ * EVERY question in this file is NOT ESTABLISHED until somebody pastes it
+ * into a live site and sends the transcript back. Until then this file is
+ * a list of things nobody here knows — do not cite any row of it, and do
+ * not let a plausible-sounding expectation in a comment be read as a
  * result. When it has run, quote the findings into this block, dated, and
- * say which site kind they came from.
+ * say which site kind they came from AND WHICH ACCOUNT PASTED IT.
+ *
+ * IT IS NOW MEANT TO BE PASTED BY THE REPORTING SERVICE ACCOUNT, not by an
+ * operator. This file was written assuming the opposite, and the change is
+ * not administrative — it changes what the central question measures.
+ *
+ * That account holds ONLY list-scoped `Read` plus the `Limited Access`
+ * SharePoint derives at web scope. IT IS NOT A MEMBER OF ANY SITE. On
+ * 2026-08-12 it nonetheless ran a console probe on a site it does not
+ * belong to: it loaded the page, called REST, enumerated `web/siteusers`,
+ * read the site collection features and POSTed `web/ensureuser`. It WAS
+ * REFUSED `getusereffectivepermissions` for a named principal at both web
+ * and list scope — HTTP 403, UnauthorizedAccessException — because it does
+ * not hold `EnumeratePermissions`. (See enterprise-reader-probe.js.j2,
+ * run 2. That is an observation about one account on one site, not a rule
+ * about SharePoint.)
+ *
+ * Three consequences, all of them wired into the code below:
+ *
+ *   S10 CHANGES MEANING ENTIRELY. "Not answerable" is the honest answer
+ *       for a PRIVILEGED caller and the wrong one for this account. Run by
+ *       the list-only reporting identity, THE RESULT SET IS THE
+ *       MEASUREMENT: what comes back IS the trimmed view, and whether it
+ *       contains anything at all is what decides whether search-driven
+ *       discovery can work under least privilege. Set RUNNING_AS_READER =
+ *       true so S10 knows which run this is. THE FLAG IS NOT TRUSTED ON
+ *       ITS OWN: web/currentuser is read every run and the caller's login
+ *       printed beside the answer, and S10 refuses to answer at all if the
+ *       flag says reader while the caller reads back as a site collection
+ *       administrator.
+ *   A 403 IS A FINDING, NOT A BROKEN PROBE. Several questions may now be
+ *       refused outright. "The reporting identity is refused this
+ *       endpoint" is precisely what the design needs to know, so a 401/403
+ *       is recorded as an OBSERVED refusal ATTRIBUTABLE TO THIS CALLER'S
+ *       PRIVILEGE — never as a fact about SharePoint in general, and never
+ *       as the run having failed.
+ *   S1 GATES EVERY OTHER SEARCH ROW. If the control does not hold, the
+ *       rest record NOT ESTABLISHED (control open) and carry whatever they
+ *       read as supporting detail only — the same downgrade
+ *       enterprise-reader-probe.js.j2 now applies to its A3 and A4, added
+ *       there because a row that contradicts its own control had recorded
+ *       itself as OBSERVED.
  *
  * ---- WHY THIS PROBE EXISTS --------------------------------------------
  * The generated Power BI pack needs one query per list per site, written by
@@ -68,6 +109,11 @@
  *   3. Whether a list's Description is crawled, and whether a marker token
  *      planted in one is exact-matchable — the candidate way to tag which
  *      lists are ours without relying on titles.
+ *   4. Whether ANY of it is reachable by the reporting service account —
+ *      the identity the whole design would run as. See the STATUS block.
+ *   5. Whether SharePoint REST on this tenant emits a SERVER-DRIVEN
+ *      continuation at all. Unrelated to search; see the paging section
+ *      below for why it is asked here.
  *
  * ---- THE ONE RULE THIS FILE IS BUILT AROUND ---------------------------
  * A measurement's inputs and its outputs are different kinds of value.
@@ -93,12 +139,16 @@
  *
  * READ-ONLY. These run with the write flag OFF and write nothing.
  *
- *   S1  CONTROL. Does `_api/search/query` answer THIS caller at all, for a
- *       trivial query? Without it, every row below is a fact about the
- *       endpoint rather than about the question it was asked. NOTE: zero
- *       rows still passes S1 — the control is about the endpoint
- *       ANSWERING, and requiring rows would make the control assert over
- *       an observation.
+ *   S1  CONTROL, AND IT GATES THE REST. Does `_api/search/query` answer
+ *       THIS caller at all, for a trivial query? Without it, every search
+ *       row below is a fact about the endpoint rather than about the
+ *       question it was asked — so while S1 is open, S2-S9 record NOT
+ *       ESTABLISHED (control open) and print what they read as supporting
+ *       detail. NOTE: zero rows still answers S1 — the control is about
+ *       the endpoint ANSWERING, and requiring rows would make the control
+ *       assert over an observation. A 403 here IS an answer to S1: it says
+ *       this caller is refused the endpoint, which for the reporting
+ *       identity is one of the two outcomes the design is waiting on.
  *   S2  Does `contentclass:STS_List` return rows? How many, and what total
  *       does the result set report?
  *   S3  For the first row, EVERY property name returned and its value.
@@ -126,9 +176,18 @@
  *       created content is in the index yet, so a SECOND run can bound it.
  *       ONE RUN CANNOT ANSWER THIS and the row says so in its own
  *       evidence.
- *   S10 Security trimming. CANNOT BE ESTABLISHED FROM A PRIVILEGED
- *       OPERATOR ACCOUNT — see the section below. Registered, and recorded
- *       as NOT ANSWERABLE FROM THIS ACCOUNT.
+ *   S10 Security trimming, AND WHAT IT MEANS DEPENDS ON WHO PASTED IT.
+ *       From a privileged account it is not answerable and says so. From
+ *       the list-only reporting identity the returned set IS the trimmed
+ *       view and therefore IS the answer. See the S10 section below.
+ *   S11 SERVER-DRIVEN PAGING, measured against a 6,000-row fixture that
+ *       already exists. Reads that list's items with NO `$top` at all and
+ *       records how many rows came back and whether a continuation link
+ *       came with them. See the paging section below for what this does
+ *       and does not settle.
+ *   S12 Follows that link once, and records whether the second page holds
+ *       DIFFERENT rows — because a second page that repeats the first
+ *       would look like paging and would not be.
  *
  * WRITE-GATED. Default OFF; the run is useful without it.
  *
@@ -138,19 +197,76 @@
  *       See the two warnings below — they are the difference between an
  *       answer and a fabricated one.
  *
- * ---- S10: WHY IT IS NOT ANSWERABLE HERE, AND MUST NOT READ AS A PASS ---
- * Security trimming cannot be demonstrated by an account that can see
- * everything. A trimmed result and an untrimmed result ARE IDENTICAL to
- * such a caller — both return everything that account may see, which is
- * everything. Running this as a site collection administrator and getting
- * a full result set is not evidence that trimming works; it is not
- * evidence of anything at all about trimming.
+ * ---- S10: TWO RUNS, TWO MEANINGS, AND ONLY ONE OF THEM IS AN ANSWER ----
+ * PASTED BY A PRIVILEGED ACCOUNT, S10 IS NOT ANSWERABLE. Trimming cannot
+ * be demonstrated by an account that can see everything: a trimmed result
+ * and an untrimmed result ARE IDENTICAL to such a caller — both return
+ * everything that account may see, which is everything. Running this as a
+ * site collection administrator and getting a full result set is not weak
+ * evidence that trimming works; it is no evidence at all. That branch is
+ * still in the code, unchanged, and it still refuses.
  *
- * What WOULD answer it: run the same STS_List query while SIGNED IN AS THE
- * REPORTING SERVICE ACCOUNT, on a tenant where that account has access to
- * some sites and not others, and compare the sites that come back against
- * the sites it was granted. That is a different session, so no revision of
- * this file can close S10 — it can only refuse to pretend.
+ * PASTED BY THE LIST-ONLY REPORTING IDENTITY, S10 IS THE MEASUREMENT THE
+ * DESIGN IS WAITING FOR. That account is not a member of any site and
+ * holds Read on lists only. Whatever `_api/search/query` hands it IS the
+ * trimmed view, by definition — there is no untrimmed view to compare
+ * against and none is needed. Three outcomes, all real answers:
+ *
+ *   - Rows come back. Search-driven, permission-trimmed discovery is
+ *     REACHABLE from least privilege on this tenant, and the rows say
+ *     which sites and lists reached it.
+ *   - Zero rows, endpoint answering. The mechanism is reachable and the
+ *     account sees nothing through it — which would mean granting list
+ *     Read is not enough to make a list discoverable, and the design needs
+ *     a different grant or a different mechanism.
+ *   - HTTP 401/403. The account is refused the endpoint outright. That
+ *     kills search as a least-privilege discovery mechanism as configured,
+ *     and it is a finding, not a failed run.
+ *
+ * WHICH RUN THIS IS comes from RUNNING_AS_READER, a constant the person
+ * pasting sets, default false. A script cannot reliably tell which
+ * identity is driving it, so it does not pretend to — but it does not take
+ * the flag on faith either: web/currentuser is read every run and the
+ * caller's LoginName, Title and IsSiteAdmin are printed beside the answer,
+ * so the transcript shows who actually ran it. If the flag says reader and
+ * the caller reads back as a site collection administrator, S10 records
+ * NOT ESTABLISHED and names the contradiction rather than filing a
+ * privileged result set as a least-privilege measurement.
+ *
+ * ---- S11/S12: SERVER-DRIVEN PAGING, AND WHY IT IS ASKED HERE ----------
+ * `_security_principals.js.j2` and `_reader_enrolment.js.j2` both page a
+ * collection with `$top=5000` and follow `d.__next`. NOBODY HAS CONFIRMED
+ * THAT SHAREPOINT REST EMITS `__next` ON SERVER TRUNCATION AT ALL. If it
+ * does not, both templates read a first page and stop, silently.
+ *
+ * The obvious experiment — a site group with more members than the server
+ * page size — HAS BEEN DECLINED, on sound grounds: putting a large group
+ * into a site's permissions to satisfy a probe would expose many real
+ * people to development work. That is settled. It is not asked for here
+ * and it is not asked for again anywhere else.
+ *
+ * So this measures the same platform behaviour against a fixture that
+ * ALREADY EXISTS on the tenant and costs nothing: the list named by
+ * PAGING_FIXTURE_LIST below, holding 6,000 rows, left in place by the list
+ * view threshold work. READ-ONLY. Nothing in this probe writes to it, and
+ * IT MUST NOT BE RECYCLED while anything is still being measured against
+ * it — rebuilding it costs five batch loads, reading it costs one paste.
+ *
+ * WHAT S11 AND S12 SETTLE, AND WHAT THEY DO NOT. This is the LIST-ITEMS
+ * collection, NOT `sitegroups/users`. A continuation link here establishes
+ * that THIS TENANT'S REST EMITS SERVER-DRIVEN PAGING AT ALL, which is the
+ * question underneath both templates. It does NOT settle the site-group
+ * case: that collection may page differently or not at all, and it remains
+ * UNMEASURED and — given the exposure objection above — UNMEASURABLE. Say
+ * both halves whenever these rows are quoted.
+ *
+ * AND AN ABSENT LINK IS NOT PROOF EVERYTHING CAME BACK. On this same
+ * fixture an unindexed presence test was measured returning 50 ROWS
+ * INSTEAD OF 60, AT HTTP 200 WITH NO ERROR (2026-07-31, see
+ * threshold-index-probe.js.j2 and analysis/checks/_views.py). This tenant
+ * is already known to truncate silently. So S11 records the row count, the
+ * list's ItemCount and the link's presence as three separate observations
+ * and draws no conclusion from the absence of the third.
  *
  * ---- S6: TWO WARNINGS -------------------------------------------------
  * FIRST: THIS CREATES A LIST. One list, on the site you pasted into,
@@ -188,18 +304,26 @@
  * it recycles and does not recreate.
  *
  * ---- HOW TO RUN -------------------------------------------------------
- *   1. Edit the two constants under CONFIGURATION. Both ship as obvious
- *      placeholders, and the questions that need them refuse to run and
- *      say which constant to set, so an unedited paste never produces a
- *      row that looks like a measurement. There is deliberately NO SITE
- *      URL: the probe reads the site it was pasted into.
- *   2. Open the target SharePoint site. F12 -> Console -> paste -> Enter.
+ *   0. SIGN IN AS THE REPORTING SERVICE ACCOUNT. That is the run this file
+ *      is now for; see the STATUS block. An operator run is still useful
+ *      for S1-S9 and S11-S12, but it cannot answer S10.
+ *   1. Edit the constants under CONFIGURATION. LIST_TITLE and MARKER_TOKEN
+ *      ship as obvious placeholders, and the questions that need them
+ *      refuse to run and say which constant to set, so an unedited paste
+ *      never produces a row that looks like a measurement. Set
+ *      RUNNING_AS_READER = true if and only if you are signed in as the
+ *      reporting service account. There is deliberately NO SITE URL: the
+ *      probe reads the site it was pasted into.
+ *   2. Open the target SharePoint site — for S11 and S12 to answer, the
+ *      site holding PAGING_FIXTURE_LIST. F12 -> Console -> paste -> Enter.
  *      It prints its plan and stops.
  *   3. Set CONFIRMED = true and paste again. That answers everything
  *      except S6 and writes nothing.
  *   4. Optionally, on a site you are content to leave a list on: set
  *      ALLOW_WRITES = true as well and paste once more. Then read the S6
- *      warnings above — you will need to come back.
+ *      warnings above — you will need to come back. The reporting service
+ *      account is unlikely to be able to create a list at all; if it is
+ *      refused, that refusal is itself a recorded observation.
  *   5. Copy the whole RESULTS block back verbatim, including the evidence
  *      lines. The property dump IS the finding for S3 and S8; a summary of
  *      it is not. The transcript stays OUT of this repository.
@@ -403,7 +527,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision bbeafed3 — quote this when reporting results.');
+  log('INFO', 'probe revision 51c370ac — quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // NO SITE URL, deliberately — see the harness.
@@ -426,6 +550,30 @@
   // and CLEANUP only ever touches this one list.
   const MARKER_LIST_TITLE = 'dbml-sharepoint search marker probe';
 
+  // WHO IS PASTING THIS. Leave it false for an operator, a site owner or a
+  // site collection administrator. Set it to true ONLY if you are signed
+  // in AS the reporting service account — the list-only reader described
+  // in the docblock. It changes what S10 means and NOTHING else: no extra
+  // call is made, nothing is written, and no other row reads it.
+  //
+  // THE FLAG IS NOT TAKEN ON FAITH. Every run reads web/currentuser and
+  // prints the caller's LoginName, Title and IsSiteAdmin, so the
+  // transcript shows who actually ran it; and S10 refuses to answer if the
+  // flag says reader while the caller reads back as a site collection
+  // administrator.
+  const RUNNING_AS_READER = false;
+
+  // The list S11 and S12 page against. NOT a placeholder — it names a
+  // fixture that ALREADY EXISTS on the tenant, 6,000 rows left in place by
+  // the list view threshold work. Change it only to point at a different
+  // large list, and say so when you report, because the row counts mean
+  // nothing without knowing which list produced them.
+  //
+  // READ-ONLY HERE, AND IT MUST NOT BE RECYCLED. Nothing in this probe
+  // writes to it, and other measurements still depend on it existing at
+  // exactly 6,000 rows.
+  const PAGING_FIXTURE_LIST = 'dbmlsp Probe Threshold';
+
   const PLACEHOLDER = /CHANGE ME|CHANGEME/;
 
   // ---- Registration ----------------------------------------------------
@@ -442,6 +590,8 @@
   expect('S8', 'Does the contentclass:"STS_Site" fallback work, and what identity comes back per site?');
   expect('S9', 'Crawl latency: is recently created content in the index yet, at this run timestamp?');
   expect('S10', 'Is the result set security-trimmed for the querying identity?');
+  expect('S11', 'With NO $top, how many list items come back, and is there a server-driven continuation link?');
+  expect('S12', 'Does following that continuation link return a further page of DIFFERENT items?');
 
   if (!CONFIRMED) {
     log('INFO', 'Would READ, writing nothing: several _api/search/query GETs — a');
@@ -449,7 +599,11 @@
     log('INFO', 'a query for the configured list title, and contentclass:"STS_Site".');
     log('INFO', 'Also web/lists on this site, to tell an unmet prerequisite (no list');
     log('INFO', 'here HAS a description) from a finding (descriptions are not');
-    log('INFO', 'returned). Every recorded URL has the site host stripped first.');
+    log('INFO', 'returned); web/currentuser, so the transcript records who ran it;');
+    log('INFO', `and the items of '${PAGING_FIXTURE_LIST}' with no $top, to see`);
+    log('INFO', 'whether the SERVER emits a continuation link. That list is read and');
+    log('INFO', 'never written, and it must not be recycled.');
+    log('INFO', 'Every recorded URL has the site host stripped first.');
     log('INFO', 'Would ADDITIONALLY, only with ALLOW_WRITES = true, CREATE ONE LIST');
     log('INFO', `named '${MARKER_LIST_TITLE}' carrying a marker token in its`);
     log('INFO', 'Description, and query for that token. That list is RECYCLED, not');
@@ -530,6 +684,30 @@
   const httpDetail = (r) => `HTTP ${r.status}: ${show(r.text == null ? JSON.stringify(r.body) : r.text, 500)}`;
   const failureOutcome = (r) => (isRefusal(r.status) ? `REFUSED (HTTP ${r.status})` : `NOT ESTABLISHED (HTTP ${r.status})`);
 
+  // A 401 or 403 IS A FINDING IN THIS RUN, and that is a deliberate
+  // departure from the harness's isRefusal, which excludes both because
+  // they are about WHO is asking rather than about what was sent.
+  //
+  // Here, who is asking IS THE QUESTION. This file is meant to be pasted by
+  // the reporting service account, and "that identity is refused this
+  // endpoint" is exactly what the design needs to know — so it is recorded
+  // as an OBSERVED refusal attributable to this caller's privilege, not as
+  // NOT ESTABLISHED, which would file the answer under "we never found
+  // out". Everything else keeps the harness's reading.
+  //
+  // What it must NOT be read as: a fact about SharePoint. It is a fact
+  // about this account, on this site, at this moment, and the outcome
+  // string says "for this caller" so a quoted row carries that with it.
+  const privilegeRefusal = (status) => status === 401 || status === 403;
+  const outcomeFor = (r) => (privilegeRefusal(r.status)
+    ? `OBSERVED — REFUSED (HTTP ${r.status}) for this caller`
+    : failureOutcome(r));
+  const privilegeNote = (r) => (privilegeRefusal(r.status)
+    ? ` HTTP ${r.status} is an identity refusal: it is attributable to THIS CALLER'S PRIVILEGE on this `
+      + 'site and is recorded as an observation, not as the probe failing. It says nothing about what a '
+      + 'more privileged account would get, and nothing about SharePoint in general.'
+    : '');
+
   // Learn documents the endpoint, the GET parameter spellings and the two
   // JSON Accept headers. It does NOT, as far as this author could find,
   // document the response BODY SHAPE for either flavour. So the shape is
@@ -545,6 +723,21 @@
     let parsed = null;
     try { parsed = JSON.parse(text); } catch { /* SharePoint sent XML or plain text */ }
     return { ok: res.ok, status: res.status, body: parsed, text, flavour };
+  };
+
+  // The harness's spGet sends odata=nometadata. S11 has to reproduce what
+  // the DEPLOY TEMPLATES send, and `d.__next` is a VERBOSE construct, so
+  // verbose gets its own helper rather than being bolted onto spGet. Same
+  // contract as the harness: `body` is the parsed payload whether or not
+  // the request succeeded, so only `ok` says the call worked.
+  const spGetVerbose = async (path) => {
+    const res = await fetch(`${WEB}/_api/${path}`, {
+      headers: { Accept: 'application/json;odata=verbose' },
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* SharePoint sent plain text */ }
+    return { ok: res.ok, status: res.status, body: parsed, text };
   };
 
   // `results`-wrapped arrays are a VERBOSE construct; nometadata gives bare
@@ -626,10 +819,54 @@
   const queryFailure = (q) => (q.unknownShape
     ? `HTTP ${q.res.status} but no PrimaryQueryResult.RelevantResults found in either odata flavour. `
       + `Raw (odata=${q.res.flavour}): ${show(q.res.text, 600)}`
-    : httpDetail(q.res));
+    : `${httpDetail(q.res)}${privilegeNote(q.res)}`);
   const queryOutcome = (q) => (q.unknownShape
     ? 'NOT ESTABLISHED (unrecognised response shape)'
-    : failureOutcome(q.res));
+    : outcomeFor(q.res));
+
+  // ---- Who is actually running this ------------------------------------
+  // Read ONCE, before anything else, and printed immediately. Two reasons,
+  // and neither is bookkeeping: S10's whole meaning depends on which
+  // identity ran the queries, and RUNNING_AS_READER is a hand-set constant
+  // that can be wrong or stale. The transcript therefore carries the
+  // caller's own words for who it is, and S10 cross-checks the flag
+  // against IsSiteAdmin rather than believing it.
+  const callerRes = await spGet('web/currentuser?$select=LoginName,Title,IsSiteAdmin');
+  const callerOk = !readFailed(callerRes);
+  const callerLogin = callerOk ? String(callerRes.body.LoginName == null ? '' : callerRes.body.LoginName) : '';
+  const callerIsSiteAdmin = callerOk ? callerRes.body.IsSiteAdmin : null;
+  const whoRan = callerOk
+    ? `the caller is LoginName ${JSON.stringify(callerLogin)}, Title `
+      + `${JSON.stringify(callerRes.body.Title)}, IsSiteAdmin=${JSON.stringify(callerIsSiteAdmin)}`
+    : `web/currentuser could not be read (${httpDetail(callerRes)})`;
+  log('INFO', `RUNNING_AS_READER = ${RUNNING_AS_READER}; ${whoRan}`);
+  if (!callerOk) {
+    log('INFO', 'The caller could not be identified. S10 will not answer without that — see its row.');
+  }
+
+  // ---- The control's verdict, threaded into every search row -----------
+  // Set by S1 below. A row that contradicts its own control must not read
+  // as a finding: enterprise-reader-probe.js.j2 recorded exactly that on
+  // 2026-08-12 — an A3 reading OBSERVED while A2, the same endpoint for
+  // the same login, had been refused — and a caveat in prose beside a row
+  // that says OBSERVED loses to the row. So the downgrade is mechanical
+  // here rather than written out in each evidence string.
+  //
+  // NOTHING IS THROWN AWAY. Whatever the row read is still printed, as
+  // supporting detail for a re-run to compare against.
+  let searchAnswers = false;
+  let controlWhy = 'S1 did not run';
+  let controlStatus = null;
+  const searchRecord = (id, question, outcome, evidence) => {
+    if (searchAnswers || outcome.startsWith('NOT ESTABLISHED')) {
+      record(id, question, outcome, evidence);
+      return;
+    }
+    record(id, question, 'NOT ESTABLISHED (control open)',
+           'NOT a finding about search discovery: S1, the control, has not been shown to answer this '
+           + `caller — ${controlWhy}. While that is open, this row is about the endpoint rather than `
+           + `about the question it was asked. Supporting detail only: ${outcome}; ${evidence}`);
+  };
 
   // ================= S1 — THE CONTROL ===================================
   // depends on: the endpoint spelling and this caller's session.
@@ -642,21 +879,29 @@
   // ANSWERS THIS CALLER — requiring rows would be asserting over an
   // observation, and on a small or freshly crawled tenant it would report
   // the control as broken while it was working perfectly.
-  let searchAnswers = false;
+  //
+  // A 401/403 ALSO ANSWERS S1, in the other direction: it says this caller
+  // is refused the endpoint. For the reporting service account that is one
+  // of the two outcomes the whole design is waiting on, so it is recorded
+  // as OBSERVED — and it still leaves searchAnswers false, because a
+  // refused control cannot license any row below it.
   {
+    const S1_Q = 'CONTROL: does _api/search/query answer this caller at all, for a trivial query?';
     const q = await runQuery('sharepoint', '&rowlimit=1');
+    controlStatus = q.res.status;
     if (!q.ok) {
-      record('S1', 'CONTROL: does _api/search/query answer this caller at all, for a trivial query?',
-             queryOutcome(q),
-             `${queryFailure(q)}. EVERY OTHER ROW IN THIS RUN IS NOW ABOUT THE ENDPOINT, NOT ABOUT `
-             + 'the question it was asked. Do not read S2-S9 as findings about search discovery while '
-             + 'this row is open.');
+      controlWhy = q.unknownShape
+        ? `S1 got HTTP ${q.res.status} but no result set it could recognise`
+        : `S1 got HTTP ${q.res.status}`;
+      record('S1', S1_Q, queryOutcome(q),
+             `${queryFailure(q)} ${whoRan}. EVERY OTHER SEARCH ROW IN THIS RUN IS NOW ABOUT THE `
+             + 'ENDPOINT, NOT ABOUT the question it was asked, and S2-S9 will say so themselves rather '
+             + 'than leaving it to this sentence. S11 and S12 are unaffected — they do not use search.');
     } else {
       searchAnswers = true;
-      record('S1', 'CONTROL: does _api/search/query answer this caller at all, for a trivial query?',
-             'OBSERVED — the endpoint answered',
-             `${describeQuery(q)}. A row count of 0 is still an answer to THIS question: it says the `
-             + 'endpoint served the caller. What it does not say is anything about the index.');
+      record('S1', S1_Q, 'OBSERVED — the endpoint answered',
+             `${describeQuery(q)}. ${whoRan}. A row count of 0 is still an answer to THIS question: it `
+             + 'says the endpoint served the caller. What it does not say is anything about the index.');
     }
   }
 
@@ -666,19 +911,24 @@
   // exactly what S3 is asking. Constraining the answer and then reporting
   // it as the answer is how a probe measures its own input.
   let firstListRow = null;
+  // Kept for S10: when the reporting identity runs this, the rows THIS
+  // query returned are the trimmed view, so S10 reads them rather than
+  // issuing the same query again from a second position in the run.
+  let listQuery = null;
   {
     const S2_Q = 'Does contentclass:STS_List return rows, how many, and what total is reported?';
     const S3_Q = 'For the first STS_List row: EVERY property name returned, and its value.';
     const q = await runQuery('contentclass:STS_List', '&rowlimit=10');
+    listQuery = q;
     if (!q.ok) {
       const detail = queryFailure(q);
-      record('S2', S2_Q, queryOutcome(q),
+      searchRecord('S2', S2_Q, queryOutcome(q),
              `${detail}. This is the decisive unknown, so be careful reading it: the query FAILING is `
              + 'not the same as STS_List not being a content class. Check S1 first, then S8 — if the '
              + 'documented STS_Site query works and this one does not, THAT is the finding.');
       record('S3', S3_Q, 'NOT ESTABLISHED (prerequisite)', 'S2 returned no result set to inspect.');
     } else {
-      record('S2', S2_Q, `OBSERVED — ${q.rows.length} row(s) returned`,
+      searchRecord('S2', S2_Q, `OBSERVED — ${q.rows.length} row(s) returned`,
              `${describeQuery(q)}. rowlimit was 10, so a returned count of 10 is the LIMIT talking, `
              + 'not the population — the reported total is the number to read, and S7 pushes on it.');
       if (q.rows.length === 0) {
@@ -727,7 +977,7 @@
             + `requested on its own: ${perName.join('; ')}`;
         }
 
-        record('S3', S3_Q, `OBSERVED — ${names.length} propert${names.length === 1 ? 'y' : 'ies'} on the first row`,
+        searchRecord('S3', S3_Q, `OBSERVED — ${names.length} propert${names.length === 1 ? 'y' : 'ies'} on the first row`,
                `${describeQuery(q)}\n      --- every cell on row 1, site host redacted ---\n${dumpRow(firstListRow)}\n`
                + `      --- end of dump ---\n      property NAMES: ${names.join(', ')}\n`
                + `      Of the names the design would like: PRESENT ${present.join(', ') || '(none)'}; `
@@ -779,7 +1029,7 @@
         lines.push(`        of those, ${exact} equal${exact === 1 ? 's' : ''} LIST_TITLE character for `
                    + `character; ${titles.length - exact} do not. The ones that do NOT are the finding.`);
       }
-      record('S4', S4_Q,
+      searchRecord('S4', S4_Q,
              anyAnswered ? 'OBSERVED — see every title returned, per query variant' : 'NOT ESTABLISHED (no variant answered)',
              `LIST_TITLE was ${JSON.stringify(LIST_TITLE)}.\n${lines.join('\n')}\n`
              + '      Read this against Learn: text managed properties are word-broken, and "Complete '
@@ -808,8 +1058,11 @@
     if (localRows === null) {
       record('S5', S5_Q, 'NOT ESTABLISHED (prerequisite)',
              `could not read web/lists to establish whether any list here HAS a description: `
-             + `${httpDetail(localLists)}. Without that, an empty Description column in the search `
-             + 'result cannot be told from there being nothing to crawl.');
+             + `${httpDetail(localLists)}.${privilegeNote(localLists)} Without that, an empty `
+             + 'Description column in the search result cannot be told from there being nothing to '
+             + 'crawl. Whether the reporting identity can enumerate web/lists at all is a live '
+             + 'question in its own right — the Power BI SharePoint Online List connector does '
+             + 'exactly that read — so quote this line if it refused.');
     } else if (described.length === 0) {
       record('S5', S5_Q, 'NOT ESTABLISHED (prerequisite: no list in reach has a description)',
              `${localRows.length} visible list(s) on this site were read directly from web/lists and `
@@ -822,7 +1075,7 @@
       const explicit = await runQuery('contentclass:STS_List',
                                       "&rowlimit=50&selectproperties='Title,Description'");
       if (!q.ok && !explicit.ok) {
-        record('S5', S5_Q, queryOutcome(q), `neither the default nor the explicit-select query `
+        searchRecord('S5', S5_Q, queryOutcome(q), `neither the default nor the explicit-select query `
                + `answered: ${queryFailure(q)}`);
       } else {
         const summarise = (label, result) => {
@@ -834,7 +1087,7 @@
             + `CELL; ${withValue.length} carried a non-empty value. Up to three verbatim: `
             + `${JSON.stringify(samples)}`;
         };
-        record('S5', S5_Q, 'OBSERVED — see the per-query counts',
+        searchRecord('S5', S5_Q, 'OBSERVED — see the per-query counts',
                `PREREQUISITE MET: ${described.length} of ${localRows.length} visible list(s) on this `
                + `site have a description, so there IS something to find. Their titles, for cross-`
                + `reference: ${JSON.stringify(described.slice(0, 10).map((l) => show(l.Title, 80)))}\n`
@@ -886,7 +1139,7 @@
       lines.push(`      paging via startrow: not answered — page 1 ${page1.ok ? 'ok' : queryFailure(page1)}; `
                  + `page 2 ${page2.ok ? 'ok' : queryFailure(page2)}`);
     }
-    record('S7', S7_Q,
+    searchRecord('S7', S7_Q,
            answered ? `OBSERVED — ${answered} of ${limits.length} row limits answered` : 'NOT ESTABLISHED (no row limit answered)',
            `${lines.join('\n')}\n      For context only, and asserted nowhere above: Learn documents 500 `
            + 'as the boundary for rows in a result set (raisable to 10,000 via MaxRowLimit) and caps '
@@ -901,16 +1154,18 @@
   // samples and it is the design's plan B; a plan B nobody measured is not
   // a plan. Same two-part treatment as S3: dump the DEFAULT cell set, then
   // separately request the four properties Learn's sample selects.
+  let siteQuery = null;
   {
     const S8_Q = 'Does the contentclass:"STS_Site" fallback work, and what identity comes back per site?';
     const q = await runQuery('contentclass:"STS_Site"', '&rowlimit=10');
+    siteQuery = q;
     if (!q.ok) {
-      record('S8', S8_Q, queryOutcome(q),
+      searchRecord('S8', S8_Q, queryOutcome(q),
              `${queryFailure(q)}. Note what this would mean if S2 also failed: the DOCUMENTED, `
              + 'Microsoft-sampled query did not work either, which points at the endpoint or this '
              + 'caller rather than at STS_List.');
     } else if (q.rows.length === 0) {
-      record('S8', S8_Q, 'OBSERVED — 0 rows',
+      searchRecord('S8', S8_Q, 'OBSERVED — 0 rows',
              `${describeQuery(q)}. The query was accepted and returned nothing. On a caller who can `
              + 'see many sites that is worth reporting; it is not, on its own, a fact about STS_Site.');
     } else {
@@ -922,7 +1177,7 @@
         ? sampled.rows.map((row, i) => `        site ${i + 1}: `
             + SAMPLED.map((p) => `${p}=${nonEmpty(cellValue(row, p)) ? show(cellValue(row, p), 100) : '(empty)'}`).join(', ')).join('\n')
         : `        the Learn-sampled select did not answer: ${queryFailure(sampled)}`;
-      record('S8', S8_Q, `OBSERVED — ${q.rows.length} site row(s) returned`,
+      searchRecord('S8', S8_Q, `OBSERVED — ${q.rows.length} site row(s) returned`,
              `${describeQuery(q)}\n      --- every cell on site row 1, site host redacted ---\n`
              + `${dumpRow(q.rows[0])}\n      --- end of dump ---\n`
              + `      property NAMES: ${cellNames(q.rows[0]).join(', ')}\n`
@@ -958,7 +1213,7 @@
         ? q.rows.map((r) => show(cellValue(r, 'Title'), 120))
         : null;
       const hit = titles ? titles.some((t) => t === newest.Title) : false;
-      record('S9', S9_Q, `OBSERVED — at ${RUN_AT}, the newest list here is ${hit ? 'IN' : 'NOT IN'} the result set`,
+      searchRecord('S9', S9_Q, `OBSERVED — at ${RUN_AT}, the newest list here is ${hit ? 'IN' : 'NOT IN'} the result set`,
              `run timestamp ${RUN_AT}. The most recently created visible list on this site is `
              + `${JSON.stringify(show(newest.Title, 80))}, Created ${JSON.stringify(newest.Created)} — `
              + `about ${Number.isFinite(ageHours) ? ageHours.toFixed(1) : '?'} hour(s) before this run. `
@@ -971,27 +1226,270 @@
   }
 
   // ================= S10 — SECURITY TRIMMING ============================
-  // Registered, and deliberately NOT answered. The outcome string starts
-  // with NOT ESTABLISHED on purpose: the harness's report() counts those as
-  // open, so this stays visible in the summary instead of quietly reading
-  // as a pass.
+  // TWO RUNS, TWO MEANINGS, and only one of them is an answer. See the S10
+  // section in the docblock. From a privileged caller this row still
+  // refuses, in the same words it always did. From the list-only reporting
+  // identity the result set IS the trimmed view and therefore IS the
+  // measurement — which is why RUNNING_AS_READER exists, and why the flag
+  // is cross-checked against the caller rather than believed.
   {
     const S10_Q = 'Is the result set security-trimmed for the querying identity?';
-    const me = await spGet('web/currentuser?$select=Title,IsSiteAdmin');
-    const who = readFailed(me)
-      ? `web/currentuser could not be read (${httpDetail(me)})`
-      : `the caller is ${JSON.stringify(show(me.body.Title, 80))}, IsSiteAdmin=${JSON.stringify(me.body.IsSiteAdmin)}`;
-    record('S10', S10_Q, 'NOT ESTABLISHED (not answerable from this account)',
-           `${who}. THIS RUN CANNOT ANSWER THIS AND DID NOT TRY. A trimmed result set and an untrimmed `
-           + 'one are IDENTICAL to a caller who can see everything: both return everything that account '
-           + 'may see. So a full result set here is not weak evidence that trimming works — it is no '
-           + 'evidence at all, and quoting it as reassurance would be worse than leaving the question '
-           + 'open.\n'
-           + '      WHAT WOULD ANSWER IT: run the same contentclass:STS_List query while SIGNED IN AS '
-           + 'THE REPORTING SERVICE ACCOUNT, on a tenant where it has access to some sites and not '
-           + 'others, then compare the sites that come back against the sites it was granted. That is a '
-           + 'different session, so no revision of this probe can close it. Learn documents that search '
-           + 'trims on the submitting identity; what is unmeasured is this tenant, this account.');
+
+    // The rows S2 and S8 already returned. Nothing is re-queried: for a
+    // least-privilege caller these ARE the trimmed view, there is no
+    // untrimmed view to diff against, and asking twice would only invite a
+    // reader to treat the second answer as a comparison.
+    const listRows = (listQuery && listQuery.ok) ? listQuery.rows : [];
+    const siteRows = (siteQuery && siteQuery.ok) ? siteQuery.rows : [];
+    const SITE_CELLS = ['SPSiteUrl', 'SPWebUrl', 'Path', 'OriginalPath'];
+    const located = [...new Set(listRows.concat(siteRows).flatMap(
+      (row) => SITE_CELLS
+        .filter((key) => nonEmpty(cellValue(row, key)))
+        .map((key) => `${key}=${show(cellValue(row, key), 160)}`)))];
+    const seenLine = `S2's STS_List query returned ${listRows.length} row(s) and S8's STS_Site query `
+      + `${siteRows.length}. Every distinct site/web/path value across both, host redacted, up to 40: `
+      + `${JSON.stringify(located.slice(0, 40))}`
+      + `${located.length > 40 ? ` (and ${located.length - 40} more)` : ''}`;
+
+    if (!callerOk) {
+      record('S10', S10_Q, 'NOT ESTABLISHED (the caller could not be identified)',
+             `${whoRan}. Without knowing WHICH identity ran the queries, a result set says nothing `
+             + 'about trimming — the same rows mean opposite things depending on who asked for them. '
+             + `RUNNING_AS_READER was ${RUNNING_AS_READER}, but this row will not answer on the flag `
+             + `alone. ${seenLine}`);
+    } else if (!RUNNING_AS_READER) {
+      record('S10', S10_Q, 'NOT ESTABLISHED (not answerable from a privileged account)',
+             `${whoRan}, and RUNNING_AS_READER is false, so this is an OPERATOR run. IT CANNOT ANSWER `
+             + 'THIS AND DID NOT TRY. A trimmed result set and an untrimmed one are IDENTICAL to a '
+             + 'caller who can see everything: both return everything that account may see. So a full '
+             + 'result set here is not weak evidence that trimming works — it is no evidence at all, '
+             + 'and quoting it as reassurance would be worse than leaving the question open.\n'
+             + '      WHAT WOULD ANSWER IT, and it is no longer out of reach: paste this same file '
+             + 'while SIGNED IN AS THE REPORTING SERVICE ACCOUNT and set RUNNING_AS_READER = true. That '
+             + 'account holds list-scoped Read and nothing else, so whatever comes back to it IS the '
+             + `trimmed view. For the re-run to compare against: ${seenLine}`);
+    } else if (callerIsSiteAdmin === true) {
+      record('S10', S10_Q, 'NOT ESTABLISHED (the flag contradicts the caller)',
+             `RUNNING_AS_READER was set to true, but ${whoRan} — IsSiteAdmin is true, so this is not `
+             + 'the list-only reporting identity. Filing a site collection administrator\'s result set '
+             + 'as a least-privilege measurement is exactly the fabrication this row exists to refuse, '
+             + 'so it refuses. Either paste this as the service account, or set RUNNING_AS_READER back '
+             + `to false and read the operator wording instead. ${seenLine}`);
+    } else if (!searchAnswers && privilegeRefusal(controlStatus)) {
+      record('S10', S10_Q,
+             `OBSERVED — the reporting identity was REFUSED the search endpoint (HTTP ${controlStatus})`,
+             `${whoRan}. S1, a trivial query, came back HTTP ${controlStatus} — ${controlWhy}. THAT IS `
+             + 'AN ANSWER, not a failed run: this identity cannot call _api/search/query on this site '
+             + 'at all, so SEARCH-DRIVEN DISCOVERY CANNOT WORK UNDER LEAST PRIVILEGE AS CONFIGURED '
+             + 'HERE. Read it narrowly — it is a fact about this account on this site, with these '
+             + 'grants, at this moment. It does not say search never trims, and it does not say another '
+             + 'grant would not open the endpoint. What it does say is that the fleet design cannot '
+             + 'assume the endpoint is available to the identity it would run as. Nothing in S2-S9 can '
+             + `be read as a search finding on this run; see their own rows. ${seenLine}`);
+    } else if (!searchAnswers) {
+      record('S10', S10_Q, 'NOT ESTABLISHED (control open)',
+             `${whoRan}, running as the reader. S1 did not hold and not because of an identity `
+             + `refusal — ${controlWhy} — so the empty or partial result set below is about the `
+             + 'endpoint, not about trimming. A caller who is served nothing because the endpoint is '
+             + 'broken and a caller who is served nothing because it may see nothing produce the same '
+             + `rows. Re-run before reading anything into it. ${seenLine}`);
+    } else {
+      record('S10', S10_Q,
+             `OBSERVED — the trimmed view for this identity: ${listRows.length} STS_List row(s), `
+             + `${siteRows.length} STS_Site row(s)`,
+             `${whoRan}, RUNNING_AS_READER is true and IsSiteAdmin came back `
+             + `${JSON.stringify(callerIsSiteAdmin)}, so this caller is the list-only reporting `
+             + 'identity: it is not a member of any site and holds Read at list scope plus whatever '
+             + 'Limited Access SharePoint derives at web scope. THE RESULT SET ABOVE IS THEREFORE THE '
+             + 'TRIMMED VIEW BY DEFINITION. There is nothing to compare it against and nothing needs '
+             + `to be.\n      ${seenLine}\n`
+             + `      WHAT IT IMPLIES, and read the counts rather than this sentence: ${
+                  listRows.length + siteRows.length === 0
+                    ? 'the endpoint SERVED this identity and returned NOTHING. If the account really '
+                      + 'does hold Read on lists reachable from here, that is a finding — list Read '
+                      + 'alone would not be enough to make a list DISCOVERABLE through search, and the '
+                      + 'fleet design needs a different grant or a different mechanism. Before '
+                      + 'concluding it, check S9: an uncrawled tenant looks exactly the same, and check '
+                      + 'that this account has in fact been granted Read on something here.'
+                    : 'the endpoint served this identity and returned rows, so permission-trimmed '
+                      + 'discovery IS REACHABLE from least privilege on this site. What the design '
+                      + 'still needs is whether those rows carry a list GUID and a web URL together '
+                      + '(S3), and whether the sites listed above are exactly the ones this account was '
+                      + 'granted — which only the person who made the grants can confirm. Say so when '
+                      + 'you report.'}\n`
+             + '      ONE ACCOUNT, ONE SITE, ONE MOMENT. This is a data point, not a rule about '
+             + 'SharePoint trimming, which Learn already documents and this probe does not test.');
+    }
+  }
+
+  // ================= S11 / S12 — SERVER-DRIVEN PAGING ===================
+  // NOT A SEARCH QUESTION, and deliberately so. See the S11/S12 section in
+  // the docblock: `_security_principals.js.j2` and `_reader_enrolment.js.j2`
+  // both page with `$top=5000` and follow `d.__next`, and nobody has
+  // confirmed SharePoint REST emits `__next` on server truncation at all.
+  //
+  // The experiment that WOULD settle it for site groups — a group with more
+  // members than the server page size — has been declined, because adding a
+  // large group to a site's permissions would expose many real people to
+  // development work. It is not asked for here.
+  //
+  // So this measures the same platform behaviour against a fixture that
+  // already exists and costs nothing: 6,000 rows, read-only, never written
+  // to and never recycled by this probe.
+  {
+    const S11_Q = 'With NO $top, how many list items come back, and is there a server-driven continuation link?';
+    const S12_Q = 'Does following that continuation link return a further page of DIFFERENT items?';
+    const SCOPE_NOTE = 'SCOPE, and it must travel with this row: this is the LIST-ITEMS collection, NOT '
+      + 'sitegroups/users. It establishes whether THIS TENANT\'S REST EMITS SERVER-DRIVEN PAGING AT ALL, '
+      + 'which is the assumption underneath both deploy templates. It does NOT settle the site-group '
+      + 'case — that collection may page differently or not at all, and it stays UNMEASURED.';
+    const TRUNCATION_NOTE = 'AND AN ABSENT LINK IS NOT PROOF EVERYTHING CAME BACK. On this same fixture '
+      + 'an unindexed presence test was measured returning 50 rows instead of 60, at HTTP 200 with no '
+      + 'error (2026-07-31). This tenant is already known to truncate silently, so the row count, the '
+      + 'ItemCount and the link are three separate observations here and no conclusion is drawn from '
+      + 'the absence of the third.';
+
+    const listRef = `web/lists/getbytitle('${odataLiteral(PAGING_FIXTURE_LIST)}')`;
+    const fixture = await spGet(`${listRef}?$select=Title,ItemCount`);
+    if (readFailed(fixture)) {
+      // PREREQUISITE, NEVER A FINDING. A list that is absent, renamed or
+      // unreadable by this caller cannot say anything about paging, and
+      // recording it as "paging does not work" would be a fabricated
+      // platform verdict of exactly the kind this repository exists to stop.
+      const why = `the fixture list ${JSON.stringify(PAGING_FIXTURE_LIST)} could not be read on this `
+        + `site: ${httpDetail(fixture)}.${privilegeNote(fixture)} It may not exist here, it may have `
+        + 'been renamed, or this caller may not be able to read it — PASTE THIS INTO THE SITE THAT '
+        + 'HOLDS IT, or point PAGING_FIXTURE_LIST at another large list and say which. THIS IS NOT '
+        + '"paging does not work"; nothing was measured.';
+      record('S11', S11_Q, 'NOT ESTABLISHED (prerequisite: the fixture list could not be read)', why);
+      record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
+    } else {
+      const itemCount = fixture.body.ItemCount;
+      // NO $top AT ALL — the only form that can answer this. `$top` is
+      // CLIENT-driven paging: Learn ("PageSize, Top and MaxTop") says no
+      // nextLink is returned for it, and ("Server-driven Paging in ASP.NET
+      // Core OData 8") that a $top below the page size returns that many
+      // items with no next link. With no $top the SERVER alone decides
+      // where the page ends.
+      //
+      // $select=Id IS a projection, not a page size: it keeps the payload
+      // survivable at 6,000 rows and cannot create or suppress a link.
+      //
+      // Both flavours, because `d.__next` is a VERBOSE construct — what the
+      // deploy templates send — while the harness sends nometadata, where
+      // the same thing is spelled `odata.nextLink`. Which of them this
+      // tenant emits is an observation, not something to assume.
+      const itemsPath = `${listRef}/items?$select=Id`;
+      const verboseRes = await spGetVerbose(itemsPath);
+      const nometaRes = await spGet(itemsPath);
+
+      const verboseRows = (verboseRes.ok && verboseRes.body && verboseRes.body.d
+                           && Array.isArray(verboseRes.body.d.results)) ? verboseRes.body.d.results : null;
+      const verboseNextRaw = (verboseRes.ok && verboseRes.body && verboseRes.body.d)
+        ? verboseRes.body.d.__next : undefined;
+      const verboseNext = (typeof verboseNextRaw === 'string' && verboseNextRaw !== '') ? verboseNextRaw : null;
+
+      const nometaRows = (!readFailed(nometaRes) && Array.isArray(nometaRes.body.value))
+        ? nometaRes.body.value : null;
+      const nometaNextRaw = (!readFailed(nometaRes) && nometaRes.body)
+        ? (nometaRes.body['odata.nextLink'] || nometaRes.body['@odata.nextLink']) : undefined;
+      const nometaNext = (typeof nometaNextRaw === 'string' && nometaNextRaw !== '') ? nometaNextRaw : null;
+
+      const perFlavour = `odata=verbose: ${verboseRows === null
+          ? `no d.results — ${httpDetail(verboseRes)}${privilegeNote(verboseRes)}`
+          : `${verboseRows.length} row(s); typeof d.__next = ${typeof verboseNextRaw}; value with the `
+            + `host redacted: ${verboseNext === null ? '(absent or empty)' : show(verboseNext, 300)}`}\n`
+        + `      odata=nometadata: ${nometaRows === null
+          ? `no value array — ${httpDetail(nometaRes)}${privilegeNote(nometaRes)}`
+          : `${nometaRows.length} row(s); typeof odata.nextLink = ${typeof nometaNextRaw}; value with `
+            + `the host redacted: ${nometaNext === null ? '(absent or empty)' : show(nometaNext, 300)}`}`;
+
+      if (verboseRows === null && nometaRows === null) {
+        const why = `neither flavour returned an item collection from ${JSON.stringify(PAGING_FIXTURE_LIST)}.\n`
+          + `      ${perFlavour}\n      Nothing about paging was measured. ${SCOPE_NOTE}`;
+        record('S11', S11_Q, 'NOT ESTABLISHED (prerequisite: the items could not be read)', why);
+        record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)', why);
+      } else {
+        // Follow the VERBOSE link if there is one — that is the construct
+        // both deploy templates depend on. Fall back to the nometadata
+        // link, and say which was followed, because the two are not the
+        // same claim about the platform.
+        const pageOne = verboseNext !== null ? verboseRows : nometaRows;
+        const link = verboseNext !== null ? verboseNext : nometaNext;
+        const linkKind = verboseNext !== null ? 'd.__next (odata=verbose)' : 'odata.nextLink (odata=nometadata)';
+        const returned = (verboseRows === null ? nometaRows : verboseRows).length;
+        const wholeList = Number.isInteger(itemCount) && returned >= itemCount;
+
+        if (wholeList) {
+          // The server never had to page, so an absent link is expected and
+          // says nothing. Recording it as a finding is the mistake the
+          // 2026-08-11 enterprise-reader run made and had to withdraw.
+          record('S11', S11_Q,
+                 'NOT ESTABLISHED (the collection was not larger than the server page size)',
+                 `${JSON.stringify(PAGING_FIXTURE_LIST)} reports ItemCount=${JSON.stringify(itemCount)} `
+                 + `and the no-$top read returned ${returned} row(s) — the whole list. The server never `
+                 + `had to page, so whether a link came back says NOTHING about whether this endpoint `
+                 + `pages.\n      ${perFlavour}\n      Point PAGING_FIXTURE_LIST at a list with more `
+                 + `items than the server page size, which SharePoint does not document. Do NOT read `
+                 + `this row as "the endpoint does not page". ${SCOPE_NOTE}`);
+          record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)',
+                 'S11 could not discriminate, so there is nothing to follow; see its row.');
+        } else {
+          record('S11', S11_Q,
+                 `OBSERVED — ${returned} of ItemCount ${JSON.stringify(itemCount)} row(s) with no $top; `
+                 + `continuation link ${link === null ? 'ABSENT' : `PRESENT via ${linkKind}`}`,
+                 `${JSON.stringify(PAGING_FIXTURE_LIST)} reports ItemCount=${JSON.stringify(itemCount)}. `
+                 + `No $top was sent, so the SERVER ended the page.\n      ${perFlavour}\n`
+                 + `      ${link === null
+                      ? 'A TRUNCATED PAGE WITH NO CONTINUATION would be a finding about both deploy '
+                        + 'templates: each stops when its link is absent, so on a collection this size '
+                        + 'they would silently read a PARTIAL result and report success. Check S12 and '
+                        + 'the raw counts above before quoting it, and read the next paragraph.'
+                      : 'The server truncated AND offered a continuation, which is the behaviour both '
+                        + 'deploy templates assume. S12 follows it once.'}\n`
+                 + `      ${SCOPE_NOTE}\n      ${TRUNCATION_NOTE}`);
+
+          if (link === null) {
+            record('S12', S12_Q, 'NOT ESTABLISHED (prerequisite)',
+                   'there was no continuation link to follow; see S11, which records what that does and '
+                   + 'does not mean.');
+          } else {
+            // Passed straight back to fetch, the way the deploy templates
+            // pass d.__next, rather than rebuilding a URL — a rebuilt URL
+            // would be measuring this probe instead of the platform.
+            const res2 = await fetch(link, {
+              headers: { Accept: `application/json;odata=${verboseNext !== null ? 'verbose' : 'nometadata'}` },
+            });
+            const text2 = await res2.text();
+            let body2 = null;
+            try { body2 = JSON.parse(text2); } catch { /* not JSON */ }
+            const page2 = res2.ok && body2
+              ? ((body2.d && Array.isArray(body2.d.results) && body2.d.results)
+                 || (Array.isArray(body2.value) && body2.value) || null)
+              : null;
+            if (page2 === null) {
+              record('S12', S12_Q, outcomeFor({ status: res2.status }),
+                     `following ${linkKind} returned HTTP ${res2.status}: ${show(text2, 400)}`
+                     + `${privilegeNote({ status: res2.status })}`);
+            } else {
+              // Whole-set comparison on Id, not first-row: a second page
+              // that repeated the first in a different order would read as
+              // successful paging and would not be.
+              const seen = new Set((pageOne || []).map((r) => r.Id));
+              const fresh = page2.filter((r) => !seen.has(r.Id)).length;
+              const next2 = body2.d ? body2.d.__next : (body2['odata.nextLink'] || body2['@odata.nextLink']);
+              record('S12', S12_Q,
+                     `OBSERVED — page 2 held ${page2.length} row(s), ${fresh} of them NOT on page 1`,
+                     `followed ${linkKind}. Page 1 held ${(pageOne || []).length} row(s); page 2 held `
+                     + `${page2.length}, of which ${fresh} carried an Id page 1 did not. A further link `
+                     + `on page 2: ${JSON.stringify(typeof next2 === 'string' && next2 !== '')}. Running `
+                     + `total ${seen.size + fresh} against ItemCount ${JSON.stringify(itemCount)}.\n`
+                     + `      ${SCOPE_NOTE}`);
+            }
+          }
+        }
+      }
+    }
   }
 
   // ================= S6 — THE MARKER, WRITE-GATED =======================
@@ -1041,8 +1539,12 @@
         Description: DESCRIPTION,
       }, digest);
       if (!made.ok) {
-        record('S6', S6_Q, failureOutcome(made),
-               `could not create ${JSON.stringify(MARKER_LIST_TITLE)}: ${httpDetail(made)}`);
+        // The reporting service account is unlikely to be able to create a
+        // list at all. That refusal is an observation about this caller,
+        // recorded as one — not a fact about markers, and not a broken run.
+        record('S6', S6_Q, outcomeFor(made),
+               `could not create ${JSON.stringify(MARKER_LIST_TITLE)}: ${httpDetail(made)}`
+               + `${privilegeNote(made)} Nothing is concluded about crawling or about markers.`);
         listInfo = null;
       } else {
         created = 'this run';
@@ -1054,9 +1556,10 @@
     }
 
     if (listInfo && !listInfo.ok) {
-      record('S6', S6_Q, failureOutcome(listInfo),
-             `the list could not be read back after being created: ${httpDetail(listInfo)}. Nothing is `
-             + 'concluded about the marker — the fixture itself is unverified.');
+      record('S6', S6_Q, outcomeFor(listInfo),
+             `the list could not be read back after being created: ${httpDetail(listInfo)}`
+             + `${privilegeNote(listInfo)} Nothing is concluded about the marker — the fixture itself `
+             + 'is unverified.');
     } else if (listInfo) {
       const storedDescription = String(listInfo.body.Description == null ? '' : listInfo.body.Description);
       const stampedOk = storedDescription.includes(MARKER_TOKEN);
@@ -1097,7 +1600,7 @@
           : anyRows > 0 ? 'PARTIAL — rows matched but none carried the full token'
           : 'NO MATCH YET';
         const young = !Number.isFinite(ageHours) || ageHours < 24;
-        record('S6', S6_Q,
+        searchRecord('S6', S6_Q,
                exactHits > 0 || anyRows > 0
                  ? `OBSERVED — ${verdict}`
                  : `NOT ESTABLISHED (no match yet${young ? '; the list is too new to read as an answer' : ''})`,
@@ -1129,18 +1632,29 @@
   console.log('1. The whole RESULTS block above, VERBATIM, including the indented');
   console.log('   evidence lines. For S3 and S8 the property dump IS the finding —');
   console.log('   a summary of it answers nothing, and "it looked fine" answers less.');
-  console.log('2. Which constants you set, and to what (LIST_TITLE, MARKER_TOKEN).');
+  console.log('2. WHICH ACCOUNT you pasted this as — the reporting service account, or');
+  console.log('   an operator/site owner — and what RUNNING_AS_READER was set to. S10');
+  console.log('   means opposite things for the two, and the flag is only believed as');
+  console.log('   far as the caller printed beside it agrees with it.');
   console.log('   answer: ______________________________________');
-  console.log('3. Whether ALLOW_WRITES was on for this run (S6 is blank if not), and');
+  console.log('3. Which constants you set, and to what (LIST_TITLE, MARKER_TOKEN, and');
+  console.log('   PAGING_FIXTURE_LIST if you changed it).');
+  console.log('   answer: ______________________________________');
+  console.log('4. Whether ALLOW_WRITES was on for this run (S6 is blank if not), and');
   console.log('   whether this was a FIRST paste or the follow-up.');
   console.log('   answer: ______________________________________');
-  console.log('4. Roughly how many sites and lists this account can see across the');
-  console.log('   tenant, and whether you are a site collection admin. S2 and S8 row');
-  console.log('   counts mean nothing without it, and S10 depends on it entirely.');
+  console.log('5. Which sites this account was actually GRANTED access to. S10 can say');
+  console.log('   what came back; only you can say whether that is the right set.');
   console.log('   answer: ______________________________________');
+  console.log('6. Any 401 or 403 above is a FINDING, not a failed run — send it. Those');
+  console.log('   rows say what the reporting identity is refused, which is half of');
+  console.log('   what this probe is for.');
   console.log('\nThe site host has been stripped from every URL printed above. If you');
   console.log('see a tenant host anywhere in this transcript, that is a BUG in the');
   console.log('probe — say so, and redact it before sending.');
+  console.log('\nThe CALLER\'S LOGIN IS PRINTED DELIBERATELY, so the transcript records');
+  console.log('who ran it rather than trusting a hand-set flag. It is an account name:');
+  console.log('redact it if this leaves your organisation, and never commit it.');
   console.log('\nDo NOT commit this transcript. Quote the findings into the STATUS');
   console.log('block at the top of the template instead.');
 })();
