@@ -1321,6 +1321,14 @@ groups:
     only_allow_members_view_membership: true
     require_empty_at_deploy: true        # optional
     enroll_operator_during_deploy: true  # optional, run-scoped
+  - name: "Register Enterprise Readers"
+    description: "Reporting service account, Read only."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: true
+    enroll_enterprise_reader: true  # optional; target of `build --enterprise-reader`
 
 list_permissions:
   default:
@@ -1330,6 +1338,8 @@ list_permissions:
     assignments:
       - principal: { kind: group, name: "Register Editors" }
         level: "Contribute No Delete"
+      - principal: { kind: group, name: "Register Enterprise Readers" }
+        level: "Read"
       - principal: { kind: associated_owner_group }
         level: "Full Control"
   overrides:                  # per entity; same policy shape as default
@@ -1370,6 +1380,126 @@ implemented.
 `permissions:` is now rejected at load rather than ignored, so the failure
 is loud. The keys above are the real ones, and are what every shipped
 template and example uses.
+
+:::
+
+:::danger A direct share cannot be used — and the supported route is not yet verified end-to-end
+
+A tempting shortcut for handing a reporting account read access is to share
+the site or a list with it directly, outside `mapping.yaml`. Three measured
+facts rule that out, together:
+
+- Every shipped family sets `break_inheritance: true` on every list, so a
+  site-scoped grant (adding the account to Site Visitors, for instance)
+  reaches none of the registers the deploy provisions.
+- Every shipped family uses `reconcile: exact`. The generated deploy script's
+  ACL phase (`templates/deploy/_acls.js.j2`) enumerates every role
+  assignment on the list, skips only `Limited Access`, and removes anything
+  not in the declared set, logging it `'unlisted'` — so a hand-added grant
+  is deleted by the very next deploy, surfacing days later as a short line
+  in a report on a site nobody touched.
+- A direct share creates a unique **item** scope. Under `exact`, that same
+  ACL phase detects a leftover item or folder scope and **fails closed**
+  for operator review rather than erasing it. So a direct share does not
+  merely get revoked — it aborts every subsequent deploy of that site until
+  an operator resolves it by hand.
+
+The supported route is the `enroll_enterprise_reader` group above, enrolled
+with `build --enterprise-reader <account>`: a declared, reconcilable grant
+that survives redeploy instead of being deleted or blocking one.
+
+**The flagged group must hold nobody but the named account.** Before enrolling
+anything, the deploy enumerates the group's membership — every page — and
+**aborts the run** if it finds any principal other than the one
+`--enterprise-reader` named, listing each by title and login name. It removes
+nobody: membership is an operator-owned concern, and a second holder of `Read`
+on every list in the bundle is a decision for a human, not for a script. The
+named account already being a member is not a finding, so re-running the same
+build stays green.
+
+The sequence that motivates it is ordinary. Enrol a mistyped-but-valid address,
+notice, redeploy with the correct one — and without the gate *both* accounts
+now hold `Read` on every list this bundle provisions, permanently, with an INFO
+line in a successful run as the only record. To resolve an abort, either remove
+the unexpected principals in **Site permissions → Groups** and run the script
+again, or rebuild **without** `--enterprise-reader`: that build leaves the
+membership exactly as it is and still deploys the group and its `Read` grant.
+
+One consequence for mapping authors: a group cannot declare both
+`enroll_enterprise_reader` and `enroll_operator_during_deploy`. Phase 1.3 puts
+the pasting operator into the second, which is precisely what the gate in Phase
+1.4 refuses, so every deploy would abort on a correct address. The validator
+rejects the pair (`enterprise_reader_group_enrols_the_operator`), and the
+combination has no legitimate use in any case — a reader group is held to
+`Read`, while an operator self-enrols in order to write.
+
+**That route is still not verified end-to-end**, but the specific mechanism
+it was hedged against has now been measured, and measured absent. The reader
+account holds `Read` on each list and only SharePoint's derived
+`Limited Access` at web scope — it is never added to Site Visitors or any
+web-scoped group. Microsoft Learn documents that *lockdown mode* strips
+`Use Remote Interfaces` from `Limited Access`, and that lockdown mode is on
+by default for publishing sites.
+
+Measured on **2026-08-11**, on **one** Microsoft 365 group-connected Team
+Site, with `test/manual/enterprise-reader-probe.js`:
+
+- At **web** scope the enrolled account held exactly `ViewFormPages`,
+  `Open`, `BrowseUserInfo`, `UseClientIntegration` and **`UseRemoteAPIs`** —
+  precisely Learn's documented `Limited Access` set, with `Use Remote
+  Interfaces` intact. Lockdown mode did **not** strip it on that site, and
+  the `ViewFormPagesLockDown` site collection feature was absent from the
+  features read.
+- At **list** scope, on a list with `HasUniqueRoleAssignments=true`, it held
+  `ViewListItems`, `OpenItems`, `ViewVersions`, `ViewFormPages`, `Open`,
+  `ViewPages`, `CreateSSCSite`, `BrowseUserInfo`, `UseClientIntegration`,
+  `UseRemoteAPIs` and `CreateAlerts` — the built-in `Read`. The declared
+  grant therefore does reach through broken inheritance, which is the
+  mechanism this tier depends on.
+
+Two things remain unverified, and neither is a formality:
+
+- **Publishing sites.** Lockdown mode is on by default there, and that is
+  the one configuration the run above did not sample. Nothing here says
+  what happens on such a site.
+- **Connector-level list enumeration.** At web scope the account has
+  neither `ViewPages` nor `ViewListItems`, so whether it can enumerate
+  `_api/web/lists` — which the SharePoint Online List connector does once
+  you give it a site URL — is unknown. Answering it means signing in *as*
+  the service account; no probe run in an operator's own session can.
+
+So: the grant is declared, reconcilable, survives a redeploy that would
+erase a hand-added one, and — on one non-publishing site — leaves the
+account with `Read` on the list and `Use Remote Interfaces` on the web.
+That is not the same as the reporting client working.
+
+The level is the built-in `Read` and nothing else. It is tempting to reach
+for `Restricted Read` instead, since it looks like even less privilege —
+but Microsoft Learn's site-permissions table shows `Restricted Read` lacks
+`Use Remote Interfaces`, the permission an API or reporting client needs to
+connect at all. It would be less privilege *and* a reporting connector that
+could not read anything. The validator refuses any level other than `Read`
+on a flagged group (`enterprise_reader_group_over_privileged`).
+
+A smaller, separate limit: before enrolling the named account, the deploy
+refuses it outright if it resolves to one of SharePoint's tenant-wide
+claims — but the login-name needles cover only two of the four Microsoft
+Learn names (*Everyone*, *Everyone except external users*). Learn publishes
+no login-name encoding for *All Authenticated Users* or *All Forms Users*,
+so those two were deliberately not guessed rather than guarded with an
+invented value.
+
+Measured on **2026-08-12**, on the same single tenant, by group B of
+`test/manual/enterprise-reader-probe.js`: *Everyone* and *Everyone except
+external users* both resolve to **one** `spo-grid-all-users` principal typed
+`PrincipalType` 4, which the strict single-user check refuses on its own —
+the needles are defence in depth behind it, not the only thing standing
+there. `web/ensureuser` **refused** *All Authenticated Users* and *All Forms
+Users* outright, HTTP 400, "the specified user could not be found", so on
+that tenant neither is reachable by display name. That narrows the gap; it
+does not close it, since another tenant may resolve them and a display-name
+refusal is not proof that no encoding exists. See the dated comment in
+`templates/deploy/_reader_enrolment.js.j2`.
 
 :::
 

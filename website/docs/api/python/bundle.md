@@ -197,7 +197,7 @@ Write ``index.md``: what is in the bundle, one row per artifact.
 ### `emit_bundle`
 
 ```python
-def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None) -> str
+def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, enterprise_reader: str | None = None) -> str
 ```
 
 Emit the full post-validation bundle; returns the success message.
@@ -207,4 +207,10 @@ the assess manifest, the seed-gated demo script, reporting, index.md and
 checksums.txt — shared by the core CLI and every extension CLI. Raises
 :class:`SeedRequiresDemoItemsError` before writing anything when
 ``seed`` is set but the mapping declares no demo rows.
+
+``enterprise_reader`` is already validated by the caller (a malformed
+address or a mapping with no ``enroll_enterprise_reader`` group both
+refuse before this function is reached); it is passed through unchecked
+to ``generate_deploy_js`` so the deploy render context carries it for
+Task 5's template.
 

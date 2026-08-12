@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from _builders import ID_PK, TITLE, table
@@ -437,6 +438,187 @@ def test_no_emitted_artifact_carries_a_carriage_return(tmp_path: Path) -> None:
         if p.is_file() and b"\r" in p.read_bytes()
     ]
     assert not offenders, f"CRLF in emitted artifacts: {offenders}"
+
+
+def test_the_reader_flag_needs_a_group_to_enrol_into(tmp_path: Path) -> None:
+    """Fail closed, loudly, at build time.
+
+    `sharepoint-mapping.yaml` declares a group but none with
+    `enroll_enterprise_reader: true`, so this is exactly the gap the
+    refusal exists to close: accepting the address and emitting a bundle
+    that enrols nobody would deploy green, and the operator would only
+    find out when a report came back short, weeks later.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", "svc-reporting@example.org",
+    ])
+    assert result.exit_code != 0
+    assert "enroll_enterprise_reader" in result.output
+    assert not (out / "deploy.js.txt").exists()
+
+
+@pytest.mark.parametrize(("bad", "guard_fragment"), [
+    # No '@' at all: the one-'@' guard.
+    ("not-an-address", "one '@'"),
+    # Two '@': the same one-'@' guard, from the other side.
+    ("two@at@signs.example", "one '@'"),
+    # One '@', but whitespace: the whitespace/'|' guard.
+    ("has space@example.org", "no whitespace"),
+    # The one that matters: a claims login name contains exactly one '@'
+    # and would sail past an '@'-only check, then hand `web/ensureuser` a
+    # principal other than the user it appears to name. Same guard as the
+    # whitespace case, fired for '|' instead.
+    ("i:0#.f|membership|svc@example.org", "no '|'"),
+])
+def test_a_malformed_reader_address_is_refused(
+    tmp_path: Path, bad: str, guard_fragment: str,
+) -> None:
+    """Pointed at a mapping that DOES declare an enroll_enterprise_reader
+    group, so a refusal here can only come from `validate_enterprise_reader`
+    itself -- against `sharepoint-mapping.yaml` (no such group), all four
+    cases would refuse identically via the "no group to enrol into" check
+    regardless of the address, and gutting the validator would leave every
+    case here green. Asserting the guard-specific message fragment, not just
+    a nonzero exit code, is what makes that failure mode visible: a message
+    naming the wrong guard (or no message at all, from a deleted validator)
+    fails this even when the exit code alone would not.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", bad,
+    ])
+    assert result.exit_code != 0
+    assert "enroll_enterprise_reader" not in result.output, (
+        "refused via the wrong guard (missing group, not a bad address)"
+    )
+    assert guard_fragment in result.output, result.output
+    assert not (out / "deploy.js.txt").exists()
+
+
+def test_no_reader_flag_emits_no_enrolment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Opt-in means the code path does not exist unless asked for.
+
+    Asserted primarily against what `execute_build` actually hands
+    `emit_bundle` -- a text-only check against `deploy.js.txt` would pass
+    whether or not `enterprise_reader` reached the render context at all,
+    since Task 5 (not this one) is what makes the template consume it. The
+    spy wraps the real `emit_bundle` rather than replacing it, so the build
+    still runs for real and the text assertion stays meaningful too.
+    """
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    # String target, matching
+    # `test_build_rejects_extension_that_requires_project_cli`: `emit_bundle`
+    # is imported into `cli`'s namespace rather than defined there, and mypy
+    # (under `strict`) flags `setattr(cli, "emit_bundle", ...)` as patching a
+    # name the module does not explicitly re-export.
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert captured["enterprise_reader"] is None
+    assert "enterprise-reader" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
+
+
+def test_a_valid_reader_flag_reaches_emit_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mirror of `test_no_reader_flag_emits_no_enrolment`: proves the
+    literal address, not just `None`, survives the trip through
+    `execute_build` into `emit_bundle`.
+
+    Every OTHER test with a well-formed address either hits the "no group"
+    refusal (`sharepoint-mapping.yaml`) or replaces `execute_build` wholesale
+    (the wizard's `_capture_build`), so nothing before this proved a
+    non-None value ever reaches `emit_bundle` -- a build that hard-coded
+    `enterprise_reader=None` at that call site would still pass every other
+    test in this file.
+    """
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    out = tmp_path / "build"
+    address = "svc-reporting@example.org"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", address,
+    ])
+    assert result.exit_code == 0, result.output
+    assert captured["enterprise_reader"] == address
+
+
+def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> None:
+    """`deploy-manifest.md` is written by `execute_build` itself, NOT by
+    `emit_bundle` -- so the spy test above proves nothing about it.
+
+    This is the artefact the operator reviews BEFORE pasting, and the reader
+    enrolment is the one act in the run that `rollback.js.txt` does not
+    undo. The manifest generator was never handed the address, so the whole
+    warning was missing from the only document positioned to carry it.
+    """
+    out = tmp_path / "build"
+    address = "svc-reporting@example.org"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--site-role", "default",
+        "--out", str(out),
+        "--enterprise-reader", address,
+    ])
+    assert result.exit_code == 0, result.output
+
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert address in manifest
+    assert "PERMANENT" in manifest
+    assert "does not delete the group" in manifest
 
 
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:

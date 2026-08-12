@@ -419,6 +419,39 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`List Title`. Give the column a different display title, or rename "
         "the schema column so the auto-split lands somewhere else."
     ),
+    FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR: (
+        "A group declares both `enroll_enterprise_reader` and "
+        "`enroll_operator_during_deploy`. Phase 1.3 adds the pasting "
+        "operator to that group, so by Phase 1.4 the group holds somebody "
+        "other than the named reader, and 1.4 aborts the run when it "
+        "does. Every deploy of this mapping would fail, on a correct "
+        "address, for a reason nothing in the mapping names. The "
+        "combination has no legitimate use either: a reader group is "
+        "restricted to `Read` (`enterprise_reader_group_over_privileged`), "
+        "while an operator self-enrols in order to write. Put the two "
+        "flags on two groups."
+    ),
+    FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED: (
+        "A group marked `enroll_enterprise_reader` holds no role "
+        "assignment, so enrolling an account into it grants nothing. The "
+        "deploy would still report success and the account would see no "
+        "rows. Grant it `Read` under `list_permissions`."
+    ),
+    FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED: (
+        "A group marked `enroll_enterprise_reader` is granted something "
+        "other than the built-in `Read`. Anything wider contradicts the "
+        "name. `Restricted Read` is refused too, and that half is "
+        "deliberate: Microsoft Learn's site-permissions table shows it "
+        "lacks `Use Remote Interfaces`, which an API client needs, so it "
+        "would be less privilege AND a reporting connector that cannot "
+        "read anything."
+    ),
+    FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY: (
+        "A group declares both `enroll_enterprise_reader` and "
+        "`require_empty_at_deploy`. These contradict across runs: the "
+        "reader is enrolled in Phase 1.4 and stays, so the next deploy "
+        "fails its own empty-group gate in Phase 1.2. Drop one."
+    ),
     FindingCode.ENTITY_NOT_IN_SCHEMA: (
         "The mapping's `entities:` declares a name the DBML schema has "
         "no table for."
@@ -598,6 +631,11 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.MULTIPLE_DEFAULT_VIEWS: (
         "More than one view on an entity is marked default; a "
         "SharePoint list has exactly one."
+    ),
+    FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS: (
+        "More than one group is marked `enroll_enterprise_reader`. "
+        "`build --enterprise-reader` takes one address and needs one "
+        "unambiguous target."
     ),
     FindingCode.MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED: (
         "A condition asks a multi-value column something with no verified "

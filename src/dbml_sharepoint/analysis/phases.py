@@ -27,6 +27,12 @@ DEPLOY_GROUPS: tuple[tuple[str, tuple[PhaseStep, ...]], ...] = (
                   "deploy/_security_principals.js.j2"),
         PhaseStep("enrolment", "operator self-enrolment",
                   "deploy/_operator_enrolment.js.j2"),
+        # After `security`, never before: that step proves
+        # require_empty_at_deploy, and a reader added ahead of it would trip
+        # the run's own empty-group gate. Before every write phase, because
+        # the enrolment is part of PREPARE's security setup.
+        PhaseStep("reader_enrolment", "enterprise reader enrolment",
+                  "deploy/_reader_enrolment.js.j2"),
         PhaseStep("unseal", "maintenance unseal",
                   "deploy/_maintenance_unseal.js.j2"),
     )),

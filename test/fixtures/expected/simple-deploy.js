@@ -511,6 +511,7 @@
       "allow_request_to_join_leave": false,
       "auto_accept_request_to_join_leave": false,
       "description": "Test group.",
+      "enroll_enterprise_reader": false,
       "enroll_operator_during_deploy": false,
       "name": "List Maintainer",
       "only_allow_members_view_membership": false,
@@ -1934,13 +1935,14 @@
     log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
-  markPhase('Phase 1.4 — maintenance unseal');
+  markPhase('Phase 1.4 — enterprise reader enrolment');
+  markPhase('Phase 1.5 — maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY
   // legitimate maintenance path is this script. Unseal declared fields so
   // the run's write phases work unchanged; Phase 4.1 re-seals and
   // verifies after every field write is done.
-  log('INFO', 'Starting Phase 1.4: maintenance unseal.');
+  log('INFO', 'Starting Phase 1.5: maintenance unseal.');
   invalidateFieldShapes();  // probes reflect phase-start state
   {
     const sealDeclared = [];
@@ -1983,7 +1985,7 @@
           }
         } catch (err) {
           log('ERROR', `Maintenance unseal '${listTitle}.${columnTitle}': ${err.message}`);
-          summary.errors.push({ phase: '1.4', list: listTitle, column: columnTitle, error: err.message });
+          summary.errors.push({ phase: '1.5', list: listTitle, column: columnTitle, error: err.message });
         }
       }, 4);
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);

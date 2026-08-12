@@ -25,6 +25,7 @@ manifests, reporting, index.md, checksums.txt — plus demo-data.js.txt with
 | `--out PATH` | `./build` | Output directory |
 | `--dry-run` | off | Validate only; no JS output |
 | `--seed` | off | Also emit demo-data.js.txt from the mapping's `demo_items` |
+| `--enterprise-reader UPN` | nobody | UPN of a reporting service account the deploy enrols, read-only, into the mapping's enterprise-reader group; the membership is permanent and a rollback does not remove it |
 | `--extension NAME` | mapping's `extension:` | Extension to apply; resolved via entry points |
 
 ### Running inside a project

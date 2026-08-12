@@ -26,7 +26,18 @@ def generate_manifest(
     source_mtime: str,
     generated_at: str,
     manifest_extras: ManifestExtras | None = None,
+    enterprise_reader: str | None = None,
 ) -> str:
+    """Render the deploy manifest for ONE build.
+
+    ``enterprise_reader`` is the address `build --enterprise-reader` was
+    given, or None. It is render material, not a build input: the manifest
+    is the document an operator reads BEFORE pasting anything, and the
+    reader enrolment is the one thing this bundle does that a rollback does
+    not undo. Passing it only to ``generate_deploy_js`` left the manifest
+    unable to say so, and left its group table reporting the permanently
+    enrolled group as one nothing enrols into.
+    """
     template = script_env().get_template("manifest.md.j2")
 
     counts = {
@@ -255,4 +266,5 @@ def generate_manifest(
         seed_items=schema_json["seed_items"],
         extra_sections=extras.sections,
         extra_warnings=extras.warnings,
+        enterprise_reader=enterprise_reader,
     )

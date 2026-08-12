@@ -52,10 +52,24 @@ missing host) before the operator pastes into a privileged console. Shared
 by the core CLI and any extension project CLIs that compose it. Raises
 ``typer.BadParameter`` (exit 2) on failure.
 
+### `validate_enterprise_reader`
+
+```python
+def validate_enterprise_reader(address: str) -> None
+```
+
+Refuse anything that is not a plain UPN.
+
+The `|` check is the one doing real work. A claims login name --
+`i:0#.f|membership|svc@example.org` -- contains an `@` and would pass a
+naive check, then hand `web/ensureuser` a principal other than the user
+it appears to name. Refusing the character outright is cheaper than
+parsing claims, and no legitimate UPN contains one.
+
 ### `build`
 
 ```python
-def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., extension: str | None = ...) -> None
+def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ...) -> None
 ```
 
 Generate deploy.js.txt + manifest from the DBML schema and mapping.
@@ -70,7 +84,7 @@ in a library call.
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None) -> None
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | None = None) -> None
 ```
 
 The `build` pipeline, callable without going through typer.

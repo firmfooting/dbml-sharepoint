@@ -1406,6 +1406,189 @@ def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
     assert "Nobody" in finding.message
 
 
+def _reader_findings(
+    *, require_empty: bool = False, level: str | None = "Read",
+    second_reader: bool = False, override_level: str | None = None,
+    enroll_operator: bool = False,
+) -> list[Finding]:
+    """One correctly-shaped mapping with a single knob turned per test.
+
+    `override_level`, when set, adds a `list_permissions.overrides["Risk"]`
+    block granting the first reader group that level -- an override carries
+    its OWN complete assignment list rather than adding to the default, so
+    this is the only way to exercise that path rather than the default one.
+    """
+    def reader(name: str) -> SiteGroup:
+        return SiteGroup(
+            name=name, description="", owner_group="Site Owners",
+            allow_members_edit_membership=False,
+            allow_request_to_join_leave=False,
+            auto_accept_request_to_join_leave=False,
+            only_allow_members_view_membership=False,
+            require_empty_at_deploy=require_empty,
+            enroll_operator_during_deploy=enroll_operator,
+            enroll_enterprise_reader=True,
+        )
+
+    groups = [reader("XX Enterprise Readers")]
+    if second_reader:
+        groups.append(reader("XX Other Readers"))
+    # Grant EVERY declared reader, so a test that adds a second one measures
+    # only the duplicate rule and does not also trip "granted nothing".
+    assignments = [] if level is None else [
+        RoleAssignment(
+            principal=Principal(kind="group", name=g.name), level=level,
+        )
+        for g in groups
+    ]
+    overrides = {} if override_level is None else {
+        "Risk": ListPermissionPolicy(
+            break_inheritance=True, reconcile_mode="exact",
+            assignments=[RoleAssignment(
+                principal=Principal(kind="group", name=groups[0].name),
+                level=override_level,
+            )],
+        ),
+    }
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[], groups=groups,
+                default_policy=ListPermissionPolicy(
+                    break_inheritance=True, reconcile_mode="exact",
+                    assignments=assignments,
+                ),
+                overrides=overrides,
+            ),
+        ),
+    )
+
+
+def test_a_reader_group_that_must_be_empty_is_refused() -> None:
+    """The two flags contradict each other across runs.
+
+    `require_empty_at_deploy` is proved in Phase 1.2; the reader is enrolled
+    in Phase 1.4 and stays. So the run that enrols the reader succeeds and
+    the NEXT one aborts on its own gate -- on a site nobody touched, which
+    is the worst shape a failure can take.
+    """
+    only(
+        _reader_findings(require_empty=True),
+        FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
+    )
+
+
+def test_a_reader_group_that_also_enrols_the_operator_is_refused() -> None:
+    """The two enrolment flags on ONE group deadlock the deploy.
+
+    Phase 1.3 adds the pasting operator to a group flagged
+    `enroll_operator_during_deploy`. Phase 1.4 aborts the run when the
+    reader group holds any principal other than the named reader. Put both
+    flags on one group and 1.3 manufactures exactly what 1.4 refuses, so
+    every deploy fails -- on a correct address, for a reason nothing in the
+    mapping states.
+
+    There is no legitimate use to weigh against that:
+    `enterprise_reader_group_over_privileged` already holds a reader group
+    to `Read`, and an operator self-enrols precisely in order to write.
+    """
+    finding = only(
+        _reader_findings(enroll_operator=True),
+        FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
+    )
+    assert finding.severity == "error"
+    assert "XX Enterprise Readers" in finding.message
+
+
+def test_two_reader_groups_are_refused() -> None:
+    """`--enterprise-reader` takes one address and must have one target.
+
+    Picking either group would be a coin toss, and picking both would grant
+    an account more than its author declared.
+    """
+    only(
+        _reader_findings(second_reader=True),
+        FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS,
+    )
+
+
+def test_a_reader_group_granted_nothing_is_refused() -> None:
+    """A group with no role assignment anywhere grants nothing.
+
+    Enrolment would succeed, the manifest would report a reader, the deploy
+    would go green, and the account would see no rows. Nothing downstream
+    can tell that apart from an empty register.
+    """
+    only(
+        _reader_findings(level=None),
+        FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
+    )
+
+
+def test_a_reader_group_granted_more_than_read_is_refused() -> None:
+    """An "Enterprise Reader" holding Contribute is the whole point of this
+    guard: the name would go on telling the truth while the grant did not."""
+    only(
+        _reader_findings(level="Contribute"),
+        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+    )
+
+
+def test_restricted_read_is_refused_even_though_it_is_narrower() -> None:
+    """Deliberate, and the surprising half of the rule.
+
+    Microsoft Learn's site-permissions table shows `Restricted Read` lacks
+    `Use Remote Interfaces` -- the permission an API client needs. It is
+    less privilege AND a broken connector, which is the failure this whole
+    feature exists to avoid.
+    """
+    only(
+        _reader_findings(level="Restricted Read"),
+        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+    )
+
+
+def test_a_reader_group_over_privileged_via_an_override_is_refused() -> None:
+    """The override path, not just the default.
+
+    An override carries its OWN complete assignment list rather than adding
+    to the default, so a reader clean on `list_permissions.default` can
+    still be handed `Contribute` by an override alone -- exactly the shape
+    `service-evidence-register`'s `ServiceIssue` override will take. Without
+    walking `perms.overrides` this case would look clean and the account
+    would hold more than `Read` on that one list. The finding must also
+    point at the override block, not the default, so an operator looking at
+    `location` lands on the block that actually granted it.
+    """
+    finding = only(
+        _reader_findings(override_level="Contribute"),
+        FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+    )
+    assert finding.location == Location(Section.LIST_PERMISSIONS, sub="overrides")
+
+
+def test_a_reader_group_granted_read_on_default_and_override_is_clean() -> None:
+    """The shape `service-evidence-register` writes for `ServiceIssue`: Read
+    on the default policy AND Read again on an override. Both grants are
+    the built-in 'Read', so neither the default nor the override path may
+    fire over-privileged."""
+    findings = _reader_findings(override_level="Read")
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
+
+
+def test_a_correctly_declared_reader_group_is_clean() -> None:
+    """The shape Task 3 writes into 31 mappings must pass all four rules."""
+    findings = _reader_findings()
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED)
+    none_of(findings, FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS)
+    none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR)
+
+
 def test_an_acl_naming_an_undeclared_group_is_an_error() -> None:
     """A list ACL granting to a group nothing declares would fail at deploy
     time, when `sitegroups/getbyname` cannot resolve it."""
