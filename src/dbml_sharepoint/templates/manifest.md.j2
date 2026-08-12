@@ -159,6 +159,11 @@ Power Automate flows must validate these at write time.
    - Phase {{ phase_num['lists'] }} fields: {{ l.fields_phase1 | length }}
 
 {% endfor %}
+Each list's **Description** is set to the text shown above, **replacing
+whatever it currently holds** — including a description an owner wrote by
+hand, which is not preserved. The previous value is printed in the run
+transcript on the line that reports the change, so copy anything you need out
+of it before pasting.
 
 ## Phase {{ phase_num['lookups'] }}: deferred lookups
 
