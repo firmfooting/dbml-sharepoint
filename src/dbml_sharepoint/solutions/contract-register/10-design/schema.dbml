@@ -53,5 +53,5 @@ Table Contract {
     ContractType
   }
 
-  Note: 'Every agreement the organisation is party to: who with, what it is worth, when it ends and what notice is needed to leave it. The signed document stays in its own system, linked.'
+  Note: 'Every agreement the organisation is party to: who with, its value, when it ends and the notice needed to leave. The signed document lives elsewhere, linked.'
 }

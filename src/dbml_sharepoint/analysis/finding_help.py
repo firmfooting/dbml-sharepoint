@@ -29,6 +29,7 @@ same arrangement `generate_api.py` already has for the API reference.
 """
 
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.list_description import MARKER_GROWTH_RESERVE
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 
 #: Every rule this build can report, by code. One entry per `FindingCode`
@@ -460,7 +461,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "A table's `Note:` is long enough that the provenance marker "
         "appended after it would not fit in a SharePoint list Description. "
         "The marker is what fleet reporting discovers the list by, so it is "
-        "never truncated -- the note is refused instead. Shorten the note."
+        "never truncated -- the note is refused instead. Shorten the note. "
+        "The budget is deliberately smaller than the space the marker "
+        f"actually leaves: {MARKER_GROWTH_RESERVE} characters are held back "
+        "so that the marker can grow -- gaining a version suffix, or naming "
+        "a longer family -- without invalidating notes already written. So a "
+        "note measured against the marker you can see will be refused while "
+        "still appearing to fit; the budget the finding reports is the real "
+        "limit."
     ),
     FindingCode.ENUM_MEMBERS_DIFFER: (
         "A DBML enum's members differ from the choices configured for "

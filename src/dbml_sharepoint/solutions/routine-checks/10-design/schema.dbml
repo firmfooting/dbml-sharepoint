@@ -65,5 +65,5 @@ Table CheckEntry {
     Result
   }
 
-  Note: 'One row each time a check is performed: what was observed, whether it was in range, and what was done about it if not. Entered at the time, not written up afterwards.'
+  Note: 'One row each time a check is performed: what was observed, whether it was in range, and what was done if not. Entered at the time, not written up afterwards.'
 }

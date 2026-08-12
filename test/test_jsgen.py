@@ -7,6 +7,8 @@ from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
     UNNAMED_FAMILY,
     list_description,
     marker_for,
@@ -3155,17 +3157,23 @@ def test_the_marker_survives_a_note_that_lands_exactly_on_the_budget() -> None:
     A note of exactly `note_budget` characters must survive whole AND keep the
     marker; one character more must lose a character of NOTE, never a
     character of marker. A naive `[:255]` after appending passes neither.
+
+    The full description lands on 255 LESS `MARKER_GROWTH_RESERVE`, not on
+    255: the budget holds that much back so the marker can grow later without
+    invalidating notes already written. The unused tail is deliberate, and
+    `test_validator_core` pins the reserve itself.
     """
     budget = note_budget("routine-checks", "CheckPoint")
     marker = "Provisioned by dbml-sharepoint from routine-checks/CheckPoint."
+    full = DESCRIPTION_LIMIT - MARKER_GROWTH_RESERVE
 
     exact = list_description("y" * budget, family="routine-checks", entity="CheckPoint")
     assert exact == f"{'y' * budget} {marker}"
-    assert len(exact) == 255
+    assert len(exact) == full
 
     over = list_description("y" * (budget + 1), family="routine-checks", entity="CheckPoint")
     assert over == f"{'y' * budget} {marker}"
-    assert len(over) == 255
+    assert len(over) == full
 
 
 def test_the_emitted_list_description_names_the_family_from_the_dbml_project(

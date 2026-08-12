@@ -35,7 +35,13 @@ from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
-from dbml_sharepoint.analysis.list_description import family_for, note_budget
+from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
+    family_for,
+    marker_for,
+    note_budget,
+)
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -1551,4 +1557,31 @@ def test_every_table_note_leaves_room_for_the_provenance_marker(template: str) -
         assert len(note) <= budget, (
             f"{template}.{table.name}: Note: is {len(note)} characters, "
             f"{len(note) - budget} over the {budget} that fit beside the marker."
+        )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_shipped_note_eats_into_the_marker_growth_reserve(template: str) -> None:
+    """Every shipped note leaves `MARKER_GROWTH_RESERVE` spare, catalogue-wide.
+
+    The sweep above says each note fits. This one says the CORPUS still fits
+    after the marker grows -- which is a different property, and the one that
+    decides whether a marker change is a one-line edit or an editorial pass
+    over 31 families.
+
+    It is measured against the raw arithmetic rather than against
+    `note_budget`, so it keeps meaning what it says if the reserve is ever
+    taken out of that function. This is the guard that stops the reserve being
+    spent a few characters at a time by notes nobody measured together: the
+    corpus arrived at a median of 20 characters spare exactly that way.
+    """
+    loaded = _load(template)
+    family = family_for(loaded.schema)
+    for table in loaded.schema.tables:
+        note = table.note.strip()
+        spare = DESCRIPTION_LIMIT - len(marker_for(family, table.name)) - 1 - len(note)
+        assert spare >= MARKER_GROWTH_RESERVE, (
+            f"{template}.{table.name}: Note: leaves {spare} characters beside the "
+            f"marker, under the {MARKER_GROWTH_RESERVE} reserved for the marker to "
+            f"grow into. Shorten it by {MARKER_GROWTH_RESERVE - spare}."
         )

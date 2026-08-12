@@ -58,7 +58,7 @@ Table Practitioner {
     RegistrationExpiry
   }
 
-  Note: 'The people this service has credentialed, each with the scope of practice approved for them here, their registration, and the date their credentialing is next reviewed.'
+  Note: 'The people this service has credentialed, each with the scope of practice approved here, their registration, and the next credentialing review.'
 }
 
 Table Credential {

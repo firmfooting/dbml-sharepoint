@@ -55,7 +55,7 @@ Table CodeEvent {
     IsDrill
   }
 
-  Note: 'Emergency code announcements as they are made: which code, where, when it was called and when stand-down came. Drills are logged the same way, because that is what drills are for.'
+  Note: 'Emergency code announcements as they happen: which code, where, when called and when stand-down came. Drills go in the same way; that is what they are for.'
 }
 
 Table MessageLog {
@@ -80,7 +80,7 @@ Table MessageLog {
     TakenAt
   }
 
-  Note: 'The after-hours message book: who called, who the message is for, what it said, and whether it has actually reached them yet. Anything still pending is the live board.'
+  Note: 'The after-hours message book: who called, who the message is for, what it said, and whether it has reached them yet. Anything still pending is the live board.'
 }
 
 Table Key {
@@ -95,7 +95,7 @@ Table Key {
     Active
   }
 
-  Note: 'The catalogue of keys and access cards the switchboard holds, what each one opens and who is permitted to take it. Retired keys stay listed so their movement history still reads.'
+  Note: 'The catalogue of keys and access cards the switchboard holds, what each opens and who may take it. Retired keys stay listed so their movement history still reads.'
 }
 
 Table KeyMovement {
@@ -116,5 +116,5 @@ Table KeyMovement {
     IssuedAt
   }
 
-  Note: 'One row each time a key leaves the board and each time it comes back, naming who took it. Whatever is still out is the answer to who holds a given key right now.'
+  Note: 'One row each time a key leaves the board and each time it comes back, naming who took it. Whatever is still out answers who holds a given key right now.'
 }

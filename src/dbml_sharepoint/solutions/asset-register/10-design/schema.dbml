@@ -30,7 +30,7 @@ Table Location {
   Title    nvarchar [not null, note: 'Location name (building/room/site)']
   Notes    nvarchar [note: 'Access notes, floor, etc.']
 
-  Note: 'The buildings, rooms and sites equipment can be assigned to. Kept as a shared reference so every asset points at the same spelling of a place rather than a typed one.'
+  Note: 'The buildings, rooms and sites equipment can be assigned to. Kept as a shared reference so every asset points at the same spelling of a place, not a typed one.'
 }
 
 Table Asset {
@@ -55,5 +55,5 @@ Table Asset {
     Location
   }
 
-  Note: 'Everything the organisation owns and tracks: what it is, the tag on it, who holds it now, where it lives and whether it is still in service. Retired and disposed items stay here.'
+  Note: 'Everything the organisation owns and tracks: what it is, the tag on it, who holds it, where it lives and whether it is in service. Retired and disposed items stay.'
 }

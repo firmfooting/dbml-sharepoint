@@ -62,5 +62,5 @@ Table Feedback {
     ReceivedDate
   }
 
-  Note: 'Complaints, compliments, suggestions and enquiries from the people the organisation serves, with who is handling each one, when it was acknowledged and what changed as a result.'
+  Note: 'Complaints, compliments, suggestions and enquiries from the people the organisation serves, with who handles each, when it was acknowledged and what changed.'
 }

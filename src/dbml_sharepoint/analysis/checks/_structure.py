@@ -5,6 +5,7 @@ from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
     family_for,
     marker_for,
     note_budget,
@@ -105,12 +106,15 @@ def _note_fits_beside_marker(
         return []
     return [Finding(
         FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
-        f"{entity_name}: the table's Note: is {len(note)} characters, but only "
-        f"{budget} fit beside the provenance marker "
-        f"{marker_for(family, entity_name)!r} in a {DESCRIPTION_LIMIT}-character "
-        f"list Description. The marker is how fleet reporting finds this list, "
-        f"so it is never truncated -- shorten the note by "
-        f"{len(note) - budget} character(s).",
+        f"{entity_name}: the table's Note: is {len(note)} characters, but the "
+        f"budget beside the provenance marker "
+        f"{marker_for(family, entity_name)!r} is {budget}. The marker is how "
+        f"fleet reporting finds this list, so it is never truncated -- "
+        f"shorten the note by {len(note) - budget} character(s). "
+        f"{MARKER_GROWTH_RESERVE} further characters of the "
+        f"{DESCRIPTION_LIMIT}-character list Description would fit but are "
+        f"held in reserve, so that the marker can grow without invalidating "
+        f"notes already written.",
         location=Location(Section.ENTITIES, entity=entity_name),
     )]
 

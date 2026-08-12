@@ -20,7 +20,14 @@ from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.list_description import family_for, note_budget
+from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    MARKER_GROWTH_RESERVE,
+    family_for,
+    list_description,
+    marker_for,
+    note_budget,
+)
 from dbml_sharepoint.analysis.validator import (
     MAX_INTERNAL_NAME,
     Finding,
@@ -1746,4 +1753,55 @@ def test_a_note_that_exactly_fits_beside_the_marker_is_accepted() -> None:
     only(
         validate_against_mapping(schema, make_bundle(entities=["Risk"])),
         FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+
+def test_the_budget_reserves_room_for_the_marker_to_grow_into() -> None:
+    """The boundary is `MARKER_GROWTH_RESERVE` characters SHORT of what fits.
+
+    The rule is deliberately stricter than the 255 arithmetic requires, so a
+    marker that later gains a version suffix does not turn a shipped note into
+    a build error. The reserve is the whole point of the constant, and nothing
+    else in the suite would notice it going missing: every other test asks
+    `note_budget` what the limit is, which is exactly the question a deleted
+    reserve changes the answer to.
+
+    So the budget is spelled out here from the marker instead, and the
+    invariant it buys is asserted directly: a note the rule ACCEPTS still fits
+    beside a marker `MARKER_GROWTH_RESERVE` characters longer than today's.
+    """
+    table = make_table("Risk")
+    schema = make_schema(table)
+    family = family_for(schema)
+    marker = marker_for(family, "Risk")
+
+    reserved = DESCRIPTION_LIMIT - len(marker) - 1 - MARKER_GROWTH_RESERVE
+    assert note_budget(family, "Risk") == reserved, (
+        "note_budget must hold back MARKER_GROWTH_RESERVE beyond the marker"
+    )
+
+    table.note = "x" * reserved
+    none_of(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+    table.note = "x" * (reserved + 1)
+    only(
+        validate_against_mapping(schema, make_bundle(entities=["Risk"])),
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+    )
+
+    # What the rule accepts, the emitter emits whole -- the two derive the
+    # budget from the same helper, and this is the assertion that they agree
+    # rather than the assumption.
+    accepted = "x" * reserved
+    assert list_description(accepted, family=family, entity="Risk") == (
+        f"{accepted} {marker}"
+    )
+
+    # The invariant, stated as the thing it protects.
+    grown = marker + "v" * MARKER_GROWTH_RESERVE
+    assert len(f"{accepted} {grown}") <= DESCRIPTION_LIMIT, (
+        "a note the rule accepted must survive the marker growing by the reserve"
     )

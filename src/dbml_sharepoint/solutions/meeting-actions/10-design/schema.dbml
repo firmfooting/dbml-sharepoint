@@ -34,7 +34,7 @@ Table Meeting {
     MeetingType
   }
 
-  Note: 'One row per meeting held, with its date, who chaired it and a link to the minutes. The decisions and actions it produced are recorded separately and point back here.'
+  Note: 'One row per meeting held, with its date, who chaired it and a link to the minutes. The decisions and actions it produced are recorded separately and point back.'
 }
 
 Table Decision {

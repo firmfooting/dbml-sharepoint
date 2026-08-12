@@ -35,5 +35,5 @@ Table Visit {
     VisitLocation
   }
 
-  Note: 'People on site who do not work here, who is hosting them and when they arrived. Anyone with no sign-out time is still in the building, which is what an evacuation muster reads.'
+  Note: 'People on site who do not work here, who hosts them and when they arrived. Anyone not signed out is still in the building, which is what an evacuation muster reads.'
 }

@@ -55,5 +55,5 @@ Table Trip {
     DepartedAt
   }
 
-  Note: 'One row per journey, with the driver, the odometer at each end and the business reason for going. That reason is what makes the log defensible to finance and to the tax office.'
+  Note: 'One row per journey, with the driver, the odometer at each end and the business reason. That reason is what makes the log defensible to finance and to the tax office.'
 }

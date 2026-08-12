@@ -106,7 +106,7 @@ Table ServiceIssue {
     FirstObserved
   }
 
-  Note: 'Patterns in an external provider service that are worth raising formally, each backed by the logged events behind it, with what was said in response and what was agreed.'
+  Note: 'Patterns worth raising formally with an external provider, each backed by the logged events behind it, with the response and what was agreed.'
 }
 
 // The switch that decides which fields the form shows. A single occurrence
@@ -250,7 +250,7 @@ Table ServiceEvent {
     RelatedIssue
   }
 
-  Note: 'One row each time an external provider falls short, written while it is fresh: the facts, what it cost, and what backs it up. Anecdotes lose at a service review.'
+  Note: 'One row each time an external provider falls short, written while fresh: the facts, the cost and what backs it up. Anecdotes lose at a review.'
 }
 
 Enum contact_channel {
@@ -303,5 +303,5 @@ Table FollowUp {
     Channel
   }
 
-  Note: 'Every chase it took to get an answer out of the provider: what was asked, of whom, how far up it went and what came back. The count of these rows is itself the evidence.'
+  Note: 'Every chase to get an answer from the provider: what was asked, of whom, how far it went and what came back. The count of these rows is the evidence.'
 }

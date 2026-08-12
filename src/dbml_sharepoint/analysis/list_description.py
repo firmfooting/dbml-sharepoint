@@ -55,6 +55,41 @@ DESCRIPTION_LIMIT = 255
 # `contentclass:STS_List` retrieval.
 MARKER_TEMPLATE = "Provisioned by dbml-sharepoint from {family}/{entity}."
 
+# Characters held back from every note's budget, on top of the marker itself.
+#
+# THE INVARIANT: the marker may grow by up to 32 characters and every shipped
+# note still fits. Nothing has to be re-edited, and no family becomes
+# unbuildable, until a marker change exceeds that.
+#
+# WHY IT IS NEEDED. The marker's length is not a constant of the design. Two
+# ways it can grow are already foreseen:
+#
+#   - A VERSION SUFFIX. Version-aware discovery -- a fleet report that can tell
+#     which lists came from which release of a family -- was contemplated in
+#     the design spec, and the natural spelling of it lengthens the marker
+#     (` v0.12.3` and the like).
+#   - A LONGER FAMILY OR ENTITY NAME. The budget already depends on both, so a
+#     family renamed to something more descriptive shortens every note in it.
+#
+# WHY IT HAD TO BE RESERVED RATHER THAN LEFT TO CHANCE. Measured over the 54
+# shipped notes when they were first written, the median note left 20
+# characters spare and the tightest left 9. That corpus tolerates no growth at
+# all: a marker one word longer would have turned roughly half the shipped
+# families into build ERRORS -- `ENTITY_NOTE_TOO_LONG_FOR_MARKER` is an error,
+# so the family stops building -- and the fix would have been re-editing 25
+# templates' prose under whatever deadline the marker change arrived with.
+# Charging the reserve to the budget makes that a change to one constant.
+#
+# 32 IS A JUDGEMENT, not a measurement, and it is deliberately generous enough
+# to cover a version suffix with room to spare. It costs each note about a
+# fifth of a line of prose; that is much cheaper than the alternative it buys
+# out of. Raising it later re-runs the same editorial pass over every family,
+# so it is sized once, high, rather than crept upward.
+#
+# `test_template_standard.py` pins the invariant over the whole catalogue: no
+# shipped note may eat into this reserve.
+MARKER_GROWTH_RESERVE = 32
+
 # The family recorded for a schema that declares no DBML `Project`. A
 # hand-written schema is a perfectly ordinary input -- `dbml-sharepoint build`
 # takes any DBML path -- and such a list must still be DISCOVERABLE even
@@ -112,6 +147,12 @@ def note_budget(family: str, entity: str) -> int:
     marker. The budget therefore depends on the family and entity names, which
     is why the rule computes it rather than comparing against a constant.
 
+    DELIBERATELY LESS THAN WHAT FITS. `MARKER_GROWTH_RESERVE` comes off too,
+    so a note that passes here still fits after the marker grows by up to that
+    many characters. An author measuring their note against the marker they
+    can see will find this budget short by exactly that reserve; see the
+    constant for why the corpus is worth protecting that way.
+
     NEVER NEGATIVE. A family and entity long enough to fill the limit on their
     own would otherwise produce a negative budget, and `note[:-5]` is not
     "keep nothing" -- it is "keep everything but the last five characters", so
@@ -120,7 +161,13 @@ def note_budget(family: str, entity: str) -> int:
     refuses the note first and the CLI gates errors before generation; but a
     backstop that is wrong in the case it exists for is not a backstop.
     """
-    return max(0, DESCRIPTION_LIMIT - len(marker_for(family, entity)) - 1)
+    return max(
+        0,
+        DESCRIPTION_LIMIT
+        - len(marker_for(family, entity))
+        - 1
+        - MARKER_GROWTH_RESERVE,
+    )
 
 
 def list_description(table_note: str, *, family: str, entity: str) -> str:
@@ -140,6 +187,10 @@ def list_description(table_note: str, *, family: str, entity: str) -> str:
     A zero budget returns the marker alone rather than a description with a
     leading space: there is no room for a note, and " Provisioned by ..." is
     not what "no room" should look like on a settings page.
+
+    The result therefore stops `MARKER_GROWTH_RESERVE` characters short of
+    `DESCRIPTION_LIMIT`, not at it. That unused tail is the point of the
+    reserve, not slack going to waste.
     """
     marker = marker_for(family, entity)
     note = (table_note or "").strip()

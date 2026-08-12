@@ -54,7 +54,7 @@ Table Interest {
     ReviewDate
   }
 
-  Note: 'Conflicts of interest declared by staff: outside roles, financial holdings, relationships and supplier ties, with how each one is being managed and when it is next reviewed.'
+  Note: 'Conflicts of interest staff declare: outside roles, financial holdings, relationships and supplier ties, with how each is managed and its next review date.'
 }
 
 Table GiftBenefit {
@@ -75,5 +75,5 @@ Table GiftBenefit {
     OfferedDate
   }
 
-  Note: 'Gifts, hospitality, travel and other benefits offered to staff, whether each was kept, surrendered or declined, and who made that call. Offers declined are recorded too.'
+  Note: 'Gifts, hospitality, travel and other benefits offered to staff, whether kept, surrendered or declined, and who decided. Declined offers count too.'
 }

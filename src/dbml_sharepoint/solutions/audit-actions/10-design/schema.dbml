@@ -43,7 +43,7 @@ Table Audit {
     ReportDate
   }
 
-  Note: 'Each audit, accreditation survey or regulator review the organisation has been through, with its report date, who performed it and the executive answering for the response.'
+  Note: 'Each audit, accreditation survey or regulator review the organisation has been through, with its report date, who performed it and the executive answering for it.'
 }
 
 Table Recommendation {

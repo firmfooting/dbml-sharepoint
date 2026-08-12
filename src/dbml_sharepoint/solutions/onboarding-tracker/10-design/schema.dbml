@@ -42,7 +42,7 @@ Table Starter {
     Status
   }
 
-  Note: 'People joining the organisation, with their role, start date and hiring manager. The tasks that have to happen for each one live in the companion list and point back here.'
+  Note: 'People joining the organisation, with their role, start date and hiring manager. The tasks for each one live in the companion list and point back here.'
 }
 
 Table OnboardingTask {
@@ -64,5 +64,5 @@ Table OnboardingTask {
     DueDate
   }
 
-  Note: 'What HR, IT, facilities, payroll and the manager each have to do for a new starter, with an owner and a date. One row per task, so none is assumed to be somebody else.'
+  Note: 'What HR, IT, facilities, payroll and the manager must do for a new starter, with an owner and date. One row per task, so nothing falls between them.'
 }

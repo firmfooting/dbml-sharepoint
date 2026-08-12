@@ -58,5 +58,5 @@ Table Proposal {
     ProposedDate
   }
 
-  Note: 'Every project idea in one funnel, from suggestion through a recorded gate decision to delivery. The ideas that were turned down stay here with the reason they were turned down.'
+  Note: 'Every project idea in one funnel, from suggestion through a recorded gate decision to delivery. Ideas that were turned down stay here with the reason why.'
 }
