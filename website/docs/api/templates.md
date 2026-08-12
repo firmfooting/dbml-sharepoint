@@ -125,7 +125,7 @@ Phase body: add the deferred lookup columns — self-references and members of r
 
 ### `deploy/_maintenance_unseal.js.j2`
 
-*Phase 1.4 (PREPARE) — maintenance unseal*
+*Phase 1.5 (PREPARE) — maintenance unseal*
 
 Sealed columns reject UI schema edits even for site admins; the ONLY legitimate maintenance path is this script. Unseal declared fields so the run's write phases work unchanged; Phase 4.1 re-seals and verifies after every field write is done.
 
@@ -140,6 +140,12 @@ Some mappings route all list administration through an empty-by-default admin gr
 *Phase 1.1 (PREPARE) — read-only preflight*
 
 A matching display name is not proof that an existing list or field was created from this schema. Validate every immutable identity before Phase 1.2 performs its first write. Mutable declared settings are reconciled and read back in Phase 2.1, but a wrong template/type/internal-name/lookup target always requires an explicit migration.
+
+### `deploy/_reader_enrolment.js.j2`
+
+*Phase 1.4 (PREPARE) — enterprise reader enrolment*
+
+Phase body: enrol the ONE account named by `build --enterprise-reader` into the mapping's `enroll_enterprise_reader` group, which holds Read. Emitted only when that flag was given, so an ordinary build carries no enrolment code at all. Unlike the operator's run-scoped enrolment, this membership is PERMANENT — nothing removes it at the end of the run. Every resolution is refused unless it is a single user (PrincipalType strictly 1), does not match one of the three tenant-wide-claim needles at step 3, and matches the address the build asked for; the group must hold nobody but that account already (step 7); and the membership is then read back before the run is allowed to call it done. Those needles are NOT full coverage of the tenant-wide claims: they cover two of the four Learn names. Read the dated KNOWN LIMIT at step 3 before treating this as a closed door -- it records which two, why the other two are deliberately not guessed, and which of the guards here the residual risk actually rests on.
 
 ### `deploy/_seal.js.j2`
 

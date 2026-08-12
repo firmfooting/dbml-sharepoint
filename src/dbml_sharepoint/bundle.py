@@ -294,6 +294,7 @@ def emit_bundle(
     seed: bool,
     extension: "DeploymentExtension | None" = None,
     site_context: "SiteContext | None" = None,
+    enterprise_reader: str | None = None,
 ) -> str:
     """Emit the full post-validation bundle; returns the success message.
 
@@ -302,6 +303,12 @@ def emit_bundle(
     checksums.txt — shared by the core CLI and every extension CLI. Raises
     :class:`SeedRequiresDemoItemsError` before writing anything when
     ``seed`` is set but the mapping declares no demo rows.
+
+    ``enterprise_reader`` is already validated by the caller (a malformed
+    address or a mapping with no ``enroll_enterprise_reader`` group both
+    refuse before this function is reached); it is passed through unchecked
+    to ``generate_deploy_js`` so the deploy render context carries it for
+    Task 5's template.
     """
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure
@@ -328,6 +335,7 @@ def emit_bundle(
             source_dbml=schema_name, source_mtime=source_mtime,
             generated_at=generated_at,
             extension=extension, site_context=site_context,
+            enterprise_reader=enterprise_reader,
         ),
     )
     write_artifact(

@@ -1,0 +1,114 @@
+# test/fixtures/sharepoint-mapping-with-reader.yaml
+# A copy of sharepoint-mapping.yaml that additionally declares a group with
+# `enroll_enterprise_reader: true`, granted only the built-in "Read" level
+# and not gated by `require_empty_at_deploy` -- the shape
+# `validate_enterprise_reader`-adjacent tests need to exercise the ADDRESS
+# validator itself, rather than incidentally hitting the "no such group"
+# refusal that `sharepoint-mapping.yaml` (deliberately, for its own tests)
+# does not declare a target for.
+prefix: "APP_"
+prefix_owner: "Test"
+prefix_registry: "test/registry.md"
+
+entities:
+  Project:           { kind: List, base_template: 100, site_role: default }
+  Task:              { kind: List, base_template: 100, site_role: default }
+  AppSettings: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+display_names:
+  mode: auto
+
+column_formatting:
+  Project:
+    Status: formatting/status-pill.json
+
+form_formatting:
+  Project:
+    body: { sections: [ { displayname: "Project", fields: [Title, Status, SortOrder] } ] }
+
+list_validation:
+  Project:
+    # "if closed then SortOrder >= 0" — an implication, which the grammar
+    # spells as any_of[none_of[antecedent], consequent].
+    when:
+      any_of:
+        - none_of:
+            - { field: Status, op: eq, value: "Closed" }
+        - { field: SortOrder, op: geq, value: 0 }
+    message: "A closed project needs a non-negative sort order."
+
+views:
+  Project:
+    - title: "Open projects"
+      default: true
+      fields: [Title, Status, SortOrder]
+      formatting: { additionalRowClass: "=if([$Status] == 'Closed', 'sp-css-backgroundColor-BgLightGray', '')" }
+      where:
+        - { field: Status, op: neq, value: "Closed" }
+      sort:
+        - { field: SortOrder, direction: asc }
+      row_limit: 100
+  Task:
+    - title: "Due soon"
+      fields: [Title, Project, DueDate]
+      where:
+        - { field: DueDate, op: leq, value: today+30 }
+      sort:
+        - { field: DueDate, direction: asc }
+      group_by: { field: Project, collapsed: false }
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 500
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources:
+  topic: topics.yaml#topics
+retention_policies_source: retention-policies.yaml
+
+watched_lists: []
+
+permission_levels:
+  - name: "Schema Manager"
+    description: "Test permission level."
+    base_permissions:
+      - ViewListItems
+      - ManageLists
+
+groups:
+  - name: "List Maintainer"
+    description: "Test group."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    require_empty_at_deploy: true
+  - name: "Enterprise Reader"
+    description: "Read-only enrolment target for --enterprise-reader."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "List Maintainer" }
+        level: "Schema Manager"
+      - principal: { kind: group, name: "Enterprise Reader" }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Contribute"
+      - principal: { kind: associated_visitor_group }
+        level: "Read"
+  overrides: {}

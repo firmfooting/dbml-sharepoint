@@ -50,7 +50,8 @@ class ScriptedConsole(Console):
 
 
 def _answers(
-    destination: Path, *, build: str = "n", seed: str | None = None, **over: str,
+    destination: Path, *, build: str = "n", seed: str | None = None,
+    reader: str = "", **over: str,
 ) -> list[str]:
     """The happy-path script: template, directory, prefix, site, confirm.
 
@@ -59,6 +60,16 @@ def _answers(
     Left out by default so a script that does not reach it stays honest: a
     spare answer at the end of the list is invisible, and a missing one
     surfaces as EOFError rather than as silence.
+
+    `reader` answers the enterprise-reader question, asked (only when the
+    copied mapping declares an `enroll_enterprise_reader` group) right after
+    the build confirmation, before `seed`. Unlike `seed` it defaults to a
+    real answer -- blank, "enrol nobody" -- rather than `None`, because
+    every shipped family declares such a group today (unlike demo items),
+    so most callers reach the question and a `None` default would silently
+    break them. Reader's default answer sits unread when the copied
+    mapping declares no such group, which is exactly what "a spare answer
+    is invisible" already covers.
     """
     script = {
         "template": "risk-register",
@@ -68,7 +79,11 @@ def _answers(
         "write": "y",
     }
     script.update(over)
-    tail = [build] if seed is None else [build, seed]
+    tail = [build]
+    if build == "y":
+        tail.append(reader)
+        if seed is not None:
+            tail.append(seed)
     return [*script.values(), *tail]
 
 
@@ -1037,6 +1052,103 @@ def test_declining_the_seed_builds_without_it(
 
     assert wizard.run_wizard(console) == 0
     assert captured["seed"] is False
+
+
+def test_an_empty_reader_answer_means_no_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty is the default and must stay the safe one: pressing Enter must
+    not enrol anybody.
+
+    Also pins that blank is never handed to `validate_enterprise_reader`,
+    which refuses the empty string. Validating it would turn the safest
+    answer the question offers into the one answer that cannot be given:
+    the prompt would refuse, re-ask, run out of script and exit 130 rather
+    than 0. The script carries exactly one blank, so that regression is
+    what the exit-code assertion below catches.
+    """
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
+    )
+    assert wizard.run_wizard(console) == 0
+    assert captured["enterprise_reader"] is None
+    assert "must not be empty" not in _collapsed(console)
+
+
+def test_a_reader_answer_is_passed_through(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mirror of the empty-answer case above: a real UPN reaches the
+    build. Without this, `enterprise_reader is None` could pass merely
+    because the key is always wired to `None` regardless of the answer."""
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(
+            tmp_path / "proj", build="y", seed="n",
+            reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+    assert wizard.run_wizard(console) == 0
+    assert captured["enterprise_reader"] == "svc-reporting@example.org"
+
+
+def test_a_bad_reader_address_is_refused_and_reprompted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A mistyped UPN must re-ask, not end the run in a traceback.
+
+    `validate_enterprise_reader` raises `typer.BadParameter`, which is a
+    `click.UsageError` and NOT a `typer.Exit` -- so the wizard's one
+    `except typer.Exit` around `execute_build` could not catch it, and an
+    address with no `@` propagated out of `run_wizard` as an unhandled
+    exception, on top of a project directory already written to disk.
+
+    The script answers the question twice: once with the typo, once with a
+    real address. A wizard that did not re-ask would consume the second
+    answer as the seed answer and then run out of input (exit 130), and one
+    that raised would fail this test as an error rather than an assertion
+    -- so both regressions are distinguishable from a pass.
+    """
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        # `seed` left off so `_answers` stops after the typo; the re-ask
+        # and the seed answer are appended in the order the wizard asks
+        # them, which is what makes an absent re-ask show up as EOFError
+        # rather than as the seed question silently eating a UPN.
+        [
+            *_answers(tmp_path / "proj", build="y", reader="svc.reporting"),
+            "svc-reporting@example.org",
+            "n",
+        ],
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["enterprise_reader"] == "svc-reporting@example.org"
+    assert "single UPN with one '@'" in _collapsed(console)
+
+
+def test_the_reader_question_is_not_asked_without_a_declared_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question whose only useful answer would be refused by `execute_build`
+    is worse than silence -- mirrors `test_a_template_declaring_no_demo_items_
+    is_not_asked`. The script carries no answer for it, so a wizard that
+    asked would run out of input and exit 130."""
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+    captured = _capture_build(monkeypatch)
+
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, template="fake-template", build="y"),
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert "enrol" not in _collapsed(console).lower()
+    assert captured["enterprise_reader"] is None
 
 
 def test_a_template_declaring_no_demo_items_is_not_asked(

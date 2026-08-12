@@ -1,0 +1,280 @@
+{# src/dbml_sharepoint/templates/deploy/_reader_enrolment.js.j2
+   Phase body: enrol the ONE account named by `build --enterprise-reader`
+   into the mapping's `enroll_enterprise_reader` group, which holds Read.
+   Emitted only when that flag was given, so an ordinary build carries no
+   enrolment code at all. Unlike the operator's run-scoped enrolment, this
+   membership is PERMANENT — nothing removes it at the end of the run.
+   Every resolution is refused unless it is a single user (PrincipalType
+   strictly 1), does not match one of the three tenant-wide-claim needles
+   at step 3, and matches the address the build asked for; the group must
+   hold nobody but that account already (step 7); and the membership is
+   then read back before the run is allowed to call it done.
+
+   Those needles are NOT full coverage of the tenant-wide claims: they
+   cover two of the four Learn names. Read the dated KNOWN LIMIT at step 3
+   before treating this as a closed door -- it records which two, why the
+   other two are deliberately not guessed, and which of the guards here
+   the residual risk actually rests on. #}
+{% if enterprise_reader %}
+  // === Enterprise reader enrolment (--enterprise-reader) ===
+  // Grants one named service account read-only access to the registers
+  // this bundle provisions, by adding it to the group the mapping flagged
+  // with `enroll_enterprise_reader` — a group the validator requires to
+  // hold Read and nothing more. The group's grants are unchanged here;
+  // this phase only decides WHO is in it.
+  //
+  // THIS MEMBERSHIP IS PERMANENT. Operator self-enrolment (the phase
+  // before this one) removes itself on the way out because it exists to
+  // let this run write. A reporting account exists between runs, so
+  // nothing removes it — remove it by hand in Site permissions > Groups.
+  //
+  // The group must hold nobody but the named account. If it already holds
+  // anyone else, this phase ABORTS the run before adding anything and
+  // removes nobody — a second reader is a permanent grant nothing here can
+  // safely undo, so it goes to a human.
+  //
+  // Everything below is a guard against granting Read to the wrong
+  // principal, which is the failure this phase can cause and cannot show:
+  // the deploy reads back byte-identical whether the member is one service
+  // account or the entire tenant. `ensureuser` will happily resolve a
+  // security group, a distribution list, or an everyone-claim, so each is
+  // refused explicitly and the run aborts before any list is created.
+{% if phase.first_in_group %}
+  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+{% endif %}
+  log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
+  {
+    const READER_ADDRESS = {{ enterprise_reader | tojson }};
+    // The build refuses --enterprise-reader against a mapping that declares
+    // no flagged group, and the validator refuses more than one, so on any
+    // bundle this tool produced the list holds exactly one group. Written
+    // as a loop anyway: a hand-edited bundle then reports per group instead
+    // of silently enrolling into whichever one happened to come first.
+    const readerGroups = SCHEMA.groups.filter(g => g.enroll_enterprise_reader);
+    for (const grp of readerGroups) {
+      try {
+        // 1. Resolve the address. EnsureUser is a write (it materialises
+        // the principal in the site's user information list), hence the
+        // digest, and it is the only documented way to turn a UPN into the
+        // claims LoginName a group membership needs.
+        const digestR = await getDigest();
+        const resolveResp = await fetchWithRetry(apiUrl('web/ensureuser?$select=Id,LoginName,Title,Email,PrincipalType'), {
+          method: 'POST',
+          headers: spHeaders(digestR),
+          body: JSON.stringify({ logonName: READER_ADDRESS }),
+        });
+        if (!resolveResp.ok) {
+          const text = await resolveResp.text();
+          throw new Error(`could not resolve '${READER_ADDRESS}': HTTP ${resolveResp.status} ${text}`);
+        }
+        const resolved = (await resolveResp.json()).d;
+        if (!resolved || !Number.isInteger(resolved.Id)
+            || typeof resolved.LoginName !== 'string' || resolved.LoginName === '') {
+          throw new Error(`resolving '${READER_ADDRESS}' returned an invalid principal response`);
+        }
+
+        // 2. Principal type, STRICT equality. Microsoft Learn documents
+        // SP.PrincipalType as None 0, User 1, DistributionList 2,
+        // SecurityGroup 4, SharePointGroup 8, All 15 — and marks it
+        // [Flags]. A bitwise `& 1` would therefore admit any combination
+        // that happens to carry the User bit, so the comparison is `!== 1`
+        // and stays that way.
+        if (resolved.PrincipalType !== 1) {
+          throw new Error(
+            `'${READER_ADDRESS}' resolved to '${resolved.Title || resolved.LoginName}' with PrincipalType `
+            + `${resolved.PrincipalType}, which is not a single user (1). Enrolling a group would grant Read `
+            + `to every one of its members. Nothing was changed; name an individual account.`,
+          );
+        }
+
+        // 3. The tenant-wide claims. Granting one hands Read on this
+        // register to every account in the tenant — the one mistake in this
+        // phase with no cheap undo.
+        //
+        // MEASURED 2026-08-12, on ONE tenant, by group B of
+        // `test/manual/enterprise-reader-probe.js`: `web/ensureuser` for
+        // BOTH display names — "Everyone" and "Everyone except external
+        // users" — resolved to the SAME principal, a
+        // `c:0-.f|rolemanager|spo-grid-all-users/<tenantid>` login typed
+        // PrincipalType 4 (SecurityGroup). So the strict `!== 1` check
+        // above refuses them on its own, before this list is consulted.
+        // An earlier version of this comment said these claims "resolve as
+        // ordinary users, so the type check above does not catch them".
+        // That was written from plausibility and the live run contradicts
+        // it.
+        //
+        // THE NEEDLES STAY, and neither they nor the type check are to be
+        // softened. Two of the three matched that principal
+        // (`spo-grid-all-users`, `c:0-.f|rolemanager`), and ONE TENANT IS
+        // ONE DATA POINT: another tenant may type the same claim
+        // differently, and a claim typed 1 with no needle matching it is
+        // exactly the case this defence in depth exists for.
+        //
+        // KNOWN LIMIT, opened 2026-08-11, NARROWED 2026-08-12. Learn
+        // ("Grant the Everyone claim to external users in Microsoft 365")
+        // names FOUR tenant-wide claims: Everyone, Everyone except external
+        // users, All Authenticated Users, All Forms Users. The three
+        // needles below cover the first two. Learn publishes no login-name
+        // encoding for the other two, and they are still deliberately NOT
+        // guessed here — a needle invented from plausibility would read
+        // like a guard and catch nothing, which is worse than an
+        // acknowledged gap.
+        //
+        // They were SOUGHT on 2026-08-12: rows B3 and B4 of that probe
+        // asked `web/ensureuser` for both display names and it REFUSED
+        // both, HTTP 400 SPException "The specified user ... could not be
+        // found", under odata=nometadata and odata=verbose alike. So on
+        // that tenant neither is reachable by display name, and
+        // `validate_enterprise_reader` refuses any '|' at build time, so a
+        // claim string cannot be supplied through the CLI either.
+        //
+        // THAT NARROWS THE GAP; IT DOES NOT CLOSE IT. Another tenant may
+        // resolve those display names, and a refusal by display name is not
+        // proof that no login-name encoding exists.
+        //
+        // The residual risk therefore still rests on the guards rather than
+        // on this list: the '|' refusal at build time; the strict type
+        // check above; and step 4 below, which requires the RESOLVED
+        // identity to equal the address that was asked for, which a claim
+        // principal does not.
+        const login = resolved.LoginName.toLowerCase();
+        const claim = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager']
+          .find(c => login.includes(c));
+        if (claim) {
+          throw new Error(
+            `'${READER_ADDRESS}' resolved to '${resolved.LoginName}', which is a tenant-wide claim `
+            + `(matched '${claim}') and would grant Read to every user in the tenant. Nothing was changed.`,
+          );
+        }
+
+        // 4. Identity. EnsureUser answering with SOMEBODY ELSE is the quiet
+        // failure here: the deploy reports success and the wrong account
+        // holds Read. Two addresses are compared, and either may match: the
+        // mailbox Email, and the UPN the claims LoginName ends in. They are
+        // routinely different for the same account (an alias mailbox), so
+        // requiring the Email alone would refuse correct resolutions — while
+        // a resolution of a DIFFERENT account matches neither.
+        const upnPart = (name) => {
+          const parts = String(name).split('|');
+          return parts[parts.length - 1];
+        };
+        const candidates = [resolved.Email, upnPart(resolved.LoginName)]
+          .map(v => String(v == null ? '' : v).toLowerCase())
+          .filter(v => v !== '');
+        if (!candidates.includes(READER_ADDRESS.toLowerCase())) {
+          throw new Error(
+            `'${READER_ADDRESS}' resolved to a different account: '${resolved.Title || resolved.LoginName}' `
+            + `(${candidates.join(', ') || 'no address'}). Nothing was changed.`,
+          );
+        }
+
+        // 5. The target group, created and reconciled by Phase
+        // {{ phase.group_number }}.2 earlier in this same run.
+        const grpResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!grpResp.ok) {
+          throw new Error(`group probe for '${grp.name}' failed: HTTP ${grpResp.status}`);
+        }
+        const groupId = (await grpResp.json()).d.Id;
+        if (!Number.isInteger(groupId)) {
+          throw new Error(`group probe for '${grp.name}' returned an invalid response`);
+        }
+
+        // 6. Membership, enumerated in full — every page, because the gate
+        // at step 7 is only as good as the weakest page of the read: a
+        // stranger on page two that this loop never fetched would read as
+        // an empty group. The same read verifies the write below.
+        const readMembers = async () => {
+          const found = [];
+          let membersUrl = apiUrl(`web/sitegroups(${groupId})/users?$select=Id,LoginName,Title&$top=5000`);
+          while (membersUrl) {
+            const membersResp = await fetchWithRetry(membersUrl, {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (!membersResp.ok) {
+              const text = await membersResp.text();
+              throw new Error(`membership probe for '${grp.name}' failed: HTTP ${membersResp.status} ${text}`);
+            }
+            const membersJson = await membersResp.json();
+            if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
+              throw new Error(`membership probe for '${grp.name}' returned an invalid response`);
+            }
+            found.push(...membersJson.d.results);
+            membersUrl = membersJson.d.__next || null;
+          }
+          return found;
+        };
+        // nameKey: claims logins are resolved case-insensitively, so a
+        // member stored as I:0#.F|... must not read as a different account.
+        const isReader = (u) => nameKey(u && u.LoginName) === nameKey(resolved.LoginName);
+        const before = await readMembers();
+
+        // 7. Anybody else in the group ABORTS the phase, and does so BEFORE
+        // anything is added. Two rules meet here and neither bends:
+        //
+        // - Nobody is ever removed. Membership is an operator-owned concern
+        //   and this is a gate, not a reconciler.
+        // - The operator must be shown a state this run did not just change,
+        //   so the abort comes before the enrolment POST, not after it.
+        //
+        // This used to be an INFO line and the run carried on. That made a
+        // mistyped-but-valid address permanent: enrol it, notice, redeploy
+        // with the right address, and BOTH accounts hold Read on every list
+        // this bundle provisions, for as long as the group exists. The only
+        // record was one INFO line in a run that reported success, which is
+        // to say no record at all.
+        //
+        // The named account already being a member is NOT this case — a
+        // redeploy with the same flag has to stay green — so it is filtered
+        // out by isReader before the count is taken.
+        const others = before.filter(u => !isReader(u));
+        if (others.length > 0) {
+          const listed = others
+            .map(u => `'${u.Title || '(untitled)'}' (${u.LoginName})`)
+            .join('; ');
+          throw new Error(
+            `group '${grp.name}' already holds ${others.length} principal(s) other than `
+            + `'${READER_ADDRESS}': ${listed}. That group grants Read on EVERY list this `
+            + `bundle provisions, so each of them can read all of it. Nothing was granted and `
+            + `nobody was removed — this needs a human decision. Either remove them by hand in `
+            + `Site permissions > Groups and run this script again, or rebuild WITHOUT `
+            + `--enterprise-reader, which leaves the membership exactly as it is and still `
+            + `deploys the group and its declared Read grant.`,
+          );
+        }
+        if (before.some(isReader)) {
+          log('INFO', `'${resolved.Title || READER_ADDRESS}' is already a member of '${grp.name}'; membership left untouched.`);
+          continue;
+        }
+
+        const digestA = await getDigest();
+        const addResp = await fetchWithRetry(apiUrl(`web/sitegroups(${groupId})/users`), {
+          method: 'POST',
+          headers: spHeaders(digestA),
+          body: JSON.stringify({ __metadata: { type: 'SP.User' }, LoginName: resolved.LoginName }),
+        });
+        if (!addResp.ok) {
+          const text = await addResp.text();
+          throw new Error(`enrolment of '${READER_ADDRESS}' into '${grp.name}' failed: HTTP ${addResp.status} ${text}`);
+        }
+
+        // 8. Read the membership back. HTTP 200 is not evidence that the
+        // account is in the group, and a grant reported but never made is
+        // worse than a failure: the operator stops looking.
+        const after = await readMembers();
+        if (!after.some(isReader)) {
+          throw new Error(`'${READER_ADDRESS}' was accepted into '${grp.name}' but is absent when the membership is read back; the grant did not take effect`);
+        }
+        log('INFO', `Enrolled '${resolved.Title || READER_ADDRESS}' into '${grp.name}' with the group's read-only grants. This membership is PERMANENT: remove it in Site permissions > Groups when the account no longer needs access.`);
+      } catch (err) {
+        log('ERROR', `Enterprise reader enrolment for '${grp.name}': ${err.message}`);
+        summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });
+      }
+    }
+  }
+  if (summary.errors.length > 0) {
+    log('ERROR', 'Enterprise reader enrolment failed; aborting before list creation.');
+    return { ...summary, aborted: 'reader-enrolment-errors' };
+  }
+{% endif %}

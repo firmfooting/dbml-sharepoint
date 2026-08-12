@@ -9,7 +9,7 @@ from dbml_sharepoint.analysis.validator import (
     _BUILTIN_SP_GROUPS,
     Finding,
 )
-from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy
+from dbml_sharepoint.model.mapping_loader import ListPermissionPolicy, PermissionsConfig
 
 # These messages spell the level or group name with `!r`, so the quotes are
 # inside the bracket -- `permission_levels['Reader']`. A Location holding
@@ -23,6 +23,48 @@ _GROUPS = Location(Section.GROUPS)
 #: paths are `list_permissions.default...` and `list_permissions.overrides`.
 _DEFAULT_POLICY = Location(Section.LIST_PERMISSIONS, sub="default")
 _OVERRIDES = Location(Section.LIST_PERMISSIONS, sub="overrides")
+
+
+def _levels_granted_to_group(
+    perms: PermissionsConfig, name: str,
+) -> list[tuple[str, Location]]:
+    """Every (level, origin) grant to `name` across all policy blocks.
+
+    Both the default policy and every override, because an override carries
+    its OWN complete assignment list rather than adding to the default. The
+    union is what lets `ENTERPRISE_READER_GROUP_OVER_PRIVILEGED` see a
+    reader granted Contribute on an override alone, which a default-only
+    read would miss entirely; and it lets
+    `ENTERPRISE_READER_GROUP_NOT_GRANTED` mean what it says -- the group
+    that NO block grants anything, so enrolling an account into it would
+    grant nothing anywhere.
+
+    What the union deliberately does NOT catch is the mirror case: Read on
+    the default and silence on some override. `check` tests `if not grants`
+    over the union, so one grant anywhere satisfies it. That is allowed on
+    purpose -- an override exists to differ, and may exclude the reader
+    from one list intentionally, so a rule firing on it would be stronger
+    than the mapping format's own meaning. For the SHIPPED families, where
+    such an omission would be a hole in fleet-wide reporting rather than a
+    choice, it is pinned separately by
+    `test_the_reader_group_is_granted_read_on_every_policy_block` in
+    test/test_template_standard.py.
+
+    The origin travels with each grant so an over-privileged finding can
+    point at the block that actually granted it (an override-sourced grant
+    must not be reported against the default).
+    """
+    policies: list[tuple[ListPermissionPolicy | None, Location]] = [
+        (perms.default_policy, _DEFAULT_POLICY),
+        *((policy, _OVERRIDES) for policy in perms.overrides.values()),
+    ]
+    return [
+        (a.level, origin)
+        for policy, origin in policies
+        if policy is not None
+        for a in policy.assignments
+        if a.principal.kind == "group" and a.principal.name == name
+    ]
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -166,6 +208,67 @@ def check(vc: ValidationContext) -> list[Finding]:
             _check_policy_assignments(
                 perms.default_policy, "list_permissions.default", _DEFAULT_POLICY,
             )
+
+        # === Enterprise reader tier ===
+        # The flagged group is the target of `build --enterprise-reader`.
+        # Every rule here refuses a mapping that would deploy green and
+        # leave the reporting account seeing nothing.
+        reader_groups = [g for g in perms.groups if g.enroll_enterprise_reader]
+
+        if len(reader_groups) > 1:
+            findings.append(Finding(
+                FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS,
+                f"groups: {len(reader_groups)} groups declare "
+                f"enroll_enterprise_reader "
+                f"({', '.join(repr(g.name) for g in reader_groups)}); "
+                f"--enterprise-reader needs exactly one target.",
+                location=_GROUPS,
+            ))
+
+        for grp in reader_groups:
+            if grp.enroll_operator_during_deploy:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR,
+                    f"groups: {grp.name!r} declares both "
+                    f"enroll_enterprise_reader and "
+                    f"enroll_operator_during_deploy. Phase 1.3 puts the "
+                    f"operator in the group, so Phase 1.4 finds a principal "
+                    f"other than the named reader and aborts the run -- "
+                    f"every run, on a correct address.",
+                    location=_GROUPS,
+                ))
+
+            if grp.require_empty_at_deploy:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY,
+                    f"groups: {grp.name!r} declares both "
+                    f"enroll_enterprise_reader and require_empty_at_deploy. "
+                    f"The reader is enrolled after the empty-group gate and "
+                    f"stays, so the next deploy aborts on that gate.",
+                    location=_GROUPS,
+                ))
+
+            grants = _levels_granted_to_group(perms, grp.name)
+            if not grants:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED,
+                    f"groups: {grp.name!r} declares "
+                    f"enroll_enterprise_reader but holds no role assignment; "
+                    f"enrolling an account into it would grant nothing.",
+                    location=_GROUPS,
+                ))
+            over_privileged = sorted(
+                {(level, origin) for level, origin in grants if level != "Read"},
+                key=lambda pair: (pair[0], pair[1].path),
+            )
+            for level, origin in over_privileged:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED,
+                    f"list_permissions: {grp.name!r} is an enterprise-reader "
+                    f"group granted {level!r}; only the built-in 'Read' is "
+                    f"allowed.",
+                    location=origin,
+                ))
 
         # list_permissions.overrides keys must be unprefixed DBML table names.
         for entity_name, override_policy in perms.overrides.items():

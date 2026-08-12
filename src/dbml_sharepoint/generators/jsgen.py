@@ -76,6 +76,7 @@ def generate_deploy_js(
     generated_at: str,
     extension: DeploymentExtension | None = None,
     site_context: SiteContext | None = None,
+    enterprise_reader: str | None = None,
 ) -> str:
     env = script_env()
     ext: DeploymentExtension = extension if extension is not None else NullExtension()
@@ -102,6 +103,14 @@ def generate_deploy_js(
         schema_json=schema_json,
         phases=phases_context(),
         unmanaged_sentinel=UNMANAGED,
+        # The single named account `build --enterprise-reader` enrols read-
+        # only into the mapping's flagged group, or None to enrol nobody.
+        # `execute_build` has already refused a malformed address and a
+        # mapping declaring no `enroll_enterprise_reader` group by the time
+        # this runs, so a non-None value here always names a real target.
+        # Which declared group that is stays the template's job: it filters
+        # SCHEMA.groups on the flag emitted in build_schema_json.
+        enterprise_reader=enterprise_reader,
     )
 
 
@@ -711,6 +720,11 @@ def build_schema_json(
                 "only_allow_members_view_membership": grp.only_allow_members_view_membership,
                 "require_empty_at_deploy": grp.require_empty_at_deploy,
                 "enroll_operator_during_deploy": grp.enroll_operator_during_deploy,
+                # The reader-enrolment phase finds ITS group by this flag,
+                # exactly as operator enrolment finds its own above. Omitting
+                # it leaves the phase with a `--enterprise-reader` address
+                # and nowhere to put it.
+                "enroll_enterprise_reader": grp.enroll_enterprise_reader,
             })
 
         # Build list_assignments for every list in this site role.

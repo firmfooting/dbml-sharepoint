@@ -185,3 +185,24 @@ is settled.
 Bump `schema_version`, rebuild, re-paste. Existing rows are untouched;
 drifted settings are reconciled, and declared views are reconciled to the
 declaration — a view retitled by hand comes back under its declared title.
+
+## Enterprise reporting access
+
+The deploy creates an empty `"AU Enterprise Readers"` site group holding `Read` on
+every list in this family. It stays empty unless the build was run with
+`--enterprise-reader <account>`, which enrols exactly that one account
+and nothing else. `rollback.js.txt` does not remove it: rollback deletes
+lists, not site groups or role assignments, so the group and any account
+enrolled in it survive a rollback.
+
+If the group already holds anyone other than that account, the deploy
+**aborts before enrolling** and removes nobody — clear it in Site
+permissions > Groups and paste again, or rebuild without the flag.
+
+On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
+enrolled account ends up with the built-in `Read` on each list and
+`Use Remote Interfaces` intact at web scope. Publishing sites — where
+lockdown mode is on by default — and the reporting client's own list
+enumeration are still unverified, so the end-to-end path (Power BI or any
+other API client) is not yet proven. See the danger block in the mapping
+reference's Security section.

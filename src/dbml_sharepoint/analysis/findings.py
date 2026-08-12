@@ -331,6 +331,16 @@ class FindingCode(StrEnum):
     # --- permission levels, groups and policies (checks/_permissions.py) ----
     DUPLICATE_GROUP_NAME = "duplicate_group_name", "error"
     DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name", "error"
+    ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR = (
+        "enterprise_reader_group_enrols_the_operator", "error")
+    ENTERPRISE_READER_GROUP_NOT_GRANTED = (
+        "enterprise_reader_group_not_granted", "error")
+    ENTERPRISE_READER_GROUP_OVER_PRIVILEGED = (
+        "enterprise_reader_group_over_privileged", "error")
+    ENTERPRISE_READER_GROUP_REQUIRES_EMPTY = (
+        "enterprise_reader_group_requires_empty", "error")
+    MULTIPLE_ENTERPRISE_READER_GROUPS = (
+        "multiple_enterprise_reader_groups", "error")
     UNKNOWN_BASE_PERMISSION = "unknown_base_permission", "error"
     UNKNOWN_OWNER_GROUP = "unknown_owner_group", "error"
     UNKNOWN_PERMISSION_LEVEL = "unknown_permission_level", "error"
