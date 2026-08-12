@@ -113,3 +113,42 @@ def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) ->
     if perms.levels or perms.groups:
         return True
     return any(mapping.permissions_for_entity(name) is not None for name in table_names)
+
+
+def lists_granting_group(
+    mapping: Mapping, group_name: str, table_names: Iterable[str],
+) -> tuple[list[str], list[str]]:
+    """Split `table_names` into those `group_name` is granted on, and those not.
+
+    Resolved per entity through `Mapping.permissions_for_entity`, which is the
+    same resolution `jsgen` uses to bind the live role assignments -- so this
+    reports what the deploy will actually do rather than restating the
+    mapping's shape.
+
+    Deliberately NOT `checks/_permissions._levels_granted_to_group`, which
+    unions every policy block. That union answers "does any block grant this
+    group at all", and its own docstring records that it lets an override
+    exclude the group from one list ON PURPOSE, because an override exists to
+    differ. The manifest needs the opposite question, asked per list.
+
+    The manifest said the enterprise reader "can read every list this bundle"
+    creates, unconditionally. For a valid custom mapping that grants the
+    reader on the default policy and omits it from one override, that told an
+    operator the reporting account had fleet-wide access while one list was
+    silently unreadable. The shipped families are pinned separately by
+    `test_the_reader_group_is_granted_read_on_every_policy_block`; nothing
+    constrains a custom one.
+    """
+    granted: list[str] = []
+    excluded: list[str] = []
+    for name in table_names:
+        policy = mapping.permissions_for_entity(name)
+        assignments = policy.assignments if policy is not None else []
+        if any(
+            a.principal.kind == "group" and a.principal.name == group_name
+            for a in assignments
+        ):
+            granted.append(name)
+        else:
+            excluded.append(name)
+    return granted, excluded

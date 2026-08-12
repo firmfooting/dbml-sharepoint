@@ -68,3 +68,30 @@ this build (`analysis.ordering.site_tables_in_order`'s output), not every
 entity in the mapping -- a policy scoped to a site_role this build does
 not deploy must not demand a right the build never exercises.
 
+### `lists_granting_group`
+
+```python
+def lists_granting_group(mapping: dbml_sharepoint.model._mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str]) -> tuple[list[str], list[str]]
+```
+
+Split `table_names` into those `group_name` is granted on, and those not.
+
+Resolved per entity through `Mapping.permissions_for_entity`, which is the
+same resolution `jsgen` uses to bind the live role assignments -- so this
+reports what the deploy will actually do rather than restating the
+mapping's shape.
+
+Deliberately NOT `checks/_permissions._levels_granted_to_group`, which
+unions every policy block. That union answers "does any block grant this
+group at all", and its own docstring records that it lets an override
+exclude the group from one list ON PURPOSE, because an override exists to
+differ. The manifest needs the opposite question, asked per list.
+
+The manifest said the enterprise reader "can read every list this bundle"
+creates, unconditionally. For a valid custom mapping that grants the
+reader on the default policy and omits it from one override, that told an
+operator the reporting account had fleet-wide access while one list was
+silently unreadable. The shipped families are pinned separately by
+`test_the_reader_group_is_granted_read_on_every_policy_block`; nothing
+constrains a custom one.
+
