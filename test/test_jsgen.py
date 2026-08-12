@@ -6,6 +6,11 @@ from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
 from _paths import FIXTURES
 
+from dbml_sharepoint.analysis.list_description import (
+    UNNAMED_FAMILY,
+    list_description,
+    note_budget,
+)
 from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
@@ -3110,3 +3115,102 @@ def test_an_entity_declaring_no_views_still_gets_all_items(tmp_path: Path) -> No
     # asserted in test_schema_json_carries_declared_views.
     assert all_items["set_default"] is True
     assert all_items["hidden"] is False
+
+
+# --- the list Description: a human note, then the provenance marker ---------
+
+
+def test_the_list_description_carries_the_note_then_the_marker() -> None:
+    """The description is for a human first. The marker follows it so the
+    settings page reads as prose, not as a machine tag."""
+    desc = list_description("Scheduled checks and their ranges.",
+                            family="routine-checks", entity="CheckPoint")
+    assert desc.startswith("Scheduled checks and their ranges.")
+    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks/CheckPoint.")
+
+
+def test_a_note_without_a_marker_is_never_emitted() -> None:
+    """Discovery keys on the marker. A description without one deploys a list
+    that is invisible to reporting, with no error anywhere."""
+    desc = list_description("", family="routine-checks", entity="CheckPoint")
+    assert "Provisioned by dbml-sharepoint" in desc
+
+
+def test_the_marker_is_never_truncated_away() -> None:
+    """The 255 budget truncates the NOTE, never the marker.
+
+    Appending a marker after a 250-character note and cutting at 255 removes
+    the marker: the list deploys, reads back byte-identical, and is invisible
+    to discovery forever. Nothing downstream can see that.
+    """
+    desc = list_description("x" * 400, family="routine-checks", entity="CheckPoint")
+    assert len(desc) <= 255
+    assert desc.endswith("Provisioned by dbml-sharepoint from routine-checks/CheckPoint.")
+
+
+def test_the_marker_survives_a_note_that_lands_exactly_on_the_budget() -> None:
+    """The boundary, both sides of it.
+
+    A note of exactly `note_budget` characters must survive whole AND keep the
+    marker; one character more must lose a character of NOTE, never a
+    character of marker. A naive `[:255]` after appending passes neither.
+    """
+    budget = note_budget("routine-checks", "CheckPoint")
+    marker = "Provisioned by dbml-sharepoint from routine-checks/CheckPoint."
+
+    exact = list_description("y" * budget, family="routine-checks", entity="CheckPoint")
+    assert exact == f"{'y' * budget} {marker}"
+    assert len(exact) == 255
+
+    over = list_description("y" * (budget + 1), family="routine-checks", entity="CheckPoint")
+    assert over == f"{'y' * budget} {marker}"
+    assert len(over) == 255
+
+
+def test_the_emitted_list_description_names_the_family_from_the_dbml_project(
+    tmp_path: Path,
+) -> None:
+    """End to end through the emitter: the family is the DBML `Project` name,
+    so a deployed list says which template family produced it.
+
+    The composer is unit-tested above; this pins that `build_schema_json`
+    actually calls it, because the emitter is where the silent truncation
+    lived.
+    """
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=blocks(
+            "Project routine_checks { database_type: 'SharePoint Online' }",
+            table("CheckPoint", ID_PK, TITLE, "Note: 'Scheduled checks.'"),
+        ),
+        mapping=entities("CheckPoint"),
+        preamble=False,
+    )
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    assert schema_json["lists"][0]["description"] == (
+        "Scheduled checks. Provisioned by dbml-sharepoint from routine-checks/CheckPoint."
+    )
+
+
+def test_a_list_from_a_schema_with_no_project_still_carries_a_marker(
+    tmp_path: Path,
+) -> None:
+    """A hand-written DBML need not declare a `Project`. The family is then
+    unknown, but the list must still be discoverable -- an undiscoverable list
+    is the whole failure this marker exists to prevent."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    schema, bundle = pack(
+        tmp_path,
+        dbml=table("Risk", ID_PK, TITLE),
+        mapping=entities("Risk"),
+        preamble=False,
+    )
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    assert schema_json["lists"][0]["description"] == (
+        f"Provisioned by dbml-sharepoint from {UNNAMED_FAMILY}/Risk."
+    )

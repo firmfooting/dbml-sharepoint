@@ -35,8 +35,8 @@ from _model import (
     schema,
     table,
 )
+from _packs import PREAMBLE_PROJECT, pack
 from _packs import entities as yaml_entities
-from _packs import pack
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -49,6 +49,7 @@ def test_builders_and_loader_agree_on_a_representative_document(
     built_schema = schema(
         table("Risk", column("Title", "nvarchar"), person("Owner")),
         table("FollowUp", ref("Risk", "Risk.Id")),
+        project_name=PREAMBLE_PROJECT,
     )
     built_bundle = bundle(entities=["Risk", "FollowUp"])
 
@@ -102,6 +103,7 @@ def test_builders_and_loader_agree_on_every_column_attribute(tmp_path: Path) -> 
             indexes=["Code"],
         ),
         enums=[enum("status", "Open", "Closed")],
+        project_name=PREAMBLE_PROJECT,
     )
 
     parsed, _ = pack(
@@ -243,7 +245,7 @@ def test_any_built_table_survives_the_yaml_round_trip(
             for i, (kind, required, unique) in enumerate(kinds)
         ))
         for name in names
-    ))
+    ), project_name=PREAMBLE_PROJECT)
     built_bundle = bundle(entities=names)
 
     parsed_schema, parsed_bundle = pack(

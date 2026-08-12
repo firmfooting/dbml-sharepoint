@@ -456,6 +456,12 @@ FINDING_HELP: dict[FindingCode, str] = {
         "The mapping's `entities:` declares a name the DBML schema has "
         "no table for."
     ),
+    FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER: (
+        "A table's `Note:` is long enough that the provenance marker "
+        "appended after it would not fit in a SharePoint list Description. "
+        "The marker is what fleet reporting discovers the list by, so it is "
+        "never truncated -- the note is refused instead. Shorten the note."
+    ),
     FindingCode.ENUM_MEMBERS_DIFFER: (
         "A DBML enum's members differ from the choices configured for "
         "it in `enum_sources`."

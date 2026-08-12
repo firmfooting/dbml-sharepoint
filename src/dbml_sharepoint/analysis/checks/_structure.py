@@ -3,6 +3,12 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.list_description import (
+    DESCRIPTION_LIMIT,
+    family_for,
+    marker_for,
+    note_budget,
+)
 from dbml_sharepoint.analysis.lookups import (
     DEFAULT_DISPLAY_COLUMN,
     lookup_target_entities,
@@ -22,6 +28,7 @@ from dbml_sharepoint.analysis.validator import (
     _rendered_columns,
     formula_column_refs,
 )
+from dbml_sharepoint.model.parser import Table
 
 # Calculated fields accept only a subset of column types as operands.
 # Microsoft lists Single line of text, Number, Currency, Date and Time,
@@ -72,6 +79,42 @@ _SUPPORTED_CALCULATED_OPERANDS = (
 _GENERIC_LIST_TEMPLATE = 100
 
 
+def _note_fits_beside_marker(
+    table: Table | None, entity_name: str, family: str,
+) -> list[Finding]:
+    """Refuse a table `Note:` too long to leave room for the provenance marker.
+
+    The deployed list Description is the note followed by a marker, and fleet
+    reporting discovers the list BY that marker. So the marker is never
+    truncated and the note is refused here instead.
+
+    Truncating the note would lose prose, which anyone who opens list settings
+    can see. Truncating the marker loses the list from every fleet report --
+    and NOTHING can see that: the list provisions, the Description reads back
+    byte-identical to what was sent, and every deploy phase passes. Build time
+    is the last point at which the mistake is still observable.
+
+    The budget is computed rather than a constant, because it depends on the
+    length of the family and entity names inside the marker. It comes from the
+    same module `generators.jsgen` composes the description with, so the rule
+    and the emitter cannot disagree about what fits.
+    """
+    note = table.note.strip() if table is not None else ""
+    budget = note_budget(family, entity_name)
+    if len(note) <= budget:
+        return []
+    return [Finding(
+        FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER,
+        f"{entity_name}: the table's Note: is {len(note)} characters, but only "
+        f"{budget} fit beside the provenance marker "
+        f"{marker_for(family, entity_name)!r} in a {DESCRIPTION_LIMIT}-character "
+        f"list Description. The marker is how fleet reporting finds this list, "
+        f"so it is never truncated -- shorten the note by "
+        f"{len(note) - budget} character(s).",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
+
 def check(vc: ValidationContext) -> list[Finding]:
     schema = vc.schema
     bundle = vc.bundle
@@ -86,6 +129,11 @@ def check(vc: ValidationContext) -> list[Finding]:
     # for one it does — and it did: a list reached only by a CROSS-SITE ref has
     # no picker at all, so it was told its picker would stop working.
     lookup_targets = lookup_target_entities(schema, vc.cross_site_pairs)
+
+    # The family the emitter will stamp into every list Description. Resolved
+    # once, from the same helper `generators.jsgen` uses, so the budget this
+    # rule enforces is the budget the emitter actually has.
+    family = family_for(schema)
 
     # `kind: DocumentLibrary` is REFUSED, and refused here so that it fails
     # at build rather than part-way through a paste.
@@ -140,6 +188,10 @@ def check(vc: ValidationContext) -> list[Finding]:
                 f"refused outright -- see issue #14.",
                 location=Location(Section.ENTITIES, entity=entity_name),
             ))
+
+        findings += _note_fits_beside_marker(
+            tables_by_name.get(entity_name), entity_name, family,
+        )
 
         # A lookup's picker enumerates its target list. A calculated display
         # column cannot be indexed, so the enumeration is refused once the

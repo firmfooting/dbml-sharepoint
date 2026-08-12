@@ -613,7 +613,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "",
+      "description": "Provisioned by dbml-sharepoint from simple-test/Project.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [
@@ -678,7 +678,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "",
+      "description": "Provisioned by dbml-sharepoint from simple-test/Task.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [
@@ -746,7 +746,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "",
+      "description": "Provisioned by dbml-sharepoint from simple-test/AppSettings.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [],

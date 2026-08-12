@@ -35,6 +35,7 @@ from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
+from dbml_sharepoint.analysis.list_description import family_for, note_budget
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -1506,3 +1507,48 @@ def test_the_reader_group_uses_the_family_prefix(template: str) -> None:
     admin = next(n for n in names if n.endswith(" List Administrators"))
     reader = next(n for n in names if n.endswith(" Enterprise Readers"))
     assert reader.split()[0] == admin.split()[0]
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_the_dbml_project_name_resolves_to_the_family_directory(template: str) -> None:
+    """The provenance marker stamped into every list Description names the
+    family by its DBML `Project` name, underscores swapped for hyphens.
+
+    Parametrised over EVERY template, not just the uplifted ones: a marker
+    naming a family nobody can look up is exactly as useless on a template
+    that has not been uplifted yet.
+
+    This is the check that turns a measurement into an invariant. The
+    underscore-for-hyphen rule was verified across all 31 families rather
+    than assumed, and without this test a new family declaring
+    `Project asset_reg` inside `solutions/asset-register/` would deploy lists
+    attributing themselves to a family that does not exist -- silently, since
+    the description still saves and still reads back byte-identical.
+    """
+    schema = _load(template).schema
+    assert schema.project_name, f"{template}: schema.dbml declares no `Project` name"
+    assert family_for(schema) == template, (
+        f"{template}: DBML `Project {schema.project_name}` resolves to family "
+        f"{family_for(schema)!r}, which is not the solution directory name. "
+        f"The marker would attribute this list to a family nobody can look up."
+    )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_table_note_leaves_room_for_the_provenance_marker(template: str) -> None:
+    """No shipped family may carry a note the build would refuse.
+
+    `ENTITY_NOTE_TOO_LONG_FOR_MARKER` is an error, so a note over the budget
+    makes the family unbuildable. Task 4 authors ~60 of these notes; this is
+    the sweep that catches an over-long one at the source rather than when
+    somebody tries to deploy that family.
+    """
+    loaded = _load(template)
+    family = family_for(loaded.schema)
+    for table in loaded.schema.tables:
+        note = table.note.strip()
+        budget = note_budget(family, table.name)
+        assert len(note) <= budget, (
+            f"{template}.{table.name}: Note: is {len(note)} characters, "
+            f"{len(note) - budget} over the {budget} that fit beside the marker."
+        )

@@ -87,6 +87,14 @@ class Schema:
     tables: list[Table] = field(default_factory=list)
     enums: list[EnumDef] = field(default_factory=list)
     project_note: str = ""
+    #: The DBML `Project` name, e.g. `routine_checks`. Empty when the schema
+    #: declares no `Project` block, which is legal DBML. This is the only
+    #: identifier that names the TEMPLATE FAMILY and survives the documented
+    #: workflow: an operator copies a family out of `solutions/` into a
+    #: directory they name, and the wizard rewrites the mapping's `prefix`, so
+    #: neither the directory nor the prefix identifies the family afterwards.
+    #: `analysis.list_description.family_for` turns it into the family slug.
+    project_name: str = ""
 
 
 # pydbml reports schema-level problems in its own vocabulary, against its own
@@ -164,8 +172,10 @@ def parse_dbml(path: Path) -> Schema:
         ) from exc
     schema = Schema()
 
-    if parsed.project and parsed.project.note:
-        schema.project_note = parsed.project.note.text
+    if parsed.project:
+        schema.project_name = parsed.project.name or ""
+        if parsed.project.note:
+            schema.project_note = parsed.project.note.text
 
     for raw_enum in parsed.enums:
         members = [_strip_quotes(item.name) for item in raw_enum.items]

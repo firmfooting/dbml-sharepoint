@@ -51,7 +51,14 @@ from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 #: Every schema in the suite starts with this and no test is about it.
-DBML_PREAMBLE = "Project t { database_type: 'SharePoint Online' }"
+#: The `Project` name the preamble declares. Named rather than inlined
+#: because `_model.schema()` builds the OBJECT the parser would produce from
+#: this text, and `test_model_contract` asserts the two are equal --
+#: `schema.project_name` is now one of the fields compared, so a second
+#: spelling of `t` would be a contract test comparing two different schemas.
+PREAMBLE_PROJECT = "t"
+
+DBML_PREAMBLE = f"Project {PREAMBLE_PROJECT} {{ database_type: 'SharePoint Online' }}"
 
 #: Likewise the mapping prefix.
 DEFAULT_PREFIX = 'prefix: "APP_"'

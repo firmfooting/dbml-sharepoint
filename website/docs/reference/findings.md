@@ -135,6 +135,7 @@ dbml-sharepoint explain unknown_column_type
 | `enterprise_reader_group_over_privileged` | error | A group marked `enroll_enterprise_reader` is granted something other than the built-in `Read`. Anything wider contradicts the name. `Restricted Read` is refused too, and that half is deliberate: Microsoft Learn's site-permissions table shows it lacks `Use Remote Interfaces`, which an API client needs, so it would be less privilege AND a reporting connector that cannot read anything. |
 | `enterprise_reader_group_requires_empty` | error | A group declares both `enroll_enterprise_reader` and `require_empty_at_deploy`. These contradict across runs: the reader is enrolled in Phase 1.4 and stays, so the next deploy fails its own empty-group gate in Phase 1.2. Drop one. |
 | `entity_not_in_schema` | error | The mapping's `entities:` declares a name the DBML schema has no table for. |
+| `entity_note_too_long_for_marker` | error | A table's `Note:` is long enough that the provenance marker appended after it would not fit in a SharePoint list Description. The marker is what fleet reporting discovers the list by, so it is never truncated -- the note is refused instead. Shorten the note. |
 | `enum_members_differ` | error | A DBML enum's members differ from the choices configured for it in `enum_sources`. |
 | `enum_source_has_no_dbml_enum` | warning | A configured `enum_sources` entry has no matching DBML enum in the schema. |
 | `extension_reported` | error | A finding raised by an extension's own validators. |

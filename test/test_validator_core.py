@@ -20,6 +20,7 @@ from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.list_description import UNNAMED_FAMILY, note_budget
 from dbml_sharepoint.analysis.validator import (
     MAX_INTERNAL_NAME,
     Finding,
@@ -1695,3 +1696,34 @@ def test_a_list_default_naming_an_unknown_retention_policy_is_an_error() -> None
     finding = only(findings, FindingCode.UNKNOWN_RETENTION_POLICY)
     assert finding.severity == "error"
     assert "seven-years" in finding.message
+
+
+def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
+    """Refused at build time rather than truncated at deploy time.
+
+    Silently dropping the tail of somebody's description is bad; silently
+    dropping the marker is worse, because the list then deploys clean and
+    never appears in any fleet report. The author is told to shorten it.
+    """
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", note="x" * 400)),
+        make_bundle(entities=["Risk"]),
+    )
+
+    finding = only(findings, FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER)
+    assert finding.severity == "error"
+    assert "Risk" in finding.message
+    assert "400" in finding.message
+
+
+def test_a_note_that_exactly_fits_beside_the_marker_is_accepted() -> None:
+    """The boundary is inclusive. A rule that refused a note which fits would
+    be stronger than the emitter needs, and an author has no way to tell an
+    off-by-one refusal from a real one."""
+    budget = note_budget(UNNAMED_FAMILY, "Risk")
+    findings = validate_against_mapping(
+        make_schema(make_table("Risk", note="x" * budget)),
+        make_bundle(entities=["Risk"]),
+    )
+
+    none_of(findings, FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER)
