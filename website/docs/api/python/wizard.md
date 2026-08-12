@@ -9,18 +9,40 @@ sidebar_position: 25
 
 The interactive template wizard: the default `dbml-sharepoint` command.
 
-Copies one shipped solution template into a project directory of the
-user's own, substitutes their list-name prefix, and offers to build it.
+Copies one shipped template into a project directory of the user's own,
+optionally gives its lists a name prefix, and offers to build it. The prefix
+is a yes/no gate -- "Give these lists a name prefix?", defaulting to no --
+followed by the value prompt only when the answer is yes; a template
+declaring no prefix skips the pair entirely. Pressing Enter at that gate now
+produces unprefixed lists, the opposite of the old default. The Review
+panel's `Lists` row is what shows the operator the names they are actually
+about to create -- it is the safety net for that reversed default, not
+decoration, and stays load-bearing for as long as a blank prefix is a valid
+answer.
+
+Every question is asked before anything is written, and the whole decision is
+reviewed once. The alternative -- confirming a write, then being asked three
+more questions, then having a deploy bundle generated against a real site --
+put the operator's commitment before the facts they were committing to.
 
 Scope is deliberate. The wizard changes **identity only** -- prefix, site
-URL, where the files land. It never edits the schema or the mapping's
-structure. Those templates are the tested artifacts: every one of them is
-built end-to-end in CI and held to `test_template_standard.py`, and a
+URL, site role, where the files land. It never edits the schema or the
+mapping's structure. Those templates are the tested artifacts: every one of
+them is built end-to-end in CI and held to `test_template_standard.py`, and a
 wizard that let a user restructure one would be handing them an untested
 mapping while implying the opposite.
 
 It is a front end onto `cli.execute_build`, not a second builder. Anything
 the wizard produces, the documented flags could have produced.
+
+`Answers` is deliberately plural in its templates. Deploying several
+templates to one site is where this is going; `execute_build` takes a single
+mapping, so that still means one bundle each, and making it one bundle is a
+feature with its own design. What is drawn here is the boundary -- per-site
+answers apart from per-template ones -- not the feature.
+
+Every string literal in this module must be ASCII: it is in `_CONSOLE_BOUND`
+and `test_messages_bound_for_a_console_are_ascii` walks the AST.
 
 ### `WizardError`
 
