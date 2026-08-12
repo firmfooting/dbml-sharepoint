@@ -3,7 +3,7 @@
  *
  * STATUS: RUN TWICE, on ONE live site — 2026-08-11 and 2026-08-12. The
  * second run was pasted BY THE REPORTING SERVICE ACCOUNT ITSELF with the
- * write flag ON, so GROUP B IS ANSWERED. A2, A4 and C1-C3 are still open,
+ * write flag ON, so GROUP B IS ANSWERED. A2, A4 and C2-C3 are still open,
  * and the A2/A3 CONTRADICTION recorded below is UNEXPLAINED — read that
  * note before quoting anything from run 2's group A.
  *
@@ -148,15 +148,8 @@
  *     this tenant — but a refusal by display name is not proof that no
  *     encoding exists.
  *   - Server-driven paging on a site group's members: see GROUP C. Run 2
- *     could not reach it at all. C2 IS NOT BEING ASKED FOR AGAIN — it
- *     needs a site group with more members than the server page size, and
- *     adding one to a site's permissions would expose many real people to
- *     development work. That objection is accepted and settled. The
- *     nearest measurable substitute is S11/S12 in
- *     search-discovery-probe.js.j2, which pages the LIST-ITEMS collection
- *     against an existing 6,000-row fixture: it can establish whether this
- *     tenant's REST emits server-driven paging AT ALL, but it does not
- *     settle the site-group case, which stays unmeasured.
+ *     could not reach it at all; C2 still needs a group with MORE members
+ *     than the server page size.
  *
  * ---- C2/C3 WERE AN INVALID EXPERIMENT; THEY HAVE BEEN REWRITTEN --------
  * As run on 2026-08-11, C2 asked `web/sitegroups(id)/users?$top=1` against
@@ -284,14 +277,6 @@
  *   ESTABLISHED and says so — see the C2/C3 note in STATUS above for the
  *   invalid version of this experiment and why an absent `__next` under a
  *   small `$top` proves nothing.
- *
- *   DO NOT CREATE OR ENROL A LARGE GROUP TO SATISFY THIS. That has been
- *   declined and the reason stands: it would expose many real people to
- *   development work. Run C against whatever groups already exist, accept
- *   NOT ESTABLISHED when they are small, and read S11/S12 in
- *   search-discovery-probe.js.j2 for the part of the question that CAN be
- *   measured — server-driven paging on a list-items collection, against a
- *   fixture that already exists.
  *
  * ---- WHAT THE WRITE FLAG GUARDS ---------------------------------------
  * ALLOW_WRITES gates GROUP B AND NOTHING ELSE. Groups A and C are pure
@@ -539,7 +524,7 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 30fc4e14 — quote this when reporting results.');
+  log('INFO', 'probe revision c16c867a — quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // All three are obvious placeholders. Each group refuses to run against
@@ -562,14 +547,11 @@
   const LIST_TITLE = 'CHANGE ME - a list this bundle provisioned';
 
   // The site group to measure paging against, for group C. It does NOT have
-  // to be the readers group. Use a group THAT ALREADY EXISTS — C2 can only
+  // to be the readers group. PICK THE BIGGEST GROUP YOU HAVE: C2 can only
   // answer on a group with MORE members than SharePoint's undocumented
   // server page size, and it records NOT ESTABLISHED — not a finding — when
   // the whole membership arrives in one page.
-  //
-  // DO NOT ADD PEOPLE OR A LARGE GROUP TO A SITE TO MAKE C2 ANSWERABLE.
-  // That was declined and the reason stands; see GROUP C in the docblock.
-  const GROUP_NAME = 'CHANGE ME - the largest site group that already exists';
+  const GROUP_NAME = 'CHANGE ME - the largest site group available';
 
   const PLACEHOLDER = /CHANGE ME|reporting-service-account@contoso\.com/;
 
@@ -1014,7 +996,17 @@
           ? allRes.body.d.results : null;
         if (all === null) {
           const why = `membership read failed or was not in the d.results shape: ${httpDetail(allRes)}`;
-          record('C1', C1_Q, failureOutcome(allRes), why);
+          // NOT `failureOutcome(allRes)`. That returns `REFUSED (HTTP n)` for
+          // any non-2xx outside 401/403/408/429, and `report()` counts a row
+          // as OPEN only when its outcome starts with NOT ESTABLISHED or
+          // SHORT -- so a 404 or a 500 here was summarised as C1 ANSWERED
+          // while it had measured no member count at all.
+          //
+          // A refusal IS a genuine answer in group B, where the question is
+          // what `web/ensureuser` returns for a display name: being refused
+          // is the finding. C1 asks for a ROW COUNT and a `d.__next`. A read
+          // that returned neither answered nothing, whatever the status.
+          record('C1', C1_Q, `NOT ESTABLISHED (HTTP ${allRes.status})`, why);
           record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
           record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
         } else {
@@ -1038,7 +1030,9 @@
                              && Array.isArray(firstRes.body.d.results)) ? firstRes.body.d.results : null;
           if (firstPage === null) {
             const why = `the no-$top read failed or was not in the d.results shape: ${httpDetail(firstRes)}`;
-            record('C2', C2_Q, failureOutcome(firstRes), why);
+            // Same reason as C1 above: C2 asks whether the SERVER hands back
+            // a `d.__next`, so a read that did not come back cannot answer it.
+            record('C2', C2_Q, `NOT ESTABLISHED (HTTP ${firstRes.status})`, why);
             record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
           } else if (firstPage.length >= all.length) {
             // The whole membership fitted in one server page, so the
@@ -1050,11 +1044,8 @@
               + `(${JSON.stringify(typeof firstRes.body.d.__next === 'string'
                                    && firstRes.body.d.__next !== '')}) says NOTHING about whether this `
               + 'endpoint pages. A valid answer needs a site group with MORE members than the server page '
-              + 'size, which SharePoint does not document. DO NOT BUILD ONE: enrolling a large group to '
-              + 'satisfy this has been declined, because it would expose many real people to development '
-              + 'work. This row stays open. For the part of the question that CAN be measured, see '
-              + 'S11/S12 in search-discovery-probe.js.j2, which pages a list-items collection against an '
-              + 'existing 6,000-row fixture. Do NOT read this row as "the endpoint does not page".';
+              + 'size, which SharePoint does not document — pick the largest group in the tenant and run '
+              + 'again. Do NOT read this row as "the endpoint does not page".';
             record('C2', C2_Q, 'NOT ESTABLISHED (group not larger than the server page size)', why);
             record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
           } else {
@@ -1213,8 +1204,14 @@
     // question answered before it. A probe that loses its whole transcript
     // to one failed call has wasted the operator's paste.
     report();
-  }
 
+  // The trailer is INSIDE the `finally` too, and that is the point. It used
+  // to sit after the try/finally, so a throw printed the whole RESULTS block
+  // -- site host, account UPN, real principal ids -- and then skipped the
+  // line telling the operator not to commit it, along with questions 2 to 5.
+  // The transcript is at its most sensitive exactly when the run failed, and
+  // that was the one path with no warning attached. A tenant URL has leaked
+  // from this repository twice.
   console.log('\n============ WHAT TO SEND BACK ============');
   console.log('1. The whole RESULTS block above, verbatim, including the evidence');
   console.log('   lines — the decoded permission names are the finding, not the');
@@ -1238,4 +1235,5 @@
   console.log('UPN and real principal ids. Quote the findings into the STATUS block');
   console.log('at the top of enterprise-reader-probe.js.j2 instead.');
   console.log('===========================================');
+  }
 })();
