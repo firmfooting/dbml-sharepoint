@@ -138,7 +138,7 @@ class TemplateChoice:
         `Solution.lists` unfiltered made the Review panel promise every list
         in the mapping: a mapping declaring `default: Risk` and
         `archive: Archive` had the panel name both while the bundle created
-        only `Risk`. Unreachable with the thirty-one shipped families, which
+        only `Risk`. Unreachable with the thirty-two shipped families, which
         declare `default` and nothing else -- but the site-role question
         exists precisely for the mappings where it is not.
 

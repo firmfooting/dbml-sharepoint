@@ -18,7 +18,7 @@ pip install git+https://github.com/shauneccles/dbml-sharepoint
 Either puts the `dbml-sharepoint` command on your path. Check it with
 `dbml-sharepoint version`.
 
-The 31 solution templates are part of the package, so an install is all you
+The 32 solution templates are part of the package, so an install is all you
 need to use them — no clone required.
 
 Working from a clone instead, if you are contributing:
