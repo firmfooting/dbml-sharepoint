@@ -151,6 +151,58 @@ def test_the_theme_line_is_skipped_not_shown() -> None:
     assert not load_solution("visitor-log").summary.startswith("Theme")
 
 
+def test_detail_is_the_untruncated_summary() -> None:
+    """The table cell needs a cap; the wizard's detail panel does not.
+
+    Reusing `summary` there cut a sentence mid-word -- `...SharePoint
+    calculates Resi...` -- in a Panel with room for all of it.
+    """
+    long_ones = [
+        s for s in available_solutions() if len(s.detail) > catalogue._SUMMARY_MAX
+    ]
+    assert long_ones, (
+        "no shipped template has a summary long enough to be truncated, so "
+        "this test cannot show that `detail` is not truncated"
+    )
+    for solution in long_ones:
+        assert not solution.detail.endswith(catalogue._ELLIPSIS)
+        # Strip the marker itself rather than re-slicing at a fixed offset:
+        # `_summary` rstrips *after* cutting to `_SUMMARY_MAX - len(_ELLIPSIS)`,
+        # so on a template where that cut lands on whitespace the kept text
+        # is a few characters shorter than the offset. Re-slicing `summary`
+        # at that same offset then grabs a leading fragment of the "..."
+        # marker instead -- true for service-evidence-register and
+        # volunteer-register today. Removing the marker by suffix instead of
+        # by position holds regardless of where the cut landed.
+        assert solution.detail.startswith(
+            solution.summary.removesuffix(catalogue._ELLIPSIS).rstrip(),
+        )
+
+
+def test_detail_is_a_whole_sentence() -> None:
+    """Not a hard cut. Every non-empty detail ends in a full stop."""
+    for solution in available_solutions():
+        if solution.detail:
+            assert solution.detail.endswith("."), solution.id
+
+
+def test_detail_is_ascii() -> None:
+    """Same reason as `summary`: it is rendered into a terminal.
+
+    `test_every_catalogue_entry_is_ascii` covers the other fields; this
+    keeps the new one from being the exception nobody noticed.
+    """
+    offenders = [
+        (s.id, sorted({c for c in s.detail if ord(c) > 127}))
+        for s in available_solutions()
+        if not s.detail.isascii()
+    ]
+    assert not offenders, (
+        "detail text a terminal may not encode -- give each character an "
+        f"ASCII spelling in `_TERMINAL_SPELLINGS`: {offenders}"
+    )
+
+
 def test_every_catalogue_entry_is_ascii() -> None:
     """What the wizard prints must survive a legacy console.
 

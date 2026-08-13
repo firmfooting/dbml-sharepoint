@@ -1869,6 +1869,66 @@ def test_a_note_whose_round_trip_is_unproven_is_refused(
     assert "test/manual/" in finding.message
 
 
+def test_a_run_of_whitespace_in_a_note_is_refused() -> None:
+    """The rule's own rationale named this and the rule did not enforce it.
+
+    `_UNPROVEN_NOTE_CHARACTERS`'s comment lists "a run of spaces collapsed"
+    among the normalisations that would break the byte-for-byte read-back,
+    and names a run of spaces again in the probe that would lift the whole
+    restriction -- but a tuple of single characters could not express a
+    SEQUENCE, so `Risks  and issues` passed. An uncertainty this file calls
+    dangerous has to fail closed like the others, or the read-back aborts
+    part-way through a paste on a partially provisioned site.
+
+    MEASURED 2026-08-12: no shipped family and no example note carries one,
+    so this refuses nothing that exists.
+    """
+    finding = only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note="Risks  and issues.")),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+    )
+
+    assert finding.severity == "error"
+    assert finding.location == Location(Section.ENTITIES, entity="Risk")
+    assert "a run of whitespace" in finding.message
+    assert "use single spaces between words" in finding.message
+
+
+def test_a_single_spaced_note_is_not_refused_for_whitespace() -> None:
+    """The complement, so the rule cannot pass by refusing everything.
+
+    Ordinary prose with single spaces is the shape every shipped note has.
+    Without this, a whitespace rule that matched `\\s` rather than `\\s\\s`
+    would refuse all thirty-one families and still look green here.
+    """
+    assert not [
+        f for f in validate_against_mapping(
+            make_schema(make_table("Risk", note="Risks and issues, one per row.")),
+            make_bundle(entities=["Risk"]),
+        )
+        if f.code == FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP
+    ]
+
+
+def test_an_indented_note_is_not_refused_for_the_indent() -> None:
+    """Matched against the STRIPPED note, like the characters are.
+
+    A DBML note written across an indented block carries leading whitespace
+    the Description never receives, because `list_description` composes with
+    the stripped text. Refusing it would refuse formatting, not content.
+    """
+    assert not [
+        f for f in validate_against_mapping(
+            make_schema(make_table("Risk", note="   Risks and issues.   ")),
+            make_bundle(entities=["Risk"]),
+        )
+        if f.code == FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP
+    ]
+
+
 def test_the_unproven_character_rule_names_a_remedy_for_each_character() -> None:
     """A note carrying BOTH offenders is told about both, once.
 

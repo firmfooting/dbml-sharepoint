@@ -68,6 +68,7 @@ class Solution:
     id: str
     title: str
     summary: str
+    detail: str
     lists: tuple[str, ...]
     prefix: str
     root: Path
