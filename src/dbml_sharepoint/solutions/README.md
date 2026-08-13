@@ -309,11 +309,13 @@ number into a committee pack.
 Unless a template says otherwise: ordinary **site Members work with items
 and cannot break the lists** (no schema or permission rights), working
 groups carry the process-specific access, and an **empty-by-default
-`* List Administrators` group holds Full Control** — the deploy script
+`List Administrators` group holds Full Control** — the deploy script
 enrols the running operator into it for the duration of the run and removes
 them afterwards, so schema changes and redeploys are deliberate acts, not
-accidents. Every list uses `reconcile: exact`: undeclared permission grants
-are removed on deploy and redeploy.
+accidents. `List Administrators` and `Enterprise Readers` are site-wide:
+every shipped family declares them identically and reconciles the same
+group object, not one per family. Every list uses `reconcile: exact`:
+undeclared permission grants are removed on deploy and redeploy.
 
 ### Hardening and drift detection
 

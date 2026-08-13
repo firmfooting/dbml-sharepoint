@@ -117,17 +117,20 @@ Bump `schema_version`, rebuild, re-paste.
 
 ## Enterprise reporting access
 
-The deploy creates an empty `"VI Enterprise Readers"` site group holding `Read` on
-every list in this family. It stays empty unless the build was run with
-`--enterprise-reader <account>`, which enrols exactly that one account
-and nothing else. `rollback.js.txt` does not remove it: rollback deletes
-lists, not site groups or role assignments, so the group and any account
-enrolled in it survive a rollback.
+The deploy declares the `Enterprise Readers` site group — shared with every
+other family deployed to the site — and grants it `Read` on every list in this
+family. The group starts empty only if no family has deployed to the site yet;
+it gains a member when any family's build is run with `--enterprise-reader
+<account>`, which enrols exactly that one account and nothing else.
+`rollback.js.txt` does not remove it: rollback deletes lists, not site groups
+or role assignments, so the group and any account enrolled in it survive a
+rollback.
 
 A later build that omits the flag does not put the group back to empty:
-enrolment only runs when `--enterprise-reader` is given, so an account
-enrolled by an earlier build keeps its membership and its `Read` grant on
-every list. Removing it is manual — clear it in Site permissions > Groups.
+enrolment only runs when `--enterprise-reader` is given, so an account enrolled
+by an earlier build — of this family or any other sharing the site — keeps its
+membership and its `Read` grant on every list it was declared against. Removing
+it is manual — clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody — clear it in Site

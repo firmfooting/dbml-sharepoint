@@ -1321,7 +1321,7 @@ groups:
     only_allow_members_view_membership: true
     require_empty_at_deploy: true        # optional
     enroll_operator_during_deploy: true  # optional, run-scoped
-  - name: "Register Enterprise Readers"
+  - name: "Enterprise Readers"
     description: "Reporting service account, Read only."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -1338,7 +1338,7 @@ list_permissions:
     assignments:
       - principal: { kind: group, name: "Register Editors" }
         level: "Contribute No Delete"
-      - principal: { kind: group, name: "Register Enterprise Readers" }
+      - principal: { kind: group, name: "Enterprise Readers" }
         level: "Read"
       - principal: { kind: associated_owner_group }
         level: "Full Control"
@@ -1516,6 +1516,32 @@ refusal is not proof that no encoding exists. See the dated comment in
 `templates/deploy/_reader_enrolment.js.j2`.
 
 :::
+
+### The two site-wide groups
+
+`Enterprise Readers` and `List Administrators` are **one group per site**, not
+one per family. Every shipped family declares them identically, and a fleet
+test enforces that, because two families deployed to the same site reconcile
+the same group object — the security phase writes the description, owner and
+every behaviour flag on every run, so a family that disagreed would silently
+change the other's settings.
+
+Two consequences worth knowing before you deploy a second family to a site:
+
+- **The reader identity is site-wide.** Every family on the site shares one
+  enterprise reader account. Passing a different `--enterprise-reader` address
+  on a later deploy makes the exclusivity guard find an unexpected member and
+  abort, which is correct rather than a bug.
+- **`List Administrators` holds Full Control for every register on the site.**
+  Anyone who can redeploy one register can redeploy and reschema all of them.
+  Rename the group in your mapping if a site needs that authority fenced per
+  family.
+
+**Upgrading from a prefixed deployment.** If you deployed an earlier version,
+the site holds `XX Enterprise Readers` and `XX List Administrators`. Redeploying
+creates the unprefixed groups and the ACL phase removes the old groups' grants
+from the managed lists, but the empty group objects remain — delete them by
+hand once you have re-enrolled the reader account into `Enterprise Readers`.
 
 ## `demo_items`
 

@@ -136,7 +136,7 @@ These are local operating targets, not service promises encoded in SharePoint.
   because that permission is what bypasses read-own filtering; membership must
   therefore remain tightly controlled, with sealed columns and list-deletion
   protection retained.
-- **OR List Administrators** holds Full Control for controlled maintenance.
+- **List Administrators** holds Full Control for controlled maintenance.
 - Evidence stays in its existing controlled system; the register holds a link
   and de-identified summary.
 
