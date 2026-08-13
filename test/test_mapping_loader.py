@@ -1104,6 +1104,38 @@ def test_a_versioning_override_merges_onto_the_default(tmp_path: Path) -> None:
     assert mapping.versioning_for("Risk").major_version_limit == 100
 
 
+def test_a_null_versioning_override_loads_as_an_empty_override(
+    tmp_path: Path,
+) -> None:
+    """`Project:` with nothing under it must not reach the generators as None.
+
+    YAML parses a bare key as `None`, and the value-check accepted that via
+    `override or {}` -- so it was admitted and then STORED as `None`. Every
+    reader does `versioning_overrides.get(entity, {})`, which hands back the
+    stored `None` rather than the default, and the next `.get` on it raised
+    `AttributeError: 'NoneType' object has no attribute 'get'` part-way
+    through generating a deploy script.
+
+    Reproduced before the fix. An empty block means "no overrides here", so
+    the loader now says that once instead of leaving four call sites to
+    survive a shape it let through.
+    """
+    write_mapping(tmp_path, _views_yaml("""
+        versioning:
+          default:
+            enable_versioning: true
+            major_version_limit: 42
+          overrides:
+            Project:
+    """))
+    mapping = load_mapping(tmp_path / "m.yaml").mapping
+
+    assert mapping.versioning_overrides["Project"] == {}
+    # The part that used to raise.
+    assert mapping.versioning_for("Project") == mapping.versioning_default
+    assert mapping.versioning_for("Project").major_version_limit == 42
+
+
 def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
     """`deafult` never becomes the default view; a filter under `wheres:`
     deploys an UNFILTERED view, which is the one that leaks rows."""

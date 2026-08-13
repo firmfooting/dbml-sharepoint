@@ -239,12 +239,26 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
             default=Versioning.enable_minor_versions,
         ),
     )
-    # Overrides reach jsgen/reportgen/assessgen as a RAW dict and are read
-    # there with bool()/int(), so their values were never checked anywhere.
+    # Overrides reach the generators as a RAW dict and are read there with
+    # bool()/int(), so their values are checked here and nowhere else.
+    #
+    # NORMALISED TO `{}` ON THE WAY IN, which is the whole reason this builds
+    # a dict rather than storing `versioning.overrides` verbatim. YAML parses
+    # a bare `Project:` with nothing under it as `None`, and the value-check
+    # below already tolerated that with `override or {}` -- so a null override
+    # was ACCEPTED and then stored as `None`. Every reader does
+    # `overrides.get(entity, {})`, which returns the stored `None` rather than
+    # the default, and the next `.get` on it raises AttributeError in the
+    # middle of generating a deploy script. An empty override block means "no
+    # overrides for this entity", so say that once, here, instead of leaving
+    # each reader to survive a shape the loader let through.
+    versioning_overrides: dict[str, dict[str, Any]] = {}
     for override_entity, override in _require_mapping(
         versioning.get("overrides"), "versioning.overrides",
     ).items():
-        _check_versioning_values(override or {}, f"versioning.overrides.{override_entity}")
+        context = f"versioning.overrides.{override_entity}"
+        _check_versioning_values(override or {}, context)
+        versioning_overrides[override_entity] = dict(override or {})
 
     watched = []
     for i, item in enumerate(raw.get("watched_lists") or []):
@@ -323,9 +337,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         entities=entities,
         cross_site_reference_columns=cross_site,
         versioning_default=versioning_default,
-        versioning_overrides=dict(
-            _require_mapping(versioning.get("overrides"), "versioning.overrides"),
-        ),
+        versioning_overrides=versioning_overrides,
         enum_sources=enum_source_paths,
         watched_lists=watched,
         polymorphic_patterns=polymorphic,

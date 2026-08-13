@@ -82,16 +82,61 @@ MAX_TEXT_FIELD_LENGTH = 255
 MAX_CALCULATED_FORMULA = 1024
 
 #: The ceiling on a rendered `ValidationFormula`, list-level and column-level
-#: alike. Measured against the same undocumented surface as
-#: `MAX_CALCULATED_FORMULA` and equal to it today, but kept separate: the
-#: calculated-column formula box and the validation formula box are different
-#: SharePoint surfaces, and a probe that moves one has no authority over the
-#: other.
-MAX_VALIDATION_FORMULA = 1024
+#: alike.
+#:
+#: 1023, NOT the 1024 beside it, and the odd one out for a documented reason.
+#: MICROSOFT'S OWN TWO PAGES FOR THE SAME LIST PROPERTY DISAGREE BY ONE:
+#:
+#:   `List.ValidationFormula` (CSOM) — "Its length must be equal to or less
+#:   than 1023."
+#:   https://learn.microsoft.com/previous-versions/office/sharepoint-csom/ee541013(v=office.15)
+#:
+#:   `SPList.ValidationFormula` (server OM) — ArgumentException, "The string
+#:   is too long. The maximum length of a validation formula string is 1024."
+#:   https://learn.microsoft.com/previous-versions/office/sharepoint-server/ee571123(v=office.15)
+#:
+#: Take the lower, twice over. It is the CSOM page, and CSOM/REST is the
+#: surface this tool actually writes through; and it is the conservative one,
+#: so it cannot pass a formula SharePoint would refuse. The cost of being
+#: wrong in this direction is one refused character at build time. The cost of
+#: being wrong in the other is a paste that fails against a live site.
+#:
+#: This project enforced 1024 for every validation surface until the number
+#: was collected here and could be looked up at all — so a 1024-character
+#: formula built clean and would have been refused when the deploy wrote the
+#: list. Every check reads `> MAX_VALIDATION_FORMULA`, so 1023 is the last
+#: accepted length and 1024 is refused; both directions are pinned by
+#: `test_a_list_validation_formula_at_the_documented_limit_is_accepted` and
+#: its one-over twin.
+#:
+#: THE COLUMN-LEVEL FORMULA IS NOT DOCUMENTED AT ALL. Neither
+#: `Field.ValidationFormula` page states a length — the CSOM one documents
+#: only an SPException for an unsupported `FieldTypeKind`. It BORROWS this
+#: bound, deliberately and on the same reasoning as `MAX_CALCULATED_FORMULA`:
+#: an undocumented ceiling fails closed at the tightest number anything
+#: nearby is known to enforce. That is a guard, not a citation. Loosening it
+#: for fields needs a probe under `test/manual/`, not an inference from the
+#: list-level page.
+MAX_VALIDATION_FORMULA = 1_023
 
 #: The ceiling on a `ValidationMessage` — the text an author writes to explain
-#: a refused save. Distinct from the formula bound above; the message is a
-#: separate property that SharePoint stores and renders on its own.
+#: a refused save. A separate property from the formula, which SharePoint
+#: stores and renders on its own, and DOCUMENTED at 1024 on both surfaces this
+#: tool writes:
+#:
+#:   `Field.ValidationMessage` (CSOM) — "Its length must be equal to or less
+#:   than 1024."
+#:   https://learn.microsoft.com/previous-versions/office/sharepoint-csom/ee536718(v=office.15)
+#:
+#:   `SPList.ValidationMessage` (server OM) — ArgumentException, "The maximum
+#:   length of a validation message string is 1024."
+#:   https://learn.microsoft.com/previous-versions/office/sharepoint-server/ee556408(v=office.15)
+#:
+#: So this genuinely is 1024 while the formula beside it is 1023, and the two
+#: pages agree here where they disagreed there. Do NOT "fix" this to 1023 for
+#: symmetry: the numbers differ because Microsoft documents them differently,
+#: and matching them would be asserting a SharePoint behaviour from the shape
+#: of a neighbouring one.
 MAX_VALIDATION_MESSAGE = 1024
 
 # ---------------------------------------------------------------- indexes
