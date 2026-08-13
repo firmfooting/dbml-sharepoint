@@ -49,10 +49,11 @@ from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
-# This module is the family-standard conformance sweep: 23 functions, thirteen
-# of them parametrised across the whole template library, so 31 templates
-# account for 403 of this file's 413 cases and the other ten functions
-# contribute one each. The file is 413 of the suite's 1646 cases.
+# This module is the family-standard conformance sweep, and it dominates the
+# suite's case count. Most of its functions are parametrised across the whole
+# template library, so its cases are roughly conformance-rules x families; the
+# rest contribute one each. That is why the count here grows when a FAMILY is
+# added, not when a test is.
 #
 # The marker is for FOCUS, not speed. Measured: the full suite is 4.66s and
 # `-m "not conformance"` is 4.65s -- skipping a third of the cases saves
@@ -1566,7 +1567,7 @@ def test_the_dbml_project_name_resolves_to_the_family_directory(template: str) -
     that has not been uplifted yet.
 
     This is the check that turns a measurement into an invariant. The
-    underscore-for-hyphen rule was verified across all 31 families rather
+    underscore-for-hyphen rule was verified across every family rather
     than assumed, and without this test a new family declaring
     `Project asset_reg` inside `solutions/asset-register/` would deploy lists
     attributing themselves to a family that does not exist -- silently, since
@@ -1641,7 +1642,7 @@ def test_no_shipped_note_eats_into_the_marker_growth_reserve(template: str) -> N
     The sweep above says each note fits. This one says the CORPUS still fits
     after the marker grows -- which is a different property, and the one that
     decides whether a marker change is a one-line edit or an editorial pass
-    over 31 families.
+    over every shipped family.
 
     It is measured against the raw arithmetic rather than against
     `note_budget`, so it keeps meaning what it says if the reserve is ever
@@ -1668,9 +1669,9 @@ def test_no_shipped_note_contains_a_character_of_unproven_round_trip(
     """No family may reintroduce an `&` or a line break into a table note.
 
     `ENTITY_NOTE_MAY_NOT_ROUND_TRIP` refuses one at build time; this pins the
-    CORPUS, the same pairing the two sweeps above have with their rules. All
-    54 notes were already clean when the rule was written, so this sweep is
-    a ratchet rather than a discovery -- what it stops is the 55th.
+    CORPUS, the same pairing the two sweeps above have with their rules.
+    Every note was already clean when the rule was written, so this sweep is
+    a ratchet rather than a discovery -- what it stops is the next one.
 
     The characters come from the rule's own table rather than being re-spelled
     here. A sweep with its own copy is how a corpus comes to satisfy a rule

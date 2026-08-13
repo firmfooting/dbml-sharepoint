@@ -22,9 +22,9 @@ def test_every_shipped_family_is_offered() -> None:
     """Discovered by glob, never by roster.
 
     Compared against the directory listing rather than against a number:
-    an assertion that thirty templates exist goes stale the moment a
-    thirty-first is added, and the failure would read as a bug in the
-    catalogue rather than as a template nobody wired up.
+    an assertion that some fixed number of templates exists goes stale the
+    moment the next one is added, and the failure would read as a bug in
+    the catalogue rather than as a template nobody wired up.
     """
     on_disk = {
         path.parent.parent.name
@@ -144,10 +144,10 @@ def test_a_missing_solutions_directory_is_empty_not_an_error(
 
 
 def test_the_theme_line_is_skipped_not_shown() -> None:
-    """Fourteen of the thirty READMEs open with `*Theme: ...*`, which is
-    metadata about the collection rather than a description of the
-    template. It is skipped rather than parsed because it wraps
-    inconsistently and only half the families carry it."""
+    """Many READMEs open with `*Theme: ...*`, which is metadata about the
+    collection rather than a description of the template. It is skipped
+    rather than parsed because it wraps inconsistently and only about half
+    the families carry it."""
     assert not load_solution("visitor-log").summary.startswith("Theme")
 
 
@@ -207,12 +207,12 @@ def test_every_catalogue_entry_is_ascii() -> None:
     """What the wizard prints must survive a legacy console.
 
     The picker renders every title into a rich table and the chosen
-    template's summary into a panel, before any build has run. Ten of the
-    thirty families carried typographic punctuation from their README --
+    template's summary into a panel, before any build has run. Several
+    families carried typographic punctuation from their README --
     including `→`, which no Windows console code page can encode, so picking
     one could raise `UnicodeEncodeError` from inside rich.
 
-    Asserted over the whole shipped catalogue rather than the ten, so a new
+    Asserted over the whole shipped catalogue rather than those, so a new
     template introducing a character `_TERMINAL_SPELLINGS` does not know
     fails here -- visibly, and fixable in one line -- rather than being
     silently mangled or crashing somebody's wizard.

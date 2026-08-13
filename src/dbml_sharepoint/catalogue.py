@@ -3,9 +3,9 @@
 One `Solution` per directory under `solutions/`. Everything here is
 read-only discovery: nothing in this module writes, validates or deploys.
 
-Discovered by glob, never by roster. A hardcoded list of thirty names fails
-open — a new template is simply never offered, and every test stays green
-saying so. `.github/workflows/ci.yml` builds the same set the same way, and
+Discovered by glob, never by roster. A hardcoded list of names fails open —
+a new template is simply never offered, and every test stays green saying
+so. `.github/workflows/ci.yml` builds the same set the same way, and
 `test_template_standard.py` derives its conformance cases from it.
 
 The directory is located the way `templating.py` locates the Jinja
@@ -110,7 +110,7 @@ class Solution:
 #: The READMEs are documentation read in a browser and they use real
 #: punctuation; that is house style and should stay. But the wizard renders
 #: the title and summary into a TERMINAL, where the encoding is the console's
-#: choice -- and ten of the thirty shipped families carry one of these. `→`
+#: choice -- and a good many shipped families carry one of these. `→`
 #: cannot be encoded by cp1252, cp850 OR cp437, so picking a template on a
 #: legacy Windows console could raise `UnicodeEncodeError` from inside rich.
 #:
@@ -174,15 +174,15 @@ def _lead_sentence(readme: str) -> str:
     TABLE CELL; a Panel has no such constraint, and reusing the capped text
     there cut `...SharePoint calculates Resi...` out of risk-register.
 
-    Fourteen of the thirty READMEs open with a `*Theme: ...*` line, which
+    Many, but not all, READMEs open with a `*Theme: ...*` line, which
     sometimes wraps onto a second line and sometimes carries a trailing
     qualifier. It is not consistent enough to key a grouping off, so it is
     skipped rather than parsed.
 
     Returns "" when there is nothing usable. The caller decides what an
-    empty summary looks like; `test_catalogue` asserts none of the shipped
-    thirty actually produce one, so an empty string means a NEW template
-    broke the convention rather than that this is a normal state.
+    empty summary looks like; `test_catalogue` asserts no shipped family
+    actually produces one, so an empty string means a NEW template broke
+    the convention rather than that this is a normal state.
     """
     lines = readme.splitlines()
     # Drop the H1 and anything before it.
@@ -249,8 +249,8 @@ def _mapping_facts(mapping_path: Path) -> tuple[tuple[str, ...], str]:
     Deliberately a plain `yaml.safe_load` of two keys. `load_mapping` parses
     and folds every section and raises on anything it dislikes, so using it
     here would let one malformed template take down the whole picker --
-    including the twenty-nine that are fine. Listing what is available must
-    not depend on all of it being valid.
+    including every other family, all of them fine. Listing what is
+    available must not depend on all of it being valid.
 
     The build path still goes through the real loader, so nothing is
     accepted here that would be refused there.

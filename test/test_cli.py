@@ -1503,7 +1503,7 @@ def test_build_defaults_its_inputs_to_the_project_layout(
     """Inside a scaffolded project the three paths are already known.
 
     `catalogue` declares them and `test_template_standard` enforces them
-    across all 30 families, so making the operator retype them on every
+    across every family, so making the operator retype them on every
     rebuild -- the most repeated action in the tool -- was asking for
     something we already had.
     """

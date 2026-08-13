@@ -61,7 +61,7 @@ uv tool install git+https://github.com/shauneccles/dbml-sharepoint
 # or: pip install git+https://github.com/shauneccles/dbml-sharepoint
 ```
 
-The 30 solution templates are part of the package, so an install is all you
+The solution templates are part of the package, so an install is all you
 need to use them — no clone required.
 
 Or work from a clone, if you are contributing:
@@ -75,7 +75,7 @@ uv run dbml-sharepoint version
 
 ## Quickstart
 
-Run it with no arguments and pick one of the 32 shipped templates:
+Run it with no arguments and pick one of the shipped templates:
 
 ```bash
 dbml-sharepoint
@@ -221,7 +221,7 @@ spine sits at the package root:
 | `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
 | root | `bundle` · `templating` · `cli` · `wizard` · `catalogue` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI and its interactive wizard, the extension protocol |
 
-The 32 shipped solution templates live in `src/dbml_sharepoint/solutions/`
+The shipped solution templates live in `src/dbml_sharepoint/solutions/`
 — inside the package, because only files under it reach the wheel and the
 wizard's audience is somebody who ran `uvx dbml-sharepoint` and never
 cloned this repository. Not to be confused with `templates/` below, which
