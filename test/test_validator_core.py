@@ -1418,7 +1418,7 @@ def test_a_group_owned_by_an_undeclared_group_is_an_error() -> None:
 def _reader_findings(
     *, require_empty: bool = False, level: str | None = "Read",
     second_reader: bool = False, override_level: str | None = None,
-    enroll_operator: bool = False,
+    enroll_operator: bool = False, members_edit: bool = False,
 ) -> list[Finding]:
     """One correctly-shaped mapping with a single knob turned per test.
 
@@ -1430,7 +1430,7 @@ def _reader_findings(
     def reader(name: str) -> SiteGroup:
         return SiteGroup(
             name=name, description="", owner_group="Site Owners",
-            allow_members_edit_membership=False,
+            allow_members_edit_membership=members_edit,
             allow_request_to_join_leave=False,
             auto_accept_request_to_join_leave=False,
             only_allow_members_view_membership=False,
@@ -1588,14 +1588,168 @@ def test_a_reader_group_granted_read_on_default_and_override_is_clean() -> None:
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
 
 
+def test_a_reader_group_whose_members_may_edit_membership_is_refused() -> None:
+    """The exclusivity guard would hold only until the deploy finished.
+
+    The security phase reconciles `allow_members_edit_membership` BEFORE
+    Phase 1.4 enrols the reader, so the account the guard exists to isolate
+    can then add principals to its own group. Every later addition inherits
+    the group's Read, and nothing in a subsequent deploy notices: the
+    exclusivity check reads membership at enrolment time, finds the named
+    reader, and passes.
+
+    So the one-account promise the manifest prints is true for the length
+    of one run and unenforceable afterwards, which is worse than not making
+    it.
+    """
+    finding = only(
+        _reader_findings(members_edit=True),
+        FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP,
+    )
+    assert finding.severity == "error"
+    assert "XX Enterprise Readers" in finding.message
+
+
 def test_a_correctly_declared_reader_group_is_clean() -> None:
-    """The shape Task 3 writes into 31 mappings must pass all four rules."""
+    """The shape the shipped mappings write must pass every reader rule."""
     findings = _reader_findings()
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_REQUIRES_EMPTY)
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED)
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_OVER_PRIVILEGED)
     none_of(findings, FindingCode.MULTIPLE_ENTERPRISE_READER_GROUPS)
     none_of(findings, FindingCode.ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR)
+    none_of(
+        findings,
+        FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP,
+    )
+
+
+def _level_findings(name: str) -> list[Finding]:
+    """Validate a mapping declaring one custom permission level called `name`."""
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[CustomPermissionLevel(
+                    name=name, description="test",
+                    base_permissions=["ViewListItems"],
+                )],
+                groups=[], default_policy=None, overrides={},
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize("name", [
+    "Full Control", "Design", "Edit", "Contribute", "Read", "Limited Access",
+    "Web-Only Limited Access", "Approve", "Manage Hierarchy",
+    "Restricted Read", "View Only",
+])
+def test_a_permission_level_named_after_a_builtin_is_refused(name: str) -> None:
+    """Declaring one does not create a second level -- it rewrites the site's.
+
+    `_security_principals.js.j2` reconciles a same-name role definition
+    rather than skipping it, MERGEing `Description` and `BasePermissions`
+    onto whatever is already there. That is deliberate, so a drifted custom
+    level cannot silently keep edit rights. Pointed at a built-in it means
+    the deploy redefines `Read` for EVERY principal on the site that holds
+    it, not only the account this mapping cares about.
+
+    Parametrised over all eleven Learn documents, including
+    `Web-Only Limited Access`, which the commonly-quoted list of ten omits.
+    """
+    finding = only(
+        _level_findings(name),
+        FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN,
+    )
+    assert finding.severity == "error"
+    assert name in finding.message
+
+
+def test_a_builtin_level_name_in_another_case_is_refused() -> None:
+    """One stance on case, not two.
+
+    `duplicate_permission_level_name` already casefolds, on the stated
+    grounds that SharePoint resolves and de-duplicates level names
+    case-insensitively -- two declarations differing only in case are one
+    object on the site. A reserved-name rule that compared exactly would
+    contradict the rule immediately below it in the same loop, and `read`
+    would reach the deploy and reconcile the built-in anyway.
+
+    It refuses nothing that exists: no shipped family declares a level in
+    any case variant of a built-in name.
+    """
+    only(
+        _level_findings("read"),
+        FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN,
+    )
+
+
+@pytest.mark.parametrize("level", ["Limited Access", "Web-Only Limited Access"])
+def test_a_derived_level_cannot_be_assigned(level: str) -> None:
+    """SharePoint decides these, so a mapping asking for one is not a grant.
+
+    Learn is explicit that Limited Access is assigned by SharePoint and
+    cannot be assigned directly: it is what a principal ends up holding on
+    a parent so it can reach one item granted below it, and it grants no
+    access of its own. Written into `list_permissions` it is a request the
+    site does not honour as written, leaving effective access decided by
+    inheritance rather than by anything a reader of the mapping can see.
+
+    It was accepted until now because `BUILT_IN_LEVELS` served as the
+    assignable set as well as the reserved one, and it contains every
+    built-in whether assignable or not.
+    """
+    finding = only(
+        _reader_findings(level=level),
+        FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE,
+    )
+    assert finding.severity == "error"
+    assert level in finding.message
+
+
+def test_a_derived_level_is_not_reported_as_unknown() -> None:
+    """The message has to be true, not merely a refusal.
+
+    `Limited Access` IS a built-in, so `unknown_permission_level` -- "not a
+    built-in or declared custom permission level" -- would send the author
+    hunting for a typo instead of at the grant they cannot make. The two
+    rules sit in one if/elif so they can never both fire.
+    """
+    none_of(
+        _reader_findings(level="Limited Access"),
+        FindingCode.UNKNOWN_PERMISSION_LEVEL,
+    )
+
+
+def test_an_assignable_builtin_level_is_still_accepted() -> None:
+    """The complement, so narrowing the assignable set cannot go too far.
+
+    `View Only` is the level this same change ADDED to the built-ins; it is
+    assignable, and pinning it here is what stops a later edit sweeping the
+    whole reserved set out of the assignable one.
+    """
+    none_of(
+        _reader_findings(level="View Only"),
+        FindingCode.UNKNOWN_PERMISSION_LEVEL,
+    )
+    none_of(
+        _reader_findings(level="View Only"),
+        FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE,
+    )
+
+
+def test_a_custom_permission_level_name_is_not_refused() -> None:
+    """The complement, so the rule cannot pass by refusing everything.
+
+    Without this, a predicate inverted to match any name at all would
+    still make the test above green while refusing every shipped mapping.
+    """
+    none_of(
+        _level_findings("XX Reporting Read"),
+        FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN,
+    )
 
 
 def test_an_acl_naming_an_undeclared_group_is_an_error() -> None:

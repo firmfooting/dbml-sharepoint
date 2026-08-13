@@ -78,11 +78,57 @@ def base_permissions_to_high_low(perm_names: list[str]) -> HighLow:
 
 
 # Built-in level names that don't need creation; the deployer just resolves
-# them by name when binding role assignments.
+# them by name when binding role assignments. Also the RESERVED set: a
+# mapping may not declare a `permission_levels` entry named after one, because
+# `_security_principals.js.j2` reconciles a same-name role definition rather
+# than skipping it, and would rewrite the site's copy for every principal.
+#
+# All eleven from Microsoft Learn, "Permission levels in SharePoint"
+# (https://learn.microsoft.com/sharepoint/understanding-permission-levels),
+# checked 2026-08-13 rather than written from memory. `View Only` and
+# `Web-Only Limited Access` were both missing; the second is in the same Learn
+# table and is routinely left out of the commonly-quoted list of ten.
+#
+# ONE CAVEAT this set cannot express: Approve, Manage Hierarchy and Restricted
+# Read are publishing-template levels and may not exist on a modern team or
+# communication site. They are reserved anyway -- see DERIVED_BUILT_IN_LEVELS
+# below for the neighbouring case, and the reserved-name rule in
+# checks/_permissions.py for why a build that cannot see the target site fails
+# closed rather than guessing which template it will meet.
+#
+# The names are ENGLISH. Built-in levels are locale-dependent, so on a
+# non-English tenant none of these match and a mapping could still redefine a
+# built-in. Closing that means resolving by RoleType or Id against a live
+# site. `ENTERPRISE_READER_GROUP_OVER_PRIVILEGED` has the same blind spot.
 BUILT_IN_LEVELS: frozenset[str] = frozenset({
     "Read", "Contribute", "Edit", "Design", "Full Control",
-    "Limited Access", "Approve", "Manage Hierarchy", "Restricted Read",
+    "Limited Access", "Web-Only Limited Access", "Approve",
+    "Manage Hierarchy", "Restricted Read", "View Only",
 })
+
+#: Built-in levels SharePoint DERIVES and a mapping may not assign.
+#:
+#: Learn is explicit that Limited Access is "automatically assigned by
+#: SharePoint" and "cannot be assigned directly": it is what a principal ends
+#: up holding on a parent web or list so it can reach one item it was granted
+#: below, and it "grants no additional access" on its own. Web-Only Limited
+#: Access is the same mechanism scoped to the web object.
+#:
+#: Writing one into `list_permissions` is therefore not a grant that happens to
+#: be narrow -- it is a request the site does not honour as written, and the
+#: deploy would bind a role assignment whose meaning is decided by SharePoint's
+#: own inheritance rather than by the mapping. A grant nobody can predict from
+#: reading the mapping is exactly what this repository refuses.
+#:
+#: They stay RESERVED in BUILT_IN_LEVELS above -- a custom level may not take
+#: the name either -- so the two sets differ on purpose and neither is a
+#: superset shortcut for the other.
+DERIVED_BUILT_IN_LEVELS: frozenset[str] = frozenset({
+    "Limited Access", "Web-Only Limited Access",
+})
+
+#: What a `list_permissions` assignment may name without declaring it.
+ASSIGNABLE_BUILT_IN_LEVELS: frozenset[str] = BUILT_IN_LEVELS - DERIVED_BUILT_IN_LEVELS
 
 
 def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) -> bool:
