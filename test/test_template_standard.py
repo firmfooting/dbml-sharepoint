@@ -1544,6 +1544,37 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
         )
 
 
+@pytest.mark.parametrize("template", _uplifted())
+def test_the_administrators_group_holds_full_control_everywhere(
+    template: str,
+) -> None:
+    """Full Control on the default policy is not Full Control on an override.
+
+    An override carries its OWN complete assignment list rather than adding
+    to the default, so a family with an override that forgot the
+    administrators group leaves that one list unmanageable by the people the
+    deploy just enrolled -- and the deploy still reports success.
+
+    The reader half of this is
+    `test_the_reader_group_is_granted_read_on_every_policy_block`; this is
+    the same shape for the group that can actually change things.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    perms = mapping.permissions
+    for policy in [perms.default_policy, *perms.overrides.values()]:
+        assert policy is not None
+        granted = {
+            a.level for a in policy.assignments
+            if a.principal.kind == "group"
+            and a.principal.name == "List Administrators"
+        }
+        assert granted == {"Full Control"}, (
+            f"{template}: a policy block grants List Administrators "
+            f"{granted or 'nothing'}, not Full Control"
+        )
+
+
 #: The two groups that are ONE object per site rather than one per family.
 #:
 #: Two families deployed to the same site reconcile the same group, and the
