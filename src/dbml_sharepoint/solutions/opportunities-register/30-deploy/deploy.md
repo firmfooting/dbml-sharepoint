@@ -101,11 +101,11 @@ starts `[DEMO]`; delete the rows before go-live.
 
 - [ ] The list has broken inheritance and exact ACL reconciliation.
 - [ ] Only **OR Opportunity Submitters**, **OR Opportunity Stewards**,
-      **List Administrators** and **Enterprise Readers** have declared
+      **dbml List Administrators** and **dbml Enterprise Readers** have declared
       direct grants. Associated Site Members and Site Owners have no declared
       list grant.
 - [ ] Submitters hold `OR Submit Only`; Stewards hold `OR Steward No Delete`;
-      Administrators hold Full Control; Enterprise Readers hold `Read`.
+      Administrators hold Full Control; dbml Enterprise Readers hold `Read`.
 - [ ] `OR Steward No Delete` includes `Manage Lists`, which SharePoint requires
       for Stewards to see every item despite read-own filtering. It does not
       include Delete Items. Keep the group small and verify sealed columns and
@@ -196,7 +196,7 @@ data.
 
 ## Enterprise reporting access
 
-The deploy declares the `Enterprise Readers` site group — shared with every
+The deploy declares the `dbml Enterprise Readers` site group — shared with every
 other family deployed to the site — and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader

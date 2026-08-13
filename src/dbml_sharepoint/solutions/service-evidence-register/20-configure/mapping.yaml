@@ -58,7 +58,7 @@ groups:
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
-  - name: "List Administrators"
+  - name: "dbml List Administrators"
     description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -66,7 +66,7 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
     enroll_operator_during_deploy: true
-  - name: "Enterprise Readers"
+  - name: "dbml Enterprise Readers"
     description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -101,9 +101,9 @@ list_permissions:
         level: "SE Log Only"
       - principal: { kind: group, name: "SE Evidence Curators" }
         level: "Contribute"
-      - principal: { kind: group, name: "List Administrators" }
+      - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
-      - principal: { kind: group, name: "Enterprise Readers" }
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
         level: "Read"
   overrides:
     ServiceIssue:
@@ -112,9 +112,9 @@ list_permissions:
       assignments:
         - principal: { kind: group, name: "SE Evidence Curators" }
           level: "Contribute"
-        - principal: { kind: group, name: "List Administrators" }
+        - principal: { kind: group, name: "dbml List Administrators" }
           level: "Full Control"
-        - principal: { kind: group, name: "Enterprise Readers" }
+        - principal: { kind: group, name: "dbml Enterprise Readers" }
           level: "Read"
 
 seal_columns: true

@@ -115,7 +115,7 @@ site that already holds real contracts.
       the colour drops.
 - [ ] As an ordinary site Member: the list is **read-only**.
 - [ ] Site permissions → Groups: `CT Contract Managers` (empty — now add
-      your contract managers) and `List Administrators` (empty — leave
+      your contract managers) and `dbml List Administrators` (empty — leave
       it empty; the deploy script self-enrols per run).
 - [ ] Delete the test row (as a Contract Manager).
 - [ ] Even as an owner: changing a deployed column's type, choices or
@@ -140,7 +140,7 @@ comes back under its declared title.
 
 ## Enterprise reporting access
 
-The deploy declares the `Enterprise Readers` site group — shared with every
+The deploy declares the `dbml Enterprise Readers` site group — shared with every
 other family deployed to the site — and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader

@@ -186,7 +186,7 @@ rows of their own.
 
 ## Enterprise reporting access
 
-The deploy declares the `Enterprise Readers` site group — shared with every
+The deploy declares the `dbml Enterprise Readers` site group — shared with every
 other family deployed to the site — and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader

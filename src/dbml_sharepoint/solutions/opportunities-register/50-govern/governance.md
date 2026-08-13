@@ -59,7 +59,7 @@ Exact ACL reconciliation grants access only to:
 
 - **OR Opportunity Submitters** — `OR Submit Only`;
 - **OR Opportunity Stewards** — add/read/update every item without item-delete;
-- **List Administrators** — Full Control for controlled maintenance.
+- **dbml List Administrators** — Full Control for controlled maintenance.
 
 Associated Site Members and Site Owners receive no declared grant. Site
 collection administrators may still possess platform-level authority; audit

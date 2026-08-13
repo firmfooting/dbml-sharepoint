@@ -213,7 +213,7 @@ exist.
 ## Who belongs in which group
 
 The deploy declares three site groups: `RACI Matrix Maintainers`, specific to
-this family, and `List Administrators` and `Enterprise Readers`, shared with
+this family, and `dbml List Administrators` and `dbml Enterprise Readers`, shared with
 every other family deployed to the site. The split is the shared fleet model,
 and the reason it is right here is specific: **a register whose subjects
 can rewrite their own accountability is not a register.**
@@ -221,8 +221,8 @@ can rewrite their own accountability is not a register.**
 | Group | Holds | Who belongs in it |
 |---|---|---|
 | `RACI Matrix Maintainers` | Contribute on all three lists | The small group who maintain the register — governance, quality or executive support. Not "everybody named in a row" |
-| `List Administrators` | Full Control site-wide — every register on the site, not just these three | Nobody, by default. The deploy enrols the running operator for the duration of its own run and removes them afterwards, so schema changes and redeploys are deliberate acts |
-| `Enterprise Readers` | Read site-wide — every register on the site, not just these three | Nobody, by default. Read-only accounts for aggregated cross-site reporting; membership is operator-owned |
+| `dbml List Administrators` | Full Control site-wide — every register on the site, not just these three | Nobody, by default. The deploy enrols the running operator for the duration of its own run and removes them afterwards, so schema changes and redeploys are deliberate acts |
+| `dbml Enterprise Readers` | Read site-wide — every register on the site, not just these three | Nobody, by default. Read-only accounts for aggregated cross-site reporting; membership is operator-owned |
 
 Everyone else — the site's associated members and owners — gets **Read**.
 That is the intended posture: the matrix is written centrally and read by
@@ -257,7 +257,7 @@ export the register first.
 
 ## Enterprise reporting access
 
-The deploy declares the `Enterprise Readers` site group — shared with every
+The deploy declares the `dbml Enterprise Readers` site group — shared with every
 other family deployed to the site — and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader

@@ -1515,7 +1515,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
         f"{template}: expected exactly one enterprise-reader group, "
         f"got {[g.name for g in readers]}"
     )
-    assert readers[0].name == "Enterprise Readers"
+    assert readers[0].name == "dbml Enterprise Readers"
 
 
 @pytest.mark.parametrize("template", _all_templates())
@@ -1572,10 +1572,10 @@ def test_the_administrators_group_holds_full_control_everywhere(
         granted = {
             a.level for a in policy.assignments
             if a.principal.kind == "group"
-            and a.principal.name == "List Administrators"
+            and a.principal.name == "dbml List Administrators"
         }
         assert granted == {"Full Control"}, (
-            f"{template}: policy block {block_name!r} grants List Administrators "
+            f"{template}: policy block {block_name!r} grants dbml List Administrators "
             f"{granted or 'nothing'}, not Full Control"
         )
 
@@ -1593,8 +1593,19 @@ def test_the_administrators_group_holds_full_control_everywhere(
 #: because the alternative silently WIDENS who can see the membership of a
 #: Full Control group, and that direction needs an argument rather than a
 #: majority.
+#: The role each shared group's name ends with, independent of the `dbml`
+#: stamp in front of it.
+#:
+#: A left-over `RR Enterprise Readers` from before the rename shares this
+#: SUFFIX but not the full name, and the suffix is what identifies the role.
+#: `test_no_family_prefixes_a_shared_group` matches on these rather than on
+#: the keys of SHARED_GROUPS for exactly that reason.
+SHARED_GROUP_SUFFIXES: tuple[str, ...] = (
+    "Enterprise Readers", "List Administrators",
+)
+
 SHARED_GROUPS: dict[str, dict[str, object]] = {
-    "Enterprise Readers": {
+    "dbml Enterprise Readers": {
         "description": (
             "Read-only accounts for aggregated cross-site reporting. "
             "Empty by default; membership is operator-owned."
@@ -1608,7 +1619,7 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "enroll_operator_during_deploy": False,
         "enroll_enterprise_reader": True,
     },
-    "List Administrators": {
+    "dbml List Administrators": {
         "description": (
             "Full Control for schema changes and redeploys. Empty by "
             "default; the deploy script enrols the running operator per run."
@@ -1684,17 +1695,22 @@ def test_every_family_declares_the_shared_groups_identically(
 def test_no_family_prefixes_a_shared_group(template: str) -> None:
     """The complement, so the rule above cannot pass while the old names survive.
 
-    Without this, a family that declared BOTH `Enterprise Readers` and a
+    Without this, a family that declared BOTH `dbml Enterprise Readers` and a
     left-over `RR Enterprise Readers` would satisfy the sweep above while
     still creating two groups on the site -- which is the exact failure this
     change exists to remove.
+
+    Matched on the ROLE SUFFIX, not on the full shared name. `RR Enterprise
+    Readers` does not end with `dbml Enterprise Readers`, so testing against
+    the full name would let precisely the straggler this test exists to catch
+    walk past it.
     """
     mapping = _load(template).mapping
     assert mapping.permissions is not None
     stragglers = [
         g.name for g in mapping.permissions.groups
         if g.name not in SHARED_GROUPS
-        and any(g.name.endswith(shared) for shared in SHARED_GROUPS)
+        and any(g.name.endswith(suffix) for suffix in SHARED_GROUP_SUFFIXES)
     ]
     assert not stragglers, (
         f"{template}: still declares prefixed {stragglers}; the shared "

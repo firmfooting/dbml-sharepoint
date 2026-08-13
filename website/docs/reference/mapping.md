@@ -1519,7 +1519,7 @@ refusal is not proof that no encoding exists. See the dated comment in
 
 ### The two site-wide groups
 
-`Enterprise Readers` and `List Administrators` are **one group per site**, not
+`dbml Enterprise Readers` and `dbml List Administrators` are **one group per site**, not
 one per family. Every shipped family declares them identically, and a fleet
 test enforces that, because two families deployed to the same site reconcile
 the same group object — the security phase writes the description, owner and
@@ -1532,16 +1532,24 @@ Two consequences worth knowing before you deploy a second family to a site:
   enterprise reader account. Passing a different `--enterprise-reader` address
   on a later deploy makes the exclusivity guard find an unexpected member and
   abort, which is correct rather than a bug.
-- **`List Administrators` holds Full Control for every register on the site.**
+- **`dbml List Administrators` holds Full Control for every register on the site.**
   Anyone who can redeploy one register can redeploy and reschema all of them.
   Rename the group in your mapping if a site needs that authority fenced per
   family.
 
-**Upgrading from a prefixed deployment.** If you deployed an earlier version,
-the site holds `XX Enterprise Readers` and `XX List Administrators`. Redeploying
-creates the unprefixed groups and the ACL phase removes the old groups' grants
-from the managed lists, but the empty group objects remain — delete them by
-hand once you have re-enrolled the reader account into `Enterprise Readers`.
+**Why the `dbml` prefix.** These two are the only groups the tool names for
+itself rather than for your organisation, so they carry the tool's name. That
+is deliberate: an unprefixed `List Administrators` is exactly the name a site
+administrator may already have used, and the deploy adopts a group it finds by
+name. The prefix makes that collision unlikely rather than plausible.
+
+**Upgrading from a family-prefixed deployment.** If you deployed an earlier
+version, the site holds a per-family pair such as `RR Enterprise Readers` and
+`RR List Administrators` — one of each per family you deployed. Redeploying
+creates the two `dbml`-prefixed groups, and the ACL phase removes the old
+groups' grants from the managed lists, but the empty group objects remain.
+Delete them by hand once you have re-enrolled the reader account into
+`dbml Enterprise Readers`.
 
 ## `demo_items`
 

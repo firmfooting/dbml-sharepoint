@@ -108,11 +108,11 @@ Delete the rows before go-live.
 
 - [ ] All three lists have broken inheritance and exact ACL reconciliation.
 - [ ] Only **SE Evidence Contributors**, **SE Evidence Curators**,
-      **List Administrators** and **Enterprise Readers** hold declared
+      **dbml List Administrators** and **dbml Enterprise Readers** hold declared
       direct grants on `SE_ServiceEvent` and `SE_FollowUp`. Associated Site
       Members and Site Owners have no declared list grant on any of the three.
 - [ ] **`SE_ServiceIssue` grants nothing to Contributors** — only Curators
-      (Contribute), Administrators (Full Control) and Enterprise Readers
+      (Contribute), Administrators (Full Control) and dbml Enterprise Readers
       (`Read`).
 - [ ] Contributors hold `SE Log Only`; Curators hold Contribute;
       Administrators hold Full Control.
@@ -226,7 +226,7 @@ Deletion protection is UI friction, not authority to destroy data.
 
 ## Enterprise reporting access
 
-The deploy declares the `Enterprise Readers` site group — shared with every
+The deploy declares the `dbml Enterprise Readers` site group — shared with every
 other family deployed to the site — and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
