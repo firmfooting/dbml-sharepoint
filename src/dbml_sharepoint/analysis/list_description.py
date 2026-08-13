@@ -71,13 +71,14 @@ MARKER_TEMPLATE = "Provisioned by dbml-sharepoint from {family}/{entity}."
 #   - A LONGER FAMILY OR ENTITY NAME. The budget already depends on both, so a
 #     family renamed to something more descriptive shortens every note in it.
 #
-# WHY IT HAD TO BE RESERVED RATHER THAN LEFT TO CHANCE. Measured over the 54
-# shipped notes when they were first written, the median note left 20
+# WHY IT HAD TO BE RESERVED RATHER THAN LEFT TO CHANCE. MEASURED 2026-08-12
+# over the 54 shipped notes as they then stood, the median note left 20
 # characters spare and the tightest left 9. That corpus tolerates no growth at
 # all: a marker one word longer would have turned roughly half the shipped
 # families into build ERRORS -- `ENTITY_NOTE_TOO_LONG_FOR_MARKER` is an error,
-# so the family stops building -- and the fix would have been re-editing 25
-# templates' prose under whatever deadline the marker change arrived with.
+# so the family stops building -- and the fix would have been re-editing that
+# half of the catalogue's prose under whatever deadline the marker change
+# arrived with.
 # Charging the reserve to the budget makes that a change to one constant.
 #
 # 32 IS A JUDGEMENT, not a measurement, and it is deliberately generous enough
@@ -122,7 +123,7 @@ NAME_BUDGET = (
 def normalise_family(project_name: str) -> str:
     """The family slug for a DBML `Project` name.
 
-    MEASURED against the shipped catalogue, not assumed: for all 31 families
+    MEASURED against the shipped catalogue, not assumed: for every family
     the DBML `Project` name is the solution directory name with underscores
     for hyphens (`Project routine_checks` in `solutions/routine-checks/`), so
     swapping them back makes the marker name the family the way the docs,

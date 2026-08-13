@@ -179,7 +179,7 @@ def _choice(prefix: str = "RR_", *, lists: tuple[str, ...] = ("Risk",),
     disk -- so a scaffolded family would only slow the test down.
 
     `roles` pairs positionally with `lists` and defaults to `default` for
-    every entity, which is what all thirty-two shipped families declare.
+    every entity, which is what every shipped family declares.
     Pass it to build the multi-role shape none of them has.
     """
     roles = roles or ("default",) * len(lists)
@@ -2240,8 +2240,8 @@ def test_the_facts_match_between_the_shipped_family_and_the_copy(
     """
     solutions = available_solutions()
     # A guard, not a formality: the loop below would pass just as happily
-    # over an empty roster, proving nothing while looking like it walked all
-    # thirty-two families. `test_no_two_templates_declare_the_same_entity_name`
+    # over an empty roster, proving nothing while looking like it walked
+    # every family. `test_no_two_templates_declare_the_same_entity_name`
     # in test_template_standard.py uses the same shape for the same reason.
     assert len(solutions) == 32, (
         f"{len(solutions)} templates discovered, not the 32 this walk was "
