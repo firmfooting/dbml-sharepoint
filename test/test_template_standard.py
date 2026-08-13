@@ -1515,7 +1515,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
         f"{template}: expected exactly one enterprise-reader group, "
         f"got {[g.name for g in readers]}"
     )
-    assert readers[0].name.endswith(" Enterprise Readers")
+    assert readers[0].name == "Enterprise Readers"
 
 
 @pytest.mark.parametrize("template", _uplifted())
@@ -1553,7 +1553,7 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
 #: a single build can see that: a build validates one mapping.
 #:
 #: `only_allow_members_view_membership` is TRUE for the administrators group.
-#: Thirty families had false and two had true; true was chosen deliberately
+#: Most families had false and a couple had true; true was chosen deliberately
 #: because the alternative silently WIDENS who can see the membership of a
 #: Full Control group, and that direction needs an argument rather than a
 #: majority.
@@ -1644,18 +1644,6 @@ def test_no_family_prefixes_a_shared_group(template: str) -> None:
         f"groups are one object per SITE and must be named exactly "
         f"{sorted(SHARED_GROUPS)}."
     )
-
-
-@pytest.mark.parametrize("template", _uplifted())
-def test_the_reader_group_uses_the_family_prefix(template: str) -> None:
-    """`improvement-register` is `CI`, not `IM`. The prefix comes from the
-    family's own List Administrators group, never from its folder name."""
-    mapping = _load(template).mapping
-    assert mapping.permissions is not None
-    names = [g.name for g in mapping.permissions.groups]
-    admin = next(n for n in names if n.endswith(" List Administrators"))
-    reader = next(n for n in names if n.endswith(" Enterprise Readers"))
-    assert reader.split()[0] == admin.split()[0]
 
 
 @pytest.mark.parametrize("template", _all_templates())
