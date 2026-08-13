@@ -33,6 +33,20 @@ type ReconcileMode = Literal["configured", "exact"]
 
 ENTITY_KINDS: frozenset[str] = frozenset(get_args(EntityKind.__value__))
 
+#: Derived from the `Literal` above for the same reason `ENTITY_KINDS` is:
+#: `mapping_loader` needs a runtime set to admit a raw YAML string against,
+#: and it had a hand-restated `frozenset` of the same four names one screen
+#: from a `Literal` that already held them -- plus the four names AGAIN as
+#: literal text in the error message, and a fourth copy in `Principal`'s
+#: docstring. A fifth principal kind added to the type would have type-checked
+#: everywhere and been refused at load.
+PRINCIPAL_KINDS: frozenset[str] = frozenset(get_args(PrincipalKind.__value__))
+
+#: The same vocabulary spelled for a human to read, so an error message
+#: naming the legal values cannot list a different four from the ones the
+#: gate accepts. Same pattern as `typemap.CALCULATED_TYPE_LIST`.
+PRINCIPAL_KIND_LIST = ", ".join(repr(kind) for kind in sorted(PRINCIPAL_KINDS))
+
 # Word boundaries for display-name auto mode: break before an uppercase that
 # follows a lowercase/digit, and before the LAST capital of an acronym run
 # ("RiskIDNumber" -> "Risk ID Number").
@@ -117,11 +131,33 @@ class PolymorphicPattern:
 
 @dataclass(frozen=True)
 class Versioning:
-    """Default SP list versioning settings."""
+    """SP list versioning settings, defaults included.
 
-    enable_versioning: bool
-    major_version_limit: int
-    enable_minor_versions: bool
+    THE DEFAULTS LIVE HERE, on the dataclass, and that is the point. With all
+    three fields required, the default for each had nowhere to live but the
+    caller — so `versioning.default.major_version_limit` absent meant every
+    reader wrote `500` for itself, and the merge of a per-entity override onto
+    the default was open-coded three times over (`jsgen`, `reportgen`,
+    `assessgen`) in three different spellings. The third used bare truthiness
+    with no fallback at all, so the copies were not merely duplicated, they
+    disagreed.
+
+    `Mapping.versioning_for` is now the one merge. See it for the shape an
+    override takes.
+    """
+
+    # THE THREE DEFAULTS ARE THE LOADER'S. Each is what `mapping_loader`
+    # substitutes when `versioning.default` omits the key, so the dataclass
+    # and the parser cannot disagree about what an unstated setting means --
+    # the loader reads these attributes rather than restating the values.
+    #
+    # `enable_versioning` defaults ON, which is NOT SharePoint's own default.
+    # It is this tool's: `_strict_bool` has always treated an absent flag as
+    # true, and every shipped mapping declares versioning on. Changing it is
+    # a behaviour change to every mapping that omits the key, not a tidy-up.
+    enable_versioning: bool = True
+    major_version_limit: int = 500
+    enable_minor_versions: bool = False
 
 
 @dataclass(frozen=True)
@@ -357,9 +393,15 @@ class SiteGroup:
 
 @dataclass(frozen=True)
 class Principal:
-    """A role-assignment target. `kind` is one of:
-    'group' (a named site group, custom or built-in like 'Site Owners'),
-    'associated_owner_group', 'associated_member_group', 'associated_visitor_group'.
+    """A role-assignment target.
+
+    `kind` is a `PrincipalKind` -- the members are on that type and are not
+    listed again here, because a docstring enumerating a closed vocabulary is
+    a copy of it that no reader can tell has gone stale. `group` means a named
+    site group, custom or built-in like 'Site Owners'; the three
+    `associated_*` kinds resolve through the site's own owner/member/visitor
+    group endpoints.
+
     `name` is required for kind=group, ignored otherwise.
     """
 
@@ -487,6 +529,56 @@ class Mapping:
         if name not in self.entities:
             raise KeyError(f"Unknown entity in mapping: {name!r}")
         return self.entities[name]
+
+    def cross_site_keys(self) -> set[tuple[str, str]]:
+        """`{(entity, column)}` for every declared cross-site reference.
+
+        The same three-line comprehension stood at four call sites — `jsgen`,
+        `reportgen` three times over, and `checks/_naming` — each turning the
+        list of `CrossSiteRef` into the pair set every consumer actually
+        wants. Nothing was wrong with any copy; a method is simply where the
+        shape belongs once four callers need it, and it is the fact `jsgen`
+        and `reportgen` MUST agree on (a column expanded into a Choice + URL
+        pair on one side and treated as a Lookup on the other produces a
+        report that expands a field the list does not have).
+        """
+        return {
+            (xref.entity, xref.column)
+            for xref in self.cross_site_reference_columns
+        }
+
+    def versioning_for(self, entity_name: str) -> Versioning:
+        """The versioning settings this entity's list is provisioned with.
+
+        The per-entity override merged onto the default, key by key: an
+        override block naming only `major_version_limit` keeps the default's
+        two booleans. THE one merge — `jsgen`, `reportgen` and `assessgen`
+        each re-derived it, and the third did so with bare truthiness and no
+        default fallback, which is the divergence a shared accessor removes
+        rather than merely tidies.
+
+        `Mapping` already had this shape for permissions
+        (`permissions_for_entity`); versioning was the missing fifth
+        accessor.
+
+        Overrides are still stored RAW (`dict[str, Any]`), because
+        `mapping_loader` validates their values without narrowing their
+        types; the coercions here are the ones the three call sites were
+        each performing.
+        """
+        override = self.versioning_overrides.get(entity_name, {})
+        default = self.versioning_default
+        return Versioning(
+            enable_versioning=bool(
+                override.get("enable_versioning", default.enable_versioning),
+            ),
+            major_version_limit=int(
+                override.get("major_version_limit", default.major_version_limit),
+            ),
+            enable_minor_versions=bool(
+                override.get("enable_minor_versions", default.enable_minor_versions),
+            ),
+        )
 
     def permissions_for_entity(self, entity_name: str) -> "ListPermissionPolicy | None":
         """Return the per-list permission policy for the given entity name.

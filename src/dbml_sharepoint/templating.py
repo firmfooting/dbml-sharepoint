@@ -12,6 +12,8 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from dbml_sharepoint.analysis.typemap import TYPE_AS_STRING_PAIRS
+
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 
@@ -39,4 +41,13 @@ def script_env() -> Environment:
         keep_trailing_newline=True,
     )
     env.filters["comment_safe"] = comment_safe
+    # A GLOBAL rather than a per-render argument, because the fact belongs to
+    # every script that reconciles a field and no generator should be able to
+    # forget it. The eleven pairs were previously typed out by hand inside
+    # `deploy/_field_reconcile.js.j2`, three languages away from the Python
+    # that assigns them — and a missing entry there does not fail this build.
+    # It throws in the operator's browser, mid-deploy, on a customer site.
+    # `analysis/typemap.py` owns the pairing; `test_typemap.py` asserts the
+    # rendered Map covers every FieldKind.
+    env.globals["type_as_string_by_kind"] = TYPE_AS_STRING_PAIRS
     return env

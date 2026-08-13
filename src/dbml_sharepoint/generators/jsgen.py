@@ -15,7 +15,10 @@ from dbml_sharepoint.analysis.conditions import (
 from dbml_sharepoint.analysis.forms import compose_visibility
 from dbml_sharepoint.analysis.joins import all_items_hidden
 from dbml_sharepoint.analysis.list_description import family_for, list_description
-from dbml_sharepoint.analysis.lookups import lookup_display_columns
+from dbml_sharepoint.analysis.lookups import (
+    display_column_for,
+    lookup_display_columns,
+)
 from dbml_sharepoint.analysis.ordering import compute_phases, site_tables_in_order
 from dbml_sharepoint.analysis.permissions import (
     base_permissions_to_high_low,
@@ -345,9 +348,7 @@ def build_schema_json(
         site_context, site_url=site_url, site_role=site_role, release=release,
     )
 
-    cross_site_keys = {
-        (xref.entity, xref.column) for xref in bundle.mapping.cross_site_reference_columns
-    }
+    cross_site_keys = bundle.mapping.cross_site_keys()
     # Cross-site columns are emitted as Choice + URL pairs; they must never
     # appear in phase 2 (would be a double-emit alongside the cross-site
     # expansion). Subtract cross_site_keys defensively.
@@ -382,16 +383,7 @@ def build_schema_json(
     for table_name in role_tables:
         entity = bundle.mapping.entities[table_name]
         list_title = bundle.mapping.prefix + table_name
-        versioning_o = bundle.mapping.versioning_overrides.get(table_name, {})
-        enable_versioning = bool(versioning_o.get(
-            "enable_versioning", bundle.mapping.versioning_default.enable_versioning,
-        ))
-        major_limit = int(versioning_o.get(
-            "major_version_limit", bundle.mapping.versioning_default.major_version_limit,
-        ))
-        enable_minor_versions = bool(versioning_o.get(
-            "enable_minor_versions", bundle.mapping.versioning_default.enable_minor_versions,
-        ))
+        versioning = bundle.mapping.versioning_for(table_name)
         table = by_name[table_name]
 
         fields_phase1: list[dict[str, Any]] = []
@@ -550,9 +542,9 @@ def build_schema_json(
                 table.note, family=family, entity=table_name,
             ),
             "content_types_enabled": False,
-            "enable_versioning": enable_versioning,
-            "major_version_limit": major_limit,
-            "enable_minor_versions": enable_minor_versions,
+            "enable_versioning": versioning.enable_versioning,
+            "major_version_limit": versioning.major_version_limit,
+            "enable_minor_versions": versioning.enable_minor_versions,
             "fields_phase1": fields_phase1,
             "title_patch": title_patch,
             "validation_formula": (
@@ -879,12 +871,14 @@ def _field_body(
             # "Title", but a target whose mapping declares display_column (e.g.
             # Membership → DisplayName) renders that instead — a bare "Title"
             # shows blank on lists that never populate Title.
-            target_entity = (
-                entities.get(sp.target_list) if entities and sp.target_list else None
+            #
+            # `display_column_for` rather than the rule spelled out again:
+            # `reportgen` asks the same question when it chooses what to
+            # $expand, and the two answers have to be the same column or the
+            # report expands something the list does not surface.
+            lookup_field = display_column_for(
+                entities.get(sp.target_list) if entities and sp.target_list else None,
             )
-            lookup_field = (
-                target_entity.display_column if target_entity else None
-            ) or "Title"
             body["LookupField"] = lookup_field
             # A lookup is the one field type SharePoint refuses through a
             # normal POST of SP.FieldLookup to the /fields collection. Keep

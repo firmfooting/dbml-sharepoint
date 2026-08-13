@@ -9,12 +9,15 @@
      assertFieldImmutableShape compares against it, so a wrong string fails a
      field that is in fact correct. 15/MultiChoice was measured on a live
      tenant on 2026-08-10 alongside FieldTypeKind=15 and Choices as
-     Collection(Edm.String). #}
-  const TYPE_AS_STRING_BY_KIND = new Map([
-    [2, 'Text'], [3, 'Note'], [4, 'DateTime'], [6, 'Choice'],
-    [7, 'Lookup'], [8, 'Boolean'], [9, 'Number'], [11, 'URL'], [20, 'User'],
-    [17, 'Calculated'], [15, 'MultiChoice'],
-  ]);
+     Collection(Edm.String).
+
+     RENDERED FROM `analysis/typemap.py`, not typed out here. These eleven
+     pairs were transcribed by hand, as integers, in a Jinja template — the
+     one copy of the field-kind vocabulary that the build could not check.
+     Adding a twelfth field kind in Python and forgetting this list did not
+     fail a test; it threw `TYPE_AS_STRING_BY_KIND.get(...)` undefined in the
+     operator's browser, part-way through a deploy, on a customer site. #}
+  const TYPE_AS_STRING_BY_KIND = new Map({{ type_as_string_by_kind | tojson }});
   const indexedFieldKeys = new Set(
     SCHEMA.indexed_columns.map(idx => `${idx.list}\u0000${idx.field}`),
   );

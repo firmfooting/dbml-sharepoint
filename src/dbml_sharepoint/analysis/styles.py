@@ -15,6 +15,25 @@ examples — the emitted structures mirror those samples).
 from dataclasses import dataclass
 from typing import Any
 
+# The unknown-key guard, imported rather than reimplemented.
+#
+# A style spec used to ignore everything it did not recognise, and every miss
+# was silent and wrong in the direction that reads as fine: a typo'd `guard:`
+# renders finished rows as overdue, and `calculated: true` -- documented as
+# required on a calculated column -- changed nothing at all when misspelled,
+# so the values kept their `string;#` prefix and matched no map key.
+#
+# The fix at the time was a SECOND COPY of `model/_keys._reject_unknown_keys`,
+# emitting byte-identical text (`_fail` composes `"{context}: {message}"`,
+# which is exactly what the original produced) while omitting its `isinstance`
+# guard. Same rule, same kind of block, so it is now the same function -- and
+# style specs pick up the mapping check they were missing.
+#
+# `model/` stays the home even though this is `analysis/`: `_keys.py` imports
+# nothing but `typing`, so there is no cycle, and every other caller of the
+# guard is a parser under `model/`.
+from dbml_sharepoint.model._keys import _reject_unknown_keys
+
 _SCHEMA = "https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json"
 
 
@@ -85,23 +104,6 @@ def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> boo
     if not isinstance(value, bool):
         raise _fail(context, f"{key}: expected true or false, got {value!r}")
     return value
-
-
-def _reject_unknown_keys(spec: dict[str, Any], allowed: set[str], context: str) -> None:
-    """A style spec used to ignore everything it did not recognise.
-
-    Every miss was silent and wrong in the direction that reads as fine: a
-    typo'd `guard:` renders finished rows as overdue, and `calculated:
-    true` — documented as required on a calculated column — changed
-    nothing at all when misspelled, so the values kept their `string;#`
-    prefix and matched no map key.
-    """
-    unknown = set(spec) - allowed
-    if unknown:
-        raise _fail(
-            context,
-            f"unknown key(s) {sorted(unknown)} (known: {sorted(allowed)})",
-        )
 
 
 def _resolve(

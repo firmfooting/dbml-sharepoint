@@ -1,6 +1,6 @@
 ---
 title: typemap
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # `dbml_sharepoint.analysis.typemap`
@@ -9,10 +9,28 @@ sidebar_position: 8
 
 Map DBML column types to SharePoint field descriptors.
 
-The output (SPField) is what the deploy.js template renders.
-Field type kinds map to SP REST FieldTypeKind values:
-  Text=2, Note=3, DateTime=4, Choice=6, Lookup=7, Boolean=8,
-  Number=9, URL=11, User=20.
+The output (SPField) is what the deploy.js template renders. The kind-token to
+SP REST `FieldTypeKind` pairing is `FIELD_TYPE_KIND_BY_KIND` below — the one
+place the numbers are written, rather than a list in this docstring that
+nothing could check and that had already lost Calculated and MultiChoice.
+
+### `FIELD_TYPE_KIND_BY_KIND`
+
+```python
+FIELD_TYPE_KIND_BY_KIND = {'Text': 2, 'Note': 3, 'DateTime': 4, 'Choice': 6, 'Lookup': 7, 'Boolean': 8, 'Number': 9, 'URL': 11, 'MultiChoice': 15, 'Calculated': 17, 'User': 20}
+```
+
+### `FIELD_KIND_BY_TYPE_KIND`
+
+```python
+FIELD_KIND_BY_TYPE_KIND = {2: 'Text', 3: 'Note', 4: 'DateTime', 6: 'Choice', 7: 'Lookup', 8: 'Boolean', 9: 'Number', 11: 'URL', 15: 'MultiChoice', 17: 'Calculated', 20: 'User'}
+```
+
+### `TYPE_AS_STRING_PAIRS`
+
+```python
+TYPE_AS_STRING_PAIRS = [(2, 'Text'), (3, 'Note'), (4, 'DateTime'), (6, 'Choice'), (7, 'Lookup'), (8, 'Boolean'), (9, 'Number'), (11, 'URL'), (15, 'MultiChoice'), (17, 'Calculated'), (20, 'User')]
+```
 
 ### `CALCULATED_OUTPUT_TYPES`
 
@@ -36,6 +54,18 @@ CALCULATED_TYPE_LIST = 'calculated_date, calculated_number, calculated_text'
 
 ```python
 KNOWN_SCALARS = frozenset({'boolean', 'date', 'datetime', 'hyperlink', 'int', 'longtext', 'number', 'nvarchar', 'person', 'richtext'})
+```
+
+### `DATE_TYPES`
+
+```python
+DATE_TYPES = frozenset({'calculated_date', 'date', 'datetime'})
+```
+
+### `NUMBER_TYPES`
+
+```python
+NUMBER_TYPES = frozenset({'calculated_number', 'int', 'number'})
 ```
 
 ### `MULTI_VALUE_SUFFIX`

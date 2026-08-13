@@ -31,7 +31,11 @@ from typing import Any
 from dbml_sharepoint import __version__
 from dbml_sharepoint.analysis.conditions import describe
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
-from dbml_sharepoint.analysis.lookups import lookup_display_columns
+from dbml_sharepoint.analysis.lookups import (
+    display_column_for,
+    lookup_display_columns,
+)
+from dbml_sharepoint.analysis.ordering import is_deployed_here
 from dbml_sharepoint.analysis.report_columns import (
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
@@ -92,15 +96,22 @@ class _ListPlan:
 
 
 def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> list[Table]:
-    """Schema-order tables mapped to the requested site role (same filter as
-    jsgen: absent-from-mapping or other-role entities are not deployed there,
-    so they must not be reported there either)."""
-    out = []
-    for table in schema.tables:
-        entity = bundle.mapping.entities.get(table.name)
-        if entity is not None and entity.site_role == site_role:
-            out.append(table)
-    return out
+    """Schema-order tables mapped to the requested site role.
+
+    The MEMBERSHIP question is `ordering.is_deployed_here`, shared with the
+    generators that deploy: an entity absent from the mapping or belonging to
+    another role is not provisioned at this site, so it must not be reported
+    there either. Only the ORDER differs — declaration order here, dependency
+    order there — and a report has no creation sequence to respect.
+
+    This used to re-implement the predicate and say "same filter as jsgen" in
+    its docstring, which is a claim nothing checked.
+    """
+    return [
+        table
+        for table in schema.tables
+        if is_deployed_here(bundle.mapping.entities, table.name, site_role)
+    ]
 
 
 def _refuse_ambiguous_members(column: str, members: list[str]) -> None:
@@ -142,10 +153,9 @@ def _refuse_ambiguous_members(column: str, members: list[str]) -> None:
 
 
 def _display_column(bundle: MappingBundle, target_entity: str) -> str:
-    entity = bundle.mapping.entities.get(target_entity)
-    if entity is not None and entity.display_column:
-        return entity.display_column
-    return "Title"
+    """What a lookup into `target_entity` shows — the same column jsgen sets
+    as the field's `LookupField`. One home: `analysis.lookups`."""
+    return display_column_for(bundle.mapping.entities.get(target_entity))
 
 
 def _item_url_path(bundle: MappingBundle, entity_name: str, list_title: str) -> str:
@@ -167,10 +177,7 @@ def _build_plans(
     emitted = {t.name for t in tables}
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
-    cross_site_keys = {
-        (xref.entity, xref.column)
-        for xref in bundle.mapping.cross_site_reference_columns
-    }
+    cross_site_keys = bundle.mapping.cross_site_keys()
     prefix = bundle.mapping.prefix
 
     plans: list[_ListPlan] = []
@@ -1259,10 +1266,7 @@ def generate_data_dictionary(
     tables = _tables_for_role(schema, bundle, site_role)
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
-    cross_site_keys = {
-        (xref.entity, xref.column)
-        for xref in bundle.mapping.cross_site_reference_columns
-    }
+    cross_site_keys = bundle.mapping.cross_site_keys()
     mapping = bundle.mapping
     prefix = mapping.prefix
     # cross_site_keys above is exactly the pair set lookup_display_columns
@@ -1336,21 +1340,15 @@ def generate_data_dictionary(
             indexed.append(f"{display} (lookup display column)")
         if indexed:
             details.append(f"Indexed columns: {', '.join(indexed)}.")
-        v_override = mapping.versioning_overrides.get(table.name, {})
-        v_default = mapping.versioning_default
-        enable_versioning = bool(
-            v_override.get("enable_versioning", v_default.enable_versioning),
-        )
-        if enable_versioning:
-            limit = int(
-                v_override.get("major_version_limit", v_default.major_version_limit),
-            )
-            minor = bool(
-                v_override.get("enable_minor_versions", v_default.enable_minor_versions),
-            )
+        # `versioning_for` rather than the merge again: this page tells a
+        # reader what the list was provisioned with, so it has to be the same
+        # answer jsgen sent.
+        versioning = mapping.versioning_for(table.name)
+        if versioning.enable_versioning:
             details.append(
-                f"Versioning: major versions on, limit {limit}"
-                + (", minor versions on" if minor else "")
+                "Versioning: major versions on, limit "
+                f"{versioning.major_version_limit}"
+                + (", minor versions on" if versioning.enable_minor_versions else "")
                 + ".",
             )
         else:
@@ -1386,10 +1384,7 @@ def _dictionary_rows(
     role, in schema order."""
     enum_names = {e.name for e in schema.enums}
     enum_members = {e.name: e.members for e in schema.enums}
-    cross_site_keys = {
-        (xref.entity, xref.column)
-        for xref in bundle.mapping.cross_site_reference_columns
-    }
+    cross_site_keys = bundle.mapping.cross_site_keys()
     prefix = bundle.mapping.prefix
     rows: list[tuple[str, str, str, str, str, str, str, str, str, str, str]] = []
     for table in _tables_for_role(schema, bundle, site_role):

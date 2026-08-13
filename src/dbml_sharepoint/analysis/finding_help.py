@@ -29,6 +29,15 @@ same arrangement `generate_api.py` already has for the API reference.
 """
 
 from dbml_sharepoint.analysis.findings import FindingCode
+from dbml_sharepoint.analysis.limits import (
+    INDEX_WARN_AT,
+    LIST_VIEW_THRESHOLD,
+    MAX_DISPLAY_TITLE,
+    MAX_LIST_INDEXES,
+    MAX_VALIDATION_FORMULA,
+    MAX_VALIDATION_MESSAGE,
+    MAX_VIEW_ROW_LIMIT,
+)
 from dbml_sharepoint.analysis.list_description import MARKER_GROWTH_RESERVE
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 
@@ -52,7 +61,7 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.CALCULATED_DISPLAY_COLUMN_UNINDEXABLE: (
         "A lookup target's display column is calculated, and calculated "
         "columns cannot be indexed, so its picker stops working once "
-        "the list passes roughly 5,000 items."
+        f"the list passes roughly {LIST_VIEW_THRESHOLD:,} items."
     ),
     FindingCode.CALCULATED_FORMULA_CYCLE: (
         "Calculated columns on one entity depend on each other in a "
@@ -350,7 +359,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "aborts part-way through when it did not stick."
     ),
     FindingCode.DISPLAY_TITLE_TOO_LONG: (
-        "A display title exceeds SharePoint's 255-character bound."
+        f"A display title exceeds SharePoint's {MAX_DISPLAY_TITLE}-character "
+        "bound."
     ),
     FindingCode.DOCUMENT_LIBRARY_UNSUPPORTED: (
         "An entity declares `kind: DocumentLibrary`. A library's items "
@@ -628,13 +638,19 @@ FINDING_HELP: dict[FindingCode, str] = {
         "implicit index from its `[unique]` setting."
     ),
     FindingCode.INDEX_LIMIT_APPROACHING: (
-        "A list is at 18 or 19 of its 20 indexes. SharePoint creates "
+        # "18 or 19 of its 20" was what this said while the rule fired at
+        # `>= 18` with the error at `> 20` -- so a list sitting on exactly
+        # twenty got this warning and was told it was somewhere it was not.
+        # The band now reads off the same two constants the check does.
+        f"A list has reached {INDEX_WARN_AT} of its {MAX_LIST_INDEXES} "
+        "indexes. SharePoint creates "
         "indexes by itself -- opening a sorted view on an unindexed "
         "column adds one -- and those are invisible to this build, so "
         "leave headroom."
     ),
     FindingCode.INDEX_LIMIT_EXCEEDED: (
-        "A list's effective indexes exceed SharePoint's limit of 20. "
+        "A list's effective indexes exceed SharePoint's limit of "
+        f"{MAX_LIST_INDEXES}. "
         "The message names the implicit contributors, which are the "
         "ones an author cannot count."
     ),
@@ -668,10 +684,12 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG: (
         "A `list_validation:` rule renders to a formula longer than "
-        "1024 characters once display names are substituted."
+        f"{MAX_VALIDATION_FORMULA} characters once display names are "
+        "substituted."
     ),
     FindingCode.LIST_VALIDATION_MESSAGE_TOO_LONG: (
-        "A `list_validation:` message is longer than 1024 characters."
+        "A `list_validation:` message is longer than "
+        f"{MAX_VALIDATION_MESSAGE} characters."
     ),
     FindingCode.LIST_VALIDATION_REFERENCES_A_RETIRED_COLUMN: (
         "A list validation condition references a column that has been "
@@ -881,7 +899,7 @@ FINDING_HELP: dict[FindingCode, str] = {
         "' (retired)' title suffix never reaches SharePoint."
     ),
     FindingCode.ROW_LIMIT_OUT_OF_RANGE: (
-        "A view's `row_limit` is outside 1-5000."
+        f"A view's `row_limit` is outside 1-{MAX_VIEW_ROW_LIMIT}."
     ),
     FindingCode.STYLE_CALCULATED_TYPE_MISMATCH: (
         "`calculated: true` is set on a style whose column is not the "
@@ -1010,10 +1028,11 @@ FINDING_HELP: dict[FindingCode, str] = {
     ),
     FindingCode.VALIDATION_FORMULA_TOO_LONG: (
         "A rendered validation formula exceeds SharePoint's "
-        "1024-character limit."
+        f"{MAX_VALIDATION_FORMULA}-character limit."
     ),
     FindingCode.VALIDATION_MESSAGE_TOO_LONG: (
-        "A column validation message exceeds 1024 characters."
+        f"A column validation message exceeds {MAX_VALIDATION_MESSAGE} "
+        "characters."
     ),
     FindingCode.VIEW_EMPTIED_BY_RETIREMENT: (
         "Retirement stripped every declared field from a view, which "

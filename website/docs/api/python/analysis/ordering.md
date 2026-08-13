@@ -1,6 +1,6 @@
 ---
 title: ordering
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 # `dbml_sharepoint.analysis.ordering`
@@ -31,6 +31,29 @@ DeployPlan(list_creation_order: list[str] = &lt;factory>, phase2_lookups: list[t
 ```python
 def compute_phases(schema: dbml_sharepoint.model.parser.Schema) -> dbml_sharepoint.analysis.ordering.DeployPlan
 ```
+
+### `is_deployed_here`
+
+```python
+def is_deployed_here(entities: 'dict[str, EntityMapping]', name: str, site_role: str) -> bool
+```
+
+Is this entity provisioned at a site of this role?
+
+THE role predicate, for every consumer. Two things make an entity absent
+from a site: no mapping entry at all, and a mapping entry belonging to a
+different role. Both must be excluded, and a caller that checks only the
+second raises `KeyError` on the first.
+
+`site_tables_in_order` below applies it in dependency order for the
+generators that DEPLOY. `generators.reportgen` applies it in declaration
+order, because a report has no creation sequence to respect — the
+ordering legitimately differs and the membership question does not, which
+is why the predicate is factored out and the ordering is not.
+
+reportgen used to open-code this, and said so in its own docstring
+("same filter as jsgen"). A comment claiming two implementations agree is
+the shape this repository keeps finding to be false.
 
 ### `site_tables_in_order`
 

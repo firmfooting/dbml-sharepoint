@@ -1,10 +1,10 @@
 # src/dbml_sharepoint/analysis/typemap.py
 """Map DBML column types to SharePoint field descriptors.
 
-The output (SPField) is what the deploy.js template renders.
-Field type kinds map to SP REST FieldTypeKind values:
-  Text=2, Note=3, DateTime=4, Choice=6, Lookup=7, Boolean=8,
-  Number=9, URL=11, User=20.
+The output (SPField) is what the deploy.js template renders. The kind-token to
+SP REST `FieldTypeKind` pairing is `FIELD_TYPE_KIND_BY_KIND` below — the one
+place the numbers are written, rather than a list in this docstring that
+nothing could check and that had already lost Calculated and MultiChoice.
 """
 
 import re
@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from difflib import get_close_matches
 from typing import Any, Literal
 
+from dbml_sharepoint.analysis.limits import (
+    MAX_FIELD_DESCRIPTION,
+    MAX_TEXT_FIELD_LENGTH,
+)
 from dbml_sharepoint.model.parser import Column
 
 type FieldKind = Literal[
@@ -20,15 +24,66 @@ type FieldKind = Literal[
     "Boolean", "Number", "URL", "User", "Calculated", "MultiChoice",
 ]
 
-# DBML type -> SP.FieldCalculated OutputType (SP.FieldType: Text=2,
-# DateTime=4, Number=9). Date output accepts SP's default DateFormat
-# (DateOnly).
+#: THE pairing of this codebase's field-kind token to SharePoint's numeric
+#: `FieldTypeKind`. Every `SPField` below takes its `field_type_kind` from
+#: here, so the number and the name are written down together exactly once.
+#:
+#: `Skip` is absent deliberately: it is not a SharePoint field type but this
+#: tool's marker for the auto-increment `Id` column, which is never created,
+#: and its `field_type_kind` is `None`.
+#:
+#: WHY THIS IS A MAP AND NOT ELEVEN LITERALS. The same eleven pairs were
+#: re-spelled by hand, as integers, inside a Jinja template
+#: (`templates/deploy/_field_reconcile.js.j2`), where nothing at build time
+#: could compare them to these. A missing entry there does not fail the build;
+#: it throws in the operator's browser, mid-deploy, on a customer site. The
+#: template now renders this map as context and `test_typemap.py` asserts the
+#: rendered key set is exactly this vocabulary, so a twelfth field kind cannot
+#: reach a deploy script without its TypeAsString.
+FIELD_TYPE_KIND_BY_KIND: dict[FieldKind, int] = {
+    "Text": 2,
+    "Note": 3,
+    "DateTime": 4,
+    "Choice": 6,
+    "Lookup": 7,
+    "Boolean": 8,
+    "Number": 9,
+    "URL": 11,
+    "MultiChoice": 15,
+    "Calculated": 17,
+    "User": 20,
+}
+
+#: The inverse. What SharePoint reports as `TypeAsString` on read-back is this
+#: codebase's kind token for every kind it emits — verified on a live tenant
+#: rather than transcribed from a page, which is what makes the deployer's
+#: immutable-shape assertion trustworthy (a wrong string there fails a field
+#: that is in fact correct). 15/MultiChoice was measured on 2026-08-10
+#: alongside FieldTypeKind=15 and Choices as Collection(Edm.String).
+FIELD_KIND_BY_TYPE_KIND: dict[int, FieldKind] = {
+    kind_number: kind for kind, kind_number in FIELD_TYPE_KIND_BY_KIND.items()
+}
+
+#: The same pairing shaped for a JavaScript `new Map([...])` constructor.
+#:
+#: A LIST OF PAIRS rather than the dict, because `tojson` on a dict with
+#: integer keys emits `{"2": "Text"}` — JSON object keys are strings — and the
+#: deployer looks a field's numeric `FieldTypeKind` up in that Map. A Map built
+#: from string keys misses every lookup, silently, and the field it was
+#: verifying is then reported as shape-mismatched. Pairs keep the key an
+#: integer on both sides.
+TYPE_AS_STRING_PAIRS: list[tuple[int, str]] = sorted(FIELD_KIND_BY_TYPE_KIND.items())
+
+# DBML type -> SP.FieldCalculated OutputType. OutputType is an SP.FieldType
+# value, the same enumeration FieldTypeKind draws on, so it is spelled through
+# FIELD_TYPE_KIND_BY_KIND rather than as three more integers. Date output
+# accepts SP's default DateFormat (DateOnly).
 # The formula itself is NOT in DBML; it lives in the mapping's
 # `calculated_formulas` section and is joined in at jsgen time.
 CALCULATED_OUTPUT_TYPES: dict[str, int] = {
-    "calculated_text": 2,
-    "calculated_number": 9,
-    "calculated_date": 4,
+    "calculated_text": FIELD_TYPE_KIND_BY_KIND["Text"],
+    "calculated_number": FIELD_TYPE_KIND_BY_KIND["Number"],
+    "calculated_date": FIELD_TYPE_KIND_BY_KIND["DateTime"],
 }
 
 # THE calculated type vocabulary. This map is where it belongs, because a
@@ -60,6 +115,34 @@ KNOWN_SCALARS = frozenset({
     "int", "number", "nvarchar", "longtext", "richtext", "person", "date", "datetime",
     "boolean", "hyperlink",
 })
+
+# WHAT COUNTS AS A DATE, and WHAT COUNTS AS A NUMBER — each in one place, for
+# the same reason TODAY_SENTINEL below is. Both sets were spelled out
+# byte-identically in two modules apiece: `_DATE_TYPES` in `conditions.py` and
+# `validator.py`, `_NUMBER_TYPES` in `conditions.py` and (as
+# `_NUMERIC_FOR_TOTALS`) in `checks/_views.py`.
+#
+# A fourth date type added to one copy and not the other means the CAML
+# renderer and the validator disagree about what a date column is: `today+30`
+# renders on one path and is refused on the other, or worse, is accepted by
+# the check and emitted as the literal string "today". `typemap.py:TODAY_
+# SENTINEL` records that this exact problem was found and fixed for the
+# sentinel — "Comments said they must agree; nothing checked it, so now there
+# is one pattern and a test" — and the type sets it is matched against did not
+# get the same treatment at the time.
+#
+# This module is the right home because its docstring already claims to be the
+# answer to "what is this column type, in SharePoint terms", and because it is
+# the module a new DBML type cannot be added without editing.
+#
+# The calculated members are IN. A `calculated_date` is a date for every
+# purpose these sets serve — comparison rendering, `today` sentinel
+# admission, view totals — and excluding them is what made the demo planner
+# and the condition renderer disagree in the first place. Note that
+# `generators/demogen.py` keeps its own, SMALLER date set on purpose: it
+# seeds authored rows, and a calculated column cannot be written to.
+DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
+NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
 
 
 # THE ARITY SUFFIX. DBML has no array type, so this is not a spelling this
@@ -242,7 +325,7 @@ class SPField:
     date_only: bool = True
     rich_text: bool = False
     number_of_lines: int = 6
-    max_length: int = 255
+    max_length: int = MAX_TEXT_FIELD_LENGTH
     selection_mode: int = 0
     # SP.FieldUrl exposes the writable DisplayFormat property. Value 0 means
     # hyperlink (1 means image); ``UrlFormat`` is not a FieldUrl property.
@@ -305,7 +388,8 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
         # Calculated columns are read-only derivations: never required/unique,
         # never defaulted. SP recalculates on every item edit.
         return SPField(
-            name=col.name, kind="Calculated", field_type_kind=17,
+            name=col.name, kind="Calculated",
+            field_type_kind=FIELD_TYPE_KIND_BY_KIND["Calculated"],
             required=False, unique=False, default=None,
             description=description,
             output_type=CALCULATED_OUTPUT_TYPES[col.type],
@@ -313,13 +397,14 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
 
     if col.type in enum_names:
         return SPField(
-            name=col.name, kind="Choice", field_type_kind=6,
+            name=col.name, kind="Choice",
+            field_type_kind=FIELD_TYPE_KIND_BY_KIND["Choice"],
             required=col.required, unique=col.unique, default=col.default,
             description=description, choices_enum=col.type,
         )
 
     if is_multi_value(col.type) and element_type(col.type) in enum_names:
-        # FieldType.MultiChoice = 15, and `SP.FieldChoice` DERIVES from
+        # `SP.FieldChoice` DERIVES from
         # `SP.FieldMultiChoice` -- `Choices` is a FieldMultiChoice property,
         # which is why the deployer's existing Choice machinery already
         # understands the only derived property this type adds.
@@ -336,14 +421,16 @@ def _resolve_column(col: Column, enum_names: set[str]) -> SPField:
         # any schema declares, so resolving the members means asking what one
         # member of the collection is.
         return SPField(
-            name=col.name, kind="MultiChoice", field_type_kind=15,
+            name=col.name, kind="MultiChoice",
+            field_type_kind=FIELD_TYPE_KIND_BY_KIND["MultiChoice"],
             required=col.required, unique=col.unique, default=col.default,
             description=description, choices_enum=element_type(col.type),
         )
 
     if col.ref is not None:
         return SPField(
-            name=col.name, kind="Lookup", field_type_kind=7,
+            name=col.name, kind="Lookup",
+            field_type_kind=FIELD_TYPE_KIND_BY_KIND["Lookup"],
             required=col.required, unique=col.unique, default=None,
             description=description, target_list=col.ref.target_table,
         )
@@ -364,34 +451,48 @@ def _scalar(col: Column, description: str, enum_names: set[str]) -> SPField:
     # `conditions.py` renders and not what gets provisioned. That divergence
     # is the bug #101 is about, so it is not worth reintroducing to keep one
     # match statement tidy.
+    kinds = FIELD_TYPE_KIND_BY_KIND
     if is_boolean(col.type):
-        return SPField(**base, kind="Boolean", field_type_kind=8)
+        return SPField(**base, kind="Boolean", field_type_kind=kinds["Boolean"])
     if is_person(col.type):
-        return SPField(**base, kind="User", field_type_kind=20, selection_mode=0)
+        return SPField(
+            **base, kind="User", field_type_kind=kinds["User"], selection_mode=0,
+        )
     if is_hyperlink(col.type):
-        return SPField(**base, kind="URL", field_type_kind=11, display_format=0)
+        return SPField(
+            **base, kind="URL", field_type_kind=kinds["URL"], display_format=0,
+        )
 
     match col.type:
         case "int":
-            return SPField(**base, kind="Number", field_type_kind=9)
+            return SPField(**base, kind="Number", field_type_kind=kinds["Number"])
         case "number":
-            return SPField(**base, kind="Number", field_type_kind=9)
+            return SPField(**base, kind="Number", field_type_kind=kinds["Number"])
         case "nvarchar":
-            return SPField(**base, kind="Text", field_type_kind=2, max_length=255)
+            return SPField(
+                **base, kind="Text", field_type_kind=kinds["Text"],
+                max_length=MAX_TEXT_FIELD_LENGTH,
+            )
         case "longtext":
             return SPField(
-                **base, kind="Note", field_type_kind=3,
+                **base, kind="Note", field_type_kind=kinds["Note"],
                 rich_text=False, number_of_lines=6,
             )
         case "richtext":
             return SPField(
-                **base, kind="Note", field_type_kind=3,
+                **base, kind="Note", field_type_kind=kinds["Note"],
                 rich_text=True, number_of_lines=6,
             )
         case "date":
-            return SPField(**base, kind="DateTime", field_type_kind=4, date_only=True)
+            return SPField(
+                **base, kind="DateTime", field_type_kind=kinds["DateTime"],
+                date_only=True,
+            )
         case "datetime":
-            return SPField(**base, kind="DateTime", field_type_kind=4, date_only=False)
+            return SPField(
+                **base, kind="DateTime", field_type_kind=kinds["DateTime"],
+                date_only=False,
+            )
         case _:
             # `enum_names` is what this call was told the schema declares, so
             # the suggestion can name the user's own enums. It said "Add it
@@ -467,8 +568,8 @@ def format_description(note: str) -> str:
     if not note:
         return ""
     cleaned = " ".join(note.split())
-    if len(cleaned) > 255:
-        return cleaned[:252] + "..."
+    if len(cleaned) > MAX_FIELD_DESCRIPTION:
+        return cleaned[: MAX_FIELD_DESCRIPTION - len("...")] + "..."
     return cleaned
 
 

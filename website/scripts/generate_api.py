@@ -49,6 +49,7 @@ MODULES: list[tuple[str, str]] = [
     ("model.conditions", "the shared condition grammar's types and parser"),
     ("analysis.findings", "what a finding is — code, severity, section, location"),
     ("analysis.validator", "fail-closed build-time rules"),
+    ("analysis.limits", "the SharePoint ceilings, each named once"),
     ("analysis.ordering", "dependency ordering and site filtering"),
     ("analysis.typemap", "DBML types to SharePoint field descriptors"),
     ("analysis.phases", "the deploy-phase manifest"),

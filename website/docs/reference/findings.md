@@ -166,7 +166,7 @@ dbml-sharepoint explain unknown_column_type
 | `index_column_not_rendered` | error | An `indexes { }` entry names a column the deploy never creates. |
 | `index_column_type_unindexable` | error | An `indexes { }` entry names a column of a type SharePoint cannot index. |
 | `index_duplicates_unique_column` | error | An `indexes { }` entry names a column that already carries an implicit index from its `[unique]` setting. |
-| `index_limit_approaching` | warning | A list is at 18 or 19 of its 20 indexes. SharePoint creates indexes by itself -- opening a sorted view on an unindexed column adds one -- and those are invisible to this build, so leave headroom. |
+| `index_limit_approaching` | warning | A list has reached 18 of its 20 indexes. SharePoint creates indexes by itself -- opening a sorted view on an unindexed column adds one -- and those are invisible to this build, so leave headroom. |
 | `index_limit_exceeded` | error | A list's effective indexes exceed SharePoint's limit of 20. The message names the implicit contributors, which are the ones an author cannot count. |
 | `index_on_calculated_column` | error | An `indexes { }` entry names a calculated column. SharePoint accepts the flag and reads it back false. |
 | `index_settings_unsupported` | error | A DBML index carries `name`, `unique`, `type`, `pk` or `note`. SharePoint exposes none of them, so declare a bare column index. |

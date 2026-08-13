@@ -5,6 +5,12 @@ import re
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.limits import (
+    INDEX_WARN_AT,
+    LIST_VIEW_THRESHOLD,
+    MAX_CALCULATED_FORMULA,
+    MAX_LIST_INDEXES,
+)
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
@@ -14,7 +20,7 @@ from dbml_sharepoint.analysis.list_description import (
     note_budget,
 )
 from dbml_sharepoint.analysis.lookups import (
-    DEFAULT_DISPLAY_COLUMN,
+    display_column_for,
     lookup_target_entities,
 )
 from dbml_sharepoint.analysis.ordering import compute_phases
@@ -27,7 +33,6 @@ from dbml_sharepoint.analysis.typemap import (
 )
 from dbml_sharepoint.analysis.validator import (
     CALCULATED_TYPES,
-    MAX_CALCULATED_FORMULA,
     Finding,
     _rendered_columns,
     formula_column_refs,
@@ -414,7 +419,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         #
         # A warning rather than an error because a list that stays small has no
         # problem, and that is a common, legitimate case.
-        display = entity.display_column or DEFAULT_DISPLAY_COLUMN
+        display = display_column_for(entity)
         is_calculated = display in vc.calculated_by_entity.get(entity_name, set())
         if entity_name in lookup_targets and is_calculated:
             if not entity.accept_unindexable_display_column:
@@ -423,7 +428,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{entity_name}.display_column: {display!r} is a calculated "
                     f"column. Calculated columns cannot be indexed, so this "
                     f"list's lookup picker stops working once it passes roughly "
-                    f"5,000 items: the new-item form fails with \"exceeds the "
+                    f"{LIST_VIEW_THRESHOLD:,} items: the new-item form fails with \"exceeds the "
                     f"list view threshold\" while views carry on working "
                     f"normally. If this list will stay small, set "
                     f"accept_unindexable_display_column: true on the entity.",
@@ -499,7 +504,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{unindexable} column, "
                     f"which SharePoint cannot index. A lookup target's display "
                     f"column is indexed automatically so its picker keeps "
-                    f"working past 5,000 items, and the deploy sets "
+                    f"working past {LIST_VIEW_THRESHOLD:,} items, and the deploy sets "
                     f"Indexed=true, reads it back and fails when it did not "
                     f"stick. Name an indexable column as display_column.",
                 ))
@@ -627,7 +632,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "its column [unique] setting; remove the redundant indexes entry.",
             ))
         effective_indexes = vc.effective_indexes(entity_name)
-        if len(effective_indexes) > 20:
+        if len(effective_indexes) > MAX_LIST_INDEXES:
             # Name the implicit contributors. The old message said only
             # "(including unique columns)", which on the case this rule exists
             # for — twenty declared indexes on a lookup target, no unique
@@ -648,31 +653,25 @@ def check(vc: ValidationContext) -> list[Finding]:
                 extra.append(
                     f"{display_index!r}, indexed automatically because this "
                     f"list is a lookup target -- a picker cannot enumerate an "
-                    f"unindexed column past 5,000 items",
+                    f"unindexed column past {LIST_VIEW_THRESHOLD:,} items",
                 )
             findings.append(Finding(
                 FindingCode.INDEX_LIMIT_EXCEEDED,
                 f"{entity_name}.indexes: {len(effective_indexes)} "
-                f"effective indexes exceed SharePoint's limit of 20. "
+                f"effective indexes exceed SharePoint's limit of "
+                f"{MAX_LIST_INDEXES}. "
                 f"{len(declared)} declared in indexes {{ }}"
                 + "".join(f", plus {item}" for item in extra)
                 + ".",
             ))
-        elif len(effective_indexes) >= 18:
-            # The count is a floor, not a total. SharePoint creates indexes on
-            # its own: opening a modern view sorted on an unindexed column
-            # produces one marked "(Automatically created)" that consumes a real
-            # slot, and nothing reachable from script reports the true number —
-            # the only place it exists is the "You have created N of maximum 20
-            # indices on this list" line on IndexedColumns.aspx. So a schema
-            # that validates at exactly 20 can still hit 21 in production.
-            # MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2:
-            # opening a modern view sorted on an unindexed column at 3,000 items
-            # created an index marked "(Automatically created)" on IndexedColumns.aspx,
-            # consuming one of the twenty.
+        elif len(effective_indexes) >= INDEX_WARN_AT:
+            # Why the warning band exists at all — the count this build can see
+            # is a floor, not a total — is recorded once, beside INDEX_WARN_AT
+            # in analysis/limits.py, along with the 2026-07-31 measurement.
             findings.append(Finding(
                 FindingCode.INDEX_LIMIT_APPROACHING,
-                f"{entity_name}.indexes: {len(effective_indexes)} of the 20 "
+                f"{entity_name}.indexes: {len(effective_indexes)} of the "
+                f"{MAX_LIST_INDEXES} "
                 f"available indexes are already spoken for. SharePoint also "
                 f"creates indexes by itself -- opening a sorted view on an "
                 f"unindexed column adds one -- and those are invisible to this "

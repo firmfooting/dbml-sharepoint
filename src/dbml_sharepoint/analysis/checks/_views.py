@@ -20,7 +20,13 @@ from dbml_sharepoint.analysis.joins import (
     join_bearing_columns,
     joining_fields,
 )
+from dbml_sharepoint.analysis.limits import (
+    LIST_VIEW_THRESHOLD,
+    LIST_VIEW_THRESHOLD_FALLBACK_ROWS,
+    MAX_VIEW_ROW_LIMIT,
+)
 from dbml_sharepoint.analysis.typemap import (
+    NUMBER_TYPES,
     NUMERIC_ONLY_TOTALS,
     is_multi_value,
     unsupported_index_reason,
@@ -39,7 +45,7 @@ from dbml_sharepoint.model.mapping_loader import view_url_slug
 # calculated day-counts, and the `string;#` prefix that complicates
 # calculated text is a COLUMN-formatting concern that never reaches a
 # view's Aggregations property.
-_NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
+_NUMERIC_FOR_TOTALS = NUMBER_TYPES     # one home: analysis/typemap.py
 
 # Columns SharePoint will not add up, subtract or order, whatever their
 # declared DBML type says. Separated from the numeric rule so the message
@@ -49,19 +55,11 @@ _NUMERIC_FOR_TOTALS = frozenset({"int", "number", "calculated_number"})
 # Count on a person or hyperlink column.
 _NON_ARITHMETIC = frozenset({"person", "richtext", "longtext", "hyperlink"})
 
-# SharePoint Online's list view threshold is 5,000 items. Microsoft states it
-# CANNOT be changed for SharePoint, and that the effective number "is not
-# always 5,000" because it varies with the site and database activity — so
-# 5,000 is the documented figure, not a precise cutoff.
-#
-# The consequence is worse than an error, which is why this is worth warning
-# about at all: with Metadata Navigation and Filtering (on by default) a query
-# no index can serve falls back to returning up to 1,250 of the NEWEST items,
-# and may return none. A view that silently shows a truncated answer is the
-# failure this check exists to prevent.
-# https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
-_LIST_VIEW_THRESHOLD = 5_000
-_FALLBACK_ROW_COUNT = 1_250
+# One home for both, and the whole rationale, in analysis/limits.py. They are
+# read here, in `_structure.py` and in `finding_help.py`, which is what put the
+# figure into prose three modules away from the check that enforces it.
+_LIST_VIEW_THRESHOLD = LIST_VIEW_THRESHOLD
+_FALLBACK_ROW_COUNT = LIST_VIEW_THRESHOLD_FALLBACK_ROWS
 
 # Microsoft, verbatim: "Although you can index a lookup column to improve
 # performance, using an indexed lookup column to prevent exceeding the List
@@ -784,14 +782,15 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # filter column is a Lookup or a Person needs no warning: an
                     # index on either is served past the threshold. See
                     # _LOOKUP_FIELD_TYPES for the measurement.
-            # 5000 as a literal, deliberately NOT _LIST_VIEW_THRESHOLD. This is
-            # the per-view page-size ceiling, a different limit that happens to
-            # share the value; folding them into one constant would tie a view
-            # setting to a list-size threshold they have no reason to track.
-            if view.row_limit is not None and not 1 <= view.row_limit <= 5000:
+            # MAX_VIEW_ROW_LIMIT, deliberately NOT _LIST_VIEW_THRESHOLD. This
+            # is the per-view page-size ceiling, a different limit that happens
+            # to share the value; folding them into one constant would tie a
+            # view setting to a list-size threshold they have no reason to
+            # track. limits.py says the same thing beside both.
+            if view.row_limit is not None and not 1 <= view.row_limit <= MAX_VIEW_ROW_LIMIT:
                 findings.append(Finding(
                     FindingCode.ROW_LIMIT_OUT_OF_RANGE,
-                    f"{ctx}: row_limit must be between 1 and 5000.",
+                    f"{ctx}: row_limit must be between 1 and {MAX_VIEW_ROW_LIMIT}.",
                     location=at_view,
                 ))
             if view.formatting is not None:

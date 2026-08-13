@@ -109,6 +109,51 @@ def test_styled_pack_requirements() -> None:
     assert reqs["version_trim_mode"].level_on_fail == "WARN"
 
 
+def test_version_trim_is_not_probed_when_no_list_here_versions() -> None:
+    """The versioning question is asked of the lists THIS SCRIPT provisions.
+
+    It used to be asked of the whole mapping: `default.enable_versioning or
+    any(override.get("enable_versioning") for every override)`. Both halves
+    were wrong in the same direction. The `any` looked at entities belonging
+    to other site roles, which this script never touches; and it read the raw
+    override with bare truthiness, so a YAML `"false"` counted as on.
+
+    Either way assess.js probed for a version surface on a site where nothing
+    versions -- a WARN nobody can act on, which is how a warning stops being
+    read. `Mapping.versioning_for` merges the override onto the default the
+    same way jsgen deploys it, and the entity is filtered by role first.
+    """
+    schema = make_schema(make_table("Risk", column("Title", required=True)))
+    bundle = make_bundle(
+        entities=["Risk"],
+        versioning_default=Versioning(enable_versioning=False),
+        # An override that turns versioning on -- for an entity that is not
+        # in the schema at all, and so is provisioned by no site role.
+        versioning_overrides={"SomeOtherRoleEntity": {"enable_versioning": True}},
+    )
+
+    assert assess_targets(schema, bundle, "default")["declares_versioning"] is False
+    assert "version_trim_mode" not in {
+        r.key for r in derive_requirements(schema, bundle, "default")
+    }
+
+
+def test_version_trim_is_probed_when_an_override_turns_versioning_on() -> None:
+    """The other direction: the default is off and one deployed list opts in.
+
+    Pinned beside the negative case so the rule above cannot be satisfied by
+    a `declares_versioning` that is simply always False.
+    """
+    schema = make_schema(make_table("Risk", column("Title", required=True)))
+    bundle = make_bundle(
+        entities=["Risk"],
+        versioning_default=Versioning(enable_versioning=False),
+        versioning_overrides={"Risk": {"enable_versioning": True}},
+    )
+
+    assert assess_targets(schema, bundle, "default")["declares_versioning"] is True
+
+
 def test_manage_permissions_required_even_with_inheritance_left_alone() -> None:
     """#166 item 5: a per-list ACL policy that leaves inheritance intact
     (`break_inheritance: false`) still BINDS role assignments on the list, so

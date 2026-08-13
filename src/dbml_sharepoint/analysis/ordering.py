@@ -94,6 +94,32 @@ def _topological(nodes: list[str], edges: dict[str, set[str]]) -> list[str]:
     return order
 
 
+def is_deployed_here(
+    entities: "dict[str, EntityMapping]",
+    name: str,
+    site_role: str,
+) -> bool:
+    """Is this entity provisioned at a site of this role?
+
+    THE role predicate, for every consumer. Two things make an entity absent
+    from a site: no mapping entry at all, and a mapping entry belonging to a
+    different role. Both must be excluded, and a caller that checks only the
+    second raises `KeyError` on the first.
+
+    `site_tables_in_order` below applies it in dependency order for the
+    generators that DEPLOY. `generators.reportgen` applies it in declaration
+    order, because a report has no creation sequence to respect — the
+    ordering legitimately differs and the membership question does not, which
+    is why the predicate is factored out and the ordering is not.
+
+    reportgen used to open-code this, and said so in its own docstring
+    ("same filter as jsgen"). A comment claiming two implementations agree is
+    the shape this repository keeps finding to be false.
+    """
+    entity = entities.get(name)
+    return entity is not None and entity.site_role == site_role
+
+
 def site_tables_in_order(
     schema: Schema,
     entities: "dict[str, EntityMapping]",
@@ -106,5 +132,5 @@ def site_tables_in_order(
     return [
         name
         for name in compute_phases(schema).list_creation_order
-        if name in entities and entities[name].site_role == site_role
+        if is_deployed_here(entities, name, site_role)
     ]
