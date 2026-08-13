@@ -38,7 +38,7 @@ SP REST expects on SP.BasePermissions.
 ### `BUILT_IN_LEVELS`
 
 ```python
-BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit', 'Full Control', 'Limited Access', 'Manage Hierarchy', 'Read', 'Restricted Read'})
+BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit', 'Full Control', 'Limited Access', 'Manage Hierarchy', 'Read', 'Restricted Read', 'View Only', 'Web-Only Limited Access'})
 ```
 
 ### `requires_manage_permissions`

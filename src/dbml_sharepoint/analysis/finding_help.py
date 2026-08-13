@@ -432,6 +432,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "while an operator self-enrols in order to write. Put the two "
         "flags on two groups."
     ),
+    FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP: (
+        "A group declares both `enroll_enterprise_reader` and "
+        "`allow_members_edit_membership: true`. The security phase applies "
+        "that setting before Phase 1.4 enrols the reader, so the enrolled "
+        "account can then add principals to its own group -- and everything "
+        "it adds inherits the group's `Read`. The exclusivity check reads "
+        "membership at enrolment time and would find the named reader and "
+        "pass, so a later addition is never noticed. The one-account "
+        "promise the manifest prints would hold for one run and be "
+        "unenforceable afterwards, which is worse than not making it. Drop "
+        "the setting, or use a different group for the reader."
+    ),
     FindingCode.ENTERPRISE_READER_GROUP_NOT_GRANTED: (
         "A group marked `enroll_enterprise_reader` holds no role "
         "assignment, so enrolling an account into it grants nothing. The "
@@ -773,6 +785,23 @@ FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.OVERDUE_GUARD_FIELD_NOT_RENDERED: (
         "An `overdue-date` style's `guard.field` names a column the "
         "entity does not render."
+    ),
+    FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN: (
+        "A `permission_levels:` entry is named after a built-in SharePoint "
+        "permission level. Declaring one does not create a second level "
+        "beside it: the deploy probes for a role definition of that name "
+        "and, finding the site's own, MERGEs the declared description and "
+        "base permissions onto it. That reconciliation is deliberate -- it "
+        "stops a drifted custom level silently keeping edit rights -- but "
+        "pointed at a built-in it rewrites `Read` (or whichever) for EVERY "
+        "principal on the site that holds it, not just the ones this "
+        "mapping names. Give the custom level a name of its own. Matched "
+        "case-insensitively, the same way duplicate level names are, "
+        "because the site resolves the name to one object either way. The "
+        "eleven reserved names come from Microsoft Learn, 'Permission "
+        "levels in SharePoint'; they are ENGLISH, and built-in levels are "
+        "locale-dependent, so this cannot catch the collision on a "
+        "non-English tenant."
     ),
     FindingCode.POLYMORPHIC_COLUMN_NOT_RENDERED: (
         "A `polymorphic_patterns:` entry's `field` or `discriminator` "

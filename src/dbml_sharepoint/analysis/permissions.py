@@ -78,10 +78,32 @@ def base_permissions_to_high_low(perm_names: list[str]) -> HighLow:
 
 
 # Built-in level names that don't need creation; the deployer just resolves
-# them by name when binding role assignments.
+# them by name when binding role assignments. Also the RESERVED set: a
+# mapping may not declare a `permission_levels` entry named after one, because
+# `_security_principals.js.j2` reconciles a same-name role definition rather
+# than skipping it, and would rewrite the site's copy for every principal.
+#
+# All eleven from Microsoft Learn, "Permission levels in SharePoint"
+# (https://learn.microsoft.com/sharepoint/understanding-permission-levels),
+# checked 2026-08-13 rather than written from memory. `View Only` and
+# `Web-Only Limited Access` were both missing; the second is in the same Learn
+# table and is routinely left out of the commonly-quoted list of ten.
+#
+# TWO CAVEATS this set cannot express, neither of which it makes worse:
+#   - Approve, Manage Hierarchy and Restricted Read are publishing-template
+#     levels and may not exist on a modern team or communication site.
+#   - Learn says Limited Access "cannot be assigned directly", so accepting it
+#     as an assignment level is doubtful. That predates this comment and is
+#     tracked separately; nothing here starts relying on it.
+#
+# The names are ENGLISH. Built-in levels are locale-dependent, so on a
+# non-English tenant none of these match and a mapping could still redefine a
+# built-in. Closing that means resolving by RoleType or Id against a live
+# site. `ENTERPRISE_READER_GROUP_OVER_PRIVILEGED` has the same blind spot.
 BUILT_IN_LEVELS: frozenset[str] = frozenset({
     "Read", "Contribute", "Edit", "Design", "Full Control",
-    "Limited Access", "Approve", "Manage Hierarchy", "Restricted Read",
+    "Limited Access", "Web-Only Limited Access", "Approve",
+    "Manage Hierarchy", "Restricted Read", "View Only",
 })
 
 

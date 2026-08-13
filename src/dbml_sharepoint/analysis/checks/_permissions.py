@@ -24,6 +24,13 @@ _GROUPS = Location(Section.GROUPS)
 _DEFAULT_POLICY = Location(Section.LIST_PERMISSIONS, sub="default")
 _OVERRIDES = Location(Section.LIST_PERMISSIONS, sub="overrides")
 
+#: Matched case-insensitively, the same way the duplicate-name rule below
+#: treats level names -- one stance, not two. A case variant is refused for
+#: the same reason a duplicate is: the site resolves the name to one object.
+_RESERVED_LEVEL_KEYS: frozenset[str] = frozenset(
+    name.casefold() for name in BUILT_IN_LEVELS
+)
+
 
 def _levels_granted_to_group(
     perms: PermissionsConfig, name: str,
@@ -99,6 +106,17 @@ def check(vc: ValidationContext) -> list[Finding]:
         seen_level_names: dict[str, str] = {}
         for lvl in perms.levels:
             key = lvl.name.casefold()
+            if key in _RESERVED_LEVEL_KEYS:
+                findings.append(Finding(
+                    FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN,
+                    f"permission_levels: {lvl.name!r} is a built-in SharePoint "
+                    f"permission level. Declaring it does not create a second "
+                    f"level -- the deploy reconciles the one already on the "
+                    f"site, rewriting its description and base permissions "
+                    f"for every principal that holds it. Give the custom "
+                    f"level a name of its own.",
+                    location=_LEVELS,
+                ))
             if key in seen_level_names:
                 findings.append(Finding(
                     FindingCode.DUPLICATE_PERMISSION_LEVEL_NAME,
@@ -235,6 +253,20 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"operator in the group, so Phase 1.4 finds a principal "
                     f"other than the named reader and aborts the run -- "
                     f"every run, on a correct address.",
+                    location=_GROUPS,
+                ))
+
+            if grp.allow_members_edit_membership:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP,
+                    f"groups: {grp.name!r} declares both "
+                    f"enroll_enterprise_reader and "
+                    f"allow_members_edit_membership. The security phase "
+                    f"applies that setting before Phase 1.4 enrols the "
+                    f"reader, so the enrolled account can then add "
+                    f"principals to its own group and pass on the group's "
+                    f"Read. The one-account guard would hold for the length "
+                    f"of one run and be unenforceable afterwards.",
                     location=_GROUPS,
                 ))
 
