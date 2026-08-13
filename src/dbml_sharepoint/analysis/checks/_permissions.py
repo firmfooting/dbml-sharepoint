@@ -3,7 +3,12 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.permissions import BASE_PERMISSIONS, BUILT_IN_LEVELS
+from dbml_sharepoint.analysis.permissions import (
+    ASSIGNABLE_BUILT_IN_LEVELS,
+    BASE_PERMISSIONS,
+    BUILT_IN_LEVELS,
+    DERIVED_BUILT_IN_LEVELS,
+)
 from dbml_sharepoint.analysis.validator import (
     _ASSOCIATED_GROUP_ALIASES,
     _BUILTIN_SP_GROUPS,
@@ -23,6 +28,19 @@ _GROUPS = Location(Section.GROUPS)
 #: paths are `list_permissions.default...` and `list_permissions.overrides`.
 _DEFAULT_POLICY = Location(Section.LIST_PERMISSIONS, sub="default")
 _OVERRIDES = Location(Section.LIST_PERMISSIONS, sub="overrides")
+
+#: Matched case-insensitively, the same way the duplicate-name rule below
+#: treats level names -- one stance, not two. A case variant is refused for
+#: the same reason a duplicate is: the site resolves the name to one object.
+_RESERVED_LEVEL_KEYS: frozenset[str] = frozenset(
+    name.casefold() for name in BUILT_IN_LEVELS
+)
+
+#: Case-folded for the same reason as the reserved names: the site resolves an
+#: assignment's level by name, so `limited access` reaches the same object.
+_DERIVED_LEVEL_KEYS: frozenset[str] = frozenset(
+    name.casefold() for name in DERIVED_BUILT_IN_LEVELS
+)
 
 
 def _levels_granted_to_group(
@@ -99,6 +117,35 @@ def check(vc: ValidationContext) -> list[Finding]:
         seen_level_names: dict[str, str] = {}
         for lvl in perms.levels:
             key = lvl.name.casefold()
+            # ALL eleven built-ins are reserved, including the three that are
+            # publishing-template levels and may be absent from a modern team
+            # or communication site. Raised in review on #208: on such a site
+            # the existence probe would find no `Approve`, create the custom
+            # level safely, and this rule refused a build that would have
+            # worked.
+            #
+            # Kept, because the build cannot see the target site. The same
+            # mapping is pasted into whatever site the operator has, so the
+            # choice is between refusing a name that MIGHT have been free and
+            # allowing one that MIGHT rewrite a live level for every principal
+            # holding it. `AGENTS.md` settles that: an uncertainty fails
+            # closed with a named error, and this one costs a rename.
+            #
+            # The corollary quoted against it -- a rule must not be stronger
+            # than the reference implementation satisfies -- is about the
+            # shipped families, and none of them declares a level named after
+            # any built-in. The conformance sweep would fail if one did.
+            if key in _RESERVED_LEVEL_KEYS:
+                findings.append(Finding(
+                    FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN,
+                    f"permission_levels: {lvl.name!r} is a built-in SharePoint "
+                    f"permission level. Declaring it does not create a second "
+                    f"level -- the deploy reconciles the one already on the "
+                    f"site, rewriting its description and base permissions "
+                    f"for every principal that holds it. Give the custom "
+                    f"level a name of its own.",
+                    location=_LEVELS,
+                ))
             if key in seen_level_names:
                 findings.append(Finding(
                     FindingCode.DUPLICATE_PERMISSION_LEVEL_NAME,
@@ -152,7 +199,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
 
         # Collect all valid level names (built-in + declared custom).
-        all_level_names = BUILT_IN_LEVELS | set(seen_level_names.values())
+        all_level_names = ASSIGNABLE_BUILT_IN_LEVELS | set(seen_level_names.values())
         # Collect all valid group names (declared custom + built-in SP groups).
         all_group_names = custom_group_names | _BUILTIN_SP_GROUPS
 
@@ -168,7 +215,22 @@ def check(vc: ValidationContext) -> list[Finding]:
             """
             for i, assignment in enumerate(policy.assignments):
                 lvl = assignment.level
-                if lvl not in all_level_names:
+                # Ordered so a derived level gets its own message. It IS a
+                # built-in, so "not a built-in or declared custom level"
+                # would be false and would send the author looking for a
+                # typo instead of at the grant they cannot make.
+                if lvl.casefold() in _DERIVED_LEVEL_KEYS:
+                    findings.append(Finding(
+                        FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE,
+                        f"{ctx}.assignments[{i}]: level {lvl!r} is derived by "
+                        f"SharePoint and cannot be assigned directly. It is "
+                        f"what a principal is given on a parent so it can "
+                        f"reach one item granted below, and it grants no "
+                        f"access of its own. Grant the level you mean, "
+                        f"usually 'Read'.",
+                        location=at,
+                    ))
+                elif lvl not in all_level_names:
                     findings.append(Finding(
                         FindingCode.UNKNOWN_PERMISSION_LEVEL,
                         f"{ctx}.assignments[{i}]: level {lvl!r} is not a built-in "
@@ -235,6 +297,20 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"operator in the group, so Phase 1.4 finds a principal "
                     f"other than the named reader and aborts the run -- "
                     f"every run, on a correct address.",
+                    location=_GROUPS,
+                ))
+
+            if grp.allow_members_edit_membership:
+                findings.append(Finding(
+                    FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP,
+                    f"groups: {grp.name!r} declares both "
+                    f"enroll_enterprise_reader and "
+                    f"allow_members_edit_membership. The security phase "
+                    f"applies that setting before Phase 1.4 enrols the "
+                    f"reader, so the enrolled account can then add "
+                    f"principals to its own group and pass on the group's "
+                    f"Read. The one-account guard would hold for the length "
+                    f"of one run and be unenforceable afterwards.",
                     location=_GROUPS,
                 ))
 

@@ -340,6 +340,8 @@ class FindingCode(StrEnum):
     DUPLICATE_PERMISSION_LEVEL_NAME = "duplicate_permission_level_name", "error"
     ENTERPRISE_READER_GROUP_ENROLS_THE_OPERATOR = (
         "enterprise_reader_group_enrols_the_operator", "error")
+    ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP = (
+        "enterprise_reader_group_members_may_edit_membership", "error")
     ENTERPRISE_READER_GROUP_NOT_GRANTED = (
         "enterprise_reader_group_not_granted", "error")
     ENTERPRISE_READER_GROUP_OVER_PRIVILEGED = (
@@ -348,6 +350,10 @@ class FindingCode(StrEnum):
         "enterprise_reader_group_requires_empty", "error")
     MULTIPLE_ENTERPRISE_READER_GROUPS = (
         "multiple_enterprise_reader_groups", "error")
+    PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE = (
+        "permission_level_not_directly_assignable", "error")
+    PERMISSION_LEVEL_REDEFINES_A_BUILTIN = (
+        "permission_level_redefines_a_builtin", "error")
     UNKNOWN_BASE_PERMISSION = "unknown_base_permission", "error"
     UNKNOWN_OWNER_GROUP = "unknown_owner_group", "error"
     UNKNOWN_PERMISSION_LEVEL = "unknown_permission_level", "error"
