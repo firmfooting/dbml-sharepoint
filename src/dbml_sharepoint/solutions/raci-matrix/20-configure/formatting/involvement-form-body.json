@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "State the input",
+      "fields": ["Title", "Activity", "Party"]
+    },
+    {
+      "displayname": "How they are involved",
+      "fields": ["Involvement", "Channel", "Notes"]
+    }
+  ]
+}

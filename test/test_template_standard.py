@@ -478,6 +478,32 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Ownership and closure": "Govern",
         "System": "System",
     },
+    # A vocabulary list, not a process one: it collapses to Identify ->
+    # Govern. There is no Assess beat because nothing about a party is
+    # rated, and no System beat because nothing is auto-stamped.
+    ("raci-matrix", "Party"): {
+        "Name the party": "Identify",
+        "Status and notes": "Govern",
+    },
+    # The full five-beat arc. "Classify it" is the Assess beat: ActivityKind
+    # and Criticality are the two judgements made about an activity, and
+    # Criticality drives the confirmation cadence.
+    ("raci-matrix", "Activity"): {
+        "Describe the activity": "Identify",
+        "Classify it": "Assess",
+        "Assign it": "Act",
+        "Keep it current": "Govern",
+        "System": "System",
+    },
+    # Collapses to Identify -> Act. There is no Assess beat because an
+    # involvement is not rated, and no System beat because nothing is
+    # auto-stamped. "State the input" is Identify and is named as an
+    # instruction on purpose: the mandatory Title is the whole
+    # counter-measure against a consulted list of everyone who asked.
+    ("raci-matrix", "Involvement"): {
+        "State the input": "Identify",
+        "How they are involved": "Act",
+    },
 }
 
 # §1.3. Deliberately WEAKER than the archetype table in the spec, which is a
@@ -1363,15 +1389,15 @@ def test_no_template_performs_too_many_joins(template: str) -> None:
     )
 
 
-def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
+def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     """The spec's survey number, pinned. It is the whole reason this check can
     ship silently, and the parametrized test above cannot hold it: that one
-    only fires at 9, so a template could climb from 5 to 8 unnoticed and the
+    only fires at 9, so a template could climb from 6 to 8 unnoticed and the
     warning band would be one column away with nothing having said so.
 
     Calls `all_items_joining_fields` — the same derivation `_views.py`'s
     entity loop calls — rather than re-typing the formula here. A copy would
-    let this test and the validator drift: `assert worst == 5` could keep
+    let this test and the validator drift: `assert worst == 6` could keep
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
 
@@ -1388,13 +1414,27 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
     and is still the same opportunities-register entity, re-derived rather
     than assumed.
 
-    If this fails at 6, that is a template growing a join column — update the
-    number here DELIBERATELY, and check the spec's survey paragraph with it."""
+    RE-MEASURED 2026-08-12 across 32 templates / 55 entities, when
+    raci-matrix's Party list joined the roster: 2 -> 7, 3 -> 29, 4 -> 18,
+    5 -> 1. Party lands at 3 (Contact plus Author and Editor). The worst is
+    unchanged and is still the same opportunities-register entity.
+
+    RE-MEASURED 2026-08-12 across 32 templates / 56 entities, when
+    raci-matrix's Activity register joined the roster: 2 -> 7, 3 -> 29,
+    4 -> 18, 5 -> 1, 6 -> 1. The new worst is raci-matrix/Activity at 6
+    (Accountable, AccountableForum, Author, ConfirmedBy, Editor, Responsible)
+    — a register whose subject IS people carries more person columns than
+    most. Still three clear of the nine-column warning band.
+
+    RE-MEASURED 2026-08-12 across 32 templates / 57 entities, when
+    raci-matrix's Involvement child list joined the roster: 2 -> 7, 3 -> 29,
+    4 -> 19, 5 -> 1, 6 -> 1. Involvement lands at 4 (Activity, Party, Author,
+    Editor). The worst is unchanged and is still raci-matrix/Activity at 6."""
     from dbml_sharepoint.analysis.joins import all_items_joining_fields
 
     templates = _all_templates()
-    assert len(templates) == 31, (
-        f"{len(templates)} templates discovered, not the 31 this survey was "
+    assert len(templates) == 32, (
+        f"{len(templates)} templates discovered, not the 32 this survey was "
         f"measured against. A template appeared or disappeared from the "
         f"roster — re-measure the distribution and the worst count below "
         f"before trusting either."
@@ -1414,8 +1454,8 @@ def test_the_worst_generated_all_items_is_five_of_twelve() -> None:
                 continue
             xcols = by_entity.get(name, set())
             worst = max(worst, len(all_items_joining_fields(table, entity, xcols)))
-    assert worst == 5, (
-        f"worst generated 'All Items' is now {worst} of 12, not the pinned 5. "
+    assert worst == 6, (
+        f"worst generated 'All Items' is now {worst} of 12, not the pinned 6. "
         f"If this ROSE, a template grew a join-bearing column on its worst "
         f"entity — update the number here DELIBERATELY, and check the spec's "
         f"survey paragraph with it. If it FELL, a formula term (SYSTEM_COLUMNS "
@@ -1659,8 +1699,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     """Unprefixed list names must stay unique across the shipped families.
 
     The prefix is a governance device -- you register yours so nobody else
-    takes it -- and it is on its way out. MEASURED 2026-08-12: 54 entity
-    names across 31 families, zero duplicated, so several families can
+    takes it -- and it is on its way out. MEASURED 2026-08-12: 57 entity
+    names across 32 families, zero duplicated, so several families can
     already share one site with no prefix at all.
 
     That is only true while it stays true. Two families both declaring
@@ -1668,8 +1708,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     nothing else in the build would notice: each family validates alone.
     """
     solutions = available_solutions()
-    assert len(solutions) == 31, (
-        f"{len(solutions)} templates discovered, not the 31 this collision "
+    assert len(solutions) == 32, (
+        f"{len(solutions)} templates discovered, not the 32 this collision "
         "sweep was measured against -- re-verify the invariant before "
         "trusting an empty collision set."
     )
@@ -1677,8 +1717,8 @@ def test_no_two_templates_declare_the_same_entity_name() -> None:
     for solution in solutions:
         for entity in solution.lists:
             owners.setdefault(entity, []).append(solution.id)
-    assert len(owners) == 54, (
-        f"{len(owners)} unique entity names found, not the 54 this collision "
+    assert len(owners) == 57, (
+        f"{len(owners)} unique entity names found, not the 57 this collision "
         "sweep was measured against -- re-verify the invariant before "
         "trusting an empty collision set."
     )

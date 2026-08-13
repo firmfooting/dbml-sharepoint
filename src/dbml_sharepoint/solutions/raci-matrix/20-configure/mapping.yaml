@@ -1,0 +1,563 @@
+# RACI matrix — physical mapping.
+#
+# Three lists, and the shape is forced by the platform as much as by the
+# method. Consulted and Informed are inherently many-valued, and the mapper
+# resolves no multi-value person or lookup type (see typemap.py:321 — only a
+# DBML enum becomes MultiChoice). A wide, one-row-per-activity RACI therefore
+# cannot be built here except with free text. The child list that follows is
+# also what makes the most-cited RACI failure impossible: Accountable is a
+# single-valued person column, so a row cannot carry two of them.
+prefix: "RACI_"
+
+entities:
+  Activity: { kind: List, base_template: 100, site_role: default }
+  Involvement: { kind: List, base_template: 100, site_role: default }
+  Party: { kind: List, base_template: 100, site_role: default }
+
+cross_site_reference_columns: []
+
+versioning:
+  default:
+    enable_versioning: true
+    major_version_limit: 200
+    enable_minor_versions: false
+  overrides: {}
+
+enum_sources: {}
+watched_lists: []
+
+# The confirmation cadence. Keyed to EXACTLY the three `criticality` members
+# in this order: the nested IF maps the first two by name and treats
+# everything else as Routine, so an added, renamed or reordered member
+# silently gets the LONGEST interval rather than failing. The coupling is
+# recorded here because that is where somebody editing the enum will look.
+# Unreachable by data entry today: every Choice column deploys with
+# FillInChoice false, so a value outside the enum cannot be typed.
+#
+# KNOWN, ACCEPTED, and the same defect risk-register carries: adding months
+# with DATE(YEAR(d), MONTH(d)+N, DAY(d)) OVERFLOWS at month end rather than
+# clamping, so a confirmation recorded 31 August falls due 3 March rather
+# than 28 February. One to three days on a cadence of six months or more,
+# against a column whose own guidance is to re-confirm sooner on any material
+# change. Tracked as issue #5.
+#
+# CHANGE CONTROL: SharePoint recalculates every existing row when a formula
+# changes — read 50-govern/governance.md before editing this.
+calculated_formulas:
+  Activity:
+    ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])))'
+
+# Security: the matrix is maintained centrally and read by everyone. Nobody
+# edits their own row — a register whose subjects can rewrite their own
+# accountability is not a register.
+groups:
+  - name: "RACI Matrix Maintainers"
+    description: "Staff who maintain the activity register, its involvements and the party vocabulary."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+  - name: "RACI List Administrators"
+    description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_operator_during_deploy: true
+  - name: "RACI Enterprise Readers"
+    description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
+    owner_group: "Site Owners"
+    allow_members_edit_membership: false
+    allow_request_to_join_leave: false
+    auto_accept_request_to_join_leave: false
+    only_allow_members_view_membership: false
+    enroll_enterprise_reader: true
+
+permission_levels: []
+
+list_permissions:
+  default:
+    site_role: default
+    break_inheritance: true
+    reconcile: exact
+    assignments:
+      - principal: { kind: group, name: "RACI Matrix Maintainers" }
+        level: "Contribute"
+      - principal: { kind: group, name: "RACI List Administrators" }
+        level: "Full Control"
+      - principal: { kind: associated_member_group }
+        level: "Read"
+      - principal: { kind: associated_owner_group }
+        level: "Read"
+      - principal: { kind: group, name: "RACI Enterprise Readers" }
+        level: "Read"
+
+seal_columns: true
+prevent_list_deletion: true
+
+display_names:
+  mode: auto
+
+column_formatting:
+  Activity:
+    # Criticality is an assessment scale, not a lifecycle, so it takes the
+    # severity tokens the way risk-register's TargetRiskRating does — least
+    # severe to `good`, ascending from there.
+    Criticality: { style: severity, map: { Statutory: severe, High: warning,
+                                           Routine: good } }
+    ReviewStatus: { style: severity, map: { Current: low,
+                                            "Needs review": warning,
+                                            Retired: muted } }
+    # `calculated: true` is REQUIRED here — calculated values arrive prefixed
+    # `string;#`. It is WRONG in a view formatter, where [$Field] arrives
+    # clean. Getting it backwards costs a silently-not-firing format either
+    # way.
+    ConfirmationDue: { style: overdue-date, calculated: true,
+                       guard: { field: ReviewStatus, not: [Retired] } }
+    # ActivityKind is DELIBERATELY unformatted. Task, Approval and Decision
+    # are a category with no ordering, and `pill` requires an explicit token
+    # map — so formatting it at all would mean inventing a colour ranking,
+    # which is the "colour by word, not by role" failure the style standard
+    # exists to prevent. It does its work through the view filter and the
+    # save rule instead.
+  Involvement:
+    # The two members differ in what they OBLIGE: a Consulted party's input
+    # is required before the activity proceeds, an Informed party's is not.
+    # `low` against `neutral` says exactly that, without ranking one as worse.
+    Involvement: { style: pill, map: { Consulted: low, Informed: neutral } }
+  Party:
+    # A category, not a lifecycle, so the pill separates kinds rather than
+    # ranking them: the two person-shaped kinds share neutral, a Forum reads
+    # as a body, and External is visibly outside the organisation.
+    PartyKind: { style: pill, map: { Individual: neutral, Role: neutral,
+                                     Forum: low, External: muted } }
+    Status: { style: severity, map: { Active: low, Inactive: muted } }
+
+views:
+  Activity:
+    - title: "Current"
+      default: true
+      fields: [Title, Domain, ActivityKind, Criticality, Responsible,
+               Accountable, AccountableForum, ReviewStatus, ConfirmationDue]
+      where:
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      # ONE row-level signal, reserved for the state nothing else shouts
+      # about. The ConfirmationDue cell is about time passing; this is about
+      # a human having marked the row as wrong, which is worse.
+      formatting: formatting/row-needs-review.json
+      widths:
+        Title: 280
+        Domain: 130
+        ActivityKind: 120
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        AccountableForum: 180
+        ReviewStatus: 160
+        ConfirmationDue: 170
+    - title: "My accountabilities"
+      fields: [Title, Domain, ActivityKind, Criticality, Responsible,
+               ReviewStatus, ConfirmationDue]
+      where:
+        - { field: Accountable, op: eq, value: me }
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      widths:
+        Title: 300
+        Domain: 130
+        ActivityKind: 120
+        Criticality: 160
+        Responsible: 160
+        ReviewStatus: 160
+        ConfirmationDue: 170
+    - title: "Confirmation due"
+      fields: [Title, Criticality, Accountable, ConfirmedBy, LastConfirmed,
+               ConfirmationDue, ReviewStatus]
+      where:
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+        - { field: ConfirmationDue, op: leq, value: today+30 }
+      sort:
+        - { field: ConfirmationDue, direction: asc }
+      widths:
+        Title: 300
+        Criticality: 160
+        Accountable: 160
+        ConfirmedBy: 160
+        LastConfirmed: 170
+        ConfirmationDue: 170
+        ReviewStatus: 160
+    # Two lenses merged on purpose. A decisions list and a by-forum grouping
+    # are each half a view; the non-Task rows grouped by the forum that owns
+    # them is the governance pack.
+    - title: "Decisions and approvals"
+      fields: [Title, ActivityKind, Criticality, Responsible, Accountable,
+               EscalationRoute, ConfirmationDue]
+      where:
+        - { field: ActivityKind, op: neq, value: "Task" }
+        - { field: ReviewStatus, op: neq, value: "Retired" }
+      group_by: { field: AccountableForum, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 260
+        ActivityKind: 120
+        Criticality: 160
+        Responsible: 160
+        Accountable: 160
+        EscalationRoute: 240
+        ConfirmationDue: 170
+    - title: "Retired"
+      fields: [Title, Domain, Responsible, Accountable, LastConfirmed,
+               ConfirmedBy]
+      where:
+        - { field: ReviewStatus, op: eq, value: "Retired" }
+      sort:
+        - { field: LastConfirmed, direction: desc }
+      widths:
+        Title: 300
+        Domain: 130
+        Responsible: 160
+        Accountable: 160
+        LastConfirmed: 170
+        ConfirmedBy: 160
+  Involvement:
+    # The matrix read: each group is one activity's consulted and informed
+    # list, which is the shape a RACI is normally drawn in.
+    - title: "By activity"
+      default: true
+      fields: [Title, Activity, Party, Involvement, Channel, Notes]
+      group_by: { field: Activity, collapsed: false }
+      sort:
+        - { field: Involvement, direction: asc }
+      widths:
+        Title: 280
+        Activity: 240
+        Party: 180
+        Involvement: 130
+        Channel: 180
+        Notes: 200
+    - title: "By party"
+      fields: [Title, Party, Activity, Involvement, Channel]
+      group_by: { field: Party, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Party: 180
+        Activity: 240
+        Involvement: 130
+        Channel: 180
+    # The consulted-overload detector. Grouped by party rather than by
+    # activity on purpose: the failure this exists to reveal is one party
+    # made Consulted on everything, and only this grouping shows it.
+    - title: "Consultation load"
+      fields: [Title, Party, Activity, Channel, Notes]
+      where:
+        - { field: Involvement, op: eq, value: "Consulted" }
+      group_by: { field: Party, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        Party: 180
+        Activity: 240
+        Channel: 180
+        Notes: 200
+  Party:
+    - title: "Active parties"
+      default: true
+      fields: [Title, PartyKind, Contact, Notes]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        PartyKind: 130
+        Contact: 160
+        Notes: 200
+    - title: "By kind"
+      fields: [Title, PartyKind, Contact, Notes]
+      where:
+        - { field: Status, op: eq, value: "Active" }
+      group_by: { field: PartyKind, collapsed: false }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        PartyKind: 130
+        Contact: 160
+        Notes: 200
+    - title: "Retired parties"
+      fields: [Title, PartyKind, Contact, Status, Notes]
+      where:
+        - { field: Status, op: eq, value: "Inactive" }
+      sort:
+        - { field: Title, direction: asc }
+      widths:
+        Title: 280
+        PartyKind: 130
+        Contact: 160
+        Status: 110
+        Notes: 200
+
+form_formatting:
+  Activity:
+    header: formatting/activity-form-header.json
+    body: formatting/activity-form-body.json
+  Involvement:
+    header: formatting/involvement-form-header.json
+    body: formatting/involvement-form-body.json
+  Party:
+    header: formatting/party-form-header.json
+    body: formatting/party-form-body.json
+
+form_visibility:
+  Activity:
+    columns:
+      # Defaults to today. Showing it at creation invites somebody to
+      # back-date the baseline the whole cadence counts from.
+      LastConfirmed: { new: false }
+      # Visible exactly when one of the two save-rule branches below can
+      # bite — a Decision, or anything Statutory — rather than sitting
+      # blank on every routine task. The two conditions must match the
+      # two branches of `list_validation` or the form and the save rule
+      # disagree.
+      #
+      # A bare list is all_of, so the OR needs the `any_of` group. This
+      # read `ActivityKind neq Task` alone, which is narrower than the
+      # rule: a Statutory TASK was refused at save while the field the
+      # message named was off the form, which is the exact failure
+      # conditional visibility exists to prevent. `act-statutory-overdue`
+      # in the demo rows is that shape and only saved because demo data
+      # is written over REST rather than through the form.
+      #
+      # Changing the kind or the criticality back does NOT clear a route
+      # already entered — SharePoint has no such mechanism — so the field
+      # hides while keeping its value.
+      EscalationRoute:
+        when:
+          any_of:
+            - { field: ActivityKind, op: neq, value: "Task" }
+            - { field: Criticality, op: eq, value: "Statutory" }
+
+# Deliberately absent: any rule conditioned on ConfirmationDue. Conditional
+# show/hide cannot read a calculated column — the formula stays syntactically
+# valid, it saves, the readback compares equal, the phase passes, and the
+# form never reacts. The build refuses it; see analysis/conditions.py.
+
+# A future date silently pushes ConfirmationDue out and drops the row from
+# every cadence view: no error, no empty cell, just an activity nobody is
+# asked to look at again.
+column_validation:
+  Activity:
+    columns:
+      LastConfirmed:
+        when:
+          - { field: LastConfirmed, op: leq, value: today }
+        message: "A confirmation cannot have happened in the future. Use the date you actually checked this row, or today's date."
+
+# TWO rules sharing the one ValidationFormula slot a list gets. Each is
+# written as an implication: `if A then B` is `any_of[not A, B]`, which is
+# why both branches start with the case the rule does not apply to.
+#
+# Both operands of both rules are Choice or Text on purpose. SharePoint
+# refuses person and lookup operands in validation formulas
+# (analysis/conditions.py:332), so no rule here can reference Responsible,
+# Accountable or AccountableForum — which is why EscalationRoute is typed
+# nvarchar rather than a multi-line column: validation cannot read those
+# either, and a rule that cannot fire is worse than no rule.
+list_validation:
+  Activity:
+    when:
+      - any_of:
+          - { field: ActivityKind, op: neq, value: "Decision" }
+          - { field: EscalationRoute, op: is_not_null }
+      - any_of:
+          - { field: Criticality, op: neq, value: "Statutory" }
+          - { field: EscalationRoute, op: is_not_null }
+    message: "This activity needs an Escalation Route. A Decision must say where it goes when Responsible and Accountable cannot agree, and so must anything Statutory."
+
+# Demo rows (emitted as demo-data.js ONLY when built with --seed). All four
+# PartyKind members appear among the ACTIVE rows, because "By kind" filters on
+# Active — a member that only exists on the retired row would leave its group
+# absent from the only view that groups them. Two forums, so the activity
+# register's grouped view has two groups to show.
+demo_items:
+  Activity:
+    # Drives four things at once: the row wash, the overdue ConfirmationDue
+    # cell, the "Confirmation due" view, and the severe Criticality token.
+    # Statutory, so its cadence is 6 months and today-400 is well past due.
+    - key: act-statutory-overdue
+      values:
+        Title: "[DEMO] Lodge the annual regulatory return"
+        Domain: "Quality & risk"
+        ActivityKind: "Task"
+        Criticality: "Statutory"
+        Detail: "Demo row. The annual return to the regulator, covering the full financial year. Does not include the quarterly data submissions, which are a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: party-clinical-governance }
+        EscalationRoute: "Executive Director, then the Finance and Audit Committee at its next sitting."
+        ReviewStatus: "Needs review"
+        LastConfirmed: "today-400"
+        ConfirmedBy: "@me"
+    - key: act-decision-supplier
+      values:
+        Title: "[DEMO] Approve a new supplier above the executive threshold"
+        Domain: "Finance"
+        ActivityKind: "Decision"
+        Criticality: "High"
+        Detail: "Demo row. Any new supplier whose first-year value exceeds the executive spending threshold. Renewals of existing suppliers are a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: party-finance-audit }
+        EscalationRoute: "If Responsible and Accountable cannot agree, the Finance and Audit Committee decides at its next sitting; urgent cases go to the Executive Director under delegation."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-200"
+        ConfirmedBy: "@me"
+    - key: act-approval-policy
+      values:
+        Title: "[DEMO] Approve a revised clinical policy"
+        Domain: "Governance"
+        ActivityKind: "Approval"
+        Criticality: "High"
+        Detail: "Demo row. Sign-off on any revision to a clinical policy after consultation has closed. Drafting the revision is a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        AccountableForum: { demo_ref: party-clinical-governance }
+        EscalationRoute: "Unresolved objections go to the Clinical Governance Committee, whose decision is final."
+        ReviewStatus: "Current"
+        LastConfirmed: "today-30"
+        ConfirmedBy: "@me"
+    # Routine, so a 24-month cadence: today-700 lands inside the 30-day
+    # window and populates "Confirmation due" without being overdue.
+    - key: act-task-roster
+      values:
+        Title: "[DEMO] Publish the fortnightly staff roster"
+        Domain: "People"
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. The roster for the coming fortnight, published to the team site. Leave approvals that feed it are a separate activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Current"
+        LastConfirmed: "today-700"
+        ConfirmedBy: "@me"
+    - key: act-task-backup
+      values:
+        Title: "[DEMO] Verify the weekly backup restore"
+        Domain: "Information & technology"
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. A test restore from the weekly backup, evidenced with the restore log. Taking the backup is automated and is not this activity."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Current"
+        LastConfirmed: "today-60"
+        ConfirmedBy: "@me"
+    - key: act-retired-fax
+      values:
+        Title: "[DEMO] Maintain the inbound fax register"
+        Domain: "Service delivery"
+        ActivityKind: "Task"
+        Criticality: "Routine"
+        Detail: "Demo row. Retired when the fax line was decommissioned. Kept so that anybody looking for who used to do this can see it, and see that it stopped."
+        Responsible: "@me"
+        Accountable: "@me"
+        ReviewStatus: "Retired"
+        LastConfirmed: "today-500"
+        ConfirmedBy: "@me"
+  Involvement:
+    - key: inv-auditor-return
+      values:
+        Title: "[DEMO] Whether the return's figures reconcile to the audited accounts"
+        Activity: { demo_ref: act-statutory-overdue }
+        Party: { demo_ref: party-external-auditor }
+        Involvement: "Consulted"
+        Channel: "Email"
+        Notes: "Demo row. Must be asked before lodgement; a mismatch after lodgement is a correction to the regulator."
+    - key: inv-auditor-supplier
+      values:
+        Title: "[DEMO] Whether the procurement trail meets audit standard"
+        Activity: { demo_ref: act-decision-supplier }
+        Party: { demo_ref: party-external-auditor }
+        Involvement: "Consulted"
+        Channel: "Meeting"
+        Notes: "Demo row. Three consultations on this party across the register - which is what the Consultation load view is for."
+    - key: inv-auditor-policy
+      values:
+        Title: "[DEMO] Whether the policy's evidence requirements are auditable"
+        Activity: { demo_ref: act-approval-policy }
+        Party: { demo_ref: party-external-auditor }
+        Involvement: "Consulted"
+        Channel: "Email"
+        Notes: "Demo row. Asked once per revision, not once per draft."
+    - key: inv-practice-manager-supplier
+      values:
+        Title: "[DEMO] Operational impact on the front desk and ordering"
+        Activity: { demo_ref: act-decision-supplier }
+        Party: { demo_ref: party-practice-manager }
+        Involvement: "Consulted"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. Standing item at the weekly operations meeting, so this consultation has a place to happen."
+    - key: inv-exec-return
+      values:
+        Title: "[DEMO] That the return was lodged and on what date"
+        Activity: { demo_ref: act-statutory-overdue }
+        Party: { demo_ref: party-exec-director }
+        Involvement: "Informed"
+        Channel: "Report or dashboard"
+        Notes: "Demo row. Informed, not consulted - being told afterwards is the whole point of the distinction."
+    - key: inv-clingov-policy
+      values:
+        Title: "[DEMO] That the revised policy is published and from what date"
+        Activity: { demo_ref: act-approval-policy }
+        Party: { demo_ref: party-clinical-governance }
+        Involvement: "Informed"
+        Channel: "Standing agenda item"
+        Notes: "Demo row. Noted at the next committee sitting."
+  Party:
+    - key: party-exec-director
+      values:
+        Title: "[DEMO] Executive Director"
+        PartyKind: "Individual"
+        Contact: "@me"
+        Status: "Active"
+        Notes: "Demo row. Carries accountability to the board for service delivery and finance."
+    - key: party-practice-manager
+      values:
+        Title: "[DEMO] Practice Manager"
+        PartyKind: "Role"
+        Contact: "@me"
+        Status: "Active"
+        Notes: "Demo row. A position, not a person - whoever holds it inherits every row that names it."
+    - key: party-clinical-governance
+      values:
+        Title: "[DEMO] Clinical Governance Committee"
+        PartyKind: "Forum"
+        Status: "Active"
+        Notes: "Demo row. Meets monthly. Terms of reference cover clinical risk, incidents and practice standards."
+    - key: party-finance-audit
+      values:
+        Title: "[DEMO] Finance and Audit Committee"
+        PartyKind: "Forum"
+        Status: "Active"
+        Notes: "Demo row. Meets quarterly. Holds delegated authority for expenditure above the executive threshold."
+    - key: party-external-auditor
+      values:
+        Title: "[DEMO] External auditor"
+        PartyKind: "External"
+        Status: "Active"
+        Notes: "Demo row. Outside the organisation. Consulted, never accountable - accountability cannot be outsourced."
+    - key: party-former-forum
+      values:
+        Title: "[DEMO] Regional Partnership Forum"
+        PartyKind: "Forum"
+        Status: "Inactive"
+        Notes: "Demo row. Disbanded in the last restructure. Retired rather than deleted, so the rows that referenced it still read."

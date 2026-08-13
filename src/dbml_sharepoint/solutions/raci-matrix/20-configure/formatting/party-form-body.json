@@ -1,0 +1,12 @@
+{
+  "sections": [
+    {
+      "displayname": "Name the party",
+      "fields": ["Title", "PartyKind", "Contact"]
+    },
+    {
+      "displayname": "Status and notes",
+      "fields": ["Status", "Notes"]
+    }
+  ]
+}

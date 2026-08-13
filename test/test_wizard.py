@@ -179,7 +179,7 @@ def _choice(prefix: str = "RR_", *, lists: tuple[str, ...] = ("Risk",),
     disk -- so a scaffolded family would only slow the test down.
 
     `roles` pairs positionally with `lists` and defaults to `default` for
-    every entity, which is what all thirty-one shipped families declare.
+    every entity, which is what all thirty-two shipped families declare.
     Pass it to build the multi-role shape none of them has.
     """
     roles = roles or ("default",) * len(lists)
@@ -231,7 +231,7 @@ def test_list_titles_name_only_the_lists_this_site_role_creates() -> None:
     Reporting `Solution.lists` unfiltered had the Review panel promise both
     lists of a `default`/`archive` mapping while the bundle created one.
 
-    Unreachable with the shipped families -- all thirty-one declare
+    Unreachable with the shipped families -- all thirty-two declare
     `default` and nothing else -- which is exactly why it needs a test of
     its own rather than waiting for a family that has the shape.
     """
@@ -2241,10 +2241,10 @@ def test_the_facts_match_between_the_shipped_family_and_the_copy(
     solutions = available_solutions()
     # A guard, not a formality: the loop below would pass just as happily
     # over an empty roster, proving nothing while looking like it walked all
-    # thirty-one families. `test_no_two_templates_declare_the_same_entity_name`
+    # thirty-two families. `test_no_two_templates_declare_the_same_entity_name`
     # in test_template_standard.py uses the same shape for the same reason.
-    assert len(solutions) == 31, (
-        f"{len(solutions)} templates discovered, not the 31 this walk was "
+    assert len(solutions) == 32, (
+        f"{len(solutions)} templates discovered, not the 32 this walk was "
         "measured against -- re-verify the invariant before trusting an "
         "empty roster as a pass."
     )
@@ -2270,7 +2270,7 @@ def test_a_template_the_loader_rejects_is_refused_before_anything_is_written(
     outside any guard, so a template the loader dislikes produced a traceback
     on top of a directory the wizard had just created. The picker tolerates
     such a template by design -- `_mapping_facts` avoids the loader precisely
-    so one bad family cannot take down the list of thirty-one.
+    so one bad family cannot take down the list of thirty-two.
     """
     family = tmp_path / "family"
     # `entities:` absent entirely; `load_mapping` indexes `raw["entities"]`.
