@@ -1544,7 +1544,7 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
         )
 
 
-@pytest.mark.parametrize("template", _uplifted())
+@pytest.mark.parametrize("template", _all_templates())
 def test_the_administrators_group_holds_full_control_everywhere(
     template: str,
 ) -> None:
