@@ -1544,6 +1544,108 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
         )
 
 
+#: The two groups that are ONE object per site rather than one per family.
+#:
+#: Two families deployed to the same site reconcile the same group, and the
+#: security phase rewrites description, owner_group and every behaviour flag on
+#: every run -- so a family declaring one of these differently silently
+#: overwrites the other's settings, and the last script pasted wins. Nothing in
+#: a single build can see that: a build validates one mapping.
+#:
+#: `only_allow_members_view_membership` is TRUE for the administrators group.
+#: Thirty families had false and two had true; true was chosen deliberately
+#: because the alternative silently WIDENS who can see the membership of a
+#: Full Control group, and that direction needs an argument rather than a
+#: majority.
+SHARED_GROUPS: dict[str, dict[str, object]] = {
+    "Enterprise Readers": {
+        "description": (
+            "Read-only accounts for aggregated cross-site reporting. "
+            "Empty by default; membership is operator-owned."
+        ),
+        "owner_group": "Site Owners",
+        "allow_members_edit_membership": False,
+        "allow_request_to_join_leave": False,
+        "auto_accept_request_to_join_leave": False,
+        "only_allow_members_view_membership": False,
+        "require_empty_at_deploy": False,
+        "enroll_operator_during_deploy": False,
+        "enroll_enterprise_reader": True,
+    },
+    "List Administrators": {
+        "description": (
+            "Full Control for schema changes and redeploys. Empty by "
+            "default; the deploy script enrols the running operator per run."
+        ),
+        "owner_group": "Site Owners",
+        "allow_members_edit_membership": False,
+        "allow_request_to_join_leave": False,
+        "auto_accept_request_to_join_leave": False,
+        "only_allow_members_view_membership": True,
+        "require_empty_at_deploy": False,
+        "enroll_operator_during_deploy": True,
+        "enroll_enterprise_reader": False,
+    },
+}
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_family_declares_the_shared_groups_identically(
+    template: str,
+) -> None:
+    """A shared group reconciled by two families must be declared once.
+
+    The security phase writes every one of these fields on every run. If
+    `risk-register` says the administrators group hides its membership and
+    `incident-management` says it does not, then whichever deploy the
+    operator pastes second changes the site's behaviour for the other -- with
+    nothing in either build able to notice, because a build sees one mapping.
+
+    Field-by-field rather than comparing the objects, so a failure names the
+    field that drifted instead of dumping two dataclasses at the reader.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    declared = {g.name: g for g in mapping.permissions.groups}
+
+    for name, expected in SHARED_GROUPS.items():
+        assert name in declared, (
+            f"{template}: does not declare the shared group {name!r}; "
+            f"it declares {sorted(declared)}"
+        )
+        group = declared[name]
+        for field, want in expected.items():
+            assert getattr(group, field) == want, (
+                f"{template}: shared group {name!r} has {field}="
+                f"{getattr(group, field)!r}, but every family must declare "
+                f"it as {want!r} -- two families on one site reconcile the "
+                f"same group object."
+            )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_family_prefixes_a_shared_group(template: str) -> None:
+    """The complement, so the rule above cannot pass while the old names survive.
+
+    Without this, a family that declared BOTH `Enterprise Readers` and a
+    left-over `RR Enterprise Readers` would satisfy the sweep above while
+    still creating two groups on the site -- which is the exact failure this
+    change exists to remove.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    stragglers = [
+        g.name for g in mapping.permissions.groups
+        if g.name not in SHARED_GROUPS
+        and any(g.name.endswith(shared) for shared in SHARED_GROUPS)
+    ]
+    assert not stragglers, (
+        f"{template}: still declares prefixed {stragglers}; the shared "
+        f"groups are one object per SITE and must be named exactly "
+        f"{sorted(SHARED_GROUPS)}."
+    )
+
+
 @pytest.mark.parametrize("template", _uplifted())
 def test_the_reader_group_uses_the_family_prefix(template: str) -> None:
     """`improvement-register` is `CI`, not `IM`. The prefix comes from the
