@@ -47,9 +47,11 @@
  * and the probe would certify the surface on the strength of a bug. N1 asks
  * for the absent group first.
  *
- * WHAT THIS TOUCHES. One site group, named below, created and deleted by this
- * probe. It touches no list, no item, and no group it did not create. It
- * needs ManagePermissions — a site owner.
+ * WHAT THIS TOUCHES. One site group, created and deleted by this probe under
+ * a RUN-UNIQUE name it prints before doing anything. It touches no list, no
+ * item, and no group it did not create — and if the name is somehow already
+ * taken it stops without writing or deleting. It needs ManagePermissions, so
+ * a site owner.
  *
  * HOW TO RUN
  *   1. Open the target site as a SITE OWNER.
@@ -57,15 +59,27 @@
  *   3. Set CONFIRMED = true and ALLOW_WRITES = true, then paste this file.
  *   4. Copy the whole results block back verbatim.
  *
- * WHEN FINISHED: the probe deletes its own group. If it aborted early, delete
- * the group named in GROUP by hand from Site settings > Site permissions.
+ * WHEN FINISHED: the probe deletes the group it created. If it aborted early,
+ * delete the group whose name it printed in its first line, from Site
+ * settings > Site permissions. The name carries a run-unique suffix, so it
+ * will not collide with anything the site already had.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
 
-  // Distinctive enough that finding it on a site is unambiguous, and
-  // obviously not a real group to anyone who stumbles on it.
-  const GROUP = 'dbmlsp Probe Description Group';
+  // RUN-UNIQUE, and that is a safety property rather than tidiness.
+  //
+  // An earlier draft used a fixed name and deleted it before starting, to
+  // guarantee the negative control had nothing to find. On a site where that
+  // name already existed — an interrupted run, or an administrator who
+  // happened to choose it — the probe would have destroyed a real group and
+  // its grants before looking at it, while its own preamble promised it
+  // touches no group it did not create. Review caught it; this is the fix.
+  //
+  // The suffix makes collision effectively impossible, and the existence
+  // check below still refuses to proceed rather than assuming.
+  const RUN = `${Date.now().toString(36)}`.slice(-6);
+  const GROUP = `dbmlsp Probe Description ${RUN}`;
 
   // Mirrors `analysis/list_description.py`'s MARKER_TEMPLATE shape, because
   // G8 asks whether THAT string could live on a group. A marker that cannot
@@ -85,8 +99,9 @@
   expect('G4', 'Does an ampersand survive the round trip?');
   expect('G5', 'Does a run of two spaces survive the round trip?');
   expect('G6', 'What length comes back when 1000+ characters go out?');
-  expect('G7', 'Do the four membership flags read back as written?');
+  expect('G7', 'Do the four membership flags read back as written at CREATE?');
   expect('G8', 'Does a provenance marker of the shape lists use survive?');
+  expect('G9', 'Do the four membership flags read back as written by MERGE?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN — nothing has been touched.');
@@ -114,19 +129,33 @@
     );
 
   let digest = await getDigest();
+  log('INFO', `This run uses the group name '${GROUP}'.`);
 
-  // ---- N1: the negative control, before anything is created -------------
-  await deleteGroup(digest).catch(() => null);
+  // ---- N1: the negative control, and the existence check, in one read ---
+  // Nothing is deleted first. If the name is somehow taken, that is a group
+  // this probe did not create and it stops rather than touching it.
   const absent = await readGroup();
-  record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
-    absent.ok ? 'FAIL' : 'PASS',
-    absent.ok
-      ? `read of the absent group returned HTTP ${absent.status} — every comparison below is therefore meaningless; STOP and report this`
-      : `HTTP ${absent.status} for a group that is not there, so a successful read below means something`);
   if (absent.ok) {
+    record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
+      'NOT ESTABLISHED (name already taken)',
+      `'${GROUP}' already exists on this site. Nothing was written or deleted. Re-run to get a different name, or delete that group by hand if a previous run left it.`);
     report();
     return;
   }
+  // PASS on 404 ONLY. 401/403 are about WHO is asking and 408/429 about the
+  // moment — the harness's own isRefusal contract says so — and any of them
+  // would otherwise certify the prerequisite that gives every comparison
+  // below its meaning. A throttled request must not stand in for absence.
+  if (absent.status !== 404) {
+    record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
+      `NOT ESTABLISHED (HTTP ${absent.status})`,
+      'the control needs a clean 404 for a name that is not there; this status does not establish absence, so nothing below would mean anything');
+    report();
+    return;
+  }
+  record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
+    'PASS',
+    'HTTP 404 for a group that is not there, so a successful read below means something');
 
   // ---- G1: create with a plain description ------------------------------
   digest = await getDigest();
@@ -167,7 +196,7 @@
       OnlyAllowMembersViewMembership: true,
     };
     const wrong = Object.keys(wanted).filter((k) => g[k] !== wanted[k]);
-    record('G7', 'Do the four membership flags read back as written?',
+    record('G7', 'Do the four membership flags read back as written at CREATE?',
       wrong.length === 0 ? 'PASS' : 'FAIL',
       wrong.length === 0
         ? 'all four match what was sent'
@@ -210,10 +239,15 @@
   // Load-bearing for the shared-group design in #210: two families reconcile
   // the same object, so whether an omitted field is preserved or wiped
   // decides what a second deploy does to the first one's settings.
+  // The omitted-field MERGE must CHANGE something, or this question passes
+  // vacuously: a request that did nothing at all would also leave the
+  // Description intact, and "preserved" would mean nothing. `create` set
+  // AllowRequestToJoinLeave false, so flipping it true is a change the
+  // read-back can confirm actually landed.
   const d3 = await getDigest();
   const partial = await spPost(
     `web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')`,
-    { __metadata: { type: 'SP.Group' }, AllowRequestToJoinLeave: false },
+    { __metadata: { type: 'SP.Group' }, AllowRequestToJoinLeave: true },
     d3,
     { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
   );
@@ -227,11 +261,16 @@
         `NOT ESTABLISHED (HTTP ${back.status})`, 'could not read the group back');
     } else {
       const got = back.body.Description;
+      const landed = back.body.AllowRequestToJoinLeave === true;
       record('G3', 'Does a MERGE that OMITS Description preserve the previous one?',
-        got === MERGED ? 'PASS' : 'FAIL',
-        got === MERGED
-          ? 'the omitted Description was preserved, so MERGE is partial'
-          : `the omitted Description became ${JSON.stringify(got)} — an omitted field is NOT preserved`);
+        !landed
+          ? 'NOT ESTABLISHED (the MERGE changed nothing)'
+          : (got === MERGED ? 'PASS' : 'FAIL'),
+        !landed
+          ? 'AllowRequestToJoinLeave did not flip, so this request did not take effect and "preserved" would prove nothing'
+          : (got === MERGED
+            ? 'the flag flipped AND the omitted Description survived, so MERGE is partial'
+            : `the flag flipped but the omitted Description became ${JSON.stringify(got)} — an omitted field is NOT preserved`));
     }
   }
 
@@ -251,6 +290,49 @@
   // ---- G8: the marker shape #211 would use ------------------------------
   await mergeAndRead('G8', 'Does a provenance marker of the shape lists use survive?',
     { Description: MARKER }, MARKER);
+
+  // ---- G9: the flags through the RECONCILE path -------------------------
+  // G7 only proves the CREATE path. Phase 1.2's reconcile is the one that
+  // matters and the one nothing verifies: its whole purpose is that "a
+  // pre-existing group with the right name but permissive flags must not be
+  // accepted as compliant". Sending a value that is already correct would
+  // pass without establishing anything, which is what G7 alone did.
+  //
+  // So every one of the four is the OPPOSITE of the state the run has
+  // reached by here: create set (false, false, false, true) and G3 flipped
+  // AllowRequestToJoinLeave to true, leaving (false, true, false, true).
+  // A MERGE that silently ignored any of them reads back the old value.
+  const flipped = {
+    AllowMembersEditMembership: true,
+    AllowRequestToJoinLeave: false,
+    AutoAcceptRequestToJoinLeave: true,
+    OnlyAllowMembersViewMembership: false,
+  };
+  const d9 = await getDigest();
+  const flipRes = await spPost(
+    `web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')`,
+    { __metadata: { type: 'SP.Group' }, ...flipped },
+    d9,
+    { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+  );
+  if (!flipRes.ok) {
+    record('G9', 'Do the four membership flags read back as written by MERGE?',
+      isRefusal(flipRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${flipRes.status})`,
+      `the MERGE came back HTTP ${flipRes.status}: ${flipRes.text.slice(0, 200)}`);
+  } else {
+    const back9 = await readGroup();
+    if (readFailed(back9)) {
+      record('G9', 'Do the four membership flags read back as written by MERGE?',
+        `NOT ESTABLISHED (HTTP ${back9.status})`, 'the MERGE succeeded but the group could not be read back');
+    } else {
+      const wrong9 = Object.keys(flipped).filter((k) => back9.body[k] !== flipped[k]);
+      record('G9', 'Do the four membership flags read back as written by MERGE?',
+        wrong9.length === 0 ? 'PASS' : 'FAIL',
+        wrong9.length === 0
+          ? 'all four flipped values took, so the reconcile path does persist flags'
+          : `did NOT take: ${wrong9.map((k) => `${k} sent ${flipped[k]}, read ${back9.body[k]}`).join('; ')}`);
+    }
+  }
 
   // ---- Clean up ---------------------------------------------------------
   digest = await getDigest();
