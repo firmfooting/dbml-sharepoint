@@ -1902,7 +1902,7 @@ def test_a_single_spaced_note_is_not_refused_for_whitespace() -> None:
 
     Ordinary prose with single spaces is the shape every shipped note has.
     Without this, a whitespace rule that matched `\\s` rather than `\\s\\s`
-    would refuse all thirty-one families and still look green here.
+    would refuse all thirty-two families and still look green here.
     """
     assert not [
         f for f in validate_against_mapping(
