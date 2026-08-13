@@ -1321,7 +1321,7 @@ groups:
     only_allow_members_view_membership: true
     require_empty_at_deploy: true        # optional
     enroll_operator_during_deploy: true  # optional, run-scoped
-  - name: "Enterprise Readers"
+  - name: "Reporting Readers"
     description: "Reporting service account, Read only."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -1338,7 +1338,7 @@ list_permissions:
     assignments:
       - principal: { kind: group, name: "Register Editors" }
         level: "Contribute No Delete"
-      - principal: { kind: group, name: "Enterprise Readers" }
+      - principal: { kind: group, name: "Reporting Readers" }
         level: "Read"
       - principal: { kind: associated_owner_group }
         level: "Full Control"

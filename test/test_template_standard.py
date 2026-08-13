@@ -26,7 +26,7 @@ Part 1 (the seven conventions) and §3.1 (these assertions).
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import cache
 from typing import Any
 
@@ -45,7 +45,7 @@ from dbml_sharepoint.analysis.list_description import (
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, available_solutions
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
-from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
+from dbml_sharepoint.model.mapping_loader import Mapping, SiteGroup, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 # This module is the family-standard conformance sweep, and it dominates the
@@ -1497,7 +1497,7 @@ def test_every_deploy_doc_spells_the_site_url_placeholder_the_same_way() -> None
     )
 
 
-@pytest.mark.parametrize("template", _uplifted())
+@pytest.mark.parametrize("template", _all_templates())
 def test_every_family_declares_exactly_one_enterprise_reader_group(
     template: str,
 ) -> None:
@@ -1518,7 +1518,7 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
     assert readers[0].name == "Enterprise Readers"
 
 
-@pytest.mark.parametrize("template", _uplifted())
+@pytest.mark.parametrize("template", _all_templates())
 def test_the_reader_group_is_granted_read_on_every_policy_block(
     template: str,
 ) -> None:
@@ -1558,11 +1558,16 @@ def test_the_administrators_group_holds_full_control_everywhere(
     The reader half of this is
     `test_the_reader_group_is_granted_read_on_every_policy_block`; this is
     the same shape for the group that can actually change things.
+
+    Each policy block is carried alongside its name (`"default"` or the
+    override key), so a failure on a family with overrides names the block
+    that drifted instead of just the template.
     """
     mapping = _load(template).mapping
     assert mapping.permissions is not None
     perms = mapping.permissions
-    for policy in [perms.default_policy, *perms.overrides.values()]:
+    blocks = [("default", perms.default_policy), *perms.overrides.items()]
+    for block_name, policy in blocks:
         assert policy is not None
         granted = {
             a.level for a in policy.assignments
@@ -1570,7 +1575,7 @@ def test_the_administrators_group_holds_full_control_everywhere(
             and a.principal.name == "List Administrators"
         }
         assert granted == {"Full Control"}, (
-            f"{template}: a policy block grants List Administrators "
+            f"{template}: policy block {block_name!r} grants List Administrators "
             f"{granted or 'nothing'}, not Full Control"
         )
 
@@ -1618,6 +1623,27 @@ SHARED_GROUPS: dict[str, dict[str, object]] = {
         "enroll_enterprise_reader": False,
     },
 }
+
+
+def test_shared_groups_cover_every_site_group_field() -> None:
+    """`SHARED_GROUPS` pins fleet-wide values field by field, so it is only as
+    protective as its own coverage of `SiteGroup`.
+
+    A field added to `SiteGroup` later that `SHARED_GROUPS` does not pin is
+    invisible to `test_every_family_declares_the_shared_groups_identically`:
+    two families could set it differently and the fleet sweep above would
+    stay green, because it only ever compares the fields this dict names.
+    Adding a field to `SiteGroup` must be a deliberate decision about whether
+    families are allowed to differ on it -- if not, it belongs in
+    `SHARED_GROUPS` too, and this test is what forces that decision to be
+    made rather than defaulted into.
+    """
+    expected_fields = {f.name for f in fields(SiteGroup)} - {"name"}
+    for group_name, declared in SHARED_GROUPS.items():
+        assert set(declared) == expected_fields, (
+            f"SHARED_GROUPS[{group_name!r}] covers {sorted(declared)}, but "
+            f"SiteGroup (excluding name) has {sorted(expected_fields)}"
+        )
 
 
 @pytest.mark.parametrize("template", _all_templates())
