@@ -34,6 +34,20 @@ repos:
       - id: check-toml
       - id: check-json
 
+  # Markdown style. The one remote hook whose tool is NOT pinned by
+  # pyproject.toml, because it is a node package rather than a Python one, so
+  # this `rev:` and the version in the `markdown` job of
+  # .github/workflows/ci.yml are two places holding the same number. Bump them
+  # together; test_markdownlint_versions.py fails if they diverge.
+  #
+  # Scope, ignores and rule configuration all live in .markdownlint-cli2.yaml,
+  # which this hook and CI both read. This hook lints only the files being
+  # committed; CI lints the whole tree.
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.23.2
+    hooks:
+      - id: markdownlint-cli2
+
   - repo: local
     hooks:
       - id: ruff

@@ -1,0 +1,59 @@
+# markdownlint-cli2 configuration. Read by the `markdownlint-cli2` prek hook
+# in .pre-commit-config.yaml and by the `markdown` job in
+# .github/workflows/ci.yml, so both sides lint exactly the same files under
+# exactly the same rules.
+#
+# The ruleset is markdownlint's default, unmodified. Disabling a rule needs a
+# reason written here; "it fires a lot" is not one. What each rule means:
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# There is deliberately no `globs:` key here. markdownlint-cli2 APPENDS the
+# config's globs to any given on the command line rather than replacing them
+# (measured on v0.23.2: passing one filename still reported "Linting: 162
+# files"), so a `globs: ["**/*.md"]` here would make the prek hook lint the
+# whole repository on every commit that touches any markdown at all. The
+# repo-wide glob lives in the CI invocation instead; the hook keeps
+# pre-commit's normal changed-files-only behaviour. `ignores` below applies to
+# both, because command-line filenames are themselves treated as globs.
+
+# Honour .gitignore. Build output is the reason: `examples/**/build/`,
+# `src/dbml_sharepoint/solutions/**/build/` and the docs site's own
+# `website/build/` all contain emitted markdown (index.md, deploy-manifest.md,
+# assess-manifest.md, data-dictionary.md...) that exists only in a working
+# tree. Without this, a developer who has run a build lints different files
+# from CI, which is the worst kind of lint config.
+gitignore: true
+
+ignores:
+  # node_modules is gitignored under website/, but a stray install anywhere
+  # else would otherwise pull in every dependency's README.
+  - "**/node_modules/**"
+
+  # GENERATED AND COMMITTED — excluded because a violation here cannot be
+  # fixed in the file. The file is overwritten wholesale by its generator on
+  # the next run, so the only real fix is in the generator's Python, and a
+  # lint error pointing at the artefact sends the reader to the wrong place.
+  # A currency test already fails if either page drifts from its source.
+
+  # Written by website/scripts/generate_api.py (`write_page`), which emits the
+  # whole tree: index.md, templates.md, conditions.md and python/**.
+  - "website/docs/api/**"
+
+  # Written by website/scripts/generate_findings.py, which renders the
+  # FindingCode catalogue and analysis/finding_help.py into one page. The page
+  # itself carries a "Do not edit by hand" banner.
+  - "website/docs/reference/findings.md"
+
+config:
+  # MD013 (line-length) is KEPT ON, deliberately. The obvious reason to turn
+  # it off does not apply here: this repository's committed markdown is hard
+  # wrapped -- 698 of 19,547 non-generated lines exceed 80 columns, so the
+  # convention is real and the exceptions are exceptions. (The one-line-per-
+  # paragraph convention this project follows is for GitHub issue and pull
+  # request bodies, which are not files and are not linted.)
+  #
+  # Its sub-options (tables, code_blocks, headings) are left at their defaults
+  # on purpose: whether a table row or a fenced code line should be exempt is
+  # a triage decision for the human reading the inventory, not something to
+  # pre-empt by narrowing the rule before anyone has seen what it reports.
+  MD013: true
