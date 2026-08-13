@@ -1,0 +1,273 @@
+{# test/manual/templates/group-description-probe.js.j2 #}
+/**
+ * dbml-sharepoint PROBE — WHAT A SITE GROUP'S SETTINGS DO ON THE WAY BACK
+ *
+ * WHY THIS EXISTS. `templates/deploy/_security_principals.js.j2` writes five
+ * fields onto every site group it creates or adopts — `Description` and four
+ * membership flags — and NEVER READS ONE OF THEM BACK. The create path POSTs
+ * and logs "created". The reconcile path checks `mergeResp.ok` and logs
+ * "declared membership controls reconciled". An HTTP 200 says the request was
+ * accepted; it does not say the tenant stored what was sent.
+ *
+ * That is the one thing AGENTS.md refuses outright: anything that writes must
+ * read back and verify. Lists already do — a list Description is composed,
+ * written, read back and byte-compared, and the characters that did not
+ * survive that comparison are refused at build time. Groups got none of it,
+ * because nobody had measured the surface.
+ *
+ * `SP.Group.Description` is a DIFFERENT SURFACE from `SP.List.Description`.
+ * The list findings are not evidence for it and must not be reused as such.
+ * This file measures the group surface on its own.
+ *
+ * WHAT TURNS ON THE ANSWER
+ *
+ *   - Whether the deploy can gain a read-back verification at all. If the
+ *     description does not round-trip, "verify" has to mean something other
+ *     than byte-equality, and the deploy needs to know which.
+ *   - Issue #211, a provenance marker on groups. Lists carry "Provisioned by
+ *     dbml-sharepoint from family/entity." and `assess.js` reports one that
+ *     has gone. Groups carry nothing, so nothing can tell a group this tool
+ *     created from one that was already on the site.
+ *   - Issue #209, the Critical that #211 would unblock. The deploy adopts any
+ *     existing group it finds BY NAME and grants it Full Control, with no
+ *     membership gate. The gate everyone reaches for — "adopt silently if we
+ *     made it, fail closed if we did not" — cannot be written until a group
+ *     can carry a mark that survives being written and read.
+ *
+ * SEPARATING WHAT IS DEPENDED ON FROM WHAT IS OBSERVED. G6 writes a long
+ * description and REPORTS the length that comes back; it does not assert a
+ * ceiling. A control that asserted over the value it exists to discover would
+ * fail the moment the measurement started working, and that looks identical
+ * to a real refusal. The same applies to G4 and G5: a character that does not
+ * survive is an ANSWER, recorded FAIL, not a broken run.
+ *
+ * THE NEGATIVE CONTROL IS N1 AND IT IS NOT OPTIONAL. Every other question
+ * here reads a group back and compares. If a read of a group that does not
+ * exist came back 200, every one of those comparisons would be meaningless
+ * and the probe would certify the surface on the strength of a bug. N1 asks
+ * for the absent group first.
+ *
+ * WHAT THIS TOUCHES. One site group, named below, created and deleted by this
+ * probe. It touches no list, no item, and no group it did not create. It
+ * needs ManagePermissions — a site owner.
+ *
+ * HOW TO RUN
+ *   1. Open the target site as a SITE OWNER.
+ *   2. Open a browser console on any page of that site.
+ *   3. Set CONFIRMED = true and ALLOW_WRITES = true, then paste this file.
+ *   4. Copy the whole results block back verbatim.
+ *
+ * WHEN FINISHED: the probe deletes its own group. If it aborted early, delete
+ * the group named in GROUP by hand from Site settings > Site permissions.
+ */
+(async () => {
+{% include "_probe_harness.js.j2" %}
+
+  // Distinctive enough that finding it on a site is unambiguous, and
+  // obviously not a real group to anyone who stumbles on it.
+  const GROUP = 'dbmlsp Probe Description Group';
+
+  // Mirrors `analysis/list_description.py`'s MARKER_TEMPLATE shape, because
+  // G8 asks whether THAT string could live on a group. A marker that cannot
+  // survive the round trip cannot be the basis of #209's adoption gate.
+  const MARKER = 'Provisioned by dbml-sharepoint from probe/Group.';
+
+  const PLAIN = 'dbmlsp probe plain description';
+  const MERGED = 'dbmlsp probe merged description';
+  const AMPERSAND = 'dbmlsp probe risks & issues';
+  const SPACES = 'dbmlsp probe two  spaces';
+  const LONG = `dbmlsp probe long ${'x'.repeat(1000)}`;
+
+  expect('N1', 'CONTROL: does reading a group that does not exist actually fail?');
+  expect('G1', 'Does a plain Description written at CREATE read back byte-identical?');
+  expect('G2', 'Does a Description written by MERGE read back byte-identical?');
+  expect('G3', 'Does a MERGE that OMITS Description preserve the previous one?');
+  expect('G4', 'Does an ampersand survive the round trip?');
+  expect('G5', 'Does a run of two spaces survive the round trip?');
+  expect('G6', 'What length comes back when 1000+ characters go out?');
+  expect('G7', 'Do the four membership flags read back as written?');
+  expect('G8', 'Does a provenance marker of the shape lists use survive?');
+
+  if (!CONFIRMED || !ALLOW_WRITES) {
+    log('INFO', 'PLAN — nothing has been touched.');
+    log('INFO', `This probe would create the site group '${GROUP}', write and`);
+    log('INFO', 'read back its Description several ways, then delete it.');
+    log('INFO', 'Set CONFIRMED = true and ALLOW_WRITES = true to run it.');
+    report();
+    return;
+  }
+
+  // The group settings surface is the one place this project has PROVEN
+  // works: _security_principals.js.j2 creates groups against live tenants
+  // with a verbose body. Mirroring it exactly keeps a failure here meaning
+  // "the description did not survive" rather than "the probe framed the
+  // request differently from the deployer".
+  const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
+
+  const readGroup = async () =>
+    spGet(`web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')`);
+
+  const deleteGroup = async (digest) =>
+    spPost(
+      `web/sitegroups/removebyloginname(@v)?@v='${encodeURIComponent(GROUP)}'`,
+      {}, digest,
+    );
+
+  let digest = await getDigest();
+
+  // ---- N1: the negative control, before anything is created -------------
+  await deleteGroup(digest).catch(() => null);
+  const absent = await readGroup();
+  record('N1', 'CONTROL: does reading a group that does not exist actually fail?',
+    absent.ok ? 'FAIL' : 'PASS',
+    absent.ok
+      ? `read of the absent group returned HTTP ${absent.status} — every comparison below is therefore meaningless; STOP and report this`
+      : `HTTP ${absent.status} for a group that is not there, so a successful read below means something`);
+  if (absent.ok) {
+    report();
+    return;
+  }
+
+  // ---- G1: create with a plain description ------------------------------
+  digest = await getDigest();
+  const created = await spPost('web/sitegroups', {
+    __metadata: { type: 'SP.Group' },
+    Title: GROUP,
+    Description: PLAIN,
+    AllowMembersEditMembership: false,
+    AllowRequestToJoinLeave: false,
+    AutoAcceptRequestToJoinLeave: false,
+    OnlyAllowMembersViewMembership: true,
+  }, digest, VERBOSE);
+  if (!created.ok) {
+    record('BOOT', 'create the probe group',
+      `NOT ESTABLISHED (HTTP ${created.status})`, created.text.slice(0, 300));
+    report();
+    return;
+  }
+
+  const afterCreate = await readGroup();
+  if (readFailed(afterCreate)) {
+    record('G1', 'Does a plain Description written at CREATE read back byte-identical?',
+      `NOT ESTABLISHED (HTTP ${afterCreate.status})`, 'the group was created but could not be read back');
+  } else {
+    const got = afterCreate.body.Description;
+    record('G1', 'Does a plain Description written at CREATE read back byte-identical?',
+      got === PLAIN ? 'PASS' : 'FAIL',
+      `sent ${JSON.stringify(PLAIN)}, read ${JSON.stringify(got)}`);
+  }
+
+  // ---- G7: the four flags the deploy writes and never verifies ----------
+  if (!readFailed(afterCreate)) {
+    const g = afterCreate.body;
+    const wanted = {
+      AllowMembersEditMembership: false,
+      AllowRequestToJoinLeave: false,
+      AutoAcceptRequestToJoinLeave: false,
+      OnlyAllowMembersViewMembership: true,
+    };
+    const wrong = Object.keys(wanted).filter((k) => g[k] !== wanted[k]);
+    record('G7', 'Do the four membership flags read back as written?',
+      wrong.length === 0 ? 'PASS' : 'FAIL',
+      wrong.length === 0
+        ? 'all four match what was sent'
+        : `differ: ${wrong.map((k) => `${k} sent ${wanted[k]}, read ${g[k]}`).join('; ')}`);
+  }
+
+  // A MERGE, read back, reported against what was sent. Every remaining
+  // question is this shape, so it is one function rather than five copies.
+  const mergeAndRead = async (id, question, body, expected, describe) => {
+    const d = await getDigest();
+    const res = await spPost(
+      `web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')`,
+      { __metadata: { type: 'SP.Group' }, ...body },
+      d,
+      { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+    );
+    if (!res.ok) {
+      record(id, question,
+        isRefusal(res.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${res.status})`,
+        `the MERGE itself came back HTTP ${res.status}: ${res.text.slice(0, 200)}`);
+      return null;
+    }
+    const back = await readGroup();
+    if (readFailed(back)) {
+      record(id, question, `NOT ESTABLISHED (HTTP ${back.status})`,
+        'the MERGE succeeded but the group could not be read back');
+      return null;
+    }
+    const got = back.body.Description;
+    record(id, question, describe ? describe(got) : (got === expected ? 'PASS' : 'FAIL'),
+      `sent ${JSON.stringify(expected)}, read ${JSON.stringify(got)}`);
+    return got;
+  };
+
+  // ---- G2: a description written by the reconcile path ------------------
+  await mergeAndRead('G2', 'Does a Description written by MERGE read back byte-identical?',
+    { Description: MERGED }, MERGED);
+
+  // ---- G3: is MERGE partial, or does omitting a field clear it? ---------
+  // Load-bearing for the shared-group design in #210: two families reconcile
+  // the same object, so whether an omitted field is preserved or wiped
+  // decides what a second deploy does to the first one's settings.
+  const d3 = await getDigest();
+  const partial = await spPost(
+    `web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')`,
+    { __metadata: { type: 'SP.Group' }, AllowRequestToJoinLeave: false },
+    d3,
+    { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+  );
+  if (!partial.ok) {
+    record('G3', 'Does a MERGE that OMITS Description preserve the previous one?',
+      `NOT ESTABLISHED (HTTP ${partial.status})`, partial.text.slice(0, 200));
+  } else {
+    const back = await readGroup();
+    if (readFailed(back)) {
+      record('G3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        `NOT ESTABLISHED (HTTP ${back.status})`, 'could not read the group back');
+    } else {
+      const got = back.body.Description;
+      record('G3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        got === MERGED ? 'PASS' : 'FAIL',
+        got === MERGED
+          ? 'the omitted Description was preserved, so MERGE is partial'
+          : `the omitted Description became ${JSON.stringify(got)} — an omitted field is NOT preserved`);
+    }
+  }
+
+  // ---- G4/G5: characters the LIST surface refuses -----------------------
+  await mergeAndRead('G4', 'Does an ampersand survive the round trip?',
+    { Description: AMPERSAND }, AMPERSAND);
+  await mergeAndRead('G5', 'Does a run of two spaces survive the round trip?',
+    { Description: SPACES }, SPACES);
+
+  // ---- G6: length, OBSERVED rather than asserted ------------------------
+  await mergeAndRead('G6', 'What length comes back when 1000+ characters go out?',
+    { Description: LONG }, LONG,
+    (got) => (got === LONG
+      ? 'PASS'
+      : (typeof got === 'string' ? `OBSERVED (came back ${got.length} of ${LONG.length})` : 'FAIL')));
+
+  // ---- G8: the marker shape #211 would use ------------------------------
+  await mergeAndRead('G8', 'Does a provenance marker of the shape lists use survive?',
+    { Description: MARKER }, MARKER);
+
+  // ---- Clean up ---------------------------------------------------------
+  digest = await getDigest();
+  const removed = await deleteGroup(digest);
+  log(removed.ok ? 'OK' : 'FAIL',
+    removed.ok
+      ? `Deleted '${GROUP}'.`
+      : `Could not delete '${GROUP}' (HTTP ${removed.status}) — remove it by hand.`);
+
+  report();
+  console.log('');
+  console.log('=== WHAT TO DO WITH THIS ===');
+  console.log('G1/G2 decide whether the deploy can gain a byte-compare read-back');
+  console.log('of a group Description (AGENTS.md requires one; it has none today).');
+  console.log('G3 decides what a second family deploying to the same site does to');
+  console.log("the first one's group settings — see #210.");
+  console.log('G4/G5 say whether the list-note restrictions apply to groups too.');
+  console.log('G8 decides whether #211, and the #209 adoption gate that depends');
+  console.log('on it, are possible at all.');
+})();
