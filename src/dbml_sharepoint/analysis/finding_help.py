@@ -786,6 +786,19 @@ FINDING_HELP: dict[FindingCode, str] = {
         "An `overdue-date` style's `guard.field` names a column the "
         "entity does not render."
     ),
+    FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE: (
+        "A `list_permissions` assignment names `Limited Access` or "
+        "`Web-Only Limited Access`. Microsoft Learn is explicit that "
+        "SharePoint assigns these itself and that they cannot be assigned "
+        "directly: they are what a principal ends up holding on a parent "
+        "web or list so it can reach one item granted below it, and they "
+        "grant no additional access on their own. Writing one into a "
+        "mapping is not a narrow grant -- it is a request the site does "
+        "not honour as written, leaving the effective access decided by "
+        "SharePoint's inheritance rather than by anything a reader of the "
+        "mapping can see. Grant the level you actually mean, usually "
+        "`Read`, and let SharePoint derive the rest."
+    ),
     FindingCode.PERMISSION_LEVEL_REDEFINES_A_BUILTIN: (
         "A `permission_levels:` entry is named after a built-in SharePoint "
         "permission level. Declaring one does not create a second level "

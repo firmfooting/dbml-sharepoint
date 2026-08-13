@@ -350,6 +350,8 @@ class FindingCode(StrEnum):
         "enterprise_reader_group_requires_empty", "error")
     MULTIPLE_ENTERPRISE_READER_GROUPS = (
         "multiple_enterprise_reader_groups", "error")
+    PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE = (
+        "permission_level_not_directly_assignable", "error")
     PERMISSION_LEVEL_REDEFINES_A_BUILTIN = (
         "permission_level_redefines_a_builtin", "error")
     UNKNOWN_BASE_PERMISSION = "unknown_base_permission", "error"

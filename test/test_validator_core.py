@@ -1686,6 +1686,60 @@ def test_a_builtin_level_name_in_another_case_is_refused() -> None:
     )
 
 
+@pytest.mark.parametrize("level", ["Limited Access", "Web-Only Limited Access"])
+def test_a_derived_level_cannot_be_assigned(level: str) -> None:
+    """SharePoint decides these, so a mapping asking for one is not a grant.
+
+    Learn is explicit that Limited Access is assigned by SharePoint and
+    cannot be assigned directly: it is what a principal ends up holding on
+    a parent so it can reach one item granted below it, and it grants no
+    access of its own. Written into `list_permissions` it is a request the
+    site does not honour as written, leaving effective access decided by
+    inheritance rather than by anything a reader of the mapping can see.
+
+    It was accepted until now because `BUILT_IN_LEVELS` served as the
+    assignable set as well as the reserved one, and it contains every
+    built-in whether assignable or not.
+    """
+    finding = only(
+        _reader_findings(level=level),
+        FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE,
+    )
+    assert finding.severity == "error"
+    assert level in finding.message
+
+
+def test_a_derived_level_is_not_reported_as_unknown() -> None:
+    """The message has to be true, not merely a refusal.
+
+    `Limited Access` IS a built-in, so `unknown_permission_level` -- "not a
+    built-in or declared custom permission level" -- would send the author
+    hunting for a typo instead of at the grant they cannot make. The two
+    rules sit in one if/elif so they can never both fire.
+    """
+    none_of(
+        _reader_findings(level="Limited Access"),
+        FindingCode.UNKNOWN_PERMISSION_LEVEL,
+    )
+
+
+def test_an_assignable_builtin_level_is_still_accepted() -> None:
+    """The complement, so narrowing the assignable set cannot go too far.
+
+    `View Only` is the level this same change ADDED to the built-ins; it is
+    assignable, and pinning it here is what stops a later edit sweeping the
+    whole reserved set out of the assignable one.
+    """
+    none_of(
+        _reader_findings(level="View Only"),
+        FindingCode.UNKNOWN_PERMISSION_LEVEL,
+    )
+    none_of(
+        _reader_findings(level="View Only"),
+        FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE,
+    )
+
+
 def test_a_custom_permission_level_name_is_not_refused() -> None:
     """The complement, so the rule cannot pass by refusing everything.
 
