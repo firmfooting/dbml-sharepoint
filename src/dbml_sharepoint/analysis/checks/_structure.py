@@ -1,6 +1,8 @@
 # src/dbml_sharepoint/analysis/checks/_structure.py
 """Entities, cross-site references, indexes, deferred lookups, calculated columns."""
 
+import re
+
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.list_description import (
@@ -117,6 +119,33 @@ _UNPROVEN_NOTE_CHARACTERS: tuple[tuple[str, str, str], ...] = (
     ("\r", "a line break", "keep the note to a single paragraph"),
 )
 
+#: A SEQUENCE rather than a character, which is why it cannot live in the
+#: tuple above.
+#:
+#: The rationale there names "a run of spaces collapsed" as an unproven round
+#: trip TWICE -- once in the list of normalisations that would break the
+#: read-back, and again in the probe that would lift the whole restriction --
+#: and then the character tuple could not express it. So the rule was weaker
+#: than the argument that justifies it: `Risks  and issues` passed validation
+#: and would abort every paste part-way through a partially provisioned site
+#: if SharePoint collapses the run. An uncertainty this file names as
+#: dangerous has to fail closed like the rest of them.
+#:
+#: MEASURED 2026-08-12: no shipped family and no example note contains a
+#: whitespace run, so closing the gap refuses nothing that exists today.
+#:
+#: Matched against the STRIPPED note like the characters are, so a note that
+#: is merely indented in the DBML is not refused for whitespace the
+#: Description never carries.
+#:
+#: EXCLUDES CR and LF deliberately. A plain `\s\s` also matches the `\r\n` of
+#: a CRLF-saved file, which the line-break entry above already names -- and
+#: `test_the_unproven_character_rule_names_a_remedy_for_each_character`
+#: caught it, because the message then read "a line break and a run of
+#: whitespace" for one offence. Two names for one problem is the noise that
+#: test exists to prevent, and the rationale says "a run of SPACES".
+_UNPROVEN_NOTE_WHITESPACE_RUN = re.compile(r"[^\S\r\n]{2,}")
+
 
 def _no_room_for_any_note(family: str, entity_name: str) -> str:
     """The remedy to offer when the note budget is ZERO.
@@ -214,6 +243,8 @@ def _note_round_trips(table: Table | None, entity_name: str) -> list[Finding]:
         for char, name, remedy in _UNPROVEN_NOTE_CHARACTERS
         if char in note
     }
+    if _UNPROVEN_NOTE_WHITESPACE_RUN.search(note):
+        offenders["a run of whitespace"] = "use single spaces between words"
     if not offenders:
         return []
     named = " and ".join(offenders)

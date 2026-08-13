@@ -467,9 +467,10 @@ FINDING_HELP: dict[FindingCode, str] = {
         "no table for."
     ),
     FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP: (
-        "A table's `Note:` contains an ampersand or a line break, and this "
-        "tool cannot prove either survives a deploy. Write \"and\" instead "
-        "of `&`, and keep the note to a single paragraph. Not a style "
+        "A table's `Note:` contains an ampersand, a line break or a run of "
+        "spaces, and this tool cannot prove any of them survives a deploy. "
+        "Write \"and\" instead of `&`, keep the note to a single paragraph, "
+        "and use single spaces between words. Not a style "
         "preference: the note becomes the list Description, and the deploy "
         "writes it, reads it straight back and compares the two byte for "
         "byte. That it comes back unchanged is INFERRED from the field "
@@ -479,7 +480,8 @@ FINDING_HELP: dict[FindingCode, str] = {
         "The same inference has been wrong once already elsewhere: "
         "SharePoint demonstrably normalises a column's ValidationFormula, "
         "which is why the deploy has to compare those canonically. If it is "
-        "wrong here -- `&` returned as `&amp;`, or a line break rewritten -- "
+        "wrong here -- `&` returned as `&amp;`, a line break rewritten, or a "
+        "run of spaces collapsed -- "
         "the read-back never matches what was sent and the deploy aborts. It "
         "fails closed, which is right, but it does so part-way through a "
         "paste, against a site that is already half provisioned, and "

@@ -85,6 +85,9 @@ class Solution:
     id: str
     title: str
     summary: str
+    #: The same sentence as `summary`, uncapped. `summary` is bound for a
+    #: table cell and `detail` for a Panel; they differ only in length.
+    detail: str
     lists: tuple[str, ...]
     prefix: str
     root: Path
@@ -163,8 +166,13 @@ def _clean(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _summary(readme: str) -> str:
-    """The first sentence of a family README's opening paragraph.
+def _lead_sentence(readme: str) -> str:
+    """The first sentence of the README's lead paragraph, terminal-safe.
+
+    Split out of `_summary` so the wizard's detail panel can show the whole
+    sentence. `_SUMMARY_MAX` exists because a summary is rendered into a
+    TABLE CELL; a Panel has no such constraint, and reusing the capped text
+    there cut `...SharePoint calculates Resi...` out of risk-register.
 
     Fourteen of the thirty READMEs open with a `*Theme: ...*` line, which
     sometimes wraps onto a second line and sometimes carries a trailing
@@ -212,6 +220,12 @@ def _summary(readme: str) -> str:
     match = re.search(r"\.(?:\s|$)", text)
     if match:
         text = text[: match.start() + 1]
+    return text
+
+
+def _summary(readme: str) -> str:
+    """`_lead_sentence` capped to fit the wizard's table cell."""
+    text = _lead_sentence(readme)
     if len(text) > _SUMMARY_MAX:
         # Reserve exactly as many characters as the marker occupies. This read
         # `- 1` while the marker was a one-character ellipsis; ASCII-ifying it
@@ -263,6 +277,7 @@ def _build(root: Path) -> Solution:
         id=root.name,
         title=_title(readme, root.name),
         summary=_summary(readme),
+        detail=_lead_sentence(readme),
         lists=lists,
         prefix=prefix,
         root=root,
