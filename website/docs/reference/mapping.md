@@ -1409,14 +1409,19 @@ untouched: no other level and no group from this run is created or
 reconciled either. **No later phase runs**, so no lists are created, no
 ACLs are assigned and no seed rows are written.
 
-That guarantee covers the survey, not the whole phase. Three things can
-still be found only once the apply itself runs: a group owner correction
-that does not take effect, a read-back divergence where the tenant did not
-store what was written, and a MERGE failure. Each of those can happen after
-an earlier object in the same run has already been created or reconciled,
-so a failure found there does not leave the site untouched the way a
-survey-time refusal does. The group-adoption gate below has the fuller
-account, since the owner correction is a group-only concern.
+That guarantee covers the survey, not the whole phase. A group owner
+correction that does not take effect, a read-back divergence where the
+tenant did not store what was written, and a MERGE failure can all still be
+found only once the apply itself runs. A create decision adds more of the
+same kind, since the group or level does not exist yet for the survey to
+check: the owner group cannot be resolved or read back, a group's
+`require_empty_at_deploy` gate finds members in a group that was just
+created, or a freshly created permission level's Id cannot be resolved for
+verification. Each of those can happen after an earlier object in the same
+run has already been created or reconciled, so a failure found there does
+not leave the site untouched the way a survey-time refusal does. The
+group-adoption gate below has the fuller account, since the owner
+correction and the empty-membership gate are both group-only concerns.
 
 Before any of this writes, the run logs a decision table to the
 transcript: every level and group it decided to create or adopt, one line
@@ -1665,11 +1670,16 @@ the CSOM `ProcessQuery` write, actually takes effect is unsurveyable by
 construction: it can only be known once that write has been attempted and read
 back, which the survey never does. On a create decision the whole owner check
 waits for the apply in the first place, since the group does not exist yet for
-the survey to read its owner at all. If the correction does not take effect, or
-a read-back afterward shows the tenant stored something other than what was
-sent, or a MERGE call fails, the object that failure is reported against was
-already written, and so may other objects surveyed and applied earlier in the
-same run. See the permission-level section above for the decision table this
+the survey to read its owner at all. The empty-membership gate
+(`require_empty_at_deploy`) is in the same position: on a create decision it
+also waits for the apply, since the group does not exist for the survey to
+count its members either, so a group that turns up populated between the
+create and this check is only caught after it has already been created. If
+the correction does not take effect, or a read-back afterward shows the
+tenant stored something other than what was sent, or a MERGE call fails, the
+object that failure is reported against was already written, and so may
+other objects surveyed and applied earlier in the same run. See the
+permission-level section above for the decision table this
 phase logs before it applies anything, and for the same atomicity-of-decision
 limit.
 
