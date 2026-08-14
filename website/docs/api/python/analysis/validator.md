@@ -60,18 +60,6 @@ String literals are stripped first so bracket text inside a quoted
 constant is not misread as a reference. Shared with jsgen, which orders
 Phase-1 field creation by these references.
 
-### `MAX_CALCULATED_FORMULA`
-
-```python
-MAX_CALCULATED_FORMULA = 1024
-```
-
-### `MAX_INTERNAL_NAME`
-
-```python
-MAX_INTERNAL_NAME = 32
-```
-
 ### `validate`
 
 ```python

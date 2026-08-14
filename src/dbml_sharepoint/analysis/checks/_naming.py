@@ -3,6 +3,7 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
 from dbml_sharepoint.analysis.report_columns import report_columns_for
 from dbml_sharepoint.analysis.validator import Finding, _rendered_columns
 
@@ -15,21 +16,12 @@ def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     # Display names: overrides must target rendered columns, and the resolved
     # display titles (auto + overrides) must be non-empty, within SharePoint's
-    # 255-char Title bound, and unique per entity — a duplicate display title
-    # makes two columns indistinguishable on every form and view.
+    # MAX_DISPLAY_TITLE Title bound, and unique per entity — a duplicate
+    # display title makes two columns indistinguishable on every form and view.
     #
-    # The 255 is DOCUMENTED, not assumed. Microsoft Learn, "Field element
-    # (Field)", which lists SharePoint Online among the products it applies to,
-    # says of `DisplayName`: "Maximum length is 255 characters."
-    # https://learn.microsoft.com/sharepoint/dev/schema/field-element-field
-    #
-    # `DisplayName` there is the field-schema attribute for the same surface
-    # this project writes as the REST `Title` property (see `jsgen`, which
-    # POSTs `{"Title": ...}` and renames Title to the declared display
-    # afterwards) — hence "Title bound" above. Both boundary directions are
-    # pinned: `test_a_display_name_override_longer_than_the_sp_limit_is_an_error`
-    # and `test_a_display_name_override_at_the_sp_limit_is_accepted`. 255 is the
-    # last accepted length, so this stays `> 255` and never `>= 255`.
+    # The bound is DOCUMENTED, not assumed, and it is stated once in
+    # analysis/limits.py along with the Learn citation and why the comparison
+    # is `>` rather than `>=`.
     if bundle.mapping.display_name_mode is not None:
         for entity_name, cols in bundle.mapping.display_name_overrides.items():
             override_table = tables_by_name.get(entity_name)
@@ -65,11 +57,11 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"resolves to an empty display title.",
                         location=at_overrides,
                     ))
-                elif len(display_title) > 255:
+                elif len(display_title) > MAX_DISPLAY_TITLE:
                     findings.append(Finding(
                         FindingCode.DISPLAY_TITLE_TOO_LONG,
                         f"display_names.overrides[{entity_name}]: {col_name!r} "
-                        f"display title exceeds 255 characters.",
+                        f"display title exceeds {MAX_DISPLAY_TITLE} characters.",
                         location=at_overrides,
                     ))
         for table in schema.tables:
@@ -120,9 +112,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     # to declare display_column so person/roster references show a name.
     # Cross-site reference columns are expanded to Choice+URL, not lookups, so
     # they are excluded.
-    cross_site_pairs = {
-        (x.entity, x.column) for x in bundle.mapping.cross_site_reference_columns
-    }
+    cross_site_pairs = bundle.mapping.cross_site_keys()
     for table in schema.tables:
         for col in table.columns:
             if col.ref is None or (table.name, col.name) in cross_site_pairs:

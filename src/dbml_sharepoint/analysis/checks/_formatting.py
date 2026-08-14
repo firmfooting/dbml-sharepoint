@@ -9,6 +9,10 @@ from dbml_sharepoint.analysis.conditions import (
     validate_condition,
 )
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.limits import (
+    MAX_VALIDATION_FORMULA,
+    MAX_VALIDATION_MESSAGE,
+)
 from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
 from dbml_sharepoint.analysis.validator import (
     _UNDEPLOYABLE_DECLARATION_COLUMNS,
@@ -377,10 +381,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue
         ctx = f"list_validation[{entity_name}]"
         at = Location(Section.LIST_VALIDATION, entity=entity_name)
-        if len(rule.message) > 1024:
+        if len(rule.message) > MAX_VALIDATION_MESSAGE:
             findings.append(Finding(
                 FindingCode.LIST_VALIDATION_MESSAGE_TOO_LONG,
-                f"{ctx}: message must be <=1024 characters.",
+                f"{ctx}: message must be <={MAX_VALIDATION_MESSAGE} characters.",
                 location=at,
             ))
         xcols = cross_site_by_entity.get(entity_name, set())
@@ -410,11 +414,11 @@ def check(vc: ValidationContext) -> list[Finding]:
             for internal in types:
                 display = bundle.mapping.display_name_for(entity_name, internal)
                 formula = formula.replace(f"[{internal}]", f"[{display}]")
-            if len(formula) > 1024:
+            if len(formula) > MAX_VALIDATION_FORMULA:
                 findings.append(Finding(
                     FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG,
                     f"{ctx}: rendered formula is {len(formula)} characters; "
-                    "SharePoint's limit is 1024.",
+                    f"SharePoint's limit is {MAX_VALIDATION_FORMULA}.",
                     location=at,
                 ))
 

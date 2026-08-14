@@ -21,6 +21,7 @@ from dbml_sharepoint.analysis.findings import (
     Section,
     Severity,
 )
+from dbml_sharepoint.analysis.limits import MAX_INTERNAL_NAME
 from dbml_sharepoint.extension import DeploymentExtension
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.parser import Column, Schema, Table
@@ -141,7 +142,7 @@ _BUILTIN_SP_GROUPS = frozenset({
 # are `conditions._FORBIDDEN_OPERAND_TYPES`. Do not restate either here.
 _TODAY_SENTINEL = typemap.TODAY_SENTINEL      # one home: analysis/typemap.py
 _DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
+_DATE_TYPES = typemap.DATE_TYPES              # same home, same reason
 
 
 def _rendered_columns(table: "Table", cross_site_cols: set[str]) -> set[str]:
@@ -176,17 +177,6 @@ def formula_column_refs(formula: str) -> frozenset[str]:
     return frozenset(
         FORMULA_COLUMN_REF.findall(_FORMULA_STRING_LITERAL.sub("", formula)),
     )
-
-# The practical calculated-column formula ceiling. Widely reported as the
-# limit of the Lists UI formula box, but NOT documented by Microsoft for
-# SharePoint — the documented 1000-character formula limit belongs to
-# Dataverse, which is a different product with different rules (the same
-# confusion once had this project believing SharePoint forbade calc-on-calc
-# chains, which it permits). Conservative, so it cannot pass a formula
-# SharePoint would refuse; raising it needs a live probe, not a citation.
-MAX_CALCULATED_FORMULA = 1024
-
-MAX_INTERNAL_NAME = 32
 
 # Built-in associated-group ALIASES (casefolded) mapped to the principal kind
 # that resolves them correctly at deploy time. `kind: group` principals are

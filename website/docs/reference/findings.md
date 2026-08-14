@@ -166,7 +166,7 @@ dbml-sharepoint explain unknown_column_type
 | `index_column_not_rendered` | error | An `indexes { }` entry names a column the deploy never creates. |
 | `index_column_type_unindexable` | error | An `indexes { }` entry names a column of a type SharePoint cannot index. |
 | `index_duplicates_unique_column` | error | An `indexes { }` entry names a column that already carries an implicit index from its `[unique]` setting. |
-| `index_limit_approaching` | warning | A list is at 18 or 19 of its 20 indexes. SharePoint creates indexes by itself -- opening a sorted view on an unindexed column adds one -- and those are invisible to this build, so leave headroom. |
+| `index_limit_approaching` | warning | A list has reached 18 of its 20 indexes. SharePoint creates indexes by itself -- opening a sorted view on an unindexed column adds one -- and those are invisible to this build, so leave headroom. |
 | `index_limit_exceeded` | error | A list's effective indexes exceed SharePoint's limit of 20. The message names the implicit contributors, which are the ones an author cannot count. |
 | `index_on_calculated_column` | error | An `indexes { }` entry names a calculated column. SharePoint accepts the flag and reads it back false. |
 | `index_settings_unsupported` | error | A DBML index carries `name`, `unique`, `type`, `pk` or `note`. SharePoint exposes none of them, so declare a bare column index. |
@@ -174,7 +174,7 @@ dbml-sharepoint explain unknown_column_type
 | `join_threshold_approached` | warning | A view renders join-bearing columns at that ceiling, which held on the tenant measured but may not travel. |
 | `join_threshold_exceeded` | error | A view renders more join-bearing columns than the measured ceiling of 12 join operations, and SharePoint returns the view blank at any list size. Reached from a declared view and from the generated `All Items` view. |
 | `legacy_choice_type` | error | A column uses the legacy `choice` type instead of a named DBML enum. |
-| `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1024 characters once display names are substituted. |
+| `list_validation_formula_too_long` | error | A `list_validation:` rule renders to a formula longer than 1023 characters once display names are substituted. |
 | `list_validation_message_too_long` | error | A `list_validation:` message is longer than 1024 characters. |
 | `list_validation_references_a_retired_column` | error | A list validation condition references a column that has been retired. |
 | `lookup_crosses_site_role` | error | A lookup's source and target entities map to different `site_role`s; a SharePoint lookup cannot span webs. |
@@ -244,7 +244,7 @@ dbml-sharepoint explain unknown_column_type
 | `unmapped_schema_table` | error | A DBML table has no `entities:` entry, so it would be dropped from the deploy plan without an error. |
 | `unresolvable_associated_group_alias` | error | An assignment names a built-in associated-group alias that cannot be resolved by name at deploy time; real sites name it '<SiteTitle> ...'. |
 | `unsupported_base_template` | error | An entity's `base_template` is not 100. The create call sends `BaseTemplate` and never sends `kind`, so any other number provisions a list the rest of the build does not model. |
-| `validation_formula_too_long` | error | A rendered validation formula exceeds SharePoint's 1024-character limit. |
+| `validation_formula_too_long` | error | A rendered validation formula exceeds SharePoint's 1023-character limit. |
 | `validation_message_too_long` | error | A column validation message exceeds 1024 characters. |
 | `view_emptied_by_retirement` | warning | Retirement stripped every declared field from a view, which would be created with no columns. |
 | `view_formatter_xml_metacharacter` | error | A view formatter contains a raw `&` or `<`. A view's CustomFormatter is stored in the view schema XML, so those reach SharePoint as markup and the document it assembles is malformed -- the view MERGE returns HTTP 500 with a `System.Xml.XmlException` and the deployment aborts part-way. Nothing before that point can see it: the build is clean and so is `node --check`. Measured on a live tenant 2026-08-11 by `test/manual/formatter-xml-probe.js`: `&` and `<` are refused, while `>`, `>=`, `"` and `'` are all accepted (`>` comes back as `&gt;`). So the remedy for `<` is to flip the comparison -- `0 > Number([$Km])` rather than `Number([$Km]) < 0`, which is the same predicate and the same behaviour on a blank -- and the remedy for `&&` is to nest an `if()`. `||` is unaffected. Both `&amp;` and `&lt;` were measured to write and read back unchanged, so each refused character has a working escaped spelling. The deployer still does not escape, and the reason is no longer that it is untested: what nobody has watched is whether the escaped form still RENDERS as the author meant. A formatter that stores `&amp;&amp;` and paints `&amp;&amp;` on the page is not a working formatter, and no API round-trip can tell the difference -- see issue #179. |
