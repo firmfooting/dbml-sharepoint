@@ -102,8 +102,8 @@
  *     R1  byte-identical through the CREATE path
  *     R2  byte-identical through the MERGE path
  *     R3  MERGE is PARTIAL: the Description survived a request that did not
- *         carry it. SEE THE CORRECTION BELOW, the non-vacuity was NOT
- *         established in run 1
+ *         carry it. The non-vacuity was NOT established in run 1, see the
+ *         correction below, and was settled in run 2
  *     R5  an empty description is accepted and reads back ""
  *     R6  the marker shape lists and groups already use survives intact
  *
@@ -161,10 +161,28 @@
  * assignments a partial read misses are exactly the usage a gate would fail
  * to report.
  *
- * R3 AND R9 BOTH NEED A RE-RUN before anything is built on them. Nothing
- * else in run 1 is affected: R1, R2, R5 and R6 each compare a value they
- * themselves sent, R7 compares the bitmap it sent, R4 reports a length, and
- * R8 reports a status code. None of them depend on R3 or R9.
+ * RUN 2, 2026-08-14, revision 4dd7de1c, same site, and it closes both
+ * corrections. Ten questions, ten answered, every run-1 result reproduced.
+ *
+ *   R3 IS NOW MEASURED, not described. Order read as 100 BEFORE the MERGE,
+ *   the control value 101 was derived from that observation, and Order read
+ *   back as 101 afterwards while the Description was untouched. So the MERGE
+ *   demonstrably did something and the Description survived it anyway.
+ *   Partial MERGE holds on role definitions.
+ *
+ *   R9 IS NOW ESTABLISHED at the strength a gate needs. Ten assignments over
+ *   ONE page with no continuation left, and EVERY one exposed a level Id or
+ *   Name. Not merely an array this time.
+ *
+ *   CLEANUP VERIFIED. "Deleted, and confirmed absent on read-back", so the
+ *   DELETE was not taken on the strength of its own status code.
+ *
+ * WHAT IS SETTLED AFTER TWO RUNS. A provenance marker can live on a role
+ * definition: byte-exact through both write paths, marker shape survives,
+ * empty accepted, partial MERGE confirmed. The bitmap can be verified. A
+ * refusal can name web-scope usage. The ceiling is 512 and it refuses rather
+ * than truncates. PER-LIST usage remains the one open question, deliberately
+ * not asked here.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
