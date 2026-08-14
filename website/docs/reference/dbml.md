@@ -47,9 +47,10 @@ reading](#writing-one-worth-reading) below rather than restating the
 title — the sentence is the only list-level description this tool emits,
 and a placeholder spends it.
 
-One smaller rule applies to the sentence you write, an error and described
-below: it must leave room for the [provenance
-marker](#the-budget-and-why-a-long-note-is-refused-rather-than-truncated).
+One smaller rule applies to the sentence you write, and it is an error: it
+must leave room for the [provenance
+marker](#the-budget-and-why-a-long-note-is-refused-rather-than-truncated),
+described below.
 
 :::
 
@@ -85,7 +86,7 @@ pack](../artifacts/reporting.md#the-provenance-marker).
 This tool budgets a list Description at 255 characters, so the note's
 budget is what the marker leaves:
 
-```
+```text
 255 − len(marker) − 1 (the separating space) − 32 (reserved, below)
 ```
 

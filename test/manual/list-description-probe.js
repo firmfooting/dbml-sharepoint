@@ -257,7 +257,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 0618867a. Quote this when reporting results.');
+  log('INFO', 'probe revision 0ba6e69c. Quote this when reporting results.');
 
   // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
@@ -268,6 +268,9 @@
   // Asked separately so a partial answer narrows the rule instead of leaving it whole.
   const AMPERSAND = 'dbmlsp probe risks & issues';
   const SPACES = 'dbmlsp probe two  spaces';
+  // L5 measured two. The guard allows any length on the reasoning that
+  // collapsing is one behaviour, and this observes it rather than reasons.
+  const LONG_SPACES = `dbmlsp probe eight${' '.repeat(8)}spaces`;
   const NEWLINE = 'dbmlsp probe first line\nsecond line';
   // Built from char codes so nothing between here and the console normalises the bytes.
   const CR = String.fromCharCode(13);
@@ -288,6 +291,7 @@
   expect('L8', 'Is an EMPTY description accepted?');
   expect('L9', 'Does the composed note-plus-marker shape survive intact?');
   expect('L10', 'Does a CRLF survive, given a bare LF does?');
+  expect('L11', 'Does a LONGER run of spaces survive, given two do?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN. Nothing has been touched.');
@@ -480,6 +484,12 @@
       if (got.includes(CR) && !got.includes(LF)) return 'FAIL (LF stripped, CR kept)';
       return 'FAIL';
     });
+
+  await mergeAndRead('L11', 'Does a LONGER run of spaces survive, given two do?',
+    LONG_SPACES,
+    (got) => (got === LONG_SPACES ? 'PASS'
+      : (typeof got === 'string' && got.includes('eight spaces')
+        ? 'FAIL (run collapsed)' : 'FAIL')));
 
   // ---- Clean up ----------------------------------------------------------
   const dd = await getDigest();

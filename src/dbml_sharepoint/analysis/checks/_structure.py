@@ -171,6 +171,13 @@ def _note_whitespace_is_measured(
 
     A single tab is left alone, because the retired rule allowed it and this
     one must not be stronger than the rule it narrows.
+
+    Runs of plain spaces are allowed at any length, from a measurement of two.
+    Collapsing is one behaviour rather than a per-length one: a normaliser
+    that shortens a run shortens the shortest run there is, and two came back
+    uncollapsed. A different CHARACTER is a different question, which is why
+    tabs and non-breaking spaces stay refused. L11 in the probe sends a longer
+    run so the next run settles it by observation instead.
     """
     if table is None:
         return []
