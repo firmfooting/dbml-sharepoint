@@ -351,6 +351,8 @@ class FindingCode(StrEnum):
     GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS = (
         "group_auto_accept_without_requests", "error")
     GROUP_DESCRIPTION_TOO_LONG = "group_description_too_long", "error"
+    GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER = (
+        "group_description_too_long_for_marker", "error")
     MULTIPLE_ENTERPRISE_READER_GROUPS = (
         "multiple_enterprise_reader_groups", "error")
     PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE = (

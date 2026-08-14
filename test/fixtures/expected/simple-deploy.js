@@ -515,9 +515,10 @@
       "allow_members_edit_membership": false,
       "allow_request_to_join_leave": false,
       "auto_accept_request_to_join_leave": false,
-      "description": "Test group.",
+      "description": "Test group. Provisioned by dbml-sharepoint from simple-test.",
       "enroll_enterprise_reader": false,
       "enroll_operator_during_deploy": false,
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test.",
       "name": "List Maintainer",
       "only_allow_members_view_membership": false,
       "owner_group": "Site Owners",
@@ -1729,6 +1730,82 @@
       }
     }
 
+    // Enumerate every page. A group larger than one page would otherwise read
+    // as smaller than it is, and both callers fail closed on the count.
+    async function countGroupMembers(groupName) {
+      let total = 0;
+      let membersUrl = apiUrl(`web/sitegroups/getbyname('${odataName(groupName)}')/users?$select=Id&$top=5000`);
+      while (membersUrl) {
+        const membersResp = await fetchWithRetry(membersUrl, {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!membersResp.ok) {
+          const text = await membersResp.text();
+          throw new Error(`Group '${groupName}' membership enumeration failed: HTTP ${membersResp.status} ${text}`);
+        }
+        const membersJson = await membersResp.json();
+        if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
+          throw new Error(`Group '${groupName}' membership enumeration returned an invalid response`);
+        }
+        total += membersJson.d.results.length;
+        membersUrl = membersJson.d.__next || null;
+      }
+      return total;
+    }
+
+    // MEASURED by test/manual/group-description-probe.js, 2026-08-13 and
+    // 2026-08-14: Description round-trips byte-identically, so this compare
+    // is exact rather than fuzzy. The $select projection itself is not
+    // measured; every question in that probe read the group back
+    // unprojected. It is inferred from the owner-verification calls below,
+    // which already project a site group with $select=Id,Title,PrincipalType.
+    // Id is unused here, kept only so this GET's URL shape matches theirs
+    // exactly, which is what test_a_first_deploy_probes_no_absent_group_or_field_by_name
+    // excludes as "already resolved, not a probe for something absent."
+    async function verifyGroupSettings(grp) {
+      const select = 'Id,Description,AllowMembersEditMembership,AllowRequestToJoinLeave'
+        + ',AutoAcceptRequestToJoinLeave,OnlyAllowMembersViewMembership';
+      const resp = await fetchWithRetry(
+        apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=${select}`),
+        { headers: { 'Accept': 'application/json;odata=verbose' } },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Group '${grp.name}' read-back failed: HTTP ${resp.status} ${text}`);
+      }
+      const got = (await resp.json()).d || {};
+      // The tenant forces auto-accept off when requests-to-join is off,
+      // measured against a contradictory pair sent deliberately
+      // (test/manual/group-description-probe.js G9, then confirmed non-
+      // ambiguous by G10, 2026-08-13/14), so the expected value is the
+      // coerced one, not the one sent.
+      const expectedAutoAccept = grp.allow_request_to_join_leave
+        ? grp.auto_accept_request_to_join_leave
+        : false;
+      const mismatches = [];
+      if (got.Description !== grp.description) {
+        mismatches.push(`Description: sent ${JSON.stringify(grp.description)}, stored ${JSON.stringify(got.Description)}`);
+      }
+      if (got.AllowMembersEditMembership !== grp.allow_members_edit_membership) {
+        mismatches.push(`AllowMembersEditMembership: sent ${grp.allow_members_edit_membership}, stored ${got.AllowMembersEditMembership}`);
+      }
+      if (got.AllowRequestToJoinLeave !== grp.allow_request_to_join_leave) {
+        mismatches.push(`AllowRequestToJoinLeave: sent ${grp.allow_request_to_join_leave}, stored ${got.AllowRequestToJoinLeave}`);
+      }
+      if (got.AutoAcceptRequestToJoinLeave !== expectedAutoAccept) {
+        mismatches.push(`AutoAcceptRequestToJoinLeave: expected ${expectedAutoAccept}, stored ${got.AutoAcceptRequestToJoinLeave}`);
+      }
+      if (got.OnlyAllowMembersViewMembership !== grp.only_allow_members_view_membership) {
+        mismatches.push(`OnlyAllowMembersViewMembership: sent ${grp.only_allow_members_view_membership}, stored ${got.OnlyAllowMembersViewMembership}`);
+      }
+      if (mismatches.length) {
+        throw new Error(
+          `Site group '${grp.name}' did not store what was written. The request was accepted, `
+          + `so this is a silent divergence rather than an error the tenant reported. `
+          + mismatches.join('; '));
+      }
+    }
+
     for (const grp of SCHEMA.groups) {
       try {
         // null status means "known absent without asking".
@@ -1755,7 +1832,57 @@
           // deploy honest even against a mapping that predates the rule.
           if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
           log('INFO', `Site group '${grp.name}' created.`);
+          await verifyGroupSettings(grp);
         } else if (checkResp.ok) {
+          // #209. This branch adopts a group by NAME and the ACL phase then
+          // grants it whatever the mapping declares, which for the
+          // administrators group is Full Control on every list. Adopt only a
+          // group this tool created, or one holding nobody.
+          //
+          // PROVENANCE, NOT AUTHENTICATION, 2026-08-14: the marker is evidence
+          // this tool wrote the group, not a secret. Anyone who can edit a
+          // site group's Description can satisfy it, and editing a site
+          // group already needs site-owner rights on the target site, which
+          // this gate assumes rather than re-checks.
+          //
+          // EXACT MARKER, NOT A SHARED PREFIX. Every family's marker starts
+          // with the same "Provisioned by dbml-sharepoint" text, so testing
+          // that shared text let a group ANY family stamped pass the gate
+          // for EVERY family. Comparing the exact marker this declaration
+          // expects (grp.expected_marker) closes that: a group family B
+          // declares cannot be satisfied by a marker family A left on it.
+          // The two tool-owned groups still work here, because every family
+          // computes the same expected_marker for them.
+          //
+          // Empty expected_marker would make indexOf('') return 0 for every
+          // description below, adopting every group unmarked. undefined
+          // already fails closed there; only the empty string is dangerous.
+          // jsgen always sets a value, so this only matters for a
+          // hand-edited bundle.
+          if (typeof grp.expected_marker !== 'string' || grp.expected_marker === '') {
+            throw new Error(`Site group '${grp.name}' has no expected_marker; refusing to adopt any group against it.`);
+          }
+          const existingJson = await checkResp.json();
+          const existingDescription = (existingJson.d && typeof existingJson.d.Description === 'string')
+            ? existingJson.d.Description
+            : '';
+          // SUBSTRING SEARCH, NOT A PREFIX TEST. group_description() appends
+          // the marker AFTER any declared text, so a composed description
+          // does not START with it. indexOf finds the marker anywhere in the
+          // string; changing this to startsWith would refuse every group
+          // that also carries a declared description.
+          if (existingDescription.indexOf(grp.expected_marker) === -1) {
+            const memberCount = await countGroupMembers(grp.name);
+            if (memberCount > 0) {
+              throw new Error(
+                `Site group '${grp.name}' already exists, carries no '${grp.expected_marker}' `
+                + `marker, and holds ${memberCount} member(s). It was not created by this tool, and `
+                + `adopting it would grant those members the access this family declares for the group. `
+                + `Nothing has been written to this group. Either empty the group, or rename it so `
+                + `this deploy creates its own.`);
+            }
+          }
+
           // Group membership controls are part of the security boundary. A
           // pre-existing group with the right name but permissive flags must
           // not be accepted as compliant.
@@ -1777,6 +1904,7 @@
             throw new Error(`Group '${grp.name}' settings MERGE failed: HTTP ${mergeResp.status} ${text}`);
           }
           log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
+          await verifyGroupSettings(grp);
         } else {
           throw new Error(`Probe for site group '${grp.name}' failed: HTTP ${checkResp.status}`);
         }
@@ -1904,23 +2032,7 @@
         // operator-owned concern: enumerate every page and fail closed rather
         // than silently removing an unexpected user or directory group.
         if (grp.require_empty_at_deploy) {
-          let memberCount = 0;
-          let membersUrl = apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')/users?$select=Id&$top=5000`);
-          while (membersUrl) {
-            const membersResp = await fetchWithRetry(membersUrl, {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (!membersResp.ok) {
-              const text = await membersResp.text();
-              throw new Error(`Group '${grp.name}' membership enumeration failed: HTTP ${membersResp.status} ${text}`);
-            }
-            const membersJson = await membersResp.json();
-            if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
-              throw new Error(`Group '${grp.name}' membership enumeration returned an invalid response`);
-            }
-            memberCount += membersJson.d.results.length;
-            membersUrl = membersJson.d.__next || null;
-          }
+          const memberCount = await countGroupMembers(grp.name);
           if (memberCount > 0) {
             throw new Error(`Group '${grp.name}' requires empty membership at deploy, but contains ${memberCount} member(s); remove them or use a mapping that does not declare the clean-provision gate`);
           }
