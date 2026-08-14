@@ -1642,28 +1642,104 @@
   {
     let digest0 = await getDigest();
 
+    // Existence probe via $filter: getbyname returns HTTP 500 (not 404) for
+    // a missing role definition, so a getbyname probe cannot distinguish
+    // "absent" from a real failure. The filter form returns 200 with empty
+    // results when absent. getbyname is still used below for the MERGE,
+    // where the level is known to exist. Description is selected alongside
+    // Id because the adoption gate below reads it; selecting Id alone would
+    // give the gate nothing to test. Shared with the create path's Id
+    // fallback, so both ask SharePoint the identical question.
+    async function probeLevelExistence(name) {
+      const resp = await fetchWithRetry(apiUrl(`web/roledefinitions?$select=Id,Description&$filter=Name eq '${odataName(name)}'`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Probe for permission level '${name}' failed: HTTP ${resp.status} ${text}`);
+      }
+      const json = await resp.json();
+      const rows = json?.d?.results;
+      if (!Array.isArray(rows)) {
+        throw new Error(`Probe for permission level '${name}' returned an invalid response`);
+      }
+      return rows;
+    }
+
+    // WEB SCOPE ONLY, and this count NEVER decides whether to adopt. This
+    // tool assigns its levels at LIST scope through _acls.js.j2, and R9 of
+    // role-definition-probe.js measured web scope alone, so a zero here does
+    // not mean unused. It is reported to tell the operator what they are
+    // looking at.
+    async function countWebAssignmentsUsing(levelId) {
+      let total = 0;
+      let url = apiUrl('web/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200');
+      while (url) {
+        const resp = await fetchWithRetry(url, { headers: { 'Accept': 'application/json;odata=verbose' } });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(`Role assignment enumeration failed: HTTP ${resp.status} ${text}`);
+        }
+        const json = await resp.json();
+        if (!json || !json.d || !Array.isArray(json.d.results)) {
+          throw new Error('Role assignment enumeration returned an invalid response');
+        }
+        for (const row of json.d.results) {
+          const bindings = row.RoleDefinitionBindings && row.RoleDefinitionBindings.results;
+          if (!Array.isArray(bindings)) {
+            // A row whose bindings cannot be read is usage this cannot see.
+            // R9 took the same position and recorded NOT ESTABLISHED rather
+            // than counting it as clean.
+            throw new Error('A role assignment returned bindings this script cannot read; the usage report would be incomplete');
+          }
+          if (bindings.some((b) => String(b.Id) === String(levelId))) total += 1;
+        }
+        url = json.d.__next || null;
+      }
+      return total;
+    }
+
+    // R7 (test/manual/role-definition-probe.js, 2026-08-14): Description and
+    // both bitmap halves round-trip exactly as written, so this compare is
+    // exact rather than fuzzy. Bitmap halves are compared as strings: the
+    // tenant represents SP.BasePermissions.High/Low as Int64, which OData
+    // verbose serialises as a string, and the declared value already is one
+    // (analysis.permissions.HighLow).
+    async function verifyLevelSettings(lvl, levelId) {
+      const resp = await fetchWithRetry(
+        apiUrl(`web/roledefinitions(${levelId})?$select=Id,Description,BasePermissions`),
+        { headers: { 'Accept': 'application/json;odata=verbose' } },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Permission level '${lvl.name}' read-back failed: HTTP ${resp.status} ${text}`);
+      }
+      const got = (await resp.json()).d || {};
+      const gotPerms = got.BasePermissions || {};
+      const mismatches = [];
+      if (got.Description !== lvl.description) {
+        mismatches.push(`Description: sent ${JSON.stringify(lvl.description)}, stored ${JSON.stringify(got.Description)}`);
+      }
+      if (String(gotPerms.High) !== String(lvl.base_permissions.high)) {
+        mismatches.push(`BasePermissions.High: sent ${lvl.base_permissions.high}, stored ${gotPerms.High}`);
+      }
+      if (String(gotPerms.Low) !== String(lvl.base_permissions.low)) {
+        mismatches.push(`BasePermissions.Low: sent ${lvl.base_permissions.low}, stored ${gotPerms.Low}`);
+      }
+      if (mismatches.length) {
+        throw new Error(
+          `Permission level '${lvl.name}' did not store what was written. The request was accepted, `
+          + `so this is a silent divergence rather than an error the tenant reported. `
+          + mismatches.join('; '));
+      }
+    }
+
     for (const lvl of SCHEMA.permission_levels) {
       try {
-        // Existence probe via $filter: getbyname returns HTTP 500 (not 404)
-        // for a missing role definition, so a getbyname probe cannot
-        // distinguish "absent" from a real failure. The filter form returns
-        // 200 with empty results when absent. getbyname is still used below
-        // for the MERGE, where the level is known to exist.
-        const checkResp = await fetchWithRetry(apiUrl(`web/roledefinitions?$select=Id&$filter=Name eq '${odataName(lvl.name)}'`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!checkResp.ok) {
-          const text = await checkResp.text();
-          throw new Error(`Probe for permission level '${lvl.name}' failed: HTTP ${checkResp.status} ${text}`);
-        }
-        const checkJson = await checkResp.json();
-        const existingLevels = checkJson?.d?.results;
-        if (!Array.isArray(existingLevels)) {
-          throw new Error(`Probe for permission level '${lvl.name}' returned an invalid response`);
-        }
+        const existingLevels = await probeLevelExistence(lvl.name);
         if (existingLevels.length === 0) {
           log('INFO', `Creating permission level '${lvl.name}'...`);
-          await postJson(apiUrl('web/roledefinitions'), {
+          const createResp = await postJson(apiUrl('web/roledefinitions'), {
             __metadata: { type: 'SP.RoleDefinition' },
             Name: lvl.name,
             Description: lvl.description,
@@ -1674,8 +1750,50 @@
             },
             Order: 100,
           }, digest0);
+          let newLevelId = createResp?.d?.Id;
+          if (!Number.isInteger(newLevelId)) {
+            // The create response carried no Id. Resolve it by name through
+            // the same $filter probe rather than skip verification silently.
+            // test/manual/role-definition-probe.js hit exactly this case and
+            // carries the same fallback.
+            const resolved = await probeLevelExistence(lvl.name);
+            if (resolved.length !== 1 || !Number.isInteger(resolved[0].Id)) {
+              throw new Error(`Permission level '${lvl.name}' was created but its Id could not be resolved for verification`);
+            }
+            newLevelId = resolved[0].Id;
+            log('INFO', `Create returned no Id for '${lvl.name}'; resolved it by name to verify it.`);
+          }
+          await verifyLevelSettings(lvl, newLevelId);
           log('INFO', `Permission level '${lvl.name}' created.`);
         } else {
+          const existingId = existingLevels[0].Id;
+          const existingDescription = typeof existingLevels[0].Description === 'string'
+            ? existingLevels[0].Description
+            : '';
+          // #224. A role definition is SITE-SCOPED: adopting one this tool
+          // did not create would overwrite its bitmap for every list it is
+          // already assigned on, including lists this deploy never reads.
+          // MARKER ONLY, deliberately, and a usage count never clears this
+          // gate: `_acls.js.j2` assigns every level at LIST scope, and only
+          // web-scope usage can be measured (role-definition-probe.js R9),
+          // so a web-scope zero does not mean the level is unused.
+          if (typeof lvl.expected_marker !== 'string' || lvl.expected_marker === '') {
+            throw new Error(`SCHEMA.permission_levels['${lvl.name}'].expected_marker is missing or empty; refusing to adopt any level against it.`);
+          }
+          if (existingDescription.indexOf(lvl.expected_marker) === -1) {
+            // MARKER ONLY, deliberately. A usage count cannot clear this gate
+            // because usage cannot be measured completely: assignments live at
+            // LIST scope and only web scope was measured.
+            const atWebScope = await countWebAssignmentsUsing(existingId);
+            throw new Error(
+              `Permission level '${lvl.name}' already exists and carries no '${lvl.expected_marker}' marker, `
+              + `so it was not created by this declaration. A permission level is site-wide, and reconciling it `
+              + `would change what it grants everywhere it is assigned, including lists this deploy does not `
+              + `manage and never reads. It is used by ${atWebScope} role assignment(s) AT WEB SCOPE; `
+              + `assignments on individual lists are not counted, so treat that as a floor rather than a total. `
+              + `Nothing has been written to this level. Rename the level in your mapping so this deploy creates `
+              + `its own.`);
+          }
           // A same-name role definition is not proof that its permissions are
           // still the declared permissions. Reconcile the security-sensitive
           // fields on every run so a drifted level cannot silently retain
@@ -1698,6 +1816,7 @@
             const text = await mergeResp.text();
             throw new Error(`Permission level '${lvl.name}' MERGE failed: HTTP ${mergeResp.status} ${text}`);
           }
+          await verifyLevelSettings(lvl, existingId);
           log('INFO', `Permission level '${lvl.name}' already exists; declared permissions reconciled.`);
         }
       } catch (err) {

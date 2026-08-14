@@ -1532,9 +1532,11 @@ def test_permission_level_probe_uses_filter_not_getbyname() -> None:
     role definition, so a getbyname existence probe fails Phase 1.2 on every
     clean site (first real-tenant paste). The probe must use the $filter form,
     which returns 200 + empty results when absent; getbyname remains only on
-    the MERGE path for an existing level."""
+    the MERGE path for an existing level. Description is selected alongside
+    Id: #224's adoption gate reads it, and Id alone would give that gate
+    nothing to test."""
     js = _generate_simple_js()
-    assert "web/roledefinitions?$select=Id&$filter=Name eq" in js
+    assert "web/roledefinitions?$select=Id,Description&$filter=Name eq" in js
 
 
 def test_field_probe_treats_missing_column_400_as_absent() -> None:

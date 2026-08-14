@@ -216,18 +216,28 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     // was the existence probe, a getbyname resolve, or a by-Id read-back --
     // so a MERGE could never be observed landing or failing to land.
     // Seeded with the one level the fixture declares, 'Schema Manager'
-    // (test/fixtures/sharepoint-mapping.yaml:72), already present with its
-    // declared shape, so a fresh run reconciles it rather than creating it --
-    // matching this harness's "adopted site" fiction everywhere else.
+    // (test/fixtures/sharepoint-mapping.yaml:72). Its default Description
+    // already carries THIS family's marker, matching every other pre-existing
+    // object in this harness's "adopted site" fiction: a level a prior run of
+    // the same family already created and stamped, so a fresh run reconciles
+    // it rather than refusing it. ROLE_DEF_ABSENT and
+    // ROLE_DEF_DESCRIPTION_OVERRIDE let #224's adoption-gate tests put the
+    // level through the create path, or give it an unmarked or
+    // other-family-marked Description, without touching every other test.
     // ROLE_DEF_DROP_FIELD_ON_WRITE follows GROUP_DROP_FIELD_ON_WRITE: it
     // names one field the MERGE accepts but does not store, so a later test
     // can prove a permission-level read-back fails closed.
     let nextRoleDefId = 2;
     const ROLE_DEF_DROP_FIELD_ON_WRITE = null;
     const ROLE_DEF_SETTINGS_KEYS = ['Description', 'High', 'Low'];
-    const ROLE_DEF_STATE = {
+    const ROLE_DEF_ABSENT = false;
+    const ROLE_DEF_DESCRIPTION_OVERRIDE = null;
+    const ROLE_DEF_STATE = ROLE_DEF_ABSENT ? {} : {
       'Schema Manager': {
-        Id: 1, Description: 'Test permission level.',
+        Id: 1,
+        Description: ROLE_DEF_DESCRIPTION_OVERRIDE == null
+          ? 'Test permission level. Provisioned by dbml-sharepoint from simple-test.'
+          : ROLE_DEF_DESCRIPTION_OVERRIDE,
         BasePermissions: { High: '0', Low: '2049' },
       },
     };
@@ -2239,6 +2249,187 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
     message = str(errors[0]["error"])
     assert group_name in message, message
     assert "Description" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+# #224: `_security_principals.js.j2` adopted any role definition whose name
+# matched a declared one and MERGEd the declared bitmap onto it. A role
+# definition is SITE-SCOPED, so a hand-made level sharing a declared name and
+# assigned on lists this tool never reads had its bitmap silently
+# overwritten. `_role_def_gate_deploy` lets these tests control the
+# fixture's one declared level, 'Schema Manager', against `_ADOPTED_HARNESS`.
+
+
+def _role_def_gate_deploy(
+    deploy_js: str,
+    *,
+    absent: bool = False,
+    description_override: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run `deploy_js` against `_ADOPTED_HARNESS` with the fixture's one
+    declared permission level, 'Schema Manager', either absent (so the
+    CREATE path runs) or present with its Description overridden (so the
+    #224 adoption gate can be exercised against an unmarked level, or one
+    another family stamped).
+    """
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_ABSENT = false;",
+        f"const ROLE_DEF_ABSENT = {json.dumps(absent)};",
+    ).replace(
+        "const ROLE_DEF_DESCRIPTION_OVERRIDE = null;",
+        f"const ROLE_DEF_DESCRIPTION_OVERRIDE = {json.dumps(description_override)};",
+    )
+    return _run_group_verify_deploy(deploy_js, harness)
+
+
+def _role_def_merge_writes(
+    calls: list[dict[str, Any]], level_name: str,
+) -> list[dict[str, Any]]:
+    """Every POST that MERGEs settings onto the named role definition itself."""
+    encoded = quote(level_name, safe="")
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"]
+        and f"roledefinitions/getbyname('{encoded}')" in c["url"]
+    ]
+
+
+def _role_def_create_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every POST that creates a new role definition."""
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"]
+        and c["url"].endswith("/web/roledefinitions")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unmarked_permission_level_is_refused() -> None:
+    """MARKER ONLY, unlike the group gate: no usage count can clear this
+    refusal. Default `_ADOPTED_HARNESS` state reports zero web-scope role
+    assignments for it, and it is still refused. `_acls.js.j2` assigns a
+    permission level at LIST scope, which a web-scope count cannot see, so
+    treating an unmeasured surface as empty would adopt exactly the level
+    #224 exists to stop adopting."""
+    summary, calls, _ = _role_def_gate_deploy(
+        _deploy_js(), description_override="Our own level.",
+    )
+    # The overwritten bitmap is the damage; the refusal is only how the
+    # script avoids it. Asserted first so removing the gate fails on "the
+    # level was reconciled" rather than on a summary key.
+    assert not _role_def_merge_writes(calls, "Schema Manager"), (
+        "an unmarked permission level was reconciled before the refusal: "
+        "its Description and BasePermissions were rewritten"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "carries no" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_marked_by_another_family_is_refused() -> None:
+    """The gate compares the exact marker THIS declaration expects, not the
+    shared 'Provisioned by dbml-sharepoint' prefix every family's marker
+    starts with, so a level another family stamped cannot satisfy it."""
+    summary, calls, _ = _role_def_gate_deploy(
+        _deploy_js(),
+        description_override="Provisioned by dbml-sharepoint from other-family.",
+    )
+    assert not _role_def_merge_writes(calls, "Schema Manager"), (
+        "a permission level marked by another family was reconciled before the refusal"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "carries no" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_marked_permission_level_is_adopted_silently() -> None:
+    """The default `_ADOPTED_HARNESS` state already carries this
+    declaration's marker, matching a prior run of the same family: the
+    level is reconciled without a security error."""
+    summary, calls, _ = _role_def_gate_deploy(_deploy_js())
+    assert not _security_errors(summary), summary
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "a marked permission level's settings were never reconciled"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_created_fresh_is_stamped() -> None:
+    """A level this deploy creates must carry the marker that lets a later
+    redeploy recognise it as this tool's own."""
+    summary, calls, _ = _role_def_gate_deploy(_deploy_js(), absent=True)
+    assert not _security_errors(summary), summary
+    writes = _role_def_create_writes(calls)
+    assert writes, "a fresh permission level was never created"
+    assert "Provisioned by dbml-sharepoint from simple-test." in writes[0]["body"]
+
+
+# Task 5 (#224): `mergeResp.ok` and the create POST's `ok` only say the
+# tenant accepted the request, not that it stored what was sent.
+# `verifyLevelSettings` reads the level back after both the create and the
+# MERGE and compares Description and both bitmap halves.
+# `ROLE_DEF_DROP_FIELD_ON_WRITE` models a write the tenant 200s and
+# discards, the same way `GROUP_DROP_FIELD_ON_WRITE` does for a site group.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_description_the_tenant_did_not_store_fails_closed() -> None:
+    """AGENTS.md: anything that writes must read back and verify.
+
+    The stale description still carries this family's marker, so the run
+    takes the adopt-and-reconcile branch rather than the refusal gate; only
+    the read-back after the MERGE can catch the drop.
+    """
+    stale_description = "Stale note. Provisioned by dbml-sharepoint from simple-test."
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_DESCRIPTION_OVERRIDE = null;",
+        f"const ROLE_DEF_DESCRIPTION_OVERRIDE = {json.dumps(stale_description)};",
+    ).replace(
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = null;",
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = 'Description';",
+    )
+    summary, calls, _ = _run_group_verify_deploy(_deploy_js(), harness)
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "the reconcile MERGE never happened"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "Description" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_base_permissions_the_tenant_did_not_store_fails_closed() -> None:
+    """A dropped bitmap half is the exact failure #224 exists to catch: the
+    MERGE reports success while the level keeps its old permissions. The
+    declared Low is overridden so the drop is observable, since the mock's
+    stored default otherwise already equals the undisturbed declared value.
+    """
+    js = _deploy_js().replace('"low": "2049"', '"low": "4098"', 1)
+    assert '"low": "4098"' in js
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = null;",
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = 'Low';",
+    )
+    summary, calls, _ = _run_group_verify_deploy(js, harness)
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "the reconcile MERGE never happened"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "BasePermissions" in message, message
     assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
