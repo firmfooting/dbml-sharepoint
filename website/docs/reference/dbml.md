@@ -47,11 +47,10 @@ reading](#writing-one-worth-reading) below rather than restating the
 title — the sentence is the only list-level description this tool emits,
 and a placeholder spends it.
 
-Two smaller rules apply to the sentence you write, both errors and both
-described below: it must leave room for the [provenance
+One smaller rule applies to the sentence you write, and it is an error: it
+must leave room for the [provenance
 marker](#the-budget-and-why-a-long-note-is-refused-rather-than-truncated),
-and it may not contain `&` or a line break
-(`entity_note_may_not_round_trip`).
+described below.
 
 :::
 
@@ -84,17 +83,28 @@ pack](../artifacts/reporting.md#the-provenance-marker).
 
 ### The budget, and why a long note is refused rather than truncated
 
-A SharePoint list Description holds 255 characters, so the note's budget
-is what the marker leaves:
+This tool budgets a list Description at 255 characters, so the note's
+budget is what the marker leaves:
 
-```
+```text
 255 − len(marker) − 1 (the separating space) − 32 (reserved, below)
 ```
 
 Around 190 characters for a typical family, and the exact number depends
 on the family and entity names — a longer `Project` name shortens every
-note under it. Exceeding it is `entity_note_too_long_for_marker`, also an
+note under it. Exceeding it is `entity_note_too_long_for_marker`, an
 error.
+
+**255 is this tool's budget, not a SharePoint limit.** It is what the
+emitter has always applied. The 2026-08-14 probe that measured the round
+trip wrote 1018 characters and read all of them back intact, so
+SharePoint accepts at least that many. That is a lower bound rather than
+the absence of a limit, because one length was sent and no ceiling was
+searched for.
+
+The budget stays at 255 for now. Whether a longer Description survives
+the list settings UI, the search index and the reporting pack unchanged
+has not been measured, and all three read that string.
 
 **The note is refused; the marker is never cut.** This is the whole point
 of the rule and it is worth being explicit about why, because truncating
@@ -129,15 +139,15 @@ rather than noise they learn to skip:
 - **Write for somebody who has just opened the list** and does not know
   the template, has not read this documentation, and was not in the room
   when it was chosen.
-- **No `&`, no line breaks; keep it to one paragraph.** Enforced, not
-  advised: `entity_note_may_not_round_trip` is an **error**. Not a style
-  preference either — byte-identical round-trip of a list Description is
-  *inferred*, not measured, and the reconcile compares what it wrote
-  against what came back. If the inference is wrong, the deploy aborts
-  part-way through a paste and does so on every re-paste; see [the
-  reporting pack](../artifacts/reporting.md#the-provenance-marker). Write
-  "and". The rule lifts if a `test/manual/` probe measures the round trip
-  and finds it exact.
+- **Keep it to one paragraph.** Advice, not a rule. `&`, line breaks and
+  runs of spaces were errors until 2026-08-14, when
+  `test/manual/list-description-probe.js` measured the round trip against a
+  live site and found it exact: byte for byte, at 1018 characters, including
+  an ampersand, a run of two spaces, a bare LF and a CRLF. The restriction
+  existed because that round trip was inferred rather than measured, and the
+  reconcile compares what it wrote against what came back. One paragraph
+  still reads better under list
+  settings, which is the only reason left to prefer it.
 
 The shipped families are the worked examples — every
 `src/dbml_sharepoint/solutions/*/10-design/schema.dbml` carries one note

@@ -35,6 +35,26 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: Every rule this build can report, by code. One entry per `FindingCode`
 #: member; `test_every_code_has_help` fails the build on either a member with
 #: no entry or an entry with no member.
+#: Codes that no longer exist, and what happened to them.
+#:
+#: `explain` documents a finding code as a stable identity, so a code printed
+#: by an older build has to stay answerable after the rule behind it is
+#: retired. Without this, the answer is "no finding code", which reads as a
+#: typo rather than as history.
+RETIRED_FINDINGS: dict[str, str] = {
+    "entity_note_may_not_round_trip": (
+        "Retired 2026-08-14. It refused an ampersand, a line break or a run "
+        "of spaces in a table note, because whether a list Description "
+        "returns unchanged was inferred rather than measured. "
+        "`test/manual/list-description-probe.js` measured it against a live "
+        "site and found the round trip exact for all four, so the rule was "
+        "deleted. Runs of whitespace holding a tab or a non-breaking space "
+        "were never sent by that probe and are still refused, now by "
+        "`entity_note_whitespace_unmeasured`."
+    ),
+}
+
+
 FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.ALL_ITEMS_VIEW_DECLARED: (
         "A view named `All Items` is declared; that view is generated "
@@ -478,32 +498,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "The mapping's `entities:` declares a name the DBML schema has "
         "no table for."
     ),
-    FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP: (
-        "A table's `Note:` contains an ampersand, a line break or a run of "
-        "spaces, and this tool cannot prove any of them survives a deploy. "
-        "Write \"and\" instead of `&`, keep the note to a single paragraph, "
-        "and use single spaces between words. Not a style "
-        "preference: the note becomes the list Description, and the deploy "
-        "writes it, reads it straight back and compares the two byte for "
-        "byte. That it comes back unchanged is INFERRED from the field "
-        "descriptions this tool has always written that way -- Microsoft "
-        "Learn documents `SP.List.Description` as a plain read/write string "
-        "and says nothing about normalisation, and no probe has measured it. "
-        "The same inference has been wrong once already elsewhere: "
-        "SharePoint demonstrably normalises a column's ValidationFormula, "
-        "which is why the deploy has to compare those canonically. If it is "
-        "wrong here -- `&` returned as `&amp;`, a line break rewritten, or a "
-        "run of spaces collapsed -- "
-        "the read-back never matches what was sent and the deploy aborts. It "
-        "fails closed, which is right, but it does so part-way through a "
-        "paste, against a site that is already half provisioned, and "
-        "identically on every re-paste after that, with no way forward but "
-        "re-authoring the schema and rebuilding the bundle. A build-time "
-        "refusal costs one word. The restriction is temporary and lifts on "
-        "evidence: a probe under `test/manual/` that sets a Description "
-        "containing a newline, an `&` and a run of spaces, reads it straight "
-        "back and compares bytes settles it in one paste, and if the round "
-        "trip is exact this rule goes away."
+    FindingCode.ENTITY_NOTE_WHITESPACE_UNMEASURED: (
+        "A table's `Note:` contains a run of whitespace holding a tab, a "
+        "non-breaking space or another character that is not a plain "
+        "space. The deploy writes the note as the list Description, reads "
+        "it back and compares byte for byte, so a character SharePoint "
+        "normalises aborts every paste after a partial deployment. Two "
+        "ASCII spaces were measured on 2026-08-14 by "
+        "`test/manual/list-description-probe.js` and are preserved, which "
+        "is why runs of plain spaces are allowed. These other characters "
+        "were never sent. Use single spaces between words, or plain "
+        "spaces if you meant alignment. A single tab is not refused, "
+        "because the wider rule this narrows did not refuse one either."
     ),
     FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER: (
         "A table's `Note:` is long enough that the provenance marker "
