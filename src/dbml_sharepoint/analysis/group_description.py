@@ -32,12 +32,14 @@ the other, which is why both were measured.
 
 from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
 
-#: The text every marker opens with, and the ONLY thing the deploy tests.
+#: The text every marker opens with.
 #:
-#: Both shapes below start with it, so `_security_principals.js.j2` does one
-#: substring compare and never has to know which shape a given group should
-#: carry. Changing this string changes what every already-deployed group is
-#: recognised by, so it is not a cosmetic edit.
+#: Both shapes below build on it, but the deploy no longer tests this prefix
+#: on its own: `_security_principals.js.j2` compares the exact marker one
+#: group is expected to carry, from `marker_for_group`, so a group another
+#: family stamped cannot satisfy this family's adoption test. Changing this
+#: string still changes what every already-deployed group is recognised by,
+#: so it is not a cosmetic edit.
 MARKER_PREFIX = "Provisioned by dbml-sharepoint"
 
 #: The marker for a group this tool names for itself.

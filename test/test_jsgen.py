@@ -718,11 +718,14 @@ def test_a_family_group_marker_names_its_family() -> None:
     )
 
 
-def test_the_marker_prefix_reaches_the_emitted_schema() -> None:
-    """The deploy tests this string; it must not be spelled twice."""
-    from dbml_sharepoint.analysis.group_description import MARKER_PREFIX
+def test_each_group_carries_its_own_expected_marker() -> None:
+    """The deploy gate compares this per group, not the shared prefix every
+    family's marker happens to start with."""
+    from dbml_sharepoint.analysis.group_description import marker_for_group
 
-    assert _schema_json_for_risk_register()["group_marker_prefix"] == MARKER_PREFIX
+    schema_json = _schema_json_for_risk_register()
+    for grp in schema_json["groups"]:
+        assert grp["expected_marker"] == marker_for_group(grp["name"], "risk-register")
 
 
 def test_deploy_js_phase1_reliability_hardening() -> None:

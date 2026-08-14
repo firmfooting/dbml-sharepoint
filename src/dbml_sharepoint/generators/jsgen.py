@@ -13,7 +13,7 @@ from dbml_sharepoint.analysis.conditions import (
     to_validation,
 )
 from dbml_sharepoint.analysis.forms import compose_visibility
-from dbml_sharepoint.analysis.group_description import MARKER_PREFIX, group_description
+from dbml_sharepoint.analysis.group_description import group_description, marker_for_group
 from dbml_sharepoint.analysis.joins import all_items_hidden
 from dbml_sharepoint.analysis.list_description import family_for, list_description
 from dbml_sharepoint.analysis.lookups import (
@@ -712,11 +712,16 @@ def build_schema_json(
             groups_out.append({
                 "name": grp.name,
                 # The marker is composed HERE, not in the template, so the
-                # emitted JavaScript tests one prefix and never learns which
-                # marker shape a group should carry.
+                # emitted JavaScript never has to know which marker shape a
+                # group should carry.
                 "description": group_description(
                     grp.description, group_name=grp.name, family=family,
                 ),
+                # The exact marker this declaration expects the group to
+                # carry. The deploy-side gate compares against this, not
+                # against the shared prefix, so a group another family
+                # stamped cannot satisfy this family's adoption test.
+                "expected_marker": marker_for_group(grp.name, family),
                 "owner_group": grp.owner_group,
                 "allow_members_edit_membership": grp.allow_members_edit_membership,
                 "allow_request_to_join_leave": grp.allow_request_to_join_leave,
@@ -779,10 +784,6 @@ def build_schema_json(
         "field_defaults": field_defaults_out,
         "permission_levels": permission_levels_out,
         "groups": groups_out,
-        # What the adoption gate tests for. One spelling, owned by
-        # analysis/group_description.py and carried across rather than
-        # re-typed in the template.
-        "group_marker_prefix": MARKER_PREFIX,
         "list_assignments": list_assignments_out,
         # The single boolean the manifest and deploy.js's own preflight
         # abort both key off, instead of each re-deriving "declares levels /

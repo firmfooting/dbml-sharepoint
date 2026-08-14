@@ -1978,13 +1978,35 @@ def test_a_marked_group_with_members_is_adopted_silently() -> None:
     'Enterprise Reader' regardless of --enterprise-reader."""
     summary, calls, _ = _group_gate_deploy(
         _reader_deploy_js(enterprise_reader=None), "Enterprise Reader",
-        description="Read-only accounts. Provisioned by dbml-sharepoint from Test.",
+        description="Read-only accounts. Provisioned by dbml-sharepoint from simple-test.",
         member_pages=[[{"Id": 501}]],
     )
     assert not _security_errors(summary), summary
     assert _group_settings_writes(calls, "Enterprise Reader"), (
         "a marked group's settings were never reconciled"
     )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_marked_by_another_family_with_members_is_refused() -> None:
+    """The gate must compare the exact marker this declaration expects, not
+    the shared prefix every family's marker starts with. A group another
+    family stamped and populated satisfied the old prefix-only test, and the
+    ACL phase then granted those members whatever THIS family declares."""
+    summary, calls, _ = _group_gate_deploy(
+        _reader_deploy_js(enterprise_reader=None), "Enterprise Reader",
+        description="Read-only accounts. Provisioned by dbml-sharepoint from other-family.",
+        member_pages=[[{"Id": 501}]],
+    )
+    assert not _group_settings_writes(calls, "Enterprise Reader"), (
+        "a group marked by another family was reconciled before the refusal"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Enterprise Reader" in message, message
+    assert "carries no" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
 # Task 7: `mergeResp.ok` and the create POST's `ok` only say the tenant
