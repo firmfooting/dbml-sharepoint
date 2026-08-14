@@ -2178,11 +2178,24 @@
     // that is not there yet, so they are owed to applyGroupDecision, after
     // the create.
     async function surveyGroup(grp, decidedCreates) {
-      // null status means "known absent without asking". decidedCreates
-      // covers a name this same pass already decided to create, which the
-      // one-time enumeration in knownGroupNames cannot see.
-      const isKnown = (knownGroupNames && hasName(knownGroupNames, grp.name))
-        || hasName(decidedCreates, grp.name);
+      // decidedCreates covers a name this same pass already decided to
+      // create, which the one-time enumeration in knownGroupNames cannot
+      // see. SharePoint resolves site group names case-insensitively, so
+      // two declarations differing only in case are ONE group to the
+      // tenant: the group named by decidedCreates does not exist yet, so a
+      // probe for it still answers 404 and would survey a SECOND 'create'
+      // decision, colliding with the first once both are applied. Refuse
+      // here instead, before any probe or write.
+      if (hasName(decidedCreates, grp.name)) {
+        return {
+          kind: 'refuse',
+          object: 'group',
+          name: grp.name,
+          reason: `Site group '${grp.name}' matches a name this same declaration already decided to create, differing only in case. SharePoint resolves site group names case-insensitively, so these are one group to the tenant; the second create would collide with the first once applied. Nothing has been written for either. Rename one of them so this deploy creates only one group.`,
+        };
+      }
+      // null status means "known absent without asking".
+      const isKnown = knownGroupNames && hasName(knownGroupNames, grp.name);
       const checkResp = knownGroupNames && !isKnown
         ? { status: 404, ok: false }
         : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
@@ -2308,7 +2321,12 @@
         log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
         await verifyGroupSettings(grp);
 
-        // Already computed by the survey; only the logging is left to do.
+        // ownerState was read by the survey, before every other object in
+        // this phase was written, so on the no-mismatch path below the
+        // 'owner verified' log reports evidence that may have aged by the
+        // time this line runs. The mismatch path is unaffected: it re-reads
+        // the owner after its own CSOM write, rather than trusting this
+        // state.
         await correctGroupOwner(grp, decision.ownerState);
         if (grp.require_empty_at_deploy) {
           log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
@@ -2320,10 +2338,10 @@
     // (formerly here, after a create) mutated a snapshot a later iteration
     // read. All-surveys-before-all-creates would destroy that, so instead
     // each iteration folds its own 'create' decision into this set before
-    // moving on, and surveyGroup consults it alongside knownGroupNames. Two
-    // declarations differing only in case are one group to SharePoint; the
-    // build refuses that declaration outright, so this only protects one
-    // predating the rule.
+    // moving on, and surveyGroup consults it to refuse a later case-variant
+    // declaration outright. The build already refuses two declarations
+    // differing only in case within one mapping, so this only protects a
+    // mapping built before that rule existed.
     const decidedCreates = new Set();
     for (const grp of SCHEMA.groups) {
       try {
@@ -2346,7 +2364,7 @@
     // successfully, interleaved with the refusals that already printed.
     // This phase decides no list and no ACL, so neither appears here.
     if (decisions.length > 0) {
-      log('INFO', `Phase 1.2 decisions:`);
+      log('INFO', `Phase 1.2 decisions (nothing applied yet):`);
       for (const decision of decisions) {
         const label = decision.object === 'level' ? 'permission level' : 'site group';
         const verb = decision.kind === 'create' ? 'create' : 'adopt';
@@ -2375,6 +2393,9 @@
             await applyGroupDecision(decision);
           }
         } catch (err) {
+          // Deliberately continues past this failure rather than stopping
+          // the loop, so one run's transcript names every blocker instead
+          // of only the first.
           const label = decision.object === 'level' ? 'permission level' : 'site group';
           log('ERROR', `Phase 1.2 ${label} '${decision.name}': ${err.message}`);
           if (decision.object === 'level') {

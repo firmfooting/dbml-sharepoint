@@ -2439,6 +2439,7 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
     )
     errors = _security_errors(summary)
     assert errors, summary
+    assert "group" in errors[0], errors[0]
     message = str(errors[0]["error"])
     assert group_name in message, message
     assert "Description" in message, message
@@ -2620,6 +2621,7 @@ def test_a_permission_level_base_permissions_the_tenant_did_not_store_fails_clos
     )
     errors = _security_errors(summary)
     assert errors, summary
+    assert "permissionLevel" in errors[0], errors[0]
     message = str(errors[0]["error"])
     assert "Schema Manager" in message, message
     assert "BasePermissions" in message, message
@@ -2857,6 +2859,61 @@ def test_the_decision_table_names_every_declared_object_before_any_write() -> No
     assert table_index < first_write_log, (
         f"the decision table printed after a write had already started:\n{output[-2000:]}"
     )
+
+
+def _duplicate_group_case_variant(js: str) -> str:
+    """Splice a second declared group into `SCHEMA.groups`, differing from
+    the first only in case, so `surveyGroup` meets a name `decidedCreates`
+    already holds. `sharepoint-mapping.yaml` declares one group ('List
+    Maintainer'); the build itself refuses two case-variant declarations in
+    one mapping (`DUPLICATE_GROUP_NAME`), so this bypasses that by editing
+    the already-generated JSON rather than the mapping, modelling a bundle
+    built before that rule existed.
+    """
+    match = re.search(r'  "groups": (\[\n.*?\n  \]),\n  "indexed_columns"', js, re.DOTALL)
+    assert match, "SCHEMA.groups block not found in generated deploy.js"
+    groups = json.loads(match.group(1))
+    variant = dict(groups[0])
+    variant["name"] = "LIST MAINTAINER"
+    return js.replace(match.group(1), json.dumps([*groups, variant], indent=2), 1)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_case_variant_group_declaration_is_refused_not_double_created() -> None:
+    """`decidedCreates` used to feed only `isKnown`, which only decides
+    whether to skip the by-name probe. For a name already decided 'create',
+    the group does not exist yet, so the real probe still answers 404 and
+    the survey returned a SECOND 'create' decision: applied, that queues two
+    POSTs colliding on the one name SharePoint resolves them both to.
+
+    The fix refuses the second declaration in the survey itself: one create
+    decision reaches the table, the second is a refusal, and because a
+    refusal blocks the whole phase's apply step, neither group is actually
+    written. Mutation-tested: deleting the `hasName(decidedCreates, ...)`
+    check in `surveyGroup` makes this test fail, printing two 'create site
+    group' lines and no case-collision error.
+    """
+    js = _duplicate_group_case_variant(_deploy_js())
+    summary, calls, output = _run_group_verify_deploy(js, _ADOPTED_HARNESS)
+
+    create_lines = [ln for ln in output.splitlines() if "create site group" in ln]
+    assert len(create_lines) == 1, (
+        f"expected exactly one create decision for the two case-variant "
+        f"declarations, got: {create_lines}"
+    )
+    errors = _security_errors(summary)
+    assert len(errors) == 1, summary
+    assert "group" in errors[0], errors[0]
+    message = str(errors[0]["error"])
+    assert "LIST MAINTAINER" in message, message
+    assert "case" in message.lower(), message
+    assert not _group_create_writes(calls), (
+        "a refusal must block the apply step entirely, not just the refused object"
+    )
+    assert not _role_def_merge_writes(calls, "Schema Manager"), (
+        "a refusal must block every object's apply, not only the colliding group's"
+    )
+    assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
 def test_no_reader_no_enrolment_code() -> None:
