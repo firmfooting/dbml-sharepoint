@@ -1563,7 +1563,9 @@ marker is how a later run recognises a group this tool created.
 On a later deploy, a same-named group that carries the marker is adopted as
 before. A same-named group that carries no marker and holds no members is
 adopted and stamped with one. A same-named group that carries no marker and
-already holds members is refused.
+already holds members is refused. A same-named group that carries another
+family's marker and holds members is refused too, because the marker records
+which declaration created the group, not merely that this tool did.
 
 A refusal is narrow. The refused group itself is left exactly as it was;
 nothing is written to it. **No later phase runs**, so no lists are created,

@@ -2102,10 +2102,10 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
     reconcile read-back.
     """
     group_name = "List Maintainer"
+    stale_description = "Stale note. Provisioned by dbml-sharepoint from simple-test."
     harness = _ADOPTED_HARNESS.replace(
         "const GROUP_DESCRIPTIONS = {};",
-        "const GROUP_DESCRIPTIONS = "
-        f"{json.dumps({group_name: 'Stale note. Provisioned by dbml-sharepoint from Test.'})};",
+        f"const GROUP_DESCRIPTIONS = {json.dumps({group_name: stale_description})};",
     ).replace(
         "const GROUP_MEMBER_PAGES = {};",
         f"const GROUP_MEMBER_PAGES = {json.dumps({group_name: [[]]})};",
