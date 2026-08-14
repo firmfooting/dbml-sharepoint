@@ -211,6 +211,18 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       AllowRequestToJoinLeave: false, AutoAcceptRequestToJoinLeave: false,
       OnlyAllowMembersViewMembership: false,
     });
+    // Existence for the by-name GET and its /users sub-resource: known from
+    // the enumeration (case-insensitive, matching SharePoint's own group-name
+    // resolution) or already written into GROUP_STATE by a create/MERGE this
+    // run performed. Checked with hasOwnProperty rather than through
+    // groupState() itself, whose `||=` would auto-vivify an absent name into
+    // "existing" the instant it is asked about -- which is the exact hole
+    // that let a read ahead of the create that makes it possible pass.
+    const KNOWN_GROUP_NAME_SET = new Set(KNOWN_GROUP_NAMES.map((n) => String(n).toLowerCase()));
+    const groupIsKnown = (name) => (
+      KNOWN_GROUP_NAME_SET.has(String(name).toLowerCase())
+      || Object.prototype.hasOwnProperty.call(GROUP_STATE, name)
+    );
     // Role definitions (custom permission levels). Task 3: the single line
     // this replaces answered every roledefinitions read alike, whether it
     // was the existence probe, a getbyname resolve, or a by-Id read-back --
@@ -379,6 +391,15 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // caller followed a __next this mock handed out.
       if (url.includes('/users')) {
         const name = groupNameOf(url);
+        // INFERRED, NOT MEASURED: the parent by-name GET answers 404 for an
+        // absent group (_security_principals.js.j2:223, measured), but what
+        // this /users sub-resource answers for an absent group has not been
+        // probed. 404 is used because the parent does and because either
+        // status fails the template closed; a future probe should confirm
+        // or correct this.
+        if (!groupIsKnown(name)) {
+          return { error: { code: '-2147024809, System.ArgumentException', status: 404 } };
+        }
         const pages = groupMemberPages(name);
         const marked = /[?&]page=(\d+)/.exec(url);
         const page = marked ? Number(marked[1]) : 0;
@@ -392,6 +413,13 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       if (url.includes('sitegroups/getbyname')) {
         const name = groupNameOf(url);
+        // MEASURED (_security_principals.js.j2:223): a by-name GET for a
+        // group that is not there answers 404. groupIsKnown is checked
+        // before groupState(name), whose `||=` would otherwise auto-vivify
+        // an absent name into "existing" the instant it is read.
+        if (!groupIsKnown(name)) {
+          return { error: { code: '-2147024809, System.ArgumentException', status: 404 } };
+        }
         return { d: { Id: 9, Title: name, PrincipalType: 8, ...groupState(name) } };
       }
       // Every roledefinitions read shares that substring, so the most
@@ -583,8 +611,12 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       const payload = body(u, opts);
       const absent = payload && payload.error;
+      // Most absence mocks in this file don't carry a measured status and
+      // default to 400. The site-group absence mocks above set one
+      // explicitly (404), matching what is measured (or inferred) for them.
+      const status = absent ? (payload.error.status || 400) : 200;
       return {
-        ok: !absent, status: absent ? 400 : 200,
+        ok: !absent, status,
         headers: { get: () => null },
         json: async () => payload,
         text: async () => JSON.stringify(payload),
