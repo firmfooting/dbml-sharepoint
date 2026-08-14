@@ -35,6 +35,33 @@ from dbml_sharepoint.model.parser import Schema
 DEFAULT_DISPLAY_COLUMN = "Title"
 
 
+def display_column_for(entity: EntityMapping | None) -> str:
+    """The column a lookup INTO this entity displays (SP `LookupField`).
+
+    ONE line, and a function anyway, because the question had three answers.
+    `jsgen` wrote `... or "Title"` when composing the field body, `reportgen`
+    wrote `return "Title"` when choosing what to `$expand`, and this module
+    wrote `entity.display_column or DEFAULT_DISPLAY_COLUMN`. Three spellings
+    of one rule, and the bare literal in two of them meant a change to the
+    default would have moved the deploy without moving the reports —
+    a Power Query that expands a column the list does not surface.
+
+    Takes `None` deliberately: the callers all reach this through
+    `entities.get(...)`, and a ref at a table with no mapping entry is
+    reported by other checks. Answering with the built-in Title keeps those
+    callers from each inventing their own None branch.
+
+    NOT the same question as "which display column can be indexed" —
+    `lookup_display_columns` below answers that one, and excludes calculated
+    columns because they cannot carry an index. A calculated display column
+    is still what SharePoint DISPLAYS, so folding that exclusion in here
+    would leave a real lookup with no LookupField at all.
+    """
+    if entity is None:
+        return DEFAULT_DISPLAY_COLUMN
+    return entity.display_column or DEFAULT_DISPLAY_COLUMN
+
+
 def lookup_target_entities(
     schema: Schema,
     cross_site_pairs: AbstractSet[tuple[str, str]],
@@ -73,7 +100,11 @@ def lookup_display_columns(
     calculated: dict[str, set[str]],
     cross_site_pairs: AbstractSet[tuple[str, str]],
 ) -> dict[str, str]:
-    """`{entity: column a lookup into it displays}` for every lookup target.
+    """`{entity: display column to INDEX}` for every lookup target.
+
+    The INDEXABLE subset, not the answer to "what does a lookup display" —
+    that is `display_column_for` above, and this reads it so the two cannot
+    disagree about the default.
 
     Excludes an entity whose display column is calculated: such a column cannot
     carry an index, so returning it would have callers count or deploy one that
@@ -90,7 +121,7 @@ def lookup_display_columns(
             # A ref at a table with no mapping entry. Other checks report that;
             # inventing an index for it here would be a second, worse message.
             continue
-        column = entity.display_column or DEFAULT_DISPLAY_COLUMN
+        column = display_column_for(entity)
         if column in calculated.get(name, set()):
             continue
         displayed[name] = column

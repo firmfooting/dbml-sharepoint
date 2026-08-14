@@ -20,6 +20,7 @@ from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.limits import MAX_INTERNAL_NAME, MAX_LIST_INDEXES
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
@@ -30,7 +31,6 @@ from dbml_sharepoint.analysis.list_description import (
     note_budget,
 )
 from dbml_sharepoint.analysis.validator import (
-    MAX_INTERNAL_NAME,
     Finding,
     validate,
     validate_against_mapping,
@@ -865,6 +865,26 @@ def test_index_headroom_no_warning_at_seventeen() -> None:
         validate_against_mapping(_big_with_indexes(17), make_bundle(entities=["Big"])),
         FindingCode.INDEX_LIMIT_APPROACHING,
     )
+
+def test_exactly_twenty_indexes_warns_and_does_not_error() -> None:
+    """The upper edge of the warning band, which nothing pinned.
+
+    The suite covered 17, 18 and 21 — so the band's top was inferred from two
+    inequalities and never observed. It matters because the catalogue entry
+    for this rule SAID "18 or 19 of its 20 indexes" while the rule fires from
+    `INDEX_WARN_AT` through `MAX_LIST_INDEXES` inclusive: a list sitting on
+    exactly twenty got this warning and was told it was somewhere it was not.
+
+    Twenty is the last legal count, so it warns and must not error. Moving
+    either constant by one now fails here rather than only in the prose.
+    """
+    findings = validate_against_mapping(
+        _big_with_indexes(MAX_LIST_INDEXES), make_bundle(entities=["Big"]),
+    )
+    finding = only(findings, FindingCode.INDEX_LIMIT_APPROACHING)
+    assert finding.severity == "warning"
+    assert f"{MAX_LIST_INDEXES} of the {MAX_LIST_INDEXES}" in finding.message
+    none_of(findings, FindingCode.INDEX_LIMIT_EXCEEDED)
 
 def test_index_error_at_twentyone_excludes_headroom_warning() -> None:
     """The error firing at > 20 means the warning is unreachable at that threshold.

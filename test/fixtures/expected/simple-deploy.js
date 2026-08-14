@@ -890,11 +890,7 @@
   ]
 };
 
-  const TYPE_AS_STRING_BY_KIND = new Map([
-    [2, 'Text'], [3, 'Note'], [4, 'DateTime'], [6, 'Choice'],
-    [7, 'Lookup'], [8, 'Boolean'], [9, 'Number'], [11, 'URL'], [20, 'User'],
-    [17, 'Calculated'], [15, 'MultiChoice'],
-  ]);
+  const TYPE_AS_STRING_BY_KIND = new Map([[2, "Text"], [3, "Note"], [4, "DateTime"], [6, "Choice"], [7, "Lookup"], [8, "Boolean"], [9, "Number"], [11, "URL"], [15, "MultiChoice"], [17, "Calculated"], [20, "User"]]);
   const indexedFieldKeys = new Set(
     SCHEMA.indexed_columns.map(idx => `${idx.list}\u0000${idx.field}`),
   );

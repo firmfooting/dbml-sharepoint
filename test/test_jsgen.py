@@ -837,8 +837,14 @@ def test_the_multichoice_kind_is_wired_into_the_reconciler() -> None:
 
     `MultiChoice` is what SharePoint itself reported on read-back, not a name
     transcribed from a documentation page.
+
+    Double-quoted since the map became `| tojson` of
+    `typemap.TYPE_AS_STRING_PAIRS` rather than a hand-written JS literal.
+    `test_typemap.test_the_deploy_script_map_covers_every_field_kind` now
+    asserts the whole vocabulary rather than one member; this stays as the
+    named regression for kind 15.
     """
-    assert "[15, 'MultiChoice']" in _generate_simple_js()
+    assert '[15, "MultiChoice"]' in _generate_simple_js()
 
 
 def test_exact_acl_reconciliation_removes_unlisted_principals() -> None:
@@ -1441,7 +1447,8 @@ def test_calculated_kind_wired_into_reconciliation_machinery() -> None:
         source_mtime="2026-05-04T00:00:00Z",
         generated_at="2026-05-04T00:00:00Z",
     )
-    assert "[17, 'Calculated']" in js
+    # Double-quoted since the map became `| tojson` of the Python pairing.
+    assert '[17, "Calculated"]' in js
     # Once in readFieldShape's probe list, once in DERIVED_FIELD_PROPERTIES.
     assert js.count("'Formula', 'OutputType'") >= 2
 

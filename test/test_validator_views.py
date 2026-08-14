@@ -12,7 +12,9 @@ from _model import table as make_table
 from _packs import write_dbml
 from _validator_helpers import _project_errors, _project_inputs
 
+from dbml_sharepoint.analysis.conditions import to_validation
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.limits import MAX_VALIDATION_FORMULA
 from dbml_sharepoint.analysis.validator import (
     validate_against_mapping,
 )
@@ -788,12 +790,75 @@ def test_rendered_validation_formula_length_is_checked() -> None:
     )
     list_level = only(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
     assert list_level.location == Location(Section.LIST_VALIDATION, entity="Project")
-    # The limit is the number the author has to write the formula under.
-    assert "1024" in list_level.message
+    # The limit is the number the author has to write the formula under, and
+    # it is 1023 because that is what Learn documents for
+    # List.ValidationFormula -- not the 1024 this check enforced before the
+    # ceilings were collected in analysis/limits.py and looked up.
+    assert str(MAX_VALIDATION_FORMULA) in list_level.message
+    assert "1024" not in list_level.message
     column_level = only(errors, FindingCode.VALIDATION_FORMULA_TOO_LONG)
     assert column_level.location == Location(
         Section.COLUMN_VALIDATION, entity="Project", column="Status",
     )
+
+def _list_validation_rendering_to(length: int) -> ListValidation:
+    """A `list_validation` rule whose RENDERED formula is exactly `length`.
+
+    Built by measuring rather than by counting characters in a literal: the
+    rendering is `to_validation`'s business and a hand-computed length would
+    be pinning this test to today's spelling of the predicate rather than to
+    the boundary it is about.
+    """
+    types = {
+        "Title": "nvarchar", "Status": "status",
+        "SortOrder": "int", "DueDate": "date",
+    }
+
+    def rule(needle: str) -> ListValidation:
+        return ListValidation(
+            when=Group("all_of", (Leaf(field="Title", op="neq", value=needle),)),
+            message="Too long.",
+        )
+
+    # `=` is prepended by the check before it measures; `x` needs no escaping,
+    # so the rendered length grows one for one with the needle.
+    baseline = len("=" + to_validation(rule("").when, types))
+    padding = length - baseline
+    assert padding >= 0, f"cannot build a formula as short as {length}"
+    built = rule("x" * padding)
+    assert len("=" + to_validation(built.when, types)) == length
+    return built
+
+
+def test_a_list_validation_formula_at_the_documented_limit_is_accepted() -> None:
+    """1023 is the LAST ACCEPTED length, so the check reads `>` and never `>=`.
+
+    Learn documents `List.ValidationFormula` as "length must be equal to or
+    less than 1023". Both directions are pinned because only the pair says
+    where the boundary is: an off-by-one in either direction passes one of
+    these tests on its own.
+    """
+    errors = _project_errors(
+        list_validation={
+            "Project": _list_validation_rendering_to(MAX_VALIDATION_FORMULA),
+        },
+    )
+    none_of(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
+
+
+def test_a_list_validation_formula_one_over_the_documented_limit_is_an_error() -> None:
+    """The other half of the boundary. This project enforced 1024 until the
+    ceiling was collected into `analysis/limits.py` and checked against Learn,
+    so a formula of exactly this length used to build clean and would have
+    been refused when the deploy wrote the list."""
+    errors = _project_errors(
+        list_validation={
+            "Project": _list_validation_rendering_to(MAX_VALIDATION_FORMULA + 1),
+        },
+    )
+    finding = only(errors, FindingCode.LIST_VALIDATION_FORMULA_TOO_LONG)
+    assert str(MAX_VALIDATION_FORMULA) in finding.message
+
 
 def test_view_today_sentinel_only_on_date_columns() -> None:
     errors = _project_errors(

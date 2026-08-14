@@ -55,9 +55,18 @@ def assess_targets(
         markers[prefix + table_name] = marker_for(family, table_name)
     m = bundle.mapping
     perms = m.permissions
-    versioning_on = bool(m.versioning_default.enable_versioning) or any(
-        v.get("enable_versioning") for v in m.versioning_overrides.values()
-    )
+    # Does any list THIS RUN provisions end up with versioning on? Asked
+    # through `versioning_for`, the same merge jsgen deploys from.
+    #
+    # It used to be `default.enable_versioning or any(override.get(
+    # "enable_versioning"))`, which was wrong twice over and in the direction
+    # that reads as harmless. The `any` looked at EVERY entity's override,
+    # including entities belonging to another site role and so absent from
+    # this script; and it read the raw override with bare truthiness, so a
+    # YAML `"false"` counted as on. Both made assess.js probe for a version
+    # surface on a site where nothing versions -- a WARN with nothing behind
+    # it, which is how a warning stops meaning anything.
+    versioning_on = any(m.versioning_for(name).enable_versioning for name in table_names)
     return {
         "list_titles": titles,
         "list_markers": markers,

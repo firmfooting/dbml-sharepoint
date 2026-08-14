@@ -1,15 +1,21 @@
 # test/test_typemap.py
 import ast
+import json
+import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from _findings import only
 from _packs import pack
-from _paths import PACKAGE
+from _paths import FIXTURES, PACKAGE
 
 from dbml_sharepoint.analysis.findings import FindingCode
 from dbml_sharepoint.analysis.typemap import (
+    FIELD_KIND_BY_TYPE_KIND,
+    FIELD_TYPE_KIND_BY_KIND,
+    FieldKind,
     describe_unknown_type,
     is_boolean,
     is_hyperlink,
@@ -17,9 +23,16 @@ from dbml_sharepoint.analysis.typemap import (
     is_person,
     map_column,
 )
-from dbml_sharepoint.model.parser import Column, Reference
+from dbml_sharepoint.generators.jsgen import generate_deploy_js
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.parser import Column, Reference, parse_dbml
+from dbml_sharepoint.model.release import load_release
 
 ENUM_NAMES = {"status", "topic"}
+
+#: `Skip` is this tool's marker for the auto-increment `Id` column, which is
+#: never created, so it is the one member with no SharePoint FieldTypeKind.
+_DEPLOYED_FIELD_KINDS = set(get_args(FieldKind.__value__)) - {"Skip"}
 
 
 def test_int_pk_increment_returns_skip() -> None:
@@ -362,3 +375,90 @@ def test_no_module_outside_typemap_compares_a_column_type_to_a_literal() -> None
         "column type compared to a string literal instead of asked of typemap:\n"
         + "\n".join(offenders)
     )
+
+
+# --- The field-kind vocabulary, and the copy of it that ships in JavaScript --
+
+def test_every_field_kind_has_a_sharepoint_type_kind() -> None:
+    """The Python side of the vocabulary is complete.
+
+    `FieldKind` is the closed set; `FIELD_TYPE_KIND_BY_KIND` is what turns a
+    member of it into the integer SharePoint wants. A member with no entry
+    would reach `SPField(field_type_kind=...)` and fail there, but only for a
+    schema that happens to use the new type -- so pin the whole set rather
+    than waiting for a fixture to exercise it.
+    """
+    assert set(FIELD_TYPE_KIND_BY_KIND) == _DEPLOYED_FIELD_KINDS
+
+
+def test_the_type_kind_numbers_are_distinct() -> None:
+    """Two kinds sharing a number would make FIELD_KIND_BY_TYPE_KIND lossy.
+
+    The inverse map is built by comprehension, so a duplicated integer does
+    not raise -- the later entry simply wins and one kind disappears from the
+    deploy script's Map without anything saying so.
+    """
+    assert len(set(FIELD_TYPE_KIND_BY_KIND.values())) == len(FIELD_TYPE_KIND_BY_KIND)
+    assert set(FIELD_KIND_BY_TYPE_KIND.values()) == _DEPLOYED_FIELD_KINDS
+
+
+def _rendered_type_as_string_map(js: str) -> dict[int, str]:
+    """The `TYPE_AS_STRING_BY_KIND` pairs as they reach the operator's browser.
+
+    Read out of the RENDERED script rather than off the Python constant. The
+    point of the test is that the two representations agree, and asserting
+    against the constant the template was built from would agree with itself
+    whatever the template does with it.
+    """
+    match = re.search(
+        r"const TYPE_AS_STRING_BY_KIND = new Map\((\[.*?\])\);", js, re.DOTALL,
+    )
+    assert match is not None, (
+        "deploy.js.txt no longer declares TYPE_AS_STRING_BY_KIND as "
+        "`new Map([...])` -- this test can no longer see what the deployer "
+        "will compare TypeAsString against, so it has stopped checking."
+    )
+    literal = match.group(1)
+    try:
+        pairs = json.loads(literal)
+    except json.JSONDecodeError as err:  # pragma: no cover - diagnosis only
+        # The commonest way to get here is somebody replacing the rendered
+        # `| tojson` with a hand-written JavaScript list, whose single-quoted
+        # strings are not JSON. That is the regression this file exists to
+        # catch, so say so rather than reporting a parser error.
+        msg = (
+            "TYPE_AS_STRING_BY_KIND is not the JSON `| tojson` renders. It "
+            "has most likely been hand-written back into the template, which "
+            "is the duplication this test exists to prevent. Render it from "
+            "typemap.TYPE_AS_STRING_PAIRS instead.\n"
+            f"  got: {literal}"
+        )
+        raise AssertionError(msg) from err
+    return {int(kind): name for kind, name in pairs}
+
+
+def test_the_deploy_script_map_covers_every_field_kind() -> None:
+    """The emitted JavaScript Map and the Python vocabulary are the same set.
+
+    THE FAILURE THIS CLOSES. The eleven pairs used to be typed out by hand
+    inside `templates/deploy/_field_reconcile.js.j2`. Adding a field kind in
+    Python and forgetting that list broke nothing a gate could see: the build
+    passed, the script generated, `node --check` was happy, and
+    `assertFieldImmutableShape` then compared a live `TypeAsString` against
+    `undefined` in the operator's browser, part-way through a deploy, on a
+    customer site.
+    """
+    js = generate_deploy_js(
+        schema=parse_dbml(FIXTURES / "simple.dbml"),
+        bundle=load_mapping(FIXTURES / "sharepoint-mapping.yaml"),
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    rendered = _rendered_type_as_string_map(js)
+
+    assert set(rendered.values()) == _DEPLOYED_FIELD_KINDS
+    assert rendered == FIELD_KIND_BY_TYPE_KIND

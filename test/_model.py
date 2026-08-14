@@ -233,8 +233,13 @@ def _loader_defaults() -> MappingSections:
     entire check module for every test built this way, while looking correct
     and costing no assertion.
 
-    `versioning_default` is the same story in miniature: the dataclass has no
-    default at all, and the loader's is `Versioning(True, 500, False)`.
+    `versioning_default` used to be the same story in miniature, and is no
+    longer: `Versioning` now carries the loader's own absent-key defaults on
+    its fields, and the loader reads them from there. So a bare
+    `Versioning()` here IS what a mapping declaring an empty
+    `versioning.default` block loads as -- rather than the hand-copied
+    `Versioning(True, 500, False)` that had to be kept in step with the
+    parser by hand.
 
     Rebuilt per call because these lists, dicts and the `PermissionsConfig`
     are mutable and tests mutate them.
@@ -243,9 +248,7 @@ def _loader_defaults() -> MappingSections:
         "prefix_owner": "",
         "prefix_registry": "",
         "cross_site_reference_columns": [],
-        "versioning_default": Versioning(
-            enable_versioning=True, major_version_limit=500, enable_minor_versions=False,
-        ),
+        "versioning_default": Versioning(),
         "versioning_overrides": {},
         "enum_sources": {},
         "watched_lists": [],

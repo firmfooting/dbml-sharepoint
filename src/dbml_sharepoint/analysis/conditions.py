@@ -27,7 +27,9 @@ from dataclasses import replace
 from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
+    DATE_TYPES,
     NOW_SENTINEL,
+    NUMBER_TYPES,
     TODAY_SENTINEL,
     is_boolean,
     is_multi_value,
@@ -495,8 +497,8 @@ _MULTI_VALUE_OPERATORS: dict[str, frozenset[str]] = {
 # probe would need one more query to settle it.
 _SET_DELIMITER = ";#"
 
-_NUMBER_TYPES = frozenset({"int", "number", "calculated_number"})
-_DATE_TYPES = frozenset({"date", "datetime", "calculated_date"})
+_NUMBER_TYPES = NUMBER_TYPES     # one home: analysis/typemap.py
+_DATE_TYPES = DATE_TYPES         # same home, same reason
 # `now` is for the columns that carry a time of day. A DATE column has no
 # time to compare, so `now` on one is `today` written confusingly, and the
 # semantic check below says so rather than rendering it.

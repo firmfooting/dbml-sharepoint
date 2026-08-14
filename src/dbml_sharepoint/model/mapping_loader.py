@@ -25,6 +25,8 @@ from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
 from dbml_sharepoint.model._mapping_types import (
     _REMOVED_SECTIONS,
     ENTITY_KINDS,
+    PRINCIPAL_KIND_LIST,
+    PRINCIPAL_KINDS,
     RETIRED_SUFFIX,
     ColumnValidation,
     CrossSiteRef,
@@ -220,19 +222,43 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
     _reject_unknown_keys(versioning, {"default", "overrides"}, "versioning")
     default_v = _require_mapping(versioning.get("default"), "versioning.default")
     _check_versioning_values(default_v, "versioning.default")
+    # Every absent-key fallback is `Versioning`'s own field default, named
+    # rather than typed out again. The 500 in particular was restated in
+    # `test/_model.py` as well, which is how a default ends up with three
+    # homes and no way to tell which one is authoritative.
     versioning_default = Versioning(
-        enable_versioning=_strict_bool(default_v, "enable_versioning", "versioning.default"),
-        major_version_limit=int(default_v.get("major_version_limit", 500)),
+        enable_versioning=_strict_bool(
+            default_v, "enable_versioning", "versioning.default",
+            default=Versioning.enable_versioning,
+        ),
+        major_version_limit=int(default_v.get(
+            "major_version_limit", Versioning.major_version_limit,
+        )),
         enable_minor_versions=_optional_bool(
             default_v, "enable_minor_versions", "versioning.default",
+            default=Versioning.enable_minor_versions,
         ),
     )
-    # Overrides reach jsgen/reportgen/assessgen as a RAW dict and are read
-    # there with bool()/int(), so their values were never checked anywhere.
+    # Overrides reach the generators as a RAW dict and are read there with
+    # bool()/int(), so their values are checked here and nowhere else.
+    #
+    # NORMALISED TO `{}` ON THE WAY IN, which is the whole reason this builds
+    # a dict rather than storing `versioning.overrides` verbatim. YAML parses
+    # a bare `Project:` with nothing under it as `None`, and the value-check
+    # below already tolerated that with `override or {}` -- so a null override
+    # was ACCEPTED and then stored as `None`. Every reader does
+    # `overrides.get(entity, {})`, which returns the stored `None` rather than
+    # the default, and the next `.get` on it raises AttributeError in the
+    # middle of generating a deploy script. An empty override block means "no
+    # overrides for this entity", so say that once, here, instead of leaving
+    # each reader to survive a shape the loader let through.
+    versioning_overrides: dict[str, dict[str, Any]] = {}
     for override_entity, override in _require_mapping(
         versioning.get("overrides"), "versioning.overrides",
     ).items():
-        _check_versioning_values(override or {}, f"versioning.overrides.{override_entity}")
+        context = f"versioning.overrides.{override_entity}"
+        _check_versioning_values(override or {}, context)
+        versioning_overrides[override_entity] = dict(override or {})
 
     watched = []
     for i, item in enumerate(raw.get("watched_lists") or []):
@@ -311,9 +337,7 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
         entities=entities,
         cross_site_reference_columns=cross_site,
         versioning_default=versioning_default,
-        versioning_overrides=dict(
-            _require_mapping(versioning.get("overrides"), "versioning.overrides"),
-        ),
+        versioning_overrides=versioning_overrides,
         enum_sources=enum_source_paths,
         watched_lists=watched,
         polymorphic_patterns=polymorphic,
@@ -574,14 +598,22 @@ def _entity_section(block: Any, context: str) -> tuple[str, dict[str, Any]]:
     return reconcile, columns
 
 
-def _strict_bool(raw: dict[str, Any], key: str, context: str) -> bool:
+def _strict_bool(
+    raw: dict[str, Any], key: str, context: str, *, default: bool = True,
+) -> bool:
     """Read a boolean without truthiness-coercing malformed YAML.
 
     `bool("false")` is True, so a quoted boolean would silently mean its
     opposite — and a visibility flag reading backwards hides nothing while
     reporting success.
+
+    `default` is the absent-key value, and it is a parameter only so a caller
+    whose default already has a home elsewhere can point at it rather than
+    restate it — see the `versioning.default` block, which reads its three
+    fallbacks off `Versioning`. The three form-visibility and permission
+    callers keep the true default they have always had.
     """
-    value = raw.get(key, True)
+    value = raw.get(key, default)
     if not isinstance(value, bool):
         raise ValueError(f"{context}.{key}: expected true or false, got {value!r}")
     return value
@@ -854,16 +886,15 @@ def _parse_entity_kind(raw_kind: Any, context: str) -> EntityKind:
     return cast("EntityKind", raw_kind)
 
 
-_PRINCIPAL_KINDS = frozenset({
-    "group",
-    "associated_owner_group",
-    "associated_member_group",
-    "associated_visitor_group",
-})
-
-
 def _parse_principal(raw_principal: Any, context: str) -> Principal:
-    """Parse a principal dict into a Principal dataclass."""
+    """Parse a principal dict into a Principal dataclass.
+
+    The admission gate reads `PRINCIPAL_KINDS`, derived from the
+    `PrincipalKind` Literal, and the message reads the same set. Both used to
+    be typed out here -- the set once and the four names again as error text
+    -- so a fifth kind would have type-checked and then been refused at load,
+    by a message still naming four.
+    """
     if not isinstance(raw_principal, dict):
         raise ValueError(
             f"{context}: principal must be a mapping, "
@@ -871,11 +902,10 @@ def _parse_principal(raw_principal: Any, context: str) -> Principal:
         )
     _reject_unknown_keys(raw_principal, {"kind", "name"}, context)
     kind = raw_principal.get("kind")
-    if kind not in _PRINCIPAL_KINDS:
+    if kind not in PRINCIPAL_KINDS:
         raise ValueError(
-            f"{context}: principal kind must be one of 'group', "
-            f"'associated_owner_group', 'associated_member_group', "
-            f"'associated_visitor_group'; got {kind!r}",
+            f"{context}: principal kind must be one of "
+            f"{PRINCIPAL_KIND_LIST}; got {kind!r}",
         )
     name = raw_principal.get("name")
     if kind == "group" and not name:
@@ -928,9 +958,15 @@ def _parse_policy(
     )
 
 
-def _optional_bool(raw: dict[str, Any], key: str, context: str) -> bool:
-    """Read an optional boolean without truthiness-coercing malformed YAML."""
-    value = raw.get(key, False)
+def _optional_bool(
+    raw: dict[str, Any], key: str, context: str, *, default: bool = False,
+) -> bool:
+    """Read an optional boolean without truthiness-coercing malformed YAML.
+
+    `default` exists for the same reason `_strict_bool`'s does: so a caller
+    whose fallback is declared elsewhere can name it instead of copying it.
+    """
+    value = raw.get(key, default)
     if not isinstance(value, bool):
         raise ValueError(f"{context}.{key} must be a boolean, got {value!r}")
     return value
