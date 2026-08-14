@@ -1813,11 +1813,17 @@ def test_a_group_description_exactly_at_the_budget_is_accepted() -> None:
 
 
 def test_the_raw_ceiling_rule_still_fires_on_its_own_terms() -> None:
-    """Over 512 declared is refused even before the marker is considered."""
+    """Over 512 declared is refused even before the marker is considered.
+
+    `elif`, not two `if`s, so `GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER` must
+    stay silent here -- asserting `only` the raw-ceiling code is not enough,
+    since `only` says nothing about what ELSE fired.
+    """
     findings = _bundle_with_group(
         name="RR Risk Managers", description="d" * (MAX_GROUP_DESCRIPTION + 1),
     )
     only(findings, FindingCode.GROUP_DESCRIPTION_TOO_LONG)
+    none_of(findings, FindingCode.GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER)
 
 
 def _level_findings(name: str) -> list[Finding]:
