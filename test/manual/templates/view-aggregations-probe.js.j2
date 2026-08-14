@@ -51,6 +51,16 @@
  *   the probe prints and LOOK for the totals row under the Amount column.
  *   Re-run with CLEANUP_AT_END = true to remove the list.
  *
+ * THIRD RUN 2026-08-14, revision 96d0a67a, on a THIRD site. Every result
+ * below reproduced again: seeded=ok, mechanism=patch (HTTP 204), readback
+ * exact, Sum of 42 and Average of 2 both rendered, so internal names bind
+ * and two aggregations render together. Three independent sites now agree,
+ * and nothing has ever contradicted the 2026-07-29 answers.
+ *
+ * That run also confirmed the self-seeding fix below works. The operator
+ * settled Q5 and Q6 from the seeded data alone, with none of the hand-typing
+ * the aa79f6c4 run needed.
+ *
  * RE-RUN 2026-08-14, revision aa79f6c4, on a different site. Every result
  * below REPRODUCED — mechanism=patch (HTTP 204), readback exact, a Sum of 42
  * rendered, internal names bound, both columns rendered in order.
