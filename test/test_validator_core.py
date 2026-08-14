@@ -1666,6 +1666,71 @@ def _group_description_findings(description: str) -> list[Finding]:
     )
 
 
+def _join_settings_findings(*, allow: bool, auto_accept: bool) -> list[Finding]:
+    """Validate a mapping whose one group carries these two join flags."""
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[],
+                groups=[SiteGroup(
+                    name="XX Readers", description="test",
+                    owner_group="Site Owners",
+                    allow_members_edit_membership=False,
+                    allow_request_to_join_leave=allow,
+                    auto_accept_request_to_join_leave=auto_accept,
+                    only_allow_members_view_membership=False,
+                )],
+                default_policy=None, overrides={},
+            ),
+        ),
+    )
+
+
+def test_auto_accept_without_allowing_requests_is_refused() -> None:
+    """SharePoint takes this pair and then quietly ignores half of it.
+
+    MEASURED 2026-08-13 and again 2026-08-14 by
+    `test/manual/group-description-probe.js`. A MERGE sending
+    auto-accept true alongside allow-requests false came back HTTP 200 and
+    read back with auto-accept FALSE; the same MERGE sending both true
+    (G10) took. So the pair is not refused by the server -- it is
+    silently corrected, because a group cannot auto-accept requests it
+    does not accept.
+
+    That is the shape this repository exists to catch: the deploy reports
+    the group reconciled, the mapping says one thing, the site does
+    another, and nothing reads the flags back to notice.
+    """
+    finding = only(
+        _join_settings_findings(allow=False, auto_accept=True),
+        FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS,
+    )
+    assert finding.severity == "error"
+    assert "XX Readers" in finding.message
+
+
+@pytest.mark.parametrize(("allow", "auto_accept"), [
+    (True, True),    # coherent: G10 measured this taking
+    (True, False),   # requests allowed, accepted by hand
+    (False, False),  # what every shipped family declares
+])
+def test_a_coherent_pair_of_join_settings_is_accepted(
+    *, allow: bool, auto_accept: bool,
+) -> None:
+    """The complement, over every combination that is NOT contradictory.
+
+    One case each rather than a single happy path, because a predicate
+    written as `or` instead of `and` would refuse two of these three while
+    still passing the test above.
+    """
+    none_of(
+        _join_settings_findings(allow=allow, auto_accept=auto_accept),
+        FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS,
+    )
+
+
 def test_a_group_description_over_the_ceiling_is_refused() -> None:
     """The server refuses it mid-deploy, so the build has to refuse it first.
 

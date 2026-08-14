@@ -348,6 +348,8 @@ class FindingCode(StrEnum):
         "enterprise_reader_group_over_privileged", "error")
     ENTERPRISE_READER_GROUP_REQUIRES_EMPTY = (
         "enterprise_reader_group_requires_empty", "error")
+    GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS = (
+        "group_auto_accept_without_requests", "error")
     GROUP_DESCRIPTION_TOO_LONG = "group_description_too_long", "error"
     MULTIPLE_ENTERPRISE_READER_GROUPS = (
         "multiple_enterprise_reader_groups", "error")

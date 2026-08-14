@@ -190,6 +190,26 @@ def check(vc: ValidationContext) -> list[Finding]:
             # description is a build error rather than a half-provisioned
             # site. See permissions.GROUP_DESCRIPTION_MAX for the live
             # measurement behind the number.
+            # MEASURED 2026-08-13/14, two runs: SharePoint accepts this pair
+            # with HTTP 200 and then stores AutoAccept as FALSE, because a
+            # group cannot auto-accept join requests it does not accept. The
+            # deploy would report the group reconciled while the site
+            # disagreed with the mapping -- silently, since nothing reads the
+            # flags back. Refused here so the mapping cannot claim it.
+            if (grp.auto_accept_request_to_join_leave
+                    and not grp.allow_request_to_join_leave):
+                findings.append(Finding(
+                    FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS,
+                    f"groups[{grp.name!r}]: declares "
+                    f"auto_accept_request_to_join_leave without "
+                    f"allow_request_to_join_leave. SharePoint accepts that "
+                    f"pair and then silently stores auto-accept as false, so "
+                    f"the deployed group would not match this mapping. Set "
+                    f"allow_request_to_join_leave as well, or drop the "
+                    f"auto-accept.",
+                    location=_GROUPS,
+                ))
+
             if len(grp.description) > GROUP_DESCRIPTION_MAX:
                 findings.append(Finding(
                     FindingCode.GROUP_DESCRIPTION_TOO_LONG,

@@ -124,10 +124,10 @@ BUILT_IN_LEVELS: frozenset[str] = frozenset({
 #: here; SP.Group.Description is a different surface and was measured
 #: separately.
 #:
-#: NOT measured: whether an EMPTY description is accepted. The server names
-#: null in the same breath as the ceiling, and `mapping_loader` turns an
-#: omitted `description:` into `""`, so that path is unproven rather than
-#: known-good.
+#: An EMPTY description IS accepted, and reads back `""` — MEASURED
+#: 2026-08-14. The server's "cannot be null" does not extend to the empty
+#: string, so a mapping that omits `description:`, which `mapping_loader`
+#: turns into `""`, is known-good rather than merely untested.
 #:
 #: Custom permission LEVELS also carry a description and were not measured.
 #: Do not assume this ceiling applies to them.

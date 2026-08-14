@@ -71,22 +71,33 @@
  *     G8      a marker of the shape lists use survives, so #211 is possible
  *             and #209's adoption gate has something to key on.
  *
- *   AMBIGUOUS, AND THE PROBE'S FAULT: G9 reported
+ *   AMBIGUOUS AFTER RUN 1, AND THE PROBE'S FAULT: G9 reported
  *   AutoAcceptRequestToJoinLeave sent true, read false, with the other
  *   three taking. It sent AllowRequestToJoinLeave FALSE in the same
- *   request, which is a contradictory pair — a group cannot auto-accept
- *   join requests it does not accept. So that result cannot distinguish a
- *   lost write from a coerced dependent setting. G10 was added to settle
- *   it and NEEDS A SECOND RUN. Until it has one, nothing should be
- *   concluded from G9, and no shipped family sets that flag true anyway.
+ *   request — a contradictory pair, since a group cannot auto-accept join
+ *   requests it does not accept — so it could not distinguish a lost write
+ *   from a coerced dependent setting. G10 and G11 were added to settle
+ *   that and the empty-description question.
  *
- *   STILL OPEN: G11, whether an empty description is accepted. The server
- *   named null beside the ceiling and the loader turns an omitted
- *   `description:` into "".
+ * RUN 2 — 2026-08-14, same site. Twelve questions, twelve answered. Every
+ * run-1 result reproduced identically, and both open questions closed:
  *
- * A SECOND RUN NEEDS ONLY G10 AND G11, but the file runs all of it; the
- * settled questions re-confirming costs nothing and guards against a
- * tenant-specific answer.
+ *     G10     with AllowRequestToJoinLeave TRUE, AutoAccept TOOK. So run 1
+ *             saw SharePoint COERCING a dependent setting, not the
+ *             reconcile path losing a write. The server accepts the
+ *             contradictory pair with HTTP 200 and then stores auto-accept
+ *             as false. That silent correction is now refused at build
+ *             time by `group_auto_accept_without_requests`, and G9 no
+ *             longer compares that flag — it would report FAIL for correct
+ *             behaviour on every future run.
+ *     G11     an EMPTY description is accepted and reads back "". The
+ *             server's "cannot be null" does not extend to the empty
+ *             string, so a mapping that omits `description:` — which the
+ *             loader turns into "" — is known-good rather than unproven.
+ *
+ * NOTHING IS OPEN. The file still runs end to end; re-confirming the
+ * settled questions costs nothing and would catch a tenant-specific
+ * answer, which two runs against ONE site cannot rule out.
  *
  * HOW TO RUN
  *   1. Open the target site as a SITE OWNER.
@@ -330,7 +341,7 @@
   expect('G6', 'What length comes back when 1000+ characters go out?');
   expect('G7', 'Do the four membership flags read back as written at CREATE?');
   expect('G8', 'Does a provenance marker of the shape lists use survive?');
-  expect('G9', 'Do the four membership flags read back as written by MERGE?');
+  expect('G9', 'Do the three independent membership flags read back as written by MERGE?');
   expect('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?');
   expect('G11', 'Is an EMPTY description accepted?');
 
@@ -547,21 +558,32 @@
     { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
   );
   if (!flipRes.ok) {
-    record('G9', 'Do the four membership flags read back as written by MERGE?',
+    record('G9', 'Do the three independent membership flags read back as written by MERGE?',
       isRefusal(flipRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${flipRes.status})`,
       `the MERGE came back HTTP ${flipRes.status}: ${flipRes.text.slice(0, 200)}`);
   } else {
     const back9 = await readGroup();
     if (readFailed(back9)) {
-      record('G9', 'Do the four membership flags read back as written by MERGE?',
+      record('G9', 'Do the three independent membership flags read back as written by MERGE?',
         `NOT ESTABLISHED (HTTP ${back9.status})`, 'the MERGE succeeded but the group could not be read back');
     } else {
-      const wrong9 = Object.keys(flipped).filter((k) => back9.body[k] !== flipped[k]);
-      record('G9', 'Do the four membership flags read back as written by MERGE?',
+      // AutoAccept is EXCLUDED from the comparison, and that is a finding
+      // rather than an exemption. This request sends AllowRequestToJoinLeave
+      // false, and G10 established across two runs that SharePoint then
+      // stores AutoAccept as false whatever was asked for -- a group cannot
+      // auto-accept requests it does not accept. Comparing it here would
+      // report FAIL for correct behaviour on every future run, which is how
+      // a probe teaches its reader to ignore it. G10 owns that flag; this
+      // question owns the three that are independent.
+      const independent = { ...flipped };
+      delete independent.AutoAcceptRequestToJoinLeave;
+      const wrong9 = Object.keys(independent).filter((k) => back9.body[k] !== independent[k]);
+      const coerced = back9.body.AutoAcceptRequestToJoinLeave === false;
+      record('G9', 'Do the three independent membership flags read back as written by MERGE?',
         wrong9.length === 0 ? 'PASS' : 'FAIL',
         wrong9.length === 0
-          ? 'all four flipped values took, so the reconcile path does persist flags'
-          : `did NOT take: ${wrong9.map((k) => `${k} sent ${flipped[k]}, read ${back9.body[k]}`).join('; ')}`);
+          ? `all three took, so the reconcile path persists flags${coerced ? '; AutoAccept read false as G10 predicts, its prerequisite being off' : '; NOTE AutoAccept did NOT coerce this time, which contradicts G10 — report it'}`
+          : `did NOT take: ${wrong9.map((k) => `${k} sent ${independent[k]}, read ${back9.body[k]}`).join('; ')}`);
     }
   }
 

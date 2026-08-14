@@ -462,6 +462,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "while an operator self-enrols in order to write. Put the two "
         "flags on two groups."
     ),
+    FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS: (
+        "A `groups:` entry sets `auto_accept_request_to_join_leave` while "
+        "`allow_request_to_join_leave` is false. A group cannot "
+        "auto-accept join requests it does not accept, and SharePoint does "
+        "not refuse the combination -- MEASURED 2026-08-13 and again "
+        "2026-08-14 against a live tenant, it answers HTTP 200 and then "
+        "stores auto-accept as FALSE. The deploy would report the group "
+        "reconciled while the site quietly disagreed with the mapping, and "
+        "nothing reads those flags back to notice. Set "
+        "`allow_request_to_join_leave: true` as well if you meant the "
+        "auto-accept, or drop it."
+    ),
     FindingCode.GROUP_DESCRIPTION_TOO_LONG: (
         "A `groups:` entry's description is longer than 512 characters. "
         "MEASURED 2026-08-13 against a live tenant: SharePoint answers a "
