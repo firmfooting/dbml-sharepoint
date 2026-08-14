@@ -187,58 +187,69 @@
     return got;
   };
 
-  await mergeAndRead('L2', 'Does a Description written by MERGE read back byte-identical?', MERGED);
+  const l2Read = await mergeAndRead(
+    'L2', 'Does a Description written by MERGE read back byte-identical?', MERGED);
 
   // ---- L3: partial MERGE ------------------------------------------------
-  // Changes the Title as well, or a request that did nothing would also look like preservation.
-  const RENAMED = `${LIST} b`;
-  const d3 = await getDigest();
-  const partial = await spPost(
-    `web/lists/getbytitle('${encodeURIComponent(LIST)}')`,
-    { __metadata: { type: 'SP.List' }, Title: RENAMED },
-    d3,
-    { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
-  );
-  if (!partial.ok) {
+  // L3 asks whether an omitted Description is preserved, and compares against
+  // MERGED, so it is only meaningful if L2 actually left MERGED in place. A
+  // throttled L2 leaves PLAIN there, and L3 would then report FAIL for a
+  // setup that never happened.
+  if (l2Read !== MERGED) {
     record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
-      `NOT ESTABLISHED (HTTP ${partial.status})`, partial.text.slice(0, 220));
+      'NOT ESTABLISHED (L2 did not set up the value)',
+      `this question compares against ${JSON.stringify(MERGED)}, which L2 was supposed to leave in place. L2 read ${JSON.stringify(l2Read)} instead, so a comparison here would report on the setup rather than on SharePoint.`);
   } else {
-    // getbytitle follows the NEW title once the rename lands.
-    const back = await spGet(`web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`);
-    if (readFailed(back)) {
-      record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
-        `NOT ESTABLISHED (HTTP ${back.status})`, 'could not read the list back after the rename');
-    } else {
-      const landed = back.body.Title === RENAMED;
-      const got = back.body.Description;
-      record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
-        !landed ? 'NOT ESTABLISHED (the MERGE changed nothing)'
-          : (got === MERGED ? 'PASS' : 'FAIL'),
-        !landed
-          ? 'the Title did not change, so this request did not take effect and "preserved" would prove nothing'
-          : (got === MERGED
-            ? 'the Title changed AND the omitted Description survived, so MERGE is partial'
-            : `the Title changed but the Description became ${JSON.stringify(got)}, so an omitted field is NOT preserved`));
-    }
-
-    // Restored and verified unconditionally, because a list left renamed
-    // makes L4 to L10 report FAIL for a 404 they caused themselves.
-    // Reading LIST back is the right check either way: if the rename never
-    // landed, the restoring MERGE 404s harmlessly and the read still passes.
-    const dr = await getDigest();
-    await spPost(
-      `web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`,
-      { __metadata: { type: 'SP.List' }, Title: LIST },
-      dr,
+    // Changes the Title as well, or a request that did nothing would also look like preservation.
+    const RENAMED = `${LIST} b`;
+    const d3 = await getDigest();
+    const partial = await spPost(
+      `web/lists/getbytitle('${encodeURIComponent(LIST)}')`,
+      { __metadata: { type: 'SP.List' }, Title: RENAMED },
+      d3,
       { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
     );
-    const restored = await readList();
-    if (readFailed(restored)) {
-      record('BOOT', 'restore the probe list\'s title after L3',
-        `NOT ESTABLISHED (HTTP ${restored.status})`,
-        `the list did not answer to '${LIST}' again after L3's rename, so every question below would address a title that may not exist and report a plumbing failure as a SharePoint verdict. Stopping instead. Look for a list named '${RENAMED}' and delete it by hand.`);
-      report();
-      return;
+    if (!partial.ok) {
+      record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        `NOT ESTABLISHED (HTTP ${partial.status})`, partial.text.slice(0, 220));
+    } else {
+      // getbytitle follows the NEW title once the rename lands.
+      const back = await spGet(`web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`);
+      if (readFailed(back)) {
+        record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
+          `NOT ESTABLISHED (HTTP ${back.status})`, 'could not read the list back after the rename');
+      } else {
+        const landed = back.body.Title === RENAMED;
+        const got = back.body.Description;
+        record('L3', 'Does a MERGE that OMITS Description preserve the previous one?',
+          !landed ? 'NOT ESTABLISHED (the MERGE changed nothing)'
+            : (got === MERGED ? 'PASS' : 'FAIL'),
+          !landed
+            ? 'the Title did not change, so this request did not take effect and "preserved" would prove nothing'
+            : (got === MERGED
+              ? 'the Title changed AND the omitted Description survived, so MERGE is partial'
+              : `the Title changed but the Description became ${JSON.stringify(got)}, so an omitted field is NOT preserved`));
+      }
+
+      // Restored and verified unconditionally, because a list left renamed
+      // makes L4 to L10 report FAIL for a 404 they caused themselves.
+      // Reading LIST back is the right check either way: if the rename never
+      // landed, the restoring MERGE 404s harmlessly and the read still passes.
+      const dr = await getDigest();
+      await spPost(
+        `web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`,
+        { __metadata: { type: 'SP.List' }, Title: LIST },
+        dr,
+        { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+      );
+      const restored = await readList();
+      if (readFailed(restored)) {
+        record('BOOT', 'restore the probe list\'s title after L3',
+          `NOT ESTABLISHED (HTTP ${restored.status})`,
+          `the list did not answer to '${LIST}' again after L3's rename, so every question below would address a title that may not exist and report a plumbing failure as a SharePoint verdict. Stopping instead. Look for a list named '${RENAMED}' and delete it by hand.`);
+        report();
+        return;
+      }
     }
   }
 

@@ -13,7 +13,7 @@ import yaml
 from pyparsing.exceptions import ParseBaseException
 
 from dbml_sharepoint import __version__
-from dbml_sharepoint.analysis.finding_help import FINDING_HELP
+from dbml_sharepoint.analysis.finding_help import FINDING_HELP, RETIRED_FINDINGS
 from dbml_sharepoint.analysis.findings import Finding
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.bundle import (
@@ -754,6 +754,12 @@ def explain(
     # thing to do is select the code and paste it -- which brings the colon.
     wanted = code.strip().rstrip(":").lower()
     found = next((c for c in FINDING_HELP if str(c) == wanted), None)
+    if found is None and wanted in RETIRED_FINDINGS:
+        # A code an older build printed stays answerable after its rule goes.
+        typer.echo(f"{wanted}  [retired]\n")
+        for line in wrap(RETIRED_FINDINGS[wanted], width=76):
+            typer.echo(line)
+        return
     if found is None:
         near = get_close_matches(wanted, [str(c) for c in FINDING_HELP], n=3, cutoff=0.6)
         suggestion = f" Did you mean: {', '.join(near)}?" if near else ""

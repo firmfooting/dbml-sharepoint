@@ -35,6 +35,26 @@ from dbml_sharepoint.analysis.typemap import CALCULATED_TYPE_LIST
 #: Every rule this build can report, by code. One entry per `FindingCode`
 #: member; `test_every_code_has_help` fails the build on either a member with
 #: no entry or an entry with no member.
+#: Codes that no longer exist, and what happened to them.
+#:
+#: `explain` documents a finding code as a stable identity, so a code printed
+#: by an older build has to stay answerable after the rule behind it is
+#: retired. Without this, the answer is "no finding code", which reads as a
+#: typo rather than as history.
+RETIRED_FINDINGS: dict[str, str] = {
+    "entity_note_may_not_round_trip": (
+        "Retired 2026-08-14. It refused an ampersand, a line break or a run "
+        "of spaces in a table note, because whether a list Description "
+        "returns unchanged was inferred rather than measured. "
+        "`test/manual/list-description-probe.js` measured it against a live "
+        "site and found the round trip exact for all four, so the rule was "
+        "deleted. Runs of whitespace holding a tab or a non-breaking space "
+        "were never sent by that probe and are still refused, now by "
+        "`entity_note_whitespace_unmeasured`."
+    ),
+}
+
+
 FINDING_HELP: dict[FindingCode, str] = {
     FindingCode.ALL_ITEMS_VIEW_DECLARED: (
         "A view named `All Items` is declared; that view is generated "
