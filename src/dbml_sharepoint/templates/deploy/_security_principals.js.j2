@@ -347,238 +347,309 @@
       }
     }
 
-    for (const grp of SCHEMA.groups) {
-      try {
-        // null status means "known absent without asking".
-        const checkResp = knownGroupNames && !hasName(knownGroupNames, grp.name)
-          ? { status: 404, ok: false }
-          : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-        if (checkResp.status === 404) {
-          log('INFO', `Creating site group '${grp.name}'...`);
-          await postJson(apiUrl('web/sitegroups'), {
+    // Owner verification, with automated correction. Plain REST cannot MERGE
+    // Group.Owner (read-only through that surface), but the documented CSOM
+    // protocol (MS-CSOM ProcessQuery, the same mechanism PnP's Set-PnPGroup
+    // uses) can set it. Both the target and the governed group must already
+    // exist, so this reads on an adopt decision (survey) and after the
+    // create (apply); either way, by the time it runs the group is there.
+    async function resolveGroupOwner(grp) {
+      let targetOwnerResp;
+      if (grp.owner_group === 'Site Owners') {
+        targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedOwnerGroup?$select=Id,Title,PrincipalType'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      } else if (grp.owner_group === 'Site Members') {
+        targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedMemberGroup?$select=Id,Title,PrincipalType'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      } else if (grp.owner_group === 'Site Visitors') {
+        targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedVisitorGroup?$select=Id,Title,PrincipalType'), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      } else {
+        targetOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.owner_group)}')?$select=Id,Title,PrincipalType`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      }
+      if (!targetOwnerResp.ok) {
+        throw new Error(`Cannot resolve declared owner group '${grp.owner_group}' for '${grp.name}' (HTTP ${targetOwnerResp.status})`);
+      }
+      const targetOwner = (await targetOwnerResp.json()).d;
+
+      const governedGroupResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!governedGroupResp.ok) {
+        throw new Error(`Cannot resolve governed group '${grp.name}' for owner verification (HTTP ${governedGroupResp.status})`);
+      }
+      const governedGroup = (await governedGroupResp.json()).d;
+      const currentOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
+        headers: { 'Accept': 'application/json;odata=verbose' },
+      });
+      if (!currentOwnerResp.ok) {
+        throw new Error(`Cannot read owner for group '${grp.name}' (HTTP ${currentOwnerResp.status})`);
+      }
+      const currentOwner = (await currentOwnerResp.json()).d;
+      const ownerShapeValid = Number.isInteger(targetOwner.Id)
+        && Number.isInteger(targetOwner.PrincipalType)
+        && typeof targetOwner.Title === 'string'
+        && Number.isInteger(currentOwner.Id)
+        && Number.isInteger(currentOwner.PrincipalType)
+        && typeof currentOwner.Title === 'string';
+      if (!ownerShapeValid) {
+        throw new Error(`Owner verification for group '${grp.name}' returned an invalid principal response`);
+      }
+      const ownerMismatch = currentOwner.Id !== targetOwner.Id
+        || currentOwner.PrincipalType !== targetOwner.PrincipalType;
+      return { targetOwner, governedGroup, currentOwner, ownerMismatch };
+    }
+
+    // The correction itself is a write (CSOM ProcessQuery, then a re-verify
+    // through the documented read-only /owner resource), so unlike the read
+    // above, this always belongs to the apply, never the survey.
+    async function correctGroupOwner(grp, ownerState) {
+      const { targetOwner, governedGroup, currentOwner, ownerMismatch } = ownerState;
+      if (!ownerMismatch) {
+        log('INFO', `Site group '${grp.name}' owner verified as '${targetOwner.Title}'.`);
+        return;
+      }
+      let ownerCorrected = false;
+      // Automated correction only targets site-group owners (type 8): every
+      // declared owner_group resolves to a site group.
+      if (targetOwner.PrincipalType === 8) {
+        log('INFO', `Group '${grp.name}' owner is '${currentOwner.Title}'; attempting automated correction to '${targetOwner.Title}' via CSOM ProcessQuery...`);
+        digest0 = await getDigest();
+        const csomXml =
+          '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="dbml-sharepoint">'
+          + '<Actions>'
+          + '<SetProperty Id="10" ObjectPathId="3" Name="Owner"><Parameter ObjectPathId="5" /></SetProperty>'
+          + '<Method Name="Update" Id="11" ObjectPathId="3" />'
+          + '</Actions>'
+          + '<ObjectPaths>'
+          + '<StaticProperty Id="0" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" />'
+          + '<Property Id="1" ParentId="0" Name="Web" />'
+          + '<Property Id="2" ParentId="1" Name="SiteGroups" />'
+          + `<Method Id="3" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${governedGroup.Id}</Parameter></Parameters></Method>`
+          + `<Method Id="5" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${targetOwner.Id}</Parameter></Parameters></Method>`
+          + '</ObjectPaths>'
+          + '</Request>';
+        const pqResp = await fetchWithRetry(apiUrl('ProcessQuery'), {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json;odata=verbose',
+            'Content-Type': 'text/xml',
+            'X-RequestDigest': digest0,
+          },
+          body: csomXml,
+        });
+        if (pqResp.ok) {
+          let pqJson = null;
+          try { pqJson = await pqResp.json(); } catch { pqJson = null; }
+          const pqError = Array.isArray(pqJson) && pqJson.length > 0 && pqJson[0] && pqJson[0].ErrorInfo;
+          if (!pqError) {
+            // Re-verify through the same documented read-only probe: the
+            // CSOM response alone is not trusted as success evidence.
+            const reReadResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
+              headers: { 'Accept': 'application/json;odata=verbose' },
+            });
+            if (reReadResp.ok) {
+              const reRead = (await reReadResp.json()).d;
+              ownerCorrected = reRead
+                && reRead.Id === targetOwner.Id
+                && reRead.PrincipalType === targetOwner.PrincipalType;
+            }
+          } else {
+            log('INFO', `CSOM owner set for '${grp.name}' reported: ${pqError.ErrorMessage || 'unknown error'}.`);
+          }
+        }
+      }
+      if (!ownerCorrected) {
+        throw new Error(
+          `Manual owner action required for group '${grp.name}': current owner '${currentOwner.Title}' `
+          + `(Id ${currentOwner.Id}, type ${currentOwner.PrincipalType}) does not match declared owner `
+          + `'${targetOwner.Title}' (Id ${targetOwner.Id}, type ${targetOwner.PrincipalType}) and automated `
+          + `correction did not take effect. Set the group owner in SharePoint Site permissions, then rerun `
+          + `this same script; Phase 2.1 will not start while this mismatch exists.`,
+        );
+      }
+      log('INFO', `Site group '${grp.name}' owner corrected to '${targetOwner.Title}'.`);
+    }
+
+    // Optional clean-provision/activation gate. Membership remains an
+    // operator-owned concern: enumerate every page and fail closed rather
+    // than silently removing an unexpected user or directory group. Read-only,
+    // so like the owner resolve above it runs on an adopt decision (survey)
+    // and after the create (apply).
+    async function ensureGroupEmptyIfRequired(grp) {
+      if (!grp.require_empty_at_deploy) return;
+      const memberCount = await countGroupMembers(grp.name);
+      if (memberCount > 0) {
+        throw new Error(`Group '${grp.name}' requires empty membership at deploy, but contains ${memberCount} member(s); remove them or use a mapping that does not declare the clean-provision gate`);
+      }
+    }
+
+    // Decision shape: { kind: 'create'|'adopt'|'refuse', object: 'level'|'group', name, reason?, ...state }.
+    // Unlike surveyLevel, an adopt decision here also carries ownerState and
+    // has already run the empty-membership gate: both need the group to
+    // exist, which on an adopt decision it already does. A create decision
+    // does neither; owner resolution and the empty check 404 for a group
+    // that is not there yet, so they are owed to applyGroupDecision, after
+    // the create.
+    async function surveyGroup(grp, decidedCreates) {
+      // null status means "known absent without asking". decidedCreates
+      // covers a name this same pass already decided to create, which the
+      // one-time enumeration in knownGroupNames cannot see.
+      const isKnown = (knownGroupNames && hasName(knownGroupNames, grp.name))
+        || hasName(decidedCreates, grp.name);
+      const checkResp = knownGroupNames && !isKnown
+        ? { status: 404, ok: false }
+        : await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+      if (checkResp.status === 404) {
+        return { kind: 'create', object: 'group', name: grp.name, grp };
+      }
+      if (!checkResp.ok) {
+        throw new Error(`Probe for site group '${grp.name}' failed: HTTP ${checkResp.status}`);
+      }
+
+      // #209. This branch adopts a group by NAME and the ACL phase then
+      // grants it whatever the mapping declares, which for the
+      // administrators group is Full Control on every list. Adopt only a
+      // group this tool created, or one holding nobody.
+      //
+      // PROVENANCE, NOT AUTHENTICATION, 2026-08-14: the marker is evidence
+      // this tool wrote the group, not a secret. Anyone who can edit a
+      // site group's Description can satisfy it, and editing a site
+      // group already needs site-owner rights on the target site, which
+      // this gate assumes rather than re-checks.
+      //
+      // EXACT MARKER, NOT A SHARED PREFIX. Every family's marker starts
+      // with the same "Provisioned by dbml-sharepoint" text, so testing
+      // that shared text let a group ANY family stamped pass the gate
+      // for EVERY family. Comparing the exact marker this declaration
+      // expects (grp.expected_marker) closes that: a group family B
+      // declares cannot be satisfied by a marker family A left on it.
+      // The two tool-owned groups still work here, because every family
+      // computes the same expected_marker for them.
+      //
+      // Empty expected_marker would make indexOf('') return 0 for every
+      // description below, adopting every group unmarked. undefined
+      // already fails closed there; only the empty string is dangerous.
+      // jsgen always sets a value, so this only matters for a
+      // hand-edited bundle.
+      if (typeof grp.expected_marker !== 'string' || grp.expected_marker === '') {
+        return {
+          kind: 'refuse',
+          object: 'group',
+          name: grp.name,
+          reason: `Site group '${grp.name}' has no expected_marker; refusing to adopt any group against it.`,
+        };
+      }
+      const existingJson = await checkResp.json();
+      const existingDescription = (existingJson.d && typeof existingJson.d.Description === 'string')
+        ? existingJson.d.Description
+        : '';
+      // SUBSTRING SEARCH, NOT A PREFIX TEST. group_description() appends
+      // the marker AFTER any declared text, so a composed description
+      // does not START with it. indexOf finds the marker anywhere in the
+      // string; changing this to startsWith would refuse every group
+      // that also carries a declared description.
+      if (existingDescription.indexOf(grp.expected_marker) === -1) {
+        const memberCount = await countGroupMembers(grp.name);
+        if (memberCount > 0) {
+          return {
+            kind: 'refuse',
+            object: 'group',
+            name: grp.name,
+            reason: `Site group '${grp.name}' already exists, carries no '${grp.expected_marker}' `
+              + `marker, and holds ${memberCount} member(s). It was not created by this tool, and `
+              + `adopting it would grant those members the access this family declares for the group. `
+              + `Nothing has been written to this group. Either empty the group, or rename it so `
+              + `this deploy creates its own.`,
+          };
+        }
+      }
+
+      // Both safe here: the group already exists on this path.
+      const ownerState = await resolveGroupOwner(grp);
+      await ensureGroupEmptyIfRequired(grp);
+
+      return { kind: 'adopt', object: 'group', name: grp.name, grp, ownerState };
+    }
+
+    async function applyGroupDecision(decision) {
+      const grp = decision.grp;
+      if (decision.kind === 'create') {
+        log('INFO', `Creating site group '${grp.name}'...`);
+        await postJson(apiUrl('web/sitegroups'), {
+          __metadata: { type: 'SP.Group' },
+          Title: grp.name,
+          Description: grp.description,
+          AllowMembersEditMembership: grp.allow_members_edit_membership,
+          AllowRequestToJoinLeave: grp.allow_request_to_join_leave,
+          AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
+          OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
+        }, digest0);
+        log('INFO', `Site group '${grp.name}' created.`);
+        await verifyGroupSettings(grp);
+
+        // Owed to here from the survey: both need the group to exist, and
+        // before this line it did not.
+        const ownerState = await resolveGroupOwner(grp);
+        await correctGroupOwner(grp, ownerState);
+        await ensureGroupEmptyIfRequired(grp);
+        if (grp.require_empty_at_deploy) {
+          log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
+        }
+      } else {
+        // Group membership controls are part of the security boundary. A
+        // pre-existing group with the right name but permissive flags must
+        // not be accepted as compliant.
+        digest0 = await getDigest();
+        const mergeResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
+          method: 'POST',
+          headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+          body: JSON.stringify({
             __metadata: { type: 'SP.Group' },
-            Title: grp.name,
             Description: grp.description,
             AllowMembersEditMembership: grp.allow_members_edit_membership,
             AllowRequestToJoinLeave: grp.allow_request_to_join_leave,
             AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
             OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
-          }, digest0);
-          // Keep the snapshot current. Two declarations differing only in
-          // case are one group to SharePoint, so without this the second
-          // would read as absent and try to create a name that now exists.
-          // The build refuses that declaration outright; this keeps the
-          // deploy honest even against a mapping that predates the rule.
-          if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
-          log('INFO', `Site group '${grp.name}' created.`);
-          await verifyGroupSettings(grp);
-        } else if (checkResp.ok) {
-          // #209. This branch adopts a group by NAME and the ACL phase then
-          // grants it whatever the mapping declares, which for the
-          // administrators group is Full Control on every list. Adopt only a
-          // group this tool created, or one holding nobody.
-          //
-          // PROVENANCE, NOT AUTHENTICATION, 2026-08-14: the marker is evidence
-          // this tool wrote the group, not a secret. Anyone who can edit a
-          // site group's Description can satisfy it, and editing a site
-          // group already needs site-owner rights on the target site, which
-          // this gate assumes rather than re-checks.
-          //
-          // EXACT MARKER, NOT A SHARED PREFIX. Every family's marker starts
-          // with the same "Provisioned by dbml-sharepoint" text, so testing
-          // that shared text let a group ANY family stamped pass the gate
-          // for EVERY family. Comparing the exact marker this declaration
-          // expects (grp.expected_marker) closes that: a group family B
-          // declares cannot be satisfied by a marker family A left on it.
-          // The two tool-owned groups still work here, because every family
-          // computes the same expected_marker for them.
-          //
-          // Empty expected_marker would make indexOf('') return 0 for every
-          // description below, adopting every group unmarked. undefined
-          // already fails closed there; only the empty string is dangerous.
-          // jsgen always sets a value, so this only matters for a
-          // hand-edited bundle.
-          if (typeof grp.expected_marker !== 'string' || grp.expected_marker === '') {
-            throw new Error(`Site group '${grp.name}' has no expected_marker; refusing to adopt any group against it.`);
-          }
-          const existingJson = await checkResp.json();
-          const existingDescription = (existingJson.d && typeof existingJson.d.Description === 'string')
-            ? existingJson.d.Description
-            : '';
-          // SUBSTRING SEARCH, NOT A PREFIX TEST. group_description() appends
-          // the marker AFTER any declared text, so a composed description
-          // does not START with it. indexOf finds the marker anywhere in the
-          // string; changing this to startsWith would refuse every group
-          // that also carries a declared description.
-          if (existingDescription.indexOf(grp.expected_marker) === -1) {
-            const memberCount = await countGroupMembers(grp.name);
-            if (memberCount > 0) {
-              throw new Error(
-                `Site group '${grp.name}' already exists, carries no '${grp.expected_marker}' `
-                + `marker, and holds ${memberCount} member(s). It was not created by this tool, and `
-                + `adopting it would grant those members the access this family declares for the group. `
-                + `Nothing has been written to this group. Either empty the group, or rename it so `
-                + `this deploy creates its own.`);
-            }
-          }
-
-          // Group membership controls are part of the security boundary. A
-          // pre-existing group with the right name but permissive flags must
-          // not be accepted as compliant.
-          digest0 = await getDigest();
-          const mergeResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')`), {
-            method: 'POST',
-            headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
-            body: JSON.stringify({
-              __metadata: { type: 'SP.Group' },
-              Description: grp.description,
-              AllowMembersEditMembership: grp.allow_members_edit_membership,
-              AllowRequestToJoinLeave: grp.allow_request_to_join_leave,
-              AutoAcceptRequestToJoinLeave: grp.auto_accept_request_to_join_leave,
-              OnlyAllowMembersViewMembership: grp.only_allow_members_view_membership,
-            }),
-          });
-          if (!mergeResp.ok) {
-            const text = await mergeResp.text();
-            throw new Error(`Group '${grp.name}' settings MERGE failed: HTTP ${mergeResp.status} ${text}`);
-          }
-          log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
-          await verifyGroupSettings(grp);
-        } else {
-          throw new Error(`Probe for site group '${grp.name}' failed: HTTP ${checkResp.status}`);
-        }
-
-        // Owner verification, with automated correction. Plain REST cannot
-        // MERGE Group.Owner (read-only through that surface), but the
-        // documented CSOM protocol (MS-CSOM ProcessQuery, the same mechanism
-        // PnP's Set-PnPGroup uses) can set it. On mismatch the script
-        // attempts the CSOM set, then re-verifies through the documented
-        // read-only /owner resource, and fails closed with the manual-action
-        // instruction only if the owner still mismatches.
-        let targetOwnerResp;
-        if (grp.owner_group === 'Site Owners') {
-          targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedOwnerGroup?$select=Id,Title,PrincipalType'), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-        } else if (grp.owner_group === 'Site Members') {
-          targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedMemberGroup?$select=Id,Title,PrincipalType'), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-        } else if (grp.owner_group === 'Site Visitors') {
-          targetOwnerResp = await fetchWithRetry(apiUrl('web/AssociatedVisitorGroup?$select=Id,Title,PrincipalType'), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-        } else {
-          targetOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.owner_group)}')?$select=Id,Title,PrincipalType`), {
-            headers: { 'Accept': 'application/json;odata=verbose' },
-          });
-        }
-        if (!targetOwnerResp.ok) {
-          throw new Error(`Cannot resolve declared owner group '${grp.owner_group}' for '${grp.name}' (HTTP ${targetOwnerResp.status})`);
-        }
-        const targetOwner = (await targetOwnerResp.json()).d;
-
-        const governedGroupResp = await fetchWithRetry(apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=Id`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
+          }),
         });
-        if (!governedGroupResp.ok) {
-          throw new Error(`Cannot resolve governed group '${grp.name}' for owner verification (HTTP ${governedGroupResp.status})`);
+        if (!mergeResp.ok) {
+          const text = await mergeResp.text();
+          throw new Error(`Group '${grp.name}' settings MERGE failed: HTTP ${mergeResp.status} ${text}`);
         }
-        const governedGroup = (await governedGroupResp.json()).d;
-        const currentOwnerResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
-          headers: { 'Accept': 'application/json;odata=verbose' },
-        });
-        if (!currentOwnerResp.ok) {
-          throw new Error(`Cannot read owner for group '${grp.name}' (HTTP ${currentOwnerResp.status})`);
-        }
-        const currentOwner = (await currentOwnerResp.json()).d;
-        const ownerShapeValid = Number.isInteger(targetOwner.Id)
-          && Number.isInteger(targetOwner.PrincipalType)
-          && typeof targetOwner.Title === 'string'
-          && Number.isInteger(currentOwner.Id)
-          && Number.isInteger(currentOwner.PrincipalType)
-          && typeof currentOwner.Title === 'string';
-        if (!ownerShapeValid) {
-          throw new Error(`Owner verification for group '${grp.name}' returned an invalid principal response`);
-        }
-        if (currentOwner.Id !== targetOwner.Id
-            || currentOwner.PrincipalType !== targetOwner.PrincipalType) {
-          let ownerCorrected = false;
-          // Automated correction only targets site-group owners (type 8) —
-          // every declared owner_group resolves to a site group.
-          if (targetOwner.PrincipalType === 8) {
-            log('INFO', `Group '${grp.name}' owner is '${currentOwner.Title}'; attempting automated correction to '${targetOwner.Title}' via CSOM ProcessQuery...`);
-            digest0 = await getDigest();
-            const csomXml =
-              '<Request xmlns="http://schemas.microsoft.com/sharepoint/clientquery/2009" SchemaVersion="15.0.0.0" LibraryVersion="16.0.0.0" ApplicationName="dbml-sharepoint">'
-              + '<Actions>'
-              + '<SetProperty Id="10" ObjectPathId="3" Name="Owner"><Parameter ObjectPathId="5" /></SetProperty>'
-              + '<Method Name="Update" Id="11" ObjectPathId="3" />'
-              + '</Actions>'
-              + '<ObjectPaths>'
-              + '<StaticProperty Id="0" TypeId="{3747adcd-a3c3-41b9-bfab-4a64dd2f1e0a}" Name="Current" />'
-              + '<Property Id="1" ParentId="0" Name="Web" />'
-              + '<Property Id="2" ParentId="1" Name="SiteGroups" />'
-              + `<Method Id="3" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${governedGroup.Id}</Parameter></Parameters></Method>`
-              + `<Method Id="5" ParentId="2" Name="GetById"><Parameters><Parameter Type="Int32">${targetOwner.Id}</Parameter></Parameters></Method>`
-              + '</ObjectPaths>'
-              + '</Request>';
-            const pqResp = await fetchWithRetry(apiUrl('ProcessQuery'), {
-              method: 'POST',
-              headers: {
-                'Accept': 'application/json;odata=verbose',
-                'Content-Type': 'text/xml',
-                'X-RequestDigest': digest0,
-              },
-              body: csomXml,
-            });
-            if (pqResp.ok) {
-              let pqJson = null;
-              try { pqJson = await pqResp.json(); } catch { pqJson = null; }
-              const pqError = Array.isArray(pqJson) && pqJson.length > 0 && pqJson[0] && pqJson[0].ErrorInfo;
-              if (!pqError) {
-                // Re-verify through the same documented read-only probe —
-                // the CSOM response alone is not trusted as success evidence.
-                const reReadResp = await fetchWithRetry(apiUrl(`web/sitegroups(${governedGroup.Id})/owner?$select=Id,Title,PrincipalType`), {
-                  headers: { 'Accept': 'application/json;odata=verbose' },
-                });
-                if (reReadResp.ok) {
-                  const reRead = (await reReadResp.json()).d;
-                  ownerCorrected = reRead
-                    && reRead.Id === targetOwner.Id
-                    && reRead.PrincipalType === targetOwner.PrincipalType;
-                }
-              } else {
-                log('INFO', `CSOM owner set for '${grp.name}' reported: ${pqError.ErrorMessage || 'unknown error'}.`);
-              }
-            }
-          }
-          if (!ownerCorrected) {
-            throw new Error(
-              `Manual owner action required for group '${grp.name}': current owner '${currentOwner.Title}' `
-              + `(Id ${currentOwner.Id}, type ${currentOwner.PrincipalType}) does not match declared owner `
-              + `'${targetOwner.Title}' (Id ${targetOwner.Id}, type ${targetOwner.PrincipalType}) and automated `
-              + `correction did not take effect. Set the group owner in SharePoint Site permissions, then rerun `
-              + `this same script; Phase 2.1 will not start while this mismatch exists.`,
-            );
-          }
-          log('INFO', `Site group '${grp.name}' owner corrected to '${targetOwner.Title}'.`);
-        } else {
-          log('INFO', `Site group '${grp.name}' owner verified as '${targetOwner.Title}'.`);
-        }
+        log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
+        await verifyGroupSettings(grp);
 
-        // Optional clean-provision/activation gate. Membership remains an
-        // operator-owned concern: enumerate every page and fail closed rather
-        // than silently removing an unexpected user or directory group.
+        // Already computed by the survey; only the logging is left to do.
+        await correctGroupOwner(grp, decision.ownerState);
         if (grp.require_empty_at_deploy) {
-          const memberCount = await countGroupMembers(grp.name);
-          if (memberCount > 0) {
-            throw new Error(`Group '${grp.name}' requires empty membership at deploy, but contains ${memberCount} member(s); remove them or use a mapping that does not declare the clean-provision gate`);
-          }
           log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
         }
+      }
+    }
+
+    // decidedCreates: the write-side knownGroupNames.add() this replaces
+    // (formerly here, after a create) mutated a snapshot a later iteration
+    // read. All-surveys-before-all-creates would destroy that, so instead
+    // each iteration folds its own 'create' decision into this set before
+    // moving on, and surveyGroup consults it alongside knownGroupNames. Two
+    // declarations differing only in case are one group to SharePoint; the
+    // build refuses that declaration outright, so this only protects one
+    // predating the rule.
+    const decidedCreates = new Set();
+    for (const grp of SCHEMA.groups) {
+      try {
+        const decision = await surveyGroup(grp, decidedCreates);
+        if (decision.kind === 'create') decidedCreates.add(nameKey(grp.name));
+        if (decision.kind === 'refuse') throw new Error(decision.reason);
+        await applyGroupDecision(decision);
       } catch (err) {
         log('ERROR', `Phase {{ phase.number }} site group '${grp.name}': ${err.message}`);
         summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });

@@ -2967,12 +2967,16 @@ def test_field_shapes_keep_internal_names_and_titles_apart() -> None:
     )
 
 
-def test_a_created_group_enters_the_enumeration_snapshot() -> None:
-    """The snapshot answers 'does this group exist?' locally, so a group
-    created during the run must join it — otherwise a later declaration
-    reading as absent would try to create a name that now exists."""
+def test_a_created_group_enters_the_decided_creates_snapshot() -> None:
+    """The enumeration snapshot answers 'does this group exist?' locally, and
+    is taken once before the loop runs, so it cannot see a group this same
+    pass decided to create. `decidedCreates` covers that: a group entering it
+    on 'create' is read alongside the snapshot, so a later declaration
+    differing only in case reads as present rather than trying to create a
+    name that now exists."""
     js = _generate_simple_js()
-    assert "knownGroupNames.add(nameKey(grp.name))" in js
+    assert "decidedCreates.add(nameKey(grp.name))" in js
+    assert "hasName(decidedCreates, grp.name)" in js
 
 
 def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
