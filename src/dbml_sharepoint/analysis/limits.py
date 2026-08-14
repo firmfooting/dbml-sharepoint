@@ -88,6 +88,29 @@ MAX_FIELD_DESCRIPTION = 255
 #: Do not assume this ceiling applies to them.
 MAX_GROUP_DESCRIPTION = 512
 
+#: The ceiling on a custom permission level's Description
+#: (`SP.RoleDefinition.Description`).
+#:
+#: MEASURED 2026-08-14 by test/manual/role-definition-probe.js, run 1
+#: (revision 709c2549) and confirmed in run 2 (revision 4dd7de1c) against a
+#: live tenant. R4 sent 1018 characters and got HTTP 500:
+#:
+#:     "The parameter Description cannot be bigger than 512 characters."
+#:
+#: It REFUSES rather than truncating, and it refuses at phase 1.2, part-way
+#: through writing permission levels and before any list exists. That is why
+#: this is a build-time rule rather than something the deploy discovers.
+#:
+#: SAME NUMBER AS `MAX_GROUP_DESCRIPTION`, KEPT AS A SEPARATE CONSTANT. These
+#: are different properties on different types (`SP.RoleDefinition` versus
+#: `SP.Group`), measured in separate probe runs, and the refusal messages
+#: differ: the group surface says "cannot be null or bigger than 512
+#: characters" and this one omits the null clause. A probe that moves one
+#: number has no authority over the other -- the same reasoning
+#: `MAX_VALIDATION_FORMULA` and `MAX_CALCULATED_FORMULA` record beside each
+#: other.
+MAX_ROLE_DEFINITION_DESCRIPTION = 512
+
 # ---------------------------------------------------------------- field size
 
 #: `MaxLength` set on every single-line Text field this tool creates. SP's own

@@ -25,6 +25,7 @@ from dbml_sharepoint.analysis.limits import (
     MAX_GROUP_DESCRIPTION,
     MAX_INTERNAL_NAME,
     MAX_LIST_INDEXES,
+    MAX_ROLE_DEFINITION_DESCRIPTION,
 )
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
@@ -1828,7 +1829,37 @@ def test_the_raw_ceiling_rule_still_fires_on_its_own_terms() -> None:
     none_of(findings, FindingCode.GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER)
 
 
-def _level_findings(name: str) -> list[Finding]:
+def test_a_permission_level_description_over_the_ceiling_is_refused() -> None:
+    """The server refuses it mid-deploy, so the build has to refuse it first.
+
+    MEASURED 2026-08-14 by `test/manual/role-definition-probe.js`, R4: a
+    description of 1018 characters came back HTTP 500, "The parameter
+    Description cannot be bigger than 512 characters." SharePoint does not
+    truncate it -- it rejects the request, in phase 1.2, part-way through
+    writing permission levels and before any list exists.
+    """
+    finding = only(
+        _level_findings("XX Level", description="x" * 513),
+        FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG,
+    )
+    assert finding.severity == "error"
+    assert "513" in finding.message
+
+
+def test_a_permission_level_description_at_the_ceiling_is_accepted() -> None:
+    """The complement, pinning the boundary rather than the direction.
+
+    The server's message says "bigger than 512", so 512 itself is legal.
+    Unlike a group description, a level description carries no provenance
+    marker today, so there is no second, tighter budget to check here.
+    """
+    none_of(
+        _level_findings("XX Level", description="x" * MAX_ROLE_DEFINITION_DESCRIPTION),
+        FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG,
+    )
+
+
+def _level_findings(name: str, *, description: str = "test") -> list[Finding]:
     """Validate a mapping declaring one custom permission level called `name`."""
     return validate_against_mapping(
         make_schema(make_table("Risk")),
@@ -1836,7 +1867,7 @@ def _level_findings(name: str) -> list[Finding]:
             entities=["Risk"],
             permissions=PermissionsConfig(
                 levels=[CustomPermissionLevel(
-                    name=name, description="test",
+                    name=name, description=description,
                     base_permissions=["ViewListItems"],
                 )],
                 groups=[], default_policy=None, overrides={},

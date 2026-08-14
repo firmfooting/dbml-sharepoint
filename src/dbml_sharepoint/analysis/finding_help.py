@@ -844,6 +844,18 @@ FINDING_HELP: dict[FindingCode, str] = {
         "An `overdue-date` style's `guard.field` names a column the "
         "entity does not render."
     ),
+    FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG: (
+        "A `permission_levels:` entry's description is longer than 512 "
+        "characters. MEASURED 2026-08-14 against a live tenant: SharePoint "
+        "answers a longer one with HTTP 500 and the message \"The parameter "
+        "Description cannot be bigger than 512 characters.\" It REFUSES "
+        "rather than truncating, and it does so in deploy phase 1.2 -- "
+        "part-way through writing permission levels and before any list "
+        "exists -- so the run stops against a half-provisioned site. "
+        "Shorten the description. `SP.RoleDefinition.Description` is a "
+        "different surface from a group's description and was measured "
+        "separately, even though the two ceilings agree today."
+    ),
     FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE: (
         "A `list_permissions` assignment names `Limited Access` or "
         "`Web-Only Limited Access`. Microsoft Learn is explicit that "
