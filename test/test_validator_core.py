@@ -20,7 +20,12 @@ from _packs import blocks, entities, pack
 from _paths import FIXTURES
 
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.limits import MAX_INTERNAL_NAME, MAX_LIST_INDEXES
+from dbml_sharepoint.analysis.group_description import description_budget
+from dbml_sharepoint.analysis.limits import (
+    MAX_GROUP_DESCRIPTION,
+    MAX_INTERNAL_NAME,
+    MAX_LIST_INDEXES,
+)
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
@@ -1763,6 +1768,56 @@ def test_a_group_description_at_the_ceiling_is_accepted() -> None:
         _group_description_findings("x" * 512),
         FindingCode.GROUP_DESCRIPTION_TOO_LONG,
     )
+
+
+def _bundle_with_group(*, name: str, description: str) -> list[Finding]:
+    """Validate a mapping declaring one group, on a schema whose `Project`
+    resolves to the `risk-register` family (see `list_description.normalise_family`:
+    underscores fold to hyphens)."""
+    return validate_against_mapping(
+        make_schema(make_table("Risk"), project_name="risk_register"),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[],
+                groups=[SiteGroup(
+                    name=name, description=description,
+                    owner_group="Site Owners",
+                    allow_members_edit_membership=False,
+                    allow_request_to_join_leave=False,
+                    auto_accept_request_to_join_leave=False,
+                    only_allow_members_view_membership=False,
+                )],
+                default_policy=None, overrides={},
+            ),
+        ),
+    )
+
+
+def test_a_group_description_that_leaves_no_room_for_the_marker_is_refused() -> None:
+    """The composed string is what SharePoint sees, so the budget is what matters."""
+    budget = description_budget("RR Risk Managers", "risk-register")
+    findings = _bundle_with_group(
+        name="RR Risk Managers", description="d" * (budget + 1),
+    )
+    only(findings, FindingCode.GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER)
+
+
+def test_a_group_description_exactly_at_the_budget_is_accepted() -> None:
+    budget = description_budget("RR Risk Managers", "risk-register")
+    findings = _bundle_with_group(
+        name="RR Risk Managers", description="d" * budget,
+    )
+    none_of(findings, FindingCode.GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER)
+    none_of(findings, FindingCode.GROUP_DESCRIPTION_TOO_LONG)
+
+
+def test_the_raw_ceiling_rule_still_fires_on_its_own_terms() -> None:
+    """Over 512 declared is refused even before the marker is considered."""
+    findings = _bundle_with_group(
+        name="RR Risk Managers", description="d" * (MAX_GROUP_DESCRIPTION + 1),
+    )
+    only(findings, FindingCode.GROUP_DESCRIPTION_TOO_LONG)
 
 
 def _level_findings(name: str) -> list[Finding]:

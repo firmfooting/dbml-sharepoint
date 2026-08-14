@@ -3,7 +3,9 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.group_description import description_budget, marker_for_group
 from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
+from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.permissions import (
     ASSIGNABLE_BUILT_IN_LEVELS,
     BASE_PERMISSIONS,
@@ -172,6 +174,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # reason as the levels above.
         seen_group_names: dict[str, str] = {}
         custom_group_names = {g.name for g in perms.groups}
+        family = family_for(vc.schema)
         for grp in perms.groups:
             key = grp.name.casefold()
             if key in seen_group_names:
@@ -210,6 +213,11 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
+            # The COMPOSED string is what reaches SharePoint, so the budget
+            # rather than the raw ceiling is what a description must fit.
+            # `elif`, so a description over the raw ceiling reports one code:
+            # the second would add nothing an author can act on separately.
+            budget = description_budget(grp.name, family)
             if len(grp.description) > MAX_GROUP_DESCRIPTION:
                 findings.append(Finding(
                     FindingCode.GROUP_DESCRIPTION_TOO_LONG,
@@ -217,6 +225,16 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"{len(grp.description)} characters; SharePoint refuses "
                     f"anything over {MAX_GROUP_DESCRIPTION} and does so "
                     f"part-way through the deploy. Shorten it.",
+                    location=_GROUPS,
+                ))
+            elif len(grp.description) > budget:
+                findings.append(Finding(
+                    FindingCode.GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER,
+                    f"groups[{grp.name!r}]: description is "
+                    f"{len(grp.description)} characters, and the budget is "
+                    f"{budget} once the provenance marker "
+                    f"{marker_for_group(grp.name, family)!r} and its "
+                    f"separating space are appended. Shorten it.",
                     location=_GROUPS,
                 ))
 
