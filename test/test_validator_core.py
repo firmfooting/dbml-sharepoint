@@ -1759,10 +1759,12 @@ def test_a_group_description_over_the_ceiling_is_refused() -> None:
 def test_a_group_description_at_the_ceiling_is_accepted() -> None:
     """The complement, and it pins the BOUNDARY rather than the direction.
 
-    The server's message says "bigger than 512", so 512 itself is legal. A
-    rule written as `>=` would refuse a description SharePoint accepts --
-    stronger than the surface actually is, which AGENTS.md forbids as
-    plainly as it forbids being too weak.
+    The server's message says "bigger than 512", so 512 itself is legal
+    against the raw SharePoint ceiling. This test only pins
+    `GROUP_DESCRIPTION_TOO_LONG`, the code that measures against that ceiling;
+    a 512-character description leaves no room for the marker and does fire
+    `GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER` deliberately, which is a
+    different code checked elsewhere.
     """
     none_of(
         _group_description_findings("x" * 512),

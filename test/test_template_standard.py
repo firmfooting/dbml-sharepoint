@@ -1858,8 +1858,8 @@ def test_no_shipped_group_description_eats_into_the_marker_reserve() -> None:
                 offenders.append(
                     f"{template}/{grp.name}: {len(grp.description)} > {budget}",
                 )
-    assert templates, "no templates discovered — the sweep visited nothing"
-    assert groups_checked, "no groups discovered — the sweep visited nothing"
+    assert templates, "no templates discovered, the sweep visited nothing"
+    assert groups_checked, "no groups discovered, the sweep visited nothing"
     assert not offenders, "group descriptions over budget:\n" + "\n".join(offenders)
 
 
