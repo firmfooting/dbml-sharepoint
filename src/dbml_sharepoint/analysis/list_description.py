@@ -24,8 +24,12 @@ from dbml_sharepoint.model.parser import Schema
 # THIS TOOL'S BUDGET, NOT A SHAREPOINT LIMIT, and the difference is now
 # measured rather than assumed. `test/manual/list-description-probe.js` wrote
 # 1018 characters on 2026-08-14 and read all of them back intact, so the
-# platform accepts a good deal more than this. Documentation that called 255 a
-# SharePoint limit was wrong and has been corrected.
+# platform accepts AT LEAST 1018. Documentation that called 255 a SharePoint
+# limit was wrong and has been corrected.
+#
+# That is a lower bound, not the absence of a limit. One length was sent and
+# no ceiling was searched for; a group Description, measured the same week,
+# refuses over 512.
 #
 # Kept at 255 anyway. One measurement establishes that a long Description
 # survives a REST write and read; it says nothing about whether the list

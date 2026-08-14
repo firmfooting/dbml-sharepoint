@@ -69,8 +69,12 @@
  *     L4      an ampersand SURVIVES. It does not come back `&amp;`.
  *     L5      a run of two spaces SURVIVES, uncollapsed.
  *     L6      a bare LF SURVIVES, unrewritten.
- *     L7      1018 characters survived intact. Lists have NO ceiling
- *             comparable to the 512 a group Description refuses at.
+ *     L7      1018 characters survived intact, so the accepted length is
+ *             AT LEAST 1018. That is a lower bound and nothing more: the
+ *             probe sent one length and no ceiling was searched for. A
+ *             group Description refuses over 512, so the two surfaces
+ *             differ — but "lists have no limit" is not something this
+ *             measured and must not be written down as though it did.
  *     L8      empty accepted.
  *     L9      the composed note-plus-marker shape survives.
  *
@@ -89,14 +93,9 @@
  * follow-through.
  *
  * The contrast with the group surface is the reason this was measured
- * separately rather than inferred: same-named property, different type, a
- * hard 512-character ceiling on one and none on the other. Transferring
- * either answer would have been wrong in both directions.
- *
- * The contrast with the group surface is the point: same-named property,
- * different type, and a 512-character ceiling on one and none on the other.
- * Transferring either result to the other would have been wrong in both
- * directions.
+ * separately rather than inferred: same-named property, different type, and
+ * a group refuses at 512 where a list took 1018. Transferring either answer
+ * would have been wrong in both directions.
  *
  * HOW TO RUN
  *   1. Open the target site as somebody who can create a list.
@@ -306,7 +305,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision ca64b634 — quote this when reporting results.');
+  log('INFO', 'probe revision 10651ffa — quote this when reporting results.');
 
   // Run-unique for the reason the group probe learned in review: a fixed
   // name plus a pre-emptive delete destroys somebody else's list on the one
@@ -474,14 +473,35 @@
           : (got === MERGED
             ? 'the Title changed AND the omitted Description survived, so MERGE is partial'
             : `the Title changed but the Description became ${JSON.stringify(got)} — an omitted field is NOT preserved`));
-      // Put the title back so later questions read the name they expect.
-      const dr = await getDigest();
-      await spPost(
-        `web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`,
-        { __metadata: { type: 'SP.List' }, Title: LIST },
-        dr,
-        { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
-      );
+    }
+
+    // RESTORE UNCONDITIONALLY, AND PROVE IT, before anything else measures.
+    //
+    // An earlier version restored only on the path where the read-back
+    // succeeded. If that read was throttled, the list stayed renamed, and
+    // every later question addressed a title that no longer existed: their
+    // MERGEs would 404, `isRefusal` would call a 404 a refusal, and L4-L10
+    // would report FAIL — definitive-looking verdicts about SharePoint,
+    // caused entirely by the probe's own plumbing. That is the worst thing
+    // a probe can do, and it is what this branch now prevents.
+    //
+    // The check is "does LIST answer again", which is correct whether or not
+    // the rename landed: if it never took, the restoring MERGE 404s
+    // harmlessly and LIST reads back anyway.
+    const dr = await getDigest();
+    await spPost(
+      `web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`,
+      { __metadata: { type: 'SP.List' }, Title: LIST },
+      dr,
+      { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+    );
+    const restored = await readList();
+    if (readFailed(restored)) {
+      record('BOOT', 'restore the probe list\'s title after L3',
+        `NOT ESTABLISHED (HTTP ${restored.status})`,
+        `the list did not answer to '${LIST}' again after L3's rename, so every question below would address a title that may not exist and report a plumbing failure as a SharePoint verdict. Stopping instead. Look for a list named '${RENAMED}' and delete it by hand.`);
+      report();
+      return;
     }
   }
 
@@ -500,8 +520,14 @@
       : (typeof got === 'string' && got.includes('\r\n') ? 'FAIL (rewritten to CRLF)' : 'FAIL')));
 
   // ---- L7: length, OBSERVED ---------------------------------------------
+  // PASS here means "at least this many are accepted", and the evidence says
+  // so in as many words. A reader who sees a bare PASS against a question
+  // about length will remember it as "no limit", which is not what one
+  // length establishes -- and a later decision to raise DESCRIPTION_LIMIT
+  // would then rest on a ceiling nobody looked for.
   await mergeAndRead('L7', 'What comes back when 1000+ characters go out?', LONG,
-    (got) => (got === LONG ? 'PASS'
+    (got) => (got === LONG
+      ? `PASS (lower bound only: ${LONG.length} accepted, no ceiling searched for)`
       : (typeof got === 'string' ? `OBSERVED (came back ${got.length} of ${LONG.length})` : 'FAIL')));
 
   // ---- L8/L9 -------------------------------------------------------------

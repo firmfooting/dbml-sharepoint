@@ -97,11 +97,15 @@ error.
 **255 is this tool's budget, not a SharePoint limit.** It is what the
 emitter has always applied, and the same 2026-08-14 probe that measured
 the round trip wrote **1018 characters and read all of them back
-intact** — so SharePoint accepts a good deal more. The budget is kept
-deliberately rather than raised on the strength of one measurement:
-whether a longer Description survives the *list settings UI*, the search
+intact** — so SharePoint accepts at least that many. That is a lower
+bound rather than the absence of a limit: one length was sent, and no
+ceiling was searched for.
+
+The budget is kept deliberately rather than raised on the strength of it.
+Whether a longer Description survives the *list settings UI*, the search
 index and the reporting pack unchanged is a separate question nobody has
-asked. Raising it is tracked, not assumed.
+asked, and all three read that string. Raising it is tracked, not
+assumed.
 
 **The note is refused; the marker is never cut.** This is the whole point
 of the rule and it is worth being explicit about why, because truncating
