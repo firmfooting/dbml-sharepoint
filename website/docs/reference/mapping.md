@@ -1400,14 +1400,34 @@ refused on every custom level the mapping declares. That is why this change
 is breaking. The remedy is the same as for a group: rename the level in your
 mapping so the deploy creates its own under the declared name.
 
-A level refusal does not mean the site is untouched. The refused level
-itself is left exactly as it was, and nothing is written to it, precisely as
-the error message says. **No later phase runs**, so no lists are created, no
-ACLs are assigned and no seed rows are written. The permission-level loop
-runs before the group loop in the same phase, though, and a level's refusal
-does not stop that loop, so other levels and every group the mapping
-declares may already have been created or reconciled before the run stops on
-the accumulated errors.
+No security object in this phase is written until every declared
+permission level and site group has been surveyed. The phase collects a
+create-or-adopt decision for each, then gates once, before any decision is
+applied, on every survey having succeeded with nothing refused. A level
+refusal the survey finds therefore leaves this phase's site state
+untouched: no other level and no group from this run is created or
+reconciled either. **No later phase runs**, so no lists are created, no
+ACLs are assigned and no seed rows are written.
+
+That guarantee covers the survey, not the whole phase. Three things can
+still be found only once the apply itself runs: a group owner correction
+that does not take effect, a read-back divergence where the tenant did not
+store what was written, and a MERGE failure. Each of those can happen after
+an earlier object in the same run has already been created or reconciled,
+so a failure found there does not leave the site untouched the way a
+survey-time refusal does. The group-adoption gate below has the fuller
+account, since the owner correction is a group-only concern.
+
+Before any of this writes, the run logs a decision table to the
+transcript: every level and group it decided to create or adopt, one line
+each, right after both surveys finish and before the apply loop starts. A
+refusal still prints its own error line where the survey found it, so a
+clean run and a refusing run read the same transcript shape apart from
+that line.
+
+This buys atomicity of decision, not of effect. SharePoint has no
+transaction: the site can still change between the survey and the apply,
+and an apply can still fail partway through even when every survey passed.
 
 A matching check runs at build time. A declared description that leaves no
 room for the marker is refused before any deploy runs
@@ -1585,6 +1605,23 @@ Two consequences worth knowing before you deploy a second family to a site:
   Rename the group in your mapping if a site needs that authority fenced per
   family.
 
+**Known limitation: two tabs, one operator.** Two simultaneous deploys naming
+different `--enterprise-reader` addresses no longer both leave their account
+enrolled: a run that does not reach its end now removes exactly the reader
+membership it added (#213). A second form of the same issue is not fixed. `dbml
+List Administrators` uses run-scoped operator self-enrolment: the first paste to
+reach that phase adds the operator and removes them again on the way out,
+whether it succeeds or aborts. A second paste of the same script, running at
+nearly the same time, finds the operator already a member, leaves that
+membership alone, and so never learns it needs protecting. If the first run
+exits before the second run's later phases finish, the operator loses `dbml List
+Administrators`' authority mid-run, removed by a cleanup the second run never
+asked for. Fixing this needs an advisory claim on the membership, something that
+tells the other run not to remove it yet, and nothing has measured whether two
+near-simultaneous MERGE calls to the same group description even serialise on a
+live tenant. Until that is measured, no guard is built on it: avoid pasting the
+same mapping's deploy script into two tabs at once.
+
 **Why the `dbml` prefix.** These two are the only groups the tool names for
 itself rather than for your organisation, so they carry the tool's name. That
 is deliberate: an unprefixed `List Administrators` is exactly the name a site
@@ -1615,14 +1652,26 @@ already holds members is refused. A same-named group that carries another
 family's marker and holds members is refused too, because the marker records
 which declaration created the group, not merely that this tool did.
 
-A refusal is narrow. The refused group itself is left exactly as it was;
-nothing is written to it. **No later phase runs**, so no lists are created,
-no ACLs are assigned and no seed rows are written. The mapping's custom
-permission levels, though, are attempted before the group loop even starts,
-and a level's own refusal does not stop that loop. Sibling groups, and any
-levels that were successfully created or adopted, may already have been
-written before the run stops on the one that fails, so a refusal does not
-mean the site is untouched, only that this group is.
+A refusal found here is narrow in the same way a level's is, and for the
+same reason: every declared permission level and site group is surveyed
+before any of them is applied, so a refusal the survey finds stops the
+whole phase before it writes anything. The refused group itself is left
+exactly as it was; nothing is written to it, and no sibling group or level
+from this run is created or reconciled either. **No later phase runs**, so
+no lists are created, no ACLs are assigned and no seed rows are written.
+
+That does not extend to the apply itself. Whether an automated owner correction,
+the CSOM `ProcessQuery` write, actually takes effect is unsurveyable by
+construction: it can only be known once that write has been attempted and read
+back, which the survey never does. On a create decision the whole owner check
+waits for the apply in the first place, since the group does not exist yet for
+the survey to read its owner at all. If the correction does not take effect, or
+a read-back afterward shows the tenant stored something other than what was
+sent, or a MERGE call fails, the object that failure is reported against was
+already written, and so may other objects surveyed and applied earlier in the
+same run. See the permission-level section above for the decision table this
+phase logs before it applies anything, and for the same atomicity-of-decision
+limit.
 
 Whether an existing site hits that refusal depends on the group. `dbml List
 Administrators` is normally empty between runs, since the deploy enrols the
