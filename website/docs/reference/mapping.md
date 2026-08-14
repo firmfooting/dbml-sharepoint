@@ -1540,8 +1540,11 @@ Two consequences worth knowing before you deploy a second family to a site:
 **Why the `dbml` prefix.** These two are the only groups the tool names for
 itself rather than for your organisation, so they carry the tool's name. That
 is deliberate: an unprefixed `List Administrators` is exactly the name a site
-administrator may already have used, and the deploy adopts a group it finds by
-name. The prefix makes that collision unlikely rather than plausible.
+administrator may already have used. The prefix makes that collision
+unlikely, and the group-adoption gate described below narrows the remaining
+risk: a same-named group without the tool's marker is adopted only if it
+holds no members. An administrator's own group, already carrying its
+members, is refused rather than handed Full Control.
 
 **Upgrading from a family-prefixed deployment.** If you deployed an earlier
 version, the site holds a per-family pair such as `RR Enterprise Readers` and
@@ -1550,6 +1553,54 @@ creates the two `dbml`-prefixed groups, and the ACL phase removes the old
 groups' grants from the managed lists, but the empty group objects remain.
 Delete them by hand once you have re-enrolled the reader account into
 `dbml Enterprise Readers`.
+
+**The group-adoption gate.** Every group this tool writes now carries
+`Provisioned by dbml-sharepoint` in its description: the two site-wide groups
+carry a marker naming no family, and every other group carries one naming
+its own, such as `Provisioned by dbml-sharepoint from risk-register.` The
+marker is how a later run recognises a group this tool created.
+
+On a later deploy, a same-named group that carries the marker is adopted as
+before. A same-named group that carries no marker and holds no members is
+adopted and stamped with one. A same-named group that carries no marker and
+already holds members is refused. A same-named group that carries another
+family's marker and holds members is refused too, because the marker records
+which declaration created the group, not merely that this tool did.
+
+A refusal is narrow. The refused group itself is left exactly as it was;
+nothing is written to it. **No later phase runs**, so no lists are created,
+no ACLs are assigned and no seed rows are written. The mapping's custom
+permission levels, though, are created or reconciled unconditionally before
+the group loop even starts, and other groups declared in the same phase may
+already have been created or reconciled before the run stops on the one that
+fails, so a refusal does not mean the site is untouched, only that this
+group is.
+
+Whether an existing site hits that refusal depends on the group. `dbml List
+Administrators` is normally empty between runs, since the deploy enrols the
+operator only for the run's duration and removes them again on the way out,
+so a redeploy normally adopts and stamps it without incident. `dbml
+Enterprise Readers` behaves differently: once a reader account is enrolled,
+that membership is permanent, so a site that has already enrolled one is
+refused on its first redeploy under this release, exactly as a populated
+per-family group is. A site that has never deployed either group is
+unaffected, because both are created fresh and stamped.
+
+A per-family group on a site deployed before this release is in the same
+position as an already-enrolled `dbml Enterprise Readers`: it is populated
+and carries no marker, so the first redeploy after upgrading stops on it.
+The remedy is to empty the group before redeploying, or to rename the
+pre-existing group so the deploy creates its own under the declared name.
+
+For `dbml Enterprise Readers` specifically, emptying it removes the reader
+account's access, and renaming it leaves that account enrolled in a group
+whose grants the next `reconcile: exact` ACL pass strips. Neither remedy is
+reversible by an ordinary redeploy, because the reader-enrolment phase that
+re-adds the account is only emitted when the bundle is built with
+`--enterprise-reader`. After emptying the group, rebuild with
+`--enterprise-reader <account>` so that phase re-enrols the account into the
+now-empty, now-marked group through its own guarded checks, described above
+under "A direct share cannot be used."
 
 ## `demo_items`
 

@@ -4,7 +4,7 @@ from typing import Any, ClassVar
 
 from _builders import ID_PK, TITLE, table
 from _packs import blocks, entities, entity, pack, with_tail, write_dbml, write_mapping
-from _paths import FIXTURES
+from _paths import FIXTURES, SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
@@ -679,6 +679,53 @@ def test_schema_json_has_permission_keys() -> None:
     # key off (#166 item 5) -- this fixture declares levels, groups AND
     # assignments, so it must be True regardless of which one drove it.
     assert schema_json["requires_manage_permissions"] is True
+
+
+def _schema_json_for_risk_register() -> dict[str, Any]:
+    """Build SCHEMA for the shipped risk-register family, whose mapping
+    declares all three group shapes: a family-owned group and both
+    tool-owned ones."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    root = SOLUTION_TEMPLATES / "risk-register"
+    schema = parse_dbml(root / "10-design" / "schema.dbml")
+    bundle = load_mapping(root / "20-configure" / "mapping.yaml")
+    return build_schema_json(schema, bundle, "default")
+
+
+def test_every_emitted_group_description_carries_the_marker() -> None:
+    """#211: nothing on a group recorded that this tool made it."""
+    from dbml_sharepoint.analysis.group_description import MARKER_PREFIX
+
+    schema_json = _schema_json_for_risk_register()
+    groups = schema_json["groups"]
+    assert groups, "fixture declares no groups; the assertion would be vacuous"
+    for grp in groups:
+        assert MARKER_PREFIX in grp["description"], grp["name"]
+
+
+def test_the_shared_group_marker_names_no_family() -> None:
+    schema_json = _schema_json_for_risk_register()
+    shared = next(g for g in schema_json["groups"] if g["name"] == "dbml Enterprise Readers")
+    assert shared["description"].endswith("Provisioned by dbml-sharepoint.")
+
+
+def test_a_family_group_marker_names_its_family() -> None:
+    schema_json = _schema_json_for_risk_register()
+    owned = next(g for g in schema_json["groups"] if g["name"] == "RR Risk Managers")
+    assert owned["description"].endswith(
+        "Provisioned by dbml-sharepoint from risk-register.",
+    )
+
+
+def test_each_group_carries_its_own_expected_marker() -> None:
+    """The deploy gate compares this per group, not the shared prefix every
+    family's marker happens to start with."""
+    from dbml_sharepoint.analysis.group_description import marker_for_group
+
+    schema_json = _schema_json_for_risk_register()
+    for grp in schema_json["groups"]:
+        assert grp["expected_marker"] == marker_for_group(grp["name"], "risk-register")
 
 
 def test_deploy_js_phase1_reliability_hardening() -> None:

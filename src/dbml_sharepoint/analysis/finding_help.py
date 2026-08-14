@@ -488,6 +488,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "`SP.Group.Description` is a different surface and was measured on "
         "its own."
     ),
+    FindingCode.GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER: (
+        "A `groups:` entry's description leaves no room for the provenance "
+        "marker appended to it. The deploy stamps every group it writes with "
+        "`Provisioned by dbml-sharepoint`, and the adoption gate refuses to "
+        "adopt a group whose description does not carry it, so a truncated "
+        "marker would make the tool refuse a group it created itself. "
+        "Shorten the description to the budget named in the finding."
+    ),
     FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP: (
         "A group declares both `enroll_enterprise_reader` and "
         "`allow_members_edit_membership: true`. The security phase applies "

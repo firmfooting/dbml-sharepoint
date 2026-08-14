@@ -34,6 +34,7 @@ import pytest
 from _paths import SOLUTION_TEMPLATES
 
 from dbml_sharepoint.analysis.conditions import normalise
+from dbml_sharepoint.analysis.group_description import description_budget
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
@@ -1822,6 +1823,44 @@ def test_no_shipped_note_eats_into_the_marker_growth_reserve(template: str) -> N
             f"marker, under the {MARKER_GROWTH_RESERVE} reserved for the marker to "
             f"grow into. Shorten it by {MARKER_GROWTH_RESERVE - spare}."
         )
+
+
+def test_no_shipped_group_description_eats_into_the_marker_reserve() -> None:
+    """One marker change must not force a re-edit of the whole catalogue.
+
+    The group-provenance mirror of `test_no_shipped_note_eats_into_the_marker_growth_reserve`
+    above: `description_budget` already reserves `GROUP_MARKER_GROWTH_RESERVE`
+    off the top, so a declared description that fits here still fits after the
+    marker grows by that much. Swept over the whole shipped catalogue rather
+    than left to review, because a description over budget makes
+    `GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER` fire at build time and the family
+    stops building.
+
+    `SHARED_GROUPS` is deliberately not used here: importing the very value
+    this test would otherwise check against verifies nothing, so each
+    family's own declared groups are read straight off its mapping.
+
+    A sweep over an empty catalogue would pass on `not offenders` alone with
+    nothing checked, so the family and group counts are asserted non-zero
+    too.
+    """
+    templates = _all_templates()
+    offenders: list[str] = []
+    groups_checked = 0
+    for template in templates:
+        loaded = _load(template)
+        family = family_for(loaded.schema)
+        assert loaded.mapping.permissions is not None
+        for grp in loaded.mapping.permissions.groups:
+            groups_checked += 1
+            budget = description_budget(grp.name, family)
+            if len(grp.description) > budget:
+                offenders.append(
+                    f"{template}/{grp.name}: {len(grp.description)} > {budget}",
+                )
+    assert templates, "no templates discovered, the sweep visited nothing"
+    assert groups_checked, "no groups discovered, the sweep visited nothing"
+    assert not offenders, "group descriptions over budget:\n" + "\n".join(offenders)
 
 
 def test_no_two_templates_declare_the_same_entity_name() -> None:
