@@ -1540,8 +1540,11 @@ Two consequences worth knowing before you deploy a second family to a site:
 **Why the `dbml` prefix.** These two are the only groups the tool names for
 itself rather than for your organisation, so they carry the tool's name. That
 is deliberate: an unprefixed `List Administrators` is exactly the name a site
-administrator may already have used, and the deploy adopts a group it finds by
-name. The prefix makes that collision unlikely rather than plausible.
+administrator may already have used. The prefix makes that collision
+unlikely, and the group-adoption gate described below now closes it outright:
+a same-named group without the tool's marker is adopted only if it holds no
+members. An administrator's own group, already carrying its members, is
+refused rather than handed Full Control.
 
 **Upgrading from a family-prefixed deployment.** If you deployed an earlier
 version, the site holds a per-family pair such as `RR Enterprise Readers` and
@@ -1550,6 +1553,25 @@ creates the two `dbml`-prefixed groups, and the ACL phase removes the old
 groups' grants from the managed lists, but the empty group objects remain.
 Delete them by hand once you have re-enrolled the reader account into
 `dbml Enterprise Readers`.
+
+**The group-adoption gate.** Every group this tool writes now carries
+`Provisioned by dbml-sharepoint` in its description: the two site-wide groups
+carry a marker naming no family, and every other group carries one naming
+its own, such as `Provisioned by dbml-sharepoint from risk-register.`
+
+On a later deploy, a same-named group that carries the marker is adopted as
+before. A same-named group that carries no marker and holds no members is
+adopted and stamped with one. A same-named group that carries no marker and
+already holds members is refused: the deploy stops before making any change
+on that site.
+
+The two site-wide groups are unaffected by this on any site already running
+`dbml`-prefixed names, because #210 renamed them and every site creates them
+fresh under that name. A per-family group is a different matter on a site
+deployed before this release: it is populated and carries no marker, so the
+first redeploy after upgrading stops on it. The remedy is to empty the group
+before redeploying, or to rename the pre-existing group so the deploy creates
+its own under the declared name.
 
 ## `demo_items`
 

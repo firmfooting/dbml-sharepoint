@@ -317,6 +317,13 @@ every shipped family declares them identically and reconciles the same
 group object, not one per family. Every list uses `reconcile: exact`:
 undeclared permission grants are removed on deploy and redeploy.
 
+That empty-by-default guarantee is now enforced, not assumed: every group
+the deploy writes carries a provenance marker in its Description, and a
+same-named group without that marker is only adopted if it holds no members.
+See [the group-adoption gate](../website/docs/reference/mapping.md#the-two-site-wide-groups)
+for what that means when redeploying to a site provisioned before this was
+added.
+
 ### Hardening and drift detection
 
 Every template opts into the deployer's UI hardening: **all deployed
