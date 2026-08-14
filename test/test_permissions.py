@@ -46,3 +46,11 @@ def test_built_in_levels_includes_full_control() -> None:
     assert "Full Control" in BUILT_IN_LEVELS
     assert "Contribute" in BUILT_IN_LEVELS
     assert "Read" in BUILT_IN_LEVELS
+
+
+def test_group_description_ceiling_lives_in_limits() -> None:
+    """The ceiling has one owner, per #167. permissions.py must not redeclare it."""
+    from dbml_sharepoint.analysis import limits, permissions
+
+    assert limits.MAX_GROUP_DESCRIPTION == 512
+    assert not hasattr(permissions, "GROUP_DESCRIPTION_MAX")

@@ -3,12 +3,12 @@
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
 from dbml_sharepoint.analysis.permissions import (
     ASSIGNABLE_BUILT_IN_LEVELS,
     BASE_PERMISSIONS,
     BUILT_IN_LEVELS,
     DERIVED_BUILT_IN_LEVELS,
-    GROUP_DESCRIPTION_MAX,
 )
 from dbml_sharepoint.analysis.validator import (
     _ASSOCIATED_GROUP_ALIASES,
@@ -188,7 +188,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             # The server refuses a longer one with HTTP 500, in phase 1.2 --
             # after lists may already exist. Caught here so an over-long
             # description is a build error rather than a half-provisioned
-            # site. See permissions.GROUP_DESCRIPTION_MAX for the live
+            # site. See limits.MAX_GROUP_DESCRIPTION for the live
             # measurement behind the number.
             # MEASURED 2026-08-13/14, two runs: SharePoint accepts this pair
             # with HTTP 200 and then stores AutoAccept as FALSE, because a
@@ -210,12 +210,12 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
 
-            if len(grp.description) > GROUP_DESCRIPTION_MAX:
+            if len(grp.description) > MAX_GROUP_DESCRIPTION:
                 findings.append(Finding(
                     FindingCode.GROUP_DESCRIPTION_TOO_LONG,
                     f"groups[{grp.name!r}]: description is "
                     f"{len(grp.description)} characters; SharePoint refuses "
-                    f"anything over {GROUP_DESCRIPTION_MAX} and does so "
+                    f"anything over {MAX_GROUP_DESCRIPTION} and does so "
                     f"part-way through the deploy. Shorten it.",
                     location=_GROUPS,
                 ))
