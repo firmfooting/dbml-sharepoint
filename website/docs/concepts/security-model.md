@@ -71,7 +71,7 @@ A reviewer grepping the generated scripts for `http://` or `https://` will
 find exactly two classes of hit, neither of them a request:
 
 - `http://schemas.microsoft.com/sharepoint/clientquery/2009` in the CSOM
-  request body — an XML namespace, not a network destination.
+  request body (an XML namespace, not a network destination).
 - documentation links in comments, such as the retention-policy reference in
   `rollback.js.txt`. They are never fetched; nothing reads a comment.
 
@@ -81,8 +81,8 @@ There are no calls to Microsoft Graph, PnP services, package registries,
 telemetry or analytics endpoints. There are no third-party hosts and no
 dynamic script imports, `eval`, remote modules or code downloads. This
 inventory was derived from `src/dbml_sharepoint/templates/` on 2026-07-30
-and re-derived, independently, on 2026-08-11 — same seven families, no
-drift; `test/test_template_lint.py`'s endpoint-inventory tests pin this
+and re-derived, independently, on 2026-08-11 (same seven families, no
+drift); `test/test_template_lint.py`'s endpoint-inventory tests pin this
 going forward. The source of truth remains the generated script being
 reviewed for a particular release.
 
@@ -120,7 +120,7 @@ authority is worth stating rather than summarising. It targets only the lists
 this schema declares at this site, and reaching a delete requires the operator
 to type the site's leaf path at a first prompt. Within that scope it will:
 
-- **Recycle list items**, never permanently delete them — every row it removes
+- **Recycle list items**, never permanently delete them: every row it removes
   is restorable from the site recycle bin.
 - **Delete a non-empty list** whose items are not all `[DEMO]`-marked, but
   only after the operator types `DELETE NON-EMPTY` at a second prompt that is

@@ -13,7 +13,7 @@ each. Everything after them is the ordinary ownership and cadence material.
 
 **The objection, in the room:** *"You only wrote down the bad days."*
 
-It is a good objection, and if it lands the register is worthless — worse than
+It is a good objection, and if it lands the register is worthless, worse than
 worthless, because you will have spent political capital producing something
 that made you look partisan rather than organised. It is also the objection
 you can prepare for completely, and almost nobody does.
@@ -25,14 +25,14 @@ No denominator anywhere.
 
 **Three things that answer it:**
 
-- **Decide what you log, in advance, by category — not by how annoyed you
+- **Decide what you log, in advance, by category, not by how annoyed you
   were.** Write it down: *"we log every access request that misses its
   target, every unnotified outage, and every request closed without contact."*
   Then log all of them, including the ones that were resolved politely the
   same afternoon. The ordinary rows are not filler; they are what proves the
   bad rows were not cherry-picked.
 - **Record the denominator.** *"Fourteen failures"* invites the answer *"out
-  of how many?"* — and if the honest answer is fourteen out of two thousand,
+  of how many?"* If the honest answer is fourteen out of two thousand,
   you should know that before the meeting rather than during it. Capture the
   period's total request volume from the provider's own reporting and put it
   beside your figures. If their volume reporting is itself unreliable, that is
@@ -47,7 +47,7 @@ get acted on. Registers that read as the latter get argued with.
 
 ## 2. Record conduct and events, never character
 
-Name the **role**, the **team** or the **forum**, never the individual —
+Name the **role**, the **team** or the **forum**, never the individual,
 in `Raised With`, in `Contacted Role` and in every free-text box.
 
 Two reasons, and the second is the one people forget:
@@ -95,8 +95,8 @@ evidence. Use them:
 - Log the follow-up every time you chase.
 - Escalate deliberately, one rung at a time, and record each rung.
 
-An event marked *Deliberately not raised* is legitimate — sometimes it is not
-worth the friction — but a register where most rows carry it is telling you
+An event marked *Deliberately not raised* is legitimate (sometimes it is not
+worth the friction) but a register where most rows carry it is telling you
 something about your own practice, not the provider's.
 
 ## 5. The two hand-maintained values
@@ -106,7 +106,7 @@ SharePoint cannot roll a child value up to a parent, and nothing in the
 deployer invents one, so this is a value a person keeps up to date.
 
 It is kept because the chase worklist has to show *when did we last chase
-this* beside the row it belongs to — that is the question that decides what to
+this* beside the row it belongs to. That is the question that decides what to
 do today, and a derived-only answer that lived on another list would not be
 visible here.
 
@@ -114,7 +114,7 @@ A contributor can set it **once**, on the form that creates the event, and
 never again: `SE Log Only` withholds Edit, so a saved event is fixed. Every
 chase after that one is therefore a curator's to carry across, done as part of
 the weekly pass below. That is the whole reason the field is on the New form
-at all — a value they could not set at creation is a value they could never
+at all: a value they could not set at creation is a value they could never
 set.
 
 **The drift is bounded and visible.** The `FollowUp` **By event** view shows
@@ -143,8 +143,8 @@ supporting events under the theme they belong to.
 | Contributors | Named staff | Log events and follow-ups. Cannot edit after saving, which is what makes the record worth having. |
 | List administrators | Empty by default | Schema changes and redeploys, per run. |
 
-Contributors deliberately cannot see `ServiceIssue`. Escalation strategy —
-what you intend to raise, at what level, and when — is not something everyone
+Contributors deliberately cannot see `ServiceIssue`. Escalation strategy
+(what you intend to raise, at what level, and when) is not something everyone
 who can log an event should be reading, and a leaked one is worse than no
 register at all.
 
@@ -153,8 +153,8 @@ register at all.
 | When | What |
 | --- | --- |
 | Weekly | Curator works **Needs review**: accept, reject as *Not substantiated*, or send back for detail. A queue worked weekly stays honest; one worked before a review does not. |
-| Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row, and `Last Followed Up` on the event is carried across in the same pass — a contributor could only have set it when the event was created, so every chase after that one is this pass's to record. |
-| Weekly | Curator works **Awaiting a response** on `FollowUp` and records what came back — *What came back*, *Response Date*, the summary — on the row that did the asking. A contributor sets them only if the answer had already arrived when they saved the row; `SE Log Only` withholds Edit, so anything that came back afterwards is this pass's to record. A row left here is either still unanswered or an answer nobody recorded, and only this pass tells the two apart. The same hand-off applies to `Resolved Date` and `Outcome for us` on an event that has since been resolved. |
+| Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row, and `Last Followed Up` on the event is carried across in the same pass: a contributor could only have set it when the event was created, so every chase after that one is this pass's to record. |
+| Weekly | Curator works **Awaiting a response** on `FollowUp` and records what came back (*What came back*, *Response Date*, the summary) on the row that did the asking. A contributor sets them only if the answer had already arrived when they saved the row; `SE Log Only` withholds Edit, so anything that came back afterwards is this pass's to record. A row left here is either still unanswered or an answer nobody recorded, and only this pass tells the two apart. The same hand-off applies to `Resolved Date` and `Outcome for us` on an event that has since been resolved. |
 | Monthly | Reconcile `Last Followed Up` against the **By event** view. Update `Event Count` on any theme being assembled. |
 | Monthly | Review whether the categories being logged still match what was agreed, and whether any team has stopped logging. |
 | Per service review | Assemble the pack from **Evidence pack** and **By failure mode**. Bring the denominator. |
@@ -171,7 +171,7 @@ delay stops being a delay and becomes a pattern of not responding; earlier
 than that you are escalating normal friction and will spend credibility you
 need later. **Set your own number, write it down, and tell the curators.** A
 threshold nobody agreed is a threshold that moves to suit whoever is annoyed
-this week — which is section 1's problem arriving by a different door.
+this week, which is section 1's problem arriving by a different door.
 
 Promotion is a curator judgement, not an automatic trigger. Several events
 that individually clear the bar may be one theme; one that does not clear it
@@ -192,10 +192,10 @@ may still belong to a theme worth raising.
   is Accepted or Escalated it shows **Part of theme**, which displays the
   theme's one-line title on a record every contributor can open. Contributors
   cannot open the themes list itself, and *Escalation Level* and *Raised
-  Date* are not shown to them — but assume the title line is. Keep the frank
+  Date* are not shown to them, but assume the title line is. Keep the frank
   assessment in **The pattern**, which stays on the themes list.
 - **A date earlier than the one it answers.** Three pairs cannot be refused
-  when the row is saved — the form can compare a date against today, but not
+  when the row is saved. The form can compare a date against today, but not
   against another date on the same row: *Response Date* against its
   *Follow-up Date*, a theme's *Response Date* against its *Raised Date*, and
   *Resolved Date* against *Occurred At*. Look for them in the monthly
@@ -221,7 +221,7 @@ institution.
 
 Close it when the arrangement ends, or when the service has been good enough
 for long enough that the logging costs more than it tells you. If the second
-happens, say so explicitly at a service review — *"we have kept this for four
+happens, say so explicitly at a service review: *"we have kept this for four
 quarters and there is nothing in it"* is a genuinely valuable finding, and it
 is one you can only make because you were logging the ordinary weeks as well
 as the bad ones.

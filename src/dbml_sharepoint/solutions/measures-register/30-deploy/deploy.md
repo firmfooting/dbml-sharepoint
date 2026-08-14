@@ -10,22 +10,22 @@ against the checklist below. Template-specific notes follow.
 ## Before you build
 
 - [ ] `MR_` prefix free on the target site.
-- [ ] You know who forms **MR Measure Custodians** (small — definitions
+- [ ] You know who forms **MR Measure Custodians** (small, definitions
       need guarding, not committees).
 - [ ] `MeasureArea` is free text, not an enum. Agree the handful of area
       names **before** loading the catalogue: "The catalogue" groups on
       this column, and "Quality", "quality" and "Quality & Safety" group as
       three areas.
 - [ ] Decide the review cadence you will actually run. The save rule ships
-      at **twelve months** — a review date further out than that is
+      at **twelve months**: a review date further out than that is
       refused, because a measure nobody re-tests within a year has quietly
       left the annual cull in `50-govern/governance.md`. Changing the
       cadence means changing `column_validation` in `mapping.yaml` before
       first deploy.
 - [ ] The header shows `Measure: <title>` on a saved row and `New measure`
       before the title is typed, updating live. This list has no calculated
-      columns, so the header trap that bites the rest of the theme — a
-      calculated column always resolves empty in a form header, silently —
+      columns, so the header trap that bites the rest of the theme (a
+      calculated column always resolves empty in a form header, silently)
       does not arise here. It still applies if you add one.
 
 ## Optional: the seeded demonstration build
@@ -46,9 +46,9 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt` first,
-then `demo-data.js.txt`, from the same bundle. It creates six rows — four Active
+then `demo-data.js.txt`, from the same bundle. It creates six rows (four Active
 measures across four areas and four forums, one Under development with no
-review date, and one Retired — enough that every declared view has content
+review date, and one Retired), enough that every declared view has content
 and every status colour renders.
 
 **Delete the demo rows before active use.** Every demo Title begins with
@@ -57,7 +57,7 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real measures.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `MR_Measure` exists and all five declared views appear: **The
       catalogue** (the default), **By forum**, **Definition reviews due**,
@@ -82,22 +82,22 @@ site that already holds real measures.
 - [ ] The New form shows four sections in order: **Name the measure**,
       **Define it**, **Report it**, **Govern it**. Each holds the fields
       named in `20-configure/formatting/measure-form-body.json`. There is
-      no **System** section — this list stamps nothing automatically, so
+      no **System** section. This list stamps nothing automatically, so
       shipping an empty heading would be worse than collapsing the beat.
 - [ ] `Definition`, `DataSource` and `ReportedTo` are **required** (the
-      form refuses a measure without them — deliberate).
+      form refuses a measure without them, deliberate).
 - [ ] Nothing on this form appears or disappears as you fill it in. That is
       correct: no column here is conditional on another, so no
       `form_visibility` is declared and none is deployed.
 - [ ] **The two save rules.** Set `Status` to **Active** and clear
-      `ReviewDate` — the save is refused, naming the review date. Then set
-      a review date **two years** out — refused again, with its own
+      `ReviewDate`: the save is refused, naming the review date. Then set
+      a review date **two years** out: refused again, with its own
       message about the annual cadence, because that rule reads only its
       own column and so keeps its own wording. Leave the date blank on an
       **Under development** measure and it saves: the list rule requires it
       of Active measures only.
 - [ ] **Load the current KPIs**: everything on today's dashboards and
-      committee packs goes in now — including (especially) the ones whose
+      committee packs goes in now, including (especially) the ones whose
       definitions turn out to be folklore when someone tries to write them
       down. Expect that step to be the most valuable meeting of the
       quarter.
@@ -105,7 +105,7 @@ site that already holds real measures.
 - [ ] Populate **MR Measure Custodians**; delete any test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible: it is
       drift, reverted and reported at the next re-paste.
 
 ## Redeploying
@@ -116,8 +116,8 @@ never touched.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group, shared with every
+other family deployed to the site, and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -127,9 +127,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -142,8 +142,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

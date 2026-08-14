@@ -36,7 +36,7 @@ deploy.js.txt is a reconciler, not an installer:
 - Declared mutable settings that drifted are **narrowly reconciled** and
   read back.
 - Objects whose immutable shape mismatches **fail closed** with a named
-  error — the script never migrates types or retargets lookups.
+  error: the script never migrates types or retargets lookups.
 - User content (undeclared views, rows, user-added columns) is never
   touched; `reconcile: exact` ACL mode is the single declared exception.
 
@@ -59,7 +59,7 @@ request count, DEBUG or not.
 
 ## Requirements
 
-Run from `.../_layouts/15/settings.aspx` (a classic page — the
+Run from `.../_layouts/15/settings.aspx` (a classic page, the
 wrong-site guard needs `_spPageContextInfo`), signed in as a Site Owner.
 The preflight verifies the effective permission bits it needs and aborts
 with a named finding if they are missing.

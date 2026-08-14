@@ -12,7 +12,7 @@ follow.
 
 - [ ] `CF_` prefix free on the target site.
 - [ ] Enums match your obligations (regulated sectors: your scheme may
-      prescribe outcome categories — align now). **`Status` and `Outcome`
+      prescribe outcome categories, align now). **`Status` and `Outcome`
       members are named inside deployed view filters, form visibility
       rules and the list save rule.** Renaming `Closed`, `Received` or
       `Responded` changes what the form shows and what it refuses, not
@@ -22,12 +22,12 @@ follow.
       deploy**.
 - [ ] The **SLA table in `50-govern/governance.md` is written down**
       before you paste. The two day-count bars are drawn against a fixed
-      scale — 10 days for acknowledgement, 30 for closure — chosen from
+      scale (10 days for acknowledgement, 30 for closure) chosen from
       that table's defaults. If your statutory timeframes differ, change
       the two `max:` values in `mapping.yaml` at the same time, or the
       bars will be reassuring about a breach.
 - [ ] You know who forms **CF Feedback Recorders** (front line) and
-      **CF Feedback Handlers** — this template grants ordinary site Members
+      **CF Feedback Handlers**. This template grants ordinary site Members
       nothing at all, so unlisted staff see nothing.
 - [ ] The header shows `Feedback: <title>` on a saved item and `New
       feedback` before the title is typed, updating live.
@@ -49,7 +49,7 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
-first, then `demo-data.js.txt`, from the same bundle. It creates six items —
+first, then `demo-data.js.txt`, from the same bundle. It creates six items:
 one per status and one per severity band, an unacknowledged complaint so
 *Triage* and *Unacknowledged* both fill, and two closed items inside the
 rolling thirty-day report window, one of them a compliment. Every title is
@@ -62,7 +62,7 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real feedback.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `CF_Feedback` exists; custom level **CF Record Only** exists.
 - [ ] All five declared views appear: **Open by handler** (the default),
@@ -75,13 +75,13 @@ site that already holds real feedback.
       day-counts and the outcome. Two things about the shipped
       replacement:
       - It is a **rolling thirty days**, not a calendar month, and the
-        title says so. CAML — the language SharePoint view filters are
-        written in — has no calendar-month predicate; `today-30` is what
+        title says so. CAML (the language SharePoint view filters are
+        written in) has no calendar-month predicate; `today-30` is what
         exists. On the first business day of a month the two answers
         differ, and someone reconciling a committee pack will notice.
       - It **averages both clocks** per feedback type. Each collapsed
         type shows a mean Days To Acknowledge and a mean Days To Close,
-        with an overall figure for the window — the acknowledgement mean
+        with an overall figure for the window, the acknowledgement mean
         especially, since it is the measure most organisations fail
         first. Means rather than sums: adding day-counts across
         complaints answers nothing. A **calendar**-month mean still needs
@@ -93,10 +93,10 @@ site that already holds real feedback.
 - [ ] Received `2026-07-01`, Acknowledged `2026-07-03`, Closed `2026-07-15`
       → **Days To Acknowledge = 2**, **Days To Close = 14**. Both draw as
       bars, and both take their **colour from Severity** rather than from
-      their own value — two days is green on a Standard item and red on a
+      their own value: two days is green on a Standard item and red on a
       Critical one, which is the point.
-- [ ] The New form shows five sections — **What was raised**, **Triage**,
-      **Response**, **Ownership**, **System** — each holding the fields
+- [ ] The New form shows five sections: **What was raised**, **Triage**,
+      **Response**, **Ownership**, **System**, each holding the fields
       named in `20-configure/formatting/feedback-form-body.json`.
       **System** holds only the two calculated day-counts, so on the New
       form it renders as a bare heading. That is cosmetic and expected.
@@ -114,9 +114,9 @@ site that already holds real feedback.
       empty, and set `Status` to **Closed** with **Outcome** or **Closed
       Date** empty. Both are refused; both show the same message naming
       both checks. Note that the field named in each refusal is on screen
-      when it fires — that is what the visibility rules above exist for.
+      when it fires. That is what the visibility rules above exist for.
 - [ ] Two things this register wants that are **not** enforced at save,
-      and cannot be — `50-govern/governance.md` says what carries them
+      and cannot be. `50-govern/governance.md` says what carries them
       instead:
       - `Learning` at closure. It is a rich-text column and SharePoint
         validation formulas cannot reference rich text at all.
@@ -128,7 +128,7 @@ site that already holds real feedback.
 - [ ] Populate both working groups; delete the test row (as Handler).
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## Redeploying
@@ -138,8 +138,8 @@ permissions are reconciled every run.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -149,9 +149,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -164,8 +164,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

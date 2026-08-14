@@ -1,23 +1,23 @@
 # Grants register
 
-*Theme: governance, risk & compliance — built for organisations that chase
+*Theme: governance, risk & compliance, built for organisations that chase
 funding (regional health, community services, education, research).*
 
-Every funding submission from preparation to outcome, and — the part
-everyone drops — every **post-award obligation** with its due date. Two
+Every funding submission from preparation to outcome, and (the part
+everyone drops) every **post-award obligation** with its due date. Two
 lists: `GR_Submission` (each application: funder, amount, outcome,
 agreement) and `GR_Acquittal` (linked reporting/acquittal obligations,
 each with a deadline and evidence).
 
 **The value case.** Organisations are good at the adrenaline phase
-(finding rounds, writing bids) and terrible at the obligations phase —
-the mid-term report due in 14 months is remembered by exactly nobody the
+(finding rounds, writing bids) and terrible at the obligations phase.
+The mid-term report due in 14 months is remembered by exactly nobody the
 week it's due. Missed acquittals damage the relationship that wins the
 *next* grant. This register keeps the submission pipeline visible and
 turns post-award obligations into a due-date view, loaded once from each
 funding agreement on the day it's signed.
 
-**Nine views deploy with the lists** — a pipeline, live grants, the funder
+**Nine views deploy with the lists**: a pipeline, live grants, the funder
 relationship file and a lost-bids shelf on one side; open obligations,
 *Due 90 days*, *Overdue*, *By grant* and a filed history on the other. An
 overdue obligation tints its whole row. A successful bid cannot be saved
@@ -36,4 +36,4 @@ view, every colour and the overdue wash working before you load a thing.
 | 5 | `50-govern/` | Bid/no-bid discipline, acquittal escalation, funder relations |
 
 **Customisation points:** outcome vocabulary; whether unsuccessful bids
-are analysed (governance says yes — they're purchased market intelligence).
+are analysed (governance says yes: they're purchased market intelligence).

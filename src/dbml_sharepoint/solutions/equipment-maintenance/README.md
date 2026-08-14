@@ -1,6 +1,6 @@
 # Equipment maintenance
 
-*Theme: operations & service — built for safety-critical maintenance
+*Theme: operations & service, built for safety-critical maintenance
 (biomedical equipment, test-and-tag, fire safety, plant).*
 
 What must be tested or serviced, how often, when it's next due, and the
@@ -10,16 +10,16 @@ service, test or calibration, linked, with result and evidence).
 
 **The value case.** The asset-register knows what you own; this register
 knows whether it's *safe to use*. In a health service the stakes are
-explicit — an out-of-test infusion pump is a clinical risk and an audit
-finding — but the pattern is universal: test-and-tag, fire equipment,
+explicit: an out-of-test infusion pump is a clinical risk and an audit
+finding, but the pattern is universal: test-and-tag, fire equipment,
 vehicles, plant. The *Overdue* view replaces the ring-binder and the
 contractor's memory, and every event carries its evidence link, which is
 precisely what accreditors and insurers ask to see.
 
-**What deploys with it:** seven views — *The schedule* (the equipment
+**What deploys with it:** seven views: *The schedule* (the equipment
 default), *Overdue*, *Due 60 days*, *Out of service*, and on the event
 list *Service history* (grouped under each item, the default, because
-that is what an accreditor reads), *Failures* and *Actions arising* — a
+that is what an accreditor reads), *Failures* and *Actions arising*; a
 due date that turns red once it passes and stays red until the item is
 retired, a save rule that refuses a failed or actioned event with no note,
 and demo data behind `--seed`.
@@ -44,4 +44,4 @@ test. `30-deploy/deploy.md` says so where you decide whether to seed.
 **Customisation points:** `EquipmentType` enum; frequency defaults per
 class live in governance (the schema stores each item's actual frequency).
 Note that `Status` and `Result` members are named in deployed view filters
-and the save rule — `30-deploy/deploy.md` lists the couplings.
+and the save rule: `30-deploy/deploy.md` lists the couplings.

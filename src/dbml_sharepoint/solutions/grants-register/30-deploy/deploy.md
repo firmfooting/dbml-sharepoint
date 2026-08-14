@@ -16,7 +16,7 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
       loses its colour.
 - [ ] **Decide your obligation horizon before first deploy.** The *Due 90
       days* view filters `DueDate ≤ today+90`. Change the `today+90` in
-      `mapping.yaml` now if your sweep runs on a different rhythm — a view
+      `mapping.yaml` now if your sweep runs on a different rhythm. A view
       title and a filter that disagree is worse than either.
 - [ ] You know who forms **GR Grants Coordinators**.
 - [ ] The headers show `Submission: <title>` and `Obligation: <title>` on
@@ -41,9 +41,9 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
 first, then `demo-data.js.txt`, from the same bundle. It creates six
-submissions — one per outcome, two of them under one funder so *By funder*
+submissions (one per outcome, two of them under one funder so *By funder*
 has a group with history in it, and two successful grants so *By grant* on
-the obligations list has more than one group — and five obligations, one
+the obligations list has more than one group) and five obligations, one
 per acquittal status, including the overdue one that drives the row wash.
 
 **Delete the demo rows before loading your real grants.** Every demo Title
@@ -51,7 +51,7 @@ begins with `[DEMO]`, so they are obvious in every view, they are matched
 by Title on re-paste (running it twice never duplicates), and `rollback.js.txt`
 treats a list whose rows are *all* demo-marked as demo-only content.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `GR_Submission` and `GR_Acquittal` exist (Submission first).
 - [ ] **Submission** shows four declared views: **Pipeline** (the
@@ -73,7 +73,7 @@ treats a list whose rows are *all* demo-marked as demo-only content.
 - [ ] **By grant** is grouped and collapsed on the Submission lookup. A
       static SharePoint view cannot filter to one parent record, so "the
       obligations of *this* grant" is one grouped view rather than one view
-      per grant — the real idiom, and it stays correct as grants are added.
+      per grant, the real idiom, and it stays correct as grants are added.
 - [ ] An **Overdue** row in *Open obligations* carries a tinted row
       background. That is this list's single row-level signal, reserved for
       its worst state; nothing else on either list competes with it.
@@ -92,7 +92,7 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       and the date appears; move to *Successful* and the other three
       appear. On a new obligation at *Upcoming*, **Submitted date** and
       **Evidence URL** are absent; move to *Submitted* and both appear.
-      Moving back hides them again while keeping whatever was typed —
+      Moving back hides them again while keeping whatever was typed.
       SharePoint has no mechanism to clear a hidden field.
 - [ ] `GR_Submission` carries **two** chained save rules sharing one
       message, because SharePoint gives a list a single validation formula.
@@ -108,14 +108,14 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       message; a list has only one to share.
 - [ ] Ordinary Members: read-only.
 - [ ] **Load the live estate**: every current grant as a Successful
-      submission, then — agreement in hand — every reporting/acquittal
+      submission, then (agreement in hand) every reporting/acquittal
       obligation it contains, with real due dates. This load is the
       whole point; expect it to surface at least one obligation nobody
       was tracking.
 - [ ] Populate **GR Grants Coordinators**; delete the test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## What is not enforced at save
@@ -128,7 +128,7 @@ enforceable, and the missing halves are all the same shape.
   columns. This tool would accept a rule against one; it has never been
   read back from a live tenant inside a SharePoint validation formula, and
   this repository does not ship a rule it has not seen work. Both stay
-  governance checks — and the *Live grants* and *Filed* views each show
+  governance checks, and the *Live grants* and *Filed* views each show
   the link column, so an empty one is visible where it matters.
 - **The debrief on a lost bid** lives in `ProjectSummary`, which is rich
   text, and a validation formula cannot reference a multi-line column at
@@ -142,12 +142,12 @@ enforceable, and the missing halves are all the same shape.
 
 Bump `schema_version`, rebuild, re-paste. Existing rows are untouched;
 drifted settings are reconciled, and declared views are reconciled to the
-declaration — a view retitled by hand comes back under its declared title.
+declaration. A view retitled by hand comes back under its declared title.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -157,9 +157,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -172,8 +172,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

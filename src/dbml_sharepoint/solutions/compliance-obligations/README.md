@@ -2,8 +2,8 @@
 
 *Theme: governance, risk & compliance.*
 
-Every obligation the organisation must meet — legislation, accreditation
-standards, funding agreements, formal commitments — with an owner, a
+Every obligation the organisation must meet (legislation, accreditation
+standards, funding agreements, formal commitments) with an owner, a
 compliance status, linked evidence and a review date. One list:
 `CO_Obligation`.
 
@@ -11,13 +11,13 @@ compliance status, linked evidence and a review date. One list:
 question: *how do you know you comply?* Organisations without an
 obligations register answer it fresh every cycle, from memory, expensively.
 With one, the answer is standing: obligation → owner → evidence → last
-assessed. It also ends the quieter failure — obligations nobody owns
+assessed. It also ends the quieter failure: obligations nobody owns
 (the funding-agreement clause everyone assumes someone else reads). For a
 health service this is the NSQHS/aged-care standards backbone; for anyone
-else, swap in your acts, standards and contracts — the discipline is
+else, swap in your acts, standards and contracts: the discipline is
 identical.
 
-**Five views deploy with the list**, including the accreditation pack —
+**Five views deploy with the list**, including the accreditation pack:
 *By source*, grouped by source type and then by the named instrument
 inside it. A status other than *Not assessed* cannot be saved without a
 date and a line of evidence, which is the whole assessment standard turned

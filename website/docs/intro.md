@@ -9,7 +9,7 @@ slug: /
 Turn a [DBML](https://dbml.dbdiagram.io/docs/) schema plus a YAML mapping
 into an **idempotent, fail-closed, browser-console `deploy.js.txt`** that
 provisions SharePoint Online lists, columns, lookups, views, indexes,
-permission levels, groups and ACLs — with **no tenant admin rights, no
+permission levels, groups and ACLs, with **no tenant admin rights, no
 premium licence, and nothing installed on the target**. If you can open
 the site and press F12, you can deploy.
 
@@ -32,7 +32,7 @@ schema.dbml + mapping.yaml + release.yaml
 
 ## Why
 
-- **Design as code.** Your list schema lives in DBML — reviewable,
+- **Design as code.** Your list schema lives in DBML: reviewable,
   diffable, renderable as an ERD on [dbdiagram.io](https://dbdiagram.io),
   with indexes declared beside their tables. Deployment and presentation
   mapping (prefixes, templates, versioning, views, formatting, ACLs) lives
@@ -57,14 +57,14 @@ schema.dbml + mapping.yaml + release.yaml
 
 ## Where to go next
 
-- [Getting started](getting-started.md) — install, build, first deploy.
-- [Concepts](concepts/architecture.md) — how the pipeline and the
+- [Getting started](getting-started.md): install, build, first deploy.
+- [Concepts](concepts/architecture.md): how the pipeline and the
   generated scripts work.
-- [Artifacts](artifacts/deploy.md) — the contract of every generated
+- [Artifacts](artifacts/deploy.md): the contract of every generated
   file.
-- [Reference](reference/mapping.md) — every DBML construct, mapping key
+- [Reference](reference/mapping.md): every DBML construct, mapping key
   and CLI flag.
-- [API reference](api/index.md) — generated from the source: Python
+- [API reference](api/index.md): generated from the source: Python
   modules and template contracts.
-- [Development](development/philosophy.md) — the engineering doctrine
+- [Development](development/philosophy.md): the engineering doctrine
   behind the project, and how to contribute safely.

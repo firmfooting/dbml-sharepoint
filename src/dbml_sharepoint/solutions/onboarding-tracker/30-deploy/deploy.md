@@ -14,7 +14,7 @@ follow.
       It drives the grouping of the default task view, so a function
       missing from the enum is a function with no queue.
 - [ ] **Privacy check**: the site's membership is scoped to onboarding
-      participants (starter records are personal data — see governance).
+      participants (starter records are personal data, see governance).
 - [ ] The standard task set in `50-govern/governance.md` has been reviewed
       by each function.
 - [ ] Each header shows `Starter: <name>` / `Task: <title>` on a saved row
@@ -40,7 +40,7 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
 first, then `demo-data.js.txt`, from the same bundle. It creates four starters
-covering every status and six tasks — including one that nobody has picked
+covering every status and six tasks, including one that nobody has picked
 up and which is already past due with the start date still ahead, which is
 the kind of row the *Overdue* view exists to surface.
 
@@ -54,7 +54,7 @@ the operator, so *My tasks* demonstrates as your own queue.
 duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `OB_Starter` and `OB_OnboardingTask` exist (Starter first).
 - [ ] All three **Starter** views appear: **In progress** (the default),
@@ -67,15 +67,15 @@ demo-marked as demo-only content.
       view bar on both lists, because each has an authored default.
 - [ ] **My tasks** shows *your* open tasks and changes per signed-in user.
       Ask a colleague to open the same view and confirm they see theirs,
-      not yours — that is the whole test.
-- [ ] Create a test starter; create tasks against them — the Starter lookup
+      not yours. That is the whole test.
+- [ ] Create a test starter; create tasks against them: the Starter lookup
       offers the test row; TaskFunction/DueDate are required.
 - [ ] The Starter form shows **The hire**, **Start and ownership** and
       **Progress**. The task form shows **The task**, **Who and when** and
       **Outcome**. Every column sits in one of them.
 - [ ] **Done Date** is absent from a new task and from any open one. Set
       Status to **Done** and it appears. Set Status back to **Open** and it
-      hides again, **keeping whatever was typed** — SharePoint has no
+      hides again, **keeping whatever was typed**. SharePoint has no
       mechanism to clear it.
 - [ ] An open task past its due date renders with the severe treatment and
       a warning icon. Close it Done and the date goes plain; the chip
@@ -84,19 +84,19 @@ demo-marked as demo-only content.
       - A **Done Date** in the future is refused, with its own message.
       - Status **Done** with no Done Date is refused.
       - Status **Not applicable** with empty Notes is refused. Both of
-        those last two show the same message naming both checks — a list
+        those last two show the same message naming both checks. A list
         has a single validation formula, so every cross-column rule shares
         one message. That is the platform limit, not a defect.
 - [ ] Any site Member can create and update rows.
 - [ ] Delete the test tasks then the test starter.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ### Two views this template used to recommend, and what ships instead
 
-- **"My function's queue"** — the old table specified `TaskFunction =
+- **"My function's queue"**: the old table specified `TaskFunction =
   (theirs)`, which is not buildable. The current-user sentinel resolves to
   the signed-in **user** and is permitted on person columns only;
   `TaskFunction` is a Choice, and SharePoint has no notion of which choice
@@ -106,15 +106,15 @@ demo-marked as demo-only content.
   rather than six, and it stays correct when the enum changes.
 
   The per-**person** queue that row was reaching for does ship, as **My
-  tasks** — `AssignedTo` is a person column, which is exactly the case the
+  tasks**: `AssignedTo` is a person column, which is exactly the case the
   sentinel exists for. It is also why `40-adopt/staff-guide.md` tells
   people to put themselves in AssignedTo when they pick a task up.
 
-- **"Per starter"** — a static view cannot filter to one parent record.
+- **"Per starter"**: a static view cannot filter to one parent record.
   The choices were N views that rot as hires are added, or one grouped
   view that does not. What ships is **By starter**, grouped by the Starter
   lookup and collapsed, unfiltered so a manager reading their own hire
-  sees the Done and Not applicable rows too — "everything is closed" is
+  sees the Done and Not applicable rows too; "everything is closed" is
   the answer they are checking for.
 
 ## Redeploying
@@ -124,8 +124,8 @@ formatting and save rules reconciled to the declaration.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -135,9 +135,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -150,8 +150,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

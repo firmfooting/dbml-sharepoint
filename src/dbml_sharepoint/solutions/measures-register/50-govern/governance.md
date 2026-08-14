@@ -1,4 +1,4 @@
-# Measures register — governance
+# Measures register: governance
 
 ## Ownership
 
@@ -24,23 +24,23 @@
 Once a year, the measurement owner walks the catalogue asking three
 questions of every Active measure:
 
-1. Did anyone **act** on this number in the last year? (Not "look at" —
+1. Did anyone **act** on this number in the last year? (Not "look at",
    act.)
 2. Does anyone still receive it? (Check ReportedTo against real agendas.)
 3. Would its owner notice if it stopped being produced?
 
 Three noes = **Retired**. Expect to retire 10–20% annually; a catalogue
 that only grows is a reporting burden compounding. Retirement is recorded,
-not deleted — retired definitions are needed to read old reports.
+not deleted: retired definitions are needed to read old reports.
 
 ## Pairings (this register is the theme's connective tissue)
 
 - **process-register**: "Digitised" requires a measure that would reveal
-  reversion — register it here.
+  reversion. Register it here.
 - **improvement-register**: baselines that deserve to outlive the test
   become registered measures.
 - **complaints / incidents / service-requests / audit-actions**: their
-  calculated day-counts are natural registered measures — one definition
+  calculated day-counts are natural registered measures, one definition
   each, here.
 
 ## Data-quality rules
@@ -72,7 +72,7 @@ Rules 1 and 2 **stay governance checks**, and cannot be otherwise:
   quarterly custodian check, not a save rule.
 - `Definition` and `Notes` are multi-line columns, which validation
   formulas also cannot read. Neither "passes the two-strangers test" nor
-  "every change is dated" is machine-checkable in any case — the first is a
+  "every change is dated" is machine-checkable in any case: the first is a
   judgement and the second is about *what* was written, not whether
   anything was.
 - "At least one real forum in ReportedTo" is enforceable only as

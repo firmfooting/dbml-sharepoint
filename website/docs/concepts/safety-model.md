@@ -27,7 +27,7 @@ same-origin network reach and the governed-tenant review checklist, see the
 Every write follows the same shape: **read fresh → compute the narrow
 delta → guard → write → read back → verify.** Whole-document writes
 (such as view XML) additionally diff the readback against the exact
-spliced document and refuse to proceed if anything else changed — a
+spliced document and refuse to proceed if anything else changed. A
 merge that could destroy neighbouring settings is treated as hostile
 until proven byte-safe.
 
@@ -38,7 +38,7 @@ schema is sealed against UI edits, even for admins; the deployer unseals
 for its own maintenance runs and re-seals afterwards) and
 `prevent_list_deletion: true` (`AllowDeletion` off). Rollback unlocks
 these only per-list, only after deletion of that list is explicitly
-authorised, and restores the lock if its delete fails — protection is
+authorised, and restores the lock if its delete fails. Protection is
 never left stranded off.
 
 ## Retention and holds
@@ -47,10 +47,10 @@ Live-confirmed behaviour on retention-governed sites: retention blocks
 deleting a list that still *contains* items, while an emptied list
 deletes fine, and item recycling is always allowed (the policy keeps its
 copies in the Preservation Hold Library). Rollback therefore recycles
-items before deleting lists — `recycle()`, never a permanent delete, so
+items before deleting lists: `recycle()`, never a permanent delete, so
 nothing it does is unrestorable. If an *empty* list is still refused, a
 site-level hold applies; that is compliance enforcement the script will
-never bypass — it names the situation and points at the compliance
+never bypass. It names the situation and points at the compliance
 admin.
 
 ## Undocumented surfaces
@@ -63,7 +63,7 @@ widths via `SetViewXml`, for example). The policy:
 2. Prove the mechanism live before productionising it.
 3. Wrap it in the strictest guard in the codebase (read-splice-diff-
    write-verify), because undocumented means unwarranted.
-4. Withdraw immediately when live behaviour disproves the surface — a
+4. Withdraw immediately when live behaviour disproves the surface: a
    feature that 400s on the wire is deleted, not retried harder.
 
 ## Honesty in output

@@ -6,23 +6,23 @@ sidebar_position: 1
 # Development philosophy
 
 These are the rules the codebase is actually built by. They exist
-because each one was paid for — several encode a specific live failure
+because each one was paid for. Several encode a specific live failure
 and its correction. Follow them when contributing; change them only with
 the same rigour they demand of everything else.
 
 ## 1. Fail closed, verify by readback
 
 The generated scripts operate on other people's production sites with
-no undo. Any action whose correctness the script cannot *prove* — an
+no undo. Any action whose correctness the script cannot *prove* (an
 existing object of uncertain shape, a readback that does not match a
-write, a server answer it cannot classify — stops that unit of work with
+write, a server answer it cannot classify) stops that unit of work with
 a named error. "Probably fine" is not a state this project recognises.
 
 Corollary: every write is followed by a read that verifies it took
 effect as declared. A write without a readback is a bug even when it
 works.
 
-## 2. The declaration is the contract — and only the declaration
+## 2. The declaration is the contract, and only the declaration
 
 deploy.js.txt reconciles exactly what the DBML + mapping declare, and
 touches nothing else. Undeclared views, user rows and user-added columns
@@ -32,14 +32,14 @@ rerunning safe and what makes the tool trustable on a shared site.
 
 ## 3. Live findings are law
 
-When live behaviour contradicts an assumption — even a documented one —
+When live behaviour contradicts an assumption, even a documented one,
 the live finding wins, immediately:
 
 - The finding is encoded in the code path it corrects, with a dated
   comment (`live finding 2026-07-24`) so the *why* survives.
 - A test pins the corrected behaviour so it cannot regress.
 - The design doc gains a revision recording both the wrong reading and
-  the correction — the mistake is part of the record, not overwritten.
+  the correction. The mistake is part of the record, not overwritten.
 
 Examples in the tree: view width bindings use display names because
 internal names silently reset live; rollback recycles items before list
@@ -48,7 +48,7 @@ seeding was withdrawn the day the endpoint 400'd.
 
 ## 4. Undocumented surfaces earn extra guards, or nothing
 
-Reverse-engineering what SharePoint's own UI does is legitimate — but an
+Reverse-engineering what SharePoint's own UI does is legitimate, but an
 undocumented surface gets the strictest treatment in the codebase:
 proven live before productionising, wrapped in
 read-splice-diff-write-verify, and withdrawn without sentiment the
@@ -77,7 +77,7 @@ thrash each other.
 ## 7. The partial-earning rule
 
 A template partial is shared only when **every** including script needs
-it **identically** — identity/provenance, site guard, digest, HTTP
+it **identically**: identity/provenance, site guard, digest, HTTP
 transport. Phase and domain logic stays with its phase even when
 fragments look similar, because forcing divergent logic through a shared
 partial couples scripts that must be able to evolve apart. The
@@ -87,7 +87,7 @@ separate partial precisely so assess.js.txt never includes them.
 ## 8. The public-name rule
 
 Underscore-prefixed names are module-private. Anything imported across
-modules is public and drops the prefix — no exceptions, no "internal but
+modules is public and drops the prefix, no exceptions, no "internal but
 shared". If a private helper earns a second caller, renaming it public
 is part of that change.
 
@@ -96,13 +96,13 @@ is part of that change.
 Phase numbers derive from the phases manifest; display names derive from
 internal names plus overrides; style JSON derives from tokens; the API
 docs derive from the source. Where a fact appears in two places, one of
-them is generated from the other — never maintained in parallel.
+them is generated from the other, never maintained in parallel.
 
 ## 10. Byte-golden discipline
 
 deploy.js.txt generation is pinned by a byte-exact golden fixture. Any
 template change fails the golden test until the fixture is regenerated
-*deliberately* — template drift is always a reviewed decision, never an
+*deliberately*. Template drift is always a reviewed decision, never an
 accident. Checksums hash LF-normalised content so the discipline holds
 across platforms.
 

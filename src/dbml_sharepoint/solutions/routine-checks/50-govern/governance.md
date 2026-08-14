@@ -1,4 +1,4 @@
-# Routine checks — governance
+# Routine checks: governance
 
 ## Ownership
 
@@ -6,13 +6,13 @@
 | --- | --- | --- |
 | Checks owner | *(e.g. quality/facilities/NUM per area)* | The catalogue, missed-check monitoring, this document |
 | Checkpoint owner (per row) | `CheckPoint.Owner` | That checkpoint's completeness and follow-up |
-| Everyone on the rounds | — | Timely, truthful entries |
+| Everyone on the rounds | n/a | Timely, truthful entries |
 
 ## Out-of-range escalation by check type (edit; mirror into Instructions)
 
 | Check type | Immediate action | Escalate to |
 | --- | --- | --- |
-| Temperature - cold chain | Protect stock per your cold-chain policy; do not use until cleared | Pharmacy/immunisation lead same shift — breach protocol applies |
+| Temperature - cold chain | Protect stock per your cold-chain policy; do not use until cleared | Pharmacy/immunisation lead same shift, breach protocol applies |
 | Safety equipment | Restock/replace before walking away | Area manager if unable |
 | Cleaning / environment | Rectify or log a service request | Facilities per your thresholds |
 | Security round | Per your security procedure | Duty manager |
@@ -43,22 +43,22 @@ one the platform will never do:
 
 **SharePoint cannot tell you a check did not happen.** A missed check
 leaves no row, and no row triggers nothing. Missed-check monitoring below
-is people looking, on a cadence — the register makes looking trivial, it
+is people looking, on a cadence. The register makes looking trivial, it
 does not make it automatic. Anyone who reads "the system will flag it" into
 this template has misread it.
 
 ## Missed-check monitoring (the discipline the paper never had)
 
 - **Daily** (checkpoint owners or the checks owner): the **Today** view,
-  which is what the entry list opens on — every active checkpoint of
+  which is what the entry list opens on. Every active checkpoint of
   daily-or-better frequency has its entries. Gaps are followed up **that
   day** while the cause is fresh.
-- **Weekly** (checks owner): the **Out of range** view — every entry has
+- **Weekly** (checks owner): the **Out of range** view: every entry has
   an Action taken (the list now enforces that, so the review is about
-  whether the action was *right*), and then the **Escalated** view —
+  whether the action was *right*), and then the **Escalated** view,
   every one of those reached its escalation point and somebody closed it.
 - **Monthly**: completeness rate per checkpoint (entries ÷ expected), read
-  from **By checkpoint** — chronic gaps are a rostering/design
+  from **By checkpoint**. Chronic gaps are a rostering/design
   conversation, and a checkpoint nobody can sustain gets redesigned, not
   ignored.
 
@@ -66,7 +66,7 @@ this template has misread it.
 
 Entries are made at the time of the check. Reconstructed entries are
 prohibited; a missed check is recorded by its absence and managed as a
-gap. Timestamps are attributed and versioned — this rule is checkable,
+gap. Timestamps are attributed and versioned. This rule is checkable,
 and being checkable is what makes the register audit-grade.
 
 The save rule refuses a *future* Checked At, and its message points here.
@@ -88,6 +88,6 @@ auditor looks.
 
 ## Lifecycle
 
-Check histories are compliance evidence (cold chain especially) — retain
+Check histories are compliance evidence (cold chain especially). Retain
 per your schedule. Export before decommission; never run `rollback.js.txt`
 against real rows.

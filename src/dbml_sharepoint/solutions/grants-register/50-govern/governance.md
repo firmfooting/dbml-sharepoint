@@ -1,4 +1,4 @@
-# Grants register — governance
+# Grants register: governance
 
 ## Ownership
 
@@ -17,7 +17,7 @@
    now) cost less than the grant is worth?
 4. Who is the GrantOwner? No owner, no bid.
 
-Record the decision either way — declined rounds inform next year.
+Record the decision either way. Declined rounds inform next year.
 
 ## Acquittal escalation
 
@@ -26,13 +26,13 @@ Record the decision either way — declined rounds inform next year.
   honesty far more than discovered silence); recovery date recorded in
   Notes.
 - A second overdue on the same grant: the responsible executive is
-  informed — the grant's delivery, not its paperwork, is now the question.
+  informed. The grant's delivery, not its paperwork, is now the question.
 
 ## Funder relationship hygiene
 
 - *By funder* is the relationship file: every submission, outcome and
   acquittal in one view before any meeting with that funder.
-- Unsuccessful-bid debriefs are mandatory (ProjectSummary) — patterns
+- Unsuccessful-bid debriefs are mandatory (ProjectSummary). Patterns
   across them are the strategy input.
 
 ## Data-quality rules
@@ -48,7 +48,7 @@ Every one of those three rules is now **half** enforced, and the halves
 that are missing are all the same shape: a hyperlink or a rich-text column,
 neither of which a SharePoint validation formula can reach.
 
-**Enforced at save — SharePoint rejects the row:**
+**Enforced at save (SharePoint rejects the row):**
 
 | Rule | List | Where it lives |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ neither of which a SharePoint validation formula can reach.
 | A `SubmittedDate` cannot be in the future | both | column validation |
 
 Each list has one `ValidationFormula`, so the two Submission rules share
-one message naming both checks — SharePoint cannot say which branch failed.
+one message naming both checks. SharePoint cannot say which branch failed.
 The column rules keep messages of their own, which is why they say
 something specific.
 
@@ -67,7 +67,7 @@ something specific.
 before it is ever lodged, and question three of the bid/no-bid test above
 is designed to produce exactly that outcome.
 
-**Still a governance check — nothing stops a wrong entry:**
+**Still a governance check (nothing stops a wrong entry):**
 
 - **Rule 1's linked agreement** (`AgreementUrl`) and **rule 2's filed
   copy** (`EvidenceUrl`) are hyperlink columns. A validation formula has
@@ -77,7 +77,7 @@ is designed to produce exactly that outcome.
   the sweep.
 - **Rule 1's "within a week of signing".** Nothing on a submission row can
   know how many obligation rows point at it. This is the register's single
-  most valuable habit and it is entirely on the coordinators — which is
+  most valuable habit and it is entirely on the coordinators, which is
   why 40-adopt gives it its own section rather than a bullet.
 - **The unsuccessful-bid debrief.** `ProjectSummary` is rich text, which a
   validation formula cannot reference at all. *Lost bids* shows the column
@@ -88,7 +88,7 @@ is designed to produce exactly that outcome.
 
 **What the colours do, which is not enforcement but is the sweep's first
 signal.** An `Overdue` obligation tints its whole row in *Open
-obligations* — one row-level signal on the list, reserved for the one
+obligations*, one row-level signal on the list, reserved for the one
 state this document calls an incident. A *Submitted* obligation reads
 amber rather than green, because it is still waiting on the funder's
 acceptance; green is *Accepted by funder* and nothing else.

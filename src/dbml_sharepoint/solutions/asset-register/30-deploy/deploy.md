@@ -11,12 +11,12 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
 
 - [ ] `AS_` prefix free on the target site.
 - [ ] `Category`/`Status` choices match how you actually classify equipment.
-      **`Status` members are named inside every deployed view filter** —
+      **`Status` members are named inside every deployed view filter**:
       *Stocktake* is `In service` or `Assigned`, *By holder* is `Assigned`,
       *By location* and *Warranty expiring* exclude `Retired` and
       `Disposed`, and *Retired and disposed* is exactly those two. Rename
       one and a view goes quietly empty. Decide **before first deploy**.
-- [ ] Decide the Members-can-edit question (see template README) — change
+- [ ] Decide the Members-can-edit question (see template README): change
       the Members assignment to `Read` plus a custodians group *before*
       first deploy if you want the tighter model.
 - [ ] The Asset header shows `Asset: <title>` on a saved row and `New
@@ -44,8 +44,8 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
 first, then `demo-data.js.txt`, from the same bundle. It creates four
-locations and six assets — one per status, with a warranty falling due
-inside the sixty-day window and two that have already lapsed, so the
+locations and six assets (one per status, with a warranty falling due
+inside the sixty-day window and two that have already lapsed), so the
 overdue treatment is visible. Every asset points at a demo location
 through the lookup, which is also the cheapest confirmation that the
 lookup provisioned correctly.
@@ -56,7 +56,7 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real assets.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `AS_Location` and `AS_Asset` exist, in that creation order.
 - [ ] `AS_Location` has its one declared view, **Locations by name** (the
@@ -67,42 +67,42 @@ site that already holds real assets.
       because both have an authored default.
 - [ ] **The old recommended-views table's "Stocktake sheet" is the
       default view, named "Stocktake".** It sorts by Location then Asset
-      Tag — SharePoint sorts a lookup column by its displayed value, so
+      Tag. SharePoint sorts a lookup column by its displayed value, so
       that is the order you will physically walk the building in.
-- [ ] **Seed Locations first** — add your buildings/rooms/sites now; the
+- [ ] **Seed Locations first**: add your buildings/rooms/sites now; the
       Asset form's Location dropdown reads from it. (If you seeded, four
       demo locations are already there; delete them once your real ones
       are in.)
-- [ ] Create a test asset: unique `AssetTag` enforced (try a duplicate —
+- [ ] Create a test asset: unique `AssetTag` enforced (try a duplicate,
       rejected); Purchase `2026-01-01` + Warranty `2028-01-01` →
       **Warranty Months = 24**, drawn as a bar against a 60-month scale.
 - [ ] Set a `Warranty Expiry` in the past on an item that is **In
       service**: the date turns red with a warning icon. Set the same
       item's `Status` to **Disposed**: the red goes away. That guard is
-      deliberate — most disposed equipment left service long after its
+      deliberate: most disposed equipment left service long after its
       warranty lapsed, and a register that shouts about all of it teaches
       people to ignore the colour.
-- [ ] The Asset New form shows four sections — **What it is**, **Where it
-      is**, **Purchase and warranty**, **System** — each holding the
+- [ ] The Asset New form shows four sections: **What it is**, **Where it
+      is**, **Purchase and warranty**, **System**, each holding the
       fields named in `20-configure/formatting/asset-form-body.json`.
       **System** holds only `Warranty Months`; it is calculated, so it is
       absent from the New form and the section renders as a bare heading
       there. That is cosmetic and expected.
 - [ ] The form reacts: set `Status` to **Retired** or **Disposed** and
-      **Assigned To** disappears. It keeps whatever was there — SharePoint
-      has no mechanism to clear a hidden field — so a disposal that needs
+      **Assigned To** disappears. It keeps whatever was there (SharePoint
+      has no mechanism to clear a hidden field), so a disposal that needs
       the holder cleared is done before the status change, not after.
 - [ ] Save rules, each with its own message: a **Purchase Date** in the
       future is refused, and so is a negative **Purchase Cost**. The list
       rule refuses an asset that has a **Warranty Expiry** but no
-      **Purchase Date** — without both, the month count is blank and the
+      **Purchase Date**. Without both, the month count is blank and the
       warranty term cannot be checked.
 - [ ] Assign the test asset to yourself (`Assigned To`), set Status
       `Assigned`, and confirm it appears in **By holder** under your name.
 - [ ] Delete the test asset.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## Redeploying
@@ -112,8 +112,8 @@ untouched; declared settings reconciled.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -123,9 +123,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -138,8 +138,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.
