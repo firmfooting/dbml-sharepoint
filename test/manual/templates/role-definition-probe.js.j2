@@ -81,9 +81,53 @@
  *   4. Set ALLOW_WRITES = true and paste again to actually run it.
  *   5. Copy the whole RESULTS block back verbatim.
  *
- * NOT YET RUN. When it has been, record the outcome here in the form the
- * other probes in this directory use: the date, the revision, what was
- * answered, and what each control did.
+ * RUN 1, 2026-08-14, revision 709c2549, one Microsoft 365 group-connected
+ * Team Site. Ten questions, ten answered. Both controls held: N1 read HTTP
+ * 200 with zero rows for an absent name, and the level was created, read and
+ * deleted under its run-unique name.
+ *
+ *   THE CEILING IS 512 AND IT REFUSES RATHER THAN TRUNCATES. R4 sent 1018
+ *   characters and got HTTP 500:
+ *
+ *       "The parameter Description cannot be bigger than 512 characters."
+ *
+ *   The same number as a site group, and a refusal in the same style, but
+ *   NOT the same message: the group surface says "cannot be null or bigger
+ *   than 512 characters" and this one omits the null clause. Two properties
+ *   that happen to agree today, on different types, measured separately.
+ *   R4 is recorded FAIL because 1018 characters did not come back, which is
+ *   the ANSWER the question was asked to get, not a broken run.
+ *
+ *   EVERYTHING A MARKER NEEDS WORKS.
+ *     R1  byte-identical through the CREATE path
+ *     R2  byte-identical through the MERGE path
+ *     R3  MERGE is PARTIAL, confirmed non-vacuously: the Description
+ *         survived a request that did not carry it, while the Order the
+ *         request DID carry changed in the same call
+ *     R5  an empty description is accepted and reads back ""
+ *     R6  the marker shape lists and groups already use survives intact
+ *
+ *   R7 THE BITMAP READS BACK AS WRITTEN. High=0 Low=196609 out, the same
+ *   back. So the deploy CAN verify the most security-defining value it
+ *   writes, which today it sends and never reads. That is the #212 gap for
+ *   role definitions and it is now closable.
+ *
+ *   R8 CONFIRMS THE DEPLOYER COMMENT. `getbyname` really does answer HTTP
+ *   500, not 404, for a level that is not there. The $filter existence probe
+ *   in `_security_principals.js.j2` is necessary and the comment above it is
+ *   now measured rather than asserted.
+ *
+ *   R9 WEB-SCOPE ASSIGNMENTS ARE ENUMERABLE. Ten role assignments read, all
+ *   ten with expandable RoleDefinitionBindings. A refusal can therefore NAME
+ *   the web-scope usage an adoption would affect. PER-LIST usage is still
+ *   unanswered and is a different, much more expensive question.
+ *
+ * WHAT RUN 1 IMMEDIATELY PRODUCED, beyond the questions asked. Nothing in
+ * the build guards this ceiling. A mapping declaring a level description
+ * over 512 characters builds clean and fails at phase 1.2, after permission
+ * levels have begun being written and before any list exists. The longest
+ * description in the shipped catalogue is 166 characters, so no family is at
+ * risk today, and that is luck rather than a guard.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
