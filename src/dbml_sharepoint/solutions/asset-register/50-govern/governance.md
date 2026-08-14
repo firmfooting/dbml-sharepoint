@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Register owner | *(e.g. IT manager / facilities manager)* | Register completeness, stocktakes, this document |
 | Every staff member | — | Updating rows for equipment they issue/receive |
 | Site Owners | IT / site admins | Group membership, deploys |
@@ -26,7 +26,7 @@
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Asset Tag` | Unique across the register (a schema constraint, not a formula) |
 | `Purchase Date` | Cannot be in the future |
 | `Purchase Cost` | Cannot be negative |

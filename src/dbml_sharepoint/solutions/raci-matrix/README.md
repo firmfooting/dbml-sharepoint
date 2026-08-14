@@ -39,7 +39,7 @@ gives.
 **The three lists at a glance:**
 
 | List | Columns |
-|---|---|
+| --- | --- |
 | `RACI_Activity` | `Title`, `Domain`, `ActivityKind`, `Criticality`, `Detail`, `Responsible`, `Accountable`, `AccountableForum`, `EscalationRoute`, `ReviewStatus`, `LastConfirmed`, `ConfirmedBy`, `ConfirmationDue` *(calculated)* |
 | `RACI_Party` | `Title`, `PartyKind`, `Contact`, `Status`, `Notes` |
 | `RACI_Involvement` | `Title`, `Activity`, `Party`, `Involvement`, `Channel`, `Notes` |
@@ -83,7 +83,7 @@ never refuses a save while naming a field the author cannot see.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit `Domain` to how your organisation divides work |
 | 2 | `20-configure/` | Prefix; **the confirmation cadence lives here** — changing it recalculates every row |
 | 3 | `30-deploy/` | Administrator: build, paste, verify, **then seed `Party` first** |

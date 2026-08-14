@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Fleet owner | *(e.g. corporate services/finance manager)* | The use policy, substantiation quality, fleet review, this document |
 | Every driver | — | Their trips, honestly and promptly |
 | Workshop / maintenance | — | Acting on Notes; pairing with equipment-maintenance for services |
@@ -27,7 +27,7 @@ making them visually rare is a mild but real pressure toward honesty.
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Rego` | Unique across the fleet (a schema constraint) |
 | `Departed At` | Cannot be in the future |
 | `Odometer Start`, `Odometer End` | Neither may be negative |

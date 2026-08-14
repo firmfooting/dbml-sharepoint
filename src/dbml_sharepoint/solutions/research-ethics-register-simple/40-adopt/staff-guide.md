@@ -31,7 +31,7 @@ project that can unless something says so.
 columns and you cannot edit it:
 
 | It says | It means |
-|---|---|
+| --- | --- |
 | **Ready to start here** | Both gates cleared. Go. |
 | **Ethics cleared - site authorisation outstanding** | The committee said yes; we have not. **Not yet.** |
 | **Site authorised - ethics not cleared** | Our paperwork says yes and the committee's does not — including an approval that has quietly expired. The only red in the register. |
@@ -53,7 +53,7 @@ The list opens on **Live projects** — everything not completed or
 discontinued. Five other views are already built for you:
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Live projects** | The default. Current work only; closed projects are in Archive. |
 | **Ready to start here** | Both gates cleared and not finished. The answer to "may this start?" |
 | **Ethics cleared, not authorised** | The gap. Oldest decision first, because the longer one sits here the likelier somebody has assumed otherwise. |

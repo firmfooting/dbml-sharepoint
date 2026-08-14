@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Switchboard manager | *(e.g. support services / corporate services manager)* | Operator habits, reviews, this document |
 | SB Switchboard Operators | The operating group | Contemporaneous, truthful logging |
 | Emergency planning committee | — | Consuming and reviewing the code log |
@@ -38,7 +38,7 @@ The seeded demo data holds nothing clinical, for the same reason.
 ## Message escalation (edit to your after-hours procedures)
 
 | Urgency | Relay target | If unreachable |
-|---|---|---|
+| --- | --- | --- |
 | Emergency | Immediately, interrupting other work | Escalate up the on-call chain immediately; log every attempt in the row |
 | Urgent | Within 1 hour | Second attempt within the hour, then escalate to the on-call manager |
 | Routine | Same shift or next sensible hour | Carries on the Pending board to the next shift |
@@ -75,7 +75,7 @@ export.
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Key.KeyRef` | Unique across the catalogue (a schema constraint) |
 | Every datetime column on all three logs | None may be in the future |
 | `MessageLog` list | **Relayed** needs both a Relayed To and a Relayed At |

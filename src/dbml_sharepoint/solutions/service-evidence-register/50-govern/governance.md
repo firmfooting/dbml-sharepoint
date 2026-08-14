@@ -137,7 +137,7 @@ supporting events under the theme they belong to.
 ## Ownership
 
 | Role | Who | Responsibility |
-|---|---|---|
+| --- | --- | --- |
 | Register owner | One named person | Owns the categories logged, the denominator, and what is raised. Answers for the register's fairness. |
 | Curators | 2–4 people | Review the queue, accept or reject events, assemble and own themes. The only people who can see `ServiceIssue`. |
 | Contributors | Named staff | Log events and follow-ups. Cannot edit after saving, which is what makes the record worth having. |
@@ -151,7 +151,7 @@ register at all.
 ## Cadence
 
 | When | What |
-|---|---|
+| --- | --- |
 | Weekly | Curator works **Needs review**: accept, reject as *Not substantiated*, or send back for detail. A queue worked weekly stays honest; one worked before a review does not. |
 | Weekly | Curator works **Outstanding and ageing**. Anything past its Response Due Date gets chased and a `FollowUp` row, and `Last Followed Up` on the event is carried across in the same pass — a contributor could only have set it when the event was created, so every chase after that one is this pass's to record. |
 | Weekly | Curator works **Awaiting a response** on `FollowUp` and records what came back — *What came back*, *Response Date*, the summary — on the row that did the asking. A contributor sets them only if the answer had already arrived when they saved the row; `SE Log Only` withholds Edit, so anything that came back afterwards is this pass's to record. A row left here is either still unanswered or an answer nobody recorded, and only this pass tells the two apart. The same hand-off applies to `Resolved Date` and `Outcome for us` on an event that has since been resolved. |

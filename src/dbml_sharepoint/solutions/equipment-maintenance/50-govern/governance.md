@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Maintenance owner | *(e.g. facilities/biomed manager)* | The schedule, frequencies, escalation, this document |
 | EM Maintenance Team | The working group | Record-then-reschedule discipline, evidence |
 | All staff | — | Not using out-of-service items; reporting faults |
@@ -11,7 +11,7 @@
 ## Frequency defaults by class (edit to your obligations)
 
 | Class | Default interval | Source of the rule |
-|---|---|---|
+| --- | --- | --- |
 | Biomedical / clinical | Per manufacturer + your biomed programme (typically 12 months) | AS/manufacturer/biomed policy |
 | Electrical test-and-tag | Per environment class (e.g. 12 months clinical, 5 years fixed office) | AS/NZS 3760 as applied by your policy |
 | Fire and emergency | Per your fire-services contract schedule | AS 1851 as applied |
@@ -40,7 +40,7 @@ schedule that never advances.
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Equipment Tag` | Unique across the register (a schema constraint) |
 | `Frequency Months` | At least 1 |
 | `Event Date` | Cannot be in the future |

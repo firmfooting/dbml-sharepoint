@@ -28,7 +28,7 @@ deployed lists.
 Every list this tool provisions carries a marker at the end of its
 SharePoint **Description**:
 
-```
+```text
 Provisioned by dbml-sharepoint from routine-checks/CheckPoint.
 ```
 
@@ -103,7 +103,7 @@ display-name renames — does not care.
 site into every query it ships. The first line of each `.pq` is the
 binding:
 
-```
+```text
 let
     SiteUrl = "https://tenant.sharepoint.com/sites/YourSite",
     SiteRoot = …

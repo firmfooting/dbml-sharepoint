@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Checks owner | *(e.g. quality/facilities/NUM per area)* | The catalogue, missed-check monitoring, this document |
 | Checkpoint owner (per row) | `CheckPoint.Owner` | That checkpoint's completeness and follow-up |
 | Everyone on the rounds | — | Timely, truthful entries |
@@ -11,7 +11,7 @@
 ## Out-of-range escalation by check type (edit; mirror into Instructions)
 
 | Check type | Immediate action | Escalate to |
-|---|---|---|
+| --- | --- | --- |
 | Temperature - cold chain | Protect stock per your cold-chain policy; do not use until cleared | Pharmacy/immunisation lead same shift — breach protocol applies |
 | Safety equipment | Restock/replace before walking away | Area manager if unable |
 | Cleaning / environment | Rectify or log a service request | Facilities per your thresholds |
@@ -20,7 +20,7 @@
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Checked At` | Cannot be in the future |
 | `CheckEntry` list | An out-of-range result must carry Action taken |
 | `CheckPoint` list | An **active** checkpoint must have an Acceptable Range |

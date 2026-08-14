@@ -1,7 +1,7 @@
 # Equipment maintenance
 
 *Theme: operations & service — built for safety-critical maintenance
-(biomedical equipment, test-and-tag, fire safety, plant)*
+(biomedical equipment, test-and-tag, fire safety, plant).*
 
 What must be tested or serviced, how often, when it's next due, and the
 evidence it happened. Two lists: `EM_Equipment` (each maintained item with
@@ -34,7 +34,7 @@ test. `30-deploy/deploy.md` says so where you decide whether to seed.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit equipment types and result language to your context |
 | 2 | `20-configure/` | Prefix; maintenance-team-maintains model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; load the schedule |

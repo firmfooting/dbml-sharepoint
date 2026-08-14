@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Grants owner | *(e.g. CFO / business development lead)* | Bid/no-bid discipline, the sweep, funder relationships, this document |
 | GR Grants Coordinators | The maintaining group | Pipeline and obligations upkeep |
 | GrantOwner (per submission) | Named on the row | Delivery and every acquittal of that grant |
@@ -51,7 +51,7 @@ neither of which a SharePoint validation formula can reach.
 **Enforced at save — SharePoint rejects the row:**
 
 | Rule | List | Where it lives |
-|---|---|---|
+| --- | --- | --- |
 | Anything the funder has received (*Submitted*, *Successful*, *Unsuccessful*) needs a `SubmittedDate` | Submission | list validation |
 | Rule 3: a *Successful* bid needs `AmountAwarded` | Submission | list validation |
 | Rule 2, the date half: a filed obligation needs its `SubmittedDate` | Acquittal | list validation |

@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Forum chair (per meeting type) | — | Actions reviewed at each meeting; decisions recorded |
 | Every action owner | `AssignedTo` | Status truthfulness and delivery |
 | Site Owners | — | Group membership, deploys |
@@ -26,7 +26,7 @@ Two rules refuse a save. Everything else on this page is a discipline, and
 the difference is worth knowing rather than assuming:
 
 | Rule | Where it lives | Why there |
-|---|---|---|
+| --- | --- | --- |
 | An action cannot be dated done in the future | **Enforced at save**, on the column | Reads only its own column, so it keeps its own message. A forward-dated completion sorts to the top of *Done and dropped* and reads as the most recent thing the team finished |
 | Status **Done** needs a completed date | **Enforced at save**, on the list | Data-quality rule 2 below, made real. An action finished on a date nobody can name is still In progress |
 | Status **Dropped** needs a note | **Governance check**, deliberately | Dropping is already the honest move against leaving a row Open forever. A template whose first act is to make the honest move harder than the dishonest one has its incentives backwards |

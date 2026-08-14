@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Delegating authority | Board / CEO per your constitution | The instrument itself |
 | Register owner | *(e.g. head of governance / company secretary)* | Register-instrument lockstep, reviews, this document |
 | DG Governance Coordinators | The maintaining group | Transcription accuracy, supersession hygiene |
@@ -67,7 +67,7 @@ three data-quality rules above are not, and cannot be.
 **Enforced at save — SharePoint rejects the row:**
 
 | Rule | Where it lives | Message shown |
-|---|---|---|
+| --- | --- | --- |
 | A **Superseded** row must record its supersession in `Notes` | list validation | Names what the note has to say: which instrument version replaced it, and where the authority went |
 | `ApprovedDate` cannot be in the future | column validation | Its own message, on the column |
 

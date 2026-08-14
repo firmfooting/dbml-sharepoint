@@ -1,7 +1,7 @@
 # Switchboard log
 
 *Theme: operations & service — built for hospital/facility switchboards
-and after-hours operations desks*
+and after-hours operations desks.*
 
 The switchboard's three paper books, digitised: the **emergency code log**
 (`SB_CodeEvent` — announcements, locations, all-clears, drills, with
@@ -38,7 +38,7 @@ relayed message with nobody named, and nineteen demo rows behind `--seed`.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit the code set and urgency language to your procedures |
 | 2 | `20-configure/` | Prefix; operators-only model |
 | 3 | `30-deploy/` | Administrator: build, paste; load the key catalogue |

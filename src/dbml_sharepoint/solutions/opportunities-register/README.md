@@ -1,6 +1,6 @@
 # Opportunities register
 
-*Theme: process digitisation & improvement — governance-light*
+*Theme: process digitisation & improvement — governance-light.*
 
 A thin routing layer for business problems that a project discovers but is
 not authorised or funded to fix. It captures the problem once, sends it to an
@@ -63,7 +63,7 @@ submitter does not re-enter their own name.
 `Triage Outcome` records one route:
 
 | Route | What the steward does | Terminal status here |
-|---|---|---|
+| --- | --- | --- |
 | Incident/safety, organisational risk, complaint/disclosure, privacy/cyber, or project issue/change | Confirm the required record exists; save only its safe identifier/link | `Transferred` |
 | Direct hand-off to known owner | Obtain receiving-owner acceptance and record its work item | `Transferred` |
 | Duplicate/already governed | Point to the existing record | `Duplicate` |
@@ -91,12 +91,12 @@ Routine assessment uses:
 `Priority Score = Benefit Potential × Time Criticality`
 
 | Input | 1 | 2 | 3 | 4 |
-|---|---:|---:|---:|---:|
+| --- | ---: | ---: | ---: | ---: |
 | Benefit Potential | Limited | Material | Major | System-wide |
 | Time Criticality | Flexible | Within 12 months | Within 3 months | Time-sensitive |
 
 | Score | Conversation cue |
-|---:|---|
+| ---: | --- |
 | 1–4 | Routine |
 | 5–8 | Consider |
 | 9–12 | Prioritise |
@@ -110,7 +110,7 @@ framework then determines urgency.
 ## Friction budget
 
 | Moment | Design target | Control |
-|---|---|---|
+| --- | --- | --- |
 | Submit | About 60–90 seconds | Four facts + stop gate; links optional |
 | Triage | Most records in under 3 minutes | Redirect, hand off, duplicate or close without assessment |
 | Assess | Only where a real choice remains | Coarse value/time/effort; link detailed evidence |
@@ -168,7 +168,7 @@ tenant theme colours. There are no fixed brand colours to maintain.
 ## Five operational views
 
 | View | One job |
-|---|---|
+| --- | --- |
 | **Needs triage** *(default)* | Oldest untriaged submissions first |
 | **Assessments** | Items deliberately commissioned for assessment |
 | **Decisions** | Existing decision authorities, due-date first; calculated score bar plus tenant-theme emphasis for prompt/override rows |
@@ -196,7 +196,7 @@ but only after triage decides that assessment is worth the effort.
 ## Work the folders in order
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Replace Service Area and route choices with local language |
 | 2 | `20-configure/` | Set access groups, process URLs, score definitions and views |
 | 3 | `30-deploy/` | Build, deploy, set read-own access, and verify with two accounts |

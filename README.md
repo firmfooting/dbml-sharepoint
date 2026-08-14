@@ -7,7 +7,7 @@ and ACLs — with **no tenant admin rights, no premium licence, and nothing
 installed on the target**. If you can open the site and press F12, you can
 deploy.
 
-```
+```text
 schema.dbml + mapping.yaml + release.yaml
         │
         ▼   dbml-sharepoint build
@@ -21,10 +21,12 @@ schema.dbml + mapping.yaml + release.yaml
    SharePoint Online lists, ready to use
 ```
 
-**Documentation: [shauneccles.github.io/dbml-sharepoint](https://shauneccles.github.io/dbml-sharepoint/)** —
+**Documentation: [shauneccles.github.io/dbml-sharepoint][docs]**. It covers
 getting started, concepts, per-artifact contracts, the full mapping /
 DBML / CLI reference, a generated API reference, and the development
 philosophy.
+
+[docs]: https://shauneccles.github.io/dbml-sharepoint/
 
 ## Why
 
@@ -122,7 +124,7 @@ Then:
 ## The three inputs
 
 | File | Owns |
-|---|---|
+| --- | --- |
 | `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), indexes, notes (→ column descriptions) |
 | `mapping.yaml` | List prefix, entity kind/template/site-role, views, versioning, calculated-column formulas, permission levels, groups, per-list ACLs |
 | `release.yaml` | Release tag + schema version stamped into every artefact for provenance |
@@ -215,7 +217,7 @@ One module per concern, grouped into layer packages; the packaging
 spine sits at the package root:
 
 | Layer | Modules | Responsibility |
-|---|---|---|
+| --- | --- | --- |
 | `model/` | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
 | `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
 | `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |

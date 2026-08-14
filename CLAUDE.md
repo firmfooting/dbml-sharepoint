@@ -1,6 +1,6 @@
-@AGENTS.md
+# Claude Code
 
-## Claude Code
+@AGENTS.md
 
 `AGENTS.md` above is the canonical instruction file, shared with every other
 agent. Keep project instructions there, not here — this file exists so Claude

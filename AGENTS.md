@@ -175,7 +175,7 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 ## Layout
 
 | Path | What |
-|---|---|
+| --- | --- |
 | `src/dbml_sharepoint/analysis/` | Validation. `checks/` holds the individual rules |
 | `src/dbml_sharepoint/generators/` | Emit deploy.js.txt, rollback.js.txt, assess.js.txt, reporting |
 | `src/dbml_sharepoint/templates/` | Jinja templates for the emitted JS |

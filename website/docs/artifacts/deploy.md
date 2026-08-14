@@ -15,7 +15,7 @@ Phase numbers derive from the phases manifest and renumber automatically
 when the structure changes; the groups are stable:
 
 | Group | Steps |
-|---|---|
+| --- | --- |
 | PREPARE | read-only preflight · permission levels and site groups · operator self-enrolment · maintenance unseal |
 | STRUCTURE | list creation · deferred lookups · indexed columns · field defaults |
 | PRESENTATION | views · form formatting |

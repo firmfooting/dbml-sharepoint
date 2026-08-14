@@ -13,7 +13,7 @@ permission levels, groups and ACLs — with **no tenant admin rights, no
 premium licence, and nothing installed on the target**. If you can open
 the site and press F12, you can deploy.
 
-```
+```text
 schema.dbml + mapping.yaml + release.yaml
         │
         ▼   dbml-sharepoint build

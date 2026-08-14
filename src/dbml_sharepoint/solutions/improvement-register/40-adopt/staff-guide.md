@@ -40,7 +40,7 @@ and you can see a better way?
 Deployed with the list — there is nothing to build by hand.
 
 | View | Use it when |
-|---|---|
+| --- | --- |
 | **In flight** *(default)* | What is actually being run, grouped by owner |
 | **Triage** | The fortnightly meeting: every Idea, oldest first |
 | **Adopted this quarter** | The quarterly slide — adoptions with their before/after numbers |

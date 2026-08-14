@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Process owner | *(e.g. ops/IT/quality manager)* | SLAs, the authority table, this document |
 | CH Change Managers | The triage group | Queue hygiene, decision chasing, implementation tracking |
 | Approvers | Per the authority table | Timely, recorded decisions |
@@ -11,15 +11,18 @@
 ## Impact definitions (edit to your context)
 
 | Impact | Meaning |
-|---|---|
+| --- | --- |
 | High | Affects customers/patients/public, money above your materiality line, regulated obligations, or many teams |
 | Medium | Affects more than one team, or changes a controlled document/process |
 | Low | Contained within one team, reversible cheaply |
 
-## Decision authority (edit to your delegations — the register records it, this table legitimises it)
+## Decision authority
+
+Edit to your delegations — the register records it, this table
+legitimises it.
 
 | Impact | Decided by | SLA (request → decision) |
-|---|---|---|
+| --- | --- | --- |
 | High | Executive owner of the affected area | 15 business days |
 | Medium | Department manager | 10 business days |
 | Low | Change manager may approve directly | 5 business days |
@@ -47,7 +50,7 @@ planning failure wearing a costume.
 **Refused at save:**
 
 | Rule | Where it lives |
-|---|---|
+| --- | --- |
 | A decided change (Approved, Rejected, Implemented or Closed) has a DecisionDate | `list_validation` |
 | An Implemented change has an ImplementedDate | `list_validation` |
 | RequestedDate is not in the future | `column_validation` on `RequestedDate` |

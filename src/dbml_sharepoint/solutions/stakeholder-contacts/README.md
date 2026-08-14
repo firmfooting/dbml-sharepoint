@@ -23,7 +23,7 @@ and the seed is the first thing anyone sees.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit organisation/interaction types to your world |
 | 2 | `20-configure/` | Prefix; everyone-contributes model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify the lookup chain |

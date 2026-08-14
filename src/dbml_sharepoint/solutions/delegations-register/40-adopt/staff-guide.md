@@ -29,7 +29,7 @@ Three rules of reading:
 ## The four views
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **By area** | The default. Current delegations grouped by area — the working lookup. |
 | **By role** | Current delegations grouped by role — "what can this role approve?" |
 | **Reviews due** | Current delegations due for review inside the next ninety days. Coordinators' queue. |

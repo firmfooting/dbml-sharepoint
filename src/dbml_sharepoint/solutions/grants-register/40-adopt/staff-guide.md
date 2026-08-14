@@ -5,19 +5,19 @@
 They deploy with the lists — nothing here is something you build, and you
 shouldn't rename them, because a redeploy puts the declared name back.
 
-**GR_Submission**
+### GR_Submission
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Pipeline** | The default. Bids in preparation or with the funder, closing soonest first. |
 | **Live grants** | Successful bids whose funded activity has not ended, with the agreement link. |
 | **By funder** | Everything, grouped by funder — the relationship file. |
 | **Lost bids** | Unsuccessful and withdrawn bids, with the debrief. |
 
-**GR_Acquittal**
+### GR_Acquittal
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Open obligations** | The default. Everything not yet accepted by the funder, due soonest first. Overdue rows are tinted. |
 | **Due 90 days** | The sweep view: upcoming and in-preparation obligations due inside a *rolling* ninety days. |
 | **Overdue** | Exactly what it says, with the Notes column where the recovery date goes. |

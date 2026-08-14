@@ -55,7 +55,7 @@ appearing twice** so that *By offeror* shows the repeat pattern the annual
 report is looking for.
 
 **Delete the demo rows before staff start declaring.** Every demo Title
-begins with `[DEMO] `, so they are obvious in every view, they are matched
+begins with `[DEMO]`, so they are obvious in every view, they are matched
 by Title on re-paste (running it twice never duplicates), and `rollback.js.txt`
 treats a list whose rows are *all* demo-marked as demo-only content. A demo
 declaration left in a live register is a fabricated record in an evidential

@@ -15,7 +15,7 @@ clinical, project — which is what makes it a whole-of-business quick win.
 **Title, plus 21 more columns, at a glance:**
 
 | Group | Columns |
-|---|---|
+| --- | --- |
 | Describe | `Detail`, `Category` |
 | Assess | `Likelihood`, `Consequence`, `TargetRiskRating`, `LastReviewedDate` |
 | Respond | `RiskResponse`, `ToleranceEndDate`, `Controls`, `Treatment`, `OverallControlEffectiveness`, `ClosureStatement` |
@@ -45,7 +45,7 @@ list-view threshold without redesigning those values as persisted fields.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit `Category` to your risk taxonomy |
 | 2 | `20-configure/` | Prefix; **the matrix lives here** — edit with care |
 | 3 | `30-deploy/` | Administrator: build, paste, verify the matrix calculates |
@@ -62,7 +62,7 @@ replace it, so point at your risk-process document from the column
 descriptions instead.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes six `[DEMO] `-titled rows — one per rating band, a Tolerate risk
+that pastes six `[DEMO]`-titled rows — one per rating band, a Tolerate risk
 inside its tolerance window, and a Closed risk with a closure statement — so
 every view, colour band and score bar renders on a first look. See
 `30-deploy/deploy.md`.

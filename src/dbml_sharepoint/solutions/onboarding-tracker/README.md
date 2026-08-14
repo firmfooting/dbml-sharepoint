@@ -23,7 +23,7 @@ overdue colouring, three save rules, and ten demo rows.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit functions/status language to your org |
 | 2 | `20-configure/` | Prefix; everyone-contributes security (it's cross-team) |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; agree the standard task set |

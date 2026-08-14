@@ -53,7 +53,7 @@ cold-chain breach with its action recorded. Show that row to whoever is
 sponsoring the deployment; it is the whole business case in one line.
 
 **Delete the demo rows before active use.** Every demo Title begins with
-`[DEMO] `, so they are obvious in every view, they are matched by Title on
+`[DEMO]`, so they are obvious in every view, they are matched by Title on
 re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real check history.

@@ -89,7 +89,7 @@ identifiers, not recruitment counts. See `50-govern/governance.md`.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Trim/rename columns and choice values to your vocabulary |
 | 2 | `20-configure/` | Set your prefix if `RG_` collides; review the security model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify |

@@ -34,7 +34,7 @@ entities:
 ```
 
 | Key | Meaning |
-|---|---|
+| --- | --- |
 | `kind` | `List` or `HubOnlyList`. `DocumentLibrary` is **refused** — see below |
 | `base_template` | SP base template id. **Must be `100`**, the generic list — anything else fails the build |
 | `site_role` | Free label; `build --site-role X` deploys the entities labelled `X` |
@@ -56,7 +56,7 @@ makes (`test/manual/threshold-index-probe.js`, 2026-07-31). The column varied is
 SharePoint's `ShowField`, which is what `display_column` sets:
 
 | ShowField | Result |
-|---|---|
+| --- | --- |
 | `Title`, indexed | served, 2,000 choices |
 | a Calculated column | refused, `SPQueryThrottledException` |
 
@@ -80,7 +80,7 @@ columns is blank on a list holding ten rows. Indexing does not help.
 One join per **rendered** column of these kinds:
 
 | Column | Costs a join |
-|---|---|
+| --- | --- |
 | a DBML `ref` (a real Lookup) | yes — even when it holds no data |
 | a `person` column | yes |
 | `Author` (Created By) | yes |
@@ -261,8 +261,9 @@ views:
   typed operators (`eq`, `neq`, `leq`, `geq`, `in`, `contains`, ...),
   `includes` / `not_includes` for a
   [multi-value column](dbml.md#multi-value-columns), date
-  sentinels such as `today+30` and `now`, and nesting through `all_of` / `any_of` /
-  `none_of`. A bare list means `all_of`, so every view written before
+  sentinels such as `today+30` and `now`, and nesting through
+  `all_of` / `any_of` / `none_of`. A bare list means `all_of`, so every
+  view written before
   nesting existed keeps working unchanged. The same grammar drives
   `form_visibility.when`, `column_validation.when` and
   `list_validation.when` — nobody writes CAML, or a formula, by hand.
@@ -336,7 +337,7 @@ views:
 ```
 
 | Declared | Renders | Measured 2026-08-10 |
-|---|---|---|
+| --- | --- | --- |
 | `includes` | `<Eq>` | the rows containing the member — `{View}` and `{View,Edit}` |
 | `not_includes` | `<Or><IsNull/><Neq/></Or>` | the rows without it **plus the empty row** — `{Edit,Export}` and `{}` |
 | `is_null` / `is_not_null` | `<IsNull>` / `<IsNotNull>` | correct |
@@ -413,8 +414,9 @@ never appears.
 No operator reaches that target on documentation alone: the four text
 operators were watched working in a real form, and the comparison and
 null-test operators rest on formulas harvested from a live tenant rather
-than on written syntax. Four things are still refused there. Three are sentinels: `today`, whose
-client-side equivalent `@now` carries datetime rather than date semantics;
+than on written syntax. Four things are still refused there. Three are
+sentinels: `today`, whose client-side equivalent `@now` carries
+datetime rather than date semantics;
 `now`, which stores and reads back intact, but whether a show/hide rule
 built on it fires has not been observed; and `me`, which has no verified
 client-side equivalent either — see the note below. The fourth is
@@ -445,13 +447,13 @@ the time of day. `now` is exact.
 **Where it works, and where it does not:**
 
 | Target | `now` |
-|---|---|
+| --- | --- |
 | `column_validation` / `list_validation` | ✅ renders `NOW()` |
 | `views[].where` | ✅ renders `<Today/>` with `IncludeTimeValue="TRUE"` |
 | `form_visibility.when` | ❌ refused, as `today` is |
 
 Both of the supported renderings contradict a published Microsoft source,
-so they are worth stating plainly.
+so both are recorded here explicitly.
 
 Microsoft's formula reference says Lists and libraries do not support
 `NOW()`. True of **calculated** columns, where the value would go stale
@@ -519,6 +521,7 @@ phase and never fire. It is refused in validation formulas because person
 operands already are.
 
 :::
+
 - `formatting` points at a view-level (row) formatter JSON file. Its
   `[$Field]` references must be columns **this view displays** — SharePoint
   resolves them against the view's own fields, so a reference to a column
@@ -541,7 +544,7 @@ and **the whole deployment aborts** part-way. It is refused at build time
 Measured on a live tenant 2026-08-11 by `test/manual/formatter-xml-probe.js`:
 
 | In a view formatter | Result |
-|---|---|
+| --- | --- |
 | `&` | **refused** — `XmlException`, *parsing EntityName* |
 | `<` | **refused** — `XmlException`, *Name cannot begin with the `']'` character* |
 | `&amp;` | accepted, stored and returned as `&amp;` |
@@ -596,7 +599,7 @@ Three payloads reach SharePoint as XML, and they are handled in three
 different places — worth knowing before adding a fourth:
 
 | Payload | Escaped by | Where |
-|---|---|---|
+| --- | --- | --- |
 | CAML filter values in `where` | `_xml_escape` — `&`, `<`, `>`, `"` | `analysis/conditions.py`, at render time |
 | Column widths written into `ListViewXml` | `xmlAttr` — `&`, `<`, `"` | the deploy script, at write time |
 | A view's `CustomFormatter` | nothing — **refused instead** | validation, see above |
@@ -606,6 +609,7 @@ third is the one that bit: it is sent as a JSON property and becomes XML only
 inside SharePoint, so the obligation is invisible at the call site.
 
 :::
+
 - `group_by` groups the view by one or two columns — SharePoint's own
   ceiling is two. Write `group_by: { field: Area }` for one level, or
   `group_by: { fields: [SourceType, SourceInstrument], collapsed: true }`
@@ -878,7 +882,7 @@ except `reconcile:`; anything else is a load error.
 Per column, either the string `hidden` or `visible`, or a mapping:
 
 | Key | Type | Default | Meaning |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `new` | bool | `true` | Show on the **New** form |
 | `existing` | bool | `true` | Show on **existing items** |
 | `when` | list or group | — | A condition tree; the column shows only when it holds |
@@ -963,7 +967,7 @@ always true on a new item.
 `Author`, `Editor`, `ID`) are rejected by `form_visibility`,
 `column_validation` and `column_formatting` alike:
 
-```
+```text
 form_visibility[Risk]: 'Title' cannot carry a per-column declaration — the
 built-in Title column is provisioned through its own patch, so it never
 receives these properties. Declaring it here would validate clean and
@@ -1099,7 +1103,7 @@ One declaration resolves at build time into mechanisms the deployer
 already implements — no new deploy-time capability, no new API surface:
 
 | Declared | Resolves to | Existing mechanism |
-|---|---|---|
+| --- | --- | --- |
 | retired | hidden on the New form | `form_visibility` `{new: false}` |
 | retired | readable on Edit and Display (history) | default; `hide_existing: true` opts out |
 | retired | display title suffixed `" (retired)"` | `display_names` |
@@ -1383,7 +1387,7 @@ template and example uses.
 
 :::
 
-:::danger A direct share cannot be used — and the supported route is not yet verified end-to-end
+:::danger A direct share cannot be used
 
 A tempting shortcut for handing a reporting account read access is to share
 the site or a list with it directly, outside `mapping.yaml`. Three measured
@@ -1519,8 +1523,9 @@ refusal is not proof that no encoding exists. See the dated comment in
 
 ### The two site-wide groups
 
-`dbml Enterprise Readers` and `dbml List Administrators` are **one group per site**, not
-one per family. Every shipped family declares them identically, and a fleet
+`dbml Enterprise Readers` and `dbml List Administrators` are
+**one group per site**, not one per family. Every shipped family
+declares them identically, and a fleet
 test enforces that, because two families deployed to the same site reconcile
 the same group object — the security phase writes the description, owner and
 every behaviour flag on every run, so a family that disagreed would silently
@@ -1630,7 +1635,7 @@ Value grammar:
 - Anything else — a literal, validated against the column type and enum
   membership.
 
-Every Title must start with `[DEMO] ` (validated) — the marker is the
+Every Title must start with `[DEMO]` (validated) — the marker is the
 [teardown contract](../artifacts/demo-data.md). Only emitted with
 `build --seed`.
 

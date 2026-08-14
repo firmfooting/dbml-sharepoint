@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Integrity owner | *(e.g. head of governance / people & culture)* | Thresholds, assessment standards, attestation, this document |
 | DR Compliance Coordinators | The maintaining group | Assessment workflow, review cadence, register hygiene |
 | Every staff member | — | Declaring early and honestly |
@@ -27,7 +27,7 @@ decides" line reads as nearly full at a glance. A bar scaled to somebody
 else's ladder means nothing.
 
 | Estimated value | Rule |
-|---|---|
+| --- | --- |
 | Token (under $50) | Declare; may retain unless from a current tenderer |
 | $50 – $150 | Declare; manager decides retain/surrender |
 | Over $150 | Declare; integrity owner decides; default surrender |
@@ -81,7 +81,7 @@ becomes structure.
 **Enforced at save — SharePoint rejects the row:**
 
 | Rule | List | Where it lives |
-|---|---|---|
+| --- | --- | --- |
 | Rule 2, the date half: *Assessed - managed* needs a `ReviewDate` | Interest | list validation |
 | Rule 1, the date half: *Ceased* needs a `CeasedDate` | Interest | list validation |
 | `DeclaredDate` and `CeasedDate` cannot be in the future | Interest | column validation |

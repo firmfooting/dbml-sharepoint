@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Programme owner | *(e.g. COO / transformation / improvement lead)* | The worklist, scoring calibration, this document |
 | Process owner (per row) | `Owner` | The row's truthfulness; the process itself |
 | Function leads | — | Their function's inventory completeness |
@@ -56,7 +56,7 @@ bypassed is **In progress** at best.
 **Refused at save:**
 
 | Rule | Where it lives |
-|---|---|
+| --- | --- |
 | Planned, In progress or Digitised has a TargetState | `list_validation` |
 | ReviewDate is at most twelve months out | `column_validation` on `ReviewDate` |
 | Owner, Function, Criticality, CurrentState, PainLevel and DigitisationStatus are present | the columns' own `not null` — always enforced |
@@ -77,8 +77,9 @@ quietly going stale.
   more column references are not allowed, because the columns are defined
   as a data type that is not supported in formulas."* That is established
   against a live tenant, and the build refuses the operand, so the rule
-  cannot be written at all. It ships as a **visual** control instead: `System URL` is a column on the
-  **Programme dashboard**, which groups by status and collapses, so a
+  cannot be written at all. It ships as a **visual** control instead:
+  `System URL` is a column on the **Programme dashboard**, which groups by
+  status and collapses, so a
   Digitised row with no link is an empty cell in a column of links. That is
   a compensating control, not an equivalent one, and the fortnightly
   programme review is where it is read.

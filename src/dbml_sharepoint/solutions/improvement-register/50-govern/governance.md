@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Improvement lead | *(e.g. quality/CI manager)* | Triage, coaching owners, the reporting, this document |
 | Improvement owner (per row) | `Owner` | Running the cycle honestly, updating the row |
 | Everyone | — | Raising ideas; feeding the loops |
@@ -59,7 +59,7 @@ it, and
 **Refused at save:**
 
 | Rule | Where it lives |
-|---|---|
+| --- | --- |
 | An Adopted or Abandoned improvement has an AdoptedDate | `list_validation` |
 | An Adopted improvement has a MeasureAfter | `list_validation` |
 | MeasureBefore is present | the column's own `not null` — it has always been enforced |

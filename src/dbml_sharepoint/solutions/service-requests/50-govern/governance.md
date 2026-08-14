@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Service owner | *(e.g. facilities/ops manager)* | Turnaround targets, the category catalogue, this document |
 | Queue lead (per category) | A named person per team | Their queue's hygiene and turnaround |
 | SR Service Teams | The working group | Working the queues honestly |
@@ -11,7 +11,7 @@
 ## Turnaround targets (edit to your reality — then publish them)
 
 | Priority | Accepted within | Completed within |
-|---|---|---|
+| --- | --- | --- |
 | Urgent | Same business day | 2 business days (or Waiting with reason) |
 | Normal | 2 business days | 10 business days |
 | Low | 5 business days | 20 business days |
@@ -24,7 +24,7 @@ calendar month. See "What the report can and cannot tell you" below.
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Requested Date` | Cannot be in the future |
 | `Completed Date` | Cannot be in the future |
 | The list | A request set to **Completed** or **Declined** must have both a Completed Date and a Resolution |

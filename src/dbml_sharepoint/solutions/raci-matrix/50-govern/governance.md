@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Register owner | *(e.g. head of governance / company secretary / COO)* | That the register describes the organisation as it is today; the quarterly review; this document |
 | Accountable (per row) | The `Accountable` column | That the activity happens, and that the row describing it stays true |
 | Responsible (per row) | The `Responsible` column | Doing the work, and saying when the row no longer matches reality |
@@ -210,7 +210,7 @@ that they are the same work. Two habits reduce it:
 ## What the register does enforce
 
 | Rule | Where |
-|---|---|
+| --- | --- |
 | Exactly one Responsible and one Accountable, both individuals | The column types — a person column, single-valued |
 | A team cannot hold either | The column types — a group is not a selectable value |
 | An involvement names an activity, a party and the input it gives | Required columns |

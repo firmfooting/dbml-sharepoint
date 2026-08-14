@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Assurance owner | *(e.g. CFO / head of governance / audit committee secretary)* | Register completeness, committee reporting, this document |
 | Audit sponsor (per audit) | The `Sponsor` executive | The management response and its delivery |
 | Action owner (per row) | `Owner` | Delivering the agreed action, honest updates |
@@ -27,7 +27,7 @@ as Closed.
 ## Extension and acceptance authority (edit to your delegations)
 
 | Action | Authorised by |
-|---|---|
+| --- | --- |
 | Extend a Low/Moderate item (once) | Audit sponsor |
 | Extend High/Critical, or any second extension | Audit committee (recorded in minutes, RevisedDue updated) |
 | Risk accepted | Audit committee on the sponsor's written justification |
@@ -88,7 +88,7 @@ Rules 1 and 3 cannot be enforced at save either.
 **Enforced at save — SharePoint rejects the row:**
 
 | Rule | List | Where it lives |
-|---|---|---|
+| --- | --- | --- |
 | Rule 2: a *Closed* **or *Risk accepted*** recommendation needs a `ClosedDate` | Recommendation | list validation |
 | `ClosedDate` cannot be in the future | Recommendation | column validation |
 | `ReportDate` cannot be in the future | Audit | column validation |

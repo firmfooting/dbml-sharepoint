@@ -1,6 +1,6 @@
 # Measures register
 
-*Theme: process digitisation & improvement*
+*Theme: process digitisation & improvement.*
 
 A catalogue of the measures the organisation actually runs on: each KPI's
 **definition** (numerator, denominator, exclusions), owner, target, data
@@ -30,7 +30,7 @@ enforced until now.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit frequency/direction language to your reporting |
 | 2 | `20-configure/` | Prefix; custodians-maintain model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; load the current KPIs |
@@ -43,7 +43,7 @@ review cadence in `column_validation` is the one number worth agreeing
 before first deploy.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes six `[DEMO] `-titled rows — four Active measures across four
+that pastes six `[DEMO]`-titled rows — four Active measures across four
 areas and four forums, one Under development with no review date, and one
 Retired — so every view and every status colour renders on a first look.
 See `30-deploy/deploy.md`.

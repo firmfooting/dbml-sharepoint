@@ -23,7 +23,7 @@ who owns it. Find your name, expand it, and that is your list. Four other
 views are already built for you:
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **By owner** | The default. Everything, grouped by owner. |
 | **The gap list** | Non-compliant and Partially compliant rows, worst first, with the Notes column beside them. |
 | **Not yet assessed** | Rows still on *Not assessed*, grouped by owner. |

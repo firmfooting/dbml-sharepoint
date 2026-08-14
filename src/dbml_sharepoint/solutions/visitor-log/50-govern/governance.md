@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Log owner | *(e.g. facilities/reception manager)* | The muster procedure, retention, this document |
 | Reception | — | Front-door sign-ins, the morning tidy-up |
 | Every host | — | Their guests: induction, escort rules, sign-out |
@@ -15,7 +15,7 @@ The register enforces two things itself, both with their own message on
 the form:
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Signed In At` | Cannot be in the future |
 | `Signed Out At` | Cannot be in the future |
 

@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Pipeline owner | *(e.g. PMO lead / COO / planning manager)* | Gate cadence, scoring definitions, this document |
 | Sponsor (per proposal) | The `Sponsor` executive | Scoping honesty; delivery if approved |
 | Gate | *(the forum below)* | Decisions, recorded |
@@ -24,7 +24,7 @@ Easy/Medium (6). The gate's job is to overrule the score *out loud*.
 ## Gate authority (edit to your delegations)
 
 | CostBand | Decided by | Cadence |
-|---|---|---|
+| --- | --- | --- |
 | Minimal / Small | Pipeline owner + relevant manager | Monthly |
 | Medium | Executive team | Monthly |
 | Large | Executive team / board per your delegations | As required |
@@ -56,7 +56,7 @@ Approved without a named Sponsor is returned to Scoping.
 **Refused at save:**
 
 | Rule | Where it lives |
-|---|---|
+| --- | --- |
 | Ready for decision has Benefit, Feasibility and CostBand | `list_validation` |
 | Anything past the gate (Approved, In delivery, Delivered, Declined, Parked) has a DecisionDate | `list_validation` |
 | Delivered has a DeliveredDate | `list_validation` |

@@ -24,7 +24,7 @@ anything real.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit interest types and gift categories to your code of conduct |
 | 2 | `20-configure/` | Prefix; the declare-only staff model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify the two registers |
