@@ -1557,21 +1557,36 @@ Delete them by hand once you have re-enrolled the reader account into
 **The group-adoption gate.** Every group this tool writes now carries
 `Provisioned by dbml-sharepoint` in its description: the two site-wide groups
 carry a marker naming no family, and every other group carries one naming
-its own, such as `Provisioned by dbml-sharepoint from risk-register.`
+its own, such as `Provisioned by dbml-sharepoint from risk-register.` The
+marker is how a later run recognises a group it, or an earlier version of
+it, created.
 
 On a later deploy, a same-named group that carries the marker is adopted as
 before. A same-named group that carries no marker and holds no members is
 adopted and stamped with one. A same-named group that carries no marker and
-already holds members is refused: the deploy stops before making any change
-on that site.
+already holds members is refused.
 
-The two site-wide groups are unaffected by this on any site already running
-`dbml`-prefixed names, because #210 renamed them and every site creates them
-fresh under that name. A per-family group is a different matter on a site
-deployed before this release: it is populated and carries no marker, so the
-first redeploy after upgrading stops on it. The remedy is to empty the group
-before redeploying, or to rename the pre-existing group so the deploy creates
-its own under the declared name.
+A refusal is narrow. The refused group itself is left exactly as it was;
+nothing is written to it. **No later phase runs**, so no lists are created,
+no ACLs are assigned and no seed rows are written. Other groups declared in
+the same phase, though, may already have been created or reconciled before
+the run stops on the one that fails.
+
+Whether an existing site hits that refusal depends on the group. `dbml List
+Administrators` is normally empty between runs, since the deploy enrols the
+operator only for the run's duration and removes them again on the way out,
+so a redeploy normally adopts and stamps it without incident. `dbml
+Enterprise Readers` behaves differently: once a reader account is enrolled,
+that membership is permanent, so a site that has already enrolled one is
+refused on its first redeploy under this release, exactly as a populated
+per-family group is. A site that has never deployed either group is
+unaffected, because both are created fresh and stamped.
+
+A per-family group on a site deployed before this release is in the same
+position as an already-enrolled `dbml Enterprise Readers`: it is populated
+and carries no marker, so the first redeploy after upgrading stops on it.
+The remedy is to empty the group before redeploying, or to rename the
+pre-existing group so the deploy creates its own under the declared name.
 
 ## `demo_items`
 
