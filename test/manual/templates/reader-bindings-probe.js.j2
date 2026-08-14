@@ -70,8 +70,39 @@
  *                costs the same requests: the web assignments are one read
  *                either way, and each list's were already read once per list.
  *
- * #199 part 2 is therefore ANSWERED FOR THIS SITE and #198 is still open,
- * pending one re-run.
+ * RUN 2 — 2026-08-14, revision 79eeaec8, same site, after the census
+ * rewrite. Six questions, SIX answered.
+ *
+ *     R4  Every tool-created group holds exactly `Limited Access` at web
+ *         scope -- the DERIVED binding SharePoint adds when a group is
+ *         granted something on a list below the web. Nothing elevated.
+ *         The site's own Owners/Members/Visitors hold Full Control, Edit
+ *         and Read as expected.
+ *     R5  `RC Enterprise Readers` holds `Read` on exactly the two RC lists
+ *         it was granted and nothing else. Each `<XX> List Administrators`
+ *         holds Full Control on its own family's lists only.
+ *
+ * So #198's hazard is NOT present on this site: no group carries a binding
+ * the deploy would hand on unexpectedly. One site is not a guarantee, but
+ * the shape of the gate is now known -- probe the group's web-scope
+ * bindings and its explicit list bindings, and fail closed on anything
+ * beyond a derived Limited Access.
+ *
+ * THREE THINGS THE RUN CONFIRMED THAT WERE PREVIOUSLY TAKEN FROM DOCS:
+ *
+ *   - `Limited Access` really is DERIVED. It appears on every group that
+ *     was granted something below the web, and on none that was not, and
+ *     nothing assigned it directly. That is the empirical half of the
+ *     argument for refusing it as an assignment level, which until now
+ *     rested on a Learn sentence alone.
+ *   - `Web-Only Limited Access` is REAL and in use, held by the web's
+ *     Limited Access system group. It was added to BUILT_IN_LEVELS on the
+ *     strength of a Learn table that most summaries omit; here it is.
+ *   - The site carries `CI`, `PP`, `RC` and `RG List Administrators` plus
+ *     `RC Enterprise Readers` -- four families deployed, four administrator
+ *     groups, exactly the fragmentation the shared-group change removes.
+ *
+ * #199 part 2 is ANSWERED FOR THIS SITE, and #198 with it.
  *
  * HOW TO RUN
  *   1. Open the target site as a SITE OWNER — reading role assignments needs
@@ -204,15 +235,22 @@
   }
 
   // ---- R5: list-scope bindings, for every group, on every list -----------
-  const lists = await spGet("web/lists?$select=Id,Title,Hidden&$top=500");
+  // HasUniqueRoleAssignments is what makes this readable. A list that
+  // INHERITS returns the web's assignments verbatim, so run 1 reported every
+  // group against nearly every list -- ~110 entries, of which the handful
+  // that mattered were buried. Worse, it read as though the reader group held
+  // a binding on Site Pages and Style Library when it holds one only at web
+  // scope, which R4 already reports. Inherited lists are counted, not listed.
+  const lists = await spGet("web/lists?$select=Id,Title,Hidden,HasUniqueRoleAssignments&$top=500");
   if (readFailed(lists) || !Array.isArray(lists.body && lists.body.value)) {
     record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
       `NOT ESTABLISHED (HTTP ${lists.status})`, 'could not enumerate lists');
   } else {
     const visible = lists.body.value.filter((l) => !l.Hidden);
+    const unique = visible.filter((l) => l.HasUniqueRoleAssignments);
     const held = [];
     let unreadable = 0;
-    for (const l of visible) {
+    for (const l of unique) {
       const asg = await spGet(
         `web/lists(guid'${l.Id}')/roleassignments?$expand=RoleDefinitionBindings&$top=200`);
       if (readFailed(asg) || !Array.isArray(asg.body && asg.body.value)) { unreadable += 1; continue; }
@@ -227,10 +265,12 @@
     // summary that omitted it would overstate what was checked.
     record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
       'PASS',
-      `${visible.length} visible list(s) checked${unreadable ? `, ${unreadable} whose ACL could not be read` : ''}. `
+      `${unique.length} of ${visible.length} visible list(s) have UNIQUE permissions and were inspected; `
+      + `the other ${visible.length - unique.length} inherit from the web, so their bindings are R4's, not their own`
+      + `${unreadable ? `, and ${unreadable} unique list(s) had an ACL this caller could not read` : ''}. `
       + (held.length
         ? `${held.join('; ')}. Any of these on a list OUTSIDE a deployed bundle is inherited permanently by an account enrolled into that group: deploy/_acls.js.j2 iterates SCHEMA.list_assignments only.`
-        : 'no site group holds a list-scope binding on any visible list.'));
+        : 'no site group holds an explicit binding on any list with unique permissions.'));
   }
 
   report();
