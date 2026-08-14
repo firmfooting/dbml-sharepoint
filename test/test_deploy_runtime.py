@@ -1947,6 +1947,29 @@ def test_an_unmarked_but_empty_group_is_adopted_and_stamped() -> None:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unmarked_group_with_a_member_on_a_later_page_is_refused() -> None:
+    """`countGroupMembers` must follow every page, not just the first.
+
+    The first page is empty and the only member sits on page two. A count
+    that stopped after page one would read zero, adopt the group, and MERGE
+    the family's grant onto it. This is the only guard surface on this
+    branch with no coverage of its own `__next` pagination, so it gets a
+    test that a broken loop cannot pass by accident:
+    `test_an_unmarked_group_with_members_is_refused` puts every member on
+    page one and would stay green even if pagination were deleted entirely.
+    """
+    summary, calls, _ = _group_gate_deploy(
+        _deploy_js(), "List Maintainer",
+        description="Our own group", member_pages=[[], [{"Id": 501}]],
+    )
+    assert not _group_settings_writes(calls, "List Maintainer"), (
+        "an unmarked group with a member on a later page was reconciled "
+        "before the refusal"
+    )
+    assert _security_errors(summary), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_marked_group_with_members_is_adopted_silently() -> None:
     """A redeploy must not trip over the enterprise reader a prior run
     already enrolled into this same group. `enterprise_reader=None` keeps
