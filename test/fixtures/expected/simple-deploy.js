@@ -1761,91 +1761,118 @@
       }
     }
 
-    for (const lvl of SCHEMA.permission_levels) {
-      try {
-        const existingLevels = await probeLevelExistence(lvl.name);
-        if (existingLevels.length === 0) {
-          log('INFO', `Creating permission level '${lvl.name}'...`);
-          const createResp = await postJson(apiUrl('web/roledefinitions'), {
+    // Decision shape: { kind: 'create'|'adopt'|'refuse', object: 'level'|'group', name, reason?, ...state }.
+    // A refusal is returned as data, not thrown, so a later caller can act on
+    // every survey before any write happens. A genuine failure (unreadable
+    // response, enumeration error) still throws.
+    async function surveyLevel(lvl) {
+      const existingLevels = await probeLevelExistence(lvl.name);
+      if (existingLevels.length === 0) {
+        return { kind: 'create', object: 'level', name: lvl.name, lvl };
+      }
+      const existingId = existingLevels[0].Id;
+      const existingDescription = typeof existingLevels[0].Description === 'string'
+        ? existingLevels[0].Description
+        : '';
+      // #224. A role definition is SITE-SCOPED: adopting one this tool
+      // did not create would overwrite its bitmap for every list it is
+      // already assigned on, including lists this deploy never reads.
+      // MARKER ONLY, deliberately, and a usage count never clears this
+      // gate: `_acls.js.j2` assigns every level at LIST scope, and only
+      // web-scope usage can be measured (role-definition-probe.js R9),
+      // so a web-scope zero does not mean the level is unused.
+      if (typeof lvl.expected_marker !== 'string' || lvl.expected_marker === '') {
+        return {
+          kind: 'refuse',
+          object: 'level',
+          name: lvl.name,
+          reason: `SCHEMA.permission_levels['${lvl.name}'].expected_marker is missing or empty; refusing to adopt any level against it.`,
+        };
+      }
+      if (existingDescription.indexOf(lvl.expected_marker) === -1) {
+        // MARKER ONLY, deliberately. A usage count cannot clear this gate
+        // because usage cannot be measured completely: assignments live at
+        // LIST scope and only web scope was measured.
+        const atWebScope = await countWebAssignmentsUsing(existingId);
+        return {
+          kind: 'refuse',
+          object: 'level',
+          name: lvl.name,
+          reason: `Permission level '${lvl.name}' already exists and carries no '${lvl.expected_marker}' marker, `
+            + `so it was not created by this declaration. A permission level is site-wide, and reconciling it `
+            + `would change what it grants everywhere it is assigned, including lists this deploy does not `
+            + `manage and never reads. It is used by ${atWebScope} role assignment(s) AT WEB SCOPE; `
+            + `assignments on individual lists are not counted, so treat that as a floor rather than a total. `
+            + `Nothing has been written to this level. Rename the level in your mapping so this deploy creates `
+            + `its own.`,
+        };
+      }
+      return { kind: 'adopt', object: 'level', name: lvl.name, lvl, existingId };
+    }
+
+    async function applyLevelDecision(decision) {
+      const lvl = decision.lvl;
+      if (decision.kind === 'create') {
+        log('INFO', `Creating permission level '${lvl.name}'...`);
+        const createResp = await postJson(apiUrl('web/roledefinitions'), {
+          __metadata: { type: 'SP.RoleDefinition' },
+          Name: lvl.name,
+          Description: lvl.description,
+          BasePermissions: {
+            __metadata: { type: 'SP.BasePermissions' },
+            High: lvl.base_permissions.high,
+            Low: lvl.base_permissions.low,
+          },
+          Order: 100,
+        }, digest0);
+        let newLevelId = createResp?.d?.Id;
+        if (!Number.isInteger(newLevelId)) {
+          // The create response carried no Id. Resolve it by name through
+          // the same $filter probe rather than skip verification silently.
+          // test/manual/role-definition-probe.js hit exactly this case and
+          // carries the same fallback.
+          const resolved = await probeLevelExistence(lvl.name);
+          if (resolved.length !== 1 || !Number.isInteger(resolved[0].Id)) {
+            throw new Error(`Permission level '${lvl.name}' was created but its Id could not be resolved for verification`);
+          }
+          newLevelId = resolved[0].Id;
+          log('INFO', `Create returned no Id for '${lvl.name}'; resolved it by name to verify it.`);
+        }
+        await verifyLevelSettings(lvl, newLevelId);
+        log('INFO', `Permission level '${lvl.name}' created.`);
+      } else {
+        // A same-name role definition is not proof that its permissions are
+        // still the declared permissions. Reconcile the security-sensitive
+        // fields on every run so a drifted level cannot silently retain
+        // edit/delete rights.
+        digest0 = await getDigest();
+        const mergeResp = await fetchWithRetry(apiUrl(`web/roledefinitions/getbyname('${odataName(lvl.name)}')`), {
+          method: 'POST',
+          headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
+          body: JSON.stringify({
             __metadata: { type: 'SP.RoleDefinition' },
-            Name: lvl.name,
             Description: lvl.description,
             BasePermissions: {
               __metadata: { type: 'SP.BasePermissions' },
               High: lvl.base_permissions.high,
               Low: lvl.base_permissions.low,
             },
-            Order: 100,
-          }, digest0);
-          let newLevelId = createResp?.d?.Id;
-          if (!Number.isInteger(newLevelId)) {
-            // The create response carried no Id. Resolve it by name through
-            // the same $filter probe rather than skip verification silently.
-            // test/manual/role-definition-probe.js hit exactly this case and
-            // carries the same fallback.
-            const resolved = await probeLevelExistence(lvl.name);
-            if (resolved.length !== 1 || !Number.isInteger(resolved[0].Id)) {
-              throw new Error(`Permission level '${lvl.name}' was created but its Id could not be resolved for verification`);
-            }
-            newLevelId = resolved[0].Id;
-            log('INFO', `Create returned no Id for '${lvl.name}'; resolved it by name to verify it.`);
-          }
-          await verifyLevelSettings(lvl, newLevelId);
-          log('INFO', `Permission level '${lvl.name}' created.`);
-        } else {
-          const existingId = existingLevels[0].Id;
-          const existingDescription = typeof existingLevels[0].Description === 'string'
-            ? existingLevels[0].Description
-            : '';
-          // #224. A role definition is SITE-SCOPED: adopting one this tool
-          // did not create would overwrite its bitmap for every list it is
-          // already assigned on, including lists this deploy never reads.
-          // MARKER ONLY, deliberately, and a usage count never clears this
-          // gate: `_acls.js.j2` assigns every level at LIST scope, and only
-          // web-scope usage can be measured (role-definition-probe.js R9),
-          // so a web-scope zero does not mean the level is unused.
-          if (typeof lvl.expected_marker !== 'string' || lvl.expected_marker === '') {
-            throw new Error(`SCHEMA.permission_levels['${lvl.name}'].expected_marker is missing or empty; refusing to adopt any level against it.`);
-          }
-          if (existingDescription.indexOf(lvl.expected_marker) === -1) {
-            // MARKER ONLY, deliberately. A usage count cannot clear this gate
-            // because usage cannot be measured completely: assignments live at
-            // LIST scope and only web scope was measured.
-            const atWebScope = await countWebAssignmentsUsing(existingId);
-            throw new Error(
-              `Permission level '${lvl.name}' already exists and carries no '${lvl.expected_marker}' marker, `
-              + `so it was not created by this declaration. A permission level is site-wide, and reconciling it `
-              + `would change what it grants everywhere it is assigned, including lists this deploy does not `
-              + `manage and never reads. It is used by ${atWebScope} role assignment(s) AT WEB SCOPE; `
-              + `assignments on individual lists are not counted, so treat that as a floor rather than a total. `
-              + `Nothing has been written to this level. Rename the level in your mapping so this deploy creates `
-              + `its own.`);
-          }
-          // A same-name role definition is not proof that its permissions are
-          // still the declared permissions. Reconcile the security-sensitive
-          // fields on every run so a drifted level cannot silently retain
-          // edit/delete rights.
-          digest0 = await getDigest();
-          const mergeResp = await fetchWithRetry(apiUrl(`web/roledefinitions/getbyname('${odataName(lvl.name)}')`), {
-            method: 'POST',
-            headers: spHeaders(digest0, { 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' }),
-            body: JSON.stringify({
-              __metadata: { type: 'SP.RoleDefinition' },
-              Description: lvl.description,
-              BasePermissions: {
-                __metadata: { type: 'SP.BasePermissions' },
-                High: lvl.base_permissions.high,
-                Low: lvl.base_permissions.low,
-              },
-            }),
-          });
-          if (!mergeResp.ok) {
-            const text = await mergeResp.text();
-            throw new Error(`Permission level '${lvl.name}' MERGE failed: HTTP ${mergeResp.status} ${text}`);
-          }
-          await verifyLevelSettings(lvl, existingId);
-          log('INFO', `Permission level '${lvl.name}' already exists; declared permissions reconciled.`);
+          }),
+        });
+        if (!mergeResp.ok) {
+          const text = await mergeResp.text();
+          throw new Error(`Permission level '${lvl.name}' MERGE failed: HTTP ${mergeResp.status} ${text}`);
         }
+        await verifyLevelSettings(lvl, decision.existingId);
+        log('INFO', `Permission level '${lvl.name}' already exists; declared permissions reconciled.`);
+      }
+    }
+
+    for (const lvl of SCHEMA.permission_levels) {
+      try {
+        const decision = await surveyLevel(lvl);
+        if (decision.kind === 'refuse') throw new Error(decision.reason);
+        await applyLevelDecision(decision);
       } catch (err) {
         log('ERROR', `Phase 1.2 permission level '${lvl.name}': ${err.message}`);
         summary.errors.push({ phase: '1.2', permissionLevel: lvl.name, error: err.message });
