@@ -1,6 +1,6 @@
 # Credentialing register
 
-*Theme: people & relationships — built for credentialed workforces
+*Theme: people & relationships, built for credentialed workforces
 (healthcare, but equally trades, legal, education).*
 
 Who is credentialed to do what, on whose decision, until when. Two lists:
@@ -9,7 +9,7 @@ approved **scope of practice**) and `CR_Credential` (each registration,
 qualification, certification or privilege, with expiry and evidence).
 
 **The value case.** In a health service this register is not optional
-paperwork — evidencing current registration and defined scope of clinical
+paperwork: evidencing current registration and defined scope of clinical
 practice is core clinical governance (NSQHS Standard 1 territory), and the
 question accreditors and coroners ask is precise: *how did the organisation
 know this person was credentialed for this activity on this date?* The
@@ -27,7 +27,7 @@ credentialing file, four save rules, and eleven demo rows.
 
 **Boundary:** this register **indexes** credentialing decisions and
 evidence; primary source documents (AHPRA extracts, certificates) live in
-your records system, linked. It holds staff professional data — read the
+your records system, linked. It holds staff professional data. Read the
 privacy posture in `50-govern/governance.md` before widening the site.
 
 **Work the folders in order:**
@@ -41,5 +41,5 @@ privacy posture in `50-govern/governance.md` before widening the site.
 | 5 | `50-govern/` | Scope decision authority, review cycles, privacy |
 
 **Customisation points:** `Discipline` and `CredentialType` enums; whether
-scope summaries are visible to all staff (default yes — knowing who may do
+scope summaries are visible to all staff (default yes: knowing who may do
 what is the register's operational point) or restricted.

@@ -1,6 +1,6 @@
 # Opportunities register
 
-*Theme: process digitisation & improvement — governance-light.*
+*Theme: process digitisation & improvement, governance-light.*
 
 A thin routing layer for business problems that a project discovers but is
 not authorised or funded to fix. It captures the problem once, sends it to an
@@ -30,7 +30,7 @@ tracker.
 ## Stop before capture
 
 The first field is a mandatory stop gate. A submission cannot save when the
-user selects **Urgent, sensitive or unsure — use routing guide first**.
+user selects **Urgent, sensitive or unsure: use routing guide first**.
 
 Use the organisation's required pathway first for current or potential harm,
 safety incidents, complaints or disclosure processes, privacy/cyber concerns,
@@ -44,14 +44,14 @@ summary and the controlled-system reference. Local policy and law always win.
 
 The New form requires only:
 
-1. **Safety and privacy check** — confirms the required pathway has been used
+1. **Safety and privacy check**: confirms the required pathway has been used
    and the list is safe for a de-identified process observation.
-2. **Problem or opportunity** — a specific one-line title.
-3. **Problem Statement** — two to four plain-language sentences: what happens,
+2. **Problem or opportunity**: a specific one-line title.
+3. **Problem Statement**: two to four plain-language sentences: what happens,
    who is affected and why it matters.
-4. **Service or facility area** — the likely routing destination, using a
+4. **Service or facility area**: the likely routing destination, using a
    localised choice set; **Not sure** is better than guessing.
-5. **Source Project** — where the problem was encountered.
+5. **Source Project**: where the problem was encountered.
 
 Three useful inputs remain optional: evidence/source link, project link and
 why the project cannot own the work. A steward confirms the scope boundary

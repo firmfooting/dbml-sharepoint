@@ -1,4 +1,4 @@
-# Opportunities register — staff and steward guide
+# Opportunities register: staff and steward guide
 
 This is a small front door for a project-discovered problem, not another place
 to manage work. Capture once; the steward routes once.
@@ -26,16 +26,16 @@ clarifications under the same no-identifiers rule.
 
 Open `OR_Opportunity` → **New** and complete five required controls:
 
-1. **Safety and privacy check** — choose the safe-to-record option only when the
+1. **Safety and privacy check**: choose the safe-to-record option only when the
    required urgent/sensitive pathway has been used and the content is safe for
    this register. The other option deliberately refuses save.
-2. **Problem or opportunity** — one specific line, such as “Reduce repeated
+2. **Problem or opportunity**: one specific line, such as “Reduce repeated
    interpreter-booking checks”, not “Interpreter issue”.
-3. **Problem Statement** — in two to four sentences say what happens, who is
+3. **Problem Statement**: in two to four sentences say what happens, who is
    affected and why it matters. Describe the problem, not a preferred system.
-4. **Service or facility area** — choose the best first routing destination,
+4. **Service or facility area**: choose the best first routing destination,
    or **Not sure** rather than guessing.
-5. **Source Project** — name the project that encountered it.
+5. **Source Project**: name the project that encountered it.
 
 Add an Evidence/source link, Project link or scope-boundary sentence when they
 are already at hand. Do not search for them merely to submit; the steward can
@@ -79,18 +79,18 @@ semantically correct, so check the table above before save.
 
 For `Assess here`, gather just enough evidence to decide the next destination:
 
-- **Benefit Type** — the primary value;
-- **Benefit Potential** — credible reach: Limited, Material, Major or
+- **Benefit Type**: the primary value;
+- **Benefit Potential**: credible reach: Limited, Material, Major or
   System-wide;
-- **Time Criticality** — when delay reduces value, not an emergency rating;
-- **Effort Band** — Small, Medium or Large before decision; Unknown is honest
+- **Time Criticality**: when delay reduces value, not an emergency rating;
+- **Effort Band**: Small, Medium or Large before decision; Unknown is honest
   while Assessing;
-- **Strategic Alignment** — a named objective/obligation or No direct
+- **Strategic Alignment**: a named objective/obligation or No direct
   alignment;
-- **Patient, consumer and equity consideration** — one line, with detailed
+- **Patient, consumer and equity consideration**: one line, with detailed
   engagement left to the receiving process;
-- **Proposed Benefit Measure** — a practical baseline to target hypothesis;
-- **Safety, equity or authority override** — use the existing authorised
+- **Proposed Benefit Measure**: a practical baseline to target hypothesis;
+- **Safety, equity or authority override**: use the existing authorised
   priority whenever one applies.
 
 The routine score is Benefit Potential × Time Criticality. It ranks a
@@ -110,11 +110,11 @@ funding, risk, cross-service trade-offs or contested authority require it.
 
 Outcomes:
 
-- **Accepted** — record Decision Date/Rationale, choose Delivery Route and set
+- **Accepted**: record Decision Date/Rationale, choose Delivery Route and set
   one dated hand-off action. Acceptance is not delivery.
-- **Parked** — use sparingly. Record the decision, a Review Due Date and what
+- **Parked**: use sparingly. Record the decision, a Review Due Date and what
   evidence/event will be different then.
-- **Not proceeding** — state the concise reason. A full assessment is not
+- **Not proceeding**: state the concise reason. A full assessment is not
   mandatory merely to record an honest no.
 
 ## Hand off and stop
@@ -125,11 +125,11 @@ realisation. Do not copy its progress back into this register.
 
 Use the operational views:
 
-- **Needs triage** — untriaged intake only;
-- **Assessments** — commissioned assessment only;
-- **Decisions** — matters waiting for existing authority;
-- **Handoff and deferred** — accepted transfers and dated deferrals;
-- **Closed and redirected** — destination memory and concise closure reasons.
+- **Needs triage**: untriaged intake only;
+- **Assessments**: commissioned assessment only;
+- **Decisions**: matters waiting for existing authority;
+- **Handoff and deferred**: accepted transfers and dated deferrals;
+- **Closed and redirected**: destination memory and concise closure reasons.
 
 If a view has nothing in it, that is success. Do not create work to keep the
 register busy.

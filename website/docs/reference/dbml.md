@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # DBML reference
 
-The schema is standard [DBML](https://dbml.dbdiagram.io/docs/) — the
+The schema is standard [DBML](https://dbml.dbdiagram.io/docs/). The
 same file renders as an ERD on dbdiagram.io. The deployer consumes the
 subset below; the validator rejects anything outside it with a named
 finding rather than guessing.
@@ -13,7 +13,7 @@ finding rather than guessing.
 ## The table note is required
 
 Every `Table` must carry a table-level `Note:`. A table without one fails
-the build with `entity_has_no_note` — an **error**, so the family stops
+the build with `entity_has_no_note`, an **error**, so the family stops
 building.
 
 ```dbml
@@ -27,15 +27,15 @@ Table CheckPoint {
 ```
 
 Mind the two different notes. A **column** `note:` is a field
-description; the **table** `Note:` — a statement inside the table body,
-not a column setting — is the one this section is about.
+description; the **table** `Note:`, a statement inside the table body,
+not a column setting, is the one this section is about.
 
 :::warning Upgrading an existing schema
 
 **This requirement is new, it is an error, and there is no grace period.**
 From this version every `Table` must carry a `Note:`. A hand-written
 schema that built cleanly against an earlier version and has a table
-without one **will not build** — `entity_has_no_note` is an error, so
+without one **will not build**. `entity_has_no_note` is an error, so
 `dbml-sharepoint build` refuses the bundle rather than warning about it.
 Nothing on an already-deployed site changes until you paste a new
 `deploy.js.txt`.
@@ -44,7 +44,7 @@ The fix is one sentence per table, and the build names every table that
 needs one in a single run, so you can work through the list in one pass.
 Write them to the guidance in [Writing one worth
 reading](#writing-one-worth-reading) below rather than restating the
-title — the sentence is the only list-level description this tool emits,
+title. The sentence is the only list-level description this tool emits,
 and a placeholder spends it.
 
 One smaller rule applies to the sentence you write, and it is an error: it
@@ -62,8 +62,8 @@ somebody else deployed it is frequently the only explanation they get:
 the schema, the mapping and this documentation are all somewhere they are
 not. It survives a rename of the list.
 
-The deploy writes it, reads it back, and aborts if the write did not take
-— see [the deploy script](../artifacts/deploy.md).
+The deploy writes it, reads it back, and aborts if the write did not take.
+See [the deploy script](../artifacts/deploy.md).
 
 ### A provenance marker is appended
 
@@ -91,7 +91,7 @@ budget is what the marker leaves:
 ```
 
 Around 190 characters for a typical family, and the exact number depends
-on the family and entity names — a longer `Project` name shortens every
+on the family and entity names. A longer `Project` name shortens every
 note under it. Exceeding it is `entity_note_too_long_for_marker`, an
 error.
 
@@ -112,14 +112,14 @@ instead would be the friendlier-looking choice. A Description assembled
 note-first and then clamped loses its *tail*, and the tail is the marker.
 That list would deploy clean, satisfy the deploy's own read-back of the
 truncated description it sent, pass every deploy phase, and show a
-perfectly sensible description on its settings page — while being
+perfectly sensible description on its settings page, while being
 permanently invisible to fleet discovery. Nothing in the build, the
 deploy or the page can see the difference. Refusing the note at build
 time is the only place that failure is catchable.
 
 **32 characters are held in reserve** on top of the marker's current
-length. The marker may grow — a version suffix, or a family renamed to
-something more descriptive — and the reserve is what lets it, without
+length. The marker may grow (a version suffix, or a family renamed to
+something more descriptive) and the reserve is what lets it, without
 every note already written having to be re-edited. Two consequences for
 an author: a note measured against the marker you can actually see will
 be refused while still appearing to fit, and the finding reports the real
@@ -149,7 +149,7 @@ rather than noise they learn to skip:
   still reads better under list
   settings, which is the only reason left to prefer it.
 
-The shipped families are the worked examples — every
+The shipped families are the worked examples. Every
 `src/dbml_sharepoint/solutions/*/10-design/schema.dbml` carries one note
 per table. Read a few before writing your own; the column notes already
 in each schema are the model for tone.
@@ -164,7 +164,7 @@ in each schema are the model for tone.
 | `longtext` | Multiple lines, plain text | |
 | `richtext` | Multiple lines, rich text | |
 | an enum name | Choice | Enum values become the choice set; `default:` supported |
-| an enum name with `[]` | Choice (multi-valued) | `MultiChoice`, `FieldTypeKind` 15. Several members per row. Refuses `[unique]`, `default:` and every index — see below |
+| an enum name with `[]` | Choice (multi-valued) | `MultiChoice`, `FieldTypeKind` 15. Several members per row. Refuses `[unique]`, `default:` and every index; see below |
 | `date` | Date only | |
 | `datetime` | Date and time | |
 | `boolean` | Yes/No | |
@@ -172,14 +172,14 @@ in each schema are the model for tone.
 | `hyperlink` | Hyperlink | |
 | `calculated_text` / `calculated_number` / `calculated_date` | Calculated | Formula comes from the mapping's `calculated_formulas` |
 
-The legacy bare `choice` type is rejected — declare an enum so the
+The legacy bare `choice` type is rejected. Declare an enum so the
 choice set is part of the reviewed schema.
 
 ### Multi-value columns are not emitted
 
 Every column in the table above is single-valued. This tool emits no
 `MultiChoice`, no multi-value lookup and no multi-value Person column, and
-there is no syntax that asks for one — an array-suffixed type such as
+there is no syntax that asks for one. An array-suffixed type such as
 `audit_event[]` parses as DBML but fails the build with `unknown type
 'audit_event[]'`, naming the enum it is closest to.
 
@@ -191,8 +191,8 @@ types](https://support.microsoft.com/en-US/SharePoint/lists/data-and-lists/creat
 and conditional show/hide formulas do not support "Choice with multiple
 selections" ([conditional
 formulas](https://learn.microsoft.com/sharepoint/dev/declarative-customization/list-form-conditional-show-hide)).
-Several further behaviours — the item value's write and read-back shape, and
-which CAML predicates filter such a column — are not documented at all;
+Several further behaviours, the item value's write and read-back shape, and
+which CAML predicates filter such a column, are not documented at all;
 `test/manual/multi-value-probe.js` exists to settle them against a live site
 before any of it is built.
 
@@ -242,7 +242,7 @@ Table Platform {
 }
 ```
 
-That deploys as a SharePoint **Choice (multi-valued)** column —
+That deploys as a SharePoint **Choice (multi-valued)** column:
 `TypeAsString` `MultiChoice`, `FieldTypeKind` 15, created by the same plain
 `POST` to `/fields` every other column uses. A typo still fails the way a
 scalar one does: `audit_evnet[]` is *"unknown type 'audit_evnet[]'. Did you
@@ -256,27 +256,27 @@ make a typo silently do nothing.
 
 Almost nothing below is documented by Microsoft. Every row was observed on
 SharePoint Online across three runs of the probe recorded on issue #152
-(`test/manual/multi-value-probe.js`), against a four-row fixture —
+(`test/manual/multi-value-probe.js`), against a four-row fixture:
 `{View}`, `{View,Edit}`, `{Edit,Export}`, `{}`.
 
-Where Learn *does* document something about this column type — CAML's
-`<Includes>`, `<NotIncludes>` and `<Contains>` — the measurement contradicts
+Where Learn *does* document something about this column type (CAML's
+`<Includes>`, `<NotIncludes>` and `<Contains>`), the measurement contradicts
 it. That is set out in the
 [mapping reference](mapping.md#filtering-a-multi-value-column), because it
 decides what a view filter may say.
 
 | Question | Measured |
 | --- | --- |
-| Creation | plain `POST` to `/fields`, `SP.FieldMultiChoice` — no `AddFieldAsXml` |
+| Creation | plain `POST` to `/fields`, `SP.FieldMultiChoice`; no `AddFieldAsXml` |
 | Read-back | `TypeAsString="MultiChoice"`, `FieldTypeKind=15`, `Choices` as `Collection(Edm.String)` |
 | Item write shape | `{"__metadata":{"type":"Collection(Edm.String)"},"results":[…]}` |
 | Item read-back | a bare array; **an empty set reads back as `null`, not `[]`** |
-| Member order | **preserved** — written reversed, read back reversed |
-| `Indexed: true` | **refused**, *"This column type is not supported for indexing"*, reads back `false` — with a control on a single-value Choice in the same list that stuck |
+| Member order | **preserved**: written reversed, read back reversed |
+| `Indexed: true` | **refused**, *"This column type is not supported for indexing"*, reads back `false`; with a control on a single-value Choice in the same list that stuck |
 | `EnforceUniqueValues: true` | **refused**, HTTP 500 |
-| Validation formula operand | **refused** — *"This field type does not support validation formulas."* |
-| Calculated formula operand | **refused** — *"One or more column references are not allowed…"* |
-| A `severity` column formatter | **renders a flat grey fill on every row** — see below |
+| Validation formula operand | **refused**: *"This field type does not support validation formulas."* |
+| Calculated formula operand | **refused**: *"One or more column references are not allowed…"* |
+| A `severity` column formatter | **renders a flat grey fill on every row**; see below |
 
 :::
 
@@ -300,7 +300,7 @@ would reject part-way through:
 - **A `severity` or `pill` column formatter.** Both compare `@currentField`
   against quoted strings, and a multi-value field is an array, so no branch
   matches and every cell takes the fallback. Watched on the page: that is a
-  **filled grey cell on every row** — a verdict rather than a gap, and
+  **filled grey cell on every row**, a verdict rather than a gap, and
   invisible to the build and the deploy alike.
   → `multi_value_style_renders_a_false_neutral`
 
@@ -312,8 +312,8 @@ to be the broken ones, are in the
 ### What it costs
 
 Nothing against the 12-join view ceiling or the list view threshold. A
-multi-value Choice is enum-typed with no `ref`, so it is not join-bearing —
-verified in-repo by a test rather than assumed. Multi-value **Lookup** and
+multi-value Choice is enum-typed with no `ref`, so it is not join-bearing.
+Verified in-repo by a test rather than assumed. Multi-value **Lookup** and
 **Person** are a different feature with a different cost, are not
 implemented, and `person[]` is still an unknown type.
 
@@ -330,15 +330,15 @@ relationships use the mapping's `cross_site_reference_columns` pattern
 (a Choice + URL pair) instead.
 
 Every Ref also spends part of the per-view join budget and the target
-list's index budget — see [SharePoint limits you must
+list's index budget. See [SharePoint limits you must
 know](../concepts/sharepoint-limits.md) before a schema accumulates more
 refs and person columns than a single view can render.
 
 ## Indexes
 
 See [SharePoint limits you must know](../concepts/sharepoint-limits.md) for
-why this budget exists — 20 per list, two of them often spent before you
-declare a single entry — before reading the declaration rules below.
+why this budget exists (20 per list, two of them often spent before you
+declare a single entry) before reading the declaration rules below.
 
 Declare ordinary SharePoint column indexes in the table's DBML `indexes`
 block. Each entry is one column name:
@@ -406,12 +406,12 @@ Two indexes are spent without appearing in `indexes { }`:
   pair rather than a Lookup, so nothing ever enumerates its target; and a
   **calculated** `display_column`, which cannot carry an index at all, so none
   is counted or deployed and the build warns instead. A `display_column` that
-  *could* be indexed but is not an indexable type — a Note or Hyperlink column —
+  *could* be indexed but is not an indexable type (a Note or Hyperlink column)
   fails the build, since the implicit index would abort the deploy.
 
-SharePoint also creates indexes on its own — opening a view sorted on an
+SharePoint also creates indexes on its own (opening a view sorted on an
 unindexed column adds one, marked *"(Automatically created)"* on the Indexed
-Columns page — and those are invisible to this build. The validator warns once a
+Columns page) and those are invisible to this build. The validator warns once a
 list reaches 18 of its 20 for that reason.
 
 ## Column settings
@@ -462,7 +462,7 @@ was run against SharePoint Online on 2026-07-30 and answered every question:
 | Plain multi-line text (`longtext`) | **refused** |
 | Rich text (`richtext`) | **refused** |
 | Hyperlink (`hyperlink`) | **refused** |
-| Choice, multi-valued (`enum_name[]`) | **refused** — asked separately by `multi-value-probe.js` on 2026-08-10 |
+| Choice, multi-valued (`enum_name[]`) | **refused**: asked separately by `multi-value-probe.js` on 2026-08-10 |
 
 Every refusal returned the same body: *"One or more column references are not
 allowed, because the columns are defined as a data type that is not supported

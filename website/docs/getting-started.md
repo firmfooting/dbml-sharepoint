@@ -19,7 +19,7 @@ Either puts the `dbml-sharepoint` command on your path. Check it with
 `dbml-sharepoint version`.
 
 The solution templates are part of the package, so an install is all you
-need to use them — no clone required.
+need to use them, no clone required.
 
 Working from a clone instead, if you are contributing:
 
@@ -40,13 +40,13 @@ dbml-sharepoint
 
 It lists the shipped templates, copies the one you pick into a project
 directory of your own, sets your list-name prefix and site URL, and offers
-to build straight away. You get the whole family — the schema, the mapping,
+to build straight away. You get the whole family: the schema, the mapping,
 and the `deploy.md`, `staff-guide.md` and `governance.md` written for that
 template.
 
 The wizard changes **identity only**: the prefix, the site URL, and where
 the files land. It never edits the schema or the structure of the mapping,
-because those are the tested artifacts — every template is built end to end
+because those are the tested artifacts: every template is built end to end
 in CI. Once the files are yours, edit them freely.
 
 It is a front end onto `dbml-sharepoint build`, not a separate path:
@@ -55,7 +55,7 @@ anything it produces, the flags below could have produced.
 :::note Non-interactive use
 The wizard prompts only when both stdin and stdout are a terminal. In CI, a
 cron job, a Dockerfile or a pipe, a bare `dbml-sharepoint` prints help and
-exits 0 — so scripts that already call it are unaffected. Use
+exits 0, so scripts that already call it are unaffected. Use
 `dbml-sharepoint new` to ask for the wizard explicitly.
 :::
 
@@ -67,7 +67,7 @@ exits 0 — so scripts that already call it are unaffected. Use
 | `mapping.yaml` | List prefix, entity kind/template/site-role, views, widths, versioning, calculated formulas, formatting, permission levels, groups, per-list ACLs, demo rows |
 | `release.yaml` | Release tag + schema version stamped into every artifact for provenance |
 
-Every `Table` needs a table-level `Note:` — it becomes the provisioned
+Every `Table` needs a table-level `Note:`, which becomes the provisioned
 list's Description, so a schema without one fails the build. See [the
 table note is required](reference/dbml.md#the-table-note-is-required) for
 the full rule and the character budget.
@@ -80,11 +80,11 @@ Table CheckPoint {
 ```
 
 A complete worked example lives in the repository at
-`examples/project-tracker` — schema, mapping and release side by side
+`examples/project-tracker`: schema, mapping and release side by side
 with a guided README.
 
 Before you design your own schema, read [SharePoint limits you must
-know](concepts/sharepoint-limits.md) — a schema that is perfectly ordinary
+know](concepts/sharepoint-limits.md): a schema that is perfectly ordinary
 as a relational design can silently cross a SharePoint Online ceiling (the
 5,000-item list view threshold, the 12-join lookup/person-column ceiling
 per view, the 20-index-per-list cap) at runtime, after a clean build and a
@@ -102,8 +102,8 @@ dbml-sharepoint build \
   --out ./build
 ```
 
-Inside a project directory — one the wizard created, or any folder using the
-same layout — the three input paths are the defaults, so a rebuild is:
+Inside a project directory (one the wizard created, or any folder using the
+same layout) the three input paths are the defaults, so a rebuild is:
 
 ```bash
 dbml-sharepoint build --site-url https://yourtenant.sharepoint.com/sites/your-site
@@ -114,13 +114,13 @@ the mapping's `demo_items`. Add `--dry-run` to write the manifest without
 any JS.
 
 While you are still editing the schema or the mapping, reach for `validate`
-instead — it needs no site URL and writes nothing:
+instead, since it needs no site URL and writes nothing:
 
 ```bash
 dbml-sharepoint validate
 ```
 
-The build refuses to proceed on validation errors — the validator is the
+The build refuses to proceed on validation errors: the validator is the
 same fail-closed gate the deploy script trusts, run at build time where
 mistakes are cheap. See the [CLI reference](reference/cli.md) for every
 flag.
@@ -129,7 +129,7 @@ flag.
 
 :::info Why `.js.txt`?
 The pasteable scripts end in `.js.txt`, not `.js`. They exist to be opened
-and copied, never executed from disk — and on Windows a `.js` file is bound
+and copied, never executed from disk. On Windows a `.js` file is bound
 to Windows Script Host, so double-clicking one runs a provisioning script
 outside the browser entirely. `.js.txt` opens in a text editor everywhere,
 and the inner `.js` keeps the artifact self-describing.
@@ -143,7 +143,7 @@ one.
    instructions and must show **0 validation errors**. `build/index.md`
    lists every artifact with checksums.
 2. *(Optional but recommended on an unfamiliar site)* paste
-   `build/assess.js.txt` in the site's console first — it is
+   `build/assess.js.txt` in the site's console first: it is
    [read-only](artifacts/assess.md) and prints a
    `COMPATIBLE / DEGRADED / BLOCKED` verdict.
 3. Open
@@ -167,7 +167,7 @@ dbml-sharepoint build ... --seed
 Paste `demo-data.js.txt` after a successful deploy to create the declared
 `[DEMO]`-marked sample rows. When the demonstration is over,
 `rollback.js.txt` recognises demo-only content and removes it without
-ceremony — see [rollback](artifacts/rollback.md) for the exact gates it
+ceremony. See [rollback](artifacts/rollback.md) for the exact gates it
 applies to anything that is *not* demo content.
 
 ## Browse these docs locally

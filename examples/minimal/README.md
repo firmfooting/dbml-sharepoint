@@ -1,6 +1,6 @@
 # Minimal example
 
-The smallest working input set: one table, one enum, one lookup — enough
+The smallest working input set: one table, one enum, one lookup, enough
 to exercise the whole pipeline without reading anything else.
 
 ```bash

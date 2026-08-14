@@ -3,7 +3,7 @@
 Turn a [DBML](https://dbml.dbdiagram.io/docs/) schema plus a YAML mapping into
 an **idempotent, fail-closed, browser-console `deploy.js.txt`** that provisions
 SharePoint Online lists, columns, lookups, indexes, permission levels, groups
-and ACLs — with **no tenant admin rights, no premium licence, and nothing
+and ACLs, with **no tenant admin rights, no premium licence, and nothing
 installed on the target**. If you can open the site and press F12, you can
 deploy.
 
@@ -30,20 +30,20 @@ philosophy.
 
 ## Why
 
-- **Design as code.** Your list schema lives in DBML — reviewable, diffable,
+- **Design as code.** Your list schema lives in DBML: reviewable, diffable,
   renderable as an ERD on [dbdiagram.io](https://dbdiagram.io), with indexes
   declared beside their tables. Deployment and presentation mapping
   (prefixes, templates, versioning, views, ACLs) lives in YAML next to it.
 - **Deploy with nothing but a browser.** The generated script runs in the
   site's own console under your own login, calling only documented SharePoint
   REST/CSOM endpoints. No PnP, no CSOM installs, no app registrations, no
-  Graph consent — see [why not PnP, site scripts, or
+  Graph consent. See [why not PnP, site scripts, or
   Graph?](website/docs/concepts/comparison.md) for an honest comparison.
 - **Fail closed, rerun safely.** Every write is preceded by read-only
   preflights: wrong site aborts, existing lists/fields are adopted only when
   their immutable shape provably matches, mutable drift is narrowly
   reconciled and read back. Reruns skip work the script can verify is
-  already correct — which it decides by reading the live site, not by
+  already correct, which it decides by reading the live site, not by
   comparing release tags.
 - **Real column support.** Text, note, choice (+ defaults), person, date,
   number, boolean, hyperlink, same-site lookups (including deferred circular
@@ -64,7 +64,7 @@ uv tool install git+https://github.com/shauneccles/dbml-sharepoint
 ```
 
 The solution templates are part of the package, so an install is all you
-need to use them — no clone required.
+need to use them, no clone required.
 
 Or work from a clone, if you are contributing:
 
@@ -85,7 +85,7 @@ dbml-sharepoint
 
 The wizard copies the template you choose into a project directory of your
 own, sets your list-name prefix and site URL, and offers to build it. It
-changes identity only — the schema and the mapping structure are the tested
+changes identity only. The schema and the mapping structure are the tested
 artifacts and are copied as they ship. Everything it does is also available
 as flags; it prompts only at a terminal, and prints help in CI or a pipe.
 
@@ -105,7 +105,7 @@ dbml-sharepoint build \
 
 Then:
 
-1. Read `build/deploy-manifest.md` — it opens with step-by-step run
+1. Read `build/deploy-manifest.md`: it opens with step-by-step run
    instructions and must show **0 validation errors**. (`build/index.md`
    lists every artifact, including the `reporting/` queries.)
 2. Open `https://yourtenant.sharepoint.com/sites/your-site/_layouts/15/settings.aspx`
@@ -115,7 +115,7 @@ Then:
 4. Watch the `[SP-DEPLOY]` lines; success ends with a summary and `errors: []`.
 
 > The pasteable scripts end in **`.js.txt`**, not `.js`. They exist to be
-> opened and copied, never executed from disk — and on Windows a `.js` file
+> opened and copied, never executed from disk, and on Windows a `.js` file
 > is bound to Windows Script Host, so double-clicking one runs a
 > provisioning script outside the browser. `.js.txt` opens in a text editor
 > everywhere. Editors that colour by extension will treat them as plain
@@ -148,28 +148,28 @@ Phased, logged (`[SP-DEPLOY]`), each phase fail-closed:
 5. Optional seed rows (via the extension protocol).
 
 Phases are numbered from the phases manifest
-(`src/dbml_sharepoint/analysis/phases.py`) — reference steps by name;
+(`src/dbml_sharepoint/analysis/phases.py`). Reference steps by name;
 numbers renumber automatically when the structure changes.
 
 `rollback.js.txt` deletes the declared lists. It exists for one case: a failed
 **first** provision on a site with no real data. Never run it against real
 records.
 
-Styling: every mapping inherits the fleet style standard — semantic
+Styling: every mapping inherits the fleet style standard: semantic
 severity tokens, icons and shapes on SharePoint's own formatting classes;
 see the [style guide](website/docs/reference/style-guide.md).
 
 Assessment: every build emits a **read-only** `assess.js.txt` (+
 `assess-manifest.md`) that probes a target site's capabilities across
-three tiers — always-run enumerations (permissions, list templates,
+three tiers: always-run enumerations (permissions, list templates,
 lock state, retention labels, locale, features), pack-driven
 attempt-probes (sealed/AllowDeletion/formatter surfaces, list
 collisions, version-trim, CSOM availability), and a printed
-not-assessable honesty block — then prints a
+not-assessable honesty block, then prints a
 `COMPATIBLE / DEGRADED / BLOCKED` verdict for the pack. It makes no
 changes; paste it in the site's console before a first deploy.
 
-Reporting: every build also ships `build/reporting/` — one Power Query
+Reporting: every build also ships `build/reporting/`: one Power Query
 (M) file per list (plus dictionary, model-info and user-added-column
 audit queries), a SQLCMD views script for warehouse-landed copies,
 `guide.md` with the Power BI relationship table, and
@@ -202,7 +202,7 @@ the composition points).
 - Clean first provision + same-release resume. A schema *upgrade* whose
   immutable shapes changed (field types, lookup targets, list templates)
   fails closed for explicit migration rather than guessing.
-- Calculated columns can't reference Lookup/Person columns or `[Today]` —
+- Calculated columns can't reference Lookup/Person columns or `[Today]`:
   SharePoint's rules. The validator checks that every reference *names a
   column of the entity*, which catches `[Today]` and typos but **not** a
   Lookup or Person operand: `'=[Owner]'` builds exit 0 and fails at paste
@@ -223,8 +223,8 @@ spine sits at the package root:
 | `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |
 | root | `bundle` · `templating` · `cli` · `wizard` · `catalogue` · `extension` | The one emission sequence (`emit_bundle`), stale clearing, INDEX/checksums, the shared Jinja env, the CLI and its interactive wizard, the extension protocol |
 
-The shipped solution templates live in `src/dbml_sharepoint/solutions/`
-— inside the package, because only files under it reach the wheel and the
+The shipped solution templates live in `src/dbml_sharepoint/solutions/`,
+inside the package, because only files under it reach the wheel and the
 wizard's audience is somebody who ran `uvx dbml-sharepoint` and never
 cloned this repository. Not to be confused with `templates/` below, which
 is Jinja.
@@ -233,18 +233,18 @@ Templates mirror that: `templates/*.js.j2` are the four pasteable scripts;
 `templates/_*.js.j2` are shared partials (provenance header, site guard +
 `apiUrl`/`odataName`, cached digest, read transport, write headers);
 `templates/deploy/_*.js.j2` are deploy.js.txt's phase bodies. Not every
-partial goes into every script — `assess.js.txt` deliberately omits
+partial goes into every script. `assess.js.txt` deliberately omits
 `_http_write.js.j2`, which is what makes its read-only guarantee
 structural rather than a promise.
 
-Conventions: underscore-prefixed names are module-private — anything
+Conventions: underscore-prefixed names are module-private. Anything
 imported across modules is public and unprefixed. Extension CLIs
 compose `clear_generated` → validate → manifest → `emit_bundle` rather
 than re-implementing emission.
 
 Full documentation lives at
 [shauneccles.github.io/dbml-sharepoint](https://shauneccles.github.io/dbml-sharepoint/),
-built from [`website/`](website) — a Docusaurus site; `cd website &&
+built from [`website/`](website): a Docusaurus site; `cd website &&
 npm install && npm start` to browse it locally.
 
 ## Development
@@ -260,4 +260,4 @@ uv run prek run --all-files markdownlint-cli2  # markdown style
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT: see [LICENSE](LICENSE).

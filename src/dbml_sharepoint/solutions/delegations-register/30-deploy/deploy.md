@@ -17,7 +17,7 @@ follow.
       `20-configure/formatting/delegation-form-header.json`. Point it at
       your approved instrument of delegation before you build, or delete
       the `elmType: "a"` element. **A form deployed with the placeholder
-      hands a dead link to every person who opens a delegation** — and this
+      hands a dead link to every person who opens a delegation.** This
       register's whole doctrine is that when the register and the
       instrument disagree, the instrument wins, so that link is the one
       thing on the form that has to work.
@@ -25,7 +25,7 @@ follow.
       only `http`, `https`, `mailto` and `tel` links, so a site-relative
       path such as `/sites/governance/...` is not a valid substitution.
 - [ ] `DG_` prefix free on the target site.
-- [ ] The current instrument of delegation is at hand — the register is
+- [ ] The current instrument of delegation is at hand: the register is
       loaded FROM it, clause by clause; it never invents an authority.
 - [ ] `DelegationArea` matches your instrument's own structure
       (`10-design/schema.dbml`). It is the grouping level of the default
@@ -55,7 +55,7 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
-first, then `demo-data.js.txt`, from the same bundle. It creates five rows —
+first, then `demo-data.js.txt`, from the same bundle. It creates five rows:
 four current authorities across four areas and four roles, so both grouped
 views have more than one group, two of them inside the ninety-day review
 window, and one superseded row carrying its supersession trail.
@@ -67,7 +67,7 @@ matched by Title on re-paste (running it twice never duplicates), and
 content. A demo delegation left in a live register is an authority nobody
 approved.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `DG_Delegation` exists; `RoleHolder`, `SourceInstrument` and
       `ReviewDate` required.
@@ -85,7 +85,7 @@ approved.
       superseded row's review date is a fact about a delegation that no
       longer exists, and leaving those in the queue asks the quarterly
       spot-check to re-review authority nobody holds. It is also a
-      **rolling** ninety days, not "this quarter" — CAML has no
+      **rolling** ninety days, not "this quarter": CAML has no
       calendar-period predicate, and the two differ at every boundary.
 - [ ] **History** sorts on `ApprovedDate` descending and shows `Notes`,
       which is where the supersession trail lives.
@@ -97,7 +97,7 @@ approved.
 - [ ] The New form shows **The authority**, **Limit and conditions** and
       **Source and review**, each holding the fields named in
       `20-configure/formatting/delegation-form-body.json`. There is no
-      System section, and nothing on this form is conditional — every
+      System section, and nothing on this form is conditional: every
       column applies to every row, including a superseded one, whose limit
       and conditions are exactly what an auditor is reading.
 - [ ] The list carries **one** save rule: set `Status` to **Superseded**
@@ -110,7 +110,7 @@ approved.
       the escalation is suppressed on a **Superseded** row. Set a test row
       to Superseded and confirm the colour drops.
 - [ ] As an ordinary Member: read-only.
-- [ ] **Load from the instrument** — one row per delegable authority,
+- [ ] **Load from the instrument**: one row per delegable authority,
       role-not-person, limits and conditions in the instrument's own
       wording. Where the transcription feels ambiguous, that's a finding
       about the instrument: note it for the next instrument review rather
@@ -118,7 +118,7 @@ approved.
 - [ ] Populate **DG Governance Coordinators**; delete any test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## What is not enforced at save
@@ -137,15 +137,15 @@ approved.
 
 Bump `schema_version`, rebuild, re-paste. Existing rows are untouched;
 drifted settings are reconciled, and declared views are reconciled to the
-declaration — a view retitled by hand comes back under its declared title.
+declaration: a view retitled by hand comes back under its declared title.
 **Re-check the header link after any redeploy**: the header JSON is
 reconciled from the file, so a URL edited in the SharePoint UI is reverted
 to whatever the file says.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -155,9 +155,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -170,8 +170,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

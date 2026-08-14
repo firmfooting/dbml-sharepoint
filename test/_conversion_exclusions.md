@@ -2,7 +2,7 @@
 
 Consult this before converting any test input to the `_packs` helpers. Each
 entry is here because a mechanical conversion would change behaviour, and in
-most cases would do so **silently** — the test keeps passing against the wrong
+most cases would do so **silently**. The test keeps passing against the wrong
 input.
 
 Anchored on **test function names**, not line numbers. The first version of this
@@ -10,7 +10,7 @@ list used line numbers and they had already drifted before it was executed, in
 `test_jsgen.py`, because two unrelated merges landed in between.
 
 This lives in `test/` rather than beside the plan because `docs/superpowers/` is
-gitignored (see `.gitignore`) — a plan there is local to one machine, and this
+gitignored (see `.gitignore`). A plan there is local to one machine, and this
 list has to survive.
 
 ## A. Glued literals that form ONE logical line
@@ -39,7 +39,7 @@ Note `test_mapping_loader.test_entity_sub_keys_are_checked` contains a
 **deliberate typo** (`display_colum`). It is the point of the test. Do not
 correct it.
 
-## B. `.replace()` needles — highest risk, now guarded
+## B. `.replace()` needles: highest risk, now guarded
 
 `str.replace` returns the input unchanged when the needle is absent, and raises
 nothing. Re-indent the base document without adjusting the needle identically
@@ -57,13 +57,13 @@ These are routed through `_packs.replaced()`, which asserts the needle matched:
 | `test_cli.py` | (second malformed-schema test) | `simple.dbml` contents |
 
 The two `test_cli.py` needles match a line read out of
-`test/fixtures/simple.dbml`. Their risk is not indentation — it is the fixture
+`test/fixtures/simple.dbml`. Their risk is not indentation. It is the fixture
 changing underneath them.
 
 `test_mapping_loader.py`'s `example.replace("<Entity>", "Project")` uses a
 placeholder needle with no leading whitespace and is indentation-safe.
 
-## C. Assertion and expected-output text — never convert
+## C. Assertion and expected-output text: never convert
 
 Glued runs in messages, expected CAML, and expected Markdown. Not file payloads.
 
@@ -73,18 +73,18 @@ Glued runs in messages, expected CAML, and expected Markdown. Not file payloads.
 `test_manifestgen.py` (retired-column table rows) ·
 `test_deploy_runtime.py` · `test/manual/make_threshold_rows.py`
 
-## D. Single-line sentinel files — leave as-is
+## D. Single-line sentinel files: leave as-is
 
 `"stale"`, `"preserve me"`, `"mine"`, `"-- hand written"` and similar, mostly in
 `test_bundle.py` and `test_cli.py`. Not DBML or YAML. `_packs` would append a
 trailing newline they do not have, changing what the test asserts.
 
-## E. Files with no write sites — nothing to convert
+## E. Files with no write sites: nothing to convert
 
 `test_template_standard.py`, `test_conditions.py`, `test_template_lint.py`,
 `test_rollbackgen.py`, `test_icons.py`. Their fragments are all assertion text.
 
-## F. Dynamic payloads — skip and report
+## F. Dynamic payloads: skip and report
 
 f-strings, `+ variable`, and anything assembled in a loop or conditional. About
 70 sites. Converting these needs judgement about what the interpolation means,
@@ -102,7 +102,7 @@ Coverage is the alarm that matters: a delta means a converted payload exercises
 a different code path, so the input changed.
 
 **The expected figure is `3666 182 95%`, and it is now deterministic.** It was
-not, briefly: `conditions.py:713` — the "not a number" refusal — was reached
+not, briefly: `conditions.py:713` (the "not a number" refusal) was reached
 only when the property suite's permissive strategy happened to draw a `bool`,
 about one run in ten. That produced a phantom one-line delta with a 1-in-10
 false-positive rate, exactly where this document tells you to treat a delta as
@@ -112,5 +112,5 @@ It was first misdiagnosed as a `-n auto` combine artefact. It reproduced
 serially. Fixed at source by
 `test_conditions_properties.test_a_bool_on_a_numeric_column_is_refused`, which
 pins the line. If you see a one-line delta again, look for another
-Hypothesis-reached line before assuming your conversion caused it — and check
+Hypothesis-reached line before assuming your conversion caused it, and check
 serially, because parallelism was not the cause last time.

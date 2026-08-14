@@ -1,4 +1,4 @@
-# Project pipeline — governance
+# Project pipeline: governance
 
 ## Ownership
 
@@ -10,15 +10,15 @@
 
 ## Rating definitions (edit, then hold the line)
 
-**Benefit** — High: material impact on strategy, safety, revenue or many
+**Benefit**: High: material impact on strategy, safety, revenue or many
 staff/customers. Medium: clear improvement for a team or process. Low: nice.
 
-**Feasibility** — Easy: known approach, capability on hand, few
+**Feasibility**: Easy: known approach, capability on hand, few
 dependencies. Moderate: some unknowns or dependencies. Hard: novel,
 contended resources, external dependencies.
 
 Score = Benefit × Feasibility (1–9). It ranks the conversation; it doesn't
-end it — a strategic Hard/High (score 3) can absolutely beat a trivial
+end it. A strategic Hard/High (score 3) can absolutely beat a trivial
 Easy/Medium (6). The gate's job is to overrule the score *out loud*.
 
 ## Gate authority (edit to your delegations)
@@ -36,20 +36,20 @@ Approved without a named Sponsor is returned to Scoping.
 
 - **Monthly**: the gate works the *Decision queue*; the pipeline owner
   reports the funnel (counts per stage, time-in-stage outliers).
-- **Quarterly**: the *Portfolio* view against capacity — approving more
+- **Quarterly**: the *Portfolio* view against capacity. Approving more
   than you can deliver is how pipelines die; Parked exists so "yes later"
   doesn't rot as "yes".
-- **Annually**: the Graveyard read-through — patterns in what gets declined
+- **Annually**: the Graveyard read-through. Patterns in what gets declined
   are strategy telling you something.
 
 ## Data-quality rules
 
 1. Ready for decision requires Problem, Outcome, Benefit, Feasibility,
    CostBand and a Sponsor.
-2. Declined/Parked always carry DecisionNotes — the graveyard is only
+2. Declined/Parked always carry DecisionNotes. The graveyard is only
    useful annotated.
 3. Ideas older than 6 months without movement get a nudge, then Parked with
-   "no sponsor found" — honest funnels shrink.
+   "no sponsor found". Honest funnels shrink.
 
 ### What is enforced at save, and what stays a governance check
 
@@ -74,7 +74,7 @@ wording; time-in-stage is a monthly report line counted from those dates.
   multi-line columns and `Sponsor` is a person column; SharePoint
   validation formulas can read none of the three. The three that *are*
   enforceable are enforced. "An Approved without a named Sponsor is
-  returned to Scoping" stays exactly what it says — a gate discipline, and
+  returned to Scoping" stays exactly what it says, a gate discipline, and
   the **Portfolio** view groups by sponsor so an unsponsored approval falls
   into a visible empty group rather than hiding in a flat list.
 - **Rule 2, DecisionNotes on Declined and Parked.** Multi-line again. The
@@ -86,7 +86,7 @@ wording; time-in-stage is a monthly report line counted from those dates.
   **The funnel** shows `Proposed date` in the Idea group for this.
 - **The score itself cannot be validated against anything.**
   `PriorityScore` is calculated, and SharePoint validation formulas cannot
-  read calculated columns at all — nor can conditional show/hide, which is
+  read calculated columns at all; nor can conditional show/hide, which is
   why no field on this form appears or disappears in response to the score.
   Both would save cleanly, read back equal and never fire.
 

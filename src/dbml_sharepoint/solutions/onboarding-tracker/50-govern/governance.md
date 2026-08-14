@@ -1,4 +1,4 @@
-# Onboarding tracker — governance
+# Onboarding tracker: governance
 
 ## Ownership
 
@@ -45,20 +45,20 @@ software has your back:
 | --- | --- | --- |
 | A task cannot be dated done in the future | **Enforced at save**, on the column | Reads only its own column, so it keeps its own message. A forward-dated completion is indistinguishable from a real one in every view and in the monthly stats |
 | Status **Done** needs a done date | **Enforced at save**, on the list | Cross-column, so it shares the list's single validation formula with the rule below and its message names both |
-| Status **Not applicable** needs a word in Notes | **Enforced at save**, on the list | A task closed with nothing behind it is indistinguishable from one nobody looked at. `Notes` is single-line nvarchar precisely so a validation formula can reference it — SharePoint refuses a multi-line column as an operand |
+| Status **Not applicable** needs a word in Notes | **Enforced at save**, on the list | A task closed with nothing behind it is indistinguishable from one nobody looked at. `Notes` is single-line nvarchar precisely so a validation formula can reference it. SharePoint refuses a multi-line column as an operand |
 | That the standard task set was actually created for a hire | **Governance check** | Nothing on `Starter` can know what tasks *should* exist. The task set above is the control; *By starter* is where it is read back |
 | That a due date is right relative to the start date | **Governance check** | Cross-list arithmetic. SharePoint validation formulas cannot reach the parent row at all |
-| That withdrawn and completed records are trimmed on time | **Governance check** — the privacy rules below | Retention is a decision about time passing, and no save-time rule can see it |
+| That withdrawn and completed records are trimmed on time | **Governance check**, the privacy rules below | Retention is a decision about time passing, and no save-time rule can see it |
 
 ## Privacy (this register holds personal data)
 
 - Site membership is limited to onboarding participants; don't widen the
   site audience for convenience.
-- Record only what the process needs — role, dates, logistics. **No**
+- Record only what the process needs: role, dates, logistics. **No**
   salary, visa, health or background-check detail; those live in HR's
   systems of record.
 - Withdrawn starters: after closing the tasks, trim the record to name +
-  "Withdrawn" and clear Notes — you no longer have a reason to hold the
+  "Withdrawn" and clear Notes. You no longer have a reason to hold the
   logistics detail.
 - Completed starters: keep rows for the probation period + your HR
   retention rule, then delete or anonymise per policy. (This is the one
@@ -67,5 +67,5 @@ software has your back:
 ## Lifecycle
 
 The **leavers/offboarding variant** is this same design with the task set
-inverted (access revoked, equipment returned, payroll ended) — copy the
+inverted (access revoked, equipment returned, payroll ended). Copy the
 template, change the prefix to `LV_`, and reuse everything else.

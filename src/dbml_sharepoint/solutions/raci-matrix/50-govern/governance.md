@@ -1,4 +1,4 @@
-# RACI matrix — governance
+# RACI matrix: governance
 
 ## Ownership
 
@@ -18,7 +18,7 @@ person column.
 
 So a person accountable for forty activities who is not in RACI Matrix
 Maintainers cannot re-confirm one of them, cannot correct a row they know
-is wrong, and cannot flag it *Needs review* — the acts this table makes
+is wrong, and cannot flag it *Needs review*, the acts this table makes
 them accountable for.
 
 **That is a deliberate posture, not an oversight.** A register whose
@@ -35,7 +35,7 @@ Two ways to size that group, and you must pick one before rollout:
   email. Keeps the register consistent; needs someone to own the inbox.
 - **Wider**, with the accountable population inside RACI Matrix
   Maintainers. Faster corrections, at the cost that anyone can adjust
-  their own row — so pair it with the change-visibility habit below.
+  their own row, so pair it with the change-visibility habit below.
 
 Versioning is on with 200 major versions retained, so either way every
 edit leaves a version-history entry naming who made it. Where the
@@ -48,8 +48,8 @@ the second option's shape.
 **Quarterly, as a standing rhythm, plus on any material organisational
 change.** Both halves matter, and the second is the one that gets skipped.
 
-The per-row `ConfirmationDue` cadence — Statutory 6 months, High 12,
-Routine 24 — is the **floor, not the ceiling**. It is the longest a row
+The per-row `ConfirmationDue` cadence (Statutory 6 months, High 12,
+Routine 24) is the **floor, not the ceiling**. It is the longest a row
 may go unexamined before the register admits it does not know whether the
 row is true. It is not a schedule for reviewing the register, and a
 register reviewed only when rows fall due drifts for up to two years in
@@ -65,12 +65,12 @@ that nobody was clear who owned something.
 
 1. **Work the *Confirmation due* view.** Everything falling due in the
    next thirty days or already past. Each row gets re-read, corrected if
-   needed, and confirmed — `LastConfirmed` to today and `ConfirmedBy` to
+   needed, and confirmed: `LastConfirmed` to today and `ConfirmedBy` to
    whoever actually checked. An edit is not a confirmation.
 2. **Work every *Needs review* row.** These are the rows a human has said
    are wrong. They are the highest-value rows in the register and they
    should not survive two consecutive reviews.
-3. **Read the *Consultation load* view.** See below — this is the review
+3. **Read the *Consultation load* view.** See below. This is the review
    step most likely to be dropped and the one that catches a failure
    nothing else can see.
 4. **Read *Decisions and approvals*, grouped by forum.** Every non-Task
@@ -90,8 +90,8 @@ that nobody was clear who owned something.
 challenge any party consulted on more than a handful of activities.**
 
 That view exists for one purpose: it is grouped by party rather than by
-activity, because the failure it hunts — one party made Consulted on
-everything — is invisible in any activity-first view. Reading the
+activity, because the failure it hunts (one party made Consulted on
+everything) is invisible in any activity-first view. Reading the
 register activity by activity, three consultations per row looks
 reasonable everywhere while one person is quietly Consulted on sixty
 rows.
@@ -104,7 +104,7 @@ the honest answer to the second half is no, the involvement is
 **Informed** and should be changed to it.
 
 What you are protecting against is the C column drifting from a
-functional input list into a political protection list — a record of
+functional input list into a political protection list: a record of
 everyone who would be annoyed to be left out. That version of the column
 slows every activity it touches and tells you nothing, and it arrives
 politely, one reasonable addition at a time.
@@ -124,7 +124,7 @@ in this order.
 
    **Whether you also update `Contact` depends on `PartyKind`.** For a
    Role, Forum or External party the row's identity is the position, the
-   committee or the organisation, and that has not changed — so point
+   committee or the organisation, and that has not changed, so point
    `Contact` at whoever now holds the role, chairs the successor forum,
    or is the contact in the interim. For an **Individual** party the row
    *is* that person: repointing `Contact` at their successor silently
@@ -135,13 +135,13 @@ in this order.
    involvements at it.
 2. **Never delete a `Party` row.** Every activity's `AccountableForum`
    and every involvement's `Party` is a lookup at it, and deleting the
-   row orphans all of them — the child rows survive pointing at nothing,
+   row orphans all of them: the child rows survive pointing at nothing,
    which reads as a blank cell rather than as an error. Inactive keeps
    the history readable: the rows that named the Regional Partnership
    Forum still say so, and the party row still explains what it was.
 3. **Work the activities that named the person.** Both `Responsible` and
    `Accountable` are columns on the **Current** view, so the rows naming
-   them can be found by filtering or sorting that view — which is the
+   them can be found by filtering or sorting that view, which is the
    argument for person columns over free text, quite apart from the
    argument about teams. Reassign each row to whoever now holds the work.
    This is the step that takes real time, and it is the step
@@ -150,7 +150,7 @@ in this order.
 4. **Work the involvements.** *By party* is grouped for exactly this:
    every involvement naming that party, in one place. Repoint them at the
    successor or retire them.
-5. **Confirm each row you touched** — `LastConfirmed` and `ConfirmedBy` —
+5. **Confirm each row you touched** (`LastConfirmed` and `ConfirmedBy`)
    so the cadence restarts from a row somebody actually verified.
 
 A departure is also the moment to check the reverse direction: work the
@@ -175,7 +175,7 @@ This **cannot** be enforced at save. `Contact` is a person column, and
 SharePoint validation formulas refuse person operands entirely
 (`analysis/conditions.py:332` is where the build refuses to write such a
 rule rather than emitting one that silently never fires). There is no
-conditional form of it either — "required unless PartyKind is Forum" is
+conditional form of it either: "required unless PartyKind is Forum" is
 the same refusal for the same reason.
 
 The control is the **Active parties** view, which carries `Contact` as a
@@ -192,7 +192,7 @@ makes and it holds.
 What no list can see is **the same work described twice**. "Approve a new
 supplier above the executive threshold" and "Sign off new vendor
 contracts over the delegation limit" may be one activity with two rows
-and two different Accountables — and every failure of two Accountables on
+and two different Accountables, and every failure of two Accountables on
 one row is reproduced exactly, with the added feature that neither person
 can see the other's row unless they go looking.
 
@@ -211,8 +211,8 @@ that they are the same work. Two habits reduce it:
 
 | Rule | Where |
 | --- | --- |
-| Exactly one Responsible and one Accountable, both individuals | The column types — a person column, single-valued |
-| A team cannot hold either | The column types — a group is not a selectable value |
+| Exactly one Responsible and one Accountable, both individuals | The column types: a person column, single-valued |
+| A team cannot hold either | The column types: a group is not a selectable value |
 | An involvement names an activity, a party and the input it gives | Required columns |
 | A Decision has an Escalation Route | list validation (shared message) |
 | Anything Statutory has an Escalation Route | list validation (shared message) |
@@ -225,7 +225,7 @@ can be specific.
 
 **The form's visibility condition and the save rule are kept deliberately
 in step.** `EscalationRoute` appears exactly when one of the two branches
-can bite — a Decision, or anything Statutory — so the register never
+can bite (a Decision, or anything Statutory) so the register never
 refuses a save while naming a field that is off the form. If you edit
 either the rule or the visibility condition in
 `20-configure/mapping.yaml`, edit both: a condition narrower than its rule
@@ -250,7 +250,7 @@ Two consequences worth thinking about before you touch it:
   24 months to 12 does not schedule a gentler future; it makes every
   Routine row confirmed more than a year ago overdue the moment the paste
   finishes, with the red treatment on all of them. That may be exactly
-  what you want — plan the review capacity for it rather than discovering
+  what you want. Plan the review capacity for it rather than discovering
   it.
 - **The formula is keyed to the `criticality` enum by name and by order.**
   It maps *Statutory* and *High* explicitly and treats everything else as
@@ -260,7 +260,7 @@ Two consequences worth thinking about before you touch it:
   enum will look. Change the enum and the formula together, or not at
   all.
 
-Export the register to Excel before any cadence change — that snapshot
+Export the register to Excel before any cadence change. That snapshot
 preserves the due dates as they stood immediately before it.
 
 ### A known defect, accepted and tracked
@@ -272,7 +272,7 @@ a cadence of six months or more, against a column whose own guidance is
 to re-confirm sooner on any material change, so it is accepted rather
 than worked around. It is tracked as issue #5, and `risk-register` carries
 the same defect for the same reason. Do not "fix" it locally without
-reading that issue — the arithmetic that clamps correctly is
+reading that issue. The arithmetic that clamps correctly is
 substantially longer and recalculates every row to install.
 
 ## Hand-offs to other registers
@@ -281,24 +281,24 @@ Templates in this library interconnect by **process hand-off, never by
 list lookups**. Every template deploys and stands alone; nothing below
 creates a dependency, and no column here points at another register.
 
-**`delegations-register` — authority.** This register records who *does*
+**`delegations-register`: authority.** This register records who *does*
 the work and who *answers* for it. It does not record who is *permitted*
 to approve what: that authority lives in your formally approved
 instrument of delegation, which `delegations-register` mirrors clause by
 clause. The two must agree, and where they disagree **the instrument
-wins** — it is the approved document and this is a description of
+wins**. It is the approved document and this is a description of
 practice. So: when an Approval or Decision activity names an Accountable
 who does not hold the corresponding delegation, that is a finding about
 the RACI row, not about the delegation, and it is fixed here. Check the
 non-Task rows against the instrument at each quarterly review; the
 *Decisions and approvals* view is the list to check them from.
 
-**`risk-register` — consequence.** Two hand-offs run between these, both
+**`risk-register`: consequence.** Two hand-offs run between these, both
 by hand:
 
 - An activity that is Statutory, or whose failure would cause serious
-  harm, and that has **no credible Accountable** — vacant, departed, or
-  genuinely contested — is a risk in its own right. Raise it in the risk
+  harm, and that has **no credible Accountable** (vacant, departed, or
+  genuinely contested) is a risk in its own right. Raise it in the risk
   register, describing the accountability gap as the cause. Do not leave
   it sitting as a *Needs review* row that everybody has stopped seeing.
 - A control in the risk register almost always names an activity
@@ -314,7 +314,7 @@ survive the other being retired.
 
 ## Data-quality rules
 
-1. **Activities are verb phrases**, and `Detail` states the boundary —
+1. **Activities are verb phrases**, and `Detail` states the boundary:
    what this activity covers and what it does not. A noun with no
    boundary is a topic, and a topic cannot have an Accountable.
 2. **Every involvement Title states an input**, not a person and not a
@@ -324,7 +324,7 @@ survive the other being retired.
 3. **The party vocabulary is the vocabulary.** New parties are added
    deliberately, not invented per row. Two rows for the same committee
    under two spellings split every grouped view that exists.
-4. **Retire, never delete** — parties by `Status`, activities by
+4. **Retire, never delete**: parties by `Status`, activities by
    `ReviewStatus`. The history of who used to be accountable for
    something is frequently the reason somebody opens this register.
 5. **Confirming is re-reading**, not re-saving. `ConfirmedBy` records who
@@ -344,18 +344,18 @@ depends on.
 This register uses the fleet-standard hardening declared in
 `mapping.yaml`: `seal_columns: true` blocks UI schema edits and deletion
 of every deployed column, even for site admins (a display-name rename
-still gets through — that is drift, reverted and reported at the next
+still gets through; that is drift, reverted and reported at the next
 re-paste), and `prevent_list_deletion: true` removes "Delete this list"
 from all three lists for everyone. Both are friction and tamper-evidence,
 not enforcement against a determined site collection admin working
-through the API — see "Hardening and drift detection" in
+through the API. See "Hardening and drift detection" in
 [`templates/README.md`](../../README.md). The deploy script unseals for
 its own run and re-seals afterwards; nobody else should need to.
 
 ## Lifecycle
 
 Export all three lists before decommissioning, and export `Involvement`
-with its lookups resolved — an involvement exported without its activity
+with its lookups resolved. An involvement exported without its activity
 and party is a sentence about an input with nothing attached to it.
 
 Never run `rollback.js.txt` against a populated register. It is for a

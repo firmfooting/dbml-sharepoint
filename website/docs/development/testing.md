@@ -8,7 +8,7 @@ sidebar_position: 3
 `uv run pytest` reports a case count in the low thousands. That number looks
 alarming and is mostly an artefact of how it is counted. This page records what
 is actually there, why none of it is trimmed, and where the real maintenance
-cost sits — so the next person to look at the number does not have to re-derive
+cost sits, so the next person to look at the number does not have to re-derive
 it.
 
 Run `uv run pytest --collect-only -q` for the current figures. They are
@@ -24,7 +24,7 @@ template library. Its case count is therefore roughly **conformance rules ×
 shipped families**, plus a handful of one-off checks that contribute one case
 each.
 
-So the bulk of that file is not a pile of things anyone maintains — it is a
+So the bulk of that file is not a pile of things anyone maintains. It is a
 small set of rules applied to every family. Parametrising is what makes a
 failure say *which* template drifted instead of "something under `solutions/` is
 wrong".
@@ -52,10 +52,10 @@ Because it costs almost nothing:
 | Whole pre-push gate | **~6s** |
 | CI tests | 16s (ubuntu) |
 
-Tests are no longer even the largest CI step — `setup-uv` and the two
+Tests are no longer even the largest CI step. `setup-uv` and the two
 template-build sweeps each cost more.
 
-Selective running — `pytest-testmon`, `--lf`, per-directory selection — would
+Selective running (`pytest-testmon`, `--lf`, per-directory selection) would
 save a couple of seconds and reintroduce exactly the risk the suite exists to
 remove: a change in `analysis/joins.py` breaking a template conformance rule
 nobody thought was related. **A template drifts out of the family precisely
@@ -93,7 +93,7 @@ uv run pytest -m "not conformance"
 ```
 
 **This is for focus, not speed.** Measured at 4.65s against 4.66s for the full
-suite — skipping a third of the cases saves nothing, because `-n auto` already
+suite. Skipping a third of the cases saves nothing, because `-n auto` already
 spreads them across workers and they are not the critical path. CI never
 filters.
 
@@ -101,7 +101,7 @@ filters.
 
 Test modules mirror the *concern*, not the source tree. That distinction is
 deliberate and was arrived at by measurement: `test_validator_*.py` calls
-`validate_against_mapping` (115×), `validate` (16×) and `validate_all` (3×) —
+`validate_against_mapping` (115×), `validate` (16×) and `validate_all` (3×),
 top-level entry points that run every check. Every test touches every module
 under `analysis/checks/`, so splitting the tests to mirror those modules would
 have been a fiction. Coverage per section confirms it: no section maps to one
@@ -135,8 +135,8 @@ Never re-derive a path with `Path(__file__).parent.parent` or
 from _paths import FIXTURES, MANUAL, SOLUTION_TEMPLATES
 ```
 
-Parent-counting does not fail loudly when a file moves to a different depth —
-it resolves somewhere else and the tests break somewhere unrelated. `_paths`
+Parent-counting does not fail loudly when a file moves to a different depth.
+It resolves somewhere else and the tests break somewhere unrelated. `_paths`
 finds the root by searching upward for `pyproject.toml` and raises if it is
 absent. Note `JINJA_TEMPLATES` (the `.j2` files the generators render) and
 `SOLUTION_TEMPLATES` (the shipped schema + mapping families) are different
@@ -145,6 +145,6 @@ directories; both were previously called `TEMPLATES` in different modules.
 ## The axis that grows
 
 Conformance cases scale as *rules × templates*, and the sweep currently costs a
-few seconds. Tripling the library would roughly triple that — still fine, but
+few seconds. Tripling the library would roughly triple that (still fine), but
 worth knowing that the count grows when a **template** is added, not when a test
 is. That is the axis to watch if the run ever stops feeling instant.

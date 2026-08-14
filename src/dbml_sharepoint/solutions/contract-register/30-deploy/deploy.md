@@ -9,29 +9,29 @@ against the checklist below. Template-specific notes follow.
 
 ## Before you build
 
-- [ ] `CT_` prefix free on the target site? (Site contents — no `CT_*` lists.)
+- [ ] `CT_` prefix free on the target site? (Site contents, no `CT_*` lists.)
 - [ ] `ContractType` / `Status` / `RenewalType` choices match your
-      vocabulary (`10-design/schema.dbml`) — renaming choices after data
+      vocabulary (`10-design/schema.dbml`). Renaming choices after data
       exists strands old rows, and `Status` and `RenewalType` are both
       colour-mapped in `mapping.yaml`, so a renamed member also silently
       loses its colour.
 - [ ] **Decide your expiry horizon before first deploy.** The
       *Expiring 90 days* view filters `EndDate ≤ today+90`. If your renewal
       governance runs on a different cadence, change the `today+90` in
-      `mapping.yaml` now — a view title and a filter that disagree is worse
+      `mapping.yaml` now. A view title and a filter that disagree is worse
       than either.
 - [ ] You know who goes in **CT Contract Managers** (the deploy creates it
       empty; you populate it after).
 - [ ] The header shows `Contract: <title>` on a saved row and
       `New contract` before the title is filled in, updating live as it is
       typed. If you add another `[$FieldName]` reference, note that a
-      **calculated** column always resolves empty in a form header —
+      **calculated** column always resolves empty in a form header:
       `TermMonths` will show nothing there, with no error. Its value reaches
       the form through its own `column_formatting`, in the **System**
       section.
 
-**Expected manifest finding**: one warning — `Contract.ContractRef: unique
-without not_null` — is intentional: the reference is optional, and
+**Expected manifest finding**: one warning (`Contract.ContractRef: unique
+without not_null`) is intentional: the reference is optional, and
 uniqueness is enforced on the rows that have one.
 
 ## Optional: the seeded demonstration build
@@ -51,9 +51,9 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt` first,
-then `demo-data.js.txt`, from the same bundle. It creates five rows — one per
+then `demo-data.js.txt`, from the same bundle. It creates five rows: one per
 `Status` member, including a licence that auto-renews and is *already*
-inside its own ninety-day notice window — enough that every declared view
+inside its own ninety-day notice window, enough that every declared view
 and every colour band has content.
 
 **Delete the demo rows before active use.** Every demo Title begins with
@@ -62,7 +62,7 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real contracts.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `CT_Contract` exists and all five declared views appear:
       **Live contracts** (the default), **Expiring 90 days**,
@@ -88,7 +88,7 @@ site that already holds real contracts.
 - [ ] The New form shows **The contract**, **Term and value** and
       **Ownership**, each holding the fields named in
       `20-configure/formatting/contract-form-body.json`. **System** is last
-      and holds `TermMonths` only — it is calculated, so on the New form
+      and holds `TermMonths` only. It is calculated, so on the New form
       that section is a bare heading with nothing under it. That is
       cosmetic and expected; on the Edit and Display forms the calculated
       value appears there, read-only.
@@ -97,12 +97,12 @@ site that already holds real contracts.
       days** disappears; set it back to *Auto-renews* or *Manual renewal*
       and the field returns, keeping whatever was typed. SharePoint has no
       mechanism to clear a hidden field's value, so a stale notice period
-      can survive a switch to a fixed term — harmless here, because nothing
+      can survive a switch to a fixed term, harmless here, because nothing
       reads it in that state.
 - [ ] The list carries **one** save rule: set **Renewal type** to
       *Auto-renews* with **Notice period days** empty and the save is
       refused, naming the notice period. Note the field is on screen when
-      the refusal fires — a rejection naming a field the author cannot see
+      the refusal fires: a rejection naming a field the author cannot see
       is what the visibility rule above exists to prevent.
 - [ ] Two per-column save rules, each with its own message: a negative
       **Notice period days** and a negative **Annual value** are both
@@ -110,24 +110,24 @@ site that already holds real contracts.
       on the list because a column rule keeps its own message; the list has
       only one to share.
 - [ ] `EndDate` renders plain while the date is ahead and escalates to the
-      severe treatment once it is past — except on an **Exited** row, where
+      severe treatment once it is past, except on an **Exited** row, where
       the escalation is suppressed. Set a test row to Exited and confirm
       the colour drops.
 - [ ] As an ordinary site Member: the list is **read-only**.
-- [ ] Site permissions → Groups: `CT Contract Managers` (empty — now add
-      your contract managers) and `dbml List Administrators` (empty — leave
+- [ ] Site permissions → Groups: `CT Contract Managers` (empty, now add
+      your contract managers) and `dbml List Administrators` (empty, leave
       it empty; the deploy script self-enrols per run).
 - [ ] Delete the test row (as a Contract Manager).
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## What is not enforced at save
 
 `EndDate` after `StartDate` is **not** a save rule. The condition grammar
 compares a column to a literal, never to another column, so the rule has no
-spelling — it stays a governance check (`50-govern/governance.md`). The
+spelling. It stays a governance check (`50-govern/governance.md`). The
 *Live contracts* view sorted by `EndDate` is where a reversed pair shows
 up: it sorts to the top, years in the past.
 
@@ -135,13 +135,13 @@ up: it sorts to the top, years in the past.
 
 Edit the DBML/mapping, bump `schema_version` in `release.yaml`, rebuild,
 re-paste. Existing rows are untouched; drifted settings are reconciled, and
-declared views are reconciled to the declaration — a view retitled by hand
+declared views are reconciled to the declaration. A view retitled by hand
 comes back under its declared title.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -151,9 +151,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -166,8 +166,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

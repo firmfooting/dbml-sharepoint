@@ -1,6 +1,6 @@
 # Example: Project Tracker
 
-Three linked lists — `PT_Project`, `PT_Task`, `PT_TimeLog` — exercising most
+Three linked lists (`PT_Project`, `PT_Task`, `PT_TimeLog`) exercising most
 of what dbml-sharepoint supports:
 
 | Feature | Where |
@@ -38,9 +38,9 @@ into the browser console on a classic page of the target site
 
 - Create a Project with `Budget 1000` / `Spent 950` → `BudgetHealth` shows
   "At risk"; raise Spent past 1000 → "Over budget".
-- Create a Task, then another Task with the first as `ParentTask` — the
+- Create a Task, then another Task with the first as `ParentTask`. The
   self-lookup was created in Phase 2.
 - Check Site permissions → Groups: `PT List Administrators` exists, is empty,
   and holds Full Control on the three lists while Members hold Contribute.
-- Paste `deploy.js.txt` a second time: everything verifies and skips —
-  the script is a reconciler, not a one-shot.
+- Paste `deploy.js.txt` a second time: everything verifies and skips.
+  The script is a reconciler, not a one-shot.

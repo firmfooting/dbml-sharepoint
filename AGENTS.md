@@ -50,11 +50,11 @@ uv run j2lint --ignore jinja-statements-indentation single-statement-per-line --
 uv run prek run --all-files markdownlint-cli2
 ```
 
-Markdown is the one gate not pinned by `pyproject.toml` — markdownlint-cli2 is a
+Markdown is the one gate not pinned by `pyproject.toml`. markdownlint-cli2 is a
 node package, so prek installs it from the `rev:` in `.pre-commit-config.yaml`
 and CI runs the same version through `npx`. Those two numbers are held equal by
 `test/test_markdownlint_version.py`; bump them together. Rules and exclusions
-live in `.markdownlint-cli2.yaml`, which both sides read — generated pages
+live in `.markdownlint-cli2.yaml`, which both sides read. Generated pages
 (`website/docs/api/**`, `website/docs/reference/findings.md`) are excluded there,
 because a violation in one of those can only be fixed in its generator.
 
@@ -63,14 +63,14 @@ Install the git hooks once with `uv run prek install`. Hooks are run by
 is not used here. Run everything by hand with `uv run prek run --all-files`.
 
 `pytest` runs in parallel by default (`-n auto`, capped at 8). Pass **`-n0`** when
-you need `--pdb`, deterministic ordering, or readable output from one test —
+you need `--pdb`, deterministic ordering, or readable output from one test:
 `uv run pytest -n0 test/test_joins.py`.
 
 ## Writing style
 
 - No em dashes. Use commas, parentheses, or a new sentence.
 - Banned phrases: "load-bearing", "worth stating plainly", "full stop",
-  "carry the argument", "the trap", "isn't just X — it's Y".
+  "carry the argument", "the trap", "isn't just X, it's Y".
 - No punchy fragments for drama. Write complete sentences.
 - Do not build to a turn of phrase. State the claim directly.
 - Technical documentation, not marketing copy.
@@ -90,25 +90,25 @@ are already touching.
 **The PR title matters, and is not cosmetic.** This repository squash-merges and
 the PR title becomes the commit subject on `main`. `release-please` cuts the
 changelog by parsing those subjects, so a non-conventional title contributes
-*nothing* to the release notes — silently. The release still happens, the code
+*nothing* to the release notes, silently. The release still happens, the code
 still ships, and only the notes are wrong.
 
 This has already bitten: PRs #41, #42, #45 and #51 all merged with prose
 subjects, and 0.4.0 initially credited the join-ceiling release with a single
 documentation tweak. It had to be back-filled with empty commits (#57).
 
-So: **give the pull request a conventional title** — `feat:`, `fix:`, `docs:`,
+So: **give the pull request a conventional title**: `feat:`, `fix:`, `docs:`,
 `chore:`, `test:`, `style:`, `refactor:`, `perf:`, `build:`, `ci:`, `revert:`,
 with an optional `(scope)` and a `!` for breaking changes.
 `.github/workflows/pr-title.yml` enforces it.
 
-Commits *within* a branch are not linted — they are squashed away, though their
+Commits *within* a branch are not linted. They are squashed away, though their
 messages survive in the squashed commit's body. Keep one concern per commit
 anyway; that is what makes a branch reviewable.
 
 The changelog has no Tests section, so a `test:` title is invisible in release
 notes. Pick the type from what the change does, not from which directory it
-touches — #42 looked like a pure test-fixture PR but also changed `_views.py`.
+touches. #42 looked like a pure test-fixture PR but also changed `_views.py`.
 
 Merge commits are disabled. For a change too large to review in one pass, stack
 it (`gh stack`), so each layer keeps its own title and its own changelog entry.
@@ -117,7 +117,7 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 
 - **Generated files are committed. Everything written must be LF.**
   `.gitattributes` declares `* text=auto eol=lf`, and `Path.write_text`
-  defaults to text mode — so a writer that omits `newline="\n"` emits CRLF on
+  defaults to text mode, so a writer that omits `newline="\n"` emits CRLF on
   Windows and marks every file it touched as modified, hiding the one real
   change among the noise. Both committed-output generators were fixed (they go
   through `generate_api.write_page` and an explicit `newline="\n"`), as were
@@ -131,12 +131,12 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 - **The deploy.js.txt golden.** Template changes fail
   `test_simple_deploy_js_matches_golden` until the fixture under
   `test/fixtures/expected/` is deliberately regenerated. Review the fixture diff
-  like code — it is.
+  like code. It is.
 - **Regenerate the API reference** when Python signatures, docstrings or template
   contract comments change: `uv run python website/scripts/generate_api.py`, then
   commit the real diff.
 - **A new validator rule needs a test that makes it FIRE.** Referencing the
-  code is not enough — `test_every_code_can_actually_be_produced` is a static
+  code is not enough. `test_every_code_can_actually_be_produced` is a static
   check and says so. Two things watch this, and they are not interchangeable:
 
   ```bash
@@ -150,7 +150,7 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 
   **The floor cannot do the reachability job.** It is one number over ~6,000
   branches, so a single rule that stops firing vanishes into it and unrelated
-  gains offset it indefinitely — measured: deleting the only test that fires
+  gains offset it indefinitely. Measured: deleting the only test that fires
   `display_title_too_long` leaves coverage at 95.21%, comfortably over the 95
   floor, while the reachability gate names the rule. Codes not reached yet live
   in `_reachability.NOT_YET_REACHED`, which is a ratchet: entries come out, and
@@ -161,14 +161,14 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
   website/scripts/generate_findings.py`. That catalogue is the source of truth
   for what a code means; `website/docs/reference/findings.md` and
   `dbml-sharepoint explain` both read it, and a currency test fails on a
-  hand-edited page. Do not edit the page — it was hand-maintained once and
+  hand-edited page. Do not edit the page. It was hand-maintained once and
   silently rotted into a document where all 194 rules stopped rendering.
 - **Emitted JS.** For template changes, build an example and `node --check` the
   emitted scripts.
 - **`uv run pytest` runs with `filterwarnings = ["error"]`.** A new dependency
   that emits a DeprecationWarning at import time will abort collection across
   every test module, which looks like a catastrophic failure rather than a
-  warning. `pyparsing` is capped `<3.3` for exactly this reason — see the comment
+  warning. `pyparsing` is capped `<3.3` for exactly this reason. See the comment
   in `pyproject.toml` and the matching rule in `renovate.json`. Lift both
   together or neither.
 
@@ -180,12 +180,12 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
 | `src/dbml_sharepoint/generators/` | Emit deploy.js.txt, rollback.js.txt, assess.js.txt, reporting |
 | `src/dbml_sharepoint/templates/` | Jinja templates for the emitted JS |
 | `src/dbml_sharepoint/model/` | Mapping parsing and types |
-| `src/dbml_sharepoint/solutions/` | The shipped list templates (schema + mapping + release per family). Inside the package so the wizard can offer them to somebody who never cloned this repository — only files under the package reach the wheel. Do **not** confuse with `templates/` above, which is Jinja |
+| `src/dbml_sharepoint/solutions/` | The shipped list templates (schema + mapping + release per family). Inside the package so the wizard can offer them to somebody who never cloned this repository. Only files under the package reach the wheel. Do **not** confuse with `templates/` above, which is Jinja |
 | `test/manual/` | Live-site probes. Transcripts are gitignored and a test enforces that no tracked file under these names references a tenant |
 | `website/` | Docusaurus docs. `docs/api/` is generated and committed |
 
 A generator must never import from `analysis/checks/`. Where both sides need the
-same fact, it lives in a shared module — `analysis/joins.py` is the worked
+same fact, it lives in a shared module: `analysis/joins.py` is the worked
 example.
 
 ## Safety

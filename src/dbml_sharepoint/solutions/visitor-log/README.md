@@ -3,7 +3,7 @@
 *Theme: operations & service..*
 
 The front-desk sign-in book, digitised: one list (`VI_Visit`) recording who
-is on site, hosted by whom, since when — with the sign-out that paper books
+is on site, hosted by whom, since when, with the sign-out that paper books
 never collect. The deployed default view, **On site now**, *is* the
 **evacuation muster list**, which is the real reason this is safety
 infrastructure, not admin.
@@ -31,8 +31,8 @@ something in it the first time a warden opens it.
 | 4 | `40-adopt/` | Reception habits + the evacuation drill |
 | 5 | `50-govern/` | Privacy retention, contractor rules, muster procedure |
 
-**Customisation points:** `VisitorType` — note that **Contractor** and
+**Customisation points:** `VisitorType` (note that **Contractor** and
 **Student / placement** are the two members that drive the induction
-question on the form; and whether visitors self-serve on a kiosk/tablet
+question on the form); and whether visitors self-serve on a kiosk/tablet
 (the New-item form on a mounted tablet works today, no extra software) or
 reception records for them.

@@ -11,7 +11,7 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
 
 - [ ] `AU_` prefix free on the target site.
 - [ ] `AuditType`/`FindingRating` enums match your assurance framework
-      (many audit firms rate findings themselves — mirror their scale).
+      (many audit firms rate findings themselves; mirror their scale).
       **`FindingRating` is now colour-mapped**, Low → Critical, using the
       same four tokens as the risk register's rating columns; a renamed
       member strands old rows *and* silently loses its colour. If your
@@ -26,7 +26,7 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
       saved rows, and `New audit` / `New recommendation` before the title
       is filled in, updating live as it is typed. If you add another
       `[$FieldName]` reference, note that a **calculated** column always
-      resolves empty in a form header — `DaysLate` will show nothing there,
+      resolves empty in a form header. `DaysLate` will show nothing there,
       with no error. Its value reaches the form through its own
       `column_formatting`, in the **System** section.
 
@@ -47,8 +47,8 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
-first, then `demo-data.js.txt`, from the same bundle. It creates five audits —
-one per type — and six recommendations covering every status and every
+first, then `demo-data.js.txt`, from the same bundle. It creates five audits,
+one per type, and six recommendations covering every status and every
 finding rating, including the row that matters most for testing the
 *Overdue* view: a recommendation whose **original** date has passed and
 whose **revised** date has not, and which is therefore correctly *not*
@@ -59,7 +59,7 @@ begins with `[DEMO]`, so they are obvious in every view, they are matched
 by Title on re-paste (running it twice never duplicates), and `rollback.js.txt`
 treats a list whose rows are *all* demo-marked as demo-only content.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `AU_Audit` and `AU_Recommendation` exist (Audit first).
 - [ ] **Audit** shows two declared views: **Recent reports** (the default)
@@ -88,12 +88,12 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       date, not sorted by finding rating.** The old *Recommended views*
       table asked for the rating sort, and SharePoint cannot do it: a
       Choice column orders by its stored text, so "descending" would give
-      Moderate, Low, High, Critical — not severity order, and worse than no
+      Moderate, Low, High, Critical, not severity order, and worse than no
       rating sort because it looks like one. Severity is carried by the
       colours on the `FindingRating` column instead. If you need a true
       rating sort, the workaround is to number the choice members
       (`1 Low`, `2 Moderate`, …) in `10-design/schema.dbml` **before first
-      deploy** — renaming them afterwards strands existing rows.
+      deploy**. Renaming them afterwards strands existing rows.
 - [ ] `DaysLate` renders as a bar whose **fill colour comes from
       `FindingRating`**, so a forty-day-late Critical and a forty-day-late
       Low read differently at the same bar length.
@@ -104,30 +104,30 @@ treats a list whose rows are *all* demo-marked as demo-only content.
 - [ ] The Audit New form shows **The review** and **Response**. The
       Recommendation New form shows **The finding**, **The agreed action**
       and **Closure**. **System** is last on Recommendation and holds
-      `DaysLate` only — it is calculated, so on the New form that section
+      `DaysLate` only. It is calculated, so on the New form that section
       is a bare heading with nothing under it. That is cosmetic and
       expected; on Edit and Display the value appears there, read-only.
 - [ ] **Form behaviour** (declared in `mapping.yaml` under
       `form_visibility:`): on the *New* form, RevisedDue, ClosedDate and
       EvidenceUrl are all absent. Save the row, reopen it for edit:
       RevisedDue is now there; ClosedDate and EvidenceUrl are still hidden.
-      Set Status to *Implemented - awaiting evidence* — EvidenceUrl appears
-      as you change the value, without saving. Set it to *Closed* —
+      Set Status to *Implemented - awaiting evidence*. EvidenceUrl appears
+      as you change the value, without saving. Set it to *Closed*.
       ClosedDate appears too.
 - [ ] **Both endings need a ClosedDate** (`list_validation:`). With Status
-      *Closed* and ClosedDate empty, saving is refused — `DaysLate` is
+      *Closed* and ClosedDate empty, saving is refused. `DaysLate` is
       computed from that date, so without it the committee's lateness
       figure is simply blank. Fill it; it saves. **Then try the same with
       *Risk accepted***: also refused, and for a sharper reason. That
       status leaves the default and Overdue queues the way a closure does,
-      and **Closed, last 90 days** — the committee's closure report —
+      and **Closed, last 90 days** (the committee's closure report)
       filters on `ClosedDate`, which a blank cannot satisfy. Without the
       rule, an accepted recommendation would be in no queue and in no
       report.
 - [ ] **The EvidenceUrl requirement is NOT a save rule**, and you should
       confirm that rather than assume it: set Status to *Closed* with
       EvidenceUrl empty and a ClosedDate filled, and the row **saves**.
-      SharePoint does not permit the alternative — a validation formula
+      SharePoint does not permit the alternative. A validation formula
       referencing a URL column is refused when you try to set it, with
       *"One or more column references are not allowed, because the columns
       are defined as a data type that is not supported in formulas."* The
@@ -150,12 +150,12 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       Closed `2026-07-20` → **5**.
 - [ ] Ordinary Members: read-only.
 - [ ] **Load the backlog**: every open recommendation from existing audits
-      goes in now — a partial register is worse than none, because it looks
+      goes in now. A partial register is worse than none, because it looks
       complete.
 - [ ] Populate **AU Audit Coordinators**; delete the test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## What is not enforced at save
@@ -166,7 +166,7 @@ treats a list whose rows are *all* demo-marked as demo-only content.
   may accept a risk; the register cannot check that they did.
 - **That the evidence link is actually evidence.** The save rule proves a
   URL is present. Only a coordinator reading it proves it demonstrates the
-  action — which is what the *Awaiting evidence* view exists for, and why
+  action, which is what the *Awaiting evidence* view exists for, and why
   the staff guide says a link to a folder is not evidence.
 - **The ten-business-day loading rule.** A rule about a habit, not a row.
 
@@ -176,7 +176,7 @@ template has shipped that rule since before the family standard existed and
 it is kept, but it has not been read back from a live tenant, and
 `grants-register` declined to copy the pattern for that reason. The
 checklist item above is how you find out on your own tenant, on the first
-row you close — if the save is *not* refused with EvidenceUrl empty, tell
+row you close: if the save is *not* refused with EvidenceUrl empty, tell
 us, and treat the closure-evidence standard as a governance check until it
 is settled.
 
@@ -184,24 +184,24 @@ is settled.
 
 Bump `schema_version`, rebuild, re-paste. Existing rows are untouched;
 drifted settings are reconciled, and declared views are reconciled to the
-declaration — a view retitled by hand comes back under its declared title.
+declaration. A view retitled by hand comes back under its declared title.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
-family. The group starts empty only if no family has deployed to the site yet;
-it gains a member when any family's build is run with `--enterprise-reader
-<account>`, which enrols exactly that one account and nothing else.
-`rollback.js.txt` does not remove it: rollback deletes lists, not site groups
-or role assignments, so the group and any account enrolled in it survive a
-rollback.
+The deploy declares the `dbml Enterprise Readers` site group, shared with
+every other family deployed to the site, and grants it `Read` on every list in
+this family. The group starts empty only if no family has deployed to the site
+yet; it gains a member when any family's build is run with
+`--enterprise-reader <account>`, which enrols exactly that one account and
+nothing else. `rollback.js.txt` does not remove it: rollback deletes lists,
+not site groups or role assignments, so the group and any account enrolled in
+it survive a rollback.
 
 A later build that omits the flag does not put the group back to empty:
-enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
-membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+enrolment only runs when `--enterprise-reader` is given, so an account
+enrolled by an earlier build, of this family or any other sharing the site,
+keeps its membership and its `Read` grant on every list it was declared
+against. Removing it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -214,8 +214,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
-enumeration are still unverified, so the end-to-end path (Power BI or any
-other API client) is not yet proven. See the danger block in the mapping
-reference's Security section.
+`Use Remote Interfaces` intact at web scope. Publishing sites, where lockdown
+mode is on by default, and the reporting client's own list enumeration are
+still unverified, so the end-to-end path (Power BI or any other API client) is
+not yet proven. See the danger block in the mapping reference's Security
+section.

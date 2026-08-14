@@ -19,18 +19,18 @@ write machinery is auditable from the script text itself.
 
 ## Three tiers
 
-1. **Always-run enumerations** — site identity and template, lock state,
+1. **Always-run enumerations**: site identity and template, lock state,
    platform build, effective permission bits (ManageLists,
    ManagePermissions, NoScript), creatable list templates, regional and
    language settings, group connection, storage, hub status, retention
    labels, app catalog and SPFx footprint, search.
-2. **Pack-driven attempt-probes** — per-declared-list collision probes;
+2. **Pack-driven attempt-probes**: per-declared-list collision probes;
    property-surface probes (sealing, `AllowDeletion`, column and form
    formatter surfaces) against an existing declared list where one
    exists; intelligent-versioning trim mode; CSOM availability when the
    pack declares groups; sensitivity label and Preservation Hold Library
    signals.
-3. **Not assessable** — a printed honesty block listing what cannot be
+3. **Not assessable**: a printed honesty block listing what cannot be
    determined from the operator's site context (tenant policies,
    licence-gated behaviour), so absence of a finding is never mistaken
    for a pass.
@@ -39,13 +39,13 @@ write machinery is auditable from the script text itself.
 
 Findings roll up per requirement key to a single line:
 
-- `COMPATIBLE` — no blocking or degrading findings.
-- `DEGRADED` — deployable, but WARN findings deserve review first. This
+- `COMPATIBLE`: no blocking or degrading findings.
+- `DEGRADED`: deployable, but WARN findings deserve review first. This
   includes a provisioned list whose [provenance
   marker](reporting.md#the-provenance-marker) has gone missing from its
-  Description, named in the finding — the list itself is fine, only
+  Description, named in the finding. The list itself is fine, only
   reporting is affected, so it does not block.
-- `BLOCKED` — a named requirement fails (for example, missing permission
+- `BLOCKED`: a named requirement fails (for example, missing permission
   bits or a locked site); resolve before deploying.
 
 `assess-manifest.md` documents what will be probed and how to read the

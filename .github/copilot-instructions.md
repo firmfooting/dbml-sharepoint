@@ -3,7 +3,7 @@
 **Read [`AGENTS.md`](../AGENTS.md) at the repository root.** It is the canonical
 instruction file for all coding agents here, and it is kept current; this file is
 a pointer so that Copilot picks the same instructions up. Do not duplicate its
-contents here — a second copy drifts.
+contents here. A second copy drifts.
 
 The points that matter most when reviewing a pull request in this repository:
 

@@ -5,12 +5,12 @@ with, what it's worth, who owns it, when it starts, ends, and must be
 renewed or exited. Deploys as one list: `CT_Contract`.
 
 **The value case.** Most organisations discover contract sprawl the
-expensive way — an auto-renewal nobody wanted, an expiry nobody watched, a
+expensive way: an auto-renewal nobody wanted, an expiry nobody watched, a
 supplier nobody remembers engaging. A register turns that into five views
 that **deploy with the list**: *Live contracts*, *Expiring 90 days*,
 *Auto-renewals*, *By counterparty* and *Exited*. `TermMonths` is calculated
 automatically from the start and end dates, and an auto-renewing contract
-cannot be saved without a notice period — the one number that prevents a
+cannot be saved without a notice period, the one number that prevents a
 renewal nobody chose. Build with `--seed` and five demo rows show every
 view and every colour working before you type a thing.
 
@@ -25,5 +25,5 @@ view and every colour working before you type a thing.
 | 5 | `50-govern/` | Agree owners, review cadence and data-quality rules |
 
 **Customisation points:** `ContractType` and `Status` choices; value
-thresholds and approval delegations are policy, not schema — see
+thresholds and approval delegations are policy, not schema: see
 `50-govern/governance.md`.

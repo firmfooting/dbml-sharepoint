@@ -22,10 +22,10 @@ accounts. Do not populate access groups until every go-live gate below passes.
       not create an opportunities committee.
 - [ ] Replace both header placeholders in
       `20-configure/formatting/opportunity-form-header.json`:
-      - `https://REPLACE-WITH-URGENT-ROUTING-URL` — the staff-facing page for
+      - `https://REPLACE-WITH-URGENT-ROUTING-URL`: the staff-facing page for
         incidents, emergencies, complaints, privacy/cyber and other required
         pathways;
-      - `https://REPLACE-WITH-OPPORTUNITY-PROCESS-URL` — the short local triage
+      - `https://REPLACE-WITH-OPPORTUNITY-PROCESS-URL`: the short local triage
         guide and contact.
 - [ ] Confirm `OR_` is free on the target site and that this site is appropriate
       for de-identified organisational information.
@@ -139,7 +139,7 @@ starts `[DEMO]`; delete the rows before go-live.
       Triage Route is **Assess here**.
 - [ ] A steward can redirect a Captured item by confirming the scope boundary,
       choosing the relevant Triage Route, setting Status to Transferred,
-      selecting Delivery Route and adding the receiving record/control ID — no
+      selecting Delivery Route and adding the receiving record/control ID; no
       benefit assessment is required.
 - [ ] Direct hand-off follows the same short path.
 - [ ] Duplicate requires a receiving reference but no assessment.
@@ -196,8 +196,8 @@ data.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -207,9 +207,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -222,8 +222,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

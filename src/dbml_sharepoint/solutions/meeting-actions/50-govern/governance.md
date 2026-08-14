@@ -1,19 +1,19 @@
-# Meeting actions — governance
+# Meeting actions: governance
 
 ## Ownership
 
 | Role | Held by | Accountable for |
 | --- | --- | --- |
-| Forum chair (per meeting type) | — | Actions reviewed at each meeting; decisions recorded |
+| Forum chair (per meeting type) | n/a | Actions reviewed at each meeting; decisions recorded |
 | Every action owner | `AssignedTo` | Status truthfulness and delivery |
-| Site Owners | — | Group membership, deploys |
+| Site Owners | n/a | Group membership, deploys |
 
 ## The follow-up discipline (what makes this work)
 
 1. **Every meeting opens with the previous meeting's actions.** This single
    rule is the difference between a register and a graveyard. The surface
    is the *By meeting* view, opened at that meeting's group.
-2. Actions have **one named owner and a real date** — chairs bounce
+2. Actions have **one named owner and a real date**: chairs bounce
    anything assigned to "the team" or dated "ASAP". Both columns are
    required, so the list bounces them first.
 3. The *Overdue* view is reviewed weekly by each forum's chair; three
@@ -40,19 +40,19 @@ the difference is worth knowing rather than assuming:
   decision row referencing the old one in Detail, made at a recorded
   meeting. Version history backs this, but the habit matters more.
 - Anything with legal, financial or HR consequence still follows its formal
-  approval process — this log records that it happened, it doesn't replace
+  approval process: this log records that it happened, it doesn't replace
   the authority.
 
 ## Data-quality rules
 
-1. Meetings without at least a decision or an action are fine — record them
+1. Meetings without at least a decision or an action are fine: record them
    anyway; the gap itself is information.
 2. `CompletedDate` accompanies every Done. This one is enforced at save.
 3. Quarterly, each chair skims their forum's decision log for anything that
-   silently lapsed — lapsed decisions get an explicit superseding entry.
+   silently lapsed: lapsed decisions get an explicit superseding entry.
    The *By meeting* view on Decision is the per-forum read.
 
 ## Lifecycle
 
-Keep everything — the register IS the corporate memory and it's tiny data.
+Keep everything: the register IS the corporate memory and it's tiny data.
 Export before decommissioning; never run `rollback.js.txt` against real rows.

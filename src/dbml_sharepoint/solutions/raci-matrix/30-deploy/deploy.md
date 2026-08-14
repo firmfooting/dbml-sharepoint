@@ -26,25 +26,25 @@ follows from that.
 - [ ] `RACI_` prefix free on the target site.
 - [ ] `Domain` enum matches the areas your organisation actually divides
       work into. It is what the register is grouped and reviewed by, so
-      fit it now — renaming a choice later strands the rows already on the
+      fit it now. Renaming a choice later strands the rows already on the
       old value.
 - [ ] **The confirmation cadence is a decision, and it is easier before
       first deploy.** `ConfirmationDue` is calculated from `LastConfirmed`
       and `Criticality`: Statutory 6 months, High 12, Routine 24. The
       formula is one line in `20-configure/mapping.yaml`. Changing it
       after the register is populated makes SharePoint recalculate
-      `ConfirmationDue` on **every existing row** — read the change-control
+      `ConfirmationDue` on **every existing row**. Read the change-control
       section of `50-govern/governance.md` first.
 - [ ] **Know who fills `RACI Matrix Maintainers` before you paste.**
       Nobody outside that group can edit anything here, including the
-      people named in `Responsible` and `Accountable` on their own rows —
-      see the security section below for why that is deliberate.
+      people named in `Responsible` and `Accountable` on their own rows.
+      See the security section below for why that is deliberate.
 - [ ] The three form headers show `Activity: <title>`, `Party: <title>`
       and `Involvement: <title>` on a saved row, and `New activity`, `New
       party` and `New involvement` before the title is typed, updating
       live as it is typed. If you add another `[$FieldName]` reference,
       note that a **calculated** column always resolves empty in a form
-      header — `ConfirmationDue` will show nothing there, with no error.
+      header. `ConfirmationDue` will show nothing there, with no error.
       Its value reaches the form through its own `column_formatting`, in
       the **System** section.
 
@@ -58,7 +58,7 @@ hand, and the old value is not preserved anywhere in SharePoint. The
 previous text is printed in the run transcript on the line reporting the
 change, so copy anything you need out of it before pasting. The exact
 three strings that will be written are in `build/deploy-manifest.md`, in
-the list-creation phase — read them there rather than after the fact.
+the list-creation phase. Read them there rather than after the fact.
 
 This matters more on a redeploy over an adopted list than on a fresh
 provision, where there was nothing to lose.
@@ -93,7 +93,7 @@ One thing the demo deliberately does not do: **every person column
 resolves to whoever pastes the script.** Responsible, Accountable,
 Confirmed By and a party's Contact are all the operator, so *My
 accountabilities* demonstrates as one person's list. That is the
-mechanism, not a defect — the filter is real, there is simply one person
+mechanism, not a defect. The filter is real, there is simply one person
 in the sample.
 
 **Delete the demo rows before active use.** Every demo Title begins with
@@ -121,16 +121,16 @@ other two lists usable at all:
 Enter your governance forums, the roles that recur across the register,
 the individuals who hold accountability in their own right, and the
 external bodies you are answerable to. Give each one a `Contact` unless it
-is a Forum — for a Forum the contact is its chair or secretariat, which is
+is a Forum. For a Forum the contact is its chair or secretariat, which is
 often the more useful thing to record anyway. Nothing in SharePoint
 enforces that a party has a contact; it is a governance check, and
 `50-govern/governance.md` says why it cannot be anything else.
 
 Once the vocabulary is there, load the activities, and only then the
-involvements — an involvement needs both its activity and its party to
+involvements. An involvement needs both its activity and its party to
 exist.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `RACI_Activity`, `RACI_Party` and `RACI_Involvement` all exist.
 - [ ] All five **Activity** views appear: **Current** (the default),
@@ -160,15 +160,15 @@ exist.
       person columns; a SharePoint group or a distribution list is not a
       selectable value.
 - [ ] `LastConfirmed` is **absent from the New form** and present on Edit
-      and Display. It fills itself with today's date at creation — that is
+      and Display. It fills itself with today's date at creation. That is
       the baseline the whole cadence counts from, and showing it at
       creation only invites somebody to back-date it.
 - [ ] `EscalationRoute` is **absent on a New form while Activity Kind is
       Task and Criticality is not Statutory**, and appears the moment
-      either of those changes — switch the kind to Approval or Decision,
+      either of those changes: switch the kind to Approval or Decision,
       or the criticality to Statutory. Those are exactly the two cases the
       save rule refuses without it. Switch back and it disappears again,
-      keeping whatever was typed — SharePoint offers no mechanism to clear
+      keeping whatever was typed. SharePoint offers no mechanism to clear
       a hidden field, so the value survives the field being hidden.
 - [ ] `ConfirmationDue` spot-checks, on a saved test activity:
       - Statutory, confirmed today → due in **6 months**.
@@ -186,7 +186,7 @@ exist.
       only one. Try both: set `Activity Kind` to **Decision** with
       `Escalation Route` empty, and set `Criticality` to **Statutory**
       with it empty. Both are refused with the same message naming both
-      cases — that is the platform limit, not a defect. In both cases the
+      cases. That is the platform limit, not a defect. In both cases the
       Escalation Route field is on screen when the refusal fires: a
       rejection naming a field the author cannot see is what the
       visibility rule exists to prevent, and the visibility condition
@@ -198,7 +198,7 @@ exist.
       because a visibility condition narrower than its save rule produces
       a form that refuses to save and will not show you why.
 - [ ] `LastConfirmed` refuses a date in the future, with its own message
-      rather than the shared one — it reads only its own column, so it
+      rather than the shared one. It reads only its own column, so it
       keeps a message that can be specific.
 - [ ] An `Involvement` cannot be saved without an `Activity` and a
       `Party`; its `Title` is required and the form header asks for the
@@ -208,7 +208,7 @@ exist.
 - [ ] Populate **RACI Matrix Maintainers**; delete the test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is drift,
+      this list"; a display-name rename is still possible. It is drift,
       reverted and reported at the next re-paste.
 
 ## Who belongs in which group
@@ -222,11 +222,11 @@ own accountability is not a register.**
 
 | Group | Holds | Who belongs in it |
 | --- | --- | --- |
-| `RACI Matrix Maintainers` | Contribute on all three lists | The small group who maintain the register — governance, quality or executive support. Not "everybody named in a row" |
-| `dbml List Administrators` | Full Control site-wide — every register on the site, not just these three | Nobody, by default. The deploy enrols the running operator for the duration of its own run and removes them afterwards, so schema changes and redeploys are deliberate acts |
-| `dbml Enterprise Readers` | Read site-wide — every register on the site, not just these three | Nobody, by default. Read-only accounts for aggregated cross-site reporting; membership is operator-owned |
+| `RACI Matrix Maintainers` | Contribute on all three lists | The small group who maintain the register (governance, quality or executive support). Not "everybody named in a row" |
+| `dbml List Administrators` | Full Control site-wide: every register on the site, not just these three | Nobody, by default. The deploy enrols the running operator for the duration of its own run and removes them afterwards, so schema changes and redeploys are deliberate acts |
+| `dbml Enterprise Readers` | Read site-wide: every register on the site, not just these three | Nobody, by default. Read-only accounts for aggregated cross-site reporting; membership is operator-owned |
 
-Everyone else — the site's associated members and owners — gets **Read**.
+Everyone else, the site's associated members and owners, gets **Read**.
 That is the intended posture: the matrix is written centrally and read by
 everybody, because its value is that any member of staff can look up who
 is accountable for something without asking permission first.
@@ -242,7 +242,7 @@ actually complete a quarterly review.
 Every list uses `reconcile: exact`: permission grants nobody declared are
 removed on deploy and on every redeploy.
 
-## Redeploying — formula change warning
+## Redeploying: formula change warning
 
 Bump `schema_version`, rebuild, re-paste. Rows are untouched; views,
 forms, formatting, column visibility and the save rules are reconciled
@@ -251,7 +251,7 @@ hand returns to the declared shape with the run reporting that it did so.
 
 The exception is `ConfirmationDue`. A redeploy applies a formula change to
 the live column, and SharePoint then **recalculates every existing row**.
-That is desirable for a typo fix and consequential for a cadence change —
+That is desirable for a typo fix and consequential for a cadence change:
 shortening Routine from 24 months to 12 makes a large part of the register
 fall due the moment the paste finishes. Follow the change-control
 procedure in `50-govern/governance.md` before touching that line, and
@@ -259,8 +259,8 @@ export the register first.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group, shared with every
+other family deployed to the site, and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -279,8 +279,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites, where
+lockdown mode is on by default, and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

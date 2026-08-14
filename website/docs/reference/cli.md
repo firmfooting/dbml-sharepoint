@@ -12,7 +12,7 @@ dbml-sharepoint COMMAND [OPTIONS]
 ## `build`
 
 Generate the full deployment bundle (deploy.js.txt, rollback.js.txt, assess.js.txt,
-manifests, reporting, index.md, checksums.txt — plus demo-data.js.txt with
+manifests, reporting, index.md, checksums.txt, plus demo-data.js.txt with
 `--seed`).
 
 | Option | Default | Meaning |
@@ -47,7 +47,7 @@ between that and a mispaste.
 
 Behaviour worth knowing:
 
-- Validation errors refuse the build — the manifest lists every finding.
+- Validation errors refuse the build: the manifest lists every finding.
 - `--site-role` is checked against the roles the mapping actually
   declares; a misspelled role is an error, never a silently empty
   deploy plan.
@@ -72,7 +72,7 @@ dbml-sharepoint validate          # inside a project directory
 | `--extension NAME` | mapping's `extension:` | Extension whose extra validators to run |
 
 Prints every finding with its code, then a count. Exits **1** if there are
-errors, **0** otherwise — warnings do not fail it, the same rule `build`
+errors, **0** otherwise: warnings do not fail it, the same rule `build`
 applies.
 
 **Validation is always project-wide.** `--site-role` does not scope it, and
@@ -81,7 +81,7 @@ check. A finding under `admin` is reported even when validating with
 `--site-role default`, which is deliberate: a mapping is one document, and
 an error hidden until somebody deploys that role means the mapping reads
 clean right up until the deploy that breaks. `validate_all` takes no role at
-all, and `build` calls it exactly the same way — so this matches what a build
+all, and `build` calls it exactly the same way, so this matches what a build
 would report, which is the only useful contract for a pre-build check.
 
 What the flag does do here is reject a role the mapping does not declare, so
@@ -116,7 +116,7 @@ unknown_column_type  [error]
 A column's DBML type is not one the typemap knows.
 ```
 
-The token may be pasted exactly as a build prints it — a trailing colon is
+The token may be pasted exactly as a build prints it: a trailing colon is
 tolerated, because findings render as
 `[ERROR] unknown_column_type: schema[Project].Sponsor: ...` and the obvious
 thing to do is select the code and paste it.
@@ -136,13 +136,13 @@ Measured, because a CI gate keys on these:
 | --- | --- |
 | `0` | Success, including a `--dry-run` that found no errors |
 | `1` | The build refused: validation errors, or an unreadable/invalid input file |
-| `2` | Usage error — a missing required option, a `--site-role` the mapping does not declare, or an `explain` code that is not in the catalogue |
+| `2` | Usage error: a missing required option, a `--site-role` the mapping does not declare, or an `explain` code that is not in the catalogue |
 
 A validation failure exits **1**, not 2. `2` is the usage-error code
 `typer` raises before the pipeline runs at all. Gate on non-zero rather
 than on a specific code.
 
-An unreadable or malformed input file is part of exit **1**, not 2 — a
+An unreadable or malformed input file is part of exit **1**, not 2, a
 refused build rather than a misuse of the command line. It is reported as a
 single message naming the file and, where the parser gives one, the line:
 
@@ -154,10 +154,10 @@ expected ',' or '}', but got '<stream end>'
 ```
 
 That covers what the YAML and DBML parsers reject, and the loader's own
-checks — an unknown key, a missing required one, a value of the wrong kind.
+checks: an unknown key, a missing required one, a value of the wrong kind.
 
-It also covers a section whose *shape* is wrong — valid YAML, wrong kind of
-value — for every section read as a mapping of names:
+It also covers a section whose *shape* is wrong (valid YAML, wrong kind of
+value) for every section read as a mapping of names:
 
 ```console
 $ dbml-sharepoint build --mapping ./mapping.yaml …
@@ -167,18 +167,18 @@ $ dbml-sharepoint build --mapping ./mapping.yaml …
 Note this refuses `views: []` as well as a populated list. An empty sequence
 where a mapping belongs used to be swallowed by the loader's `or {}`, so the
 section loaded as empty and the build reported success having deployed none
-of what was written there — the same typo as the populated case, failing
+of what was written there, the same typo as the populated case, failing
 silently instead of loudly.
 
 This is a rule about **shape, not emptiness**. Declaring no views is
-entirely valid and is not what this refuses — omitting the section, `views:`
+entirely valid and is not what this refuses: omitting the section, `views:`
 with nothing under it, and `views: {}` are all accepted, and every
 non-`DocumentLibrary` list still gets the generated `All Items` view
 regardless (authors are in fact forbidden from declaring one).
 
 `{}` and `[]` are not two ways of writing "empty". These sections are keyed
 by name: `{}` is that structure with zero entries, `[]` is a different
-structure. The shipped mappings already depend on the distinction —
+structure. The shipped mappings already depend on the distinction:
 
 ```yaml
 enum_sources: {}                 # keyed by name
@@ -188,7 +188,7 @@ watched_lists: []                # a list
 permission_levels: []            # a list
 ```
 
-— so `[]` under a name-keyed section says the author has the wrong shape in
+So `[]` under a name-keyed section says the author has the wrong shape in
 mind, which is worth catching before they populate it.
 
 The guard lives in the loader, not the CLI. `_CONFIG_ERRORS` deliberately
@@ -204,13 +204,13 @@ Emit the reporting pack only (no site URL required): `powerquery/`,
 Each run replaces the previous pack, so a list dropped from the schema does
 not leave its `.pq` file behind. What it removes is exactly what it writes:
 every `*.pq` under `powerquery/`, `sql/views.sql`, `guide.md` and
-`data-dictionary.md` — then `powerquery/` and `sql/` themselves, but only if
+`data-dictionary.md`, then `powerquery/` and `sql/` themselves, but only if
 emptying them left nothing. Treat `*.pq` as owned by this command: keep
 hand-written queries somewhere other than `--out`. Anything else survives,
 including files of other types sitting inside those two directories.
 
-An input the command never got past — an unreadable schema or mapping, an
-unknown `--site-role` — leaves the existing pack untouched. A schema it
+An input the command never got past (an unreadable schema or mapping, an
+unknown `--site-role`) leaves the existing pack untouched. A schema it
 reads and then refuses clears the pack, which by then describes a schema
 that no longer exists.
 
@@ -223,7 +223,7 @@ that no longer exists.
 | `--release PATH` | `20-configure/release.yaml` when present | Stamp release provenance into the outputs |
 
 Inside a project directory that makes the whole command `dbml-sharepoint
-report`. `--release` stays genuinely optional — an unstamped dictionary is
+report`. `--release` stays genuinely optional: an unstamped dictionary is
 a supported result, so unlike the other two a missing release.yaml is not
 a refusal; it is simply picked up when it is there.
 

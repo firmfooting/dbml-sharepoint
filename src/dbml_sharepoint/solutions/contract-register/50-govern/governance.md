@@ -1,4 +1,4 @@
-# Contract register — governance
+# Contract register: governance
 
 ## Ownership
 
@@ -12,7 +12,7 @@
 ## Review cadence
 
 - **Monthly**: register owner reviews the *Expiring 90 days* and
-  *Auto-renewals* views — both deploy with the list, so there is nothing to
+  *Auto-renewals* views. Both deploy with the list, so there is nothing to
   build first. Every row expiring inside its notice period gets a renewal
   decision recorded (Status → In renewal, or an exit plan). Note the
   ninety days is a **rolling** window, not a calendar quarter: CAML has no
@@ -27,7 +27,7 @@
 
 1. `EndDate`, `Owner` and `RenewalType` are never knowingly blank on an
    Active row.
-2. `AnnualValue` is an estimate — fine — but a *dated* estimate: re-check at
+2. `AnnualValue` is an estimate, fine, but a *dated* estimate: re-check at
    renewal.
 3. `ValueBand`-style thresholds, delegations and approval limits are policy,
    not schema: enforce them in your procurement process and record the
@@ -37,7 +37,7 @@
 
 Three of those rules are now refused at save. The rest are yours.
 
-**Enforced at save — SharePoint rejects the row:**
+**Enforced at save, SharePoint rejects the row:**
 
 | Rule | Where it lives | Message shown |
 | --- | --- | --- |
@@ -49,7 +49,7 @@ A cross-column rule shares the list's single `ValidationFormula`, which is
 why only the first is written that way and the other two live on their
 columns, where each keeps its own message.
 
-**Still a governance check — nothing stops a wrong entry:**
+**Still a governance check, nothing stops a wrong entry:**
 
 - **`EndDate` after `StartDate`.** The condition grammar compares a column
   to a literal, never to another column, so the rule has no spelling at
@@ -68,7 +68,7 @@ columns, where each keeps its own message.
 Where the form helps rather than enforces: `NoticePeriodDays` disappears
 when `RenewalType` is *Fixed term — no renewal*, so the field is on screen
 exactly when it can be mandatory. SharePoint cannot clear a hidden field's
-value, so a notice period entered before the type was switched survives —
+value, so a notice period entered before the type was switched survives:
 harmless, since nothing reads it in that state.
 
 ## Access rationale
@@ -76,7 +76,7 @@ harmless, since nothing reads it in that state.
 Members read, managers contribute, nobody edits schema day-to-day, and Full
 Control sits in an **empty** admin group that the deploy script joins and
 leaves automatically. Commercial sensitivity beyond that (e.g. hiding value
-from all staff) is a site-membership decision — this register inherits the
+from all staff) is a site-membership decision. This register inherits the
 site's audience.
 
 ## Lifecycle

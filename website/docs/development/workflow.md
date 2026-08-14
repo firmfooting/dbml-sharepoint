@@ -15,10 +15,10 @@ The [philosophy](philosophy.md) says why; this page says how.
    approach and its failure modes. Claims about SharePoint behaviour
    are verified against learn.microsoft.com and cited. If live
    experimentation is needed to settle a question, do it before the
-   design is called done — a dry-run snippet in a console is cheap;
+   design is called done. A dry-run snippet in a console is cheap;
    a wrong assumption shipped to operators is not.
 2. **Tests before (or with) the change.** New behaviour lands with
-   tests that pin its contract — not its incidental phrasing. Generator
+   tests that pin its contract, not its incidental phrasing. Generator
    tests assert the meaningful literals of the emitted JS (guards,
    endpoints, error text), so a regression in the safety story fails
    loudly.
@@ -29,7 +29,7 @@ The [philosophy](philosophy.md) says why; this page says how.
    partial-earning test.
 4. **Run the gates** (below) until all green.
 5. **Record live findings.** Anything a live run teaches goes back into
-   code comments, tests and the design doc's revision log — dated.
+   code comments, tests and the design doc's revision log, dated.
 
 ## The gates
 
@@ -49,15 +49,15 @@ uv run prek run --all-files markdownlint-cli2 # markdown style; see .markdownlin
   the suite; a genuinely new context key is a deliberate one-line
   addition), and orphan detection. It runs as part of pytest. j2lint
   adds independent syntax/style checking (delimiter spacing, operator
-  spacing, variable case); the two ignored rules are house style —
+  spacing, variable case); the two ignored rules are house style:
   statements sit at column 0 inside JS templates for readability of the
   emitted script, and compact single-line conditionals are allowed in
   the markdown manifests.
 
 - **Golden fixture.** Template changes fail
   `test_simple_deploy_js_matches_golden` until the fixture under
-  `test/fixtures/expected/` is regenerated — a deliberate, reviewed
-  step. Regenerate by rendering the fixture inputs with the updated
+  `test/fixtures/expected/` is regenerated (a deliberate, reviewed
+  step). Regenerate by rendering the fixture inputs with the updated
   templates; review the fixture diff like code, because it is.
 - **Syntax-check emitted JS.** `node --check` every generated script of
   a real build:
@@ -84,7 +84,7 @@ uv run prek run --all-files markdownlint-cli2 # markdown style; see .markdownlin
   uv run python website/scripts/generate_findings.py
   ```
 
-  That module is the source of truth for what a code means — the page and
+  That module is the source of truth for what a code means. The page and
   `dbml-sharepoint explain` both read it, so never edit the page directly.
 
 ## Adding things

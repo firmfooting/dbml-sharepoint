@@ -14,21 +14,21 @@ against the checklist below. Template-specific notes follow.
 - [ ] **Decide whether a Risk Sponsor is mandatory.** `RiskSponsor` ships
       optional. The two options and their costs are set out at the column
       in `10-design/schema.dbml`; requiring one is adding `[not null]`
-      there. Decide **before first deploy** — flipping it later re-validates
+      there. Decide **before first deploy**. Flipping it later re-validates
       every existing row, so a register that has been running without
       sponsors will refuse to save any of them until each is filled in.
       There is no middle setting: SharePoint validation formulas cannot
       read person columns, so "required only once it leaves Provisional"
       is not expressible.
 - [ ] If your organisation has its OWN risk matrix, encode it in
-      `mapping.yaml` **now**, before first deploy — the comment above
+      `mapping.yaml` **now**, before first deploy. The comment above
       `calculated_formulas` shows the cell layout; keep the DBML
       Likelihood/Consequence enums in the same order the formulas index
       them.
 - [ ] The header shows `Risk: <title>` on a saved risk and `New risk`
       before the title is filled in, updating live as it is typed. If you
       add another `[$FieldName]` reference, note that a **calculated**
-      column always resolves empty in a form header — `ResidualRiskRating`,
+      column always resolves empty in a form header. `ResidualRiskRating`,
       `RiskScore`, `LevelsAboveTarget` and `NextReviewDue` will show
       nothing there, with no error. Their values reach the form through
       their own `column_formatting`, in the body sections.
@@ -51,9 +51,9 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt` first,
-then `demo-data.js.txt`, from the same bundle. It creates six rows — one per
+then `demo-data.js.txt`, from the same bundle. It creates six rows: one per
 rating band (Low/Medium/High/Extreme), a Tolerate risk inside its
-tolerance-expiry window, and a Closed risk carrying a closure statement —
+tolerance-expiry window, and a Closed risk carrying a closure statement,
 enough that every declared view and every colour band has content.
 
 **Delete the demo rows before active use.** Every demo Title begins with
@@ -62,7 +62,7 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real risks.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `RR_Risk` exists and all five declared views appear: **Open** (the
       default), **Review due**, **Above target**, **Tolerance due**,
@@ -88,7 +88,7 @@ site that already holds real risks.
       last and holds the three calculated matrix outputs plus
       `MatrixVersion`; it does not interrupt the assessment inputs.
 - [ ] `MatrixVersion` is absent from the New form and present on the Edit
-      and Display forms — it is the audit stamp for which matrix version
+      and Display forms. It is the audit stamp for which matrix version
       rated the row, not something a risk owner sets at creation, but it
       must stay editable so an owner can re-stamp it on an old row during
       the matrix-revision procedure in `50-govern/governance.md`.
@@ -106,7 +106,7 @@ site that already holds real risks.
       `Status` off **Provisional** with `Likelihood` or `Consequence` blank;
       set `Status` to **Closed** with `OverallControlEffectiveness` at
       *Partially effective* or worse. All three are refused, all three show
-      the same message naming all three checks — that is the platform
+      the same message naming all three checks. That is the platform
       limit, not a defect, and it is why a rule that reads only its own
       column belongs in `column_validation` where it keeps its own message.
       For Tolerate, note the date field is on screen when the refusal
@@ -120,33 +120,33 @@ site that already holds real risks.
 - [ ] Populate **RR Risk Managers**; delete the test risk.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is drift,
+      this list"; a display-name rename is still possible. It is drift,
       reverted and reported at the next re-paste.
 
-## Redeploying — matrix change warning
+## Redeploying: matrix change warning
 
 A redeploy applies formula changes to the live columns, and SharePoint then
 **recalculates every existing row**. That is desirable for a typo fix and
-dangerous for a matrix revision — follow the change-control procedure in
+dangerous for a matrix revision. Follow the change-control procedure in
 `50-govern/governance.md` (export a snapshot first, then the
 `MatrixVersion` append-and-re-version steps) before touching any cell.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
-family. The group starts empty only if no family has deployed to the site yet;
-it gains a member when any family's build is run with `--enterprise-reader
-<account>`, which enrols exactly that one account and nothing else.
-`rollback.js.txt` does not remove it: rollback deletes lists, not site groups
-or role assignments, so the group and any account enrolled in it survive a
-rollback.
+The deploy declares the `dbml Enterprise Readers` site group, shared with
+every other family deployed to the site, and grants it `Read` on every list in
+this family. The group starts empty only if no family has deployed to the site
+yet; it gains a member when any family's build is run with
+`--enterprise-reader <account>`, which enrols exactly that one account and
+nothing else. `rollback.js.txt` does not remove it: rollback deletes lists,
+not site groups or role assignments, so the group and any account enrolled in
+it survive a rollback.
 
 A later build that omits the flag does not put the group back to empty:
-enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
-membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+enrolment only runs when `--enterprise-reader` is given, so an account
+enrolled by an earlier build, of this family or any other sharing the site,
+keeps its membership and its `Read` grant on every list it was declared
+against. Removing it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -159,8 +159,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
-enumeration are still unverified, so the end-to-end path (Power BI or any
-other API client) is not yet proven. See the danger block in the mapping
-reference's Security section.
+`Use Remote Interfaces` intact at web scope. Publishing sites, where lockdown
+mode is on by default, and the reporting client's own list enumeration are
+still unverified, so the end-to-end path (Power BI or any other API client) is
+not yet proven. See the danger block in the mapping reference's Security
+section.
