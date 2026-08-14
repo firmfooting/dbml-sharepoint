@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.permissions import (
     BASE_PERMISSIONS,
     BUILT_IN_LEVELS,
     DERIVED_BUILT_IN_LEVELS,
+    GROUP_DESCRIPTION_MAX,
 )
 from dbml_sharepoint.analysis.validator import (
     _ASSOCIATED_GROUP_ALIASES,
@@ -183,6 +184,41 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
             seen_group_names.setdefault(key, grp.name)
+
+            # The server refuses a longer one with HTTP 500, in phase 1.2 --
+            # after lists may already exist. Caught here so an over-long
+            # description is a build error rather than a half-provisioned
+            # site. See permissions.GROUP_DESCRIPTION_MAX for the live
+            # measurement behind the number.
+            # MEASURED 2026-08-13/14, two runs: SharePoint accepts this pair
+            # with HTTP 200 and then stores AutoAccept as FALSE, because a
+            # group cannot auto-accept join requests it does not accept. The
+            # deploy would report the group reconciled while the site
+            # disagreed with the mapping -- silently, since nothing reads the
+            # flags back. Refused here so the mapping cannot claim it.
+            if (grp.auto_accept_request_to_join_leave
+                    and not grp.allow_request_to_join_leave):
+                findings.append(Finding(
+                    FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS,
+                    f"groups[{grp.name!r}]: declares "
+                    f"auto_accept_request_to_join_leave without "
+                    f"allow_request_to_join_leave. SharePoint accepts that "
+                    f"pair and then silently stores auto-accept as false, so "
+                    f"the deployed group would not match this mapping. Set "
+                    f"allow_request_to_join_leave as well, or drop the "
+                    f"auto-accept.",
+                    location=_GROUPS,
+                ))
+
+            if len(grp.description) > GROUP_DESCRIPTION_MAX:
+                findings.append(Finding(
+                    FindingCode.GROUP_DESCRIPTION_TOO_LONG,
+                    f"groups[{grp.name!r}]: description is "
+                    f"{len(grp.description)} characters; SharePoint refuses "
+                    f"anything over {GROUP_DESCRIPTION_MAX} and does so "
+                    f"part-way through the deploy. Shorten it.",
+                    location=_GROUPS,
+                ))
 
         # groups[*].owner_group must be a built-in SP group or a declared custom group.
         for grp in perms.groups:

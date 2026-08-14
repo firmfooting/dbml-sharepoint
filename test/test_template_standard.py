@@ -26,7 +26,7 @@ Part 1 (the seven conventions) and §3.1 (these assertions).
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import cache
 from typing import Any
 
@@ -45,7 +45,7 @@ from dbml_sharepoint.analysis.list_description import (
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, available_solutions
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
-from dbml_sharepoint.model.mapping_loader import Mapping, load_mapping
+from dbml_sharepoint.model.mapping_loader import Mapping, SiteGroup, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 # This module is the family-standard conformance sweep, and it dominates the
@@ -1497,7 +1497,7 @@ def test_every_deploy_doc_spells_the_site_url_placeholder_the_same_way() -> None
     )
 
 
-@pytest.mark.parametrize("template", _uplifted())
+@pytest.mark.parametrize("template", _all_templates())
 def test_every_family_declares_exactly_one_enterprise_reader_group(
     template: str,
 ) -> None:
@@ -1515,10 +1515,10 @@ def test_every_family_declares_exactly_one_enterprise_reader_group(
         f"{template}: expected exactly one enterprise-reader group, "
         f"got {[g.name for g in readers]}"
     )
-    assert readers[0].name.endswith(" Enterprise Readers")
+    assert readers[0].name == "dbml Enterprise Readers"
 
 
-@pytest.mark.parametrize("template", _uplifted())
+@pytest.mark.parametrize("template", _all_templates())
 def test_the_reader_group_is_granted_read_on_every_policy_block(
     template: str,
 ) -> None:
@@ -1544,16 +1544,179 @@ def test_the_reader_group_is_granted_read_on_every_policy_block(
         )
 
 
-@pytest.mark.parametrize("template", _uplifted())
-def test_the_reader_group_uses_the_family_prefix(template: str) -> None:
-    """`improvement-register` is `CI`, not `IM`. The prefix comes from the
-    family's own List Administrators group, never from its folder name."""
+@pytest.mark.parametrize("template", _all_templates())
+def test_the_administrators_group_holds_full_control_everywhere(
+    template: str,
+) -> None:
+    """Full Control on the default policy is not Full Control on an override.
+
+    An override carries its OWN complete assignment list rather than adding
+    to the default, so a family with an override that forgot the
+    administrators group leaves that one list unmanageable by the people the
+    deploy just enrolled -- and the deploy still reports success.
+
+    The reader half of this is
+    `test_the_reader_group_is_granted_read_on_every_policy_block`; this is
+    the same shape for the group that can actually change things.
+
+    Each policy block is carried alongside its name (`"default"` or the
+    override key), so a failure on a family with overrides names the block
+    that drifted instead of just the template.
+    """
     mapping = _load(template).mapping
     assert mapping.permissions is not None
-    names = [g.name for g in mapping.permissions.groups]
-    admin = next(n for n in names if n.endswith(" List Administrators"))
-    reader = next(n for n in names if n.endswith(" Enterprise Readers"))
-    assert reader.split()[0] == admin.split()[0]
+    perms = mapping.permissions
+    blocks = [("default", perms.default_policy), *perms.overrides.items()]
+    for block_name, policy in blocks:
+        assert policy is not None
+        granted = {
+            a.level for a in policy.assignments
+            if a.principal.kind == "group"
+            and a.principal.name == "dbml List Administrators"
+        }
+        assert granted == {"Full Control"}, (
+            f"{template}: policy block {block_name!r} grants dbml List Administrators "
+            f"{granted or 'nothing'}, not Full Control"
+        )
+
+
+#: The two groups that are ONE object per site rather than one per family.
+#:
+#: Two families deployed to the same site reconcile the same group, and the
+#: security phase rewrites description, owner_group and every behaviour flag on
+#: every run -- so a family declaring one of these differently silently
+#: overwrites the other's settings, and the last script pasted wins. Nothing in
+#: a single build can see that: a build validates one mapping.
+#:
+#: `only_allow_members_view_membership` is TRUE for the administrators group.
+#: Most families had false and a couple had true; true was chosen deliberately
+#: because the alternative silently WIDENS who can see the membership of a
+#: Full Control group, and that direction needs an argument rather than a
+#: majority.
+#: The role each shared group's name ends with, independent of the `dbml`
+#: stamp in front of it.
+#:
+#: A left-over `RR Enterprise Readers` from before the rename shares this
+#: SUFFIX but not the full name, and the suffix is what identifies the role.
+#: `test_no_family_prefixes_a_shared_group` matches on these rather than on
+#: the keys of SHARED_GROUPS for exactly that reason.
+SHARED_GROUP_SUFFIXES: tuple[str, ...] = (
+    "Enterprise Readers", "List Administrators",
+)
+
+SHARED_GROUPS: dict[str, dict[str, object]] = {
+    "dbml Enterprise Readers": {
+        "description": (
+            "Read-only accounts for aggregated cross-site reporting. "
+            "Empty by default; membership is operator-owned."
+        ),
+        "owner_group": "Site Owners",
+        "allow_members_edit_membership": False,
+        "allow_request_to_join_leave": False,
+        "auto_accept_request_to_join_leave": False,
+        "only_allow_members_view_membership": False,
+        "require_empty_at_deploy": False,
+        "enroll_operator_during_deploy": False,
+        "enroll_enterprise_reader": True,
+    },
+    "dbml List Administrators": {
+        "description": (
+            "Full Control for schema changes and redeploys. Empty by "
+            "default; the deploy script enrols the running operator per run."
+        ),
+        "owner_group": "Site Owners",
+        "allow_members_edit_membership": False,
+        "allow_request_to_join_leave": False,
+        "auto_accept_request_to_join_leave": False,
+        "only_allow_members_view_membership": True,
+        "require_empty_at_deploy": False,
+        "enroll_operator_during_deploy": True,
+        "enroll_enterprise_reader": False,
+    },
+}
+
+
+def test_shared_groups_cover_every_site_group_field() -> None:
+    """`SHARED_GROUPS` pins fleet-wide values field by field, so it is only as
+    protective as its own coverage of `SiteGroup`.
+
+    A field added to `SiteGroup` later that `SHARED_GROUPS` does not pin is
+    invisible to `test_every_family_declares_the_shared_groups_identically`:
+    two families could set it differently and the fleet sweep above would
+    stay green, because it only ever compares the fields this dict names.
+    Adding a field to `SiteGroup` must be a deliberate decision about whether
+    families are allowed to differ on it -- if not, it belongs in
+    `SHARED_GROUPS` too, and this test is what forces that decision to be
+    made rather than defaulted into.
+    """
+    expected_fields = {f.name for f in fields(SiteGroup)} - {"name"}
+    for group_name, declared in SHARED_GROUPS.items():
+        assert set(declared) == expected_fields, (
+            f"SHARED_GROUPS[{group_name!r}] covers {sorted(declared)}, but "
+            f"SiteGroup (excluding name) has {sorted(expected_fields)}"
+        )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_every_family_declares_the_shared_groups_identically(
+    template: str,
+) -> None:
+    """A shared group reconciled by two families must be declared once.
+
+    The security phase writes every one of these fields on every run. If
+    `risk-register` says the administrators group hides its membership and
+    `incident-management` says it does not, then whichever deploy the
+    operator pastes second changes the site's behaviour for the other -- with
+    nothing in either build able to notice, because a build sees one mapping.
+
+    Field-by-field rather than comparing the objects, so a failure names the
+    field that drifted instead of dumping two dataclasses at the reader.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    declared = {g.name: g for g in mapping.permissions.groups}
+
+    for name, expected in SHARED_GROUPS.items():
+        assert name in declared, (
+            f"{template}: does not declare the shared group {name!r}; "
+            f"it declares {sorted(declared)}"
+        )
+        group = declared[name]
+        for field, want in expected.items():
+            assert getattr(group, field) == want, (
+                f"{template}: shared group {name!r} has {field}="
+                f"{getattr(group, field)!r}, but every family must declare "
+                f"it as {want!r} -- two families on one site reconcile the "
+                f"same group object."
+            )
+
+
+@pytest.mark.parametrize("template", _all_templates())
+def test_no_family_prefixes_a_shared_group(template: str) -> None:
+    """The complement, so the rule above cannot pass while the old names survive.
+
+    Without this, a family that declared BOTH `dbml Enterprise Readers` and a
+    left-over `RR Enterprise Readers` would satisfy the sweep above while
+    still creating two groups on the site -- which is the exact failure this
+    change exists to remove.
+
+    Matched on the ROLE SUFFIX, not on the full shared name. `RR Enterprise
+    Readers` does not end with `dbml Enterprise Readers`, so testing against
+    the full name would let precisely the straggler this test exists to catch
+    walk past it.
+    """
+    mapping = _load(template).mapping
+    assert mapping.permissions is not None
+    stragglers = [
+        g.name for g in mapping.permissions.groups
+        if g.name not in SHARED_GROUPS
+        and any(g.name.endswith(suffix) for suffix in SHARED_GROUP_SUFFIXES)
+    ]
+    assert not stragglers, (
+        f"{template}: still declares prefixed {stragglers}; the shared "
+        f"groups are one object per SITE and must be named exactly "
+        f"{sorted(SHARED_GROUPS)}."
+    )
 
 
 @pytest.mark.parametrize("template", _all_templates())

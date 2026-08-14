@@ -1644,6 +1644,127 @@ def test_a_correctly_declared_reader_group_is_clean() -> None:
     )
 
 
+def _group_description_findings(description: str) -> list[Finding]:
+    """Validate a mapping whose one group carries `description`."""
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[],
+                groups=[SiteGroup(
+                    name="XX Readers", description=description,
+                    owner_group="Site Owners",
+                    allow_members_edit_membership=False,
+                    allow_request_to_join_leave=False,
+                    auto_accept_request_to_join_leave=False,
+                    only_allow_members_view_membership=False,
+                )],
+                default_policy=None, overrides={},
+            ),
+        ),
+    )
+
+
+def _join_settings_findings(*, allow: bool, auto_accept: bool) -> list[Finding]:
+    """Validate a mapping whose one group carries these two join flags."""
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[],
+                groups=[SiteGroup(
+                    name="XX Readers", description="test",
+                    owner_group="Site Owners",
+                    allow_members_edit_membership=False,
+                    allow_request_to_join_leave=allow,
+                    auto_accept_request_to_join_leave=auto_accept,
+                    only_allow_members_view_membership=False,
+                )],
+                default_policy=None, overrides={},
+            ),
+        ),
+    )
+
+
+def test_auto_accept_without_allowing_requests_is_refused() -> None:
+    """SharePoint takes this pair and then quietly ignores half of it.
+
+    MEASURED 2026-08-13 and again 2026-08-14 by
+    `test/manual/group-description-probe.js`. A MERGE sending
+    auto-accept true alongside allow-requests false came back HTTP 200 and
+    read back with auto-accept FALSE; the same MERGE sending both true
+    (G10) took. So the pair is not refused by the server -- it is
+    silently corrected, because a group cannot auto-accept requests it
+    does not accept.
+
+    That is the shape this repository exists to catch: the deploy reports
+    the group reconciled, the mapping says one thing, the site does
+    another, and nothing reads the flags back to notice.
+    """
+    finding = only(
+        _join_settings_findings(allow=False, auto_accept=True),
+        FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS,
+    )
+    assert finding.severity == "error"
+    assert "XX Readers" in finding.message
+
+
+@pytest.mark.parametrize(("allow", "auto_accept"), [
+    (True, True),    # coherent: G10 measured this taking
+    (True, False),   # requests allowed, accepted by hand
+    (False, False),  # what every shipped family declares
+])
+def test_a_coherent_pair_of_join_settings_is_accepted(
+    *, allow: bool, auto_accept: bool,
+) -> None:
+    """The complement, over every combination that is NOT contradictory.
+
+    One case each rather than a single happy path, because a predicate
+    written as `or` instead of `and` would refuse two of these three while
+    still passing the test above.
+    """
+    none_of(
+        _join_settings_findings(allow=allow, auto_accept=auto_accept),
+        FindingCode.GROUP_AUTO_ACCEPT_WITHOUT_REQUESTS,
+    )
+
+
+def test_a_group_description_over_the_ceiling_is_refused() -> None:
+    """The server refuses it mid-deploy, so the build has to refuse it first.
+
+    MEASURED 2026-08-13 by `test/manual/group-description-probe.js`: a
+    description of 1018 characters came back HTTP 500, "The parameter
+    Description cannot be null or bigger than 512 characters." SharePoint
+    does not truncate it -- it rejects the request, in phase 1.2, after
+    lists may already have been created.
+
+    So the cost of not catching this at build time is a half-provisioned
+    site, which is the shape of failure this repository exists to avoid.
+    """
+    finding = only(
+        _group_description_findings("x" * 513),
+        FindingCode.GROUP_DESCRIPTION_TOO_LONG,
+    )
+    assert finding.severity == "error"
+    assert "513" in finding.message
+
+
+def test_a_group_description_at_the_ceiling_is_accepted() -> None:
+    """The complement, and it pins the BOUNDARY rather than the direction.
+
+    The server's message says "bigger than 512", so 512 itself is legal. A
+    rule written as `>=` would refuse a description SharePoint accepts --
+    stronger than the surface actually is, which AGENTS.md forbids as
+    plainly as it forbids being too weak.
+    """
+    none_of(
+        _group_description_findings("x" * 512),
+        FindingCode.GROUP_DESCRIPTION_TOO_LONG,
+    )
+
+
 def _level_findings(name: str) -> list[Finding]:
     """Validate a mapping declaring one custom permission level called `name`."""
     return validate_against_mapping(

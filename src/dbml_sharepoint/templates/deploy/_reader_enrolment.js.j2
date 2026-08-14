@@ -244,12 +244,14 @@
           const listed = listMembers(others);
           throw new Error(
             `group '${grp.name}' already holds ${others.length} principal(s) other than `
-            + `'${READER_ADDRESS}': ${listed}. That group grants Read on EVERY list this `
-            + `bundle provisions, so each of them can read all of it. Nothing was granted and `
-            + `nobody was removed — this needs a human decision. Either remove them by hand in `
-            + `Site permissions > Groups and run this script again, or rebuild WITHOUT `
-            + `--enterprise-reader, which leaves the membership exactly as it is and still `
-            + `deploys the group and its declared Read grant.`,
+            + `'${READER_ADDRESS}': ${listed}. This group is shared by every family deployed `
+            + `to the site, so an unexpected member is most likely another family's enterprise `
+            + `reader rather than a mistake — removing it by hand would silently break that `
+            + `family's reporting. Nothing was granted and nobody was removed — this needs a `
+            + `human decision. The site must agree on one reader account: either remove them in `
+            + `Site permissions > Groups only after confirming no other family still needs them, `
+            + `or rebuild WITHOUT --enterprise-reader, which leaves the membership exactly as it `
+            + `is and still deploys the group and its declared Read grant.`,
           );
         }
         if (before.some(isReader)) {

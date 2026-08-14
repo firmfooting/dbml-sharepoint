@@ -117,21 +117,29 @@ Bump `schema_version`, rebuild, re-paste.
 
 ## Enterprise reporting access
 
-The deploy creates an empty `"VI Enterprise Readers"` site group holding `Read` on
-every list in this family. It stays empty unless the build was run with
-`--enterprise-reader <account>`, which enrols exactly that one account
-and nothing else. `rollback.js.txt` does not remove it: rollback deletes
-lists, not site groups or role assignments, so the group and any account
-enrolled in it survive a rollback.
+The deploy declares the `dbml Enterprise Readers` site group — shared with every
+other family deployed to the site — and grants it `Read` on every list in this
+family. The group starts empty only if no family has deployed to the site yet;
+it gains a member when any family's build is run with `--enterprise-reader
+<account>`, which enrols exactly that one account and nothing else.
+`rollback.js.txt` does not remove it: rollback deletes lists, not site groups
+or role assignments, so the group and any account enrolled in it survive a
+rollback.
 
 A later build that omits the flag does not put the group back to empty:
-enrolment only runs when `--enterprise-reader` is given, so an account
-enrolled by an earlier build keeps its membership and its `Read` grant on
-every list. Removing it is manual — clear it in Site permissions > Groups.
+enrolment only runs when `--enterprise-reader` is given, so an account enrolled
+by an earlier build — of this family or any other sharing the site — keeps its
+membership and its `Read` grant on every list it was declared against. Removing
+it is manual — clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
-**aborts before enrolling** and removes nobody — clear it in Site
-permissions > Groups and paste again, or rebuild without the flag.
+**aborts before enrolling** and removes nobody. Before you clear anyone out,
+check who it is: the group is shared by every family on this site, so the
+unexpected member is most likely **another family's reporting account**, and
+removing it silently breaks that family's reporting. Agree one reader account
+for the site and rebuild with that address, or rebuild without the flag. Only
+clear the group in Site permissions > Groups once you know nothing else needs
+the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and

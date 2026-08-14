@@ -31,15 +31,15 @@ groups:
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: false
-  - name: "SR List Administrators"
+  - name: "dbml List Administrators"
     description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
     allow_request_to_join_leave: false
     auto_accept_request_to_join_leave: false
-    only_allow_members_view_membership: false
+    only_allow_members_view_membership: true
     enroll_operator_during_deploy: true
-  - name: "SR Enterprise Readers"
+  - name: "dbml Enterprise Readers"
     description: "Read-only accounts for aggregated cross-site reporting. Empty by default; membership is operator-owned."
     owner_group: "Site Owners"
     allow_members_edit_membership: false
@@ -69,13 +69,13 @@ list_permissions:
     assignments:
       - principal: { kind: group, name: "SR Service Teams" }
         level: "Contribute"
-      - principal: { kind: group, name: "SR List Administrators" }
+      - principal: { kind: group, name: "dbml List Administrators" }
         level: "Full Control"
       - principal: { kind: associated_member_group }
         level: "SR Submit Only"
       - principal: { kind: associated_owner_group }
         level: "Contribute"
-      - principal: { kind: group, name: "SR Enterprise Readers" }
+      - principal: { kind: group, name: "dbml Enterprise Readers" }
         level: "Read"
 
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
