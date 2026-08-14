@@ -664,6 +664,23 @@
       }
     }
 
+    // The decision table (#32): every object BOTH loops above decided to
+    // create or adopt, printed before any of them is applied. A refusal
+    // already logged its own ERROR line in the survey loop that found it,
+    // so this table reads the same whether the run goes on to apply or
+    // aborts on the gate below -- a clean run shows create/adopt for
+    // everything, a refusing run shows this table for whatever DID survey
+    // successfully, interleaved with the refusals that already printed.
+    // This phase decides no list and no ACL, so neither appears here.
+    if (decisions.length > 0) {
+      log('INFO', `Phase {{ phase.number }} decisions:`);
+      for (const decision of decisions) {
+        const label = decision.object === 'level' ? 'permission level' : 'site group';
+        const verb = decision.kind === 'create' ? 'create' : 'adopt';
+        log('INFO', `  ${verb} ${label} '${decision.name}'.`);
+      }
+    }
+
     // Gate: apply only if every survey above succeeded and nothing refused.
     // A refused or unsurveyable object is not a decision to proceed on, and
     // this is what stops one refusal from letting every OTHER object still

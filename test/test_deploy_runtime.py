@@ -2662,6 +2662,42 @@ def test_a_clean_run_still_writes_both_the_level_and_the_group() -> None:
     )
 
 
+# Task 5 (#32): the decision table. Every object BOTH survey loops decided
+# to create or adopt must be named before either loop's apply step writes
+# anything. `_ADOPTED_HARNESS` carries no entry in `KNOWN_GROUP_NAMES`, so
+# the group takes the create path and the level (matching this family's
+# marker) takes the adopt path in the same run, exercising both verbs.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_decision_table_names_every_declared_object_before_any_write() -> None:
+    """A refusal already logs its own ERROR line in the survey loop that
+    found it; this table is what a CLEAN run additionally gets, printed
+    before a single write.
+    """
+    summary, _calls, output = _run_group_verify_deploy(_deploy_js(), _ADOPTED_HARNESS)
+    assert not _security_errors(summary), summary
+    lines = output.splitlines()
+
+    table_index = next(
+        (i for i, ln in enumerate(lines)
+         if "decisions" in ln.lower() and pn("security") in ln), None,
+    )
+    assert table_index is not None, f"no decision table was printed:\n{output[-2000:]}"
+
+    table_block = "\n".join(lines[table_index:table_index + 5])
+    assert "Schema Manager" in table_block, table_block
+    assert "List Maintainer" in table_block, table_block
+
+    first_write_log = next(
+        i for i, ln in enumerate(lines)
+        if "Creating" in ln or "reconciled" in ln
+    )
+    assert table_index < first_write_log, (
+        f"the decision table printed after a write had already started:\n{output[-2000:]}"
+    )
+
+
 def test_no_reader_no_enrolment_code() -> None:
     """Opt-in: the code path must not exist unless asked for.
 
