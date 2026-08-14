@@ -35,6 +35,27 @@
  *   the probe prints and LOOK for the totals row under the Amount column.
  *   Re-run with CLEANUP_AT_END = true to remove the list.
  *
+ * RE-RUN 2026-08-14, revision aa79f6c4, on a different site. Every result
+ * below REPRODUCED — mechanism=patch (HTTP 204), readback exact, a Sum of 42
+ * rendered, internal names bound, both columns rendered in order.
+ *
+ * It also surfaced something the 2026-07-29 record does not mention, and it
+ * matters more than it looks:
+ *
+ *   AN AGGREGATION OVER AN EMPTY COLUMN RENDERS NOTHING AT ALL. No label,
+ *   no zero, no blank total — the column footer is simply absent. The probe
+ *   created `SecondAmount` AFTER seeding its rows, so both were empty, and
+ *   the operator running it saw exactly what a FAILED BINDING looks like.
+ *   Q5 could only be settled by hand-typing values into the list, at which
+ *   point "Average 2" appeared under the display title and the binding was
+ *   proven all along.
+ *
+ *   That is a diagnostic trap for anyone deploying a totals view onto a NEW
+ *   list: it will look broken until the first row carries a value. It is
+ *   also why this probe now seeds the second column itself — a probe that
+ *   cannot answer its own question without manual data entry is one whose
+ *   answer depends on the operator guessing what to try.
+ *
  * ANSWERED, 2026-07-29, against a live SharePoint Online site:
  *
  *   seeded=ok mechanism=patch readback=ok rendered=yes
@@ -92,7 +113,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision aa79f6c4 — quote this when reporting results.');
+  log('INFO', 'probe revision 96d0a67a — quote this when reporting results.');
   const results = [];
   const expect = (id, question) => {
     results.push({ id, question, observed: 'NOT ESTABLISHED', detail: 'the run did not reach this question' });
@@ -375,6 +396,26 @@
         { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
       );
       await post(`${listPath}/views('${viewId}')/viewfields/addviewfield('${odataName(SECOND)}')`);
+
+      // SEED THE SECOND COLUMN, because run 1 could not answer its own
+      // question without it. The field is created after the rows, so both
+      // were empty, and SharePoint renders NOTHING for an aggregation over
+      // an empty column — no label, no zero. An operator looking for a
+      // figure under "Second Amount Display" therefore saw exactly what a
+      // FAILED BINDING would look like, and Q5 could only be settled by
+      // hand-typing values into the list. That ambiguity is the probe's
+      // fault; these two writes remove it.
+      const secondValues = [1, 3];  // AVG 2, distinct from Amount's Sum 42
+      const seededRows = await get(`${listPath}/items?$select=Id&$top=10`);
+      const seededIds = (seededRows.ok && seededRows.d && seededRows.d.results
+        ? seededRows.d.results.map((r) => r.Id) : []);
+      for (let i = 0; i < seededIds.length && i < secondValues.length; i += 1) {
+        await post(
+          `${listPath}/items(${seededIds[i]})`,
+          { __metadata: { type: itemType }, [SECOND]: secondValues[i] },
+          { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+        );
+      }
       const both = `<FieldRef Name="${AGG_FIELD}" Type="${AGG_TYPE}"/>`
         + `<FieldRef Name="${SECOND}" Type="AVG"/>`;
       const wrote = await post(
