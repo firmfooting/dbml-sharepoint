@@ -4,7 +4,10 @@
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.group_description import description_budget, marker_for_group
-from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
+from dbml_sharepoint.analysis.limits import (
+    MAX_GROUP_DESCRIPTION,
+    MAX_ROLE_DEFINITION_DESCRIPTION,
+)
 from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.permissions import (
     ASSIGNABLE_BUILT_IN_LEVELS,
@@ -169,6 +172,23 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"permission_levels[{lvl.name!r}]: unknown base permission {bit!r}",
                         location=_LEVELS,
                     ))
+
+        # permission_levels[*].description must fit SP.RoleDefinition.Description.
+        # The server refuses a longer one with HTTP 500, in phase 1.2 -- part-way
+        # through writing permission levels and before any list exists. See
+        # limits.MAX_ROLE_DEFINITION_DESCRIPTION for the live measurement behind
+        # the number. No provenance marker is appended to a level description
+        # today, so unlike the group check this compares the raw ceiling only.
+        for lvl in perms.levels:
+            if len(lvl.description) > MAX_ROLE_DEFINITION_DESCRIPTION:
+                findings.append(Finding(
+                    FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG,
+                    f"permission_levels[{lvl.name!r}]: description is "
+                    f"{len(lvl.description)} characters; SharePoint refuses "
+                    f"anything over {MAX_ROLE_DEFINITION_DESCRIPTION} and does "
+                    f"so part-way through the deploy. Shorten it.",
+                    location=_LEVELS,
+                ))
 
         # groups[*].name must be unique — case-insensitively, for the same
         # reason as the levels above.
