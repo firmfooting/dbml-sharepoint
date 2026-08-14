@@ -211,6 +211,48 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       AllowRequestToJoinLeave: false, AutoAcceptRequestToJoinLeave: false,
       OnlyAllowMembersViewMembership: false,
     });
+    // Role definitions (custom permission levels). Task 3: the single line
+    // this replaces answered every roledefinitions read alike, whether it
+    // was the existence probe, a getbyname resolve, or a by-Id read-back --
+    // so a MERGE could never be observed landing or failing to land.
+    // Seeded with the one level the fixture declares, 'Schema Manager'
+    // (test/fixtures/sharepoint-mapping.yaml:72), already present with its
+    // declared shape, so a fresh run reconciles it rather than creating it --
+    // matching this harness's "adopted site" fiction everywhere else.
+    // ROLE_DEF_DROP_FIELD_ON_WRITE follows GROUP_DROP_FIELD_ON_WRITE: it
+    // names one field the MERGE accepts but does not store, so a later test
+    // can prove a permission-level read-back fails closed.
+    let nextRoleDefId = 2;
+    const ROLE_DEF_DROP_FIELD_ON_WRITE = null;
+    const ROLE_DEF_SETTINGS_KEYS = ['Description', 'High', 'Low'];
+    const ROLE_DEF_STATE = {
+      'Schema Manager': {
+        Id: 1, Description: 'Test permission level.',
+        BasePermissions: { High: '0', Low: '2049' },
+      },
+    };
+    const roleDefState = (name) => (ROLE_DEF_STATE[name] ||= {
+      Id: nextRoleDefId++, Description: '', BasePermissions: { High: '0', Low: '0' },
+    });
+    // Decode idiom shared with listOf/groupNameOf: odataName DOUBLES an
+    // apostrophe and encodeURIComponent leaves it alone, so undo percent
+    // encoding first and then the doubling.
+    const roleDefFilterNameOf = (url) => {
+      const raw = (url.match(/\$filter=Name eq '(.*?)'/) || [])[1];
+      return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
+    };
+    const roleDefByNameOf = (url) => {
+      const raw = (url.match(/roledefinitions\/getbyname\('(.*?)'\)/) || [])[1];
+      return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
+    };
+    // The web/lists/getbytitle('X')/roleassignments enumeration
+    // _acls.js.j2 reads to decide what a list already has bound, keyed by
+    // list title. Configurable per title so a later test can exercise the
+    // __next pagination path; empty by default, matching every other
+    // probe's brand-new-site fiction ('nothing bound yet') so an
+    // unconfigured run only ever adds.
+    const ROLE_ASSIGNMENT_PAGES = {};
+    const roleAssignmentPages = (listTitle) => ROLE_ASSIGNMENT_PAGES[listTitle] || [[]];
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
     const titles = {};
     const titleState = (listTitle) => (titles[listTitle] ||= {
@@ -342,7 +384,53 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         const name = groupNameOf(url);
         return { d: { Id: 9, Title: name, PrincipalType: 8, ...groupState(name) } };
       }
-      if (url.includes('roledefinitions')) return { d: { results: [{ Id: 1 }] } };
+      // Every roledefinitions read shares that substring, so the most
+      // specific shape is checked first: the $filter existence probe (by
+      // Name), a by-Id read-back, getbyname (both the MERGE target below
+      // and what resolveRoleDefId GETs directly), then the bare collection
+      // endpoint, which only a create POST reaches -- the write-application
+      // block below has already recorded the new state by the time this
+      // runs, so it is echoed back the way SharePoint would.
+      if (url.includes('roledefinitions')) {
+        const notFound = { error: { code: '-2147024809, System.ArgumentException' } };
+        if (url.includes('$filter=Name')) {
+          const state = ROLE_DEF_STATE[roleDefFilterNameOf(url)];
+          const row = state ? [{ Id: state.Id, Description: state.Description }] : [];
+          return { d: { results: row } };
+        }
+        const byId = url.match(/roledefinitions\((\d+)\)/);
+        if (byId) {
+          const state = Object.values(ROLE_DEF_STATE).find((s) => String(s.Id) === byId[1]);
+          return state ? { d: state } : notFound;
+        }
+        if (url.includes('getbyname')) {
+          const state = ROLE_DEF_STATE[roleDefByNameOf(url)];
+          return state ? { d: state } : notFound;
+        }
+        if (opts && opts.body) {
+          const parsed = JSON.parse(opts.body);
+          const state = ROLE_DEF_STATE[parsed.Name];
+          if (state) return { d: state };
+        }
+        return { d: { results: [] } };
+      }
+      // A list's role-assignment enumeration (Member + RoleDefinitionBindings),
+      // paginated the same way the group membership mock pages
+      // sitegroups/.../users: page 0 unless the caller followed a __next
+      // this mock handed out.
+      if (url.includes('/roleassignments')) {
+        const listTitle = listOf(url);
+        const pages = roleAssignmentPages(listTitle);
+        const marked = /[?&]page=(\d+)/.exec(url);
+        const page = marked ? Number(marked[1]) : 0;
+        const payload = { d: { results: pages[page] || [] } };
+        if (page + 1 < pages.length) {
+          payload.d.__next =
+            `https://example.sharepoint.com/_api/web/lists/getbytitle('${encodeURIComponent(listTitle)}')`
+            + `/roleassignments?$expand=Member,RoleDefinitionBindings&page=${page + 1}`;
+        }
+        return payload;
+      }
       // The adopted list starts with SharePoint's built-in Title-only All
       // Items view. View writes below mutate this state so exact field/query
       // readback exercises the generated recovery-view behavior.
@@ -454,6 +542,32 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
           if (GROUP_COERCE_AUTO_ACCEPT && !state.AllowRequestToJoinLeave) {
             state.AutoAcceptRequestToJoinLeave = false;
+          }
+        }
+      }
+      // A permission-level create (POST to .../web/roledefinitions) or a
+      // MERGE onto the definition itself (POST to
+      // .../roledefinitions/getbyname('...') with nothing after the closing
+      // paren, matching the group write above). Mutates ROLE_DEF_STATE so a
+      // later by-Id or by-name read-back sees what this write actually
+      // stored, applying ROLE_DEF_DROP_FIELD_ON_WRITE the same way
+      // GROUP_DROP_FIELD_ON_WRITE models a write the tenant 200s and
+      // discards.
+      if ((opts.method || 'GET') === 'POST' && opts.body
+          && (u.endsWith('/roledefinitions') || /roledefinitions\/getbyname\('.*'\)$/.test(u))) {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.__metadata && parsed.__metadata.type === 'SP.RoleDefinition') {
+          const name = u.endsWith('/roledefinitions') ? parsed.Name : roleDefByNameOf(u);
+          const state = roleDefState(name);
+          const sent = {
+            Description: parsed.Description,
+            High: parsed.BasePermissions && parsed.BasePermissions.High,
+            Low: parsed.BasePermissions && parsed.BasePermissions.Low,
+          };
+          for (const key of ROLE_DEF_SETTINGS_KEYS) {
+            if (sent[key] === undefined || key === ROLE_DEF_DROP_FIELD_ON_WRITE) continue;
+            if (key === 'Description') state.Description = sent[key];
+            else state.BasePermissions[key] = sent[key];
           }
         }
       }
