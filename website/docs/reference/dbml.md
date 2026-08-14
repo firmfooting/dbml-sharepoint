@@ -47,11 +47,9 @@ reading](#writing-one-worth-reading) below rather than restating the
 title — the sentence is the only list-level description this tool emits,
 and a placeholder spends it.
 
-Two smaller rules apply to the sentence you write, both errors and both
-described below: it must leave room for the [provenance
-marker](#the-budget-and-why-a-long-note-is-refused-rather-than-truncated),
-and it may not contain `&` or a line break
-(`entity_note_may_not_round_trip`).
+One smaller rule applies to the sentence you write, an error and described
+below: it must leave room for the [provenance
+marker](#the-budget-and-why-a-long-note-is-refused-rather-than-truncated).
 
 :::
 
@@ -129,15 +127,15 @@ rather than noise they learn to skip:
 - **Write for somebody who has just opened the list** and does not know
   the template, has not read this documentation, and was not in the room
   when it was chosen.
-- **No `&`, no line breaks; keep it to one paragraph.** Enforced, not
-  advised: `entity_note_may_not_round_trip` is an **error**. Not a style
-  preference either — byte-identical round-trip of a list Description is
-  *inferred*, not measured, and the reconcile compares what it wrote
-  against what came back. If the inference is wrong, the deploy aborts
-  part-way through a paste and does so on every re-paste; see [the
-  reporting pack](../artifacts/reporting.md#the-provenance-marker). Write
-  "and". The rule lifts if a `test/manual/` probe measures the round trip
-  and finds it exact.
+- **Keep it to one paragraph.** Advice now, not a rule. `&`, line breaks
+  and runs of spaces were refused as errors until 2026-08-14, when
+  `test/manual/list-description-probe.js` measured the round trip against a
+  live site and found it exact — byte for byte, over 1000 characters,
+  including an ampersand, a run of two spaces, a bare LF and a CRLF. The
+  restriction existed because that round trip was *inferred* rather than
+  measured and the reconcile compares what it wrote against what came back;
+  the measurement retired it. One paragraph still reads better under list
+  settings, which is the only reason left to prefer it.
 
 The shipped families are the worked examples — every
 `src/dbml_sharepoint/solutions/*/10-design/schema.dbml` carries one note

@@ -33,7 +33,6 @@ from typing import Any
 import pytest
 from _paths import SOLUTION_TEMPLATES
 
-from dbml_sharepoint.analysis.checks._structure import _UNPROVEN_NOTE_CHARACTERS
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
 from dbml_sharepoint.analysis.list_description import (
@@ -1572,10 +1571,10 @@ def test_the_dbml_project_name_resolves_to_the_family_directory(template: str) -
     `Project asset_reg` inside `solutions/asset-register/` would deploy lists
     attributing themselves to a family that does not exist -- silently, since
     a description naming the wrong family saves and reconciles exactly like
-    one naming the right family. (Not a claim that a list Description
-    round-trips byte for byte -- that is inferred, not measured; see
-    `ENTITY_NOTE_MAY_NOT_ROUND_TRIP`. A wrong family name is invisible either
-    way.)
+    one naming the right family. (A list Description does round-trip byte
+    for byte -- MEASURED 2026-08-14, see
+    `test/manual/list-description-probe.js` -- but a wrong family name would
+    be invisible either way, so nothing here rests on it.)
     """
     schema = _load(template).schema
     assert schema.project_name, f"{template}: schema.dbml declares no `Project` name"
@@ -1659,40 +1658,6 @@ def test_no_shipped_note_eats_into_the_marker_growth_reserve(template: str) -> N
             f"{template}.{table.name}: Note: leaves {spare} characters beside the "
             f"marker, under the {MARKER_GROWTH_RESERVE} reserved for the marker to "
             f"grow into. Shorten it by {MARKER_GROWTH_RESERVE - spare}."
-        )
-
-
-@pytest.mark.parametrize("template", _all_templates())
-def test_no_shipped_note_contains_a_character_of_unproven_round_trip(
-    template: str,
-) -> None:
-    """No family may reintroduce an `&` or a line break into a table note.
-
-    `ENTITY_NOTE_MAY_NOT_ROUND_TRIP` refuses one at build time; this pins the
-    CORPUS, the same pairing the two sweeps above have with their rules.
-    Every note was already clean when the rule was written, so this sweep is
-    a ratchet rather than a discovery -- what it stops is the next one.
-
-    The characters come from the rule's own table rather than being re-spelled
-    here. A sweep with its own copy is how a corpus comes to satisfy a rule
-    that has since been widened, which would leave the next family free to
-    ship exactly the note the build refuses.
-
-    Measured against the STRIPPED note, matching the rule and matching
-    `list_description`: only what actually reaches the Description counts.
-    """
-    loaded = _load(template)
-    for table in loaded.schema.tables:
-        note = table.note.strip()
-        offenders = sorted({
-            name for char, name, _ in _UNPROVEN_NOTE_CHARACTERS if char in note
-        })
-        assert not offenders, (
-            f"{template}.{table.name}: Note: contains {', '.join(offenders)}. "
-            f"The deploy compares the list Description it writes against the "
-            f"read-back byte for byte and that round trip is inferred rather "
-            f"than measured, so this would abort a paste part-way through. "
-            f"Fix the note, not the rule."
         )
 
 

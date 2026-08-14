@@ -903,23 +903,25 @@
   // stored. Used for FIELD descriptions and, since 2026-08-12, for the LIST
   // Description that carries the provenance marker.
   //
-  // WHAT THIS ASSUMES, AND WHAT IS ACTUALLY KNOWN (2026-08-12). Both callers
+  // WHAT THIS ASSUMES, AND WHAT IS NOW MEASURED (2026-08-14). Both callers
   // stake a byte-identical round trip: whatever is MERGEd comes back
   // character for character. For fields that is long-standing behaviour here.
-  // For LISTS it is an INFERENCE FROM THE FIELD CASE, NOT A MEASUREMENT —
-  // Learn documents SP.List.Description as a plain read/write string and says
-  // nothing about normalisation, and no probe has been run. Contrast
-  // ValidationFormula, where SharePoint demonstrably DOES normalise and
-  // canonicalFormula exists precisely because a raw compare never converged.
+  // For LISTS it was an inference from the field case until
+  // test/manual/list-description-probe.js measured it against a live site:
+  // exact, over 1000 characters, through both the create and the MERGE path,
+  // and including an ampersand, a run of two spaces, a bare LF and a CRLF.
   //
-  // If a list Description is normalised the same way — whitespace collapsed,
-  // newlines rewritten, `&` returned as `&amp;` — then a note containing one
-  // becomes a PERMANENT abort: every re-paste MERGEs, reads back a difference
-  // that is not drift, and fails closed. Loud and safe, which is the right
-  // failure, but it would strand the operator with no way forward. Until
-  // test/manual/ closes it (set a description containing a newline, an `&`
-  // and a run of spaces; read it straight back; compare bytes), the shipped
-  // template notes stay clear of `&` and of newlines.
+  // That closes the question this comment used to pose. The fear was that a
+  // Description might be normalised the way ValidationFormula demonstrably is
+  // — whitespace collapsed, newlines rewritten, `&` returned as `&amp;` —
+  // which would make a note containing one a PERMANENT abort: every re-paste
+  // MERGEs, reads back a difference that is not drift, and fails closed.
+  // `entity_note_may_not_round_trip` existed to keep notes clear of those
+  // characters until somebody measured. Somebody has, none of them
+  // normalise, and the rule is gone.
+  //
+  // The comparison stays a raw byte compare, which is now what the surface
+  // actually warrants rather than what was hoped.
   const normalizeDescription = (value) => value == null ? '' : String(value);
   const normalizeDefaultValue = (value) => value == null || value === '' ? null : String(value);
   const DERIVED_FIELD_PROPERTIES = [

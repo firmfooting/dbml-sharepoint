@@ -1,7 +1,6 @@
 # src/dbml_sharepoint/analysis/checks/_structure.py
 """Entities, cross-site references, indexes, deferred lookups, calculated columns."""
 
-import re
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
@@ -82,69 +81,6 @@ _SUPPORTED_CALCULATED_OPERANDS = (
 # which refusing a specific list of templates would.
 _GENERIC_LIST_TEMPLATE = 100
 
-# Characters a table `Note:` may not contain, each with the name to call it in
-# a message and the thing to write instead.
-#
-# NOT A STYLE RULE, and not a claim about SharePoint either. It is a rule about
-# what this tool can PROVE. `reconcileListDescription` in
-# `templates/deploy/_field_reconcile.js.j2` writes the composed Description,
-# reads it straight back and compares it byte for byte -- and that the value
-# comes back unchanged is INFERRED from the long-standing field-description
-# case, not measured. Learn documents `SP.List.Description` as a plain
-# read/write string and says nothing about normalisation in either direction,
-# and no probe has been run. ValidationFormula is the standing proof that the
-# inference can be wrong: SharePoint demonstrably normalises those, which is
-# why `canonicalFormula` had to exist at all.
-#
-# `\r` earns its own entry rather than being folded into `\n`: a DBML file
-# saved with CRLF endings puts one in the note on its own, and a rule that
-# checked only `\n` would pass a note the reconcile could still trip over.
-#
-# WHY IT IS AN ERROR AT BUILD TIME. If a list Description IS normalised --
-# `&` returned as `&amp;`, a newline rewritten, a run of spaces collapsed --
-# then the read-back never matches what was sent and the deploy aborts. It
-# fails closed, which is the right failure, but it fails PART-WAY THROUGH A
-# PASTE against a partially provisioned site, and it does so on every re-paste
-# forever, with no way forward but re-authoring the schema. Refusing the note
-# here costs an author one word; the alternative strands an operator.
-#
-# TEMPORARY BY CONSTRUCTION. The restriction lifts the day a `test/manual/`
-# probe measures it: set a description containing a newline, an `&` and a run
-# of spaces, read it straight back, compare bytes. If it survives, delete this
-# rule and the note in `website/docs/reference/dbml.md`; if it does not, this
-# rule is what stopped it reaching a live site.
-_UNPROVEN_NOTE_CHARACTERS: tuple[tuple[str, str, str], ...] = (
-    ("&", "an ampersand", 'write "and"'),
-    ("\n", "a line break", "keep the note to a single paragraph"),
-    ("\r", "a line break", "keep the note to a single paragraph"),
-)
-
-#: A SEQUENCE rather than a character, which is why it cannot live in the
-#: tuple above.
-#:
-#: The rationale there names "a run of spaces collapsed" as an unproven round
-#: trip TWICE -- once in the list of normalisations that would break the
-#: read-back, and again in the probe that would lift the whole restriction --
-#: and then the character tuple could not express it. So the rule was weaker
-#: than the argument that justifies it: `Risks  and issues` passed validation
-#: and would abort every paste part-way through a partially provisioned site
-#: if SharePoint collapses the run. An uncertainty this file names as
-#: dangerous has to fail closed like the rest of them.
-#:
-#: MEASURED 2026-08-12: no shipped family and no example note contains a
-#: whitespace run, so closing the gap refuses nothing that exists today.
-#:
-#: Matched against the STRIPPED note like the characters are, so a note that
-#: is merely indented in the DBML is not refused for whitespace the
-#: Description never carries.
-#:
-#: EXCLUDES CR and LF deliberately. A plain `\s\s` also matches the `\r\n` of
-#: a CRLF-saved file, which the line-break entry above already names -- and
-#: `test_the_unproven_character_rule_names_a_remedy_for_each_character`
-#: caught it, because the message then read "a line break and a run of
-#: whitespace" for one offence. Two names for one problem is the noise that
-#: test exists to prevent, and the rationale says "a run of SPACES".
-_UNPROVEN_NOTE_WHITESPACE_RUN = re.compile(r"[^\S\r\n]{2,}")
 
 
 def _no_room_for_any_note(family: str, entity_name: str) -> str:
@@ -214,58 +150,6 @@ def _note_is_present(table: Table | None, entity_name: str, family: str) -> list
     )]
 
 
-def _note_round_trips(table: Table | None, entity_name: str) -> list[Finding]:
-    """Refuse a table `Note:` whose round trip through SharePoint is unproven.
-
-    See `_UNPROVEN_NOTE_CHARACTERS` for the whole argument. The short version:
-    the deploy writes the Description and compares the read-back byte for
-    byte, that comparison is an INFERENCE rather than a measurement, and a
-    character that does not survive turns every paste of the bundle into a
-    mid-deploy abort on a partially provisioned site. This rule moves that
-    failure to build time, where it costs an edit rather than a stranded
-    operator.
-
-    Measured against the STRIPPED note, because that is what
-    `list_description` composes with: a note that is merely indented, or that
-    ends with the newline before its closing quote, carries nothing into the
-    Description and must not be refused for it.
-
-    Skipped when the table is missing, like the two rules either side:
-    `ENTITY_NOT_IN_SCHEMA` is the whole story there.
-    """
-    if table is None:
-        return []
-    note = table.note.strip()
-    # `dict` rather than a set: it de-duplicates `\n` and `\r`, which share a
-    # name, while keeping the declaration order so the message is stable.
-    offenders = {
-        name: remedy
-        for char, name, remedy in _UNPROVEN_NOTE_CHARACTERS
-        if char in note
-    }
-    if _UNPROVEN_NOTE_WHITESPACE_RUN.search(note):
-        offenders["a run of whitespace"] = "use single spaces between words"
-    if not offenders:
-        return []
-    named = " and ".join(offenders)
-    remedy = "; ".join(dict.fromkeys(offenders.values()))
-    return [Finding(
-        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
-        f"{entity_name}: the table's Note: contains {named}, and this tool "
-        f"cannot prove that survives the deploy. The list Description is "
-        f"written, read straight back and compared byte for byte -- but that "
-        f"it comes back unchanged is INFERRED from the field case, not "
-        f"measured, and Microsoft Learn documents no normalisation either "
-        f"way. If SharePoint returns `&` as `&amp;` or rewrites a line break, "
-        f"the comparison never matches and EVERY paste of this bundle aborts "
-        f"part-way through the deploy, against a site that is already half "
-        f"provisioned, with no way forward. Refused at build time so that "
-        f"cannot happen: {remedy}. The restriction lifts when a test/manual/ "
-        f"probe measures the round trip.",
-        location=Location(Section.ENTITIES, entity=entity_name),
-    )]
-
-
 def _note_fits_beside_marker(
     table: Table | None, entity_name: str, family: str,
 ) -> list[Finding]:
@@ -282,11 +166,12 @@ def _note_fits_beside_marker(
     passes. Build time is the last point at which the mistake is still
     observable.
 
-    Note what that does NOT claim. Whether a list Description survives the
-    round trip byte for byte is an inference here, not a measurement -- see
-    `_UNPROVEN_NOTE_CHARACTERS`. It makes no difference to this rule: a
-    truncated marker is invisible whether the read-back compares equal or
-    aborts the run, so the note is refused either way.
+    MEASURED 2026-08-14 by `test/manual/list-description-probe.js`: a list
+    Description does survive the round trip byte for byte, over 1000
+    characters, including an ampersand, a run of spaces and both a bare LF
+    and a CRLF. It makes no difference to this rule either way -- a truncated
+    marker is invisible whether the read-back compares equal or aborts the
+    run, so the note is refused regardless.
 
     The budget is computed rather than a constant, because it depends on the
     length of the family and entity names inside the marker. It comes from the
@@ -400,7 +285,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         findings += _note_fits_beside_marker(
             tables_by_name.get(entity_name), entity_name, family,
         )
-        findings += _note_round_trips(tables_by_name.get(entity_name), entity_name)
+
 
         # A lookup's picker enumerates its target list. A calculated display
         # column cannot be indexed, so the enumeration is refused once the
