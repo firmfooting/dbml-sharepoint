@@ -36,6 +36,7 @@ from _paths import SOLUTION_TEMPLATES
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.group_description import description_budget
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
+from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
@@ -1861,6 +1862,43 @@ def test_no_shipped_group_description_eats_into_the_marker_reserve() -> None:
     assert templates, "no templates discovered, the sweep visited nothing"
     assert groups_checked, "no groups discovered, the sweep visited nothing"
     assert not offenders, "group descriptions over budget:\n" + "\n".join(offenders)
+
+
+def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> None:
+    """The permission-level mirror of the group description sweep above.
+
+    `SP.RoleDefinition.Description` refuses over 512 characters at deploy
+    phase 1.2, before any list exists (see `limits.MAX_ROLE_DEFINITION_DESCRIPTION`).
+    Nothing in the build guards a hand-written mapping against it, so the
+    shipped catalogue is pinned here instead of left to review. A level
+    carries no provenance marker, unlike a group, so this checks the raw
+    ceiling only.
+
+    A sweep over an empty catalogue would pass on `not offenders` alone with
+    nothing checked, so the family and level counts are asserted non-zero
+    too.
+    """
+    templates = _all_templates()
+    offenders: list[str] = []
+    levels_checked = 0
+    families_with_levels = 0
+    for template in templates:
+        loaded = _load(template)
+        assert loaded.mapping.permissions is not None
+        levels = loaded.mapping.permissions.levels
+        if levels:
+            families_with_levels += 1
+        for lvl in levels:
+            levels_checked += 1
+            if len(lvl.description) > MAX_ROLE_DEFINITION_DESCRIPTION:
+                offenders.append(
+                    f"{template}/{lvl.name}: {len(lvl.description)} > "
+                    f"{MAX_ROLE_DEFINITION_DESCRIPTION}",
+                )
+    assert templates, "no templates discovered, the sweep visited nothing"
+    assert families_with_levels, "no family declares a level, the sweep visited nothing"
+    assert levels_checked, "no levels discovered, the sweep visited nothing"
+    assert not offenders, "level descriptions over ceiling:\n" + "\n".join(offenders)
 
 
 def test_no_two_templates_declare_the_same_entity_name() -> None:

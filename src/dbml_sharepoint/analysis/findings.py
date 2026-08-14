@@ -355,6 +355,8 @@ class FindingCode(StrEnum):
         "group_description_too_long_for_marker", "error")
     MULTIPLE_ENTERPRISE_READER_GROUPS = (
         "multiple_enterprise_reader_groups", "error")
+    PERMISSION_LEVEL_DESCRIPTION_TOO_LONG = (
+        "permission_level_description_too_long", "error")
     PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE = (
         "permission_level_not_directly_assignable", "error")
     PERMISSION_LEVEL_REDEFINES_A_BUILTIN = (
