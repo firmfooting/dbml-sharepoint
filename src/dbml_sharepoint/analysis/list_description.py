@@ -20,6 +20,11 @@ survives a rename of the list.
 from dbml_sharepoint.model.parser import Schema
 
 # The list Description budget the emitter has always applied.
+#
+# This tool's budget, not a SharePoint limit: MEASURED 2026-08-14, the
+# platform accepted at least 1018 characters. Kept at 255 because the list
+# settings UI, the search index and the reporting pack all read this string
+# and none of them has been measured at a greater length. See issue #219.
 DESCRIPTION_LIMIT = 255
 
 # The discovery marker. It is a sentence, not a tag, because it sits at the
@@ -195,13 +200,10 @@ def list_description(table_note: str, *, family: str, entity: str) -> str:
     `ENTITY_NOTE_TOO_LONG_FOR_MARKER` refuses the note at build time and this
     never runs on one. The clamp here is a backstop, not the enforcement.
 
-    That is deliberately NOT a claim that a list Description round-trips byte
-    for byte. It is inferred rather than measured -- the honest statement is
-    in `templates/deploy/_field_reconcile.js.j2`, and
-    `ENTITY_NOTE_MAY_NOT_ROUND_TRIP` is the rule that keeps the corpus inside
-    what the inference can carry. Nothing here depends on it: a truncated
-    marker is invisible to fleet reporting whether or not the round trip is
-    exact.
+    A list Description round-trips byte for byte, MEASURED 2026-08-14 by
+    `test/manual/list-description-probe.js`. Nothing here depends on that,
+    because a truncated marker is invisible to fleet reporting whether or not
+    the round trip is exact.
 
     Note the order of operations: the note is clamped BEFORE the marker is
     appended. Appending first and clamping the result is the defect -- it

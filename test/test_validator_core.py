@@ -1980,166 +1980,57 @@ def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
     assert "400" in finding.message
 
 
-@pytest.mark.parametrize(
-    ("note", "named"),
-    [
-        ("Risks and issues R&D is carrying.", "an ampersand"),
-        ("Risks this team is carrying.\nOne row per risk.", "a line break"),
-        ("Risks this team is carrying.\r\nOne row per risk.", "a line break"),
-    ],
-    ids=["ampersand", "newline", "carriage-return"],
-)
-def test_a_note_whose_round_trip_is_unproven_is_refused(
-    note: str, named: str,
+@pytest.mark.parametrize(("note", "codepoint"), [
+    ("Risks\t\tand issues.", "U+0009"),
+    ("Risks \tand issues.", "U+0009"),
+    # Written as escapes: literal NBSP bytes are invisible and an editor
+    # that normalises them would silently retarget this case at spaces.
+    ("Risks\u00a0\u00a0and issues.", "U+00A0"),
+])
+def test_a_note_with_unmeasured_whitespace_is_refused(
+    note: str, codepoint: str,
 ) -> None:
-    """The build-time half of a restriction the docs used to state as prose.
+    """Only ASCII spaces were measured, so other whitespace stays refused.
 
-    `_field_reconcile.js.j2` writes the list Description, reads it back and
-    compares byte for byte, and that the value survives unchanged is an
-    INFERENCE from the field case rather than a measurement. An author who
-    writes `&` and finds out at deploy time finds out part-way through a
-    paste, against a half-provisioned site, on every re-paste forever. Prose
-    in `dbml.md` asking nicely was the whole enforcement until this rule.
-
-    `\\r` is parametrised separately because a DBML file saved with CRLF
-    endings carries one on its own, and a rule matching only `\\n` would pass
-    a note the reconcile could still trip over.
+    The retired `entity_note_may_not_round_trip` refused every run of two or
+    more horizontal whitespace characters. The 2026-08-14 probe sent two
+    plain spaces and nothing else, so lifting the whole rule would have
+    accepted tabs and non-breaking spaces on evidence that never covered
+    them. If SharePoint collapses one, the deploy's byte compare aborts
+    every paste after a partial deployment.
     """
     finding = only(
         validate_against_mapping(
             make_schema(make_table("Risk", note=note)),
             make_bundle(entities=["Risk"]),
         ),
-        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+        FindingCode.ENTITY_NOTE_WHITESPACE_UNMEASURED,
     )
-
     assert finding.severity == "error"
-    assert finding.location == Location(Section.ENTITIES, entity="Risk")
-    assert named in finding.message
-    # The message has to carry the WHY, not just the what: an author told only
-    # "no ampersands" reads it as a house style and works around it once,
-    # rather than understanding that the rule lifts on evidence.
-    assert "INFERRED" in finding.message
-    assert "test/manual/" in finding.message
+    assert codepoint in finding.message
 
 
-def test_a_run_of_whitespace_in_a_note_is_refused() -> None:
-    """The rule's own rationale named this and the rule did not enforce it.
+@pytest.mark.parametrize("note", [
+    "Risks  and issues, two plain spaces.",
+    "Risks and\tissues, one tab.",
+    "Risks & issues.\nA second line.",
+])
+def test_a_note_with_measured_or_previously_allowed_whitespace_is_accepted(
+    note: str,
+) -> None:
+    """The complement, over each case the narrowed rule must not refuse.
 
-    `_UNPROVEN_NOTE_CHARACTERS`'s comment lists "a run of spaces collapsed"
-    among the normalisations that would break the byte-for-byte read-back,
-    and names a run of spaces again in the probe that would lift the whole
-    restriction -- but a tuple of single characters could not express a
-    SEQUENCE, so `Risks  and issues` passed. An uncertainty this file calls
-    dangerous has to fail closed like the others, or the read-back aborts
-    part-way through a paste on a partially provisioned site.
-
-    MEASURED 2026-08-12: no shipped family and no example note carries one,
-    so this refuses nothing that exists.
+    Two plain spaces were measured and are fine. A single tab was allowed by
+    the rule this one narrows, and a rule stronger than the one it replaces
+    would refuse notes that build today. The ampersand and line break are
+    what this branch lifted.
     """
-    finding = only(
-        validate_against_mapping(
-            make_schema(make_table("Risk", note="Risks  and issues.")),
-            make_bundle(entities=["Risk"]),
-        ),
-        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
-    )
-
-    assert finding.severity == "error"
-    assert finding.location == Location(Section.ENTITIES, entity="Risk")
-    assert "a run of whitespace" in finding.message
-    assert "use single spaces between words" in finding.message
-
-
-def test_a_single_spaced_note_is_not_refused_for_whitespace() -> None:
-    """The complement, so the rule cannot pass by refusing everything.
-
-    Ordinary prose with single spaces is the shape every shipped note has.
-    Without this, a whitespace rule that matched `\\s` rather than `\\s\\s`
-    would refuse every shipped family and still look green here.
-    """
-    assert not [
-        f for f in validate_against_mapping(
-            make_schema(make_table("Risk", note="Risks and issues, one per row.")),
-            make_bundle(entities=["Risk"]),
-        )
-        if f.code == FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP
-    ]
-
-
-def test_an_indented_note_is_not_refused_for_the_indent() -> None:
-    """Matched against the STRIPPED note, like the characters are.
-
-    A DBML note written across an indented block carries leading whitespace
-    the Description never receives, because `list_description` composes with
-    the stripped text. Refusing it would refuse formatting, not content.
-    """
-    assert not [
-        f for f in validate_against_mapping(
-            make_schema(make_table("Risk", note="   Risks and issues.   ")),
-            make_bundle(entities=["Risk"]),
-        )
-        if f.code == FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP
-    ]
-
-
-def test_the_unproven_character_rule_names_a_remedy_for_each_character() -> None:
-    """A note carrying BOTH offenders is told about both, once.
-
-    `\\n` and `\\r` share the name "a line break", so a message assembled
-    without de-duplicating would list it twice on a CRLF note -- "an
-    ampersand and a line break and a line break". Asserted here rather than
-    left to the parametrised cases above, none of which can see it.
-
-    The opening clause is matched whole rather than by counting the phrase
-    over the message: the explanation further down uses "a line break" too,
-    and a count would be asserting about prose that is free to be reworded.
-    """
-    finding = only(
-        validate_against_mapping(
-            make_schema(make_table("Risk", note="Risk & issues.\r\nOne per row.")),
-            make_bundle(entities=["Risk"]),
-        ),
-        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
-    )
-
-    assert "contains an ampersand and a line break, and" in finding.message
-    assert 'write "and"' in finding.message
-    assert "keep the note to a single paragraph" in finding.message
-    # One remedy per offending character, not one per matching table row.
-    assert finding.message.count("keep the note to a single paragraph") == 1
-
-
-@pytest.mark.parametrize(
-    "note",
-    [
-        "Risks this team is carrying, and what is being done about each.",
-        # Stripped before the check, because that is what `list_description`
-        # composes with. A note indented inside its DBML block, or one whose
-        # closing quote sits on the next line, carries no line break into the
-        # Description and must not be refused for one.
-        "\n  Risks this team is carrying.\r\n",
-    ],
-    ids=["clean", "surrounding-whitespace-only"],
-)
-def test_a_note_with_nothing_unproven_in_it_is_accepted(note: str) -> None:
-    """The other side of the boundary. Without it, a rule that fired on every
-    note at all would pass every case above."""
     none_of(
         validate_against_mapping(
             make_schema(make_table("Risk", note=note)),
             make_bundle(entities=["Risk"]),
         ),
-        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
-    )
-
-
-def test_an_entity_with_no_table_is_not_told_about_its_notes_characters() -> None:
-    """Like the two note rules either side: `ENTITY_NOT_IN_SCHEMA` is the whole
-    story, and advice about prose in a table that does not exist is noise."""
-    none_of(
-        validate_against_mapping(make_schema(), make_bundle(entities=["Risk"])),
-        FindingCode.ENTITY_NOTE_MAY_NOT_ROUND_TRIP,
+        FindingCode.ENTITY_NOTE_WHITESPACE_UNMEASURED,
     )
 
 
