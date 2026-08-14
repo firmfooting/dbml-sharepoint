@@ -510,12 +510,13 @@
       "list": "APP_Project"
     }
   ],
+  "group_marker_prefix": "Provisioned by dbml-sharepoint",
   "groups": [
     {
       "allow_members_edit_membership": false,
       "allow_request_to_join_leave": false,
       "auto_accept_request_to_join_leave": false,
-      "description": "Test group.",
+      "description": "Test group. Provisioned by dbml-sharepoint from simple-test.",
       "enroll_enterprise_reader": false,
       "enroll_operator_during_deploy": false,
       "name": "List Maintainer",
