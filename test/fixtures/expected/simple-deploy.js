@@ -1838,10 +1838,30 @@
           // grants it whatever the mapping declares, which for the
           // administrators group is Full Control on every list. Adopt only a
           // group this tool created, or one holding nobody.
+          //
+          // PROVENANCE, NOT AUTHENTICATION, 2026-08-14: the marker is evidence
+          // this tool wrote the group, not a secret. Anyone who can edit a
+          // site group's Description can satisfy it, and editing a site
+          // group already needs site-owner rights on the target site, which
+          // this gate assumes rather than re-checks.
+          //
+          // Empty prefix would make indexOf('') return 0 for every
+          // description below, adopting every group unmarked. undefined
+          // already fails closed there; only the empty string is dangerous.
+          // jsgen always sets a value, so this only matters for a
+          // hand-edited bundle.
+          if (typeof SCHEMA.group_marker_prefix !== 'string' || SCHEMA.group_marker_prefix === '') {
+            throw new Error('SCHEMA.group_marker_prefix is missing or empty; refusing to adopt any group against it.');
+          }
           const existingJson = await checkResp.json();
           const existingDescription = (existingJson.d && typeof existingJson.d.Description === 'string')
             ? existingJson.d.Description
             : '';
+          // SUBSTRING SEARCH, NOT A PREFIX TEST. group_description() appends
+          // the marker AFTER any declared text, so a composed description
+          // does not START with it. indexOf finds the marker anywhere in the
+          // string; changing this to startsWith would refuse every group
+          // that also carries a declared description.
           if (existingDescription.indexOf(SCHEMA.group_marker_prefix) === -1) {
             const memberCount = await countGroupMembers(grp.name);
             if (memberCount > 0) {
@@ -1849,8 +1869,8 @@
                 `Site group '${grp.name}' already exists, carries no '${SCHEMA.group_marker_prefix}' `
                 + `marker, and holds ${memberCount} member(s). It was not created by this tool, and `
                 + `adopting it would grant those members the access this family declares for the group. `
-                + `Nothing has been changed. Either empty the group, or rename it so this deploy `
-                + `creates its own.`);
+                + `Nothing has been written to this group. Either empty the group, or rename it so `
+                + `this deploy creates its own.`);
             }
           }
 
