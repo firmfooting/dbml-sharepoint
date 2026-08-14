@@ -478,6 +478,19 @@ FINDING_HELP: dict[FindingCode, str] = {
         "The mapping's `entities:` declares a name the DBML schema has "
         "no table for."
     ),
+    FindingCode.ENTITY_NOTE_WHITESPACE_UNMEASURED: (
+        "A table's `Note:` contains a run of whitespace holding a tab, a "
+        "non-breaking space or another character that is not a plain "
+        "space. The deploy writes the note as the list Description, reads "
+        "it back and compares byte for byte, so a character SharePoint "
+        "normalises aborts every paste after a partial deployment. Two "
+        "ASCII spaces were measured on 2026-08-14 by "
+        "`test/manual/list-description-probe.js` and are preserved, which "
+        "is why runs of plain spaces are allowed. These other characters "
+        "were never sent. Use single spaces between words, or plain "
+        "spaces if you meant alignment. A single tab is not refused, "
+        "because the wider rule this narrows did not refuse one either."
+    ),
     FindingCode.ENTITY_NOTE_TOO_LONG_FOR_MARKER: (
         "A table's `Note:` is long enough that the provenance marker "
         "appended after it would not fit in a SharePoint list Description. "

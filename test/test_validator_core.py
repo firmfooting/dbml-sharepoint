@@ -1980,6 +1980,60 @@ def test_a_note_too_long_to_leave_room_for_the_marker_is_refused() -> None:
     assert "400" in finding.message
 
 
+@pytest.mark.parametrize(("note", "codepoint"), [
+    ("Risks\t\tand issues.", "U+0009"),
+    ("Risks \tand issues.", "U+0009"),
+    # Written as escapes: literal NBSP bytes are invisible and an editor
+    # that normalises them would silently retarget this case at spaces.
+    ("Risks\u00a0\u00a0and issues.", "U+00A0"),
+])
+def test_a_note_with_unmeasured_whitespace_is_refused(
+    note: str, codepoint: str,
+) -> None:
+    """Only ASCII spaces were measured, so other whitespace stays refused.
+
+    The retired `entity_note_may_not_round_trip` refused every run of two or
+    more horizontal whitespace characters. The 2026-08-14 probe sent two
+    plain spaces and nothing else, so lifting the whole rule would have
+    accepted tabs and non-breaking spaces on evidence that never covered
+    them. If SharePoint collapses one, the deploy's byte compare aborts
+    every paste after a partial deployment.
+    """
+    finding = only(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note=note)),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_WHITESPACE_UNMEASURED,
+    )
+    assert finding.severity == "error"
+    assert codepoint in finding.message
+
+
+@pytest.mark.parametrize("note", [
+    "Risks  and issues, two plain spaces.",
+    "Risks and\tissues, one tab.",
+    "Risks & issues.\nA second line.",
+])
+def test_a_note_with_measured_or_previously_allowed_whitespace_is_accepted(
+    note: str,
+) -> None:
+    """The complement, over each case the narrowed rule must not refuse.
+
+    Two plain spaces were measured and are fine. A single tab was allowed by
+    the rule this one narrows, and a rule stronger than the one it replaces
+    would refuse notes that build today. The ampersand and line break are
+    what this branch lifted.
+    """
+    none_of(
+        validate_against_mapping(
+            make_schema(make_table("Risk", note=note)),
+            make_bundle(entities=["Risk"]),
+        ),
+        FindingCode.ENTITY_NOTE_WHITESPACE_UNMEASURED,
+    )
+
+
 def test_a_note_that_exactly_fits_beside_the_marker_is_accepted() -> None:
     """The boundary is inclusive, and measured one character either side of it.
 

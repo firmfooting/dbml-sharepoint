@@ -1,6 +1,7 @@
 # src/dbml_sharepoint/analysis/checks/_structure.py
 """Entities, cross-site references, indexes, deferred lookups, calculated columns."""
 
+import re
 
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
@@ -150,6 +151,50 @@ def _note_is_present(table: Table | None, entity_name: str, family: str) -> list
     )]
 
 
+# A run of horizontal whitespace, the shape the retired round-trip rule
+# refused. The probe measured ASCII spaces only, so runs containing a tab or a
+# non-breaking space stay refused until something measures them.
+_HORIZONTAL_WHITESPACE_RUN = re.compile(r"[^\S\r\n]{2,}")
+
+
+def _note_whitespace_is_measured(
+    table: Table | None, entity_name: str,
+) -> list[Finding]:
+    """Refuse a whitespace run this project has not measured a round trip for.
+
+    `entity_note_may_not_round_trip` refused every run of two or more
+    horizontal whitespace characters. `test/manual/list-description-probe.js`
+    measured two ASCII spaces on 2026-08-14 and found them preserved, so that
+    case is allowed now. A run containing a tab or a non-breaking space was
+    never sent, and if SharePoint collapses one the deploy's byte compare
+    aborts every paste after a partial deployment.
+
+    A single tab is left alone, because the retired rule allowed it and this
+    one must not be stronger than the rule it narrows.
+    """
+    if table is None:
+        return []
+    note = table.note.strip()
+    unmeasured = sorted({
+        char
+        for run in _HORIZONTAL_WHITESPACE_RUN.finditer(note)
+        for char in run.group()
+        if char != " "
+    })
+    if not unmeasured:
+        return []
+    named = ", ".join(f"U+{ord(c):04X}" for c in unmeasured)
+    return [Finding(
+        FindingCode.ENTITY_NOTE_WHITESPACE_UNMEASURED,
+        f"{entity_name}: the table's Note: contains a whitespace run holding "
+        f"{named}, and no probe has measured whether SharePoint returns it "
+        f"unchanged. Plain spaces were measured on 2026-08-14 and are fine. "
+        f"Use single spaces between words, or plain spaces if you meant "
+        f"alignment.",
+        location=Location(Section.ENTITIES, entity=entity_name),
+    )]
+
+
 def _note_fits_beside_marker(
     table: Table | None, entity_name: str, family: str,
 ) -> list[Finding]:
@@ -279,6 +324,9 @@ def check(vc: ValidationContext) -> list[Finding]:
 
         findings += _note_is_present(
             tables_by_name.get(entity_name), entity_name, family,
+        )
+        findings += _note_whitespace_is_measured(
+            tables_by_name.get(entity_name), entity_name,
         )
         findings += _note_fits_beside_marker(
             tables_by_name.get(entity_name), entity_name, family,

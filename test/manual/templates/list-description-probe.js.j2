@@ -47,6 +47,10 @@
  * `website/docs/reference/dbml.md`. Issue #203 asked the same question about
  * the marker's own components and is answered by the same runs.
  *
+ * L5 sent ASCII spaces only. A whitespace run containing a tab or a
+ * non-breaking space is still refused, by
+ * `entity_note_whitespace_unmeasured`, because nothing has measured those.
+ *
  * HOW TO RUN
  *   1. Open the target site as somebody who can create a list.
  *   2. Open a browser console on any page of that site.
@@ -286,10 +290,15 @@
   report();
   console.log('');
   console.log('=== WHAT TO DO WITH THIS ===');
-  console.log('L4, L5 and L6 decide the fate of entity_note_may_not_round_trip:');
-  console.log('all three PASS and the rule comes out, along with #203 and the');
-  console.log('caveat in website/docs/reference/dbml.md. Any one FAIL and the');
-  console.log('rule was right, and that character stays refused with a citation.');
-  console.log('L2 is what reconcileListDescription already compares on every');
-  console.log('re-paste, so a FAIL there is a permanent abort, not a caveat.');
+  console.log('L4, L5, L6 and L10 together decided entity_note_may_not_round_trip,');
+  console.log('which refused an ampersand, a space run, an LF and a CR. All four');
+  console.log('must PASS for the rule to stay out. L10 is the only observation of');
+  console.log('the CR, so a FAIL there means the rule was right about that byte');
+  console.log('even if L4 to L6 pass.');
+  console.log('L5 covers ASCII spaces only. Runs containing a tab or a');
+  console.log('non-breaking space are still refused by');
+  console.log('entity_note_whitespace_unmeasured, because this probe never sent');
+  console.log('one. Extend it before allowing those.');
+  console.log('L2 is what reconcileListDescription compares on every re-paste, so');
+  console.log('a FAIL there is a permanent abort rather than a caveat.');
 })();
