@@ -101,9 +101,9 @@
  *   EVERYTHING A MARKER NEEDS WORKS.
  *     R1  byte-identical through the CREATE path
  *     R2  byte-identical through the MERGE path
- *     R3  MERGE is PARTIAL, confirmed non-vacuously: the Description
- *         survived a request that did not carry it, while the Order the
- *         request DID carry changed in the same call
+ *     R3  MERGE is PARTIAL: the Description survived a request that did not
+ *         carry it. SEE THE CORRECTION BELOW, the non-vacuity was NOT
+ *         established in run 1
  *     R5  an empty description is accepted and reads back ""
  *     R6  the marker shape lists and groups already use survives intact
  *
@@ -127,7 +127,25 @@
  * over 512 characters builds clean and fails at phase 1.2, after permission
  * levels have begun being written and before any list exists. The longest
  * description in the shipped catalogue is 166 characters, so no family is at
- * risk today, and that is luck rather than a guard.
+ * risk today, and that is luck rather than a guard. Filed as #227.
+ *
+ * CORRECTION TO RUN 1, made 2026-08-14 after review, before any of this was
+ * built on. R3's recorded evidence said the omitted-field MERGE "did change
+ * Order in the same call". THE PROBE NEVER READ ORDER BACK. It did not even
+ * select it. That sentence described the request rather than reporting a
+ * measurement, so run 1 established the weaker claim only:
+ *
+ *     MEASURED: a MERGE that omitted Description was accepted, and the
+ *     Description was unchanged afterwards.
+ *     NOT MEASURED: that the MERGE did anything at all. A server that
+ *     ignored the entire request produces the same observation.
+ *
+ * The code now selects Order, reads it back, and records NOT ESTABLISHED
+ * when the control field did not move, so the premise is measured instead of
+ * described. R3 needs a re-run before anything relies on partial MERGE for
+ * role definitions. Nothing else in run 1 is affected: R1, R2, R5 and R6
+ * each compare a value they themselves sent, and R7 compares the bitmap it
+ * sent, so none of them depend on R3.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -186,8 +204,10 @@
   const filterLevel = async (name) =>
     spGet(`web/roledefinitions?$select=Id,Name,Description&$filter=Name eq '${encodeURIComponent(name)}'`);
 
+  // Order is selected because R3's non-vacuity depends on reading it back,
+  // not on the request having carried it.
   const readLevelById = async (id) =>
-    spGet(`web/roledefinitions(${id})?$select=Id,Name,Description,BasePermissions`);
+    spGet(`web/roledefinitions(${id})?$select=Id,Name,Description,BasePermissions,Order`);
 
   let digest = await getDigest();
   log('INFO', `This run uses the level name '${LEVEL}'.`);
@@ -314,17 +334,43 @@
     MERGED, { Description: MERGED });
 
   // ---- R3: is MERGE partial? --------------------------------------------
-  // Non-vacuous only if the request carries SOMETHING. It changes Order, so a
-  // preserved Description cannot be explained by the request having been a
-  // no-op the server ignored entirely.
-  const afterOmit = await askDescription('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
-    null, { Order: 101 });
-  if (afterOmit !== null) {
+  // Non-vacuous ONLY IF the request demonstrably did something. It carries a
+  // new Order, and that Order is READ BACK below. Run 1 claimed the
+  // non-vacuity in its evidence string without ever checking it, which made
+  // a surviving Description equally explainable by the server having ignored
+  // the whole request. A control that asserts its own premise is not a
+  // control, so the premise is measured here instead of described.
+  const ORDER_BEFORE = 100;
+  const ORDER_AFTER = 101;
+  const omitRes = await mergeDescription({ Order: ORDER_AFTER });
+  if (!omitRes.ok) {
     record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
-      afterOmit === MERGED ? 'PASS' : 'FAIL',
-      afterOmit === MERGED
-        ? `Description survived a MERGE that did not carry it, while Order did change in the same call; read ${JSON.stringify(afterOmit)}`
-        : `Description did NOT survive; expected ${JSON.stringify(MERGED)}, read ${JSON.stringify(afterOmit)}`);
+      isRefusal(omitRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${omitRes.status})`,
+      `HTTP ${omitRes.status}: ${omitRes.text.slice(0, 200)}`);
+  } else {
+    const backOmit = await readLevelById(levelId);
+    if (readFailed(backOmit)) {
+      record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+        `NOT ESTABLISHED (HTTP ${backOmit.status})`,
+        'the MERGE succeeded but the level could not be read back');
+    } else {
+      const gotDesc = backOmit.body.Description;
+      const gotOrder = Number(backOmit.body.Order);
+      const orderMoved = gotOrder === ORDER_AFTER;
+      if (!orderMoved) {
+        // The premise failed, so the question is UNANSWERED rather than
+        // answered yes. A preserved Description here proves nothing.
+        record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+          'NOT ESTABLISHED (the control field did not move)',
+          `the request carried Order ${ORDER_AFTER} and the level read back Order ${gotOrder}, so this MERGE cannot be shown to have done anything. A surviving Description would be equally explained by the whole request being ignored. Description read ${JSON.stringify(gotDesc)}`);
+      } else {
+        record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+          gotDesc === MERGED ? 'PASS' : 'FAIL',
+          gotDesc === MERGED
+            ? `Description survived a MERGE that did not carry it, and the same call DID move Order from ${ORDER_BEFORE} to ${gotOrder}, so the request was not ignored. Description read ${JSON.stringify(gotDesc)}`
+            : `Description did NOT survive a partial MERGE; expected ${JSON.stringify(MERGED)}, read ${JSON.stringify(gotDesc)}. Order moved to ${gotOrder}, so the request was applied`);
+      }
+    }
   }
 
   // ---- R4: length, REPORTED not asserted --------------------------------
@@ -358,14 +404,34 @@
       'the web role assignments could not be read, so the gate cannot report what an adoption would affect');
   } else {
     const rows = (assignments.body && (assignments.body.value || assignments.body.results)) || [];
-    const withBindings = rows.filter(
-      (r) => Array.isArray(r.RoleDefinitionBindings || (r.RoleDefinitionBindings || {}).results),
+    // The gate needs the BINDINGS, not the assignment rows. A row whose
+    // RoleDefinitionBindings cannot be parsed tells it nothing about which
+    // level is in use, so counting rows alone would certify the capability
+    // on evidence that does not carry it.
+    const bindingsOf = (r) => {
+      const b = r.RoleDefinitionBindings;
+      if (Array.isArray(b)) return b;
+      if (b && Array.isArray(b.results)) return b.results;
+      return null;
+    };
+    const parsed = rows.map(bindingsOf).filter((b) => b !== null);
+    // Does a binding actually expose the level identity the gate would match on?
+    const identified = parsed.filter(
+      (b) => b.some((d) => d && (d.Id !== undefined || d.Name !== undefined)),
     ).length;
-    record('R9', 'Can the role assignments referencing a level be enumerated?',
-      rows.length > 0 ? 'PASS' : 'NOT ESTABLISHED (no role assignments on this web)',
-      rows.length > 0
-        ? `read ${rows.length} web-scope role assignment(s), ${withBindings} with expandable RoleDefinitionBindings. A gate can therefore report web-scope usage. Per-LIST usage is a separate and more expensive question this run does not answer.`
-        : 'this web reported no role assignments at all, which is unusual; the question is unanswered rather than answered no');
+    if (rows.length === 0) {
+      record('R9', 'Can the role assignments referencing a level be enumerated?',
+        'NOT ESTABLISHED (no role assignments on this web)',
+        'this web reported no role assignments at all, which is unusual; the question is unanswered rather than answered no');
+    } else if (identified === 0) {
+      record('R9', 'Can the role assignments referencing a level be enumerated?',
+        'NOT ESTABLISHED (bindings not usable)',
+        `read ${rows.length} row(s), but ${parsed.length} had a parseable RoleDefinitionBindings collection and none exposed an Id or Name. A gate cannot match a level against these, so the capability is unproven rather than present.`);
+    } else {
+      record('R9', 'Can the role assignments referencing a level be enumerated?',
+        'PASS',
+        `read ${rows.length} web-scope role assignment(s); ${parsed.length} had parseable bindings and ${identified} exposed a level Id or Name a gate could match on. Web-scope usage is therefore reportable. PER-LIST usage is a separate and much more expensive question this run does not answer.`);
+    }
   }
 
   // ---- Clean up ----------------------------------------------------------
@@ -375,10 +441,21 @@
     `web/roledefinitions(${levelId})`, {}, digest,
     { 'X-HTTP-Method': 'DELETE', 'IF-MATCH': '*' },
   );
-  log(removed.ok ? 'OK' : 'FAIL',
-    removed.ok
-      ? `Deleted '${LEVEL}'.`
-      : `Could not delete '${LEVEL}' (HTTP ${removed.status}) — remove it by hand in Site permissions > Permission Levels.`);
+  // Cleanup is a write, and this project does not accept an HTTP 200 as
+  // evidence that a write took. A DELETE reported as succeeding while the
+  // level is still there would leave a site-scoped object behind under a
+  // transcript claiming the site was left clean, which is the worst of both.
+  if (removed.ok) {
+    const gone = await filterLevel(LEVEL);
+    const goneRows = (gone.body && (gone.body.value || gone.body.results)) || [];
+    if (!readFailed(gone) && goneRows.length === 0) {
+      log('OK', `Deleted '${LEVEL}', and confirmed absent on read-back.`);
+    } else {
+      log('FAIL', `DELETE reported success for '${LEVEL}' but it is STILL PRESENT on read-back (HTTP ${gone.status}, ${goneRows.length} row(s)). Remove it by hand in Site permissions > Permission Levels, and report this: a DELETE that reports success without deleting is itself a finding.`);
+    }
+  } else {
+    log('FAIL', `Could not delete '${LEVEL}' (HTTP ${removed.status}). Remove it by hand in Site permissions > Permission Levels.`);
+  }
 
   report();
   console.log('');
