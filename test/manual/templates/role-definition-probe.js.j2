@@ -118,9 +118,11 @@
  *   now measured rather than asserted.
  *
  *   R9 WEB-SCOPE ASSIGNMENTS ARE ENUMERABLE. Ten role assignments read, all
- *   ten with expandable RoleDefinitionBindings. A refusal can therefore NAME
- *   the web-scope usage an adoption would affect. PER-LIST usage is still
- *   unanswered and is a different, much more expensive question.
+ *   ten with an expandable RoleDefinitionBindings collection, and no
+ *   continuation link at a page size of 200. SEE THE CORRECTION BELOW: run 1
+ *   checked that the collection was an array, NOT that its entries expose an
+ *   Id or Name a gate could match a level against. PER-LIST usage is a
+ *   different and much more expensive question that stays unanswered.
  *
  * WHAT RUN 1 IMMEDIATELY PRODUCED, beyond the questions asked. Nothing in
  * the build guards this ceiling. A mapping declaring a level description
@@ -140,12 +142,29 @@
  *     NOT MEASURED: that the MERGE did anything at all. A server that
  *     ignored the entire request produces the same observation.
  *
- * The code now selects Order, reads it back, and records NOT ESTABLISHED
- * when the control field did not move, so the premise is measured instead of
- * described. R3 needs a re-run before anything relies on partial MERGE for
- * role definitions. Nothing else in run 1 is affected: R1, R2, R5 and R6
- * each compare a value they themselves sent, and R7 compares the bitmap it
- * sent, so none of them depend on R3.
+ * The code now reads Order BEFORE the MERGE, derives a control value that
+ * differs from what it actually observed rather than from what the create
+ * request sent, reads Order back, and records NOT ESTABLISHED when the
+ * control field did not move. Deriving the control from the observed value
+ * matters for the same reason the first correction did: had the tenant
+ * normalised Order at create time to the number the MERGE was about to
+ * write, an ignored MERGE would have read back as the target and the control
+ * would have passed while proving nothing.
+ *
+ * SECOND CORRECTION, same review. R9 recorded PASS after checking that each
+ * assignment's RoleDefinitionBindings was an ARRAY. A gate does not need an
+ * array, it needs an Id or a Name to match a level against, and run 1 never
+ * checked for one. Run 1 therefore established that the collection is
+ * present and expandable, and NOT that it is usable. The code now requires
+ * every row to expose an Id or Name, follows every continuation page, and
+ * records NOT ESTABLISHED on a truncated enumeration, because the
+ * assignments a partial read misses are exactly the usage a gate would fail
+ * to report.
+ *
+ * R3 AND R9 BOTH NEED A RE-RUN before anything is built on them. Nothing
+ * else in run 1 is affected: R1, R2, R5 and R6 each compare a value they
+ * themselves sent, R7 compares the bitmap it sent, R4 reports a length, and
+ * R8 reports a status code. None of them depend on R3 or R9.
  */
 (async () => {
 {% include "_probe_harness.js.j2" %}
@@ -265,16 +284,34 @@
     report();
     return;
   }
-  const levelId = created.body && (created.body.Id || (created.body.d && created.body.d.Id));
+  let levelId = created.body && (created.body.Id || (created.body.d && created.body.d.Id));
   if (!levelId) {
-    record('BOOT', 'create the probe permission level',
-      'NOT ESTABLISHED (no Id returned)',
-      'the level may exist; delete it by hand and report this. Nothing further was attempted.');
-    report();
-    return;
+    // The create SUCCEEDED, so something exists on this site under a name
+    // this probe chose. Resolve it rather than walking away: returning here
+    // without an Id is how a probe that promises to clean up after itself
+    // leaves a site-scoped object behind.
+    const resolved = await filterLevel(LEVEL);
+    const resolvedRows = (resolved.body && (resolved.body.value || resolved.body.results)) || [];
+    levelId = resolvedRows.length === 1 ? resolvedRows[0].Id : null;
+    if (!levelId) {
+      record('BOOT', 'create the probe permission level',
+        'NOT ESTABLISHED (no Id returned, and the name could not be resolved)',
+        `the create returned HTTP ${created.status} without an Id and '${LEVEL}' could not be resolved by name. It may exist. Delete it by hand in Site permissions > Permission Levels and report this.`);
+      report();
+      return;
+    }
+    log('INFO', `Create returned no Id; resolved '${LEVEL}' to Id ${levelId} so it can still be cleaned up.`);
+  } else {
+    log('INFO', `Created level Id ${levelId}.`);
   }
-  log('INFO', `Created level Id ${levelId}.`);
 
+  // EVERYTHING FROM HERE RUNS INSIDE try/finally. A rejected fetch, a
+  // getDigest that throws on a throttle, or a JSON parse failure would
+  // otherwise skip the cleanup below and leave a site-scoped permission level
+  // behind, under a transcript that never mentioned it. The preamble promises
+  // this probe deletes what it creates, and a promise that holds only on the
+  // happy path is not one.
+  try {
   const afterCreate = await readLevelById(levelId);
   if (readFailed(afterCreate)) {
     record('R1', 'Does a plain Description written at CREATE read back byte-identical?',
@@ -340,9 +377,25 @@
   // a surviving Description equally explainable by the server having ignored
   // the whole request. A control that asserts its own premise is not a
   // control, so the premise is measured here instead of described.
-  const ORDER_BEFORE = 100;
-  const ORDER_AFTER = 101;
-  const omitRes = await mergeDescription({ Order: ORDER_AFTER });
+  // The control value is DERIVED from what the level actually reads as, not
+  // from what the create request sent. Assuming the pre-state is the same
+  // mistake one level up: if the tenant normalised Order at create time to
+  // whatever we were about to write, an ignored MERGE would read back as the
+  // target and the control would pass while proving nothing.
+  const beforeOmit = await readLevelById(levelId);
+  if (readFailed(beforeOmit)) {
+    // Recorded and stepped over, never returned from: the remaining questions
+    // do not depend on R3, and an early return here would be a second way to
+    // skip the cleanup this probe promises.
+    record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
+      `NOT ESTABLISHED (HTTP ${beforeOmit.status})`,
+      'the level could not be read before the MERGE, so no control value could be chosen');
+  }
+  const ORDER_BEFORE = readFailed(beforeOmit) ? NaN : Number(beforeOmit.body.Order);
+  const ORDER_AFTER = ORDER_BEFORE === 101 ? 102 : 101;
+  const omitRes = Number.isNaN(ORDER_BEFORE)
+    ? { ok: false, status: 0, text: 'skipped: no pre-MERGE Order could be read' }
+    : await mergeDescription({ Order: ORDER_AFTER });
   if (!omitRes.ok) {
     record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
       isRefusal(omitRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${omitRes.status})`,
@@ -356,19 +409,21 @@
     } else {
       const gotDesc = backOmit.body.Description;
       const gotOrder = Number(backOmit.body.Order);
-      const orderMoved = gotOrder === ORDER_AFTER;
+      // Both halves matter. Reaching the target says the request was applied;
+      // differing from the observed pre-value says the request is why.
+      const orderMoved = gotOrder === ORDER_AFTER && gotOrder !== ORDER_BEFORE;
       if (!orderMoved) {
         // The premise failed, so the question is UNANSWERED rather than
         // answered yes. A preserved Description here proves nothing.
         record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
           'NOT ESTABLISHED (the control field did not move)',
-          `the request carried Order ${ORDER_AFTER} and the level read back Order ${gotOrder}, so this MERGE cannot be shown to have done anything. A surviving Description would be equally explained by the whole request being ignored. Description read ${JSON.stringify(gotDesc)}`);
+          `Order read ${ORDER_BEFORE} before the MERGE, the request carried ${ORDER_AFTER}, and it read back ${gotOrder}. This MERGE cannot be shown to have done anything, so a surviving Description would be equally explained by the whole request being ignored. Description read ${JSON.stringify(gotDesc)}`);
       } else {
         record('R3', 'Does a MERGE that OMITS Description preserve the previous one?',
           gotDesc === MERGED ? 'PASS' : 'FAIL',
           gotDesc === MERGED
-            ? `Description survived a MERGE that did not carry it, and the same call DID move Order from ${ORDER_BEFORE} to ${gotOrder}, so the request was not ignored. Description read ${JSON.stringify(gotDesc)}`
-            : `Description did NOT survive a partial MERGE; expected ${JSON.stringify(MERGED)}, read ${JSON.stringify(gotDesc)}. Order moved to ${gotOrder}, so the request was applied`);
+            ? `Description survived a MERGE that did not carry it, and the same call DID move Order from an OBSERVED ${ORDER_BEFORE} to ${gotOrder}, so the request was not ignored. Description read ${JSON.stringify(gotDesc)}`
+            : `Description did NOT survive a partial MERGE; expected ${JSON.stringify(MERGED)}, read ${JSON.stringify(gotDesc)}. Order moved from an observed ${ORDER_BEFORE} to ${gotOrder}, so the request was applied`);
       }
     }
   }
@@ -395,15 +450,40 @@
   // Read-only. Answers whether #224's gate can NAME the damage rather than
   // warn in the abstract. Web scope only: a per-list sweep is a different and
   // much more expensive question, and this one has to be answered first.
-  const assignments = await spGet(
+  // EVERY page, or the question is unanswered. A first page carrying one
+  // identifiable binding would otherwise certify that web-scope usage is
+  // reportable while later assignments were never looked at, which is the
+  // same fail-open a truncated membership enumeration would be.
+  let assignments = await spGet(
     'web/roleassignments?$select=PrincipalId&$expand=RoleDefinitionBindings&$top=200',
   );
+  const rows = [];
+  let truncated = false;
+  let pages = 0;
+  if (!readFailed(assignments)) {
+    let body = assignments.body;
+    for (;;) {
+      pages += 1;
+      rows.push(...((body && (body.value || body.results)) || []));
+      const next = body && (body['odata.nextLink'] || body.__next);
+      if (!next) break;
+      // A continuation link is absolute, so it does not go through spGet.
+      const res = await fetch(next, { headers: { Accept: 'application/json;odata=nometadata' } });
+      if (!res.ok) { truncated = true; break; }
+      body = await res.json().catch(() => null);
+      if (!body) { truncated = true; break; }
+      if (pages > 50) { truncated = true; break; }
+    }
+  }
   if (readFailed(assignments)) {
     record('R9', 'Can the role assignments referencing a level be enumerated?',
       `NOT ESTABLISHED (HTTP ${assignments.status})`,
       'the web role assignments could not be read, so the gate cannot report what an adoption would affect');
+  } else if (truncated) {
+    record('R9', 'Can the role assignments referencing a level be enumerated?',
+      'NOT ESTABLISHED (enumeration truncated)',
+      `read ${rows.length} row(s) over ${pages} page(s) and then could not follow the continuation. A partial enumeration cannot establish that usage is reportable, because the assignments it did not reach are exactly the ones a gate would miss.`);
   } else {
-    const rows = (assignments.body && (assignments.body.value || assignments.body.results)) || [];
     // The gate needs the BINDINGS, not the assignment rows. A row whose
     // RoleDefinitionBindings cannot be parsed tells it nothing about which
     // level is in use, so counting rows alone would certify the capability
@@ -423,19 +503,36 @@
       record('R9', 'Can the role assignments referencing a level be enumerated?',
         'NOT ESTABLISHED (no role assignments on this web)',
         'this web reported no role assignments at all, which is unusual; the question is unanswered rather than answered no');
-    } else if (identified === 0) {
+    } else if (identified !== rows.length) {
+      // EVERY row, not merely one. A gate that can identify the level behind
+      // some assignments and not others reports an incomplete list of what an
+      // adoption would affect, and an incomplete list read as a complete one
+      // is worse than no list.
       record('R9', 'Can the role assignments referencing a level be enumerated?',
-        'NOT ESTABLISHED (bindings not usable)',
-        `read ${rows.length} row(s), but ${parsed.length} had a parseable RoleDefinitionBindings collection and none exposed an Id or Name. A gate cannot match a level against these, so the capability is unproven rather than present.`);
+        'NOT ESTABLISHED (identity coverage incomplete)',
+        `read ${rows.length} row(s) over ${pages} page(s); ${parsed.length} had a parseable RoleDefinitionBindings collection and ${identified} exposed a level Id or Name. A gate needs all of them, because the rows it cannot identify are the usage it would fail to report.`);
     } else {
       record('R9', 'Can the role assignments referencing a level be enumerated?',
         'PASS',
-        `read ${rows.length} web-scope role assignment(s); ${parsed.length} had parseable bindings and ${identified} exposed a level Id or Name a gate could match on. Web-scope usage is therefore reportable. PER-LIST usage is a separate and much more expensive question this run does not answer.`);
+        `read ${rows.length} web-scope role assignment(s) over ${pages} page(s) with no continuation left, and every one exposed a level Id or Name a gate could match on. Web-scope usage is therefore reportable. PER-LIST usage is a separate and much more expensive question this run does not answer.`);
     }
   }
 
+  } catch (err) {
+    // The measurement that threw is already NOT ESTABLISHED, because every
+    // question was registered up front. Recorded here so the transcript says
+    // the run stopped early rather than leaving the reader to infer it.
+    log('FAIL', `The probe stopped after the level was created: ${(err && err.message) || err}. Cleanup still runs below.`);
+  } finally {
+
   // ---- Clean up ----------------------------------------------------------
   // By Id, never by name: the Id is the one this run created and nothing else.
+  //
+  // Wrapped in its own try/catch because this whole block is a `finally`. An
+  // exception thrown from here would replace whatever sent the run here in
+  // the first place, so a throttled digest during cleanup would hide the
+  // original failure and still not delete anything.
+  try {
   digest = await getDigest();
   const removed = await spPost(
     `web/roledefinitions(${levelId})`, {}, digest,
@@ -455,6 +552,10 @@
     }
   } else {
     log('FAIL', `Could not delete '${LEVEL}' (HTTP ${removed.status}). Remove it by hand in Site permissions > Permission Levels.`);
+  }
+  } catch (cleanupErr) {
+    log('FAIL', `Cleanup of '${LEVEL}' threw: ${(cleanupErr && cleanupErr.message) || cleanupErr}. The level Id was ${levelId}. Remove it by hand in Site permissions > Permission Levels.`);
+  }
   }
 
   report();
