@@ -189,6 +189,28 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       const raw = (url.match(/sitegroups\/getbyname\('(.*?)'\)/) || [])[1];
       return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
     };
+    // Task 7 read-back verification. A group's write endpoints (create and
+    // MERGE) mutate GROUP_STATE the same way the list write above mutates
+    // LIST_DESCRIPTIONS, so verifyGroupSettings reads back what the mock
+    // actually stored rather than a shape fixed in advance.
+    // GROUP_DROP_FIELD_ON_WRITE names one property the tenant accepts but
+    // never stores, modelling a write SharePoint 200s and discards.
+    // GROUP_COERCE_AUTO_ACCEPT models the measured tenant behaviour
+    // (test/manual/group-description-probe.js, G9/G10, 2026-08-13/14):
+    // AutoAcceptRequestToJoinLeave is forced false whenever the written
+    // AllowRequestToJoinLeave is false, regardless of what was sent for
+    // AutoAccept itself.
+    const GROUP_DROP_FIELD_ON_WRITE = null;
+    const GROUP_COERCE_AUTO_ACCEPT = false;
+    const GROUP_SETTINGS_KEYS = ['Description', 'AllowMembersEditMembership',
+      'AllowRequestToJoinLeave', 'AutoAcceptRequestToJoinLeave',
+      'OnlyAllowMembersViewMembership'];
+    const GROUP_STATE = {};
+    const groupState = (name) => (GROUP_STATE[name] ||= {
+      Description: groupDescription(name), AllowMembersEditMembership: false,
+      AllowRequestToJoinLeave: false, AutoAcceptRequestToJoinLeave: false,
+      OnlyAllowMembersViewMembership: false,
+    });
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
     const titles = {};
     const titleState = (listTitle) => (titles[listTitle] ||= {
@@ -318,11 +340,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       if (url.includes('sitegroups/getbyname')) {
         const name = groupNameOf(url);
-        return { d: {
-          Id: 9, Title: name, PrincipalType: 8,
-          Description: groupDescription(name), AllowMembersEditMembership: false,
-          AllowRequestToJoinLeave: false, AutoAcceptRequestToJoinLeave: false,
-          OnlyAllowMembersViewMembership: false } };
+        return { d: { Id: 9, Title: name, PrincipalType: 8, ...groupState(name) } };
       }
       if (url.includes('roledefinitions')) return { d: { results: [{ Id: 1 }] } };
       // The adopted list starts with SharePoint's built-in Title-only All
@@ -414,6 +432,28 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
             for (const key of ['Title', 'DefaultView', 'Hidden', 'RowLimit', 'ViewQuery']) {
               if (parsed[key] !== undefined) state[key] = parsed[key];
             }
+          }
+        }
+      }
+      // A group create (POST to .../web/sitegroups) or a MERGE onto the
+      // group object itself (POST to .../sitegroups/getbyname('...') with
+      // nothing after the closing paren, so a membership write to the same
+      // group's /users does not match). Mutates GROUP_STATE so
+      // verifyGroupSettings's read-back sees what this write actually
+      // stored, applying GROUP_DROP_FIELD_ON_WRITE and
+      // GROUP_COERCE_AUTO_ACCEPT.
+      if ((opts.method || 'GET') === 'POST' && opts.body
+          && (u.endsWith('/sitegroups') || /sitegroups\/getbyname\('.*'\)$/.test(u))) {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.__metadata && parsed.__metadata.type === 'SP.Group') {
+          const name = u.endsWith('/sitegroups') ? parsed.Title : groupNameOf(u);
+          const state = groupState(name);
+          for (const key of GROUP_SETTINGS_KEYS) {
+            if (parsed[key] === undefined || key === GROUP_DROP_FIELD_ON_WRITE) continue;
+            state[key] = parsed[key];
+          }
+          if (GROUP_COERCE_AUTO_ACCEPT && !state.AllowRequestToJoinLeave) {
+            state.AutoAcceptRequestToJoinLeave = false;
           }
         }
       }
@@ -1211,13 +1251,15 @@ def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
     assert line is not None, "harness produced no call log"
     calls = json.loads(line.removeprefix("__CALLS__"))
     gets = [c["url"] for c in calls if c["method"] == "GET"]
-    # The ACL phase resolves a group's Id by name AFTER creating it, so on
-    # a real run that request succeeds and is not console noise; the mock
-    # creates nothing, which is why it is excluded by its $select rather
-    # than by being overlooked.
+    # The ACL phase resolves a group's Id by name AFTER creating it, and
+    # verifyGroupSettings reads the same group back after the same create,
+    # so on a real run both requests succeed and are not console noise; the
+    # mock creates nothing, which is why they are excluded by their $select
+    # rather than by being overlooked.
     by_name = [
         u for u in gets
-        if ("sitegroups/getbyname" in u and "$select=Id" not in u)
+        if ("sitegroups/getbyname" in u and "$select=Id" not in u
+            and "$select=Description" not in u)
         or ("getbytitle" in u and "/fields?" in u)
     ]
     assert not by_name, (
@@ -1791,30 +1833,14 @@ def test_an_already_enrolled_reader_is_not_added_twice() -> None:
 # shared defaults (unmarked, empty) so it is neither created nor refused.
 
 
-def _group_gate_deploy(
-    deploy_js: str,
-    group_name: str,
-    *,
-    description: str,
-    member_pages: list[list[dict[str, Any]]],
+def _run_group_verify_deploy(
+    deploy_js: str, harness: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
-    """Run `deploy_js` against `_ADOPTED_HARNESS` with one group's Description
-    and membership overridden.
+    """Run `deploy_js` against `harness` and return (summary, calls, output).
 
-    Returns (summary, calls, output). Phase 'security' must actually have
-    started, or a refusal assertion would pass against a run that never
-    reached the group loop at all.
+    Phase 'security' must actually have started, or a refusal assertion
+    would pass against a run that never reached the group loop at all.
     """
-    harness = _ADOPTED_HARNESS.replace(
-        "const GROUP_DESCRIPTIONS = {};",
-        f"const GROUP_DESCRIPTIONS = {json.dumps({group_name: description})};",
-    ).replace(
-        "const GROUP_MEMBER_PAGES = {};",
-        f"const GROUP_MEMBER_PAGES = {json.dumps({group_name: member_pages})};",
-    ).replace(
-        "const KNOWN_GROUP_NAMES = [];",
-        f"const KNOWN_GROUP_NAMES = {json.dumps([group_name])};",
-    )
     script = harness + "\n" + deploy_js.replace(
         "})();",
         "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
@@ -1837,6 +1863,29 @@ def _group_gate_deploy(
         json.loads(calls_line.removeprefix("__CALLS__")),
         output,
     )
+
+
+def _group_gate_deploy(
+    deploy_js: str,
+    group_name: str,
+    *,
+    description: str,
+    member_pages: list[list[dict[str, Any]]],
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run `deploy_js` against `_ADOPTED_HARNESS` with one group's Description
+    and membership overridden.
+    """
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_DESCRIPTIONS = {};",
+        f"const GROUP_DESCRIPTIONS = {json.dumps({group_name: description})};",
+    ).replace(
+        "const GROUP_MEMBER_PAGES = {};",
+        f"const GROUP_MEMBER_PAGES = {json.dumps({group_name: member_pages})};",
+    ).replace(
+        "const KNOWN_GROUP_NAMES = [];",
+        f"const KNOWN_GROUP_NAMES = {json.dumps([group_name])};",
+    )
+    return _run_group_verify_deploy(deploy_js, harness)
 
 
 def _group_settings_writes(
@@ -1915,6 +1964,88 @@ def test_a_marked_group_with_members_is_adopted_silently() -> None:
     assert _group_settings_writes(calls, "Enterprise Reader"), (
         "a marked group's settings were never reconciled"
     )
+
+
+# Task 7: `mergeResp.ok` and the create POST's `ok` only say the tenant
+# accepted the request, not that it stored what was sent. `verifyGroupSettings`
+# reads the group back after both the create and the reconcile write and
+# compares every field it wrote. `GROUP_DROP_FIELD_ON_WRITE` and
+# `GROUP_COERCE_AUTO_ACCEPT` model the two ways the mock, like the tenant, can
+# answer 200 while storing something other than what was sent.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_group_description_the_tenant_did_not_store_fails_closed() -> None:
+    """AGENTS.md: anything that writes must read back and verify."""
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_DROP_FIELD_ON_WRITE = null;",
+        "const GROUP_DROP_FIELD_ON_WRITE = 'Description';",
+    )
+    summary, _, _ = _run_group_verify_deploy(_deploy_js(), harness)
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "List Maintainer" in message, message
+    assert "Description" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_flag_the_tenant_ignored_fails_closed() -> None:
+    """OnlyAllowMembersViewMembership is part of the security boundary.
+
+    The fixture declares it false, which is also the mock's untouched
+    default, so dropping the write would leave the state unchanged and
+    prove nothing. The schema text is overridden to true so the drop is
+    observable: the state stays at the untouched default instead of
+    picking up what was sent.
+    """
+    js = _deploy_js().replace(
+        '"only_allow_members_view_membership": false',
+        '"only_allow_members_view_membership": true', 1,
+    )
+    assert '"only_allow_members_view_membership": true' in js
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_DROP_FIELD_ON_WRITE = null;",
+        "const GROUP_DROP_FIELD_ON_WRITE = 'OnlyAllowMembersViewMembership';",
+    )
+    summary, _, _ = _run_group_verify_deploy(js, harness)
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "List Maintainer" in message, message
+    assert "OnlyAllowMembersViewMembership" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_auto_accept_is_compared_against_the_coerced_value() -> None:
+    """group-description-probe.js, G9/G10 (2026-08-13 and 2026-08-14): the
+    tenant stores AutoAcceptRequestToJoinLeave as false whenever the written
+    AllowRequestToJoinLeave is false, no matter what was sent for AutoAccept.
+    `group_auto_accept_without_requests` refuses a mapping that declares
+    that pair, so no shipped mapping can reach this branch through the CLI.
+    The schema text is overridden directly to reach it anyway, the same way
+    every other test in this file calls `generate_deploy_js` without going
+    through the build-time checks.
+
+    Comparing the read-back against the value SENT, rather than the coerced
+    one, would fail here: SENT is true, the tenant stores false, and the
+    deploy must accept that as correct rather than abort. Getting this wrong
+    aborts a redeploy for every shipped family, since every one of them
+    declares AllowRequestToJoinLeave false.
+    """
+    js = _deploy_js().replace(
+        '"auto_accept_request_to_join_leave": false',
+        '"auto_accept_request_to_join_leave": true', 1,
+    )
+    assert '"auto_accept_request_to_join_leave": true' in js
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_COERCE_AUTO_ACCEPT = false;",
+        "const GROUP_COERCE_AUTO_ACCEPT = true;",
+    )
+    summary, _, _ = _run_group_verify_deploy(js, harness)
+    assert not _security_errors(summary), summary
 
 
 def test_no_reader_no_enrolment_code() -> None:

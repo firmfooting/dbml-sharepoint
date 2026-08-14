@@ -1753,6 +1753,50 @@
       return total;
     }
 
+    // MEASURED by test/manual/group-description-probe.js, 2026-08-13 and
+    // 2026-08-14: Description round-trips byte-identically, so this compare
+    // is exact rather than fuzzy.
+    async function verifyGroupSettings(grp) {
+      const select = 'Description,AllowMembersEditMembership,AllowRequestToJoinLeave'
+        + ',AutoAcceptRequestToJoinLeave,OnlyAllowMembersViewMembership';
+      const resp = await fetchWithRetry(
+        apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=${select}`),
+        { headers: { 'Accept': 'application/json;odata=verbose' } },
+      );
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`Group '${grp.name}' read-back failed: HTTP ${resp.status} ${text}`);
+      }
+      const got = (await resp.json()).d || {};
+      // The tenant forces auto-accept off when requests-to-join is off, so the
+      // expected value is the coerced one, not the one sent.
+      const expectedAutoAccept = grp.allow_request_to_join_leave
+        ? grp.auto_accept_request_to_join_leave
+        : false;
+      const mismatches = [];
+      if (got.Description !== grp.description) {
+        mismatches.push(`Description: sent ${JSON.stringify(grp.description)}, stored ${JSON.stringify(got.Description)}`);
+      }
+      if (got.AllowMembersEditMembership !== grp.allow_members_edit_membership) {
+        mismatches.push(`AllowMembersEditMembership: sent ${grp.allow_members_edit_membership}, stored ${got.AllowMembersEditMembership}`);
+      }
+      if (got.AllowRequestToJoinLeave !== grp.allow_request_to_join_leave) {
+        mismatches.push(`AllowRequestToJoinLeave: sent ${grp.allow_request_to_join_leave}, stored ${got.AllowRequestToJoinLeave}`);
+      }
+      if (got.AutoAcceptRequestToJoinLeave !== expectedAutoAccept) {
+        mismatches.push(`AutoAcceptRequestToJoinLeave: expected ${expectedAutoAccept}, stored ${got.AutoAcceptRequestToJoinLeave}`);
+      }
+      if (got.OnlyAllowMembersViewMembership !== grp.only_allow_members_view_membership) {
+        mismatches.push(`OnlyAllowMembersViewMembership: sent ${grp.only_allow_members_view_membership}, stored ${got.OnlyAllowMembersViewMembership}`);
+      }
+      if (mismatches.length) {
+        throw new Error(
+          `Site group '${grp.name}' did not store what was written. The request was accepted, `
+          + `so this is a silent divergence rather than an error the tenant reported. `
+          + mismatches.join('; '));
+      }
+    }
+
     for (const grp of SCHEMA.groups) {
       try {
         // null status means "known absent without asking".
@@ -1779,6 +1823,7 @@
           // deploy honest even against a mapping that predates the rule.
           if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
           log('INFO', `Site group '${grp.name}' created.`);
+          await verifyGroupSettings(grp);
         } else if (checkResp.ok) {
           // #209. This branch adopts a group by NAME and the ACL phase then
           // grants it whatever the mapping declares, which for the
@@ -1821,6 +1866,7 @@
             throw new Error(`Group '${grp.name}' settings MERGE failed: HTTP ${mergeResp.status} ${text}`);
           }
           log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
+          await verifyGroupSettings(grp);
         } else {
           throw new Error(`Probe for site group '${grp.name}' failed: HTTP ${checkResp.status}`);
         }
