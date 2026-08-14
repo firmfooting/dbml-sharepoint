@@ -30,9 +30,12 @@ ceiling. Same-named property, different type. Neither result is evidence for
 the other, which is why both were measured.
 """
 
+from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
 
-#: The text every marker opens with.
+#: Re-exported so existing importers of `group_description.MARKER_PREFIX`
+#: keep working. `provenance.MARKER_PREFIX` is the single owner of the text;
+#: see that module for why three surfaces must share one spelling.
 #:
 #: Both shapes below build on it, but the deploy no longer tests this prefix
 #: on its own: `_security_principals.js.j2` compares the exact marker one
@@ -40,7 +43,7 @@ from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
 #: family stamped cannot satisfy this family's adoption test. Changing this
 #: string still changes what every already-deployed group is recognised by,
 #: so it is not a cosmetic edit.
-MARKER_PREFIX = "Provisioned by dbml-sharepoint"
+MARKER_PREFIX = provenance.MARKER_PREFIX
 
 #: The marker for a group this tool names for itself.
 SHARED_MARKER = f"{MARKER_PREFIX}."

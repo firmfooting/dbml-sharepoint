@@ -681,16 +681,21 @@ def test_schema_json_has_permission_keys() -> None:
     assert schema_json["requires_manage_permissions"] is True
 
 
+def _schema_json_for(solution_id: str) -> dict[str, Any]:
+    """Build SCHEMA for a shipped family named by its solution id."""
+    from dbml_sharepoint.generators.jsgen import build_schema_json
+
+    root = SOLUTION_TEMPLATES / solution_id
+    schema = parse_dbml(root / "10-design" / "schema.dbml")
+    bundle = load_mapping(root / "20-configure" / "mapping.yaml")
+    return build_schema_json(schema, bundle, "default")
+
+
 def _schema_json_for_risk_register() -> dict[str, Any]:
     """Build SCHEMA for the shipped risk-register family, whose mapping
     declares all three group shapes: a family-owned group and both
     tool-owned ones."""
-    from dbml_sharepoint.generators.jsgen import build_schema_json
-
-    root = SOLUTION_TEMPLATES / "risk-register"
-    schema = parse_dbml(root / "10-design" / "schema.dbml")
-    bundle = load_mapping(root / "20-configure" / "mapping.yaml")
-    return build_schema_json(schema, bundle, "default")
+    return _schema_json_for("risk-register")
 
 
 def test_every_emitted_group_description_carries_the_marker() -> None:
@@ -726,6 +731,28 @@ def test_each_group_carries_its_own_expected_marker() -> None:
     schema_json = _schema_json_for_risk_register()
     for grp in schema_json["groups"]:
         assert grp["expected_marker"] == marker_for_group(grp["name"], "risk-register")
+
+
+def test_every_emitted_level_description_carries_the_marker() -> None:
+    """risk-register declares no permission levels, so this loads
+    change-register, which declares 'CH Submit Only'."""
+    schema_json = _schema_json_for("change-register")
+    levels = schema_json["permission_levels"]
+    assert levels, "fixture declares no permission levels; the assertion would be vacuous"
+    for lvl in levels:
+        assert lvl["description"].endswith(
+            "Provisioned by dbml-sharepoint from change-register.",
+        ), lvl["name"]
+
+
+def test_each_level_carries_its_own_expected_marker() -> None:
+    from dbml_sharepoint.analysis.role_definition_description import marker_for_level
+
+    schema_json = _schema_json_for("change-register")
+    levels = schema_json["permission_levels"]
+    assert levels, "fixture declares no permission levels; the assertion would be vacuous"
+    for lvl in levels:
+        assert lvl["expected_marker"] == marker_for_level("change-register")
 
 
 def test_deploy_js_phase1_reliability_hardening() -> None:
@@ -1505,9 +1532,11 @@ def test_permission_level_probe_uses_filter_not_getbyname() -> None:
     role definition, so a getbyname existence probe fails Phase 1.2 on every
     clean site (first real-tenant paste). The probe must use the $filter form,
     which returns 200 + empty results when absent; getbyname remains only on
-    the MERGE path for an existing level."""
+    the MERGE path for an existing level. Description is selected alongside
+    Id: #224's adoption gate reads it, and Id alone would give that gate
+    nothing to test."""
     js = _generate_simple_js()
-    assert "web/roledefinitions?$select=Id&$filter=Name eq" in js
+    assert "web/roledefinitions?$select=Id,Description&$filter=Name eq" in js
 
 
 def test_field_probe_treats_missing_column_400_as_absent() -> None:

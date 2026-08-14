@@ -211,6 +211,58 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       AllowRequestToJoinLeave: false, AutoAcceptRequestToJoinLeave: false,
       OnlyAllowMembersViewMembership: false,
     });
+    // Role definitions (custom permission levels). Task 3: the single line
+    // this replaces answered every roledefinitions read alike, whether it
+    // was the existence probe, a getbyname resolve, or a by-Id read-back --
+    // so a MERGE could never be observed landing or failing to land.
+    // Seeded with the one level the fixture declares, 'Schema Manager'
+    // (test/fixtures/sharepoint-mapping.yaml:72). Its default Description
+    // already carries THIS family's marker, matching every other pre-existing
+    // object in this harness's "adopted site" fiction: a level a prior run of
+    // the same family already created and stamped, so a fresh run reconciles
+    // it rather than refusing it. ROLE_DEF_ABSENT and
+    // ROLE_DEF_DESCRIPTION_OVERRIDE let #224's adoption-gate tests put the
+    // level through the create path, or give it an unmarked or
+    // other-family-marked Description, without touching every other test.
+    // ROLE_DEF_DROP_FIELD_ON_WRITE follows GROUP_DROP_FIELD_ON_WRITE: it
+    // names one field the MERGE accepts but does not store, so a later test
+    // can prove a permission-level read-back fails closed.
+    let nextRoleDefId = 2;
+    const ROLE_DEF_DROP_FIELD_ON_WRITE = null;
+    const ROLE_DEF_SETTINGS_KEYS = ['Description', 'High', 'Low'];
+    const ROLE_DEF_ABSENT = false;
+    const ROLE_DEF_DESCRIPTION_OVERRIDE = null;
+    const ROLE_DEF_STATE = ROLE_DEF_ABSENT ? {} : {
+      'Schema Manager': {
+        Id: 1,
+        Description: ROLE_DEF_DESCRIPTION_OVERRIDE == null
+          ? 'Test permission level. Provisioned by dbml-sharepoint from simple-test.'
+          : ROLE_DEF_DESCRIPTION_OVERRIDE,
+        BasePermissions: { High: '0', Low: '2049' },
+      },
+    };
+    const roleDefState = (name) => (ROLE_DEF_STATE[name] ||= {
+      Id: nextRoleDefId++, Description: '', BasePermissions: { High: '0', Low: '0' },
+    });
+    // Decode idiom shared with listOf/groupNameOf: odataName DOUBLES an
+    // apostrophe and encodeURIComponent leaves it alone, so undo percent
+    // encoding first and then the doubling.
+    const roleDefFilterNameOf = (url) => {
+      const raw = (url.match(/\$filter=Name eq '(.*?)'/) || [])[1];
+      return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
+    };
+    const roleDefByNameOf = (url) => {
+      const raw = (url.match(/roledefinitions\/getbyname\('(.*?)'\)/) || [])[1];
+      return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
+    };
+    // The web/lists/getbytitle('X')/roleassignments enumeration
+    // _acls.js.j2 reads to decide what a list already has bound, keyed by
+    // list title. Configurable per title so a later test can exercise the
+    // __next pagination path; empty by default, matching every other
+    // probe's brand-new-site fiction ('nothing bound yet') so an
+    // unconfigured run only ever adds.
+    const ROLE_ASSIGNMENT_PAGES = {};
+    const roleAssignmentPages = (listTitle) => ROLE_ASSIGNMENT_PAGES[listTitle] || [[]];
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
     const titles = {};
     const titleState = (listTitle) => (titles[listTitle] ||= {
@@ -342,7 +394,53 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         const name = groupNameOf(url);
         return { d: { Id: 9, Title: name, PrincipalType: 8, ...groupState(name) } };
       }
-      if (url.includes('roledefinitions')) return { d: { results: [{ Id: 1 }] } };
+      // Every roledefinitions read shares that substring, so the most
+      // specific shape is checked first: the $filter existence probe (by
+      // Name), a by-Id read-back, getbyname (both the MERGE target below
+      // and what resolveRoleDefId GETs directly), then the bare collection
+      // endpoint, which only a create POST reaches -- the write-application
+      // block below has already recorded the new state by the time this
+      // runs, so it is echoed back the way SharePoint would.
+      if (url.includes('roledefinitions')) {
+        const notFound = { error: { code: '-2147024809, System.ArgumentException' } };
+        if (url.includes('$filter=Name')) {
+          const state = ROLE_DEF_STATE[roleDefFilterNameOf(url)];
+          const row = state ? [{ Id: state.Id, Description: state.Description }] : [];
+          return { d: { results: row } };
+        }
+        const byId = url.match(/roledefinitions\((\d+)\)/);
+        if (byId) {
+          const state = Object.values(ROLE_DEF_STATE).find((s) => String(s.Id) === byId[1]);
+          return state ? { d: state } : notFound;
+        }
+        if (url.includes('getbyname')) {
+          const state = ROLE_DEF_STATE[roleDefByNameOf(url)];
+          return state ? { d: state } : notFound;
+        }
+        if (opts && opts.body) {
+          const parsed = JSON.parse(opts.body);
+          const state = ROLE_DEF_STATE[parsed.Name];
+          if (state) return { d: state };
+        }
+        return { d: { results: [] } };
+      }
+      // A list's role-assignment enumeration (Member + RoleDefinitionBindings),
+      // paginated the same way the group membership mock pages
+      // sitegroups/.../users: page 0 unless the caller followed a __next
+      // this mock handed out.
+      if (url.includes('/roleassignments')) {
+        const listTitle = listOf(url);
+        const pages = roleAssignmentPages(listTitle);
+        const marked = /[?&]page=(\d+)/.exec(url);
+        const page = marked ? Number(marked[1]) : 0;
+        const payload = { d: { results: pages[page] || [] } };
+        if (page + 1 < pages.length) {
+          payload.d.__next =
+            `https://example.sharepoint.com/_api/web/lists/getbytitle('${encodeURIComponent(listTitle)}')`
+            + `/roleassignments?$expand=Member,RoleDefinitionBindings&page=${page + 1}`;
+        }
+        return payload;
+      }
       // The adopted list starts with SharePoint's built-in Title-only All
       // Items view. View writes below mutate this state so exact field/query
       // readback exercises the generated recovery-view behavior.
@@ -454,6 +552,32 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           }
           if (GROUP_COERCE_AUTO_ACCEPT && !state.AllowRequestToJoinLeave) {
             state.AutoAcceptRequestToJoinLeave = false;
+          }
+        }
+      }
+      // A permission-level create (POST to .../web/roledefinitions) or a
+      // MERGE onto the definition itself (POST to
+      // .../roledefinitions/getbyname('...') with nothing after the closing
+      // paren, matching the group write above). Mutates ROLE_DEF_STATE so a
+      // later by-Id or by-name read-back sees what this write actually
+      // stored, applying ROLE_DEF_DROP_FIELD_ON_WRITE the same way
+      // GROUP_DROP_FIELD_ON_WRITE models a write the tenant 200s and
+      // discards.
+      if ((opts.method || 'GET') === 'POST' && opts.body
+          && (u.endsWith('/roledefinitions') || /roledefinitions\/getbyname\('.*'\)$/.test(u))) {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.__metadata && parsed.__metadata.type === 'SP.RoleDefinition') {
+          const name = u.endsWith('/roledefinitions') ? parsed.Name : roleDefByNameOf(u);
+          const state = roleDefState(name);
+          const sent = {
+            Description: parsed.Description,
+            High: parsed.BasePermissions && parsed.BasePermissions.High,
+            Low: parsed.BasePermissions && parsed.BasePermissions.Low,
+          };
+          for (const key of ROLE_DEF_SETTINGS_KEYS) {
+            if (sent[key] === undefined || key === ROLE_DEF_DROP_FIELD_ON_WRITE) continue;
+            if (key === 'Description') state.Description = sent[key];
+            else state.BasePermissions[key] = sent[key];
           }
         }
       }
@@ -2125,6 +2249,217 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
     message = str(errors[0]["error"])
     assert group_name in message, message
     assert "Description" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+# #224: `_security_principals.js.j2` adopted any role definition whose name
+# matched a declared one and MERGEd the declared bitmap onto it. A role
+# definition is SITE-SCOPED, so a hand-made level sharing a declared name and
+# assigned on lists this tool never reads had its bitmap silently
+# overwritten. `_role_def_gate_deploy` lets these tests control the
+# fixture's one declared level, 'Schema Manager', against `_ADOPTED_HARNESS`.
+
+
+def _role_def_gate_deploy(
+    deploy_js: str,
+    *,
+    absent: bool = False,
+    description_override: str | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run `deploy_js` against `_ADOPTED_HARNESS` with the fixture's one
+    declared permission level, 'Schema Manager', either absent (so the
+    CREATE path runs) or present with its Description overridden (so the
+    #224 adoption gate can be exercised against an unmarked level, or one
+    another family stamped).
+    """
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_ABSENT = false;",
+        f"const ROLE_DEF_ABSENT = {json.dumps(absent)};",
+    ).replace(
+        "const ROLE_DEF_DESCRIPTION_OVERRIDE = null;",
+        f"const ROLE_DEF_DESCRIPTION_OVERRIDE = {json.dumps(description_override)};",
+    )
+    return _run_group_verify_deploy(deploy_js, harness)
+
+
+def _role_def_merge_writes(
+    calls: list[dict[str, Any]], level_name: str,
+) -> list[dict[str, Any]]:
+    """Every POST that MERGEs settings onto the named role definition itself."""
+    encoded = quote(level_name, safe="")
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"]
+        and f"roledefinitions/getbyname('{encoded}')" in c["url"]
+    ]
+
+
+def _role_def_create_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every POST that creates a new role definition."""
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"]
+        and c["url"].endswith("/web/roledefinitions")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unmarked_permission_level_is_refused() -> None:
+    """MARKER ONLY, unlike the group gate: no usage count can clear this
+    refusal. Default `_ADOPTED_HARNESS` state reports zero web-scope role
+    assignments for it, and it is still refused. `_acls.js.j2` assigns a
+    permission level at LIST scope, which a web-scope count cannot see, so
+    treating an unmeasured surface as empty would adopt exactly the level
+    #224 exists to stop adopting."""
+    summary, calls, _ = _role_def_gate_deploy(
+        _deploy_js(), description_override="Our own level.",
+    )
+    # The overwritten bitmap is the damage; the refusal is only how the
+    # script avoids it. Asserted first so removing the gate fails on "the
+    # level was reconciled" rather than on a summary key.
+    assert not _role_def_merge_writes(calls, "Schema Manager"), (
+        "an unmarked permission level was reconciled before the refusal: "
+        "its Description and BasePermissions were rewritten"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "carries no" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_marked_by_another_family_is_refused() -> None:
+    """The gate compares the exact marker THIS declaration expects, not the
+    shared 'Provisioned by dbml-sharepoint' prefix every family's marker
+    starts with, so a level another family stamped cannot satisfy it."""
+    summary, calls, _ = _role_def_gate_deploy(
+        _deploy_js(),
+        description_override="Provisioned by dbml-sharepoint from other-family.",
+    )
+    assert not _role_def_merge_writes(calls, "Schema Manager"), (
+        "a permission level marked by another family was reconciled before the refusal"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "carries no" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_marked_permission_level_is_adopted_silently() -> None:
+    """The default `_ADOPTED_HARNESS` state already carries this
+    declaration's marker, matching a prior run of the same family: the
+    level is reconciled without a security error."""
+    summary, calls, _ = _role_def_gate_deploy(_deploy_js())
+    assert not _security_errors(summary), summary
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "a marked permission level's settings were never reconciled"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_created_fresh_is_stamped() -> None:
+    """A level this deploy creates must carry the marker that lets a later
+    redeploy recognise it as this tool's own."""
+    summary, calls, _ = _role_def_gate_deploy(_deploy_js(), absent=True)
+    assert not _security_errors(summary), summary
+    writes = _role_def_create_writes(calls)
+    assert writes, "a fresh permission level was never created"
+    assert "Provisioned by dbml-sharepoint from simple-test." in writes[0]["body"]
+
+
+# Task 5 (#224): `mergeResp.ok` and the create POST's `ok` only say the
+# tenant accepted the request, not that it stored what was sent.
+# `verifyLevelSettings` reads the level back after both the create and the
+# MERGE and compares Description and both bitmap halves.
+# `ROLE_DEF_DROP_FIELD_ON_WRITE` models a write the tenant 200s and
+# discards, the same way `GROUP_DROP_FIELD_ON_WRITE` does for a site group.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_description_the_tenant_did_not_store_fails_closed() -> None:
+    """AGENTS.md: anything that writes must read back and verify.
+
+    The stale description still carries this family's marker, so the run
+    takes the adopt-and-reconcile branch rather than the refusal gate; only
+    the read-back after the MERGE can catch the drop.
+    """
+    stale_description = "Stale note. Provisioned by dbml-sharepoint from simple-test."
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_DESCRIPTION_OVERRIDE = null;",
+        f"const ROLE_DEF_DESCRIPTION_OVERRIDE = {json.dumps(stale_description)};",
+    ).replace(
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = null;",
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = 'Description';",
+    )
+    summary, calls, _ = _run_group_verify_deploy(_deploy_js(), harness)
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "the reconcile MERGE never happened"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "Description" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_permission_level_base_permissions_the_tenant_did_not_store_fails_closed() -> None:
+    """A dropped bitmap half is the exact failure #224 exists to catch: the
+    MERGE reports success while the level keeps its old permissions. The
+    declared Low is overridden so the drop is observable, since the mock's
+    stored default otherwise already equals the undisturbed declared value.
+    """
+    js = _deploy_js().replace('"low": "2049"', '"low": "4098"', 1)
+    assert '"low": "4098"' in js
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = null;",
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = 'Low';",
+    )
+    summary, calls, _ = _run_group_verify_deploy(js, harness)
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "the reconcile MERGE never happened"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "BasePermissions" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_freshly_created_level_base_permissions_the_tenant_did_not_store_fails_closed() -> None:
+    """The two drop-field tests above only drive the MERGE (adopt) branch.
+    `verifyLevelSettings` is called separately after CREATE, and deleting
+    that call left every other test in this file green: the create-body
+    assertion in `test_a_permission_level_created_fresh_is_stamped` does not
+    move when the post-create read-back is skipped.
+
+    `roleDefState`'s untouched default for a never-seen name already has
+    BasePermissions.Low '0', which differs from the fixture's declared
+    '2049' on its own, so no override of the declared value is needed here
+    to make the drop observable, unlike the MERGE-path test above it.
+    """
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_ABSENT = false;",
+        "const ROLE_DEF_ABSENT = true;",
+    ).replace(
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = null;",
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = 'Low';",
+    )
+    summary, calls, _ = _run_group_verify_deploy(_deploy_js(), harness)
+    assert _role_def_create_writes(calls), "the create POST never happened"
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "BasePermissions" in message, message
     assert summary.get("aborted") == "phase-0-security-errors", summary
 
 

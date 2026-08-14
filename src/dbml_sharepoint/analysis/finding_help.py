@@ -856,6 +856,15 @@ FINDING_HELP: dict[FindingCode, str] = {
         "different surface from a group's description and was measured "
         "separately, even though the two ceilings agree today."
     ),
+    FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER: (
+        "A `permission_levels:` entry's description leaves no room for the "
+        "provenance marker appended to it. The deploy stamps every level it "
+        "writes with `Provisioned by dbml-sharepoint`, and the adoption "
+        "gate refuses to adopt a level whose description does not carry "
+        "it, so a truncated marker would make the tool refuse a level it "
+        "created itself. Shorten the description to the budget named in "
+        "the finding."
+    ),
     FindingCode.PERMISSION_LEVEL_NOT_DIRECTLY_ASSIGNABLE: (
         "A `list_permissions` assignment names `Limited Access` or "
         "`Web-Only Limited Access`. Microsoft Learn is explicit that "
