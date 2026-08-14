@@ -3,7 +3,10 @@
    into the mapping's `enroll_enterprise_reader` group, which holds Read.
    Emitted only when that flag was given, so an ordinary build carries no
    enrolment code at all. Unlike the operator's run-scoped enrolment, this
-   membership is PERMANENT — nothing removes it at the end of the run.
+   membership is PERMANENT once the run reaches the end. If a later phase
+   aborts, deploy.js.j2's finally removes the account this phase just
+   enrolled -- a rollback of this run's own write, not a general reconciler
+   for membership some earlier run may have left behind.
    Every resolution is refused unless it is a single user (PrincipalType
    strictly 1), does not match one of the three tenant-wide-claim needles
    at step 3, and matches the address the build asked for; the group must
@@ -23,10 +26,14 @@
   // hold Read and nothing more. The group's grants are unchanged here;
   // this phase only decides WHO is in it.
   //
-  // THIS MEMBERSHIP IS PERMANENT. Operator self-enrolment (the phase
-  // before this one) removes itself on the way out because it exists to
-  // let this run write. A reporting account exists between runs, so
-  // nothing removes it — remove it by hand in Site permissions > Groups.
+  // THIS MEMBERSHIP IS PERMANENT ONLY ONCE THE RUN REACHES THE END. Operator
+  // self-enrolment (the phase before this one) always removes itself on the
+  // way out, because it exists only to let this run write. A reporting
+  // account is meant to exist between runs, but a run that aborts after
+  // this phase has deploy.js.j2's finally remove the account it just
+  // enrolled, same as any other write a run cannot leave half done. Once
+  // the run reaches the end, nothing removes it; remove it by hand in Site
+  // permissions > Groups.
   //
   // The group must hold nobody but the named account. If it already holds
   // anyone else, this phase ABORTS the run before adding anything and
@@ -270,6 +277,17 @@
           throw new Error(`enrolment of '${READER_ADDRESS}' into '${grp.name}' failed: HTTP ${addResp.status} ${text}`);
         }
 
+        // Recorded now, before the read-back below can abort this phase.
+        // Two concurrent deploys with different addresses can each reach
+        // this point, each add their own account, and each then abort at
+        // the strays check a few lines down because it now sees the
+        // other's account too (#213 form 1). Recording only on full
+        // success left an aborting run with nothing to undo, which was the
+        // issue. Mirrors _operator_enrolment.js.j2's selfEnrollments.push:
+        // right after the write that needs undoing, not after the checks
+        // that follow it.
+        readerEnrollments.push({ groupId, groupName: grp.name, userId: resolved.Id });
+
         // 8. Read the membership back. HTTP 200 is not evidence that the
         // account is in the group, and a grant reported but never made is
         // worse than a failure: the operator stops looking.
@@ -286,11 +304,14 @@
         // small windows get hit -- a deploy is pasted while people are
         // working in the site.
         //
-        // Nothing is removed here either, for the reason the before-read
-        // gives: membership is an operator-owned concern and this is a gate.
-        // It fails closed AFTER the write, which is deliberate -- the write
-        // is already done and cannot be un-done safely, so the operator is
-        // told exactly what the group now holds rather than left to find out.
+        // Nothing removes a STRANGER here, for the reason the before-read
+        // gives: membership is an operator-owned concern and this is a
+        // gate, not a reconciler for accounts this run did not add. It
+        // fails closed AFTER the write, which is deliberate -- the operator
+        // is told exactly what the group now holds rather than left to find
+        // out. This run's OWN account is a different matter: it was
+        // recorded above and deploy.js.j2's finally removes it, because the
+        // abort below means the run never reached the end.
         const strays = foreign(after);
         if (strays.length > 0) {
           throw new Error(
@@ -298,11 +319,13 @@
             + `${strays.length} other principal(s) that were not there when this run checked: `
             + `${listMembers(strays)}. Somebody added them while this script was running. That `
             + `group grants Read on EVERY list this bundle provisions, so each of them can read `
-            + `all of it. Nothing was removed -- review the membership in Site permissions > `
-            + `Groups and remove whoever should not be there, then run this script again.`,
+            + `all of it. This run's own enrolment of '${READER_ADDRESS}' will be removed `
+            + `automatically as this script exits, since the run does not reach its end. Review `
+            + `the membership in Site permissions > Groups for the others and remove whoever `
+            + `should not be there, then run this script again.`,
           );
         }
-        log('INFO', `Enrolled '${resolved.Title || READER_ADDRESS}' into '${grp.name}' with the group's read-only grants. This membership is PERMANENT: remove it in Site permissions > Groups when the account no longer needs access.`);
+        log('INFO', `Enrolled '${resolved.Title || READER_ADDRESS}' into '${grp.name}' with the group's read-only grants. This membership is PERMANENT once this run reaches its end; if a later phase aborts it is removed automatically. Once permanent, remove it in Site permissions > Groups when the account no longer needs access.`);
       } catch (err) {
         log('ERROR', `Enterprise reader enrolment for '${grp.name}': ${err.message}`);
         summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });

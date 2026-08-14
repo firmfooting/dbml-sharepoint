@@ -126,6 +126,15 @@
     return { ...summary, aborted: 'phase-5-seed-errors' };
   }
 
+  // The explicit success signal: every abort gate in the phase chain has
+  // now been passed, so the enterprise reader this run enrolled (if any)
+  // is a permanent grant, not a failed run's leftover. Set here rather than
+  // read from `summary.errors.length === 0` in the finally, because
+  // restoreUnsealedFields runs first in that finally and can still push to
+  // that array on the way out -- reading it there would misread a failed
+  // exit re-seal as a reason to unenrol a reader this successful deploy
+  // just added.
+  runReachedTheEnd = true;
   await removeSelfEnrollments();
 
   // Operator-perspective diagnostic (after enrolment cleanup, so the

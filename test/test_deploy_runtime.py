@@ -1593,6 +1593,22 @@ def _reader_harness(
                      text: async () => JSON.stringify(payload) };
           };
           if (u.toLowerCase().includes('/ensureuser')) return respond({ d: ENSURED });
+          // Task 6 (security-phase-atomicity): removeReaderEnrollments's
+          // drain POSTs here. Checked BEFORE the broader
+          // sitegroups(N)/users test below, which this URL also matches --
+          // and whose POST branch assumes an add, parsing `opts.body` as
+          // JSON. A remove call carries no body, so falling through to that
+          // branch throws `JSON.parse(undefined)` instead of modelling the
+          // removal.
+          const removed = /sitegroups\(\d+\)\/users\/removebyid\((\d+)\)/.exec(u);
+          if (removed && method === 'POST') {
+            const removedId = Number(removed[1]);
+            for (const page of READER_MEMBER_PAGES) {
+              const idx = page.findIndex((m) => Number(m.Id) === removedId);
+              if (idx !== -1) page.splice(idx, 1);
+            }
+            return respond({ d: null });
+          }
           // The flagged group's own membership, keyed off the BY-ID form of
           // the path so the 1.2 empty-group gate — which asks by name —
           // still reaches the adopted mock underneath and still sees empty.
@@ -1937,9 +1953,13 @@ def test_a_principal_added_during_the_run_is_caught_by_the_read_back() -> None:
     nothing else: the membership is empty when the gate runs, and the
     foreign principal appears at the moment of the write.
 
-    Nothing is removed -- the same reason the before-read gives. The run
-    fails closed AFTER the write, which is the point: the write cannot be
-    safely undone, so the operator is told what the group now holds.
+    Nothing here removes the STRAY -- the same reason the before-read gives:
+    membership is an operator-owned concern and this is a gate, not a
+    reconciler for an account this run did not add. But (task 6,
+    security-phase atomicity, #213 form 1) this run's OWN account no longer
+    stays enrolled after this abort: deploy.js.j2's finally drains it,
+    because the run never reached the end. This used to be the case that
+    left BOTH accounts in two concurrent deploys permanently enrolled.
     """
     summary, calls, output = _run_reader_deploy(
         _RESOLVED_USER, members=[], stray_on_write=_OTHER_MEMBER,
@@ -1955,7 +1975,13 @@ def test_a_principal_added_during_the_run_is_caught_by_the_read_back() -> None:
     assert errors, summary
     assert "while this script was running" in str(errors), errors
     assert summary.get("aborted") == "reader-enrolment-errors", summary
-    assert not _removals(calls)
+    removals = _removals(calls)
+    assert any(f"removebyid({_RESOLVED_USER['Id']})" in c["url"] for c in removals), (
+        f"the reader this run just enrolled was left in place after the abort: {removals}"
+    )
+    assert not any(f"removebyid({_OTHER_MEMBER['Id']})" in c["url"] for c in removals), (
+        f"the stray, which this run never added, was removed: {removals}"
+    )
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -1977,6 +2003,141 @@ def test_an_already_enrolled_reader_is_not_added_twice() -> None:
     # that the reader phase is not what stopped it.
     assert summary.get("aborted") != "reader-enrolment-errors", summary
     assert not _membership_writes(calls), "an existing membership was re-POSTed"
+
+
+# Task 6 (security-phase atomicity, #213 form 1): the reader enrolment must
+# clean up after a run that adds the account and then fails LATER, and must
+# leave it alone on a run that reaches the end. Two concurrent deploys
+# naming different reader addresses used to both add their account, both
+# abort, and both leave their account enrolled forever.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_later_phase_failure_drains_the_reader_this_run_added() -> None:
+    """The general form of #213's fix: the reader phase itself succeeds
+    cleanly, and a LATER phase aborts. The account this run just added must
+    not survive that abort -- only a run that reaches the end may leave it.
+
+    Plain `_run_reader_deploy` already aborts in Phase 2.1 on this fixture's
+    Lookup column, for reasons that have nothing to do with the reader (the
+    same fact `test_an_already_enrolled_reader_is_not_added_twice` notes
+    above) -- exactly the shape this test needs: a clean 1.4 followed by a
+    dirty later phase, with no bespoke harness required to get there.
+    """
+    summary, calls, output = _run_reader_deploy(_RESOLVED_USER)
+    assert not _reader_errors(summary), (
+        f"the reader phase itself failed, so this does not test a LATER "
+        f"phase's abort: {summary}"
+    )
+    assert summary.get("aborted") not in (None, "reader-enrolment-errors"), (
+        f"the run did not abort in a later phase: {summary}\n{output[-2000:]}"
+    )
+    assert _membership_writes(calls), "the reader was never enrolled in the first place"
+    removals = _removals(calls)
+    assert any(f"removebyid({_RESOLVED_USER['Id']})" in c["url"] for c in removals), (
+        f"a later phase's abort must remove the reader this run just enrolled: {removals}"
+    )
+
+
+# `_declared_pack`'s minimal all-text schema is what `_ADOPTED_HARNESS` can
+# drive all the way to a clean DATA-phase finish
+# (`test_a_declared_run_completes_every_phase_cleanly`); the shipped
+# `sharepoint-mapping(-with-reader).yaml` fixture's Lookup and formula
+# columns are not modelled that completely (see the test above), so "a
+# clean run leaves the reader enrolled" needs this schema, not that
+# fixture, to reach the end at all.
+_READER_DECLARED_SECTION = """
+    groups:
+      - name: "Enterprise Reader"
+        description: "Read-only enrolment target for --enterprise-reader."
+        owner_group: "Site Owners"
+        allow_members_edit_membership: false
+        allow_request_to_join_leave: false
+        auto_accept_request_to_join_leave: false
+        only_allow_members_view_membership: false
+        enroll_enterprise_reader: true
+
+    list_permissions:
+      default:
+        site_role: default
+        break_inheritance: true
+        reconcile: exact
+        assignments:
+          - principal: { kind: group, name: "Enterprise Reader" }
+            level: "Read"
+"""
+
+
+def _declared_reader_deploy_js(tmp_path: Path) -> str:
+    """`_declared_deploy_js`, plus an enterprise-reader group with a Read
+    ACL assignment, built with `--enterprise-reader`."""
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js
+    from dbml_sharepoint.model.release import load_release
+
+    schema, bundle = _declared_pack(tmp_path, _READER_DECLARED_SECTION)
+    return generate_deploy_js(
+        schema=schema,
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=_READER_ADDRESS,
+    )
+
+
+# The ACL phase resolves a declared assignment's level by name through
+# `web/roledefinitions/getbyname`, the same surface `ROLE_DEF_STATE` already
+# models for this tool's own custom levels. No existing test names a
+# BUILT-IN level ('Read') in an ACL assignment, so `_ADOPTED_HARNESS` never
+# needed to seed one; this is the first run to carry an enterprise-reader
+# group's Read grant all the way through Phase 4.2.
+_READER_ACL_HARNESS = _ADOPTED_HARNESS.replace(
+    "'Schema Manager': {",
+    "'Read': { Id: 100, Description: '', BasePermissions: { High: '0', Low: '138612833' } },\n"
+    "      'Schema Manager': {",
+)
+
+
+def _reader_harness_for_declared_run(ensure_user: dict[str, Any]) -> str:
+    """`_reader_harness`, rebuilt on `_READER_ACL_HARNESS` instead of the
+    plain `_ADOPTED_HARNESS` it always starts from."""
+    overlay = _reader_harness(ensure_user)[len(_ADOPTED_HARNESS):]
+    return _READER_ACL_HARNESS + overlay
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_clean_end_to_end_run_leaves_the_reader_enrolled(tmp_path: Path) -> None:
+    """The other half of #213's fix: a run that reaches the end must NOT
+    remove the reader it just added. That membership is meant to outlive
+    the run, and only a run that never gets here should undo it.
+    """
+    js = _declared_reader_deploy_js(tmp_path)
+    script = _reader_harness_for_declared_run(_RESOLVED_USER) + "\n" + js.replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
+    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    assert _membership_writes(calls), "the reader was never enrolled"
+    assert not _removals(calls), (
+        f"a successful run removed the reader it just enrolled: {_removals(calls)}"
+    )
 
 
 # #209: a hand-made site group whose name happens to match a declared one
