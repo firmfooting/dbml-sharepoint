@@ -15,6 +15,10 @@ from dbml_sharepoint.analysis.permissions import (
     BUILT_IN_LEVELS,
     DERIVED_BUILT_IN_LEVELS,
 )
+from dbml_sharepoint.analysis.role_definition_description import (
+    level_description_budget,
+    marker_for_level,
+)
 from dbml_sharepoint.analysis.validator import (
     _ASSOCIATED_GROUP_ALIASES,
     _BUILTIN_SP_GROUPS,
@@ -121,6 +125,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # site: the second create fails on a name collision, mid-deploy,
         # after the first has already been made.
         seen_level_names: dict[str, str] = {}
+        family = family_for(vc.schema)
         for lvl in perms.levels:
             key = lvl.name.casefold()
             # ALL eleven built-ins are reserved, including the three that are
@@ -177,8 +182,11 @@ def check(vc: ValidationContext) -> list[Finding]:
         # The server refuses a longer one with HTTP 500, in phase 1.2 -- part-way
         # through writing permission levels and before any list exists. See
         # limits.MAX_ROLE_DEFINITION_DESCRIPTION for the live measurement behind
-        # the number. No provenance marker is appended to a level description
-        # today, so unlike the group check this compares the raw ceiling only.
+        # the number. The deploy appends a provenance marker to every level
+        # description it writes, so `elif` chains onto the budget check below:
+        # a description over the raw ceiling reports one code, the same as the
+        # group check.
+        level_budget = level_description_budget(family)
         for lvl in perms.levels:
             if len(lvl.description) > MAX_ROLE_DEFINITION_DESCRIPTION:
                 findings.append(Finding(
@@ -189,12 +197,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"so part-way through the deploy. Shorten it.",
                     location=_LEVELS,
                 ))
+            elif len(lvl.description) > level_budget:
+                findings.append(Finding(
+                    FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER,
+                    f"permission_levels[{lvl.name!r}]: description is "
+                    f"{len(lvl.description)} characters, and the budget is "
+                    f"{level_budget} once the provenance marker "
+                    f"{marker_for_level(family)!r} and its separating space "
+                    f"are appended. Shorten it.",
+                    location=_LEVELS,
+                ))
 
         # groups[*].name must be unique — case-insensitively, for the same
         # reason as the levels above.
         seen_group_names: dict[str, str] = {}
         custom_group_names = {g.name for g in perms.groups}
-        family = family_for(vc.schema)
         for grp in perms.groups:
             key = grp.name.casefold()
             if key in seen_group_names:

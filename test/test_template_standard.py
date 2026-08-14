@@ -36,7 +36,6 @@ from _paths import SOLUTION_TEMPLATES
 from dbml_sharepoint.analysis.conditions import normalise
 from dbml_sharepoint.analysis.group_description import description_budget
 from dbml_sharepoint.analysis.icons import FLEET_ICONS
-from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 from dbml_sharepoint.analysis.list_description import (
     DESCRIPTION_LIMIT,
     MARKER_GROWTH_RESERVE,
@@ -44,6 +43,7 @@ from dbml_sharepoint.analysis.list_description import (
     marker_for,
     note_budget,
 )
+from dbml_sharepoint.analysis.role_definition_description import level_description_budget
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, available_solutions
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
@@ -1870,9 +1870,11 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
     `SP.RoleDefinition.Description` refuses over 512 characters at deploy
     phase 1.2, before any list exists (see `limits.MAX_ROLE_DEFINITION_DESCRIPTION`).
     Nothing in the build guards a hand-written mapping against it, so the
-    shipped catalogue is pinned here instead of left to review. A level
-    carries no provenance marker, unlike a group, so this checks the raw
-    ceiling only.
+    shipped catalogue is pinned here instead of left to review. The deploy
+    appends a provenance marker to every level description it writes, so
+    this checks against `level_description_budget`, the composed string's
+    budget, rather than the raw ceiling -- the same tightening the group
+    sweep above already makes.
 
     A sweep over an empty catalogue would pass on `not offenders` alone with
     nothing checked, so the family and level counts are asserted non-zero
@@ -1885,20 +1887,21 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
     for template in templates:
         loaded = _load(template)
         assert loaded.mapping.permissions is not None
+        family = family_for(loaded.schema)
         levels = loaded.mapping.permissions.levels
         if levels:
             families_with_levels += 1
         for lvl in levels:
             levels_checked += 1
-            if len(lvl.description) > MAX_ROLE_DEFINITION_DESCRIPTION:
+            budget = level_description_budget(family)
+            if len(lvl.description) > budget:
                 offenders.append(
-                    f"{template}/{lvl.name}: {len(lvl.description)} > "
-                    f"{MAX_ROLE_DEFINITION_DESCRIPTION}",
+                    f"{template}/{lvl.name}: {len(lvl.description)} > {budget}",
                 )
     assert templates, "no templates discovered, the sweep visited nothing"
     assert families_with_levels, "no family declares a level, the sweep visited nothing"
     assert levels_checked, "no levels discovered, the sweep visited nothing"
-    assert not offenders, "level descriptions over ceiling:\n" + "\n".join(offenders)
+    assert not offenders, "level descriptions over budget:\n" + "\n".join(offenders)
 
 
 def test_no_two_templates_declare_the_same_entity_name() -> None:

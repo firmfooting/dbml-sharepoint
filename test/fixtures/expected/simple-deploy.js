@@ -777,7 +777,8 @@
         "high": "0",
         "low": "2049"
       },
-      "description": "Test permission level.",
+      "description": "Test permission level. Provisioned by dbml-sharepoint from simple-test.",
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test.",
       "name": "Schema Manager"
     }
   ],
