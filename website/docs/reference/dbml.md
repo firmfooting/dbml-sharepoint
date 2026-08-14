@@ -82,8 +82,8 @@ pack](../artifacts/reporting.md#the-provenance-marker).
 
 ### The budget, and why a long note is refused rather than truncated
 
-A SharePoint list Description holds 255 characters, so the note's budget
-is what the marker leaves:
+This tool budgets a list Description at 255 characters, so the note's
+budget is what the marker leaves:
 
 ```
 255 − len(marker) − 1 (the separating space) − 32 (reserved, below)
@@ -91,8 +91,17 @@ is what the marker leaves:
 
 Around 190 characters for a typical family, and the exact number depends
 on the family and entity names — a longer `Project` name shortens every
-note under it. Exceeding it is `entity_note_too_long_for_marker`, also an
+note under it. Exceeding it is `entity_note_too_long_for_marker`, an
 error.
+
+**255 is this tool's budget, not a SharePoint limit.** It is what the
+emitter has always applied, and the same 2026-08-14 probe that measured
+the round trip wrote **1018 characters and read all of them back
+intact** — so SharePoint accepts a good deal more. The budget is kept
+deliberately rather than raised on the strength of one measurement:
+whether a longer Description survives the *list settings UI*, the search
+index and the reporting pack unchanged is a separate question nobody has
+asked. Raising it is tracked, not assumed.
 
 **The note is refused; the marker is never cut.** This is the whole point
 of the rule and it is worth being explicit about why, because truncating

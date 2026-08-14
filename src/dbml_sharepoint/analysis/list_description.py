@@ -20,6 +20,18 @@ survives a rename of the list.
 from dbml_sharepoint.model.parser import Schema
 
 # The list Description budget the emitter has always applied.
+#
+# THIS TOOL'S BUDGET, NOT A SHAREPOINT LIMIT, and the difference is now
+# measured rather than assumed. `test/manual/list-description-probe.js` wrote
+# 1018 characters on 2026-08-14 and read all of them back intact, so the
+# platform accepts a good deal more than this. Documentation that called 255 a
+# SharePoint limit was wrong and has been corrected.
+#
+# Kept at 255 anyway. One measurement establishes that a long Description
+# survives a REST write and read; it says nothing about whether the list
+# settings UI, the search index or the reporting pack carry it unchanged, and
+# every one of those reads this string. Raising it is a deliberate change with
+# its own evidence to gather, not a consequence of this one.
 DESCRIPTION_LIMIT = 255
 
 # The discovery marker. It is a sentence, not a tag, because it sits at the
