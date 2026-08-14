@@ -57,9 +57,28 @@ is not used here. Run everything by hand with `uv run prek run --all-files`.
 you need `--pdb`, deterministic ordering, or readable output from one test —
 `uv run pytest -n0 test/test_joins.py`.
 
+## Writing style
+
+- No em dashes. Use commas, parentheses, or a new sentence.
+- Banned phrases: "load-bearing", "worth stating plainly", "full stop",
+  "carry the argument", "the trap", "isn't just X — it's Y".
+- No punchy fragments for drama. Write complete sentences.
+- Do not build to a turn of phrase. State the claim directly.
+- Technical documentation, not marketing copy.
+- Comments explain why, in one line. No paragraph-length comments.
+- Write no new documentation unless explicitly asked. Regenerating a committed
+  reference, and correcting a page the change has made wrong, are part of the
+  change rather than new documentation.
+
+This applies to everything you write: code comments, docstrings, commit
+messages, pull request titles and bodies, issues, and the docs under
+`website/`. It does not apply retroactively. Existing prose predates the rule
+and a repo-wide rewrite would bury real changes in noise, so fix the lines you
+are already touching.
+
 ## Commits and merging
 
-**The PR title is load-bearing, not cosmetic.** This repository squash-merges and
+**The PR title matters, and is not cosmetic.** This repository squash-merges and
 the PR title becomes the commit subject on `main`. `release-please` cuts the
 changelog by parsing those subjects, so a non-conventional title contributes
 *nothing* to the release notes — silently. The release still happens, the code
@@ -94,8 +113,9 @@ it (`gh stack`), so each layer keeps its own title and its own changelog entry.
   change among the noise. Both committed-output generators were fixed (they go
   through `generate_api.write_page` and an explicit `newline="\n"`), as were
   the shipped bundle artifacts (`bundle.write_artifact`). **Use those helpers
-  rather than `write_text` when adding a writer** — the trap is per-call-site,
-  so the next one reintroduces it. If you do see phantom drift, diagnose it
+  rather than `write_text` when adding a writer**, because the defect is
+  per-call-site and the next writer reintroduces it. If you do see phantom
+  drift, diagnose it
   with `git diff --ignore-cr-at-eol` and `git checkout --` the files that come
   back empty. Note `git status` can also report a file modified from a stale
   stat cache alone; if `git diff` is empty for it there is no real change.
