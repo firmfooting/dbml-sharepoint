@@ -17,6 +17,24 @@
     // Id because the adoption gate below reads it; selecting Id alone would
     // give the gate nothing to test. Shared with the create path's Id
     // fallback, so both ask SharePoint the identical question.
+    //
+    // OPEN QUESTION, 2026-08-15: whether $filter=Name eq '...' matches
+    // case-sensitively is not documented on Microsoft Learn and was not one
+    // of the ten questions test/manual/role-definition-probe.js asked. If it
+    // is case-sensitive, a site level named 'schema manager' reads as absent
+    // against a declared 'Schema Manager', so this probe returns no rows,
+    // the create path runs, and the adoption gate below never sees the
+    // existing level. That is NOT a gate fail-open: nothing is written to
+    // the existing level, which is the same behaviour as before this
+    // branch. The residual is real, though: the create either collides with
+    // the existing level and errors, or leaves two case-variant levels in
+    // place, and _acls.js.j2's resolveRoleDefId, which resolves a level by
+    // name through its own getbyname call, then binds whichever one
+    // SharePoint's name resolution picks. The group path further below in
+    // this file was given nameSet/hasName for exactly this hazard, at the
+    // site-group enumeration; this path has no equivalent, because it is
+    // not yet known whether one is needed. A question for the next
+    // test/manual/role-definition-probe.js run.
     async function probeLevelExistence(name) {
       const resp = await fetchWithRetry(apiUrl(`web/roledefinitions?$select=Id,Description&$filter=Name eq '${odataName(name)}'`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
