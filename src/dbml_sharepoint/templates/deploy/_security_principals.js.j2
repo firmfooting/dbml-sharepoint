@@ -52,7 +52,16 @@
           throw new Error('Role assignment enumeration returned an invalid response');
         }
         for (const row of json.d.results) {
-          const bindings = row.RoleDefinitionBindings && row.RoleDefinitionBindings.results;
+          // Verbose is expected to render an expanded navigation property as
+          // `{ results: [...] }`. That is inferred from _acls.js.j2's own
+          // expanded reads under verbose, not measured here: R9
+          // (role-definition-probe.js) probed this same URL under
+          // odata=nometadata, whose shape differs. Tolerating a bare array
+          // too, like the probe's own bindingsOf, means a wrong inference
+          // only degrades the refusal message below; an unreadable row still
+          // throws rather than counting as clean.
+          const raw = row.RoleDefinitionBindings;
+          const bindings = Array.isArray(raw) ? raw : (raw && raw.results);
           if (!Array.isArray(bindings)) {
             // A row whose bindings cannot be read is usage this cannot see.
             // R9 took the same position and recorded NOT ESTABLISHED rather

@@ -2433,6 +2433,36 @@ def test_a_permission_level_base_permissions_the_tenant_did_not_store_fails_clos
     assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_freshly_created_level_base_permissions_the_tenant_did_not_store_fails_closed() -> None:
+    """The two drop-field tests above only drive the MERGE (adopt) branch.
+    `verifyLevelSettings` is called separately after CREATE, and deleting
+    that call left every other test in this file green: the create-body
+    assertion in `test_a_permission_level_created_fresh_is_stamped` does not
+    move when the post-create read-back is skipped.
+
+    `roleDefState`'s untouched default for a never-seen name already has
+    BasePermissions.Low '0', which differs from the fixture's declared
+    '2049' on its own, so no override of the declared value is needed here
+    to make the drop observable, unlike the MERGE-path test above it.
+    """
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_ABSENT = false;",
+        "const ROLE_DEF_ABSENT = true;",
+    ).replace(
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = null;",
+        "const ROLE_DEF_DROP_FIELD_ON_WRITE = 'Low';",
+    )
+    summary, calls, _ = _run_group_verify_deploy(_deploy_js(), harness)
+    assert _role_def_create_writes(calls), "the create POST never happened"
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "BasePermissions" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
 def test_no_reader_no_enrolment_code() -> None:
     """Opt-in: the code path must not exist unless asked for.
 
