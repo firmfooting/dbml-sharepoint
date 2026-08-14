@@ -9,10 +9,10 @@ expiry).
 inductions get skipped for "temporary" staff, and the first time anyone
 checks is after the incident. A register makes the two questions instant:
 *who is currently covered for X?* and *whose coverage lapses in the next
-60 days?* — per record, filterable, exportable for the auditor.
+60 days?*, per record, filterable, exportable for the auditor.
 
 **Deploys with:** seven views (a catalogue grouped by category, the
-mandatory subset, the never-expires audit, and — on records — coverage by
+mandatory subset, the never-expires audit, and (on records) coverage by
 person, the 60-day sweep window, coverage by course and the expired list),
 sectioned forms on both lists, expiry dates that turn red past due, three
 save rules, and eleven demo rows including a lapse and its refresher as
@@ -29,4 +29,4 @@ the two separate rows the register insists on.
 | 5 | `50-govern/` | Mandatory-training matrix, expiry monitoring, evidence rules |
 
 **Customisation points:** `Category` enum; whether staff record their own
-completions (default: no — coordinators do, because records = evidence).
+completions (default: no, coordinators do, because records = evidence).

@@ -1,7 +1,7 @@
 # RACI matrix
 
 Who does the work, who answers for it, who must be asked and who must be
-told — one row per activity, with the accountability held by exactly one
+told: one row per activity, with the accountability held by exactly one
 named person.
 
 The matrix is three lists. **Activity** holds one row per thing that gets
@@ -17,13 +17,13 @@ than discouraged by a document: a row cannot carry two Accountables, a team
 cannot be made Responsible, and a party cannot be Consulted anonymously.
 
 **The value case.** Most RACI matrices are built in a workshop, drawn as a
-wide grid in a spreadsheet, laminated, and dead within six months — because
+wide grid in a spreadsheet, laminated, and dead within six months, because
 a grid is a document and an organisation is not. This one is a live
 register: it is read-only to everyone and maintained centrally, every row
 carries a re-confirmation date driven by how critical the activity is,
 and a row anybody believes is wrong can be flagged in one edit and shows up
 gold in the default view until somebody deals with it. The question it
-answers — *who is accountable for this?* — is one every organisation is
+answers (*who is accountable for this?*) is one every organisation is
 asked in an audit, an incident review and an accreditation, and one most
 answer from memory.
 
@@ -45,18 +45,18 @@ gives.
 | `RACI_Involvement` | `Title`, `Activity`, `Party`, `Involvement`, `Channel`, `Notes` |
 
 `ConfirmationDue` is the only calculated column and is read-only. It is
-`LastConfirmed` plus the interval `Criticality` sets — **Statutory 6 months,
-High 12, Routine 24** — and it goes blank on a retired activity, because
+`LastConfirmed` plus the interval `Criticality` sets (**Statutory 6 months,
+High 12, Routine 24**) and it goes blank on a retired activity, because
 nobody needs to re-confirm work that has stopped. Past due it turns red with
 a warning icon, and that escalation is suppressed on a retired row.
 
-**Eleven declared views**, deployed with the paste — nothing to build by
+**Eleven declared views**, deployed with the paste; nothing to build by
 hand. On Activity: *Current* (the default), *My accountabilities*,
 *Confirmation due*, *Decisions and approvals* (grouped by the forum that
-owns them) and *Retired*. On Involvement: *By activity* (the default — this
+owns them) and *Retired*. On Involvement: *By activity* (the default: this
 is the matrix as it is normally drawn), *By party*, and *Consultation load*,
 which is grouped by party rather than by activity because the failure it
-exists to reveal — one party made Consulted on everything — is invisible in
+exists to reveal (one party made Consulted on everything) is invisible in
 any activity-first view. On Party: *Active parties* (the default), *By kind*
 and *Retired parties*.
 
@@ -73,7 +73,7 @@ the two views driven by that date are not guaranteed to scale past the
 list-view threshold without redesigning it as a persisted field.
 
 **Three save rules on Activity.** A Decision must carry an escalation
-route, and so must anything Statutory — both are cross-column rules and so
+route, and so must anything Statutory. Both are cross-column rules and so
 share the list's single validation message. The third reads only its own
 column and keeps a message of its own: `LastConfirmed` is required and
 refuses a date in the future. The escalation-route field appears on the
@@ -85,13 +85,13 @@ never refuses a save while naming a field the author cannot see.
 | Step | Folder | You |
 | --- | --- | --- |
 | 1 | `10-design/` | Fit `Domain` to how your organisation divides work |
-| 2 | `20-configure/` | Prefix; **the confirmation cadence lives here** — changing it recalculates every row |
+| 2 | `20-configure/` | Prefix; **the confirmation cadence lives here**, changing it recalculates every row |
 | 3 | `30-deploy/` | Administrator: build, paste, verify, **then seed `Party` first** |
 | 4 | `40-adopt/` | The staff guide: the four letters, the five failure modes, and what this register is not for |
 | 5 | `50-govern/` | Review cadence, the departed-person workflow, the two checks SharePoint cannot enforce |
 
 **Read the staff guide before rolling this out**, and not only because
-staff need it. It is where the method itself lives — what Responsible and
+staff need it. It is where the method itself lives: what Responsible and
 Accountable mean in a Task versus an Approval versus a Decision, why RACI
 governs execution and has no decider (so a team using one to *make* a
 decision deadlocks, and wants DACI or RAPID instead), and the honest
@@ -101,7 +101,7 @@ modes anyway.
 
 **Customisation points:** the `Domain` enum; the three intervals in the
 `ConfirmationDue` formula in `mapping.yaml` (read the change-control section
-of `50-govern/governance.md` first — changing one recalculates every
+of `50-govern/governance.md` first; changing one recalculates every
 existing row, and shortening one makes rows overdue the moment the paste
 finishes); the `involvement_channel` list, which should name the meetings
 and reports your organisation actually has; and how wide `RACI Matrix
@@ -109,7 +109,7 @@ Maintainers` should be, which the governance file sets out as a real choice
 with a cost either way.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes eighteen rows titled with `[DEMO]` followed by a space — six
+that pastes eighteen rows titled with `[DEMO]` followed by a space: six
 parties covering all four
 kinds plus a disbanded forum, six activities including an overdue Statutory
 one flagged *Needs review* and a retired one, and six involvements, three of

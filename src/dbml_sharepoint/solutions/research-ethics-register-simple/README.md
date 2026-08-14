@@ -20,7 +20,7 @@ where somebody starts recruiting who should not, and it is invisible unless
 something watches. This register watches: two independent status columns, two
 form sections, a calculated **Site Readiness** column that collapses the pair
 into one answer, and a row wash on the one combination that is genuinely
-dangerous — a project that has started here (*Underway*, or *Closed to
+dangerous: a project that has started here (*Underway*, or *Closed to
 recruitment* having been Underway first) with no site authorisation.
 
 ## Why one list, and what that costs
@@ -33,18 +33,18 @@ ship that, for a reason measured on a live tenant rather than assumed.
 attribute; the calculated-column workaround that community guidance
 recommends is refused past 5,000 items; and the target list's own default
 view filter is ignored by the picker. All three were tested and all three are
-closed — see *SharePoint cannot filter a lookup* in the tool's
+closed: see *SharePoint cannot filter a lookup* in the tool's
 `reference/mapping.md`.
 
 A project register is an **accumulator**: it only grows. By year three, an
 amendment form's project picker offers every long-closed project alongside
 the live one, and staff cannot find theirs. This is not the 5,000-item
-threshold — 5 to 30 new projects a year never approaches it. It is picker
+threshold: 5 to 30 new projects a year never approaches it. It is picker
 usability, and there is no fix inside a list schema.
 
 The insight the design turns on: **filtering works everywhere in SharePoint
 except a lookup picker.** Remove the child lists and the accumulation problem
-becomes one SharePoint solves well — a default view filtered to live
+becomes one SharePoint solves well: a default view filtered to live
 projects. That is what *Project Stage* and the **Live projects** view do, and
 they are load-bearing rather than housekeeping.
 
@@ -68,22 +68,22 @@ concurrent projects with frequent amendments, or one with its own research
 office and a reporting obligation across a portfolio. That shape is a project
 list with an amendment list and a progress-report list joined by Lookups, and
 it answers the portfolio questions this one cannot. If that is you, take the
-picker problem knowingly — curate the parent list, or build the picker
+picker problem knowingly: curate the parent list, or build the picker
 outside a list schema. This template will not pretend the lookup can be
 filtered.
 
 ## What you get
 
-Six views that **deploy with the list**: *Live projects* (the default —
+Six views that **deploy with the list**: *Live projects* (the default,
 closed work filtered away), *Ready to start here*, *Ethics cleared, not
 authorised*, *Response required*, *Reports due soon* and *Archive*. The
 two gates are two Choice columns and two form sections, never merged.
 `SiteReadiness` is calculated from both and costs no join, because both live
 on this one list. Build with `--seed` and six demo rows show every view and
-every colour working before you type a thing — one of them deliberately
+every colour working before you type a thing, one of them deliberately
 wrong, so you can watch the register catch it.
 
-**Project metadata only. No participant data at any grain** — not names, not
+**Project metadata only. No participant data at any grain**: not names, not
 identifiers, not recruitment counts. See `50-govern/governance.md`.
 
 **Work the folders in order:**
@@ -99,5 +99,5 @@ identifiers, not recruitment counts. See `50-govern/governance.md`.
 **Customisation points:** the `ethics_pathway` and `authorisation_status`
 members, to match your partner committee's and your own vocabulary; the
 sixty-day window on *Reports due soon*; and the amendment-count data bar's
-maximum. Delegations, fees and turnaround times are policy, not schema — see
+maximum. Delegations, fees and turnaround times are policy, not schema. See
 `50-govern/governance.md`.

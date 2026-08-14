@@ -13,13 +13,13 @@ monthly view instead of an anecdote, and produces exactly what ombudsmen,
 accreditors and boards ask for. Front-line staff record; handlers respond;
 trends surface.
 
-**A deliberate privacy posture**: ordinary site members get **no access** —
+**A deliberate privacy posture**: ordinary site members get **no access**;
 complaints identify people. Recorders can submit; handlers manage. Widen
 deliberately, not by default.
 
-**What deploys with it:** five views — *Open by handler* (the default,
+**What deploys with it:** five views: *Open by handler* (the default,
 grouped and collapsed), *Triage*, *Unacknowledged*, *Closed last 30 days*
-and *The learning shelf* — a five-section form that asks a recorder only
+and *The learning shelf*; a five-section form that asks a recorder only
 what a recorder can answer, save rules that refuse an item moved past
 Received with no acknowledgement date and a closure with no outcome, and
 six demo items behind `--seed`.
@@ -38,5 +38,5 @@ six demo items behind `--seed`.
 the SLA table in governance (regulated sectors: put your statutory
 timeframes in). Note that `Status` and `Outcome` members are named inside
 deployed view filters, form rules and the save rule, and that the SLA
-table sets the two day-count bars' scales — `30-deploy/deploy.md` lists
+table sets the two day-count bars' scales: `30-deploy/deploy.md` lists
 both couplings before you build.

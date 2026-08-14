@@ -1,4 +1,4 @@
-# Incident management — governance
+# Incident management: governance
 
 ## Ownership
 
@@ -6,13 +6,13 @@
 | --- | --- | --- |
 | Process owner | *(e.g. quality/safety/ops manager)* | Triage SLA, severity definitions, trend review, this document |
 | IN Incident Handlers | The response team | Triage, resolution, corrective actions |
-| All staff | — | Reporting what they see |
+| All staff | n/a | Reporting what they see |
 
-## Sector note — healthcare (and other regulated sectors)
+## Sector note: healthcare (and other regulated sectors)
 
 This register is for **corporate and non-clinical** incidents. Clinical
 incidents belong in your mandated clinical-incident system
-(VHIMS/RiskMan-class in Victorian health; equivalents elsewhere) — never
+(VHIMS/RiskMan-class in Victorian health; equivalents elsewhere), never
 here. Where a corporate incident touches a clinical event, record the
 corporate substance and reference the clinical system's identifier; no
 patient-identifiable detail enters this list. See
@@ -20,7 +20,7 @@ patient-identifiable detail enters this list. See
 
 The seeded demo data holds nothing clinical, for the same reason.
 
-## Severity definitions (edit to your context — then keep the enum in sync)
+## Severity definitions (edit to your context; then keep the enum in sync)
 
 | Severity | Meaning | Triage SLA |
 | --- | --- | --- |
@@ -31,7 +31,7 @@ The seeded demo data holds nothing clinical, for the same reason.
 
 `Critical` is the one severity with a row-level signal: an open Critical
 incident washes its whole row in the default view. That is deliberate
-scarcity — one signal, reserved for the state that should interrupt
+scarcity: one signal, reserved for the state that should interrupt
 somebody's day. Renaming the member disables the wash silently, so keep the
 enum and the mapping in step.
 
@@ -65,7 +65,7 @@ enum and the mapping in step.
 are listed here rather than left to be discovered by somebody trying:
 
 - **Rule 1, every incident past Reported has a Handler.** SharePoint
-  validation formulas cannot reference person columns at all — not as an
+  validation formulas cannot reference person columns at all: not as an
   operand, not as a null test. The structural half is that Handler is off
   the New form entirely, so it is a triage act by construction; the rest is
   the daily triage review.
@@ -76,28 +76,28 @@ are listed here rather than left to be discovered by somebody trying:
 - **A cancelled action says why in its Notes.** Notes is rich text, which
   validation formulas cannot reference either.
 
-## The "edit own report" question — honest options
+## The "edit own report" question: honest options
 
-SharePoint permission levels cannot grant "edit *your own* items only" —
-that's an item-level setting, not a level. Your options:
+SharePoint permission levels cannot grant "edit *your own* items only".
+That's an item-level setting, not a level. Your options:
 
-1. **This template's default**: reporters cannot edit after submission —
+1. **This template's default**: reporters cannot edit after submission:
    strongest evidential integrity; corrections go through handlers.
 2. Site owners may enable the list's *item-level permissions* setting
    ("Create items and edit items that were created by the user") manually
-   in List settings → Advanced — reporters can then amend their own reports.
+   in List settings → Advanced. Reporters can then amend their own reports.
    Deliberately not automated: it changes evidential meaning, so it should
    be an explicit governance decision recorded here.
 
 ## Data-quality rules
 
-1. Every incident past Reported has a `Handler`. **Not enforceable — see
+1. Every incident past Reported has a `Handler`. **Not enforceable: see
    above.**
 2. `Resolved` requires `ResolvedDate` (**enforced at save**); `Closed`
-   requires all linked actions terminal (**not enforceable — the By
+   requires all linked actions terminal (**not enforceable: the By
    incident view is the control**).
-3. Reporter wording in `Detail` is never edited — handlers append.
-4. Every corrective action names one person, not a team. Not enforceable —
+3. Reporter wording in `Detail` is never edited. Handlers append.
+4. Every corrective action names one person, not a team. Not enforceable.
    `AssignedTo` is required, but a shared account satisfies a required
    field as happily as a person does.
 

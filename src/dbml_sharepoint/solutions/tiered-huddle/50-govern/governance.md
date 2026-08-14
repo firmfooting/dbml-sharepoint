@@ -1,4 +1,4 @@
-# Tiered huddle boards — governance
+# Tiered huddle boards: governance
 
 ## Ownership
 
@@ -7,9 +7,9 @@
 | Tier 1 chair (per team) | `Chair` on `TH_Tier1Board` | A row every working day; escalating what the team cannot fix |
 | Tier 2 chair (per department or service) | `Chair` on `TH_Tier2Board` | The same, plus acting on Tier 1 escalations and delegating what belongs below |
 | Tier 3 chair (site or executive) | `Chair` on `TH_Tier3Board` | The same, plus the site view and the Tier 4 relationship |
-| Stream lead (per reporting stream) | — | That stream reporting every day it is meant to; explaining a run of blanks |
+| Stream lead (per reporting stream) | n/a | That stream reporting every day it is meant to; explaining a run of blanks |
 | Every escalation owner | `Owner` | Status truthfulness and delivery |
-| Site Owners | — | Group membership, deploys, the stream lifecycle |
+| Site Owners | n/a | Group membership, deploys, the stream lifecycle |
 
 ## The cadence that makes this work
 
@@ -29,7 +29,7 @@
 
 Set by `Priority`, measured from `RaisedDate`, and owned by the tier named in
 `TargetTier`. Adjust these to your organisation before you publish this
-document — they are a starting position, not a standard.
+document. They are a starting position, not a standard.
 
 | Priority | Target tier acknowledges | Target date agreed by |
 | --- | --- | --- |
@@ -49,11 +49,11 @@ failure mode this list exists to prevent.
 
 Nothing here moves an escalation between tiers automatically. `Direction`,
 `RaisedAtTier` and `TargetTier` record the journey, and a re-raised item is a
-new row that names the old one in `Notes` — the deployer provisions
+new row that names the old one in `Notes`. The deployer provisions
 structure, not process automation. If you want the movement automated, that
 is a Power Automate flow over the deployed lists.
 
-## Stream lifecycle — why it is a governed act
+## Stream lifecycle: why it is a governed act
 
 Adding or retiring a reporting stream changes what the organisation says it
 watches. It is a board decision, recorded like any other, and then a
@@ -65,7 +65,7 @@ sets, the column formatting, and the board's form body under
 history: the columns leave every view and the new-item form, their titles
 gain " (retired)", and every past value stays readable and stays in the
 reporting bundle. Deleting the column would throw away the record of what the
-organisation used to watch — which is exactly the question an auditor asks.
+organisation used to watch, which is exactly the question an auditor asks.
 
 **The declaration stays in `schema.dbml`.** Deleting it leaves a live column
 the schema no longer declares, which the `_UserAddedColumns.pq` drift audit
@@ -83,16 +83,16 @@ Nothing links; a lookup can target only one list and would couple five lists
 together for no gain.
 
 **Escalation to action.** When an escalation stops being a daily-huddle item
-and becomes tracked work — it needs a project, a budget line, or a committee
-decision — the receiving forum raises it as an `MA_ActionItem` against the
+and becomes tracked work (it needs a project, a budget line, or a committee
+decision), the receiving forum raises it as an `MA_ActionItem` against the
 `MA_Meeting` that accepted it. The escalation stays open until that forum
 confirms receipt, then moves to *Resolved* (or *Returned to tier* if the
 forum declined it) with the `Resolution` naming the meeting and date. One
 sentence, so the trail is followable by a human without a join.
 
 **Action to board.** When a meeting produces an action that needs daily
-visibility — a recovery plan, a temporary control, a change everyone must
-follow — the owner raises it as a *Delegated down* escalation on
+visibility (a recovery plan, a temporary control, a change everyone must
+follow), the owner raises it as a *Delegated down* escalation on
 `TH_Escalation` against the tier that must act, and the relevant stream note
 carries it on the board until it is done. The `MA_ActionItem` stays the
 system of record for delivery; the board carries the daily visibility.
@@ -103,7 +103,7 @@ system of record for delivery; the board carries the daily visibility.
    are impossible by construction.
 2. A non-Green status carries a note. A Green does not need one.
 3. `OverallStatus` is the chair's call and may legitimately disagree with the
-   stream columns — a disagreement is a conversation, not a defect.
+   stream columns, a disagreement is a conversation, not a defect.
 4. Every escalation has one named person as `Owner`. Never a team, never a
    role with no incumbent.
 5. Resolutions say what was done, not that something was "actioned".
@@ -117,5 +117,5 @@ board are worthless) and 100 on `TH_Escalation`, where the edit trail is the
 audit trail.
 
 Export before decommissioning. Never run `rollback.js.txt` against a site holding
-real rows — it is for a failed first provision on an empty site, and for
+real rows. It is for a failed first provision on an empty site, and for
 clearing demo data.

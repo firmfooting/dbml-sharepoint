@@ -9,7 +9,7 @@ Shared procedure: [`templates/README.md`](../../README.md) with
 - [ ] The reporting streams in `10-design/schema.dbml` are yours, not the
       shipped placeholders. Renaming a stream after deploy is a manual
       SharePoint operation; renaming it now is a text edit.
-- [ ] First deploy? Delete the shipped retirement example — the
+- [ ] First deploy? Delete the shipped retirement example: the
       `EnvironmentStatus` / `EnvironmentNote` pair in `Tier3Board` and the
       `retired_columns:` block in `mapping.yaml`. It is there to show the
       mechanism, and there is no history to preserve on a site that has
@@ -23,14 +23,14 @@ Shared procedure: [`templates/README.md`](../../README.md) with
 - [ ] The huddle chairs are site Members. The security model gives Members
       and Owners Contribute; nobody needs a bespoke group.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `TH_Tier1Board`, `TH_Tier2Board`, `TH_Tier3Board` and `TH_Escalation`
       exist.
 - [ ] Each board opens on **Last 14 days** and shows the status columns
       without the note columns.
 - [ ] Create a board row for today, then try to create a second row with the
-      same date — SharePoint refuses it. `BoardDate` is unique; that is the
+      same date. SharePoint refuses it. `BoardDate` is unique; that is the
       one-row-per-day guarantee.
 - [ ] On a new board row, **Stood down reason** is not shown while
       **Huddle held** is *Held*, and appears the moment you change it. It is
@@ -43,11 +43,11 @@ Shared procedure: [`templates/README.md`](../../README.md) with
       Wrap-up**, not one flat scroll.
 - [ ] Set a stream status to Red and check the grid renders it as
       SharePoint's severe box with an icon. Clear it again and check the cell
-      goes blank and grey — that grey cell is the unreported signal.
+      goes blank and grey. That grey cell is the unreported signal.
 - [ ] If you kept the retirement example: `Environment Status (retired)` and
       `Environment Note (retired)` are absent from every view and from the
       **new**-item form, and present on an existing item. That asymmetry is
-      the whole point — retirement stops collection without hiding history.
+      the whole point. Retirement stops collection without hiding history.
 - [ ] On `TH_Escalation`, set Status to *Resolved* and save with `Resolution`
       empty. Expected refusal: **"Resolving or closing an escalation needs a
       resolution and a resolved date."**
@@ -64,7 +64,7 @@ Shared procedure: [`templates/README.md`](../../README.md) with
 - [ ] Delete the test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete this
-      list"; a display-name rename is still possible — it is drift, reverted
+      list"; a display-name rename is still possible. It is drift, reverted
       and reported at the next re-paste.
 
 ## Optional: the seeded demonstration build
@@ -85,7 +85,7 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt` first,
 then `demo-data.js.txt`, from the same bundle. It creates a fortnight of Tier 3
-board rows ending today and six escalations — enough that every declared view
+board rows ending today and six escalations, enough that every declared view
 has content.
 
 **Delete the demo rows before active use.** Every demo Title begins with
@@ -97,12 +97,12 @@ already holds real records.
 ## The stream lifecycle
 
 Streams change: functions merge, move between tiers, or stop reporting. Both
-operations are ordinary redeploys — the deployer unseals for its own run and
+operations are ordinary redeploys. The deployer unseals for its own run and
 re-seals afterwards.
 
 ### Adding a stream
 
-Worked example — adding **Wellbeing** to the Tier 1 board.
+Worked example: adding **Wellbeing** to the Tier 1 board.
 
 1. `10-design/schema.dbml`, in `Table Tier1Board`, beside the other stream
    pairs:
@@ -114,7 +114,7 @@ Worked example — adding **Wellbeing** to the Tier 1 board.
 
 2. `20-configure/mapping.yaml`, in `field_sets.Tier1Board`: add
    `WellbeingStatus` to `statuses` and `WellbeingNote` to `notes`. Every view
-   that references those sets picks the columns up — you do not touch
+   that references those sets picks the columns up. You do not touch
    `views:` at all.
 
 3. Same file, in `column_formatting.Tier1Board`:
@@ -139,7 +139,7 @@ genuinely unreported on those days, and the grid says so.
 
 ### Retiring a stream
 
-Worked example — Tier 3 folds **Environment** into **Facilities**. This one
+Worked example: Tier 3 folds **Environment** into **Facilities**. This one
 is shipped, so you can read the result in `mapping.yaml` rather than imagine
 it:
 
@@ -161,14 +161,14 @@ Bump `schema_version`, rebuild, re-paste. What that one block does:
 - the columns leave every declared view;
 - they leave the **New** form, so nobody is asked to fill them in again;
 - they stay on the edit and display forms, so the history is readable and
-  correctable — the modern display form follows the edit form, and the two
+  correctable. The modern display form follows the edit form, and the two
   cannot be separated, so "readable but not editable" is not a state
   SharePoint has. Add `hide_existing: true` if you want them gone from
   those forms as well;
 - their display titles gain `" (retired)"`;
 - every value ever recorded stays in the list and in the reporting bundle.
 
-You do not touch `field_sets` — a retired column named in a set is stripped
+You do not touch `field_sets`. A retired column named in a set is stripped
 rather than rejected, though the build tells you it did so. Removing the
 names yourself keeps the declaration honest, and this template does.
 
@@ -177,14 +177,14 @@ render in colour wherever the column is still shown.
 
 The form body in `20-configure/formatting/tier3-form-body.json` is the other
 place worth a hand tidy. A retired name left in a **Streams** section is
-stripped by the build, with a warning naming it — harmless, but the warning
-is telling you the file no longer describes the form.
+stripped by the build, with a warning naming it. That is harmless, but the
+warning is telling you the file no longer describes the form.
 
 ### Do NOT delete the retired columns from `schema.dbml`
 
 This is the trap, and it is worth stating plainly. Deleting the declaration
 does not delete anything on the site. It leaves a live, visible, deletable
-column that the schema no longer declares — and the generated
+column that the schema no longer declares, and the generated
 `_UserAddedColumns.pq` drift audit then reports it as a user-added column on
 **every refresh, forever**. That audit is only worth running because any row
 in it means "investigate". One wrongly deleted declaration is enough to
@@ -203,20 +203,20 @@ schema change and always warrants the bump.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
-family. The group starts empty only if no family has deployed to the site yet;
-it gains a member when any family's build is run with `--enterprise-reader
-<account>`, which enrols exactly that one account and nothing else.
-`rollback.js.txt` does not remove it: rollback deletes lists, not site groups
-or role assignments, so the group and any account enrolled in it survive a
-rollback.
+The deploy declares the `dbml Enterprise Readers` site group, shared with
+every other family deployed to the site, and grants it `Read` on every list in
+this family. The group starts empty only if no family has deployed to the site
+yet; it gains a member when any family's build is run with
+`--enterprise-reader <account>`, which enrols exactly that one account and
+nothing else. `rollback.js.txt` does not remove it: rollback deletes lists,
+not site groups or role assignments, so the group and any account enrolled in
+it survive a rollback.
 
 A later build that omits the flag does not put the group back to empty:
-enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
-membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+enrolment only runs when `--enterprise-reader` is given, so an account
+enrolled by an earlier build, of this family or any other sharing the site,
+keeps its membership and its `Read` grant on every list it was declared
+against. Removing it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -229,8 +229,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
-enumeration are still unverified, so the end-to-end path (Power BI or any
-other API client) is not yet proven. See the danger block in the mapping
-reference's Security section.
+`Use Remote Interfaces` intact at web scope. Publishing sites, where lockdown
+mode is on by default, and the reporting client's own list enumeration are
+still unverified, so the end-to-end path (Power BI or any other API client) is
+not yet proven. See the danger block in the mapping reference's Security
+section.

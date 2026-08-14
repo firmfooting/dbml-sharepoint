@@ -1,8 +1,8 @@
-# Tiered huddle boards — staff guide
+# Tiered huddle boards: staff guide
 
 ## The chair's 90 seconds (every day, straight after the huddle)
 
-1. Open your board list. It opens on **Last 14 days** — that grid is your
+1. Open your board list. It opens on **Last 14 days**: that grid is your
    wall chart. Click **New**.
 2. **Board date** today, **Chair** you, **Huddle held** = Held.
 3. Walk the streams in the order they reported. For each one: a status, and a
@@ -16,21 +16,21 @@
 6. Save.
 
 If the huddle did not happen, still create the row: set **Huddle held** to
-*Stood down* or *Cancelled*. A **Stood down reason** box appears — the list
+*Stood down* or *Cancelled*. A **Stood down reason** box appears: the list
 will not let you save without filling it in. A missing row tells nobody
 anything; a stood-down row with a reason tells them everything.
 
 ## What the colours actually mean
 
-- **Green** — reported, and nothing needs anyone else.
-- **Amber** — reported, and something needs attention **at this tier**. You
+- **Green**: reported, and nothing needs anyone else.
+- **Amber**: reported, and something needs attention **at this tier**. You
   are handling it; you are telling the room so nobody is surprised tomorrow.
-- **Red** — reported, and this tier cannot fix it today. A Red should
+- **Red**: reported, and this tier cannot fix it today. A Red should
   normally have an escalation against it.
-- **Not applicable** — nothing to report by design (a stream that only
+- **Not applicable**: nothing to report by design (a stream that only
   reports weekly, a function that is closed for the period). Deliberate, and
   different from blank.
-- **Blank** — the stream **did not report**. Not a pass. The grey cell is the
+- **Blank**: the stream **did not report**. Not a pass. The grey cell is the
   record of a gap, and a run of grey in one column is a conversation to have
   with that stream's lead.
 
@@ -64,7 +64,7 @@ a tier that only ever sends things up.
 - Cannot make the date? Change it and say why in **Notes**. A moved date with
   a reason beats a silently overdue row.
 - Resolving something: set Status to *Resolved*, and the list will insist on a
-  **Resolution** and a **Resolved date**. One line is enough — say what was
+  **Resolution** and a **Resolved date**. One line is enough: say what was
   actually done, not that it was "actioned".
 - Sent something up and got it back? That is *Returned to tier*, not Closed.
   It is a real outcome and it should be visible.
@@ -72,8 +72,8 @@ a tier that only ever sends things up.
 ## A column marked "(retired)"
 
 A stream that has stopped reporting keeps its columns, with *(retired)* in
-the title. You will not be asked for it on a new board — it is gone from the
-form — but you can still read what it said on older rows. Nothing was
+the title. You will not be asked for it on a new board (it is gone from the
+form), but you can still read what it said on older rows. Nothing was
 deleted, and nothing needs to be.
 
 ## What NOT to do

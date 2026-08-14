@@ -1,4 +1,4 @@
-# Service requests — governance
+# Service requests: governance
 
 ## Ownership
 
@@ -8,7 +8,7 @@
 | Queue lead (per category) | A named person per team | Their queue's hygiene and turnaround |
 | SR Service Teams | The working group | Working the queues honestly |
 
-## Turnaround targets (edit to your reality — then publish them)
+## Turnaround targets (edit to your reality; then publish them)
 
 | Priority | Accepted within | Completed within |
 | --- | --- | --- |
@@ -16,7 +16,7 @@
 | Normal | 2 business days | 10 business days |
 | Low | 5 business days | 20 business days |
 
-Targets are promises to staff — set ones you can keep. The **Turnaround**
+Targets are promises to staff. Set ones you can keep. The **Turnaround**
 view is where you find out whether you did, with one caveat worth knowing
 before you build a report on it: it shows a **rolling ninety days**, not a
 calendar month. See "What the report can and cannot tell you" below.
@@ -30,12 +30,12 @@ calendar month. See "What the report can and cannot tell you" below.
 | The list | A request set to **Completed** or **Declined** must have both a Completed Date and a Resolution |
 
 That last one is data-quality rule 1 below, and until this template's
-uplift nothing enforced it — a completed request with no date has no
+uplift nothing enforced it. A completed request with no date has no
 turnaround, and it is invisible in the only view that measures the team.
 The refusal names all of it in one message, because SharePoint gives a
 list exactly one validation formula and one message.
 
-Everything else here is a **governance check** — a habit or a review, not
+Everything else here is a **governance check**, a habit or a review, not
 something the platform refuses:
 
 - **Declines say where to go instead.** `Resolution` is required at
@@ -52,20 +52,20 @@ something the platform refuses:
 
 ## Triage rules
 
-- Queue leads may re-set Priority (with a word in Resolution) — requesters
+- Queue leads may re-set Priority (with a word in Resolution). Requesters
   propose, teams dispose.
-- Wrong category: re-categorise, don't bounce — the request moves queues
+- Wrong category: re-categorise, don't bounce. The request moves queues
   invisibly to the requester.
 - Anything that's really a **change** (new spend, new capability, policy)
-  gets Declined with a pointer to the change-register — the two templates
+  gets Declined with a pointer to the change-register. The two templates
   are designed to hand off to each other.
 
 ## Monitoring
 
-- **Weekly** (queue leads): the **Waiting** view — everything waiting has
+- **Weekly** (queue leads): the **Waiting** view: everything waiting has
   a reason and a next step in `Resolution`; nothing hides there.
 - **Monthly** (service owner): the **Turnaround** view, grouped by
-  category — volumes, day-counts against targets, decline rate. Chronic
+  category: volumes, day-counts against targets, decline rate. Chronic
   misses are a resourcing conversation with data, not a blame conversation
   with vibes.
 
@@ -74,8 +74,8 @@ something the platform refuses:
 Two limits, both deliberate, both stated here so a monthly pack is not
 built on a misunderstanding:
 
-- **It is a rolling ninety days, not a calendar month.** CAML — the filter
-  language SharePoint views are written in — has no calendar-month or
+- **It is a rolling ninety days, not a calendar month.** CAML, the filter
+  language SharePoint views are written in, has no calendar-month or
   calendar-quarter predicate; `today-90` is what exists. On the first
   business day of a month the two answers differ noticeably.
 - **The mean turnaround is on the screen.** The view groups by category,
@@ -89,11 +89,11 @@ built on a misunderstanding:
 
 1. No Completed without Completed Date + Resolution. **Enforced at save.**
 2. Declines always say why and where to go instead.
-3. Requests are never deleted — Declined and Completed are the terminal
+3. Requests are never deleted. Declined and Completed are the terminal
    states; the history is the demand data.
 
 ## Lifecycle
 
-Turnaround history is your demand evidence for budget bids — keep at least
+Turnaround history is your demand evidence for budget bids. Keep at least
 two years. Export before decommission; never run `rollback.js.txt` against
 real rows.

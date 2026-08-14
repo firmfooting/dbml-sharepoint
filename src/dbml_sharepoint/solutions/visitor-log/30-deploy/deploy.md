@@ -14,8 +14,8 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
       the New-item form for self-service (both work with nothing extra).
 - [ ] The paper book has a cutover date.
 - [ ] `VisitorType` matches the classes of person who actually arrive at
-      your front door. Two of its members — **Contractor** and **Student /
-      placement** — are what make the *Induction sighted* tick appear on
+      your front door. Two of its members, **Contractor** and **Student /
+      placement**, are what make the *Induction sighted* tick appear on
       the form, so renaming or removing them changes the form as well as
       the enum. Decide **before first deploy**.
 - [ ] The header shows `Visit: <name>` on a saved row and `New visit`
@@ -39,10 +39,10 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
-first, then `demo-data.js.txt`, from the same bundle. It creates six visits —
+first, then `demo-data.js.txt`, from the same bundle. It creates six visits:
 three people still on site (one of them signed in yesterday, so *Never
 signed out* has a row), a contractor with an induction ticked, a student
-placement, and completed visits — enough that all four declared views have
+placement, and completed visits, enough that all four declared views have
 content.
 
 **Delete the demo rows before active use.** Every demo Title begins with
@@ -51,7 +51,7 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real visits.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `VI_Visit` exists and all four declared views appear: **On site now**
       (the default), **Signed in today**, **Contractors on site**, **Never
@@ -59,7 +59,7 @@ site that already holds real visits.
       **All Items** recovery view is hidden from the modern view bar
       because this template has an authored default.
 - [ ] **Open *On site now* on a phone, signed in, before you rehearse the
-      muster procedure.** It is the default view, so the list opens on it —
+      muster procedure.** It is the default view, so the list opens on it,
       but the warden who will use it at the assembly point should have done
       that once on their own device, in advance, rather than for the first
       time in the rain.
@@ -68,7 +68,7 @@ site that already holds real visits.
       knowing:
       - **Signed in today** filters `SignedInAt ≥ today`, not `= today`.
         CAML's `<Today/>` is midnight, so an equality test on a *datetime*
-        column matches only a sign-in stamped at exactly 00:00 — the
+        column matches only a sign-in stamped at exactly 00:00. The
         promised view would have been permanently empty.
       - **Never signed out** filters `SignedInAt < today`, which is
         "before midnight this morning" rather than "more than 24 hours
@@ -76,8 +76,8 @@ site that already holds real visits.
         00:01, which is what a morning tidy-up wants.
 - [ ] List Settings → Indexed columns shows `SignedInAt`, `VisitorType`
       and `VisitLocation`. The build manifest lists the same three.
-- [ ] The New form shows three sections — **Who is visiting**, **On site**
-      and **Induction** — each holding the fields named in
+- [ ] The New form shows three sections: **Who is visiting**, **On site**
+      and **Induction**, each holding the fields named in
       `20-configure/formatting/visit-form-body.json`.
 - [ ] The form reacts as you fill it in. On a New form, **Signed Out At**
       is absent: nobody signs out at the moment they arrive, and it appears
@@ -87,12 +87,12 @@ site that already holds real visits.
       was ticked.
 - [ ] Save rules: a **Signed In At** dated next month is refused with its
       own message, and so is a future **Signed Out At**. Both allow any
-      time up to the moment you save — each formula compares against
+      time up to the moment you save. Each formula compares against
       `NOW()`, so the refusal bites within the hour rather than at
       midnight. If it refuses a sign-in stamped a few minutes ago, the rule
       has been edited back to a whole-day bound.
 - [ ] Two rules this register wants are **not** enforced at save, by
-      construction rather than by omission — `50-govern/governance.md` says
+      construction rather than by omission; `50-govern/governance.md` says
       what carries them instead:
       - a sign-out earlier than its own sign-in (a column-to-column
         comparison, which the condition grammar does not express);
@@ -108,7 +108,7 @@ site that already holds real visits.
 - [ ] Delete the test row.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## Redeploying
@@ -117,20 +117,20 @@ Bump `schema_version`, rebuild, re-paste.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
-family. The group starts empty only if no family has deployed to the site yet;
-it gains a member when any family's build is run with `--enterprise-reader
-<account>`, which enrols exactly that one account and nothing else.
-`rollback.js.txt` does not remove it: rollback deletes lists, not site groups
-or role assignments, so the group and any account enrolled in it survive a
-rollback.
+The deploy declares the `dbml Enterprise Readers` site group, shared with
+every other family deployed to the site, and grants it `Read` on every list in
+this family. The group starts empty only if no family has deployed to the site
+yet; it gains a member when any family's build is run with
+`--enterprise-reader <account>`, which enrols exactly that one account and
+nothing else. `rollback.js.txt` does not remove it: rollback deletes lists,
+not site groups or role assignments, so the group and any account enrolled in
+it survive a rollback.
 
 A later build that omits the flag does not put the group back to empty:
-enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
-membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+enrolment only runs when `--enterprise-reader` is given, so an account
+enrolled by an earlier build, of this family or any other sharing the site,
+keeps its membership and its `Read` grant on every list it was declared
+against. Removing it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -143,8 +143,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
-enumeration are still unverified, so the end-to-end path (Power BI or any
-other API client) is not yet proven. See the danger block in the mapping
-reference's Security section.
+`Use Remote Interfaces` intact at web scope. Publishing sites, where lockdown
+mode is on by default, and the reporting client's own list enumeration are
+still unverified, so the end-to-end path (Power BI or any other API client) is
+not yet proven. See the danger block in the mapping reference's Security
+section.

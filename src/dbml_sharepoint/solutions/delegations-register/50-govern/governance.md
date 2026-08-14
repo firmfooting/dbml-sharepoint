@@ -1,4 +1,4 @@
-# Delegations register — governance
+# Delegations register: governance
 
 ## Ownership
 
@@ -11,11 +11,11 @@
 ## The one iron rule: the register transcribes, never creates
 
 Authority lives in the formally approved instrument of delegation. The
-register is its searchable mirror — loaded clause by clause, in the
+register is its searchable mirror, loaded clause by clause, in the
 instrument's own wording, with the clause reference on every row. No row
 exists without a clause; no clause change lands without a row change
 (same week). Where transcription exposes ambiguity in the instrument,
-that's recorded as an instrument issue for the next formal review — the
+that's recorded as an instrument issue for the next formal review. The
 register never "clarifies" authority on its own.
 
 ## Instrument change workflow
@@ -25,9 +25,9 @@ register never "clarifies" authority on its own.
    with the new clause wording and ApprovedDate; removed authorities →
    Status **Superseded** with the supersession noted; new authorities
    added. **The list now refuses to save a Superseded row with an empty
-   `Notes`** — step 2 is the one step of this workflow that is enforced
+   `Notes`**. Step 2 is the one step of this workflow that is enforced
    rather than remembered.
-3. The *History* view preserves what authority existed when — which is
+3. The *History* view preserves what authority existed when, which is
    exactly what an auditor reconstructing an old approval needs. It
    deploys with the list, filtered to Superseded and sorted by
    `ApprovedDate` descending, with `Notes` beside each row.
@@ -38,15 +38,15 @@ Delegations attach to roles, so acting appointments carry them **only
 when the acting arrangement is formal** (an instrument or policy that
 says acting = full delegations, or a specific acting instrument). Record
 your organisation's rule here: ______. Informal "watching the shop"
-carries nothing — the register's *By role* view is only truthful if
+carries nothing. The register's *By role* view is only truthful if
 acting rules are.
 
 ## Review cycle
 
 - **Annually** (or per your governance calendar): the delegating
-  authority reviews the instrument; the register review rides along —
+  authority reviews the instrument; the register review rides along:
   every Current row's clause still exists, every ReviewDate resets.
-- **Quarterly** (register owner): the *Reviews due* view — it deploys with
+- **Quarterly** (register owner): the *Reviews due* view, which deploys with
   the list, filtered to Current rows due inside a **rolling** ninety days
   (CAML has no calendar-quarter predicate, so it is ninety days from
   whenever you open it, not "this quarter"). Spot-check five rows against
@@ -54,7 +54,7 @@ acting rules are.
 
 ## Data-quality rules
 
-1. Role names match your org structure's current titles — a delegation
+1. Role names match your org structure's current titles. A delegation
    to a role that no longer exists is flagged at every review.
 2. Limits and conditions are verbatim, not paraphrased.
 3. Superseded rows are never deleted.
@@ -64,7 +64,7 @@ acting rules are.
 One step of the instrument-change workflow is now refused at save. The
 three data-quality rules above are not, and cannot be.
 
-**Enforced at save — SharePoint rejects the row:**
+**Enforced at save, SharePoint rejects the row:**
 
 | Rule | Where it lives | Message shown |
 | --- | --- | --- |
@@ -73,17 +73,17 @@ three data-quality rules above are not, and cannot be.
 
 The supersession rule is a cross-column rule, so it takes the list's single
 `ValidationFormula`. The future-date rule reads only its own column, so it
-lives there and keeps a message of its own — which is why it can say
+lives there and keeps a message of its own, which is why it can say
 something specific rather than sharing a sentence with an unrelated check.
 
-**Still a governance check — nothing stops a wrong entry:**
+**Still a governance check, nothing stops a wrong entry:**
 
 - **Rule 1, role-not-person.** `RoleHolder` is free text and no formula can
   tell "Director of Nursing" from "Jane Chen". This is the register's most
   important editorial rule and it is entirely unenforceable; the quarterly
   five-row verbatim spot-check is the control.
 - **Rule 2, verbatim limits and conditions.** A save rule can prove text
-  exists. It cannot prove the text matches the instrument — the register
+  exists. It cannot prove the text matches the instrument. The register
   cannot read the instrument, which is why the form header links to it.
 - **Rule 3, never deleting a superseded row.** Deletion is a permission
   question, not a validation question: ordinary members read only, and
@@ -96,12 +96,12 @@ something specific rather than sharing a sentence with an unrelated check.
 
 **What the colours do, which is not enforcement but is useful.**
 `ReviewDate` escalates to red once past, and the escalation is suppressed
-on Superseded rows — a review date on an authority nobody holds is not a
+on Superseded rows. A review date on an authority nobody holds is not a
 deadline, and a date that keeps shouting after the row is finished trains
 people to ignore the colour everywhere else.
 
 ## Lifecycle
 
-The history IS the value — retain permanently (it decodes every historical
+The history IS the value: retain permanently (it decodes every historical
 approval). Export before decommission; never run `rollback.js.txt` against
 real rows.

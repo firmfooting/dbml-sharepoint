@@ -21,7 +21,7 @@ below passes.
       consistent.
 - [ ] Name one register owner and a small curator group. Curators are the
       only people who see `ServiceIssue`.
-- [ ] Agree the escalation threshold before anyone logs anything — the shipped
+- [ ] Agree the escalation threshold before anyone logs anything. The shipped
       default is *past Response Due Date, chased twice or more, still
       unresolved*. governance.md explains why, so you can move it deliberately.
 - [ ] Confirm `SE_` is free on the target site.
@@ -61,11 +61,11 @@ at all):
    read-own item-level filtering, and turning it on would break it: it filters
    Curators too, and the **Needs review** queue is by construction made of
    rows Curators did not create. A contributor seeing a colleague's event is
-   not a leak here — the sensitive list is `SE_ServiceIssue`, and they cannot
+   not a leak here. The sensitive list is `SE_ServiceIssue`, and they cannot
    open it.
 3. Leave **Create and Edit access** on **Create and edit all items**. A
-   contributor still cannot alter a saved record — which is what makes the
-   record worth having — because the assigned `SE Log Only` level withholds
+   contributor still cannot alter a saved record (which is what makes the
+   record worth having) because the assigned `SE Log Only` level withholds
    Edit outright. The permission level carries that property, so the
    item-level setting is not needed to buy it and would only strip Curators of
    the updates they are asked to make.
@@ -79,10 +79,10 @@ at all):
 8. User A adds a follow-up against event A; User B adds one against event B.
    `SE_FollowUp` carries the same grant and the same claim in the checklist,
    so testing only the event list would leave half the gate unverified.
-9. Verify neither user can edit or delete **any of the four rows** — their own
+9. Verify neither user can edit or delete **any of the four rows**, their own
    included. That refusal is the whole point of the group. Verify a Curator
    can open and update all four.
-10. Verify **neither test user can open `SE_ServiceIssue` at all** — not the
+10. Verify **neither test user can open `SE_ServiceIssue` at all**: not the
     list, not a view, not an item.
 11. Remove the test rows and users. Only now add real contributors.
 
@@ -94,8 +94,8 @@ configuration changes.
 
 Add `--seed` to the build command. `demo-data.js.txt` creates fifteen rows: six
 events, five follow-ups and four themes, all prefixed `[DEMO]`. They tell one
-deliberately mundane, sector-neutral story — a recurring access-provisioning
-failure, chased four times, escalated, partly remedied — and are chosen so
+deliberately mundane, sector-neutral story (a recurring access-provisioning
+failure, chased four times, escalated, partly remedied) and are chosen so
 every declared view returns something and every formatted column is seen to
 render, including an event marked **Not substantiated**.
 
@@ -111,7 +111,7 @@ Delete the rows before go-live.
       **dbml List Administrators** and **dbml Enterprise Readers** hold declared
       direct grants on `SE_ServiceEvent` and `SE_FollowUp`. Associated Site
       Members and Site Owners have no declared list grant on any of the three.
-- [ ] **`SE_ServiceIssue` grants nothing to Contributors** — only Curators
+- [ ] **`SE_ServiceIssue` grants nothing to Contributors**: only Curators
       (Contribute), Administrators (Full Control) and dbml Enterprise Readers
       (`Read`).
 - [ ] Contributors hold `SE Log Only`; Curators hold Contribute;
@@ -132,7 +132,7 @@ Delete the rows before go-live.
       and the theme lookup are absent.
 - [ ] With **Event Nature** on *Single occurrence*, **Response Due Date** and
       **Last Followed Up** do not appear. Change it to *Unactioned request or
-      ticket* and both appear — on the New form, not only on a saved record,
+      ticket* and both appear: on the New form, not only on a saved record,
       because the person logging the request is the one who knows when a
       response was promised and cannot edit afterwards.
 - [ ] **Resolved Date** and **Outcome for us** appear whatever the Event
@@ -146,7 +146,7 @@ Delete the rows before go-live.
       directions: a date with no outcome, and an outcome of *Resolved
       satisfactorily*, *Resolved after escalation* or *Worked around locally*
       with no date. *Partially resolved*, *Unresolved* and *Recurred after
-      resolution* need no date — they are the honest state of an open row.
+      resolution* need no date. They are the honest state of an open row.
 - [ ] **An event that happened earlier today saves, and one stamped an hour
       from now is refused.** `Occurred At` is a datetime and its rule is
       `NOW()`, not a whole-day bound, so the refusal should bite within the
@@ -194,7 +194,7 @@ Delete the rows before go-live.
       cadence rather than when a review is imminent.
 - [ ] The escalation threshold is written down and known to the curators.
 - [ ] **Curators** know that `Last Followed Up` on the event is carried across
-      as part of the weekly chase — it is the template's one hand-maintained
+      as part of the weekly chase. It is the template's one hand-maintained
       link, a contributor can only have set it when the event was created, and
       the **By event** view is how you check it.
 
@@ -210,8 +210,8 @@ platform constraint rather than by choice:
 - a theme's *Response received*, *Remedy agreed* and closure stages require
   their **dates** but not their narrative text.
 
-Each stage is gated on its date instead, which is the closest honest proxy —
-you cannot record a response date without having had a response. The
+Each stage is gated on its date instead, which is the closest honest proxy.
+You cannot record a response date without having had a response. The
 narrative expectations are carried by the form notes and by the review cadence
 in governance.md. Every save message claims only what its formula actually
 enforces.
@@ -226,8 +226,8 @@ Deletion protection is UI friction, not authority to destroy data.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group (shared with every
+other family deployed to the site) and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -237,9 +237,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build (of this family or any other sharing the site) keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -252,8 +252,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites (where
+lockdown mode is on by default) and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

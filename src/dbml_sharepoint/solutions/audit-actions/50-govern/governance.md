@@ -1,4 +1,4 @@
-# Audit actions — governance
+# Audit actions: governance
 
 ## Ownership
 
@@ -15,7 +15,7 @@ A recommendation closes only when the evidence, on its own, would satisfy
 the **next** auditor that the action happened:
 
 - a changed *thing* (policy published, control configured, report produced)
-  — linked, not described;
+  linked, not described;
 - dated after the recommendation, attributable, and retained where the
   auditor can be shown it;
 - for behavioural actions (training, new practice): the records that show
@@ -36,16 +36,16 @@ as Closed.
 
 - **Weekly** (coordinators): the *Overdue* view worked and chases logged,
   then the *Awaiting evidence* view read. Both deploy with the list.
-  *Overdue* filters on the **committed** date — the revised one where a
-  formal extension exists, the original where it does not — so a properly
+  *Overdue* filters on the **committed** date (the revised one where a
+  formal extension exists, the original where it does not) so a properly
   extended recommendation drops out of the queue and an unextended one
   does not.
 - **Per committee cycle**: the *Committee pack* view, plus
-  *Closed, last 90 days* with DaysLate — the committee sees lateness as a
+  *Closed, last 90 days* with DaysLate: the committee sees lateness as a
   number, not an adjective. Note the ninety days is a **rolling** window
   rather than a calendar quarter: CAML has no calendar-period predicate,
   and the two differ on the first day of a quarter.
-- **Annually**: aged-item review — anything open past 12 months is either
+- **Annually**: aged-item review: anything open past 12 months is either
   re-committed with a real plan or taken to Risk accepted honestly.
 
 ## Data-quality rules
@@ -59,7 +59,7 @@ as Closed.
 ## What the lists enforce, and what this document does
 
 Rule 2 is half enforced. The `ClosedDate` requirement is a save rule, on
-**both** endings — *Risk accepted* is an ending too, and the closure
+**both** endings: *Risk accepted* is an ending too, and the closure
 report filters on that date, so an accepted recommendation without one
 would leave every queue and never reach the committee. The `EvidenceUrl`
 requirement cannot be a save rule, and the reason is worth reading before
@@ -70,7 +70,7 @@ a validation formula that references one is refused outright, with a
 message that names the cause: *"One or more column references are not
 allowed, because the columns are defined as a data type that is not
 supported in formulas."* That is established against a live tenant rather
-than reasoned about — the probe is
+than reasoned about: the probe is
 `test/manual/hyperlink-validation-operand-probe.js`.
 
 Nor does such a rule fail quietly: it fails the **paste**, at the
@@ -80,12 +80,12 @@ operand, which turns a failed deploy into a failed build.
 The requirement itself stands. It is a closure criterion below, a
 verification step in `30-deploy/deploy.md`, and the **Closed, last 90
 days** view displays `EvidenceUrl` so that an empty one is visible to the
-committee reading it. That is the compensating control, and — given
-SharePoint's answer — the only one available.
+committee reading it. That is the compensating control and, given
+SharePoint's answer, the only one available.
 
 Rules 1 and 3 cannot be enforced at save either.
 
-**Enforced at save — SharePoint rejects the row:**
+**Enforced at save: SharePoint rejects the row:**
 
 | Rule | List | Where it lives |
 | --- | --- | --- |
@@ -104,7 +104,7 @@ guards against negative ranges by returning 0, so a recommendation closed
 "next month" would have reported as **closed on time**, silently, on that
 same number.
 
-**Still a governance check — nothing stops a wrong entry:**
+**Still a governance check: nothing stops a wrong entry:**
 
 - **Rule 2's recorded authority for a *Risk accepted* ending.** It lives in
   `Notes`, which is rich text, and a validation formula cannot reference a
@@ -131,7 +131,7 @@ been read back from a live tenant. `30-deploy/deploy.md` has a checklist
 item that tests it on the first row you close. Until you have run that,
 treat the closure-evidence standard as a governance check.
 
-**What the colours do.** *Implemented - awaiting evidence* is amber — the
+**What the colours do.** *Implemented - awaiting evidence* is amber: the
 action is reported done and nobody has checked it. *Risk accepted* is grey.
 Only *Closed* is green. `FindingRating` carries the report's own severity
 in the same four colours the risk register uses, and `DaysLate` takes its
@@ -140,6 +140,6 @@ do not look the same to a committee.
 
 ## Lifecycle
 
-The register is assurance evidence — retain long (align with your audit
+The register is assurance evidence: retain long (align with your audit
 retention schedule). Export before decommission; never run `rollback.js.txt`
 against real rows.

@@ -14,7 +14,7 @@ follow.
 - [ ] You know who forms **TR Training Coordinators**.
 - [ ] Decide your sweep window. The template ships **60 days**, in the
       `Expiring 60 days` view's `today+60`. Widen it if your refreshers
-      take longer to book than they do to run — the number is in
+      take longer to book than they do to run. The number is in
       `20-configure/mapping.yaml`, once, and the view title says it so
       nobody has to guess which window they are looking at.
 - [ ] Each header shows `Course: <name>` / `Training record: <title>` on a
@@ -51,7 +51,7 @@ Two things the demo deliberately does not do:
   Link one by hand on any demo row to see the column work.
 - **Every record belongs to the person who pasted it.** Demo person
   columns resolve to the operator, so the *By person* view demonstrates as
-  one group. That is the mechanism, not a defect — the grouping is real,
+  one group. That is the mechanism, not a defect: the grouping is real,
   there is simply one person in the sample.
 
 **Delete the demo rows before active use.** Every demo Title begins with
@@ -60,7 +60,7 @@ duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content. Do not seed a site that already holds
 real records.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `TR_Course` and `TR_TrainingRecord` exist, catalogue created first.
 - [ ] All three **Course** views appear: **Catalogue** (the default,
@@ -71,7 +71,7 @@ real records.
       **Expired**. If you seeded, none of the seven is empty. The
       generated **All Items** recovery view is hidden from the modern view
       bar on both lists, because each has an authored default.
-- [ ] **Seed the catalogue** — enter your required courses/certifications
+- [ ] **Seed the catalogue**: enter your required courses/certifications
       with their `ValidityMonths` before any records; the record form's
       Course dropdown reads from it.
 - [ ] The Course form shows **The course**, **Requirement and validity**
@@ -85,7 +85,7 @@ real records.
       change it to something the sweep has not decided yet.
 - [ ] An expiry date in the past renders with the severe treatment and a
       warning icon. Set that record's Status to **Expired** and the date
-      goes plain — the chip carries the signal from there, and two of them
+      goes plain. The chip carries the signal from there, and two of them
       shouting is how people learn to stop reading the colour.
 - [ ] Save rules, all three:
       - A course with **Validity Months** of `0` or a negative number is
@@ -97,7 +97,7 @@ real records.
 - [ ] Populate **TR Training Coordinators**; delete the test record.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ### What is not enforced at save
@@ -108,11 +108,11 @@ the second of which is the real one: the build has no verified evidence
 that a URL column can be an operand in a SharePoint validation formula,
 and *linked* is not *sighted* in any case. A rule that passes on a link to
 the wrong document buys nothing and costs the coordinator a save. It stays
-a quarterly spot-check — see `50-govern/governance.md`.
+a quarterly spot-check, see `50-govern/governance.md`.
 
 ## Note on expiry status
 
-`Status` is **not** self-updating — SharePoint calculated columns cannot
+`Status` is **not** self-updating. SharePoint calculated columns cannot
 reference "today", so the template deliberately leaves status maintenance to
 the coordinators' weekly sweep (see `50-govern/governance.md`) or to a small
 scheduled automation you add later. The `ExpiryDate` index keeps either
@@ -125,8 +125,8 @@ formatting and save rules reconciled to the declaration.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group, shared with every
+other family deployed to the site, and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -136,9 +136,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build, of this family or any other sharing the site, keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual. Clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -151,8 +151,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites, where
+lockdown mode is on by default, and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

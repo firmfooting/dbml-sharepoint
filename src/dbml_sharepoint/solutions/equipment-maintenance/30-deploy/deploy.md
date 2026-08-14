@@ -20,7 +20,7 @@ follow.
       `Result`. Renaming one changes behaviour, not just wording. Decide
       **before first deploy**.
 - [ ] If you also run the **asset-register** template: decide the boundary
-      now — asset-register owns *what/where/whose*; this owns *is it in
+      now: asset-register owns *what/where/whose*; this owns *is it in
       test*. Same physical tag string in both keeps them joinable by eye.
 - [ ] The Equipment header shows `Item: <title>` on a saved row and `New
       maintained item` before the title is typed, updating live.
@@ -28,7 +28,7 @@ follow.
 ## Optional: the seeded demonstration build
 
 **Read this one before you seed.** The *Overdue* view's target state on a
-live register is **empty** — that is the whole point of the register, and
+live register is **empty**. That is the whole point of the register, and
 governance treats anything appearing there as work to be done or explained
 within five business days.
 
@@ -36,8 +36,8 @@ The seeded build deliberately breaks that goal, and it should. A view that
 demonstrates empty teaches the adopter it does not work; the first time
 anyone should see *Overdue* populate must not be the first time a real
 infusion pump is out of test. So the demo data ships **one genuinely
-overdue item** — a pump eighteen days past its annual service and still in
-service — which is simultaneously the clinical exposure this register is
+overdue item**, a pump eighteen days past its annual service and still in
+service, which is simultaneously the clinical exposure this register is
 bought for and the only way to see the view, the red date and the severity
 colour render together.
 
@@ -56,8 +56,8 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
 first, then `demo-data.js.txt`, from the same bundle. It creates five
-maintained items — one overdue and in service, one falling due inside
-sixty days, one comfortably ahead, one failed and withdrawn, one retired —
+maintained items (one overdue and in service, one falling due inside
+sixty days, one comfortably ahead, one failed and withdrawn, one retired)
 and five service records covering every result.
 
 The demo events carry **no evidence link**. A SharePoint URL column takes
@@ -71,19 +71,19 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds a real schedule.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `EM_Equipment` and `EM_MaintenanceEvent` exist (Equipment first).
 - [ ] `EM_Equipment` has **The schedule** (the default), **Overdue**,
       **Due 60 days** and **Out of service**. `EM_MaintenanceEvent` has
       **Service history** (the default), **Failures** and **Actions
-      arising**. If you seeded, none is empty — including *Overdue*, on
+      arising**. If you seeded, none is empty, including *Overdue*, on
       purpose; see above. The generated **All Items** recovery view is
       hidden from the modern view bar on both lists.
 - [ ] **What replaced "Per item".** The old recommended-views table asked
       for the service history of one item, and named accreditors and
-      insurers as its readers. A static view cannot filter to one parent —
-      building it meant hard-coding an item into a filter that rots, or
+      insurers as its readers. A static view cannot filter to one parent.
+      Building it meant hard-coding an item into a filter that rots, or
       one view per item. It ships as **Service history**: one view grouped
       on the Equipment lookup, collapsed. It is also the **default** on
       that list, because the audience governance names should not have to
@@ -94,12 +94,12 @@ site that already holds a real schedule.
       view means *still in use and out of test*, which is the clinical and
       legal exposure. An item already withdrawn is overdue too, and it is
       in **Out of service**, where somebody is already looking.
-- [ ] Create a test item (unique `EquipmentTag` enforced — try a
+- [ ] Create a test item (unique `EquipmentTag` enforced, try a
       duplicate); record an event against it (Equipment lookup offers it;
       PerformedBy and Result required).
 - [ ] Set a test item's `Next Due Date` in the past while it is **In
       service**: the date turns red with a warning icon and the row appears
-      in *Overdue*. Set `Status` to **Retired** and the red goes away — the
+      in *Overdue*. Set `Status` to **Retired** and the red goes away. The
       guard names Retired only, so an item **Out of service** with a passed
       due date keeps shouting. That is intended: it is arguably the most
       urgent row in the register.
@@ -107,12 +107,12 @@ site that already holds a real schedule.
       is refused (an interval of zero is a schedule that never advances),
       and an event dated in the future is refused. The MaintenanceEvent
       list refuses a **Passed with actions** or **Failed** event with no
-      **Notes** — the actions and the reason have to land somewhere.
+      **Notes**. The actions and the reason have to land somewhere.
 - [ ] Two things this register wants that are **not** enforced at save,
       and `50-govern/governance.md` explains both:
       - **Evidence on every event.** A URL column is a compound value and
         SharePoint validation formulas cannot read one.
-      - **"An in-service item has a future-or-today Next Due Date"** —
+      - **"An in-service item has a future-or-today Next Due Date"**:
         governance's own data-quality rule 1. As a save rule it would
         refuse to *store* an overdue item, which is the exact state the
         Overdue view exists to surface and the one a real register must be
@@ -120,17 +120,17 @@ site that already holds a real schedule.
         fix it.
 - [ ] The Equipment New form shows **The item**, **The schedule** and **In
       service**; the event form shows **The work**, **Outcome** and
-      **Evidence**. Neither form has conditional fields, by design — every
+      **Evidence**. Neither form has conditional fields, by design. Every
       column on either list is true of the row from the moment it is
       created.
 - [ ] As an ordinary Member: read-only.
-- [ ] **Load the schedule** — every maintained item with its real
+- [ ] **Load the schedule**: every maintained item with its real
       Next Due Date (from the current binder/contractor list). An item not
       in the register is an item not in the schedule.
 - [ ] Populate **EM Maintenance Team**; delete the test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## Redeploying
@@ -139,8 +139,8 @@ Bump `schema_version`, rebuild, re-paste.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group, shared with every
+other family deployed to the site, and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -150,9 +150,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build, of this family or any other sharing the site, keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -165,8 +165,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites, where
+lockdown mode is on by default, and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

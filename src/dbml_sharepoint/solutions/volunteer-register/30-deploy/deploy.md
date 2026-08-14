@@ -15,10 +15,10 @@ follow.
       should match).
 - [ ] Check names match your jurisdiction. Two ways to do it, and they are
       not equivalent:
-      - **Re-label only** — edit `display_names.overrides.Volunteer` in
+      - **Re-label only**: edit `display_names.overrides.Volunteer` in
         `20-configure/mapping.yaml`. "WWCC Expiry" becomes "Blue Card
         Expiry" on every form and view, and nothing else moves.
-      - **Rename the column** — edit `10-design/schema.dbml`. This moves
+      - **Rename the column**: edit `10-design/schema.dbml`. This moves
         the internal name, which the indexes, the five declared views and
         the reporting bundle all bind to, so every one of them has to be
         updated with it.
@@ -48,9 +48,9 @@ dbml-sharepoint build \
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
 first, then `demo-data.js.txt`, from the same bundle. It creates six
-volunteers — three active (one fully checked, one inside the 90-day expiry
+volunteers: three active (one fully checked, one inside the 90-day expiry
 window, one with a police check that was never recorded), an applicant in
-the pipeline, one on extended leave and one exited and trimmed — so every
+the pipeline, one on extended leave and one exited and trimmed, so every
 declared view has content on the day you demonstrate it.
 
 The demo rows describe a **role**, not a person: this register holds
@@ -63,7 +63,7 @@ duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content. Do not seed a site that already holds
 real volunteers.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `VL_Volunteer` exists; `VolunteerRole` and `Coordinator` required.
 - [ ] All five declared views appear: **Active by team** (the default),
@@ -83,11 +83,11 @@ real volunteers.
 - [ ] **Start Date** is absent on the New form (Status defaults to
       Applying) and appears the moment you move Status off **Applying**.
       Move it back and the field hides again, **keeping whatever was
-      typed** — SharePoint has no mechanism to clear it, which is why the
+      typed**. SharePoint has no mechanism to clear it, which is why the
       save rule below reads the value rather than the field.
 - [ ] An expiry date in the past renders with the severe treatment and a
       warning icon; the same date on an **Exited** volunteer renders plain.
-      The guard names Exited only — an Inactive volunteer's checks are
+      The guard names Exited only. An Inactive volunteer's checks are
       still swept, because they intend to come back.
 - [ ] Save rules, both of them:
       - Set **Induction Date** to tomorrow. Refused, with its own message
@@ -96,27 +96,27 @@ real volunteers.
         empty. Refused, with the list's message.
 - [ ] As an ordinary Member: **cannot see the list**.
 - [ ] As a Coordinator: full create/edit.
-- [ ] **Load current volunteers** — including the drawer of paper: every
+- [ ] **Load current volunteers**, including the drawer of paper: every
       active volunteer with their real check expiry dates (this load is
-      where most programmes discover their first expired check — that's
+      where most programmes discover their first expired check, which is
       the register working on day one).
 - [ ] Populate **VL Volunteer Coordinators**; delete any test rows.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ### What "Missing checks" does and does not know
 
 The view this template used to *recommend* was "Status = Active and a
 required check column blank (per the role matrix)". The parenthesis is the
-part a static view cannot do — SharePoint has no way to read a table in a
+part a static view cannot do. SharePoint has no way to read a table in a
 Markdown file, so no filter can know that an op-shop volunteer needs a WWCC
 only if children are involved.
 
 What ships is deliberately **wider than the matrix**: every active
 volunteer missing *any* of police check, WWCC or induction. The coordinator
-applies the matrix to the result. Over-reporting is the safe direction — a
+applies the matrix to the result. Over-reporting is the safe direction: a
 row that turns out not to need a WWCC costs ten seconds of reading; a row
 the view never showed costs a reportable failure.
 
@@ -127,8 +127,8 @@ formatting and save rules reconciled to the declaration.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group, shared with every
+other family deployed to the site, and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -138,9 +138,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build, of this family or any other sharing the site, keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -153,8 +153,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites, where
+lockdown mode is on by default, and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

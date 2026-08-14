@@ -1,4 +1,4 @@
-# Volunteer register — governance
+# Volunteer register: governance
 
 ## Ownership
 
@@ -15,10 +15,10 @@
 | Retail / op-shop / events | Required, 3-yearly | If children involved | Required |
 | Remote/admin support | Per your policy | Per role | Required |
 
-The matrix is the **gate to Active status** — no complete checks, no
+The matrix is the **gate to Active status**. No complete checks, no
 start. Jurisdictional names differ (WWCC / Blue Card / WWVP): re-label the
 columns to yours before first deploy, not after (`display_names.overrides`
-in `20-configure/mapping.yaml` — see `30-deploy/deploy.md`).
+in `20-configure/mapping.yaml`; see `30-deploy/deploy.md`).
 
 ### What is enforced at save, and what stays a governance check
 
@@ -35,29 +35,29 @@ rather than assuming the software has your back:
 | Whether an expiring check has been chased | **Governance check** | The *Checks expiring 90 days* view is the surface; acting on it is the monthly sweep |
 
 The compensating control for the two rows that stay governance checks is
-the *Missing checks* view, which is deliberately **wider than the matrix**
-— it surfaces every active volunteer missing police check, WWCC *or*
+the *Missing checks* view, which is deliberately **wider than the matrix**.
+It surfaces every active volunteer missing police check, WWCC *or*
 induction, and the coordinator applies the matrix to the result.
 
-## Privacy (load-bearing — this register holds personal data)
+## Privacy (this register holds personal data)
 
 1. Site membership: coordinators and owners only. General staff get
    volunteer information from coordinators, not from the register.
 2. Record the minimum: check dates and numbers, not document copies;
    an emergency contact name and phone, nothing more; no health,
-   financial or family information — if a volunteer shares relevant
+   financial or family information. If a volunteer shares relevant
    health context, it's handled per your people processes, not typed
    into Notes.
 3. **Exited volunteers**: after your retention period (align with your
-   volunteer/HR policy — commonly 7 years for the fact of service, far
+   volunteer/HR policy, commonly 7 years for the fact of service, far
    less for the detail), trim rows to name, role, dates; clear check
    numbers, emergency contact and Notes.
-4. Subject access applies — coordinators handle requests with your
+4. Subject access applies. Coordinators handle requests with your
    privacy officer.
 
 ## Cadences
 
-- **Monthly**: the check-expiry sweep (the programme's core control) —
+- **Monthly**: the check-expiry sweep (the programme's core control),
   the *Checks expiring 90 days* and *Missing checks* views.
 - **Quarterly**: programme owner reviews the *Active by team* view
   (insurance and funding returns read straight off it) and the *Pipeline*
@@ -68,7 +68,7 @@ induction, and the coordinator applies the matrix to the result.
 ## Data-quality rules
 
 1. Active status is impossible without the matrix's checks recorded and
-   in date — the list enforces the induction date and the start date at
+   in date. The list enforces the induction date and the start date at
    save; coordinators certify the rest at every status change.
 2. Stand-downs for expired checks are recorded factually and kindly.
 3. Exited rows are trimmed on schedule, not hoarded.

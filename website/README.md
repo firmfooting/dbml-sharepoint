@@ -8,7 +8,7 @@ npm start          # local dev server
 npm run build      # static build into build/
 ```
 
-`docs/api/` is **generated** — do not edit those pages by hand:
+`docs/api/` is **generated**. Do not edit those pages by hand:
 
 ```bash
 uv run python scripts/generate_api.py   # from the repository root, or:

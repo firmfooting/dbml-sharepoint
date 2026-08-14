@@ -7,7 +7,7 @@ by function).
 
 **The value case.** Onboarding is the textbook multifactorial process: four
 departments, one deadline, and no single owner of the whole. When it's run
-by email, the new starter arrives to no laptop, no access, no desk — and
+by email, the new starter arrives to no laptop, no access, no desk, and
 everyone is sure someone else dropped it. This tracker gives each function
 its own group in the open-task queue, every individual a *My tasks* view
 that follows the signed-in user, the manager a per-starter checklist, and
@@ -31,5 +31,5 @@ overdue colouring, three save rules, and ten demo rows.
 | 5 | `50-govern/` | The standard task list, leavers variant, privacy notes |
 
 **Customisation points:** the `TaskFunction` enum; your standard task set
-(documented in `50-govern/governance.md` — the template deliberately ships
+(documented in `50-govern/governance.md`, the template deliberately ships
 the checklist as governance, not seed data, so you review it before use).

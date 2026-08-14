@@ -7,7 +7,7 @@ sidebar_position: 4
 
 Emitted only when the build is run with `--seed`. Creates the sample
 rows declared under the mapping's `demo_items`, so a freshly deployed
-site can be demonstrated with realistic content in seconds — and torn
+site can be demonstrated with realistic content in seconds, and torn
 down just as fast.
 
 ## The marker contract
@@ -21,7 +21,7 @@ whole contract:
   active use.
 - [rollback.js.txt](rollback.md) trusts it: a list whose items are *all*
   marked is demo-only content and is removed without the non-empty
-  refusal prompt — deploy, demonstrate, delete.
+  refusal prompt: deploy, demonstrate, delete.
 
 The build validator enforces the marker on every declared demo Title, so
 an unmarked demo row cannot be produced.

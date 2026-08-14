@@ -1,7 +1,7 @@
 # Audit actions
 
 Audit findings and the recommendations they produced, tracked to closure
-with evidence. Two lists: `AU_Audit` (each review — internal, external,
+with evidence. Two lists: `AU_Audit` (each review: internal, external,
 accreditation) and `AU_Recommendation` (linked findings/recommendations,
 each with an agreed action, owner, due date and closure evidence).
 
@@ -12,8 +12,8 @@ badly from spreadsheets. This register makes the answer a view, and
 overdue against the *committed* date (the revised one where a formal
 extension exists), the evidence-verification queue, the committee pack
 grouped by audit, and recent closures showing how late each one was.
-External auditors consistently rate recommendation-tracking maturity —
-this is the cheapest maturity point you'll ever buy.
+External auditors consistently rate recommendation-tracking maturity.
+This is the cheapest maturity point you'll ever buy.
 
 A recommendation cannot be closed without both the evidence link and the
 closure date, and `DaysLate` takes its colour from the finding's own

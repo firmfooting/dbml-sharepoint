@@ -10,8 +10,8 @@ errors) → **paste** `build/deploy.js.txt` from a Site Owner's console →
 ## Before you build
 
 - [ ] `SR_` prefix free on the target site.
-- [ ] `Category` values map 1:1 to teams that will actually work a queue —
-      a category nobody owns is a black hole with a name.
+- [ ] `Category` values map 1:1 to teams that will actually work a queue.
+      A category nobody owns is a black hole with a name.
 - [ ] **Two categories are named in the deployed views.** *Facilities
       queue* filters on `Facilities / maintenance` and *IT queue* on
       `IT / equipment`. Rename either member and its view goes empty with
@@ -47,7 +47,7 @@ dbml-sharepoint build \
 ```
 
 That bundle contains an extra file, `demo-data.js.txt`. Paste `deploy.js.txt`
-first, then `demo-data.js.txt`, from the same bundle. It creates six requests —
+first, then `demo-data.js.txt`, from the same bundle. It creates six requests:
 one per status and one per priority, with a facilities request and an IT
 request so both named queues fill, a request waiting with its reason
 stated, and two closed-out rows inside the ninety-day turnaround window.
@@ -60,7 +60,7 @@ re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real requests.
 
-## After the paste — verification checklist
+## After the paste: verification checklist
 
 - [ ] `SR_Request` exists; custom level **SR Submit Only** exists.
 - [ ] All six declared views appear: **Open by category** (the default),
@@ -73,8 +73,8 @@ site that already holds real requests.
       - The literal `*(one per category)* …` row is **not** shipped as one
         view per category. A static view cannot be generated per enum
         member, and hand-building five of them means rebuilding them every
-        time the catalogue changes. It ships as **Open by category** — one
-        view grouped on `Category`, collapsed — plus the two per-team
+        time the catalogue changes. It ships as **Open by category** (one
+        view grouped on `Category`, collapsed) plus the two per-team
         queues this template names by hand. Add a category and the grouped
         view picks it up with no work.
       - **Turnaround report** asked for completions "in month" with a
@@ -85,20 +85,20 @@ site that already holds real requests.
         there: the view totals `DaysToComplete` as a **mean**, so each
         collapsed category shows its average turnaround and the window
         shows an overall one. A mean rather than a sum, because adding up
-        day-counts answers nothing — "how long does this team take" is the
+        day-counts answers nothing. "How long does this team take" is the
         question the report exists for.
 - [ ] `Requested 2026-07-01` + `Completed 2026-07-04` →
       **Days To Complete = 3**, drawn as a bar against a 30-day scale and
       coloured from that request's **Priority**, not from its own value.
-- [ ] The New form shows five sections — **Describe the request**,
-      **Triage**, **Resolution**, **Ownership**, **System** — each holding
+- [ ] The New form shows five sections: **Describe the request**,
+      **Triage**, **Resolution**, **Ownership**, **System**, each holding
       the fields named in
       `20-configure/formatting/request-form-body.json`. **System** holds
       only `Days To Complete`; it is calculated, so it is absent from the
       New form and the section renders as a bare heading there. That is
       cosmetic and expected.
 - [ ] The form reacts as you fill it in. On a New form **Assigned To**,
-      **Completed Date** and **Resolution** are all absent — a requester
+      **Completed Date** and **Resolution** are all absent. A requester
       is never asked who will fix their screen or when it was done. On an
       existing request, set `Status` to **Waiting - parts or approval** and
       **Resolution** appears; set it to **Completed** or **Declined** and
@@ -107,14 +107,14 @@ site that already holds real requests.
 - [ ] Save rules, each with its own message: a **Requested Date** or
       **Completed Date** in the future is refused. The list rule refuses a
       request set to **Completed** or **Declined** with either the date or
-      the Resolution empty — try all three combinations.
+      the Resolution empty. Try all three combinations.
 - [ ] As an ordinary Member: submit works, editing afterwards doesn't.
 - [ ] As a Service Teams member: pick up the test request (Assigned To,
       Status), complete it.
 - [ ] Populate **SR Service Teams**; delete the test row.
 - [ ] Even as an owner: changing a deployed column's type, choices or
       settings is refused (sealed) and List settings offers no "Delete
-      this list"; a display-name rename is still possible — it is
+      this list"; a display-name rename is still possible. It is
       drift, reverted and reported at the next re-paste.
 
 ## Redeploying
@@ -123,8 +123,8 @@ Bump `schema_version`, rebuild, re-paste.
 
 ## Enterprise reporting access
 
-The deploy declares the `dbml Enterprise Readers` site group — shared with every
-other family deployed to the site — and grants it `Read` on every list in this
+The deploy declares the `dbml Enterprise Readers` site group, shared with every
+other family deployed to the site, and grants it `Read` on every list in this
 family. The group starts empty only if no family has deployed to the site yet;
 it gains a member when any family's build is run with `--enterprise-reader
 <account>`, which enrols exactly that one account and nothing else.
@@ -134,9 +134,9 @@ rollback.
 
 A later build that omits the flag does not put the group back to empty:
 enrolment only runs when `--enterprise-reader` is given, so an account enrolled
-by an earlier build — of this family or any other sharing the site — keeps its
+by an earlier build, of this family or any other sharing the site, keeps its
 membership and its `Read` grant on every list it was declared against. Removing
-it is manual — clear it in Site permissions > Groups.
+it is manual: clear it in Site permissions > Groups.
 
 If the group already holds anyone other than that account, the deploy
 **aborts before enrolling** and removes nobody. Before you clear anyone out,
@@ -149,8 +149,8 @@ the account.
 
 On one Microsoft 365 group-connected Team Site (measured 2026-08-11) the
 enrolled account ends up with the built-in `Read` on each list and
-`Use Remote Interfaces` intact at web scope. Publishing sites — where
-lockdown mode is on by default — and the reporting client's own list
+`Use Remote Interfaces` intact at web scope. Publishing sites, where
+lockdown mode is on by default, and the reporting client's own list
 enumeration are still unverified, so the end-to-end path (Power BI or any
 other API client) is not yet proven. See the danger block in the mapping
 reference's Security section.

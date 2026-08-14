@@ -1,4 +1,4 @@
-# Declarations register — governance
+# Declarations register: governance
 
 ## Ownership
 
@@ -6,13 +6,13 @@
 | --- | --- | --- |
 | Integrity owner | *(e.g. head of governance / people & culture)* | Thresholds, assessment standards, attestation, this document |
 | DR Compliance Coordinators | The maintaining group | Assessment workflow, review cadence, register hygiene |
-| Every staff member | — | Declaring early and honestly |
-| Managers | — | Participating in assessments for their people |
+| Every staff member | n/a | Declaring early and honestly |
+| Managers | n/a | Participating in assessments for their people |
 
 ## Visibility posture (record the decision)
 
 - [ ] **Open register** (deployed default): all site members read all
-      declarations — transparency as the control.
+      declarations: transparency as the control.
 - [ ] **Confidential register**: site membership restricted to the
       compliance function; staff declare via coordinators.
 
@@ -40,8 +40,8 @@ manager assess: could the interest, seen from outside, influence (or appear
 to influence) a duty? Outcomes:
 
 - **Assessed - no action**: no realistic intersection; note why.
-- **Assessed - managed**: a written `ManagementPlan` — recusal from named
-  decisions, reallocation, information barriers — with an annual
+- **Assessed - managed**: a written `ManagementPlan` (recusal from named
+  decisions, reallocation, information barriers) with an annual
   `ReviewDate`.
 
 The declarer never assesses their own declaration; managers never assess
@@ -50,12 +50,12 @@ their own reports' declarations alone.
 ## Cadences
 
 - **10 days**: assessment SLA for new declarations of either kind. The
-  *Awaiting assessment* view is the queue that clock runs against —
+  *Awaiting assessment* view is the queue that clock runs against,
   oldest first, so the top row is the one closest to breaching it.
 - **Monthly**: coordinators clear *Pending decisions* and chase *Reviews
   due*. Both deploy with the lists. *Reviews due* is a **rolling** thirty
-  days, not "this month" — CAML has no calendar-period predicate.
-- **Annually**: whole-staff attestation drive — each person opens *My
+  days, not "this month" (CAML has no calendar-period predicate).
+- **Annually**: whole-staff attestation drive. Each person opens *My
   interests*, which shows their own rows and nobody else's. The integrity
   owner reports to the executive/audit committee from *Annual disclosure*
   (a **rolling** twelve months, highest value first) and *By offeror*,
@@ -63,14 +63,14 @@ their own reports' declarations alone.
 
 ## Data-quality rules
 
-1. Declarations are never edited or deleted — evolution is a new
+1. Declarations are never edited or deleted. Evolution is a new
    declaration; cessation is a status with a date.
 2. Every "Assessed - managed" has a plan and a future ReviewDate.
 3. Declined gifts are as much a record as accepted ones.
 
 ## What the lists enforce, and what this document does
 
-The strongest control here is not a save rule at all — it is the **form**.
+The strongest control here is not a save rule at all. It is the **form**.
 Staff hold a submit-only permission level, so the New form is the only form
 most people ever see, and the assessment fields are not on it. The declarer
 cannot set `Status`, write a `ManagementPlan` or record a `Decision`,
@@ -78,7 +78,7 @@ because those fields do not exist on the form they use. The rule "the
 declarer never assesses their own declaration" stops being culture and
 becomes structure.
 
-**Enforced at save — SharePoint rejects the row:**
+**Enforced at save (SharePoint rejects the row):**
 
 | Rule | List | Where it lives |
 | --- | --- | --- |
@@ -92,7 +92,7 @@ The two Interest rules share one message, because a SharePoint list has
 exactly one `ValidationFormula` and cannot say which branch failed. The
 column rules keep messages of their own.
 
-**Still a governance check — nothing stops a wrong entry:**
+**Still a governance check (nothing stops a wrong entry):**
 
 - **A decided gift needs a `DecisionBy`.** This is the one cross-column
   rule `DR_GiftBenefit` wants and it cannot be written at all: SharePoint
