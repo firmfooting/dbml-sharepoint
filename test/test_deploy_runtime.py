@@ -2793,6 +2793,41 @@ def _security_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_apply_pass_takes_its_own_fresh_digest() -> None:
+    """digest0 is captured near the top of phase 1.2, before the whole
+    survey (every level probe, the group enumeration, every adopt-path
+    owner read and membership count) now runs ahead of it, where before this
+    task the first write followed the fetch almost immediately. A create
+    write that reused digest0 directly, without asking getDigest() again,
+    would carry whatever was fetched before the survey started rather than
+    a digest taken right before the apply pass's first write.
+
+    getDigest() caches for at least 60s (`_digest_cached.js.j2`), which a
+    synchronous test cannot outlast, so the cache guard is disabled here to
+    make every call a real fetch: the count of `contextinfo` POSTs before
+    the first write is then a reliable proxy for whether the apply pass took
+    its own fresh digest, rather than reusing the one taken before survey.
+    """
+    js = _deploy_js().replace(
+        "if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;",
+        "if (false) return cachedDigest; // test: force every call to re-fetch",
+    )
+    assert "if (false) return cachedDigest" in js, "getDigest cache guard not found"
+    summary, calls, output = _role_def_gate_deploy(js, absent=True)
+    assert not _security_errors(summary), summary
+    creates = _role_def_create_writes(calls)
+    assert creates, f"a fresh permission level was never created:\n{output[-3000:]}"
+    first_write_index = calls.index(creates[0])
+    digests_before_first_write = [
+        c for c in calls[:first_write_index] if "contextinfo" in c["url"]
+    ]
+    assert len(digests_before_first_write) >= 2, (
+        "the apply pass reused the digest fetched before the survey instead of "
+        f"taking its own fresh one: {digests_before_first_write}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_refused_level_blocks_the_group_create_that_used_to_follow_it() -> None:
     """Before this task, the level loop ran survey-then-apply per object and
     only checked `summary.errors` after BOTH loops. A refused level did not

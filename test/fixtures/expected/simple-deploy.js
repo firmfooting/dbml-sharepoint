@@ -2410,6 +2410,15 @@
     // correctGroupOwner's manual-action refusal happens during apply and is
     // unsurveyable by construction.
     if (summary.errors.length === 0) {
+      // digest0 was captured near the top of this phase, before every level
+      // probe, the group enumeration, and every adopt-path owner read and
+      // membership count -- survey work that did not exist between the
+      // fetch and the first write before this phase split decision from
+      // effect. FormDigestValue expires after ~30 minutes (_seeds.js.j2,
+      // 'Fresh digest per seed'), so the apply pass takes its own fresh one
+      // here, before its first write, rather than trusting whatever the
+      // survey left behind.
+      digest0 = await getDigest();
       for (const decision of decisions) {
         try {
           if (decision.object === 'level') {
