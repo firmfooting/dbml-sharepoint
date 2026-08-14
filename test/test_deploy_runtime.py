@@ -211,6 +211,39 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       AllowRequestToJoinLeave: false, AutoAcceptRequestToJoinLeave: false,
       OnlyAllowMembersViewMembership: false,
     });
+    // Existence for the by-name GET and its /users sub-resource: known from
+    // the enumeration (case-insensitive, matching SharePoint's own group-name
+    // resolution) or already written into GROUP_STATE by a create/MERGE this
+    // run performed. Checked with hasOwnProperty rather than through
+    // groupState() itself, whose `||=` would auto-vivify an absent name into
+    // "existing" the instant it is asked about -- which is the exact hole
+    // that let a read ahead of the create that makes it possible pass.
+    const KNOWN_GROUP_NAME_SET = new Set(KNOWN_GROUP_NAMES.map((n) => String(n).toLowerCase()));
+    const groupIsKnown = (name) => (
+      KNOWN_GROUP_NAME_SET.has(String(name).toLowerCase())
+      || Object.prototype.hasOwnProperty.call(GROUP_STATE, name)
+    );
+    // Group Id, historically fixed at 9 for every name -- harmless while the
+    // owner probe below answered the same fixed value regardless of Id. A
+    // test exercising TWO groups' owner state independently (one group
+    // adopted, its declared owner_group a second, absent custom group) needs
+    // them to resolve to DIFFERENT Ids, so this is now a per-name map,
+    // defaulting every unconfigured name to the old fixed 9 so every
+    // existing test is unaffected.
+    const GROUP_IDS = {};
+    const groupId = (name) => (GROUP_IDS[name] != null ? GROUP_IDS[name] : 9);
+    // Current owner per governed-group Id (`web/sitegroups(N)/owner`), keyed
+    // by the same Id groupId() hands out. Overridable per test so a declared
+    // owner_group naming a CUSTOM group, rather than a built-in, can be
+    // modelled as already correct -- exercising resolveGroupOwner without
+    // also exercising CSOM ProcessQuery correction, which this mock does not
+    // apply. Default (Id 9, i.e. every unconfigured name) matches the
+    // built-in Site Owners every other test in this file declares as
+    // owner_group, so their existing mismatch-free behaviour is unchanged.
+    const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };
+    const currentOwnerFor = (id) => (
+      GROUP_CURRENT_OWNER[id] || { Id: 3, Title: 'Site Owners', PrincipalType: 8 }
+    );
     // Role definitions (custom permission levels). Task 3: the single line
     // this replaces answered every roledefinitions read alike, whether it
     // was the existence probe, a getbyname resolve, or a by-Id read-back --
@@ -363,8 +396,15 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // maintenance unseal at 1.4. Before this, the runtime test had never
       // executed a phase beyond the read-only preflight.
       if (url.includes('AssociatedOwnerGroup') || url.includes('AssociatedMemberGroup')
-          || url.includes('AssociatedVisitorGroup') || url.includes('/owner')) {
+          || url.includes('AssociatedVisitorGroup')) {
         return { d: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };
+      }
+      // A governed group's current owner (`web/sitegroups(N)/owner`), keyed
+      // by the Id in the URL so two groups in the same run can carry
+      // different current owners. See GROUP_CURRENT_OWNER above.
+      if (url.includes('/owner')) {
+        const idMatch = url.match(/sitegroups\((\d+)\)\/owner/);
+        return { d: currentOwnerFor(idMatch ? Number(idMatch[1]) : 9) };
       }
       // The site-group enumeration the security phase uses to decide
       // create-vs-adopt without a per-group 404 probe. Checked before the
@@ -379,6 +419,15 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // caller followed a __next this mock handed out.
       if (url.includes('/users')) {
         const name = groupNameOf(url);
+        // INFERRED, NOT MEASURED: the parent by-name GET answers 404 for an
+        // absent group (_security_principals.js.j2:223, measured), but what
+        // this /users sub-resource answers for an absent group has not been
+        // probed. 404 is used because the parent does and because either
+        // status fails the template closed; a future probe should confirm
+        // or correct this.
+        if (!groupIsKnown(name)) {
+          return { error: { code: '-2147024809, System.ArgumentException', status: 404 } };
+        }
         const pages = groupMemberPages(name);
         const marked = /[?&]page=(\d+)/.exec(url);
         const page = marked ? Number(marked[1]) : 0;
@@ -392,7 +441,14 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       if (url.includes('sitegroups/getbyname')) {
         const name = groupNameOf(url);
-        return { d: { Id: 9, Title: name, PrincipalType: 8, ...groupState(name) } };
+        // MEASURED (_security_principals.js.j2:223): a by-name GET for a
+        // group that is not there answers 404. groupIsKnown is checked
+        // before groupState(name), whose `||=` would otherwise auto-vivify
+        // an absent name into "existing" the instant it is read.
+        if (!groupIsKnown(name)) {
+          return { error: { code: '-2147024809, System.ArgumentException', status: 404 } };
+        }
+        return { d: { Id: groupId(name), Title: name, PrincipalType: 8, ...groupState(name) } };
       }
       // Every roledefinitions read shares that substring, so the most
       // specific shape is checked first: the $filter existence probe (by
@@ -583,8 +639,12 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       }
       const payload = body(u, opts);
       const absent = payload && payload.error;
+      // Most absence mocks in this file don't carry a measured status and
+      // default to 400. The site-group absence mocks above set one
+      // explicitly (404), matching what is measured (or inferred) for them.
+      const status = absent ? (payload.error.status || 400) : 200;
       return {
-        ok: !absent, status: absent ? 400 : 200,
+        ok: !absent, status,
         headers: { get: () => null },
         json: async () => payload,
         text: async () => JSON.stringify(payload),
@@ -1561,6 +1621,22 @@ def _reader_harness(
                      text: async () => JSON.stringify(payload) };
           };
           if (u.toLowerCase().includes('/ensureuser')) return respond({ d: ENSURED });
+          // Task 6 (security-phase-atomicity): removeReaderEnrollments's
+          // drain POSTs here. Checked BEFORE the broader
+          // sitegroups(N)/users test below, which this URL also matches --
+          // and whose POST branch assumes an add, parsing `opts.body` as
+          // JSON. A remove call carries no body, so falling through to that
+          // branch throws `JSON.parse(undefined)` instead of modelling the
+          // removal.
+          const removed = /sitegroups\(\d+\)\/users\/removebyid\((\d+)\)/.exec(u);
+          if (removed && method === 'POST') {
+            const removedId = Number(removed[1]);
+            for (const page of READER_MEMBER_PAGES) {
+              const idx = page.findIndex((m) => Number(m.Id) === removedId);
+              if (idx !== -1) page.splice(idx, 1);
+            }
+            return respond({ d: null });
+          }
           // The flagged group's own membership, keyed off the BY-ID form of
           // the path so the 1.2 empty-group gate — which asks by name —
           // still reaches the adopted mock underneath and still sees empty.
@@ -1905,9 +1981,13 @@ def test_a_principal_added_during_the_run_is_caught_by_the_read_back() -> None:
     nothing else: the membership is empty when the gate runs, and the
     foreign principal appears at the moment of the write.
 
-    Nothing is removed -- the same reason the before-read gives. The run
-    fails closed AFTER the write, which is the point: the write cannot be
-    safely undone, so the operator is told what the group now holds.
+    Nothing here removes the STRAY -- the same reason the before-read gives:
+    membership is an operator-owned concern and this is a gate, not a
+    reconciler for an account this run did not add. But (task 6,
+    security-phase atomicity, #213 form 1) this run's OWN account no longer
+    stays enrolled after this abort: deploy.js.j2's finally drains it,
+    because the run never reached the end. This used to be the case that
+    left BOTH accounts in two concurrent deploys permanently enrolled.
     """
     summary, calls, output = _run_reader_deploy(
         _RESOLVED_USER, members=[], stray_on_write=_OTHER_MEMBER,
@@ -1923,7 +2003,13 @@ def test_a_principal_added_during_the_run_is_caught_by_the_read_back() -> None:
     assert errors, summary
     assert "while this script was running" in str(errors), errors
     assert summary.get("aborted") == "reader-enrolment-errors", summary
-    assert not _removals(calls)
+    removals = _removals(calls)
+    assert any(f"removebyid({_RESOLVED_USER['Id']})" in c["url"] for c in removals), (
+        f"the reader this run just enrolled was left in place after the abort: {removals}"
+    )
+    assert not any(f"removebyid({_OTHER_MEMBER['Id']})" in c["url"] for c in removals), (
+        f"the stray, which this run never added, was removed: {removals}"
+    )
 
 
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
@@ -1945,6 +2031,141 @@ def test_an_already_enrolled_reader_is_not_added_twice() -> None:
     # that the reader phase is not what stopped it.
     assert summary.get("aborted") != "reader-enrolment-errors", summary
     assert not _membership_writes(calls), "an existing membership was re-POSTed"
+
+
+# Task 6 (security-phase atomicity, #213 form 1): the reader enrolment must
+# clean up after a run that adds the account and then fails LATER, and must
+# leave it alone on a run that reaches the end. Two concurrent deploys
+# naming different reader addresses used to both add their account, both
+# abort, and both leave their account enrolled forever.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_later_phase_failure_drains_the_reader_this_run_added() -> None:
+    """The general form of #213's fix: the reader phase itself succeeds
+    cleanly, and a LATER phase aborts. The account this run just added must
+    not survive that abort -- only a run that reaches the end may leave it.
+
+    Plain `_run_reader_deploy` already aborts in Phase 2.1 on this fixture's
+    Lookup column, for reasons that have nothing to do with the reader (the
+    same fact `test_an_already_enrolled_reader_is_not_added_twice` notes
+    above) -- exactly the shape this test needs: a clean 1.4 followed by a
+    dirty later phase, with no bespoke harness required to get there.
+    """
+    summary, calls, output = _run_reader_deploy(_RESOLVED_USER)
+    assert not _reader_errors(summary), (
+        f"the reader phase itself failed, so this does not test a LATER "
+        f"phase's abort: {summary}"
+    )
+    assert summary.get("aborted") not in (None, "reader-enrolment-errors"), (
+        f"the run did not abort in a later phase: {summary}\n{output[-2000:]}"
+    )
+    assert _membership_writes(calls), "the reader was never enrolled in the first place"
+    removals = _removals(calls)
+    assert any(f"removebyid({_RESOLVED_USER['Id']})" in c["url"] for c in removals), (
+        f"a later phase's abort must remove the reader this run just enrolled: {removals}"
+    )
+
+
+# `_declared_pack`'s minimal all-text schema is what `_ADOPTED_HARNESS` can
+# drive all the way to a clean DATA-phase finish
+# (`test_a_declared_run_completes_every_phase_cleanly`); the shipped
+# `sharepoint-mapping(-with-reader).yaml` fixture's Lookup and formula
+# columns are not modelled that completely (see the test above), so "a
+# clean run leaves the reader enrolled" needs this schema, not that
+# fixture, to reach the end at all.
+_READER_DECLARED_SECTION = """
+    groups:
+      - name: "Enterprise Reader"
+        description: "Read-only enrolment target for --enterprise-reader."
+        owner_group: "Site Owners"
+        allow_members_edit_membership: false
+        allow_request_to_join_leave: false
+        auto_accept_request_to_join_leave: false
+        only_allow_members_view_membership: false
+        enroll_enterprise_reader: true
+
+    list_permissions:
+      default:
+        site_role: default
+        break_inheritance: true
+        reconcile: exact
+        assignments:
+          - principal: { kind: group, name: "Enterprise Reader" }
+            level: "Read"
+"""
+
+
+def _declared_reader_deploy_js(tmp_path: Path) -> str:
+    """`_declared_deploy_js`, plus an enterprise-reader group with a Read
+    ACL assignment, built with `--enterprise-reader`."""
+    from dbml_sharepoint.generators.jsgen import generate_deploy_js
+    from dbml_sharepoint.model.release import load_release
+
+    schema, bundle = _declared_pack(tmp_path, _READER_DECLARED_SECTION)
+    return generate_deploy_js(
+        schema=schema,
+        bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="s.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        enterprise_reader=_READER_ADDRESS,
+    )
+
+
+# The ACL phase resolves a declared assignment's level by name through
+# `web/roledefinitions/getbyname`, the same surface `ROLE_DEF_STATE` already
+# models for this tool's own custom levels. No existing test names a
+# BUILT-IN level ('Read') in an ACL assignment, so `_ADOPTED_HARNESS` never
+# needed to seed one; this is the first run to carry an enterprise-reader
+# group's Read grant all the way through Phase 4.2.
+_READER_ACL_HARNESS = _ADOPTED_HARNESS.replace(
+    "'Schema Manager': {",
+    "'Read': { Id: 100, Description: '', BasePermissions: { High: '0', Low: '138612833' } },\n"
+    "      'Schema Manager': {",
+)
+
+
+def _reader_harness_for_declared_run(ensure_user: dict[str, Any]) -> str:
+    """`_reader_harness`, rebuilt on `_READER_ACL_HARNESS` instead of the
+    plain `_ADOPTED_HARNESS` it always starts from."""
+    overlay = _reader_harness(ensure_user)[len(_ADOPTED_HARNESS):]
+    return _READER_ACL_HARNESS + overlay
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_clean_end_to_end_run_leaves_the_reader_enrolled(tmp_path: Path) -> None:
+    """The other half of #213's fix: a run that reaches the end must NOT
+    remove the reader it just added. That membership is meant to outlive
+    the run, and only a run that never gets here should undo it.
+    """
+    js = _declared_reader_deploy_js(tmp_path)
+    script = _reader_harness_for_declared_run(_RESOLVED_USER) + "\n" + js.replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    summary = json.loads(result_line.removeprefix("__RESULT__"))
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
+    calls = json.loads(calls_line.removeprefix("__CALLS__"))
+
+    assert summary.get("aborted") is None, summary
+    assert summary.get("errors") == [], summary["errors"]
+    assert _membership_writes(calls), "the reader was never enrolled"
+    assert not _removals(calls), (
+        f"a successful run removed the reader it just enrolled: {_removals(calls)}"
+    )
 
 
 # #209: a hand-made site group whose name happens to match a declared one
@@ -2246,10 +2467,93 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
     )
     errors = _security_errors(summary)
     assert errors, summary
+    assert "group" in errors[0], errors[0]
     message = str(errors[0]["error"])
     assert group_name in message, message
     assert "Description" in message, message
     assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+# Every survey in the security phase now runs before every create, so an
+# adopt decision's owner resolve, which reads a SECOND group (the declared
+# owner_group), can hit a custom group this SAME pass has not created yet.
+# `_owner_pending_groups_deploy_js` splits the fixture's one declared group
+# into two so the adopted one names the about-to-be-created one as its owner.
+
+
+def _owner_pending_groups_deploy_js() -> str:
+    """`_deploy_js()` with the fixture's one declared group ('List
+    Maintainer') split into two: it now declares owner_group 'Group B', a
+    second custom group this same declaration also creates. Mutates the
+    generated JSON directly, the same way `test_auto_accept_is_compared_...`
+    does, rather than adding a second group to the shared mapping fixture.
+    """
+    js = _deploy_js()
+    match = re.search(r'"groups": (\[.*?\n  \])', js, re.DOTALL)
+    assert match, "groups array not found in generated deploy.js"
+    groups = json.loads(match.group(1))
+    assert len(groups) == 1, groups
+    list_maintainer = dict(groups[0])
+    assert list_maintainer["owner_group"] == "Site Owners", list_maintainer
+    list_maintainer["owner_group"] = "Group B"
+    group_b = dict(list_maintainer)
+    group_b["name"] = "Group B"
+    group_b["description"] = "Group B."
+    group_b["owner_group"] = "Site Owners"
+    group_b["require_empty_at_deploy"] = False
+    new_groups = json.dumps([group_b, list_maintainer], indent=2).replace("\n", "\n  ")
+    return js[: match.start(1)] + new_groups + js[match.end(1):]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_adopted_group_owned_by_a_group_pending_creation_still_deploys() -> None:
+    """'List Maintainer' already exists and declares owner_group 'Group B',
+    which is declared but absent, so this same pass decides to create it.
+    Resolving 'List Maintainer's owner during the survey, before Group B
+    exists, would 404 and abort the whole phase; the fix defers that resolve
+    to applyGroupDecision, which runs after Group B's own create has
+    applied. Verified by mutation: forcing the resolve back into the survey
+    unconditionally reproduces the abort this test would otherwise miss.
+    """
+    js = _owner_pending_groups_deploy_js()
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_DESCRIPTIONS = {};",
+        f"const GROUP_DESCRIPTIONS = {json.dumps({
+            'List Maintainer': 'Test group. Provisioned by dbml-sharepoint from simple-test.',
+        })};",
+    ).replace(
+        "const GROUP_MEMBER_PAGES = {};",
+        f"const GROUP_MEMBER_PAGES = {json.dumps({'List Maintainer': [[]]})};",
+    ).replace(
+        "const KNOWN_GROUP_NAMES = [];",
+        f"const KNOWN_GROUP_NAMES = {json.dumps(['List Maintainer'])};",
+    ).replace(
+        "const GROUP_IDS = {};",
+        f"const GROUP_IDS = {json.dumps({'List Maintainer': 101, 'Group B': 102})};",
+    ).replace(
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };",
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 }, "
+        "101: { Id: 102, Title: 'Group B', PrincipalType: 8 } };",
+    )
+    summary, calls, output = _run_group_verify_deploy(js, harness)
+    assert not _security_errors(summary), summary
+    assert summary.get("aborted") != "phase-0-security-errors", summary
+    create_indices = [
+        i for i, c in enumerate(calls)
+        if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
+        and json.loads(c["body"]).get("Title") == "Group B"
+    ]
+    assert create_indices, f"Group B was never created:\n{output[-3000:]}"
+    owner_resolve_indices = [
+        i for i, c in enumerate(calls)
+        if c["method"] == "GET"
+        and "sitegroups/getbyname('Group%20B')" in c["url"]
+    ]
+    assert owner_resolve_indices, f"'List Maintainer's owner was never resolved:\n{output[-3000:]}"
+    assert min(owner_resolve_indices) > create_indices[0], (
+        "the owner resolve for 'List Maintainer' ran before Group B was created: "
+        f"resolve at {owner_resolve_indices}, create at {create_indices[0]}"
+    )
 
 
 # #224: `_security_principals.js.j2` adopted any role definition whose name
@@ -2427,6 +2731,7 @@ def test_a_permission_level_base_permissions_the_tenant_did_not_store_fails_clos
     )
     errors = _security_errors(summary)
     assert errors, summary
+    assert "permissionLevel" in errors[0], errors[0]
     message = str(errors[0]["error"])
     assert "Schema Manager" in message, message
     assert "BasePermissions" in message, message
@@ -2460,6 +2765,299 @@ def test_a_freshly_created_level_base_permissions_the_tenant_did_not_store_fails
     message = str(errors[0]["error"])
     assert "Schema Manager" in message, message
     assert "BasePermissions" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+# Task 4 (security-phase-atomicity): the abort check used to run only after
+# BOTH loops (levels, then groups) had finished, so a refusal on the first
+# object did not stop a write on a LATER one. `_security_writes` names every
+# POST the phase can issue, regardless of which object it belongs to, so the
+# tests below anchor on the absence of writes in the call log rather than on
+# a summary key, matching AGENTS.md's evidence rule: the gate must never be
+# softenable without a test failing on the write itself.
+
+
+def _security_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every POST `_security_principals.js.j2` can issue: a permission-level
+    create or MERGE, a site-group create or MERGE, or the CSOM ProcessQuery
+    owner correction. All three only ever fire from the apply loop."""
+    return [
+        c for c in calls
+        if c["method"] == "POST"
+        and (
+            "sitegroups" in c["url"]
+            or "roledefinitions" in c["url"]
+            or "ProcessQuery" in c["url"]
+        )
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_apply_pass_takes_its_own_fresh_digest() -> None:
+    """digest0 is captured near the top of phase 1.2, before the whole
+    survey (every level probe, the group enumeration, every adopt-path
+    owner read and membership count) now runs ahead of it, where before this
+    task the first write followed the fetch almost immediately. A create
+    write that reused digest0 directly, without asking getDigest() again,
+    would carry whatever was fetched before the survey started rather than
+    a digest taken right before the apply pass's first write.
+
+    getDigest() caches for at least 60s (`_digest_cached.js.j2`), which a
+    synchronous test cannot outlast, so the cache guard is disabled here to
+    make every call a real fetch: the count of `contextinfo` POSTs before
+    the first write is then a reliable proxy for whether the apply pass took
+    its own fresh digest, rather than reusing the one taken before survey.
+    """
+    js = _deploy_js().replace(
+        "if (cachedDigest && Date.now() < digestExpiresAt) return cachedDigest;",
+        "if (false) return cachedDigest; // test: force every call to re-fetch",
+    )
+    assert "if (false) return cachedDigest" in js, "getDigest cache guard not found"
+    summary, calls, output = _role_def_gate_deploy(js, absent=True)
+    assert not _security_errors(summary), summary
+    creates = _role_def_create_writes(calls)
+    assert creates, f"a fresh permission level was never created:\n{output[-3000:]}"
+    first_write_index = calls.index(creates[0])
+    digests_before_first_write = [
+        c for c in calls[:first_write_index] if "contextinfo" in c["url"]
+    ]
+    assert len(digests_before_first_write) >= 2, (
+        "the apply pass reused the digest fetched before the survey instead of "
+        f"taking its own fresh one: {digests_before_first_write}"
+    )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_level_blocks_the_group_create_that_used_to_follow_it() -> None:
+    """Before this task, the level loop ran survey-then-apply per object and
+    only checked `summary.errors` after BOTH loops. A refused level did not
+    stop the group loop a few lines later from creating 'List Maintainer'.
+    """
+    summary, calls, output = _role_def_gate_deploy(
+        _deploy_js(), description_override="Our own level.",
+    )
+    assert not _security_writes(calls), (
+        f"a refused permission level did not stop a write on another "
+        f"object\n{output[-2000:]}"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_group_blocks_the_permission_level_reconcile_too() -> None:
+    """Symmetric case: with no override the fixture's one declared level
+    ('Schema Manager') is adopted and reconciled cleanly on its own
+    (`test_a_marked_permission_level_is_adopted_silently`). Refusing the
+    group here must stop that reconcile from happening, whichever loop ran
+    first.
+    """
+    summary, calls, output = _group_gate_deploy(
+        _deploy_js(), "List Maintainer",
+        description="Our own group", member_pages=[[{"Id": 501}]],
+    )
+    assert not _security_writes(calls), (
+        f"a refused site group did not stop the permission level reconcile "
+        f"that would otherwise have run\n{output[-2000:]}"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_two_refusals_both_appear_in_the_transcript() -> None:
+    """Surveying must not short-circuit on the first refusal: an operator
+    who fixes one blocker and redeploys must not just meet the next one
+    they were never told about."""
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_DESCRIPTION_OVERRIDE = null;",
+        f"const ROLE_DEF_DESCRIPTION_OVERRIDE = {json.dumps('Our own level.')};",
+    ).replace(
+        "const GROUP_DESCRIPTIONS = {};",
+        f"const GROUP_DESCRIPTIONS = {json.dumps({'List Maintainer': 'Our own group'})};",
+    ).replace(
+        "const GROUP_MEMBER_PAGES = {};",
+        f"const GROUP_MEMBER_PAGES = {json.dumps({'List Maintainer': [[{'Id': 501}]]})};",
+    ).replace(
+        "const KNOWN_GROUP_NAMES = [];",
+        f"const KNOWN_GROUP_NAMES = {json.dumps(['List Maintainer'])};",
+    )
+    summary, calls, output = _run_group_verify_deploy(_deploy_js(), harness)
+    assert not _security_writes(calls), output[-2000:]
+    errors = _security_errors(summary)
+    messages = [str(e["error"]) for e in errors]
+    assert any("Schema Manager" in m for m in messages), errors
+    assert any("List Maintainer" in m for m in messages), errors
+    assert len(errors) == 2, (
+        f"only one of two refusals reached the transcript: {errors}"
+    )
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+# A genuine survey FAILURE (not a refusal): the permission-level existence
+# probe answers a real HTTP error rather than a filtered result set.
+# `surveyLevel` throws in that case, and the per-object catch around it must
+# still turn that into the same structured summary a refusal produces,
+# rather than letting it escape the phase, the `try` in deploy.js.j2, and
+# the async IIFE as an unhandled rejection -- which the harness would
+# surface as a missing `__RESULT__` line, since nothing would ever call the
+# `.then()` that prints it.
+_SURVEY_FAILURE_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    const _passThrough = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      if ((opts.method || 'GET') === 'GET' && u.includes('roledefinitions')
+          && u.includes('$filter=Name')) {
+        calls.push({ url: u, method: 'GET', body: null });
+        const payload = { error: { message: { value: 'probe exploded' } } };
+        return {
+          ok: false, status: 500,
+          headers: { get: () => null },
+          json: async () => payload,
+          text: async () => JSON.stringify(payload),
+        };
+      }
+      return _passThrough(url, opts);
+    };
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_survey_failure_still_produces_a_structured_abort() -> None:
+    """`_run_group_verify_deploy` already asserts a `__RESULT__` line was
+    printed; if the probe failure above escaped as an unhandled rejection,
+    that assertion is what would catch it, not the abort-key check below.
+    """
+    summary, calls, output = _run_group_verify_deploy(
+        _deploy_js(), _SURVEY_FAILURE_HARNESS,
+    )
+    assert not _security_writes(calls), output[-2000:]
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "500" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+def _group_create_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every POST that creates a new site group."""
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"]
+        and c["url"].endswith("/web/sitegroups")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_clean_run_still_writes_both_the_level_and_the_group() -> None:
+    """No refusals, no survey failures: the restructure must not turn a
+    previously clean run into one that skips writes it used to make.
+
+    Plain `_ADOPTED_HARNESS` carries no entry in `KNOWN_GROUP_NAMES`, so
+    'List Maintainer' takes the create path here rather than the adopt
+    path other tests in this file exercise via `_group_gate_deploy`.
+    """
+    summary, calls, _ = _run_group_verify_deploy(_deploy_js(), _ADOPTED_HARNESS)
+    assert not _security_errors(summary), summary
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "a clean run stopped reconciling the permission level"
+    )
+    assert _group_create_writes(calls), (
+        "a clean run stopped creating the site group"
+    )
+
+
+# Task 5 (#32): the decision table. Every object BOTH survey loops decided
+# to create or adopt must be named before either loop's apply step writes
+# anything. `_ADOPTED_HARNESS` carries no entry in `KNOWN_GROUP_NAMES`, so
+# the group takes the create path and the level (matching this family's
+# marker) takes the adopt path in the same run, exercising both verbs.
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_the_decision_table_names_every_declared_object_before_any_write() -> None:
+    """A refusal already logs its own ERROR line in the survey loop that
+    found it; this table is what a CLEAN run additionally gets, printed
+    before a single write.
+    """
+    summary, _calls, output = _run_group_verify_deploy(_deploy_js(), _ADOPTED_HARNESS)
+    assert not _security_errors(summary), summary
+    lines = output.splitlines()
+
+    table_index = next(
+        (i for i, ln in enumerate(lines)
+         if "decisions" in ln.lower() and pn("security") in ln), None,
+    )
+    assert table_index is not None, f"no decision table was printed:\n{output[-2000:]}"
+
+    table_block = "\n".join(lines[table_index:table_index + 5])
+    assert "Schema Manager" in table_block, table_block
+    assert "List Maintainer" in table_block, table_block
+
+    first_write_log = next(
+        i for i, ln in enumerate(lines)
+        if "Creating" in ln or "reconciled" in ln
+    )
+    assert table_index < first_write_log, (
+        f"the decision table printed after a write had already started:\n{output[-2000:]}"
+    )
+
+
+def _duplicate_group_case_variant(js: str) -> str:
+    """Splice a second declared group into `SCHEMA.groups`, differing from
+    the first only in case, so `surveyGroup` meets a name `decidedCreates`
+    already holds. `sharepoint-mapping.yaml` declares one group ('List
+    Maintainer'); the build itself refuses two case-variant declarations in
+    one mapping (`DUPLICATE_GROUP_NAME`), so this bypasses that by editing
+    the already-generated JSON rather than the mapping, modelling a bundle
+    built before that rule existed.
+    """
+    match = re.search(r'  "groups": (\[\n.*?\n  \]),\n  "indexed_columns"', js, re.DOTALL)
+    assert match, "SCHEMA.groups block not found in generated deploy.js"
+    groups = json.loads(match.group(1))
+    variant = dict(groups[0])
+    variant["name"] = "LIST MAINTAINER"
+    return js.replace(match.group(1), json.dumps([*groups, variant], indent=2), 1)
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_case_variant_group_declaration_is_refused_not_double_created() -> None:
+    """`decidedCreates` used to feed only `isKnown`, which only decides
+    whether to skip the by-name probe. For a name already decided 'create',
+    the group does not exist yet, so the real probe still answers 404 and
+    the survey returned a SECOND 'create' decision: applied, that queues two
+    POSTs colliding on the one name SharePoint resolves them both to.
+
+    The fix refuses the second declaration in the survey itself: one create
+    decision reaches the table, the second is a refusal, and because a
+    refusal blocks the whole phase's apply step, neither group is actually
+    written. Mutation-tested: deleting the `hasName(decidedCreates, ...)`
+    check in `surveyGroup` makes this test fail, printing two 'create site
+    group' lines and no case-collision error.
+    """
+    js = _duplicate_group_case_variant(_deploy_js())
+    summary, calls, output = _run_group_verify_deploy(js, _ADOPTED_HARNESS)
+
+    create_lines = [ln for ln in output.splitlines() if "create site group" in ln]
+    assert len(create_lines) == 1, (
+        f"expected exactly one create decision for the two case-variant "
+        f"declarations, got: {create_lines}"
+    )
+    errors = _security_errors(summary)
+    assert len(errors) == 1, summary
+    assert "group" in errors[0], errors[0]
+    message = str(errors[0]["error"])
+    assert "LIST MAINTAINER" in message, message
+    assert "case" in message.lower(), message
+    assert not _group_create_writes(calls), (
+        "a refusal must block the apply step entirely, not just the refused object"
+    )
+    assert not _role_def_merge_writes(calls, "Schema Manager"), (
+        "a refusal must block every object's apply, not only the colliding group's"
+    )
     assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
