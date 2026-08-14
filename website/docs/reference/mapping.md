@@ -1371,6 +1371,37 @@ cannot express it.
 an `overrides:` entry is accepted by the loader and then discarded — an
 override applies to its entity wherever that entity deploys.
 
+**The permission-level adoption gate.** Every level this tool writes now
+carries `Provisioned by dbml-sharepoint from <family>.` in its description,
+composed the same way as a group's. The marker records which declaration
+created the level.
+
+On a later deploy, a same-named level that carries the marker is adopted and
+reconciled as before. A same-named level that does not carry the marker is
+refused, whether or not it appears to be in use, and nothing is written to
+it.
+
+That refusal does not weigh usage, and it does not soften for a level that
+looks unassigned. A role definition is site-scoped, and this tool assigns
+levels at LIST scope, through
+`web/lists/getbytitle(...)/roleassignments/addroleassignment`. The probe
+that measured role-definition usage
+(`test/manual/role-definition-probe.js`, question R9) measured WEB scope
+only, so a usage count built from it cannot see the list-scope assignments
+that matter here. A gate keyed on that count would clear itself for exactly
+the case it exists to catch: a level already assigned across lists this
+tool does not manage. The error does report a web-scope figure, to tell the
+operator what they are looking at, but that figure is a floor rather than a
+total, since assignments on individual lists are not counted.
+
+The remedy is the same as for a group: rename the level in your mapping so
+the deploy creates its own.
+
+A matching check runs at build time. A declared description that leaves no
+room for the marker is refused before any deploy runs
+(`permission_level_description_too_long_for_marker`), the same way a
+group's is.
+
 :::note There was never a nested `permissions:` block
 
 Earlier versions of this page documented `permissions:` with `levels:`,
