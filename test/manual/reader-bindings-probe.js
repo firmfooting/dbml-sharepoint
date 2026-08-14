@@ -20,8 +20,8 @@
  * existing bindings. A group carrying Full Control at web scope, or an
  * elevated binding on a list outside the bundle, hands all of it to the
  * account — and neither the ACL phase nor anything else removes it, because
- * both only reconcile lists this bundle declares. R4 and R5 enumerate what a
- * named group holds today.
+ * both only reconcile lists this bundle declares. R4 and R5 census what EVERY
+ * group on the site holds today.
  *
  * WHY THIS CANNOT BE ANSWERED FROM DOCUMENTATION. Microsoft Learn documents
  * what the STOCK levels contain. It cannot say what THIS tenant's `Read` was
@@ -42,9 +42,35 @@
  * for a question about excess privilege. R1 establishes the read works before
  * any absence is believed.
  *
- * WHAT TO SET. GROUP is the group to inspect. Leave it as the shared reader
- * group if the site has one; point it at `dbml List Administrators`, or at any
- * group you are considering handing to the reader, to ask about that instead.
+ * NOTHING TO SET. It surveys EVERY group on the site. An earlier draft asked
+ * about one named group and defaulted to a name that only exists after a
+ * deploy — so on a fresh site it reported NOT ESTABLISHED and told the
+ * operator to go and guess. The census costs the same number of requests.
+ *
+ * RUN 1 — 2026-08-14, revision f0927e57, one Microsoft 365 group-connected
+ * Team Site. Six questions, FOUR answered and two NOT ESTABLISHED, which is
+ * the probe reporting its own failure rather than passing vacuously.
+ *
+ *     R1  PASS — 11 role definitions readable, so an empty result means empty.
+ *     R2  PASS — this site's `Read` is
+ *                RoleTypeKind=2, High=176, Low=138612833,
+ *                "Can view pages and list items and download documents."
+ *                The FIRST measured bitmap this project holds for a Read.
+ *                ONE site on ONE tenant: it is a reference point, not a
+ *                constant to compare against, until a second site agrees.
+ *     R3  PASS — RoleTypeKind=2, so SharePoint still regards it as the
+ *                built-in Reader. No custom level is wearing the name here.
+ *     R4  NOT ESTABLISHED, R5 NOT ESTABLISHED — and the fault was the
+ *                probe's. It asked about ONE group, defaulting to a name
+ *                that only exists AFTER a deploy of the branch that
+ *                introduced it, so on a site that had never seen one there
+ *                was nothing to inspect and the operator was told to go and
+ *                guess a name. Replaced by a census of every group, which
+ *                costs the same requests: the web assignments are one read
+ *                either way, and each list's were already read once per list.
+ *
+ * #199 part 2 is therefore ANSWERED FOR THIS SITE and #198 is still open,
+ * pending one re-run.
  *
  * HOW TO RUN
  *   1. Open the target site as a SITE OWNER — reading role assignments needs
@@ -252,10 +278,8 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision f0927e57 — quote this when reporting results.');
+  log('INFO', 'probe revision 79eeaec8 — quote this when reporting results.');
 
-  // The group to inspect. Any group name on this site.
-  const GROUP = 'dbml Enterprise Readers';
 
   // Learn's stock `Read`, for R3 to compare against. From "Permission levels
   // in SharePoint": View Items, Open Items, View Versions, Create Alerts,
@@ -272,15 +296,15 @@
   expect('R1', 'CONTROL: can this caller read web/roledefinitions at all?');
   expect('R2', 'What BasePermissions does THIS site\'s built-in Read carry?');
   expect('R3', 'Does this site\'s Read differ from its neighbours in a way that suggests customisation?');
-  expect('R4', 'What web-scope role assignments does the named group already hold?');
-  expect('R5', 'What list-scope role assignments does it hold, across every list?');
-  expect('R6', 'Is the named group present on this site at all?');
+  expect('R4', 'Which groups hold a WEB-scope role assignment, and what?');
+  expect('R5', 'Which groups hold a LIST-scope role assignment, and on what?');
+  expect('R6', 'What groups does this site have, and what does each already hold?');
 
   if (!CONFIRMED) {
     log('INFO', 'PLAN — nothing has been touched, and nothing would be.');
     log('INFO', 'This probe only READS. It would report:');
     log('INFO', `  - the BasePermissions of this site's built-in 'Read'`);
-    log('INFO', `  - every web-scope and list-scope binding held by '${GROUP}'`);
+    log('INFO', '  - every web-scope and list-scope binding held by EVERY site group');
     log('INFO', 'Set CONFIRMED = true to run it. ALLOW_WRITES is not used.');
     report();
     return;
@@ -326,47 +350,56 @@
         : `RoleTypeKind=${read.RoleTypeKind}, so SharePoint still regards this as the built-in Reader level. Its bitmap is reported in R2 and should be compared across tenants before anything relies on a specific value. ${STOCK_READ_NOTE}`);
   }
 
-  // ---- R6: does the group exist? -----------------------------------------
-  const grp = await spGet(`web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')?$select=Id,Title,Description`);
-  if (readFailed(grp)) {
-    record('R6', 'Is the named group present on this site at all?',
-      grp.status === 404 ? 'PASS' : `NOT ESTABLISHED (HTTP ${grp.status})`,
-      grp.status === 404
-        ? `no group named '${GROUP}' here, so R4 and R5 have nothing to inspect. Point GROUP at an existing group to ask about one.`
-        : `could not read the group: HTTP ${grp.status}`);
-    record('R4', 'What web-scope role assignments does the named group already hold?',
-      'NOT ESTABLISHED (no such group)', 'R6 found no group of that name');
-    record('R5', 'What list-scope role assignments does it hold, across every list?',
-      'NOT ESTABLISHED (no such group)', 'R6 found no group of that name');
+  // ---- R6: survey every group on the site --------------------------------
+  // Run 1 asked about ONE named group and learned nothing, because the name
+  // it defaulted to only exists AFTER a deploy of the branch that introduced
+  // it. R4 and R5 came back NOT ESTABLISHED and the operator was told to go
+  // and guess a name.
+  //
+  // Surveying every group is strictly better AND COSTS THE SAME: the web
+  // assignments are one read either way, and each list's assignments were
+  // already read once per list. Only the reporting changes. The question
+  // #198 actually asks is "what could a group already be carrying", and a
+  // census answers that where a single lookup cannot.
+  const groups = await spGet('web/sitegroups?$select=Id,Title&$top=200');
+  if (readFailed(groups) || !Array.isArray(groups.body && groups.body.value)) {
+    record('R6', 'What groups does this site have, and what does each already hold?',
+      `NOT ESTABLISHED (HTTP ${groups.status})`, 'could not enumerate site groups');
+    record('R4', 'Which groups hold a WEB-scope role assignment, and what?',
+      'NOT ESTABLISHED (no group list)', 'R6 could not enumerate the groups');
+    record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
+      'NOT ESTABLISHED (no group list)', 'R6 could not enumerate the groups');
     report();
     return;
   }
-  const groupId = grp.body.Id;
-  record('R6', 'Is the named group present on this site at all?',
-    'PASS', `'${GROUP}' is group Id ${groupId}, description ${JSON.stringify(grp.body.Description)}`);
+  const byId = new Map(groups.body.value.map((g) => [g.Id, g.Title]));
+  const named = (id) => byId.get(id) || `principal ${id}`;
+  record('R6', 'What groups does this site have, and what does each already hold?',
+    'PASS',
+    `${byId.size} site group(s): ${[...byId.values()].join(', ')}`);
 
-  // ---- R4: web-scope bindings --------------------------------------------
+  // ---- R4: web-scope bindings, for every group ---------------------------
   // The binding the ACL phase never looks at and never removes: it reconciles
   // web/lists/.../roleassignments only.
-  const webAsg = await spGet(
-    `web/roleassignments?$expand=Member,RoleDefinitionBindings&$top=200`);
+  const webAsg = await spGet('web/roleassignments?$expand=RoleDefinitionBindings&$top=200');
   if (readFailed(webAsg) || !Array.isArray(webAsg.body && webAsg.body.value)) {
-    record('R4', 'What web-scope role assignments does the named group already hold?',
+    record('R4', 'Which groups hold a WEB-scope role assignment, and what?',
       `NOT ESTABLISHED (HTTP ${webAsg.status})`, 'could not enumerate web role assignments');
   } else {
-    const mine = webAsg.body.value.filter((a) => a.PrincipalId === groupId);
-    const levels = mine.flatMap((a) => (a.RoleDefinitionBindings || []).map((b) => b.Name));
-    record('R4', 'What web-scope role assignments does the named group already hold?',
+    const held = webAsg.body.value
+      .filter((a) => byId.has(a.PrincipalId))
+      .map((a) => `${named(a.PrincipalId)}: ${(a.RoleDefinitionBindings || []).map((b) => b.Name).join('+')}`);
+    record('R4', 'Which groups hold a WEB-scope role assignment, and what?',
       'PASS',
-      levels.length
-        ? `at WEB scope '${GROUP}' holds: ${levels.join(', ')}. Anything beyond a derived Limited Access is inherited by every account enrolled into it, and nothing in the deploy removes it.`
-        : `no web-scope binding for '${GROUP}'`);
+      held.length
+        ? `${held.join('; ')}. Anything here beyond a derived Limited Access is inherited by every account enrolled into that group, and nothing in the deploy removes it.`
+        : 'no site group holds a web-scope role assignment');
   }
 
-  // ---- R5: list-scope bindings, including lists outside any bundle -------
+  // ---- R5: list-scope bindings, for every group, on every list -----------
   const lists = await spGet("web/lists?$select=Id,Title,Hidden&$top=500");
   if (readFailed(lists) || !Array.isArray(lists.body && lists.body.value)) {
-    record('R5', 'What list-scope role assignments does it hold, across every list?',
+    record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
       `NOT ESTABLISHED (HTTP ${lists.status})`, 'could not enumerate lists');
   } else {
     const visible = lists.body.value.filter((l) => !l.Hidden);
@@ -377,20 +410,20 @@
         `web/lists(guid'${l.Id}')/roleassignments?$expand=RoleDefinitionBindings&$top=200`);
       if (readFailed(asg) || !Array.isArray(asg.body && asg.body.value)) { unreadable += 1; continue; }
       for (const a of asg.body.value) {
-        if (a.PrincipalId !== groupId) continue;
+        if (!byId.has(a.PrincipalId)) continue;
         const names = (a.RoleDefinitionBindings || []).map((b) => b.Name).join('+');
-        held.push(`${l.Title}: ${names}`);
+        held.push(`${l.Title} → ${named(a.PrincipalId)}: ${names}`);
       }
     }
     // The unreadable count is REPORTED, not swallowed. A list this caller
     // cannot read the ACL of is a list this probe cannot clear, and a
     // summary that omitted it would overstate what was checked.
-    record('R5', 'What list-scope role assignments does it hold, across every list?',
+    record('R5', 'Which groups hold a LIST-scope role assignment, and on what?',
       'PASS',
       `${visible.length} visible list(s) checked${unreadable ? `, ${unreadable} whose ACL could not be read` : ''}. `
       + (held.length
-        ? `'${GROUP}' holds — ${held.join('; ')}. Any of these on a list OUTSIDE the deployed bundle is inherited permanently by the enrolled reader: deploy/_acls.js.j2 iterates SCHEMA.list_assignments only.`
-        : `'${GROUP}' holds no list-scope binding on any visible list.`));
+        ? `${held.join('; ')}. Any of these on a list OUTSIDE a deployed bundle is inherited permanently by an account enrolled into that group: deploy/_acls.js.j2 iterates SCHEMA.list_assignments only.`
+        : 'no site group holds a list-scope binding on any visible list.'));
   }
 
   report();
