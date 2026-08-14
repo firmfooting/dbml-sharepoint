@@ -1730,6 +1730,29 @@
       }
     }
 
+    // Enumerate every page. A group larger than one page would otherwise read
+    // as smaller than it is, and both callers fail closed on the count.
+    async function countGroupMembers(groupName) {
+      let total = 0;
+      let membersUrl = apiUrl(`web/sitegroups/getbyname('${odataName(groupName)}')/users?$select=Id&$top=5000`);
+      while (membersUrl) {
+        const membersResp = await fetchWithRetry(membersUrl, {
+          headers: { 'Accept': 'application/json;odata=verbose' },
+        });
+        if (!membersResp.ok) {
+          const text = await membersResp.text();
+          throw new Error(`Group '${groupName}' membership enumeration failed: HTTP ${membersResp.status} ${text}`);
+        }
+        const membersJson = await membersResp.json();
+        if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
+          throw new Error(`Group '${groupName}' membership enumeration returned an invalid response`);
+        }
+        total += membersJson.d.results.length;
+        membersUrl = membersJson.d.__next || null;
+      }
+      return total;
+    }
+
     for (const grp of SCHEMA.groups) {
       try {
         // null status means "known absent without asking".
@@ -1757,6 +1780,26 @@
           if (knownGroupNames) knownGroupNames.add(nameKey(grp.name));
           log('INFO', `Site group '${grp.name}' created.`);
         } else if (checkResp.ok) {
+          // #209. This branch adopts a group by NAME and the ACL phase then
+          // grants it whatever the mapping declares, which for the
+          // administrators group is Full Control on every list. Adopt only a
+          // group this tool created, or one holding nobody.
+          const existingJson = await checkResp.json();
+          const existingDescription = (existingJson.d && typeof existingJson.d.Description === 'string')
+            ? existingJson.d.Description
+            : '';
+          if (existingDescription.indexOf(SCHEMA.group_marker_prefix) === -1) {
+            const memberCount = await countGroupMembers(grp.name);
+            if (memberCount > 0) {
+              throw new Error(
+                `Site group '${grp.name}' already exists, carries no '${SCHEMA.group_marker_prefix}' `
+                + `marker, and holds ${memberCount} member(s). It was not created by this tool, and `
+                + `adopting it would grant those members the access this family declares for the group. `
+                + `Nothing has been changed. Either empty the group, or rename it so this deploy `
+                + `creates its own.`);
+            }
+          }
+
           // Group membership controls are part of the security boundary. A
           // pre-existing group with the right name but permissive flags must
           // not be accepted as compliant.
@@ -1905,23 +1948,7 @@
         // operator-owned concern: enumerate every page and fail closed rather
         // than silently removing an unexpected user or directory group.
         if (grp.require_empty_at_deploy) {
-          let memberCount = 0;
-          let membersUrl = apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')/users?$select=Id&$top=5000`);
-          while (membersUrl) {
-            const membersResp = await fetchWithRetry(membersUrl, {
-              headers: { 'Accept': 'application/json;odata=verbose' },
-            });
-            if (!membersResp.ok) {
-              const text = await membersResp.text();
-              throw new Error(`Group '${grp.name}' membership enumeration failed: HTTP ${membersResp.status} ${text}`);
-            }
-            const membersJson = await membersResp.json();
-            if (!membersJson.d || !Array.isArray(membersJson.d.results)) {
-              throw new Error(`Group '${grp.name}' membership enumeration returned an invalid response`);
-            }
-            memberCount += membersJson.d.results.length;
-            membersUrl = membersJson.d.__next || null;
-          }
+          const memberCount = await countGroupMembers(grp.name);
           if (memberCount > 0) {
             throw new Error(`Group '${grp.name}' requires empty membership at deploy, but contains ${memberCount} member(s); remove them or use a mapping that does not declare the clean-provision gate`);
           }

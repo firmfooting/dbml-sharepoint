@@ -20,6 +20,7 @@ import tempfile
 import textwrap
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 from _builders import ID_PK, table
@@ -167,6 +168,27 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
     const listDescription = (listTitle) => (
       LIST_DESCRIPTIONS[listTitle] == null ? '' : LIST_DESCRIPTIONS[listTitle]
     );
+    // Per-group Description and paginated membership, keyed by group Title.
+    // A name with no entry keeps the prior fixed shape (Description 'Test
+    // group.', no members), so every existing test is unaffected. Rewritten
+    // by _group_gate_deploy for the adoption-gate tests.
+    const GROUP_DESCRIPTIONS = {};
+    const GROUP_MEMBER_PAGES = {};
+    // The site-group enumeration (web/sitegroups?$select=Title) that decides
+    // whether a declared group reads as pre-existing or absent. Empty by
+    // default, matching every other test's "brand-new site" fiction for
+    // groups: the ADOPT branch below is otherwise unreachable, because the
+    // enumeration fast path answers every declared group 404 before the
+    // by-name probe this override targets ever runs.
+    const KNOWN_GROUP_NAMES = [];
+    const groupDescription = (name) => (
+      GROUP_DESCRIPTIONS[name] == null ? 'Test group.' : GROUP_DESCRIPTIONS[name]
+    );
+    const groupMemberPages = (name) => GROUP_MEMBER_PAGES[name] || [[]];
+    const groupNameOf = (url) => {
+      const raw = (url.match(/sitegroups\/getbyname\('(.*?)'\)/) || [])[1];
+      return raw == null ? raw : decodeURIComponent(raw).replace(/''/g, "'");
+    };
     // Per-list Title state, mutated by MERGEs exactly as SharePoint would.
     const titles = {};
     const titleState = (listTitle) => (titles[listTitle] ||= {
@@ -270,11 +292,35 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
           || url.includes('AssociatedVisitorGroup') || url.includes('/owner')) {
         return { d: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };
       }
-      if (url.includes('/users')) return { d: { results: [] } };
+      // The site-group enumeration the security phase uses to decide
+      // create-vs-adopt without a per-group 404 probe. Checked before the
+      // by-name probe below, whose URL also contains 'sitegroups' but not
+      // this exact query shape.
+      if (url.includes('web/sitegroups?')) {
+        return { d: { results: KNOWN_GROUP_NAMES.map((name) => ({ Title: name })) } };
+      }
+      // A group's own membership, by NAME (the shape countGroupMembers and
+      // require_empty_at_deploy both read) and paginated the same way the
+      // reader-enrolment mock pages sitegroups(N)/users: page 0 unless the
+      // caller followed a __next this mock handed out.
+      if (url.includes('/users')) {
+        const name = groupNameOf(url);
+        const pages = groupMemberPages(name);
+        const marked = /[?&]page=(\d+)/.exec(url);
+        const page = marked ? Number(marked[1]) : 0;
+        const payload = { d: { results: pages[page] || [] } };
+        if (page + 1 < pages.length) {
+          payload.d.__next =
+            `https://example.sharepoint.com/_api/web/sitegroups/getbyname('${encodeURIComponent(name)}')`
+            + `/users?$select=Id&$top=5000&page=${page + 1}`;
+        }
+        return payload;
+      }
       if (url.includes('sitegroups/getbyname')) {
+        const name = groupNameOf(url);
         return { d: {
-          Id: 9, Title: 'List Maintainer', PrincipalType: 8,
-          Description: 'Test group.', AllowMembersEditMembership: false,
+          Id: 9, Title: name, PrincipalType: 8,
+          Description: groupDescription(name), AllowMembersEditMembership: false,
           AllowRequestToJoinLeave: false, AutoAcceptRequestToJoinLeave: false,
           OnlyAllowMembersViewMembership: false } };
       }
@@ -1735,6 +1781,140 @@ def test_an_already_enrolled_reader_is_not_added_twice() -> None:
     # that the reader phase is not what stopped it.
     assert summary.get("aborted") != "reader-enrolment-errors", summary
     assert not _membership_writes(calls), "an existing membership was re-POSTed"
+
+
+# #209: a hand-made site group whose name happens to match a declared one
+# used to be adopted by name alone, and the ACL phase then granted it
+# whatever the mapping declares for that group. `_group_gate_deploy` lets
+# these tests control ONE declared group's Description and paginated
+# membership against `_ADOPTED_HARNESS`, leaving every other group at the
+# shared defaults (unmarked, empty) so it is neither created nor refused.
+
+
+def _group_gate_deploy(
+    deploy_js: str,
+    group_name: str,
+    *,
+    description: str,
+    member_pages: list[list[dict[str, Any]]],
+) -> tuple[dict[str, Any], list[dict[str, Any]], str]:
+    """Run `deploy_js` against `_ADOPTED_HARNESS` with one group's Description
+    and membership overridden.
+
+    Returns (summary, calls, output). Phase 'security' must actually have
+    started, or a refusal assertion would pass against a run that never
+    reached the group loop at all.
+    """
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_DESCRIPTIONS = {};",
+        f"const GROUP_DESCRIPTIONS = {json.dumps({group_name: description})};",
+    ).replace(
+        "const GROUP_MEMBER_PAGES = {};",
+        f"const GROUP_MEMBER_PAGES = {json.dumps({group_name: member_pages})};",
+    ).replace(
+        "const KNOWN_GROUP_NAMES = [];",
+        f"const KNOWN_GROUP_NAMES = {json.dumps([group_name])};",
+    )
+    script = harness + "\n" + deploy_js.replace(
+        "})();",
+        "}))().then(r => { console.log('__RESULT__' + JSON.stringify(r));"
+        " console.log('__CALLS__' + JSON.stringify(globalThis.__calls)); })",
+    ).replace("(async () => {", "((async () => {", 1)
+    output = _run(script)
+    result_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__RESULT__")), None,
+    )
+    assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
+    calls_line = next(
+        (ln for ln in output.splitlines() if ln.startswith("__CALLS__")), None,
+    )
+    assert calls_line is not None, f"harness produced no call log:\n{output[-3000:]}"
+    assert f"Starting Phase {pn('security')}" in output, (
+        f"the security phase never ran:\n{output[-3000:]}"
+    )
+    return (
+        json.loads(result_line.removeprefix("__RESULT__")),
+        json.loads(calls_line.removeprefix("__CALLS__")),
+        output,
+    )
+
+
+def _group_settings_writes(
+    calls: list[dict[str, Any]], group_name: str,
+) -> list[dict[str, Any]]:
+    """Every POST that MERGEs settings, description included, onto the named
+    group object itself, not its membership."""
+    encoded = quote(group_name, safe="")
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"]
+        and f"sitegroups/getbyname('{encoded}')" in c["url"]
+        and "/users" not in c["url"]
+    ]
+
+
+def _security_errors(summary: dict[str, Any]) -> list[Any]:
+    return [
+        err for err in (summary.get("errors") or [])
+        if str(err.get("phase")) == pn("security")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unmarked_group_with_members_is_refused() -> None:
+    """#209: adopting it would grant those members whatever the family
+    declares. 'List Maintainer' is granted 'Schema Manager' in the plain
+    fixture mapping, which can create and manage every list in the family."""
+    summary, calls, _ = _group_gate_deploy(
+        _deploy_js(), "List Maintainer",
+        description="Our own group", member_pages=[[{"Id": 501}]],
+    )
+    # The grant is the damage; the refusal is only how the script avoids it.
+    # Asserted first so removing the gate fails on "the group was
+    # reconciled" rather than on a summary key.
+    assert not _group_settings_writes(calls, "List Maintainer"), (
+        "an unmarked group with members was reconciled before the refusal: "
+        "its description and membership controls were rewritten"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "List Maintainer" in message, message
+    assert "carries no" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_unmarked_but_empty_group_is_adopted_and_stamped() -> None:
+    """A group nobody has joined yet carries no access to hand out, so it is
+    adopted like any other pre-existing group and stamped with the marker
+    that lets a later redeploy recognise it as this tool's own."""
+    summary, calls, _ = _group_gate_deploy(
+        _deploy_js(), "List Maintainer",
+        description="Our own group", member_pages=[[]],
+    )
+    assert not _security_errors(summary), summary
+    writes = _group_settings_writes(calls, "List Maintainer")
+    assert writes, "an unmarked, empty group was never adopted"
+    assert "Provisioned by dbml-sharepoint" in writes[0]["body"]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_marked_group_with_members_is_adopted_silently() -> None:
+    """A redeploy must not trip over the enterprise reader a prior run
+    already enrolled into this same group. `enterprise_reader=None` keeps
+    the reader-enrolment phase itself out of the emitted script, so this
+    exercises only the adoption gate in the security phase that reconciles
+    'Enterprise Reader' regardless of --enterprise-reader."""
+    summary, calls, _ = _group_gate_deploy(
+        _reader_deploy_js(enterprise_reader=None), "Enterprise Reader",
+        description="Read-only accounts. Provisioned by dbml-sharepoint from Test.",
+        member_pages=[[{"Id": 501}]],
+    )
+    assert not _security_errors(summary), summary
+    assert _group_settings_writes(calls, "Enterprise Reader"), (
+        "a marked group's settings were never reconciled"
+    )
 
 
 def test_no_reader_no_enrolment_code() -> None:
