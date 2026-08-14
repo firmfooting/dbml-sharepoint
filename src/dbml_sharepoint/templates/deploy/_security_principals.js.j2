@@ -235,11 +235,19 @@
       }
     }
 
+    // Every object below (level or group) is surveyed before ANY of them is
+    // applied. decisions collects only the decisions that CAN be applied
+    // ('create'/'adopt'); a 'refuse' is turned into a thrown error right
+    // here, on the same per-object catch a genuine survey failure already
+    // used, so both land in summary.errors identically and the gate further
+    // down treats them alike.
+    const decisions = [];
+
     for (const lvl of SCHEMA.permission_levels) {
       try {
         const decision = await surveyLevel(lvl);
         if (decision.kind === 'refuse') throw new Error(decision.reason);
-        await applyLevelDecision(decision);
+        decisions.push(decision);
       } catch (err) {
         log('ERROR', `Phase {{ phase.number }} permission level '${lvl.name}': ${err.message}`);
         summary.errors.push({ phase: '{{ phase.number }}', permissionLevel: lvl.name, error: err.message });
@@ -649,10 +657,42 @@
         const decision = await surveyGroup(grp, decidedCreates);
         if (decision.kind === 'create') decidedCreates.add(nameKey(grp.name));
         if (decision.kind === 'refuse') throw new Error(decision.reason);
-        await applyGroupDecision(decision);
+        decisions.push(decision);
       } catch (err) {
         log('ERROR', `Phase {{ phase.number }} site group '${grp.name}': ${err.message}`);
         summary.errors.push({ phase: '{{ phase.number }}', group: grp.name, error: err.message });
+      }
+    }
+
+    // Gate: apply only if every survey above succeeded and nothing refused.
+    // A refused or unsurveyable object is not a decision to proceed on, and
+    // this is what stops one refusal from letting every OTHER object still
+    // get written before the run reports it.
+    //
+    // This buys atomicity of DECISION, not of effect. SharePoint offers no
+    // transaction: the site can still change between this gate and the
+    // apply loop below, and an apply can still fail part way through even
+    // when every survey passed. A refusal here is also not a promise the
+    // site stays untouched by everything this run does afterward;
+    // correctGroupOwner's manual-action refusal happens during apply and is
+    // unsurveyable by construction.
+    if (summary.errors.length === 0) {
+      for (const decision of decisions) {
+        try {
+          if (decision.object === 'level') {
+            await applyLevelDecision(decision);
+          } else {
+            await applyGroupDecision(decision);
+          }
+        } catch (err) {
+          const label = decision.object === 'level' ? 'permission level' : 'site group';
+          log('ERROR', `Phase {{ phase.number }} ${label} '${decision.name}': ${err.message}`);
+          if (decision.object === 'level') {
+            summary.errors.push({ phase: '{{ phase.number }}', permissionLevel: decision.name, error: err.message });
+          } else {
+            summary.errors.push({ phase: '{{ phase.number }}', group: decision.name, error: err.message });
+          }
+        }
       }
     }
   }

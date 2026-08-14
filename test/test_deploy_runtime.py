@@ -2495,6 +2495,173 @@ def test_a_freshly_created_level_base_permissions_the_tenant_did_not_store_fails
     assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
+# Task 4 (security-phase-atomicity): the abort check used to run only after
+# BOTH loops (levels, then groups) had finished, so a refusal on the first
+# object did not stop a write on a LATER one. `_security_writes` names every
+# POST the phase can issue, regardless of which object it belongs to, so the
+# tests below anchor on the absence of writes in the call log rather than on
+# a summary key, matching AGENTS.md's evidence rule: the gate must never be
+# softenable without a test failing on the write itself.
+
+
+def _security_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every POST `_security_principals.js.j2` can issue: a permission-level
+    create or MERGE, a site-group create or MERGE, or the CSOM ProcessQuery
+    owner correction. All three only ever fire from the apply loop."""
+    return [
+        c for c in calls
+        if c["method"] == "POST"
+        and (
+            "sitegroups" in c["url"]
+            or "roledefinitions" in c["url"]
+            or "ProcessQuery" in c["url"]
+        )
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_level_blocks_the_group_create_that_used_to_follow_it() -> None:
+    """Before this task, the level loop ran survey-then-apply per object and
+    only checked `summary.errors` after BOTH loops. A refused level did not
+    stop the group loop a few lines later from creating 'List Maintainer'.
+    """
+    summary, calls, output = _role_def_gate_deploy(
+        _deploy_js(), description_override="Our own level.",
+    )
+    assert not _security_writes(calls), (
+        f"a refused permission level did not stop a write on another "
+        f"object\n{output[-2000:]}"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_refused_group_blocks_the_permission_level_reconcile_too() -> None:
+    """Symmetric case: with no override the fixture's one declared level
+    ('Schema Manager') is adopted and reconciled cleanly on its own
+    (`test_a_marked_permission_level_is_adopted_silently`). Refusing the
+    group here must stop that reconcile from happening, whichever loop ran
+    first.
+    """
+    summary, calls, output = _group_gate_deploy(
+        _deploy_js(), "List Maintainer",
+        description="Our own group", member_pages=[[{"Id": 501}]],
+    )
+    assert not _security_writes(calls), (
+        f"a refused site group did not stop the permission level reconcile "
+        f"that would otherwise have run\n{output[-2000:]}"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_two_refusals_both_appear_in_the_transcript() -> None:
+    """Surveying must not short-circuit on the first refusal: an operator
+    who fixes one blocker and redeploys must not just meet the next one
+    they were never told about."""
+    harness = _ADOPTED_HARNESS.replace(
+        "const ROLE_DEF_DESCRIPTION_OVERRIDE = null;",
+        f"const ROLE_DEF_DESCRIPTION_OVERRIDE = {json.dumps('Our own level.')};",
+    ).replace(
+        "const GROUP_DESCRIPTIONS = {};",
+        f"const GROUP_DESCRIPTIONS = {json.dumps({'List Maintainer': 'Our own group'})};",
+    ).replace(
+        "const GROUP_MEMBER_PAGES = {};",
+        f"const GROUP_MEMBER_PAGES = {json.dumps({'List Maintainer': [[{'Id': 501}]]})};",
+    ).replace(
+        "const KNOWN_GROUP_NAMES = [];",
+        f"const KNOWN_GROUP_NAMES = {json.dumps(['List Maintainer'])};",
+    )
+    summary, calls, output = _run_group_verify_deploy(_deploy_js(), harness)
+    assert not _security_writes(calls), output[-2000:]
+    errors = _security_errors(summary)
+    messages = [str(e["error"]) for e in errors]
+    assert any("Schema Manager" in m for m in messages), errors
+    assert any("List Maintainer" in m for m in messages), errors
+    assert len(errors) == 2, (
+        f"only one of two refusals reached the transcript: {errors}"
+    )
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+# A genuine survey FAILURE (not a refusal): the permission-level existence
+# probe answers a real HTTP error rather than a filtered result set.
+# `surveyLevel` throws in that case, and the per-object catch around it must
+# still turn that into the same structured summary a refusal produces,
+# rather than letting it escape the phase, the `try` in deploy.js.j2, and
+# the async IIFE as an unhandled rejection -- which the harness would
+# surface as a missing `__RESULT__` line, since nothing would ever call the
+# `.then()` that prints it.
+_SURVEY_FAILURE_HARNESS = _ADOPTED_HARNESS + textwrap.dedent(r"""
+    const _passThrough = globalThis.fetch;
+    globalThis.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      if ((opts.method || 'GET') === 'GET' && u.includes('roledefinitions')
+          && u.includes('$filter=Name')) {
+        calls.push({ url: u, method: 'GET', body: null });
+        const payload = { error: { message: { value: 'probe exploded' } } };
+        return {
+          ok: false, status: 500,
+          headers: { get: () => null },
+          json: async () => payload,
+          text: async () => JSON.stringify(payload),
+        };
+      }
+      return _passThrough(url, opts);
+    };
+""")
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_survey_failure_still_produces_a_structured_abort() -> None:
+    """`_run_group_verify_deploy` already asserts a `__RESULT__` line was
+    printed; if the probe failure above escaped as an unhandled rejection,
+    that assertion is what would catch it, not the abort-key check below.
+    """
+    summary, calls, output = _run_group_verify_deploy(
+        _deploy_js(), _SURVEY_FAILURE_HARNESS,
+    )
+    assert not _security_writes(calls), output[-2000:]
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert "Schema Manager" in message, message
+    assert "500" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+def _group_create_writes(calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Every POST that creates a new site group."""
+    return [
+        c for c in calls
+        if c["method"] == "POST" and c["body"]
+        and c["url"].endswith("/web/sitegroups")
+    ]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_clean_run_still_writes_both_the_level_and_the_group() -> None:
+    """No refusals, no survey failures: the restructure must not turn a
+    previously clean run into one that skips writes it used to make.
+
+    Plain `_ADOPTED_HARNESS` carries no entry in `KNOWN_GROUP_NAMES`, so
+    'List Maintainer' takes the create path here rather than the adopt
+    path other tests in this file exercise via `_group_gate_deploy`.
+    """
+    summary, calls, _ = _run_group_verify_deploy(_deploy_js(), _ADOPTED_HARNESS)
+    assert not _security_errors(summary), summary
+    assert _role_def_merge_writes(calls, "Schema Manager"), (
+        "a clean run stopped reconciling the permission level"
+    )
+    assert _group_create_writes(calls), (
+        "a clean run stopped creating the site group"
+    )
+
+
 def test_no_reader_no_enrolment_code() -> None:
     """Opt-in: the code path must not exist unless asked for.
 
