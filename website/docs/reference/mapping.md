@@ -1394,8 +1394,20 @@ tool does not manage. The error does report a web-scope figure, to tell the
 operator what they are looking at, but that figure is a floor rather than a
 total, since assignments on individual lists are not counted.
 
-The remedy is the same as for a group: rename the level in your mapping so
-the deploy creates its own.
+**Every level on a site deployed before this release carries no marker**,
+since the marker did not exist yet, so the first redeploy after upgrading is
+refused on every custom level the mapping declares. That is why this change
+is breaking. The remedy is the same as for a group: rename the level in your
+mapping so the deploy creates its own under the declared name.
+
+A level refusal does not mean the site is untouched. The refused level
+itself is left exactly as it was, and nothing is written to it, precisely as
+the error message says. **No later phase runs**, so no lists are created, no
+ACLs are assigned and no seed rows are written. The permission-level loop
+runs before the group loop in the same phase, though, and a level's refusal
+does not stop that loop, so other levels and every group the mapping
+declares may already have been created or reconciled before the run stops on
+the accumulated errors.
 
 A matching check runs at build time. A declared description that leaves no
 room for the marker is refused before any deploy runs
@@ -1606,11 +1618,11 @@ which declaration created the group, not merely that this tool did.
 A refusal is narrow. The refused group itself is left exactly as it was;
 nothing is written to it. **No later phase runs**, so no lists are created,
 no ACLs are assigned and no seed rows are written. The mapping's custom
-permission levels, though, are created or reconciled unconditionally before
-the group loop even starts, and other groups declared in the same phase may
-already have been created or reconciled before the run stops on the one that
-fails, so a refusal does not mean the site is untouched, only that this
-group is.
+permission levels, though, are attempted before the group loop even starts,
+and a level's own refusal does not stop that loop. Sibling groups, and any
+levels that were successfully created or adopted, may already have been
+written before the run stops on the one that fails, so a refusal does not
+mean the site is untouched, only that this group is.
 
 Whether an existing site hits that refusal depends on the group. `dbml List
 Administrators` is normally empty between runs, since the deploy enrols the
