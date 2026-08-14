@@ -510,7 +510,6 @@
       "list": "APP_Project"
     }
   ],
-  "group_marker_prefix": "Provisioned by dbml-sharepoint",
   "groups": [
     {
       "allow_members_edit_membership": false,
@@ -519,6 +518,7 @@
       "description": "Test group. Provisioned by dbml-sharepoint from simple-test.",
       "enroll_enterprise_reader": false,
       "enroll_operator_during_deploy": false,
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test.",
       "name": "List Maintainer",
       "only_allow_members_view_membership": false,
       "owner_group": "Site Owners",
@@ -1845,13 +1845,22 @@
           // group already needs site-owner rights on the target site, which
           // this gate assumes rather than re-checks.
           //
-          // Empty prefix would make indexOf('') return 0 for every
+          // EXACT MARKER, NOT A SHARED PREFIX. Every family's marker starts
+          // with the same "Provisioned by dbml-sharepoint" text, so testing
+          // that shared text let a group ANY family stamped pass the gate
+          // for EVERY family. Comparing the exact marker this declaration
+          // expects (grp.expected_marker) closes that: a group family B
+          // declares cannot be satisfied by a marker family A left on it.
+          // The two tool-owned groups still work here, because every family
+          // computes the same expected_marker for them.
+          //
+          // Empty expected_marker would make indexOf('') return 0 for every
           // description below, adopting every group unmarked. undefined
           // already fails closed there; only the empty string is dangerous.
           // jsgen always sets a value, so this only matters for a
           // hand-edited bundle.
-          if (typeof SCHEMA.group_marker_prefix !== 'string' || SCHEMA.group_marker_prefix === '') {
-            throw new Error('SCHEMA.group_marker_prefix is missing or empty; refusing to adopt any group against it.');
+          if (typeof grp.expected_marker !== 'string' || grp.expected_marker === '') {
+            throw new Error(`Site group '${grp.name}' has no expected_marker; refusing to adopt any group against it.`);
           }
           const existingJson = await checkResp.json();
           const existingDescription = (existingJson.d && typeof existingJson.d.Description === 'string')
@@ -1862,11 +1871,11 @@
           // does not START with it. indexOf finds the marker anywhere in the
           // string; changing this to startsWith would refuse every group
           // that also carries a declared description.
-          if (existingDescription.indexOf(SCHEMA.group_marker_prefix) === -1) {
+          if (existingDescription.indexOf(grp.expected_marker) === -1) {
             const memberCount = await countGroupMembers(grp.name);
             if (memberCount > 0) {
               throw new Error(
-                `Site group '${grp.name}' already exists, carries no '${SCHEMA.group_marker_prefix}' `
+                `Site group '${grp.name}' already exists, carries no '${grp.expected_marker}' `
                 + `marker, and holds ${memberCount} member(s). It was not created by this tool, and `
                 + `adopting it would grant those members the access this family declares for the group. `
                 + `Nothing has been written to this group. Either empty the group, or rename it so `
