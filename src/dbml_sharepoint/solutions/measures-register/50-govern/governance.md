@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Measurement owner | *(e.g. head of performance/quality)* | The catalogue, change control, the annual cull, this document |
 | MR Measure Custodians | The maintaining group | Definition quality, review cadence |
 | Measure owner (per row) | `Owner` | The number being right, produced, and reported |
@@ -56,7 +56,7 @@ Rule 3 is now **enforced at save**, along with the cadence it implies. Two
 separate rules, because SharePoint treats them differently:
 
 | Rule | Where it lives | What happens |
-|---|---|---|
+| --- | --- | --- |
 | An Active measure needs a ReviewDate | `list_validation` (cross-column) | The save is refused |
 | A ReviewDate is at most twelve months out | `column_validation` on `ReviewDate` | The save is refused, with its own message |
 

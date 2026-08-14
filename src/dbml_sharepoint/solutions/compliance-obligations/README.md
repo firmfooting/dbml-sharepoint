@@ -1,6 +1,6 @@
 # Compliance obligations
 
-*Theme: governance, risk & compliance*
+*Theme: governance, risk & compliance.*
 
 Every obligation the organisation must meet — legislation, accreditation
 standards, funding agreements, formal commitments — with an owner, a
@@ -28,7 +28,7 @@ grouping levels working before you load a thing.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit source types to your obligation landscape |
 | 2 | `20-configure/` | Prefix; coordinators-maintain model |
 | 3 | `30-deploy/` | Administrator: build, paste; load the obligations |

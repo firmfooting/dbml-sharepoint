@@ -24,17 +24,17 @@ told an auditor it would do. The register is where that promise is visible.
 
 ## The views
 
-**AU_Audit**
+### AU_Audit
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Recent reports** | The default. Every review, most recent report first. |
 | **By type** | The same, grouped by internal / external / accreditation / regulator / self-assessment. |
 
-**AU_Recommendation**
+### AU_Recommendation
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Open by owner** | The default. Everything still open, grouped by who owns it. |
 | **Overdue** | Open rows past their *committed* date — the revised one where there is one, the original where there isn't. |
 | **Awaiting evidence** | Actions reported done whose evidence has not been verified. The coordinators' reading queue. |

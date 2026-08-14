@@ -3,14 +3,14 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Programme owner | *(e.g. volunteer manager / community engagement lead)* | The role matrix, privacy rules, this document |
 | VL Volunteer Coordinators | The maintaining group | Records, sweeps, onboarding gates |
 
 ## Check requirements by role (edit to your jurisdiction and context)
 
 | Role type | Police check | WWCC (or equivalent) | Induction |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Patient/client-facing (wards, transport, home visits) | Required, 3-yearly | Required if role involves children or per your policy | Required before start |
 | Retail / op-shop / events | Required, 3-yearly | If children involved | Required |
 | Remote/admin support | Per your policy | Per role | Required |
@@ -27,7 +27,7 @@ It cannot hold the rest, and the difference is worth knowing precisely
 rather than assuming the software has your back:
 
 | Rule | Where it lives | Why there |
-|---|---|---|
+| --- | --- | --- |
 | An induction date cannot be in the future | **Enforced at save**, on the column, with its own message | It reads only its own column, so it can carry a message that names the actual mistake |
 | An **Active** volunteer must have an induction date and a start date | **Enforced at save**, on the list | Cross-column, so it shares the list's single validation formula. These two are the only requirements the matrix states for *every* role type |
 | **Which** checks a role requires | **Governance check** | The requirement varies by role and lives in the table above. SharePoint cannot read it, and a formula that guessed would be wrong for some roles in both directions |

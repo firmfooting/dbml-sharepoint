@@ -12,7 +12,7 @@ down just as fast.
 
 ## The marker contract
 
-Every demo row's Title begins with **`[DEMO] `**. The marker is the
+Every demo row's Title begins with **`[DEMO]`**. The marker is the
 whole contract:
 
 - It is visible in every view and form, so nobody mistakes demo content

@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Register owner | *(e.g. CFO / COO / risk lead)* | Register completeness, escalation, the matrix, this document |
 | Risk owner (per row) | The `RiskOwner` column | Rating honesty, treatment, reviews |
 | Risk Sponsor (per row) | The `RiskSponsor` column | Approving opening, tolerance and closure |
@@ -91,7 +91,7 @@ share a single message, because SharePoint gives a list one validation
 formula; the fourth reads only its own column and so keeps its own.
 
 | Rule | Where |
-|---|---|
+| --- | --- |
 | A Tolerate response carries a Tolerance End Date | list (shared message) |
 | A risk past Provisional has both Likelihood and Consequence | list (shared message) |
 | A Closed risk has a Target Risk Rating **and** controls rated *All reasonable controls in place* or better | list (shared message) |

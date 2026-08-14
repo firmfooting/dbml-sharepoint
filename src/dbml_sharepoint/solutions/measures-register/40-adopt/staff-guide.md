@@ -52,7 +52,7 @@ the next committee:
 Deployed with the list — there is nothing to build by hand.
 
 | View | Use it when |
-|---|---|
+| --- | --- |
 | **The catalogue** *(default)* | Browsing what is actually in force, grouped by area |
 | **By forum** | Before an agenda goes out: what does this committee receive? |
 | **Definition reviews due** | Working the review cadence — anything due within 60 days, oldest first, overdue dates in red |

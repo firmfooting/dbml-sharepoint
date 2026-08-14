@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Compliance owner | *(e.g. head of governance/quality)* | The register's coverage, assessment standard, reporting, this document |
 | CO Compliance Coordinators | The maintaining group | Loading, assessment facilitation, evidence currency |
 | Obligation owner (per row) | `Owner` | The duty being met and evidenced; raising changes early |
@@ -37,7 +37,7 @@ owner, and dated (`LastAssessedDate`):
 ## Review cycles
 
 | Status / stakes | Reassess at least |
-|---|---|
+| --- | --- |
 | Non-compliant / Partially compliant | Monthly until resolved |
 | Compliant, high-stakes instruments (safety, funding conditions) | Annually |
 | Compliant, other | Every 2 years |
@@ -67,7 +67,7 @@ worth knowing rather than discovering.
 **Enforced at save — SharePoint rejects the row:**
 
 | Rule | Where it lives | Message shown |
-|---|---|---|
+| --- | --- | --- |
 | A status other than *Not assessed* needs a `LastAssessedDate` | list validation | Shared, names both list rules |
 | *Compliant* / *Partially compliant* / *Non-compliant* needs `EvidenceNotes` | list validation | Shared, names both list rules |
 | `LastAssessedDate` cannot be in the future | column validation | Its own message, on the column |

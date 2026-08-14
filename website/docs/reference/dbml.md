@@ -70,7 +70,7 @@ The deploy writes it, reads it back, and aborts if the write did not take
 The emitted Description is the note, a space, then a marker naming the
 template the list came from:
 
-```
+```text
 Provisioned by dbml-sharepoint from routine-checks/CheckPoint.
 ```
 
@@ -157,7 +157,7 @@ in each schema are the model for tone.
 ## Column types
 
 | DBML type | SharePoint field | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `int` (as `pk, increment`) | built-in ID | The conventional surrogate key; not created as a column |
 | `int`, `number` | Number | |
 | `nvarchar` | Single line of text | |
@@ -266,7 +266,7 @@ it. That is set out in the
 decides what a view filter may say.
 
 | Question | Measured |
-|---|---|
+| --- | --- |
 | Creation | plain `POST` to `/fields`, `SP.FieldMultiChoice` — no `AddFieldAsXml` |
 | Read-back | `TypeAsString="MultiChoice"`, `FieldTypeKind=15`, `Choices` as `Collection(Edm.String)` |
 | Item write shape | `{"__metadata":{"type":"Collection(Edm.String)"},"results":[…]}` |
@@ -450,7 +450,7 @@ The matrix is **live-verified**, not inferred. `calculated-operand-probe.js`
 was run against SharePoint Online on 2026-07-30 and answered every question:
 
 | Operand column type | Result |
-|---|---|
+| --- | --- |
 | Single line of text (`nvarchar`) | accepted |
 | Number (`number`, `int`) | accepted |
 | Date, Date/Time (`date`, `datetime`) | accepted |

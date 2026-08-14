@@ -136,6 +136,34 @@ jobs:
           # as a number instead of a list.
           test "$found" -eq "$expected"
 
+  markdown:
+    # Style of the hand-written markdown -- the whole tree, not just
+    # website/, since the solution templates ship READMEs and guides that an
+    # adopter reads. Scope, exclusions and rule configuration all live in
+    # .markdownlint-cli2.yaml, shared with the prek hook.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Lint markdown (markdownlint-cli2)
+        # The version here and the `rev:` of the markdownlint-cli2 hook in
+        # .pre-commit-config.yaml are the same number written twice, because
+        # this is a node tool and cannot be pinned by pyproject.toml the way
+        # ruff/mypy/j2lint are. test/test_markdownlint_version.py fails if
+        # they drift, so the hook can still never disagree with CI.
+        #
+        # The repo-wide glob is passed here rather than set as `globs:` in the
+        # config, because markdownlint-cli2 APPENDS config globs to
+        # command-line ones -- putting it there would make the pre-commit hook
+        # lint all 162 files on every commit instead of the ones staged.
+        run: npx --yes markdownlint-cli2@0.23.2 "**/*.md"
+
   docs:
     # onBrokenLinks/onBrokenMarkdownLinks are 'throw', so this build is
     # the cross-link integrity gate for the whole docs site.

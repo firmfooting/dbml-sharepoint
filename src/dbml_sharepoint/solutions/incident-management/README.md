@@ -25,7 +25,7 @@ eleven demo rows behind `--seed`.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit severity/category language to your incident taxonomy |
 | 2 | `20-configure/` | Prefix, review the report-only permission level |
 | 3 | `30-deploy/` | Administrator: build, paste, verify both lists + the level |

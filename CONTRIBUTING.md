@@ -21,9 +21,12 @@ drift from the version anyone else has. The config keeps the
 classic `pre-commit` is not used here.
 
 The hooks run the same lint/type/template checks as CI on every commit
-(ruff, mypy, j2lint) and the full test suite on push. They shell out to
-the project's own pinned tools via `uv run`, so a hook can never disagree
-with CI. Run them by hand any time with `uv run prek run --all-files`.
+(ruff, mypy, j2lint, markdownlint) and the full test suite on push. They
+shell out to the project's own pinned tools via `uv run`, so a hook can
+never disagree with CI. markdownlint-cli2 is the exception — a node
+package, pinned by `rev:` in the config and matched to CI's `npx` version
+by `test/test_markdownlint_version.py`. Run them by hand any time with
+`uv run prek run --all-files`.
 
 ## The gates
 
@@ -34,6 +37,7 @@ uv run pytest                               # full suite, incl. the semantic Jin
 uv run ruff check src test website/scripts  # lint
 uv run mypy                                 # strict typing: src, test, website/scripts
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
+uv run prek run --all-files markdownlint-cli2  # markdown style; config in .markdownlint-cli2.yaml
 ```
 
 Notes that save you a round-trip:

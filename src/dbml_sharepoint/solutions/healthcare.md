@@ -51,7 +51,7 @@ A SharePoint list never replaces a mandated system:
 ## Template map for a health service
 
 | Health-service need | Template | Notes |
-|---|---|---|
+| --- | --- | --- |
 | Practitioner credentialing & scope (NSQHS Std 1) | credentialing-register | The register accreditors ask for first |
 | Biomed / test-and-tag / fire maintenance | equipment-maintenance | Evidence-linked service history |
 | Fridge temps, trolley checks, cleaning rounds | routine-checks | Cold-chain evidence; kills the paper sheets |

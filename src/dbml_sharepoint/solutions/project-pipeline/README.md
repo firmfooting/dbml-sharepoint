@@ -31,7 +31,7 @@ formulas cannot read.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit stages/cost bands to your delivery approach |
 | 2 | `20-configure/` | Prefix; the scoring weights ARE the mapping formulas |
 | 3 | `30-deploy/` | Administrator: build, paste, verify the score |
@@ -45,7 +45,7 @@ member, re-read every `where:` in `mapping.yaml`: five views filter on
 stage names, and a renamed member empties a view without failing the build.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes six `[DEMO] `-titled rows — one per live stage plus a declined
+that pastes six `[DEMO]`-titled rows — one per live stage plus a declined
 and a delivered one — so every view, every rating band and the score bar
 render on a first look. One is deliberately left unscored. See
 `30-deploy/deploy.md`.

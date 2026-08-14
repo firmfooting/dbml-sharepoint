@@ -1,0 +1,94 @@
+# markdownlint-cli2 configuration. Read by the `markdownlint-cli2` prek hook
+# in .pre-commit-config.yaml and by the `markdown` job in
+# .github/workflows/ci.yml, so both sides lint exactly the same files under
+# exactly the same rules.
+
+# The ruleset is markdownlint's default, unmodified. Disabling a rule needs a
+# reason written here; "it fires a lot" is not one. What each rule means:
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+
+# There is deliberately no `globs:` key here. markdownlint-cli2 APPENDS the
+# config's globs to any given on the command line rather than replacing them
+# (measured on v0.23.2: passing one filename still reported "Linting: 162
+# files"), so a `globs: ["**/*.md"]` here would make the prek hook lint the
+# whole repository on every commit that touches any markdown at all.
+
+# The repo-wide glob lives in the CI invocation instead; the hook keeps
+# pre-commit's normal changed-files-only behaviour. `ignores` below applies to
+# both, because command-line filenames are themselves treated as globs.
+
+# Honour .gitignore. Build output is the reason: `examples/**/build/`,
+# `src/dbml_sharepoint/solutions/**/build/` and the docs site's own
+# `website/build/` all contain emitted markdown (index.md, deploy-manifest.md,
+# assess-manifest.md, data-dictionary.md...) that exists only in a working
+# tree. Without this, a developer who has run a build lints different files
+# from CI, which is the worst kind of lint config.
+gitignore: true
+
+ignores:
+  # node_modules is gitignored under website/, but a stray install anywhere
+  # else would otherwise pull in every dependency's README.
+  - "**/node_modules/**"
+
+  # GENERATED AND COMMITTED, excluded because a violation here cannot be
+  # fixed in the file. The file is overwritten wholesale by its generator on
+  # the next run, so the only real fix is in the generator's Python, and a
+  # lint error pointing at the artefact sends the reader to the wrong place.
+  # A currency test already fails if either page drifts from its source.
+
+  # Written by website/scripts/generate_api.py (`write_page`), which emits the
+  # whole tree: index.md, templates.md, conditions.md and python/**.
+  - "website/docs/api/**"
+
+  # Written by website/scripts/generate_findings.py, which renders the
+  # FindingCode catalogue and analysis/finding_help.py into one page. The page
+  # itself carries a "Do not edit by hand" banner.
+  - "website/docs/reference/findings.md"
+
+config:
+  # MD013 (line-length) is KEPT ON, deliberately. The obvious reason to turn
+  # it off does not apply here: this repository's committed markdown is hard
+  # wrapped, 698 of 19,547 non-generated lines exceed 80 columns, so the
+  # convention is real and the exceptions are exceptions.
+
+  # Its sub-options were left at their defaults until an inventory existed, so
+  # what follows is a decision made on numbers rather than a rule narrowed
+  # before anyone had seen what it reports. MEASURED over the whole tree,
+  # 2026-08-14, once the mechanical rules were fixed: 490 findings, of which
+  # 452 were a table row, 21 prose, 16 a line inside a fenced code block, and
+  # 1 a heading.
+
+  # TABLES ARE OFF, and that is a syntax constraint rather than a preference.
+  # A GFM table row must occupy exactly one line and there is no continuation,
+  # so a long row cannot be wrapped at all and the only way to satisfy the
+  # rule is to delete words from a cell. That is information loss dressed up
+  # as formatting, across 452 rows of documentation an adopter reads.
+
+  # CODE BLOCKS ARE OFF for the same reason one step removed. A fenced line is
+  # content the reader copies and runs. Wrapping it either changes what they
+  # run or adds continuation backslashes that change what they see, and the
+  # longest offenders are the commands AGENTS.md tells people to paste.
+
+  # Both meet the test this file already applies to its `ignores` list: a
+  # violation that cannot be fixed in the file. Headings stay ON, because the
+  # one over-long heading is a real finding. That leaves 22 findings genuinely
+  # about prose being too wide, which is what the rule was kept on to catch.
+  MD013:
+    tables: false
+    code_blocks: false
+
+  # MD025 counts a Docusaurus front matter `title:` as a top-level heading, so
+  # a page carrying both that and a body `# Heading` reads as having two. This
+  # tells it to count real headings only.
+
+  # MEASURED across website/docs, 2026-08-14, excluding the generated api
+  # tree: 23 pages carry a front matter title, all 23 also carry a body H1,
+  # and none carries a front matter title alone. The pairing is the site's
+  # universal convention rather than drift on a few pages.
+
+  # Deleting the 22 body headings the rule flagged was rejected on that
+  # evidence. Docusaurus uses the front matter title for the sidebar, the
+  # browser tab and search; it does not inject a heading into the page body.
+  # Removing the body H1 would leave those pages with no visible heading.
+  MD025:
+    front_matter_title: ""

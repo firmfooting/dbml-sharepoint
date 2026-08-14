@@ -60,7 +60,7 @@ Work **Needs triage** oldest first. Most rows should take under three minutes:
 4. Choose one **Triage Route** and finish the shortest path below.
 
 | Triage Route | Complete | Status |
-|---|---|---|
+| --- | --- | --- |
 | Clinical incident/safety, risk, complaint/open disclosure, privacy/cyber, or project issue/change | Receiving system ID/link + Delivery Route | Transferred |
 | Direct hand-off to known owner | Owner acceptance + receiving work item/link + Delivery Route | Transferred |
 | Duplicate/already governed | Existing record ID/link | Duplicate |

@@ -1,7 +1,7 @@
 # Credentialing register
 
 *Theme: people & relationships — built for credentialed workforces
-(healthcare, but equally trades, legal, education)*
+(healthcare, but equally trades, legal, education).*
 
 Who is credentialed to do what, on whose decision, until when. Two lists:
 `CR_Practitioner` (each credentialed person, their registration and their
@@ -33,7 +33,7 @@ privacy posture in `50-govern/governance.md` before widening the site.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit disciplines/credential types to your workforce |
 | 2 | `20-configure/` | Prefix; coordinators-maintain, staff-read model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; load the workforce |

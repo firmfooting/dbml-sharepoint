@@ -8,7 +8,7 @@ sidebar_position: 1
 The build is a straight pipeline. Every stage is a plain module with a
 readable role; nothing is hidden behind frameworks.
 
-```
+```text
 schema.dbml ──▶ model/parser ─┐
 mapping.yaml ─▶ model/mapping_loader ─┼─▶ analysis/  validator,
 release.yaml ─▶ model/release ────────┘   ordering, typemap, phases,
@@ -29,7 +29,7 @@ One module per concern, grouped into layer packages that mirror the
 pipeline; the packaging spine sits at the package root:
 
 | Layer | Modules | Responsibility |
-|---|---|---|
+| --- | --- | --- |
 | `model/` | `parser` · `mapping_loader` · `release` | Parse DBML, the mapping YAML (+ enums/retention), release.yaml into typed objects |
 | `analysis/` | `validator` · `ordering` · `typemap` · `phases` · `permissions` · `styles` | Build-time rules (fail-closed), dependency ordering, SP type/formatter/permission projections |
 | `generators/` | `jsgen` · `rollbackgen` · `assessgen` · `demogen` · `manifestgen` · `reportgen` | Each renders one artifact family from model + analysis |

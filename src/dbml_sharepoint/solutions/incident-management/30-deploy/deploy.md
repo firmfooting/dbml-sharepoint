@@ -50,7 +50,7 @@ corporate and non-clinical incidents and the healthcare note in
 `50-govern/governance.md` is emphatic about it.
 
 **Delete the demo rows before active use.** Every demo Title begins with
-`[DEMO] `, so they are obvious in every view, they are matched by Title on
+`[DEMO]`, so they are obvious in every view, they are matched by Title on
 re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds real incidents.

@@ -21,7 +21,7 @@ the two separate rows the register insists on.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit categories and validity language to your framework |
 | 2 | `20-configure/` | Prefix; who maintains records (default: coordinators) |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; seed the catalogue |

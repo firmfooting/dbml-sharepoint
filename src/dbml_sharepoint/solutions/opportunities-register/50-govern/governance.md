@@ -40,7 +40,7 @@ points to those controls; it does not reproduce them.
 ## Minimal ownership model
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Register owner | Existing improvement, quality, operations or portfolio executive | Boundary, access, steward capacity, exception reporting and stop-doing review |
 | OR Opportunity Stewards | A small named routing function | Safety recheck, route selection, concise records, decision coordination and verified hand-off |
 | Submitter | Named project staff member | Four capture facts and safe/de-identified content |
@@ -100,7 +100,7 @@ The default objective is a decision about **where the item belongs**, not a
 decision about whether to fund a solution.
 
 | Triage Outcome | Intended Status | Minimum evidence |
-|---|---|---|
+| --- | --- | --- |
 | Clinical incident/safety, organisational risk, complaint/open disclosure, privacy/cyber, project issue/change | Transferred | Confirmed destination ID/link and Delivery Route |
 | Direct hand-off to known owner | Transferred | Receiving owner acceptance, destination ID/link and route |
 | Duplicate/already governed | Duplicate | Existing record ID/link |
@@ -147,7 +147,7 @@ For routine non-clinical ordering only:
 `Priority Score = Benefit Potential (1–4) × Time Criticality (1–4)`
 
 | Score | Cue |
-|---:|---|
+| ---: | --- |
 | 1–4 | Routine |
 | 5–8 | Consider |
 | 9–12 | Prioritise |

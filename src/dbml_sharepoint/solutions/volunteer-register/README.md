@@ -1,7 +1,7 @@
 # Volunteer register
 
 *Theme: people & relationships — built for organisations that run on
-volunteers (regional healthcare, aged care, community services, sport)*
+volunteers (regional healthcare, aged care, community services, sport).*
 
 Every volunteer, their role, and the compliance that keeps them (and the
 people they serve) safe: police check and Working with Children Check
@@ -29,7 +29,7 @@ accordingly.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit roles/check vocabulary to your programme |
 | 2 | `20-configure/` | Prefix; coordinators-only model |
 | 3 | `30-deploy/` | Administrator: build, paste; load current volunteers |

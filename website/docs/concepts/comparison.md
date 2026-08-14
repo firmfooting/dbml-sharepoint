@@ -23,7 +23,7 @@ they are corrected below rather than repeated.
 ## At a glance
 
 | | PnP | Site designs / scripts | Microsoft Graph | This tool |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Tool install required | Yes — PnP PowerShell module or PnP Framework/.NET package | No (REST) or SharePoint Online Management Shell for the PowerShell path | No (REST); optional SDKs | No — browser only |
 | Admin rights required | Site-level for most templates; site collection admin for some | Yes — registering/applying a script or design is a SharePoint-admin operation | An Entra admin must consent the app's permission scope | No — runs as the signed-in operator, bounded by their own SharePoint permissions |
 | App registration for unattended automation | Yes, for app-only auth (cert or secret) | Not for interactive admin PowerShell; yes for unattended REST automation | Yes, always — Graph calls require an OAuth bearer token | Never — there is no unattended mode |
@@ -108,9 +108,10 @@ synchronously using Invoke-SPOSiteDesign... we have bumped this limit to 300
 actions (or 100,000 characters) when the scripts are applied asynchronously…
 There is also a limit of 100 site scripts and 100 site templates per
 tenant"* ([SharePoint site template and site script
-overview](https://learn.microsoft.com/sharepoint/dev/declarative-customization/site-design-overview#anatomy-of-a-site-script)) —
-re-verified current for this page, matching the figures the July 2026
-landscape analysis flagged for re-checking. There is no documented grouping
+overview](https://learn.microsoft.com/sharepoint/dev/declarative-customization/site-design-overview#anatomy-of-a-site-script)).
+This was re-verified current for this page, matching the figures the
+July 2026 landscape analysis flagged for re-checking. There is no
+documented grouping
 property on `addSPView`, and no field type is claimed for the generic
 `addSPFieldXml` CAML escape hatch, so a Calculated column's support is
 unstated rather than confirmed either way. The re-run guarantee has one

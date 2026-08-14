@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Process owner | *(e.g. HR manager)* | The standard task set, overall SLA, this document |
 | Coordinator (per starter) | HR | Creating the record + tasks, chasing overdue |
 | Each function | Their queue | Their tasks, honestly statused |
@@ -12,7 +12,7 @@
 ## The standard task set (edit to your organisation, review annually)
 
 | Function | Task | Due |
-|---|---|---|
+| --- | --- | --- |
 | HR | Contract signed & filed | start − 10 |
 | HR | Payroll & super forms to Finance | start − 7 |
 | Finance / payroll | Payroll setup complete | start − 3 |
@@ -42,7 +42,7 @@ and the difference is worth knowing precisely rather than assuming the
 software has your back:
 
 | Rule | Where it lives | Why there |
-|---|---|---|
+| --- | --- | --- |
 | A task cannot be dated done in the future | **Enforced at save**, on the column | Reads only its own column, so it keeps its own message. A forward-dated completion is indistinguishable from a real one in every view and in the monthly stats |
 | Status **Done** needs a done date | **Enforced at save**, on the list | Cross-column, so it shares the list's single validation formula with the rule below and its message names both |
 | Status **Not applicable** needs a word in Notes | **Enforced at save**, on the list | A task closed with nothing behind it is indistinguishable from one nobody looked at. `Notes` is single-line nvarchar precisely so a validation formula can reference it — SharePoint refuses a multi-line column as an operand |

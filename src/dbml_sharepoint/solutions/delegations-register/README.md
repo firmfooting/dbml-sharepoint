@@ -1,6 +1,6 @@
 # Delegations register
 
-*Theme: governance, risk & compliance*
+*Theme: governance, risk & compliance.*
 
 Who may approve what, up to what limit, under which instrument. One list:
 `DG_Delegation` — each authority stated as a **role** (not a person), with
@@ -29,7 +29,7 @@ transcribe a clause.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit delegation areas to your instrument |
 | 2 | `20-configure/` | Prefix; governance-maintains, everyone-reads |
 | 3 | `30-deploy/` | Administrator: build, paste; load from the instrument |

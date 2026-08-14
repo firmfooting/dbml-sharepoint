@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Register owner | *(e.g. comms/partnerships lead)* | Hygiene cadence, privacy rules, this document |
 | Relationship owner (per organisation) | `Organisation.Owner` | The relationship, and its record being current |
 | Everyone using it | — | Logging their own interactions |
@@ -32,7 +32,7 @@ important thing on this page. Every other rule here is a discipline, and
 none of them is enforceable even in principle:
 
 | Rule | Where it lives | Why there |
-|---|---|---|
+| --- | --- | --- |
 | An interaction cannot be dated in the future | **Enforced at save**, on the column | This list is a log of what happened. A forward-dated entry sorts to the top of *Recent activity* and reads as the last thing anyone heard from that stakeholder — and walking into a meeting believing it is the failure the register exists to prevent |
 | Business-contact information only; no personal details, no opinions, no sensitive attributes | **Governance check** — privacy rule 1 | No formula can read the difference between a professional note and a personal one. The Contact form header carries the instruction instead, at the moment someone is typing |
 | Every organisation has a live Owner | **Governance check** — the quarterly cadence | Not expressible: a person column needs an accessor to be compared at all, and CAML refuses every accessor. The **blank group at the end of *By owner*** is the surface — it *is* the unowned list |

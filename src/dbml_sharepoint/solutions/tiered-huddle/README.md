@@ -21,7 +21,7 @@ down when the work belongs closer to the front line, and back again as
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Rename the reporting streams to yours; delete a board list if you run two tiers |
 | 2 | `20-configure/` | Prefix; the field sets and formatting that follow your stream names |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; learn the stream lifecycle |

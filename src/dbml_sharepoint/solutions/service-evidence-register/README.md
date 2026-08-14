@@ -23,7 +23,7 @@ The register separates three things that most logs mash into a single text
 box, and that separation *is* the rigour:
 
 | | Columns | Why it is separate |
-|---|---|---|
+| --- | --- | --- |
 | **Fact** | What happened, Occurred At, Provider Reference | Written at the time, attributable, verifiable from the provider's own records |
 | **Impact** | Severity, People Affected, Hours Lost | Estimated — and honestly labelled as estimated |
 | **Characterisation** | Failure Mode, Reviewer's assessment, Materiality | Somebody's judgement, and marked as such |

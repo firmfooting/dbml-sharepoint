@@ -1,7 +1,7 @@
 # Grants register
 
 *Theme: governance, risk & compliance — built for organisations that chase
-funding (regional health, community services, education, research)*
+funding (regional health, community services, education, research).*
 
 Every funding submission from preparation to outcome, and — the part
 everyone drops — every **post-award obligation** with its due date. Two
@@ -28,7 +28,7 @@ view, every colour and the overdue wash working before you load a thing.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit outcome/obligation language to your funders |
 | 2 | `20-configure/` | Prefix; grants-team-maintains model |
 | 3 | `30-deploy/` | Administrator: build, paste; load live grants + obligations |

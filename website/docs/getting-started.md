@@ -62,7 +62,7 @@ exits 0 — so scripts that already call it are unaffected. Use
 ## The three inputs
 
 | File | Owns |
-|---|---|
+| --- | --- |
 | `schema.dbml` | Tables, columns, types, enums (→ Choice), refs (→ Lookup), indexes, notes (→ column descriptions) |
 | `mapping.yaml` | List prefix, entity kind/template/site-role, views, widths, versioning, calculated formulas, formatting, permission levels, groups, per-list ACLs, demo rows |
 | `release.yaml` | Release tag + schema version stamped into every artifact for provenance |
@@ -165,7 +165,7 @@ dbml-sharepoint build ... --seed
 ```
 
 Paste `demo-data.js.txt` after a successful deploy to create the declared
-`[DEMO] `-marked sample rows. When the demonstration is over,
+`[DEMO]`-marked sample rows. When the demonstration is over,
 `rollback.js.txt` recognises demo-only content and removes it without
 ceremony — see [rollback](artifacts/rollback.md) for the exact gates it
 applies to anything that is *not* demo content.

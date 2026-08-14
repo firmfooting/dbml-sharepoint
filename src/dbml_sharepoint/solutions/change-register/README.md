@@ -27,7 +27,7 @@ moves, so the save rules fire with the field they name on screen.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit change types and impact language to your org |
 | 2 | `20-configure/` | Prefix; the submit-only intake model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify the intake level |
@@ -40,7 +40,7 @@ doesn't enforce it; and the `max:` on the `DaysToDecision` bar, which ships
 set from the slowest SLA in that table.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes six `[DEMO] `-titled rows — two in triage, one under review,
+that pastes six `[DEMO]`-titled rows — two in triage, one under review,
 one approved and stalled past sixty days, one emergency decided in a day
 and one rejected after three weeks — so every view and every colour band
 renders on a first look. See `30-deploy/deploy.md`.
