@@ -106,6 +106,33 @@ BUILT_IN_LEVELS: frozenset[str] = frozenset({
     "Manage Hierarchy", "Restricted Read", "View Only",
 })
 
+#: The ceiling on a site group's Description, from the server itself.
+#:
+#: MEASURED 2026-08-13 by test/manual/group-description-probe.js against a live
+#: tenant. A MERGE carrying 1018 characters came back HTTP 500:
+#:
+#:     "The parameter Description cannot be null or bigger than 512
+#:      characters."
+#:
+#: It REFUSES rather than truncating, and it refuses mid-deploy -- phase 1.2,
+#: after lists may already have been created. That is why this is a build-time
+#: rule rather than something the deploy discovers.
+#:
+#: The same run established that a group Description otherwise round-trips
+#: byte-identically, including an ampersand and a run of two spaces, both of
+#: which a LIST note is refused for. The list restrictions do not transfer
+#: here; SP.Group.Description is a different surface and was measured
+#: separately.
+#:
+#: An EMPTY description IS accepted, and reads back `""` — MEASURED
+#: 2026-08-14. The server's "cannot be null" does not extend to the empty
+#: string, so a mapping that omits `description:`, which `mapping_loader`
+#: turns into `""`, is known-good rather than merely untested.
+#:
+#: Custom permission LEVELS also carry a description and were not measured.
+#: Do not assume this ceiling applies to them.
+GROUP_DESCRIPTION_MAX = 512
+
 #: Built-in levels SharePoint DERIVES and a mapping may not assign.
 #:
 #: Learn is explicit that Limited Access is "automatically assigned by

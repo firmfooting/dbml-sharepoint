@@ -1,3 +1,19 @@
+{# test/manual/templates/view-aggregations-probe.js.j2 #}
+{# Lifted VERBATIM from the hand-written test/manual/view-aggregations-probe.js
+   so it comes under `test_rendered_probes_match_their_templates`, which only
+   guards probes that have a template. Until now this one could be edited in
+   place and drift from anything anyone reviewed.
+
+   It predates `_probe_harness.js.j2` and keeps its OWN log/expect/record,
+   whose `record(id, question, observed, detail)` differs from the harness's
+   `record(id, question, outcome, evidence)` — and the harness's report()
+   counts an open question by an outcome PREFIX the older helpers never
+   write. Converting it would change what it measures, and it has never been
+   run, so there is no transcript to check a conversion against. Bringing it
+   under the gate first is the safe half; converging it on the harness is
+   tracked separately.
+
+   The one addition is the revision stamp every other probe prints. #}
 /**
  * dbml-sharepoint VIEW AGGREGATIONS PROBE (creates and deletes its own list).
  *
@@ -113,7 +129,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 96d0a67a — quote this when reporting results.');
+  log('INFO', 'probe revision {{ revision }} — quote this when reporting results.');
   const results = [];
   const expect = (id, question) => {
     results.push({ id, question, observed: 'NOT ESTABLISHED', detail: 'the run did not reach this question' });
