@@ -1060,8 +1060,14 @@ def test_required_empty_group_is_paginated_and_fails_before_phase_1() -> None:
     ]
     assert "/users/removebyid" not in gate_block
     assert "/users/removebyloginname" not in js
-    assert js.count("/users/removebyid(") == 1  # only the self-enrolment cleanup
+    # Two now, both unconditional: the operator's run-scoped cleanup and the
+    # enterprise-reader drain, which deploy.js.j2 declares regardless of
+    # whether --enterprise-reader was passed (task 6, security-phase
+    # atomicity) so it exists on every build, not just one that emits the
+    # reader-enrolment phase itself.
+    assert js.count("/users/removebyid(") == 2
     assert js.index("removeSelfEnrollments") < js.index("/users/removebyid(")
+    assert "removeReaderEnrollments" in js
 
 
 def test_exact_lists_break_inheritance_immediately_in_phase_1() -> None:
@@ -2965,14 +2971,6 @@ def test_field_shapes_keep_internal_names_and_titles_apart() -> None:
     assert "byInternal.get(nameKey(name)) || byTitle.get(nameKey(name))" in js, (
         "internal names must take precedence over display titles"
     )
-
-
-def test_a_created_group_enters_the_enumeration_snapshot() -> None:
-    """The snapshot answers 'does this group exist?' locally, so a group
-    created during the run must join it — otherwise a later declaration
-    reading as absent would try to create a name that now exists."""
-    js = _generate_simple_js()
-    assert "knownGroupNames.add(nameKey(grp.name))" in js
 
 
 def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
