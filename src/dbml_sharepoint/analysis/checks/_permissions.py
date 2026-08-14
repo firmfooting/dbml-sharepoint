@@ -8,6 +8,7 @@ from dbml_sharepoint.analysis.permissions import (
     BASE_PERMISSIONS,
     BUILT_IN_LEVELS,
     DERIVED_BUILT_IN_LEVELS,
+    GROUP_DESCRIPTION_MAX,
 )
 from dbml_sharepoint.analysis.validator import (
     _ASSOCIATED_GROUP_ALIASES,
@@ -183,6 +184,21 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_GROUPS,
                 ))
             seen_group_names.setdefault(key, grp.name)
+
+            # The server refuses a longer one with HTTP 500, in phase 1.2 --
+            # after lists may already exist. Caught here so an over-long
+            # description is a build error rather than a half-provisioned
+            # site. See permissions.GROUP_DESCRIPTION_MAX for the live
+            # measurement behind the number.
+            if len(grp.description) > GROUP_DESCRIPTION_MAX:
+                findings.append(Finding(
+                    FindingCode.GROUP_DESCRIPTION_TOO_LONG,
+                    f"groups[{grp.name!r}]: description is "
+                    f"{len(grp.description)} characters; SharePoint refuses "
+                    f"anything over {GROUP_DESCRIPTION_MAX} and does so "
+                    f"part-way through the deploy. Shorten it.",
+                    location=_GROUPS,
+                ))
 
         # groups[*].owner_group must be a built-in SP group or a declared custom group.
         for grp in perms.groups:

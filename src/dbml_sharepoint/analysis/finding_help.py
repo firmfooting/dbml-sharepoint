@@ -462,6 +462,20 @@ FINDING_HELP: dict[FindingCode, str] = {
         "while an operator self-enrols in order to write. Put the two "
         "flags on two groups."
     ),
+    FindingCode.GROUP_DESCRIPTION_TOO_LONG: (
+        "A `groups:` entry's description is longer than 512 characters. "
+        "MEASURED 2026-08-13 against a live tenant: SharePoint answers a "
+        "longer one with HTTP 500 and the message \"The parameter "
+        "Description cannot be null or bigger than 512 characters.\" It "
+        "REFUSES rather than truncating, and it does so in deploy phase 1.2 "
+        "-- after lists may already have been created -- so the run stops "
+        "against a half-provisioned site. Shorten the description. Note the "
+        "same run found that a group description otherwise round-trips "
+        "byte-identically, including an ampersand and a run of two spaces: "
+        "the restrictions a LIST note carries do not apply here, because "
+        "`SP.Group.Description` is a different surface and was measured on "
+        "its own."
+    ),
     FindingCode.ENTERPRISE_READER_GROUP_MEMBERS_MAY_EDIT_MEMBERSHIP: (
         "A group declares both `enroll_enterprise_reader` and "
         "`allow_members_edit_membership: true`. The security phase applies "

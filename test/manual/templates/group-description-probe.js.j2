@@ -53,6 +53,42 @@
  * taken it stops without writing or deleting. It needs ManagePermissions, so
  * a site owner.
  *
+ * RUN 1 — 2026-08-13, one Microsoft 365 group-connected Team Site. Ten
+ * questions, ten answered.
+ *
+ *   ANSWERED AND SETTLED:
+ *     G1, G2  a group Description round-trips BYTE-IDENTICAL, through both
+ *             the create path and the MERGE path.
+ *     G3      MERGE is PARTIAL — a field left out of the request is
+ *             preserved. Confirmed non-vacuously: the flag the request did
+ *             carry flipped in the same call.
+ *     G4, G5  an ampersand and a run of two spaces BOTH survive. The
+ *             restrictions a LIST note carries do NOT transfer to a group.
+ *     G6      512 characters, and the server REFUSES rather than truncating:
+ *             HTTP 500, "The parameter Description cannot be null or bigger
+ *             than 512 characters." Now enforced at build time by
+ *             `group_description_too_long`.
+ *     G7      the four membership flags round-trip at CREATE.
+ *     G8      a marker of the shape lists use survives, so #211 is possible
+ *             and #209's adoption gate has something to key on.
+ *
+ *   AMBIGUOUS, AND THE PROBE'S FAULT: G9 reported
+ *   AutoAcceptRequestToJoinLeave sent true, read false, with the other
+ *   three taking. It sent AllowRequestToJoinLeave FALSE in the same
+ *   request, which is a contradictory pair — a group cannot auto-accept
+ *   join requests it does not accept. So that result cannot distinguish a
+ *   lost write from a coerced dependent setting. G10 was added to settle
+ *   it and NEEDS A SECOND RUN. Until it has one, nothing should be
+ *   concluded from G9, and no shipped family sets that flag true anyway.
+ *
+ *   STILL OPEN: G11, whether an empty description is accepted. The server
+ *   named null beside the ceiling and the loader turns an omitted
+ *   `description:` into "".
+ *
+ * A SECOND RUN NEEDS ONLY G10 AND G11, but the file runs all of it; the
+ * settled questions re-confirming costs nothing and guards against a
+ * tenant-specific answer.
+ *
  * HOW TO RUN
  *   1. Open the target site as a SITE OWNER.
  *   2. Open a browser console on any page of that site.
@@ -102,6 +138,8 @@
   expect('G7', 'Do the four membership flags read back as written at CREATE?');
   expect('G8', 'Does a provenance marker of the shape lists use survive?');
   expect('G9', 'Do the four membership flags read back as written by MERGE?');
+  expect('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?');
+  expect('G11', 'Is an EMPTY description accepted?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
     log('INFO', 'PLAN — nothing has been touched.');
@@ -332,6 +370,78 @@
           ? 'all four flipped values took, so the reconcile path does persist flags'
           : `did NOT take: ${wrong9.map((k) => `${k} sent ${flipped[k]}, read ${back9.body[k]}`).join('; ')}`);
     }
+  }
+
+  // ---- G10: disambiguate what G9 saw ------------------------------------
+  // RUN 1 (2026-08-13) had G9 report AutoAcceptRequestToJoinLeave sent true,
+  // read false, with the other three taking. That has two explanations and
+  // they call for opposite responses:
+  //
+  //   (a) the reconcile path silently loses that flag -- a real defect, and
+  //       the deploy could not trust any flag it writes; or
+  //   (b) SharePoint COERCES it, because G9 sent AllowRequestToJoinLeave
+  //       false in the same request and a group cannot auto-accept join
+  //       requests it does not accept. A dependent setting being corrected
+  //       is not a lost write.
+  //
+  // G9 cannot tell them apart, because it sent the contradictory pair. That
+  // was a flaw in the probe, not a finding about the tenant. G10 sends the
+  // COHERENT pair -- both true -- so a false read-back here means (a) and a
+  // true read-back means (b).
+  const coherent = {
+    AllowRequestToJoinLeave: true,
+    AutoAcceptRequestToJoinLeave: true,
+  };
+  const d10 = await getDigest();
+  const cohRes = await spPost(
+    `web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')`,
+    { __metadata: { type: 'SP.Group' }, ...coherent },
+    d10,
+    { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+  );
+  if (!cohRes.ok) {
+    record('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?',
+      isRefusal(cohRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${cohRes.status})`,
+      `the MERGE came back HTTP ${cohRes.status}: ${cohRes.text.slice(0, 200)}`);
+  } else {
+    const back10 = await readGroup();
+    if (readFailed(back10)) {
+      record('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?',
+        `NOT ESTABLISHED (HTTP ${back10.status})`, 'could not read the group back');
+    } else {
+      const took = back10.body.AutoAcceptRequestToJoinLeave === true;
+      record('G10', 'Is AutoAccept refused only when its prerequisite is off, or always?',
+        took ? 'PASS' : 'FAIL',
+        took
+          ? 'with AllowRequestToJoinLeave TRUE the flag took, so G9 saw a dependent setting being coerced, not a lost write'
+          : 'the flag did not take even with its prerequisite on, so the reconcile path really does lose it — the deploy cannot trust a flag it writes');
+    }
+  }
+
+  // ---- G11: is an empty description accepted? ---------------------------
+  // The server named null in the same breath as the 512 ceiling, and
+  // `mapping_loader` turns an omitted `description:` into "". Nobody has
+  // measured whether that empty string is treated as null and refused, so a
+  // mapping that simply omits the key is currently unproven rather than
+  // known-good.
+  const d11 = await getDigest();
+  const emptyRes = await spPost(
+    `web/sitegroups/getbyname('${encodeURIComponent(GROUP)}')`,
+    { __metadata: { type: 'SP.Group' }, Description: '' },
+    d11,
+    { ...VERBOSE, 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' },
+  );
+  if (!emptyRes.ok) {
+    record('G11', 'Is an EMPTY description accepted?',
+      isRefusal(emptyRes.status) ? 'FAIL' : `NOT ESTABLISHED (HTTP ${emptyRes.status})`,
+      `HTTP ${emptyRes.status}: ${emptyRes.text.slice(0, 200)}`);
+  } else {
+    const back11 = await readGroup();
+    record('G11', 'Is an EMPTY description accepted?',
+      readFailed(back11) ? `NOT ESTABLISHED (HTTP ${back11.status})` : 'PASS',
+      readFailed(back11)
+        ? 'the MERGE succeeded but the group could not be read back'
+        : `accepted; read back ${JSON.stringify(back11.body.Description)}`);
   }
 
   // ---- Clean up ---------------------------------------------------------

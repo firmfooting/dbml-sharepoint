@@ -41,6 +41,12 @@ SP REST expects on SP.BasePermissions.
 BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit', 'Full Control', 'Limited Access', 'Manage Hierarchy', 'Read', 'Restricted Read', 'View Only', 'Web-Only Limited Access'})
 ```
 
+### `GROUP_DESCRIPTION_MAX`
+
+```python
+GROUP_DESCRIPTION_MAX = 512
+```
+
 ### `DERIVED_BUILT_IN_LEVELS`
 
 ```python

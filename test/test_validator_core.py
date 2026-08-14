@@ -1644,6 +1644,62 @@ def test_a_correctly_declared_reader_group_is_clean() -> None:
     )
 
 
+def _group_description_findings(description: str) -> list[Finding]:
+    """Validate a mapping whose one group carries `description`."""
+    return validate_against_mapping(
+        make_schema(make_table("Risk")),
+        make_bundle(
+            entities=["Risk"],
+            permissions=PermissionsConfig(
+                levels=[],
+                groups=[SiteGroup(
+                    name="XX Readers", description=description,
+                    owner_group="Site Owners",
+                    allow_members_edit_membership=False,
+                    allow_request_to_join_leave=False,
+                    auto_accept_request_to_join_leave=False,
+                    only_allow_members_view_membership=False,
+                )],
+                default_policy=None, overrides={},
+            ),
+        ),
+    )
+
+
+def test_a_group_description_over_the_ceiling_is_refused() -> None:
+    """The server refuses it mid-deploy, so the build has to refuse it first.
+
+    MEASURED 2026-08-13 by `test/manual/group-description-probe.js`: a
+    description of 1018 characters came back HTTP 500, "The parameter
+    Description cannot be null or bigger than 512 characters." SharePoint
+    does not truncate it -- it rejects the request, in phase 1.2, after
+    lists may already have been created.
+
+    So the cost of not catching this at build time is a half-provisioned
+    site, which is the shape of failure this repository exists to avoid.
+    """
+    finding = only(
+        _group_description_findings("x" * 513),
+        FindingCode.GROUP_DESCRIPTION_TOO_LONG,
+    )
+    assert finding.severity == "error"
+    assert "513" in finding.message
+
+
+def test_a_group_description_at_the_ceiling_is_accepted() -> None:
+    """The complement, and it pins the BOUNDARY rather than the direction.
+
+    The server's message says "bigger than 512", so 512 itself is legal. A
+    rule written as `>=` would refuse a description SharePoint accepts --
+    stronger than the surface actually is, which AGENTS.md forbids as
+    plainly as it forbids being too weak.
+    """
+    none_of(
+        _group_description_findings("x" * 512),
+        FindingCode.GROUP_DESCRIPTION_TOO_LONG,
+    )
+
+
 def _level_findings(name: str) -> list[Finding]:
     """Validate a mapping declaring one custom permission level called `name`."""
     return validate_against_mapping(
