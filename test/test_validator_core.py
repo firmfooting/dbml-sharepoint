@@ -36,6 +36,7 @@ from dbml_sharepoint.analysis.list_description import (
     marker_for,
     note_budget,
 )
+from dbml_sharepoint.analysis.role_definition_description import level_description_budget
 from dbml_sharepoint.analysis.validator import (
     Finding,
     validate,
@@ -1847,11 +1848,14 @@ def test_a_permission_level_description_over_the_ceiling_is_refused() -> None:
 
 
 def test_a_permission_level_description_at_the_ceiling_is_accepted() -> None:
-    """The complement, pinning the boundary rather than the direction.
+    """The complement, and it pins the BOUNDARY rather than the direction.
 
-    The server's message says "bigger than 512", so 512 itself is legal.
-    Unlike a group description, a level description carries no provenance
-    marker today, so there is no second, tighter budget to check here.
+    The server's message says "bigger than 512", so 512 itself is legal
+    against the raw SharePoint ceiling. This test only pins
+    `PERMISSION_LEVEL_DESCRIPTION_TOO_LONG`, the code that measures against
+    that ceiling; a 512-character description leaves no room for the marker
+    and does fire `PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER`
+    deliberately, which is a different code checked elsewhere.
     """
     none_of(
         _level_findings("XX Level", description="x" * MAX_ROLE_DEFINITION_DESCRIPTION),
@@ -1859,10 +1863,45 @@ def test_a_permission_level_description_at_the_ceiling_is_accepted() -> None:
     )
 
 
+def test_a_permission_level_description_that_leaves_no_room_for_the_marker_is_refused() -> None:
+    """The composed string is what SharePoint sees, so the budget is what matters."""
+    budget = level_description_budget("risk-register")
+    only(
+        _level_findings("XX Level", description="d" * (budget + 1)),
+        FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER,
+    )
+
+
+def test_a_permission_level_description_exactly_at_the_budget_is_accepted() -> None:
+    budget = level_description_budget("risk-register")
+    findings = _level_findings("XX Level", description="d" * budget)
+    none_of(findings, FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER)
+    none_of(findings, FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG)
+
+
+def test_the_raw_ceiling_rule_still_fires_on_its_own_terms_for_a_level() -> None:
+    """Over 512 declared is refused even before the marker is considered.
+
+    `elif`, not two `if`s, so `PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER`
+    must stay silent here -- asserting `only` the raw-ceiling code is not
+    enough, since `only` says nothing about what ELSE fired.
+    """
+    findings = _level_findings(
+        "XX Level", description="d" * (MAX_ROLE_DEFINITION_DESCRIPTION + 1),
+    )
+    only(findings, FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG)
+    none_of(findings, FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER)
+
+
 def _level_findings(name: str, *, description: str = "test") -> list[Finding]:
-    """Validate a mapping declaring one custom permission level called `name`."""
+    """Validate a mapping declaring one custom permission level called `name`.
+
+    The schema's `Project` resolves to the `risk-register` family (see
+    `list_description.normalise_family`: underscores fold to hyphens), so a
+    test can compare against `level_description_budget("risk-register")`.
+    """
     return validate_against_mapping(
-        make_schema(make_table("Risk")),
+        make_schema(make_table("Risk"), project_name="risk_register"),
         make_bundle(
             entities=["Risk"],
             permissions=PermissionsConfig(

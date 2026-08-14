@@ -26,6 +26,10 @@ from dbml_sharepoint.analysis.permissions import (
     requires_manage_permissions,
 )
 from dbml_sharepoint.analysis.phases import phases_context
+from dbml_sharepoint.analysis.role_definition_description import (
+    level_description,
+    marker_for_level,
+)
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPES,
     TOTAL_FUNCTIONS,
@@ -704,7 +708,15 @@ def build_schema_json(
             hl = base_permissions_to_high_low(lvl.base_permissions)
             permission_levels_out.append({
                 "name": lvl.name,
-                "description": lvl.description,
+                # The marker is composed HERE, not in the template, so the
+                # emitted JavaScript never has to know which marker shape a
+                # level should carry.
+                "description": level_description(lvl.description, family=family),
+                # The exact marker this declaration expects the level to
+                # carry. The deploy-side gate compares against this, so a
+                # level another family stamped cannot satisfy this family's
+                # adoption test.
+                "expected_marker": marker_for_level(family),
                 "base_permissions": {"high": hl.high, "low": hl.low},
             })
 

@@ -17,6 +17,7 @@ string this tool already writes, a human reads it in list settings, and it
 survives a rename of the list.
 """
 
+from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.model.parser import Schema
 
 # The list Description budget the emitter has always applied.
@@ -58,7 +59,7 @@ DESCRIPTION_LIMIT = 255
 # probe: set a distinctive Description, wait for a crawl, then compare a
 # free-text query, a `Description:"..."` restriction, and a
 # `contentclass:STS_List` retrieval.
-MARKER_TEMPLATE = "Provisioned by dbml-sharepoint from {family}/{entity}."
+MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family}/{entity}."
 
 # Characters held back from every note's budget, on top of the marker itself.
 #

@@ -182,6 +182,23 @@
  * refusal can name web-scope usage. The ceiling is 512 and it refuses rather
  * than truncates. PER-LIST usage remains the one open question, deliberately
  * not asked here.
+ *
+ * OPEN QUESTIONS FOR A FUTURE RUN
+ *
+ *   - CASE SENSITIVITY OF `$filter=Name eq '...'`. Not documented on
+ *     Microsoft Learn and not one of the ten questions above. The existence
+ *     probe in `_security_principals.js.j2` uses this filter to decide
+ *     whether a declared level already exists. If the match is
+ *     case-sensitive, a site level named 'schema manager' reads as absent
+ *     against a declared 'Schema Manager', the create path runs, and the
+ *     #224 adoption gate never sees the existing level. That is NOT a gate
+ *     fail-open: nothing is written to the existing level, which is the same
+ *     behaviour as before #224. The residual is real: the create either
+ *     collides with the existing level and errors, or two case-variant
+ *     levels end up coexisting, and `_acls.js.j2`'s `resolveRoleDefId`, which
+ *     resolves a level by name through its own `getbyname` call, then binds
+ *     whichever one SharePoint's name resolution picks. No result is
+ *     recorded for this yet; it is a question, not a finding.
  */
 (async () => {
   // ---- Operator gate -------------------------------------------------
@@ -381,7 +398,7 @@
   };
 
   // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
-  log('INFO', 'probe revision 79eaef81. Quote this when reporting results.');
+  log('INFO', 'probe revision a4578975. Quote this when reporting results.');
 
   // Run-unique, and that is a safety property rather than tidiness. A fixed
   // name plus a pre-emptive delete destroys somebody else's level on the one
