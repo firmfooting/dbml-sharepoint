@@ -250,6 +250,10 @@
     console.log('Copy this whole block back verbatim.');
   };
 
+  // Printed before any gate: a stale clipboard and a fix that did not
+  // work produce identical transcripts otherwise.
+  log('INFO', 'probe revision f0927e57 — quote this when reporting results.');
+
   // The group to inspect. Any group name on this site.
   const GROUP = 'dbml Enterprise Readers';
 

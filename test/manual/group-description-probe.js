@@ -307,6 +307,10 @@
     console.log('Copy this whole block back verbatim.');
   };
 
+  // Printed before any gate: a stale clipboard and a fix that did not
+  // work produce identical transcripts otherwise.
+  log('INFO', 'probe revision 5a11e2a4 — quote this when reporting results.');
+
   // RUN-UNIQUE, and that is a safety property rather than tidiness.
   //
   // An earlier draft used a fixed name and deleted it before starting, to
