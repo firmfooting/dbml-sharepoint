@@ -9,6 +9,12 @@
   {
     let digest0 = await getDigest();
 
+    // A built-in owner group always exists (it is the site's own associated
+    // group), so resolveGroupOwner's Associated*Group branches never 404.
+    // Used below to decide whether an adopt-path owner resolve is safe
+    // during survey, or must be deferred to apply.
+    const BUILTIN_OWNER_GROUPS = new Set(['Site Owners', 'Site Members', 'Site Visitors']);
+
     // Existence probe via $filter: getbyname returns HTTP 500 (not 404) for
     // a missing role definition, so a getbyname probe cannot distinguish
     // "absent" from a real failure. The filter form returns 200 with empty
@@ -593,8 +599,21 @@
         }
       }
 
-      // Both safe here: the group already exists on this path.
-      const ownerState = await resolveGroupOwner(grp);
+      // ensureGroupEmptyIfRequired only reads the governed group, already
+      // proven to exist on this path, so it is always safe here. Owner
+      // resolution reads a SECOND group: grp.owner_group can name a custom
+      // group this same declaration decided to create, and every survey in
+      // this phase runs before every create, so that group may not exist on
+      // the site yet. Resolving it now would 404 and abort the whole phase
+      // for a group this deploy is about to create anyway: the same class
+      // as decidedCreates above, one level deeper. Resolve now only when
+      // the owner group is a built-in or is already known to exist from
+      // the one-time enumeration; otherwise defer to
+      // applyGroupDecision, which runs after every create in this phase has
+      // applied. Do not "tidy" this back to an unconditional resolve.
+      const ownerGroupKnownToExist = BUILTIN_OWNER_GROUPS.has(grp.owner_group)
+        || (knownGroupNames !== null && hasName(knownGroupNames, grp.owner_group));
+      const ownerState = ownerGroupKnownToExist ? await resolveGroupOwner(grp) : null;
       await ensureGroupEmptyIfRequired(grp);
 
       return { kind: 'adopt', object: 'group', name: grp.name, grp, ownerState };
@@ -648,13 +667,19 @@
         log('INFO', `Site group '${grp.name}' already exists; declared membership controls reconciled.`);
         await verifyGroupSettings(grp);
 
-        // ownerState was read by the survey, before every other object in
-        // this phase was written, so on the no-mismatch path below the
-        // 'owner verified' log reports evidence that may have aged by the
-        // time this line runs. The mismatch path is unaffected: it re-reads
-        // the owner after its own CSOM write, rather than trusting this
-        // state.
-        await correctGroupOwner(grp, decision.ownerState);
+        // decision.ownerState is null when the survey deferred the resolve
+        // (see surveyGroup): grp.owner_group named a custom group not yet
+        // known to exist, most likely because this same pass decided to
+        // create it. Every create in the phase has applied by the time this
+        // line runs, so the resolve is safe here. When ownerState WAS read
+        // by the survey, it was read before every other object in this
+        // phase was written, so on the no-mismatch path below the 'owner
+        // verified' log reports evidence that may have aged by the time
+        // this line runs. The mismatch path is unaffected either way: it
+        // re-reads the owner after its own CSOM write, rather than trusting
+        // this state.
+        const ownerState = decision.ownerState || await resolveGroupOwner(grp);
+        await correctGroupOwner(grp, ownerState);
         if (grp.require_empty_at_deploy) {
           log('INFO', `Site group '${grp.name}' is empty as required for deployment.`);
         }

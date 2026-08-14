@@ -223,6 +223,27 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       KNOWN_GROUP_NAME_SET.has(String(name).toLowerCase())
       || Object.prototype.hasOwnProperty.call(GROUP_STATE, name)
     );
+    // Group Id, historically fixed at 9 for every name -- harmless while the
+    // owner probe below answered the same fixed value regardless of Id. A
+    // test exercising TWO groups' owner state independently (one group
+    // adopted, its declared owner_group a second, absent custom group) needs
+    // them to resolve to DIFFERENT Ids, so this is now a per-name map,
+    // defaulting every unconfigured name to the old fixed 9 so every
+    // existing test is unaffected.
+    const GROUP_IDS = {};
+    const groupId = (name) => (GROUP_IDS[name] != null ? GROUP_IDS[name] : 9);
+    // Current owner per governed-group Id (`web/sitegroups(N)/owner`), keyed
+    // by the same Id groupId() hands out. Overridable per test so a declared
+    // owner_group naming a CUSTOM group, rather than a built-in, can be
+    // modelled as already correct -- exercising resolveGroupOwner without
+    // also exercising CSOM ProcessQuery correction, which this mock does not
+    // apply. Default (Id 9, i.e. every unconfigured name) matches the
+    // built-in Site Owners every other test in this file declares as
+    // owner_group, so their existing mismatch-free behaviour is unchanged.
+    const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };
+    const currentOwnerFor = (id) => (
+      GROUP_CURRENT_OWNER[id] || { Id: 3, Title: 'Site Owners', PrincipalType: 8 }
+    );
     // Role definitions (custom permission levels). Task 3: the single line
     // this replaces answered every roledefinitions read alike, whether it
     // was the existence probe, a getbyname resolve, or a by-Id read-back --
@@ -375,8 +396,15 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // maintenance unseal at 1.4. Before this, the runtime test had never
       // executed a phase beyond the read-only preflight.
       if (url.includes('AssociatedOwnerGroup') || url.includes('AssociatedMemberGroup')
-          || url.includes('AssociatedVisitorGroup') || url.includes('/owner')) {
+          || url.includes('AssociatedVisitorGroup')) {
         return { d: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };
+      }
+      // A governed group's current owner (`web/sitegroups(N)/owner`), keyed
+      // by the Id in the URL so two groups in the same run can carry
+      // different current owners. See GROUP_CURRENT_OWNER above.
+      if (url.includes('/owner')) {
+        const idMatch = url.match(/sitegroups\((\d+)\)\/owner/);
+        return { d: currentOwnerFor(idMatch ? Number(idMatch[1]) : 9) };
       }
       // The site-group enumeration the security phase uses to decide
       // create-vs-adopt without a per-group 404 probe. Checked before the
@@ -420,7 +448,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         if (!groupIsKnown(name)) {
           return { error: { code: '-2147024809, System.ArgumentException', status: 404 } };
         }
-        return { d: { Id: 9, Title: name, PrincipalType: 8, ...groupState(name) } };
+        return { d: { Id: groupId(name), Title: name, PrincipalType: 8, ...groupState(name) } };
       }
       // Every roledefinitions read shares that substring, so the most
       // specific shape is checked first: the $filter existence probe (by
@@ -2444,6 +2472,88 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
     assert group_name in message, message
     assert "Description" in message, message
     assert summary.get("aborted") == "phase-0-security-errors", summary
+
+
+# Every survey in the security phase now runs before every create, so an
+# adopt decision's owner resolve, which reads a SECOND group (the declared
+# owner_group), can hit a custom group this SAME pass has not created yet.
+# `_owner_pending_groups_deploy_js` splits the fixture's one declared group
+# into two so the adopted one names the about-to-be-created one as its owner.
+
+
+def _owner_pending_groups_deploy_js() -> str:
+    """`_deploy_js()` with the fixture's one declared group ('List
+    Maintainer') split into two: it now declares owner_group 'Group B', a
+    second custom group this same declaration also creates. Mutates the
+    generated JSON directly, the same way `test_auto_accept_is_compared_...`
+    does, rather than adding a second group to the shared mapping fixture.
+    """
+    js = _deploy_js()
+    match = re.search(r'"groups": (\[.*?\n  \])', js, re.DOTALL)
+    assert match, "groups array not found in generated deploy.js"
+    groups = json.loads(match.group(1))
+    assert len(groups) == 1, groups
+    list_maintainer = dict(groups[0])
+    assert list_maintainer["owner_group"] == "Site Owners", list_maintainer
+    list_maintainer["owner_group"] = "Group B"
+    group_b = dict(list_maintainer)
+    group_b["name"] = "Group B"
+    group_b["description"] = "Group B."
+    group_b["owner_group"] = "Site Owners"
+    group_b["require_empty_at_deploy"] = False
+    new_groups = json.dumps([group_b, list_maintainer], indent=2).replace("\n", "\n  ")
+    return js[: match.start(1)] + new_groups + js[match.end(1):]
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_an_adopted_group_owned_by_a_group_pending_creation_still_deploys() -> None:
+    """'List Maintainer' already exists and declares owner_group 'Group B',
+    which is declared but absent, so this same pass decides to create it.
+    Resolving 'List Maintainer's owner during the survey, before Group B
+    exists, would 404 and abort the whole phase; the fix defers that resolve
+    to applyGroupDecision, which runs after Group B's own create has
+    applied. Verified by mutation: forcing the resolve back into the survey
+    unconditionally reproduces the abort this test would otherwise miss.
+    """
+    js = _owner_pending_groups_deploy_js()
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_DESCRIPTIONS = {};",
+        f"const GROUP_DESCRIPTIONS = {json.dumps({
+            'List Maintainer': 'Test group. Provisioned by dbml-sharepoint from simple-test.',
+        })};",
+    ).replace(
+        "const GROUP_MEMBER_PAGES = {};",
+        f"const GROUP_MEMBER_PAGES = {json.dumps({'List Maintainer': [[]]})};",
+    ).replace(
+        "const KNOWN_GROUP_NAMES = [];",
+        f"const KNOWN_GROUP_NAMES = {json.dumps(['List Maintainer'])};",
+    ).replace(
+        "const GROUP_IDS = {};",
+        f"const GROUP_IDS = {json.dumps({'List Maintainer': 101, 'Group B': 102})};",
+    ).replace(
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 } };",
+        "const GROUP_CURRENT_OWNER = { 9: { Id: 3, Title: 'Site Owners', PrincipalType: 8 }, "
+        "101: { Id: 102, Title: 'Group B', PrincipalType: 8 } };",
+    )
+    summary, calls, output = _run_group_verify_deploy(js, harness)
+    assert not _security_errors(summary), summary
+    assert summary.get("aborted") != "phase-0-security-errors", summary
+    create_indices = [
+        i for i, c in enumerate(calls)
+        if c["method"] == "POST" and c["url"].endswith("/sitegroups") and c["body"]
+        and json.loads(c["body"]).get("Title") == "Group B"
+    ]
+    assert create_indices, f"Group B was never created:\n{output[-3000:]}"
+    owner_resolve_indices = [
+        i for i, c in enumerate(calls)
+        if c["method"] == "GET"
+        and "sitegroups/getbyname('Group%20B')" in c["url"]
+    ]
+    assert owner_resolve_indices, f"'List Maintainer's owner was never resolved:\n{output[-3000:]}"
+    assert min(owner_resolve_indices) > create_indices[0], (
+        "the owner resolve for 'List Maintainer' ran before Group B was created: "
+        f"resolve at {owner_resolve_indices}, create at {create_indices[0]}"
+    )
 
 
 # #224: `_security_principals.js.j2` adopted any role definition whose name
