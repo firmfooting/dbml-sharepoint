@@ -1755,9 +1755,15 @@
 
     // MEASURED by test/manual/group-description-probe.js, 2026-08-13 and
     // 2026-08-14: Description round-trips byte-identically, so this compare
-    // is exact rather than fuzzy.
+    // is exact rather than fuzzy. The $select projection itself is not
+    // measured; every question in that probe read the group back
+    // unprojected. It is inferred from the owner-verification calls below,
+    // which already project a site group with $select=Id,Title,PrincipalType.
+    // Id is unused here, kept only so this GET's URL shape matches theirs
+    // exactly, which is what test_a_first_deploy_probes_no_absent_group_or_field_by_name
+    // excludes as "already resolved, not a probe for something absent."
     async function verifyGroupSettings(grp) {
-      const select = 'Description,AllowMembersEditMembership,AllowRequestToJoinLeave'
+      const select = 'Id,Description,AllowMembersEditMembership,AllowRequestToJoinLeave'
         + ',AutoAcceptRequestToJoinLeave,OnlyAllowMembersViewMembership';
       const resp = await fetchWithRetry(
         apiUrl(`web/sitegroups/getbyname('${odataName(grp.name)}')?$select=${select}`),
@@ -1768,8 +1774,11 @@
         throw new Error(`Group '${grp.name}' read-back failed: HTTP ${resp.status} ${text}`);
       }
       const got = (await resp.json()).d || {};
-      // The tenant forces auto-accept off when requests-to-join is off, so the
-      // expected value is the coerced one, not the one sent.
+      // The tenant forces auto-accept off when requests-to-join is off,
+      // measured against a contradictory pair sent deliberately
+      // (test/manual/group-description-probe.js G9, then confirmed non-
+      // ambiguous by G10, 2026-08-13/14), so the expected value is the
+      // coerced one, not the one sent.
       const expectedAutoAccept = grp.allow_request_to_join_leave
         ? grp.auto_accept_request_to_join_leave
         : false;

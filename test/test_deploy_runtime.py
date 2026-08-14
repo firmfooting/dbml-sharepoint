@@ -1251,15 +1251,13 @@ def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
     assert line is not None, "harness produced no call log"
     calls = json.loads(line.removeprefix("__CALLS__"))
     gets = [c["url"] for c in calls if c["method"] == "GET"]
-    # The ACL phase resolves a group's Id by name AFTER creating it, and
-    # verifyGroupSettings reads the same group back after the same create,
-    # so on a real run both requests succeed and are not console noise; the
-    # mock creates nothing, which is why they are excluded by their $select
-    # rather than by being overlooked.
+    # The ACL phase resolves a group's Id by name AFTER creating it, so on
+    # a real run that request succeeds and is not console noise; the mock
+    # creates nothing, which is why it is excluded by its $select rather
+    # than by being overlooked.
     by_name = [
         u for u in gets
-        if ("sitegroups/getbyname" in u and "$select=Id" not in u
-            and "$select=Description" not in u)
+        if ("sitegroups/getbyname" in u and "$select=Id" not in u)
         or ("getbytitle" in u and "/fields?" in u)
     ]
     assert not by_name, (
@@ -2046,6 +2044,43 @@ def test_auto_accept_is_compared_against_the_coerced_value() -> None:
     )
     summary, _, _ = _run_group_verify_deploy(js, harness)
     assert not _security_errors(summary), summary
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> None:
+    """The three tests above all exercise the create path (`KNOWN_GROUP_NAMES`
+    empty). `verifyGroupSettings` is called on the reconcile path too, and
+    that call has no coverage of its own without this: `KNOWN_GROUP_NAMES`
+    names the group, and its pre-existing Description already carries the
+    marker (`Stale note...`), so this takes the adopt-and-reconcile branch,
+    never the create branch, and the drop can only be caught by the
+    reconcile read-back.
+    """
+    group_name = "List Maintainer"
+    harness = _ADOPTED_HARNESS.replace(
+        "const GROUP_DESCRIPTIONS = {};",
+        "const GROUP_DESCRIPTIONS = "
+        f"{json.dumps({group_name: 'Stale note. Provisioned by dbml-sharepoint from Test.'})};",
+    ).replace(
+        "const GROUP_MEMBER_PAGES = {};",
+        f"const GROUP_MEMBER_PAGES = {json.dumps({group_name: [[]]})};",
+    ).replace(
+        "const KNOWN_GROUP_NAMES = [];",
+        f"const KNOWN_GROUP_NAMES = {json.dumps([group_name])};",
+    ).replace(
+        "const GROUP_DROP_FIELD_ON_WRITE = null;",
+        "const GROUP_DROP_FIELD_ON_WRITE = 'Description';",
+    )
+    summary, calls, _ = _run_group_verify_deploy(_deploy_js(), harness)
+    assert _group_settings_writes(calls, group_name), (
+        "the reconcile MERGE never happened"
+    )
+    errors = _security_errors(summary)
+    assert errors, summary
+    message = str(errors[0]["error"])
+    assert group_name in message, message
+    assert "Description" in message, message
+    assert summary.get("aborted") == "phase-0-security-errors", summary
 
 
 def test_no_reader_no_enrolment_code() -> None:
