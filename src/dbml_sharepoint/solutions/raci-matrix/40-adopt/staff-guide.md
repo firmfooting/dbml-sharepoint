@@ -55,7 +55,7 @@ in each. Getting this wrong is how a register that looks complete gives
 people the wrong expectation of each other.
 
 | Kind | Responsible | Accountable |
-|---|---|---|
+| --- | --- | --- |
 | **Task** | Does the work | Owns the outcome |
 | **Approval** | Prepares the thing and puts it up | Signs it |
 | **Decision** | Runs the process — options, analysis, consultation | Makes the call |
@@ -112,7 +112,7 @@ somebody spent weeks on. Three of them this template makes structurally
 impossible. Two it can only make visible, and you are the control.
 
 | Failure | What it looks like | Here |
-|---|---|---|
+| --- | --- | --- |
 | **Two Accountables** | Two names on one row, each assuming the other is watching | **Impossible** — `Accountable` takes one person |
 | **A team as Responsible** | "Engineering team" holds R; nobody individually feels it | **Impossible** — `Responsible` is a person column |
 | **Anonymous Consulted** | A column of names with no reason attached | **Impossible** — every involvement is a row whose Title must state the input |
@@ -252,7 +252,7 @@ moving between teams — the due date is a ceiling, not a target.
 ## The views you will actually use
 
 | View | List | What it is for |
-|---|---|---|
+| --- | --- | --- |
 | **Current** | Activity | The register, minus retired rows, soonest due first. Gold rows need review |
 | **My accountabilities** | Activity | Everything you personally answer for. Read this one first |
 | **Confirmation due** | Activity | Falling due in the next 30 days, or already past |

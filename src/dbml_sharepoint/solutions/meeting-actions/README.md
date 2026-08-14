@@ -21,7 +21,7 @@ item works before you have held a meeting.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Adjust meeting types to your forums |
 | 2 | `20-configure/` | Prefix; default everyone-can-record security |
 | 3 | `30-deploy/` | Administrator: build, paste, verify links |

@@ -1,6 +1,6 @@
 # Process register
 
-*Theme: process digitisation & improvement*
+*Theme: process digitisation & improvement.*
 
 An inventory of how the organisation actually runs: every business process,
 who owns it, how it's currently done (paper? email? spreadsheet? a real
@@ -33,7 +33,7 @@ out, because the inventory refresh is annual.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit state/criticality language to your context |
 | 2 | `20-configure/` | Prefix; everyone-contributes (inventory is a team sport) |
 | 3 | `30-deploy/` | Administrator: build, paste, verify the score |
@@ -47,7 +47,7 @@ members); the scoring definitions in governance are the calibration that
 makes scores comparable across teams.
 
 **Demo data.** Build with `--seed` and the bundle gains a `demo-data.js.txt`
-that pastes six `[DEMO] `-titled rows across four functions, covering all
+that pastes six `[DEMO]`-titled rows across four functions, covering all
 five current states and all six digitisation statuses, with two landing in
 *Key-person risk* — so every view, every colour band and the score bar
 render on a first look. See `30-deploy/deploy.md`.

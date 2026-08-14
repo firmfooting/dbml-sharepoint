@@ -44,20 +44,20 @@ exists to see).
 
 ## The views
 
-**DR_Interest**
+### DR_Interest
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Live interests** | The default. Everything not ceased, grouped by who declared it. |
 | **My interests** | Just yours. This is the annual attestation. |
 | **Awaiting assessment** | Declarations nobody has assessed yet, oldest first — the coordinators' ten-day clock. |
 | **Reviews due** | Managed conflicts due for review inside the next thirty days, with the management plan. |
 | **Ceased** | Interests that have ended, most recently ceased first. |
 
-**DR_GiftBenefit**
+### DR_GiftBenefit
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Last 12 months** | The default. A *rolling* twelve months, most recent first. |
 | **Pending decisions** | Offers still awaiting a decision, oldest first. No date window — an old pending decision is worse, not less relevant. |
 | **Annual disclosure** | The same rolling twelve months, highest value first. This is the report. |

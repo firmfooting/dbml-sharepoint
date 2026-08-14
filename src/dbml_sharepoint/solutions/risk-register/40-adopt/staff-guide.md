@@ -81,7 +81,7 @@ matrix will show it.
 not something you set directly. The cadence:
 
 | Trigger | Review at least every |
-|---|---|
+| --- | --- |
 | Rating is High or Extreme | 3 months |
 | Controls are Inadequate or Uncontrolled | 3 months |
 | Two or more levels above target | 3 months |

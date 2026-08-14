@@ -21,19 +21,19 @@ changes the document. Convert these by joining the fragments into one line, or
 leave them.
 
 | File | Enclosing function | Tail of the glued fragment |
-|---|---|---|
+| --- | --- | --- |
 | `test_jsgen.py` | `_display_names_inputs` | `RiskScore: '=IF([MatrixVersion]="13.0",1,` |
-| `test_jsgen.py` | `test_view_rows_carry_formatting_and_template_reconciles_it` | `additionalRowClass: "=if([$Score] >= 20, ` |
-| `test_lookups.py` | `test_a_declared_display_column_wins` | `site_role: default, ` |
-| `test_lookups.py` | `test_a_calculated_display_column_is_excluded` | `site_role: default, ` |
-| `test_mapping_loader.py` | `test_entity_sub_keys_are_checked` | `site_role: default, ` |
-| `test_mapping_loader.py` | `test_accept_unindexable_display_column_defaults_false_and_parses` | `site_role: default, ` |
-| `test_validator_calculated.py` | `_display_type_inputs` | `site_role: default, ` |
-| `test_validator_calculated.py` | `test_a_display_column_that_is_never_rendered_is_an_error` | `site_role: default, ` |
-| `test_validator_calculated.py` | `test_a_pointless_acceptance_warns` | `site_role: default, ` |
-| `test_validator_calculated.py` | `test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth` | `site_role: default, ` |
-| `test_validator_view_totals.py` | `_cross_site_only_target` | `site_role: default, ` |
-| `test_validator_view_totals.py` | `test_a_calculated_display_column_does_not_count_as_an_index` | `site_role: default, ` |
+| `test_jsgen.py` | `test_view_rows_carry_formatting_and_template_reconciles_it` | `additionalRowClass: "=if([$Score] >= 20,` |
+| `test_lookups.py` | `test_a_declared_display_column_wins` | `site_role: default,` |
+| `test_lookups.py` | `test_a_calculated_display_column_is_excluded` | `site_role: default,` |
+| `test_mapping_loader.py` | `test_entity_sub_keys_are_checked` | `site_role: default,` |
+| `test_mapping_loader.py` | `test_accept_unindexable_display_column_defaults_false_and_parses` | `site_role: default,` |
+| `test_validator_calculated.py` | `_display_type_inputs` | `site_role: default,` |
+| `test_validator_calculated.py` | `test_a_display_column_that_is_never_rendered_is_an_error` | `site_role: default,` |
+| `test_validator_calculated.py` | `test_a_pointless_acceptance_warns` | `site_role: default,` |
+| `test_validator_calculated.py` | `test_an_acceptance_on_an_unlooked_up_calculated_column_states_the_truth` | `site_role: default,` |
+| `test_validator_view_totals.py` | `_cross_site_only_target` | `site_role: default,` |
+| `test_validator_view_totals.py` | `test_a_calculated_display_column_does_not_count_as_an_index` | `site_role: default,` |
 
 Note `test_mapping_loader.test_entity_sub_keys_are_checked` contains a
 **deliberate typo** (`display_colum`). It is the point of the test. Do not
@@ -48,7 +48,7 @@ and the test runs against the **unmodified** input and still passes.
 These are routed through `_packs.replaced()`, which asserts the needle matched:
 
 | File | Function | Base |
-|---|---|---|
+| --- | --- | --- |
 | `test_lookups.py` | `test_a_declared_display_column_wins` | `_PLAIN` |
 | `test_lookups.py` | `test_a_calculated_display_column_is_excluded` | `_PLAIN` |
 | `test_lookups.py` | `test_a_ref_target_unmapped_is_absent` | `_PLAIN` |
@@ -68,8 +68,9 @@ placeholder needle with no leading whitespace and is indentation-safe.
 Glued runs in messages, expected CAML, and expected Markdown. Not file payloads.
 
 `test_conditions.py` · `test_jsgen.py` (the `<Where>…`, `<GroupBy …>`,
-`<Or><IsNull>…` expectations) · `test_rollbackgen.py` · `test_template_lint.py` ·
-`test_template_standard.py` · `test_manifestgen.py` (retired-column table rows) ·
+`<Or><IsNull>…` expectations) · `test_rollbackgen.py` ·
+`test_template_lint.py` · `test_template_standard.py` ·
+`test_manifestgen.py` (retired-column table rows) ·
 `test_deploy_runtime.py` · `test/manual/make_threshold_rows.py`
 
 ## D. Single-line sentinel files — leave as-is

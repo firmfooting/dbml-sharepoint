@@ -58,7 +58,7 @@ open.
 The current templates use these endpoint families:
 
 | Endpoint family | Purpose |
-|---|---|
+| --- | --- |
 | `/_api/contextinfo` | Obtain a request digest and SharePoint build metadata |
 | `/_api/web` and `/_api/web/...` | Read and reconcile lists, fields, content types, views, items, indexes, permissions, role definitions, groups, current user, regional settings, list templates and web properties |
 | `/_api/site` and `/_api/site/...` | Read lock, usage, hub and sensitivity-label information during assessment |
@@ -122,7 +122,7 @@ to type the site's leaf path at a first prompt. Within that scope it will:
 
 - **Recycle list items**, never permanently delete them — every row it removes
   is restorable from the site recycle bin.
-- **Delete a non-empty list** whose items are not all `[DEMO] `-marked, but
+- **Delete a non-empty list** whose items are not all `[DEMO]`-marked, but
   only after the operator types `DELETE NON-EMPTY` at a second prompt that is
   re-asked for each such list.
 - **Clear a list's deletion block.** When a target list has

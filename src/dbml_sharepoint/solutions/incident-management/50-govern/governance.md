@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Process owner | *(e.g. quality/safety/ops manager)* | Triage SLA, severity definitions, trend review, this document |
 | IN Incident Handlers | The response team | Triage, resolution, corrective actions |
 | All staff | — | Reporting what they see |
@@ -23,7 +23,7 @@ The seeded demo data holds nothing clinical, for the same reason.
 ## Severity definitions (edit to your context — then keep the enum in sync)
 
 | Severity | Meaning | Triage SLA |
-|---|---|---|
+| --- | --- | --- |
 | Critical | Ongoing harm/loss, or imminent risk of it | Same business day |
 | Major | Significant harm/loss occurred; contained | 1 business day |
 | Moderate | Limited impact; process failed but recovered | 3 business days |
@@ -56,7 +56,7 @@ enum and the mapping in step.
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | All three incident dates, and an action's Done Date | None may be in the future |
 | `Incident` list | **Resolved** or **Closed** needs a Resolved Date |
 | `CorrectiveAction` list | **Done** needs a Done Date |

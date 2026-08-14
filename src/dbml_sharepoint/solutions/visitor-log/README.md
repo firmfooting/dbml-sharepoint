@@ -1,6 +1,6 @@
 # Visitor log
 
-*Theme: operations & service*
+*Theme: operations & service..*
 
 The front-desk sign-in book, digitised: one list (`VI_Visit`) recording who
 is on site, hosted by whom, since when — with the sign-out that paper books
@@ -24,7 +24,7 @@ something in it the first time a warden opens it.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit visitor types to your site |
 | 2 | `20-configure/` | Prefix; everyone-signs-in model |
 | 3 | `30-deploy/` | Administrator: build, paste; set up the front-desk form |

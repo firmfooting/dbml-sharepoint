@@ -5,19 +5,19 @@ Each template is a complete, working input set for `dbml-sharepoint build`
 **plus** the organisational material a real rollout needs: an administrator
 deployment guide, staff education, and governance resources.
 
-The library is organised into four themes, plus sector guides
-(currently: [regional healthcare](healthcare.md) — NSQHS mapping,
-statutory-system boundaries, and a first-90-days sequence). Templates interconnect across
+The library is organised into four themes, plus sector guides (currently:
+[regional healthcare](healthcare.md) — NSQHS mapping, statutory-system
+boundaries, and a first-90-days sequence). Templates interconnect across
 themes by *process hand-off* (documented in their governance files), never
 by list lookups — every template deploys and stands alone.
 
-## Theme: Process digitisation & improvement
+*Theme: Process digitisation & improvement.*
 
 The improvement engine: inventory your processes, digitise the painful
 ones, measure what matters, and close the loop.
 
 | Template | Process | Highlights |
-|---|---|---|
+| --- | --- | --- |
 | [process-register](process-register/) | Business-process inventory | The digitisation backbone — calculated digitisation-priority score (criticality × pain) |
 | [improvement-register](improvement-register/) | Continuous improvement log | Idea → test → adopt/abandon stages; before/after measures; fed by complaints, incidents and audits |
 | [measures-register](measures-register/) | KPI / measures catalogue | Definitions with numerator/denominator discipline — makes "improved" provable |
@@ -35,10 +35,10 @@ problem outside its authority, *opportunities-register* captures it once,
 routes known destinations immediately, and assesses only the remainder before
 hand-off into that same improvement/investment chain.
 
-## Theme: Governance, risk & compliance
+*Theme: Governance, risk & compliance.*
 
 | Template | Process | Highlights |
-|---|---|---|
+| --- | --- | --- |
 | [risk-register](risk-register/) | Organisational risk | **Self-rating 5×5 matrix** — rating and score calculated, matrix-inconsistent entries impossible |
 | [audit-actions](audit-actions/) | Audit recommendations to closure | Closure-evidence standard, guarded DaysLate metric, committee-pack view |
 | [declarations-register](declarations-register/) | Conflicts of interest + gifts & benefits | Two standalone compliance lists; declare-only staff level |
@@ -50,10 +50,10 @@ hand-off into that same improvement/investment chain.
 | [raci-matrix](raci-matrix/) | Who does what, and who answers for it | One Accountable per row, structurally; consulted parties must state their input; criticality-driven re-confirmation |
 | [research-ethics-register-simple](research-ethics-register-simple/) | Projects referred to a partner HREC | The single-list register for a service referring to a partner's HREC: two separate gates on one row, calculated site readiness, closed work filtered out of the default view |
 
-## Theme: Operations & service
+*Theme: Operations & service.*
 
 | Template | Process | Highlights |
-|---|---|---|
+| --- | --- | --- |
 | [service-requests](service-requests/) | Internal helpdesk (facilities/IT/admin) | Per-team queues from one intake; highest goodwill-per-hour in the set |
 | [incident-management](incident-management/) | Incidents & corrective actions | Two linked lists, report-only staff permission level |
 | [complaints-feedback](complaints-feedback/) | External complaints & feedback | Two calculated response clocks; no-members-access privacy posture |
@@ -64,10 +64,10 @@ hand-off into that same improvement/investment chain.
 | [visitor-log](visitor-log/) | Front-desk sign-in | The On-site now view is your evacuation muster list, live at the desk; contractor induction flag |
 | [vehicle-log](vehicle-log/) | Pool-car log books | Calculated kilometres from odometer readings; the Purpose column is your FBT substantiation |
 
-## Theme: People & relationships
+*Theme: People & relationships.*
 
 | Template | Process | Highlights |
-|---|---|---|
+| --- | --- | --- |
 | [meeting-actions](meeting-actions/) | Meetings, decisions, actions | The fastest payback in the library — deploy before your next meeting |
 | [tiered-huddle](tiered-huddle/) | Daily tiered huddle boards + escalation | The wall chart, live — one row per day per tier, one column per stream, and a blank cell that means *unreported*; add or retire a stream without losing history |
 | [onboarding-tracker](onboarding-tracker/) | New-starter coordination | HR + IT + facilities + finance queues from one record |
@@ -126,7 +126,7 @@ written for the person filling in the form rather than SharePoint's
 generic one.
 
 **Demonstration data.** Four to six rows per list, every Title prefixed
-`[DEMO] `, dates written relative to the day you run them, and people
+`[DEMO]`, dates written relative to the day you run them, and people
 resolved to whoever pastes the script. They are chosen so that every
 declared view returns something and every formatted column renders in its
 colours — a view that demonstrates empty teaches the adopter it does not
@@ -136,7 +136,7 @@ deploy, demonstrate, delete.
 
 ## Anatomy — every template follows the same sequence
 
-```
+```text
 <template>/
   README.md            Why this exists, the value case, what to customise
   10-design/           The data model
@@ -393,9 +393,9 @@ queries and keep it on the report's documentation page.
 
 Status columns across the templates render as SharePoint's own severity
 boxes with icons per the deployer's style standard (see
-[the style guide](../website/docs/reference/style-guide.md)) — consistent colours and
-iconography fleet-wide, using only Microsoft's documented formatting
-classes.
+[the style guide](../website/docs/reference/style-guide.md)) — consistent
+colours and iconography fleet-wide, using only Microsoft's documented
+formatting classes.
 
 ## Customising before you deploy
 

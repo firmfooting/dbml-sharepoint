@@ -14,7 +14,7 @@ The list opens on **Live contracts** — everything not yet exited, soonest
 expiry first. Four other views are already built for you:
 
 | View | What it shows |
-|---|---|
+| --- | --- |
 | **Live contracts** | The default. Every contract still running. |
 | **Expiring 90 days** | Anything ending inside the next ninety days. This is a *rolling* ninety days, not "this quarter". |
 | **Auto-renewals** | Every contract that renews itself. Check the notice period against the end date. |

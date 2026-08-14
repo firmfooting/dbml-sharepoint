@@ -16,7 +16,7 @@ manifests, reporting, index.md, checksums.txt — plus demo-data.js.txt with
 `--seed`).
 
 | Option | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--schema PATH` | `10-design/schema.dbml` | Path to the DBML schema file |
 | `--mapping PATH` | `20-configure/mapping.yaml` | Path to the mapping YAML |
 | `--release PATH` | `20-configure/release.yaml` | Path to release.yaml |
@@ -65,7 +65,7 @@ dbml-sharepoint validate          # inside a project directory
 ```
 
 | Option | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--schema PATH` | `10-design/schema.dbml` | Path to the DBML schema file |
 | `--mapping PATH` | `20-configure/mapping.yaml` | Path to the mapping YAML |
 | `--site-role ROLE` | `default` | Rejected if the mapping does not declare it; does **not** narrow what is checked |
@@ -93,7 +93,7 @@ What the flag does do here is reject a role the mapping does not declare, so
 They answer different questions, which is why both exist:
 
 | | Question | Needs a site URL | Writes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `validate` | Is my schema and mapping correct? | no | nothing |
 | `build --dry-run` | What would this build do against that site, without emitting JS? | yes | `deploy-manifest.md` |
 
@@ -133,7 +133,7 @@ from, so the two cannot disagree.
 Measured, because a CI gate keys on these:
 
 | Code | Meaning |
-|---|---|
+| --- | --- |
 | `0` | Success, including a `--dry-run` that found no errors |
 | `1` | The build refused: validation errors, or an unreadable/invalid input file |
 | `2` | Usage error — a missing required option, a `--site-role` the mapping does not declare, or an `explain` code that is not in the catalogue |
@@ -215,7 +215,7 @@ reads and then refuses clears the pack, which by then describes a schema
 that no longer exists.
 
 | Option | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `--schema PATH` | `10-design/schema.dbml` | Path to the DBML schema file |
 | `--mapping PATH` | `20-configure/mapping.yaml` | Path to the mapping YAML |
 | `--site-role ROLE` | `default` | Which entities to include |

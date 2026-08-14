@@ -1,7 +1,7 @@
 # Routine checks
 
 *Theme: operations & service — and the purest digitisation win in the
-library (crossover with process digitisation & improvement)*
+library (crossover with process digitisation & improvement).*
 
 The wall-taped paper checklists, digitised: vaccine-fridge temperatures,
 cleaning rounds, emergency-trolley checks, environmental audits. Two lists:
@@ -36,7 +36,7 @@ automatic. `50-govern/governance.md` is explicit about it.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit check types and result language to your rounds |
 | 2 | `20-configure/` | Prefix; everyone-records model |
 | 3 | `30-deploy/` | Administrator: build, paste; load the checkpoint catalogue |

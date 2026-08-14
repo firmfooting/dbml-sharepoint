@@ -4,7 +4,7 @@ Three linked lists — `PT_Project`, `PT_Task`, `PT_TimeLog` — exercising most
 of what dbml-sharepoint supports:
 
 | Feature | Where |
-|---|---|
+| --- | --- |
 | Every scalar type (text, note, choice, person, date, number, boolean, hyperlink) | `Project` |
 | Choice enums with defaults | `Status`, `Priority` |
 | Unique column | `Project.Code` |

@@ -61,7 +61,7 @@ views have more than one group, two of them inside the ninety-day review
 window, and one superseded row carrying its supersession trail.
 
 **Delete the demo rows before loading from your instrument.** Every demo
-Title begins with `[DEMO] `, so they are obvious in every view, they are
+Title begins with `[DEMO]`, so they are obvious in every view, they are
 matched by Title on re-paste (running it twice never duplicates), and
 `rollback.js.txt` treats a list whose rows are *all* demo-marked as demo-only
 content. A demo delegation left in a live register is an authority nobody

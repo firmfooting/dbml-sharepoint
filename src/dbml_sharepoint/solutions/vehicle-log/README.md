@@ -1,6 +1,6 @@
 # Vehicle log
 
-*Theme: operations & service*
+*Theme: operations & service.*
 
 The pool-car paper log book, digitised: `VE_Vehicle` (the fleet catalogue)
 and `VE_Trip` (every trip: driver, odometer out/in with **kilometres
@@ -37,7 +37,7 @@ financial-year or true calendar-month figure still needs an export, and
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit purpose/vocabulary to your fleet rules |
 | 2 | `20-configure/` | Prefix; every-driver-records model |
 | 3 | `30-deploy/` | Administrator: build, paste; load the fleet |

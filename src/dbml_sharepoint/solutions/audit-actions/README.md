@@ -24,7 +24,7 @@ colour and both branches of the overdue filter before you load a thing.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit audit types and finding ratings to your assurance map |
 | 2 | `20-configure/` | Prefix; audit-team-maintains security |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; load the backlog |

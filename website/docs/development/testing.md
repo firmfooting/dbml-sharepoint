@@ -47,7 +47,7 @@ Every other file is close to one case per function.
 Because it costs almost nothing:
 
 | | Time |
-|---|---|
+| --- | --- |
 | Full suite, local | **~5s** |
 | Whole pre-push gate | **~6s** |
 | CI tests | 16s (ubuntu) |
@@ -67,7 +67,7 @@ a filtered run misses.
 `-n auto --maxprocesses 8` is in `addopts`. Measured on a 24-core machine:
 
 | Configuration | Wall |
-|---|---|
+| --- | --- |
 | serial | 17.4s |
 | `-n 8` | 6.1s |
 | `-n auto` (24 workers) | 6.6s |
@@ -107,7 +107,7 @@ under `analysis/checks/`, so splitting the tests to mirror those modules would
 have been a fiction. Coverage per section confirms it: no section maps to one
 check module.
 
-```
+```text
 test/
   _paths.py                      where things are, resolved once
   _validator_helpers.py          the seven helpers used by >1 validator module

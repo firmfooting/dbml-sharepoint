@@ -18,7 +18,7 @@ trending and date examples.
 ## Tokens
 
 | Token | Classes | Default icon | Use for |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `good` | `sp-field-severity--good` | `CheckMark` | Complete / healthy / approved |
 | `low` | `sp-field-severity--low` | `Forward` | Open / in motion / in progress |
 | `warning` | `sp-field-severity--warning` | `Error` | Needs attention |
@@ -38,7 +38,7 @@ means the same thing across a fleet of solutions: "Received", "Draft" and
 second register of their week should not have to relearn what grey means.
 
 | Role in the lifecycle | Token | Members that play it |
-|---|---|---|
+| --- | --- | --- |
 | Intake, not yet triaged | `neutral` | Provisional, Draft, Received, Submitted, Reported, Applying, Idea |
 | In motion | `low` | Open, In progress, Assigned, In service, Under review, Testing, Current |
 | Needs attention | `warning` | Waiting, Partially compliant, On hold, Pending decision, Out of range |
@@ -92,7 +92,7 @@ Characterised on a live tenant, 2026-07-28, because getting this backwards
 costs a silently-not-firing format either way:
 
 | Where | Reference | A calculated-text value arrives as |
-|---|---|---|
+| --- | --- | --- |
 | Column formatting | `@currentField` | `string;#Extreme` |
 | View formatting (`views[].formatting`) | `[$Field]` | `Extreme` |
 
@@ -107,6 +107,7 @@ so it survives, and it leaves the next reader believing the prefix reaches
 somewhere it does not.
 
 :::
+
 - **pill** — compact native choice-pill look (opt-in alternative).
 - **data-bar** — the documented `sp-field-dataBars` bar; `max` sets the
   full-width value. Optional `color_by: { field, map, calculated }` is

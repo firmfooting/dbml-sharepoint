@@ -27,7 +27,7 @@ six demo items behind `--seed`.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Fit types/severity/outcome language to your obligations |
 | 2 | `20-configure/` | Prefix; the recorder/handler/no-members model |
 | 3 | `30-deploy/` | Administrator: build, paste, verify the access split |

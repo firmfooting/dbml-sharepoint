@@ -17,7 +17,7 @@ deploy.js.txt.
 2. **Permission preflight.** ManageLists + ManagePermissions are
    verified up front.
 3. **Per-list non-empty gate.** A list that still contains items is
-   *refused* — unless every item carries the `[DEMO] ` Title marker
+   *refused* — unless every item carries the `[DEMO]` Title marker
    (demo-only content proceeds automatically), or the operator types
    `DELETE NON-EMPTY` for **that specific list**. One confirmation never
    authorises deleting any other non-empty list.
@@ -29,7 +29,7 @@ items, while an emptied list deletes fine (live-confirmed). Rollback
 therefore empties lists before deleting them — via `recycle()`, never a
 permanent delete, so every item remains restorable from the recycle bin:
 
-- **Demo path:** every row's `[DEMO] ` marker is re-checked at the
+- **Demo path:** every row's `[DEMO]` marker is re-checked at the
   moment of recycling; an unmarked item aborts that list, fail closed.
 - **Override path:** after `DELETE NON-EMPTY`, all items are recycled —
   the operator just authorised deleting the list including its contents,

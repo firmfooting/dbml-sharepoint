@@ -66,7 +66,7 @@ with a bare string in `Evidence URL` would fail at the paste rather than
 in the build. Add one by hand on a test event to see the column render.
 
 **Delete the demo rows before active use.** Every demo Title begins with
-`[DEMO] `, so they are obvious in every view, they are matched by Title on
+`[DEMO]`, so they are obvious in every view, they are matched by Title on
 re-paste (running it twice never duplicates), and `rollback.js.txt` treats a
 list whose rows are *all* demo-marked as demo-only content. Do not seed a
 site that already holds a real schedule.

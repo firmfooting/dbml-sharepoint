@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Process owner | *(e.g. quality/consumer-experience manager)* | SLAs, trend reporting, privacy, this document |
 | Handlers | CF Feedback Handlers | Acknowledgement, investigation, response, learning |
 | Recorders | CF Feedback Recorders | Faithful capture at the point of receipt |
@@ -22,7 +22,7 @@ substance at process level, clinical content in clinical systems. See
 ## Severity definitions & response SLAs (put statutory timeframes here)
 
 | Severity | Meaning | Acknowledge within | Close within |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Critical | Alleged serious harm, systemic failure, media/regulator interest | 1 business day | per your scheme |
 | Serious | Significant individual impact or repeated issue | 2 business days | 20 business days |
 | Standard | Everything else | 5 business days | 30 business days |
@@ -38,7 +38,7 @@ reassuring about a breach.
 ## What is enforced at save, and what stays a governance check
 
 | Enforced at save | Rule |
-|---|---|
+| --- | --- |
 | `Received Date`, `Acknowledged Date`, `Closed Date` | None may be in the future |
 | The list | Anything past **Received** must have an Acknowledged Date |
 | The list | A **Closed** item must have an Outcome and a Closed Date |

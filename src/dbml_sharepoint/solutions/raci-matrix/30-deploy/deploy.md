@@ -11,7 +11,7 @@ follow.
 ## The three lists
 
 | List | Holds | Who writes to it |
-|---|---|---|
+| --- | --- | --- |
 | `RACI_Party` | The vocabulary: individuals, roles, governance forums and external bodies | Maintainers, and it is filled **first** |
 | `RACI_Activity` | One row per thing done, approved or decided, with its single Responsible and single Accountable | Maintainers |
 | `RACI_Involvement` | One row per Consulted or Informed party on an activity, stating the input that party gives | Maintainers |
@@ -83,10 +83,11 @@ dbml-sharepoint build \
 That bundle contains an extra file, `demo-data.js.txt`. Paste
 `deploy.js.txt` first, then `demo-data.js.txt`, from the same bundle. It
 creates eighteen rows: six parties covering all four kinds, two of them
-active forums and one a disbanded forum kept as Inactive; six activities (an overdue Statutory task marked *Needs
-review*, a Decision, an Approval, two Routine tasks and one Retired row)
-and six involvements, three of them consulting the same external auditor
-so the *Consultation load* view has something to reveal.
+active forums and one a disbanded forum kept as Inactive; six activities
+(an overdue Statutory task marked *Needs review*, a Decision, an
+Approval, two Routine tasks and one Retired row) and six involvements,
+three of them consulting the same external auditor so the *Consultation
+load* view has something to reveal.
 
 One thing the demo deliberately does not do: **every person column
 resolves to whoever pastes the script.** Responsible, Accountable,
@@ -212,14 +213,15 @@ exist.
 
 ## Who belongs in which group
 
-The deploy declares three site groups: `RACI Matrix Maintainers`, specific to
-this family, and `dbml List Administrators` and `dbml Enterprise Readers`, shared with
-every other family deployed to the site. The split is the shared fleet model,
-and the reason it is right here is specific: **a register whose subjects
-can rewrite their own accountability is not a register.**
+The deploy declares three site groups: `RACI Matrix Maintainers`,
+specific to this family, and `dbml List Administrators` and
+`dbml Enterprise Readers`, shared with every other family deployed to
+the site. The split is the shared fleet model, and the reason it is
+right here is specific: **a register whose subjects can rewrite their
+own accountability is not a register.**
 
 | Group | Holds | Who belongs in it |
-|---|---|---|
+| --- | --- | --- |
 | `RACI Matrix Maintainers` | Contribute on all three lists | The small group who maintain the register — governance, quality or executive support. Not "everybody named in a row" |
 | `dbml List Administrators` | Full Control site-wide — every register on the site, not just these three | Nobody, by default. The deploy enrols the running operator for the duration of its own run and removes them afterwards, so schema changes and redeploys are deliberate acts |
 | `dbml Enterprise Readers` | Read site-wide — every register on the site, not just these three | Nobody, by default. Read-only accounts for aggregated cross-site reporting; membership is operator-owned |

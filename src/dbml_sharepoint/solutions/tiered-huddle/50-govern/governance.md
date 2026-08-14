@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Tier 1 chair (per team) | `Chair` on `TH_Tier1Board` | A row every working day; escalating what the team cannot fix |
 | Tier 2 chair (per department or service) | `Chair` on `TH_Tier2Board` | The same, plus acting on Tier 1 escalations and delegating what belongs below |
 | Tier 3 chair (site or executive) | `Chair` on `TH_Tier3Board` | The same, plus the site view and the Tier 4 relationship |
@@ -32,7 +32,7 @@ Set by `Priority`, measured from `RaisedDate`, and owned by the tier named in
 document — they are a starting position, not a standard.
 
 | Priority | Target tier acknowledges | Target date agreed by |
-|---|---|---|
+| --- | --- | --- |
 | Critical | Same huddle | Same day |
 | High | Next huddle | 2 working days |
 | Medium | 2 working days | 5 working days |

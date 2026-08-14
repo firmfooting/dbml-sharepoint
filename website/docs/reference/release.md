@@ -18,7 +18,7 @@ notes: |
 ```
 
 | Key | Required | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `release` | yes | The release tag. Bump for any regenerated bundle you hand to an operator |
 | `date` | yes | The release date, as a string |
 | `deployer_version` | yes | The tool version this bundle was cut with — a pin you record, not one the tool reads back |

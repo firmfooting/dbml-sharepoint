@@ -21,9 +21,10 @@ validator source directly (`analysis/checks/_structure.py`,
 "probably" fires.
 
 Read this before you design a schema, not after a deploy surprises you.
-Read [DBML reference](../reference/dbml.md) and [mapping reference](../reference/mapping.md) for the
-full, live-verified detail behind each ceiling — this page is the map, they
-are the territory.
+Read [DBML reference](../reference/dbml.md) and
+[mapping reference](../reference/mapping.md) for the full, live-verified
+detail behind each ceiling — this page is the map, they are the
+territory.
 
 ## The list view threshold — 5,000 items
 
@@ -37,9 +38,10 @@ actually matches.
 generated `All Items` view are queries against the list. A filter with no
 selective index behind it is exactly the shape that gets truncated rather
 than refused. [Indexing a Lookup or Person column does not avert
-it](https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0) —
-Microsoft's own indexing guidance says so, and treats Person/Group (single
-value) and Managed Metadata as lookup types for this purpose too.
+it](https://support.microsoft.com/en-us/office/add-an-index-to-a-sharepoint-column-f3f00554-b7dc-44d1-a2ed-d477eac463b0)
+— Microsoft's own indexing guidance says so, and treats Person/Group
+(single value) and Managed Metadata as lookup types for this purpose
+too.
 
 **What the build does.** **Warns, never errors** — `unindexed_filter_columns`
 when a `where` clause filters only on columns no effective index covers. The
@@ -124,8 +126,9 @@ contributors — the ones an author cannot see just by counting `indexes {}`
 entries.
 
 **Mitigation.** Spend the budget on the columns actually used to filter
-large lists; drop indexes that only sped up a Metadata Navigation view you
-no longer use. See [DBML reference: indexes](../reference/dbml.md#indexes) for the full
+large lists; drop indexes that only sped up a Metadata Navigation view
+you no longer use. See
+[DBML reference: indexes](../reference/dbml.md#indexes) for the full
 declaration rules, including which DBML types can carry `[unique]`.
 
 ## The calculated-column operand rules
@@ -176,8 +179,10 @@ for the full, live-verified operand table.
 **No cross-site lookups.** DBML `Ref` columns become same-site SharePoint
 Lookup columns; a relationship into a list on a different site needs the
 mapping's `cross_site_reference_columns` pattern (a Choice + URL pair)
-instead of a real Lookup. [DBML reference](../reference/dbml.md#references-lookups) and
-[mapping reference](../reference/mapping.md) already state this. It is not repeated here
+instead of a real Lookup.
+[DBML reference](../reference/dbml.md#references-lookups) and
+[mapping reference](../reference/mapping.md) already state this. It is
+not repeated here
 with a fresh citation: a focused search for a current Microsoft Learn or
 Support page that states the same-site restriction as its own subject,
 rather than as a side effect of a template- or workflow-scoped article,
@@ -187,9 +192,10 @@ really support it, it stays where it already lives, and
 tracks sourcing it properly — by a probe if Microsoft documentation never
 states it directly.
 
-**The two-level `group_by` ceiling.** Documented in [mapping
-reference](../reference/mapping.md#views); not repeated here because it was not part of
-the set of ceilings this page was written to cover.
+**The two-level `group_by` ceiling.** Documented in
+[mapping reference](../reference/mapping.md#views); not repeated here
+because it was not part of the set of ceilings this page was written to
+cover.
 
 Any other limit not listed above is, as far as this page is concerned,
 either not yet known to bite a DBML-shaped schema, or not yet sourced to

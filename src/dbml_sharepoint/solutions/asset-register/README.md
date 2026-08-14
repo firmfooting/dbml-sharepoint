@@ -22,7 +22,7 @@ with six demo assets behind `--seed`.
 **Work the folders in order:**
 
 | Step | Folder | You |
-|---|---|---|
+| --- | --- | --- |
 | 1 | `10-design/` | Adjust categories/statuses; drop columns you won't keep current |
 | 2 | `20-configure/` | Prefix, security review |
 | 3 | `30-deploy/` | Administrator: build, paste, verify; seed Locations first |

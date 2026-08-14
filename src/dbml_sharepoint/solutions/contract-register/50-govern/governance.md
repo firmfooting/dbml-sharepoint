@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Register owner | *(name a person, e.g. head of procurement/finance)* | Completeness of the register; this document |
 | Contract owner (per row) | The `Owner` column | That contract's renewal decisions and data accuracy |
 | CT Contract Managers | The maintaining group | Data entry and upkeep |
@@ -40,7 +40,7 @@ Three of those rules are now refused at save. The rest are yours.
 **Enforced at save — SharePoint rejects the row:**
 
 | Rule | Where it lives | Message shown |
-|---|---|---|
+| --- | --- | --- |
 | An **Auto-renews** contract must carry a notice period | list validation | Names the notice period as the only thing standing between the contract and a renewal nobody chose |
 | `NoticePeriodDays` cannot be negative | column validation | Its own message, on the column |
 | `AnnualValue` cannot be negative | column validation | Its own message, on the column |

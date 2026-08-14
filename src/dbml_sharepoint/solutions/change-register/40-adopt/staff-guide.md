@@ -43,7 +43,7 @@ review → a decision, with the reasoning in **Decision notes**.
 Deployed with the list — there is nothing to build by hand.
 
 | View | Use it when |
-|---|---|
+| --- | --- |
 | **In flight** *(default)* | The daily list: everything still moving, oldest first |
 | **Triage queue** | The morning job — submitted requests waiting to be assessed |
 | **Awaiting decision** | Chasing: grouped by approver, so you chase people rather than rows |

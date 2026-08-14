@@ -60,7 +60,7 @@ what was ever agreed and why.
 Deployed with the list — there is nothing to build by hand.
 
 | View | Use it when |
-|---|---|
+| --- | --- |
 | **The funnel** *(default)* | The whole live pipeline, grouped by stage, ranked by score inside each group |
 | **Decision queue** | The monthly gate agenda |
 | **Portfolio** | The quarterly capacity read — approved and in-delivery work, grouped by sponsor |

@@ -109,7 +109,7 @@ the best available demonstration of that view: paste a URL onto one row by
 hand and watch it leave.
 
 **Delete the demo rows before active use.** Every demo Title begins with
-`[DEMO] `, they are matched by Title on re-paste (running it twice never
+`[DEMO]`, they are matched by Title on re-paste (running it twice never
 duplicates), and `rollback.js.txt` treats a list whose rows are *all*
 demo-marked as demo-only content. Do not seed a site that already holds
 real practitioners.

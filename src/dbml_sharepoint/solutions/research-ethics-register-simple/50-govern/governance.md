@@ -50,7 +50,8 @@ has no fix inside a list schema.
 Filtering works everywhere in SharePoint *except* a lookup picker. Removing
 the child lists turns the accumulation problem into one SharePoint solves
 well: a default view filtered to live projects. **Project Stage** and the
-**Live projects** view are that answer, and they are load-bearing.
+**Live projects** view are that answer, and the mitigation depends on
+both of them.
 
 **What the trade costs.** No per-amendment and no per-report rows, so:
 
@@ -77,7 +78,7 @@ pretend otherwise.
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Site authorisation | *(Chief Executive, or the delegate named in your instrument of delegation)* | Authorising a project for this site, and withdrawing that authorisation |
 | Research governance officer | *(named role)* | The site-specific assessment, the register's accuracy, both sweeps |
 | RG Research Governance | The maintaining group | Recording decisions the same week they arrive; keeping Governance Notes |
@@ -91,7 +92,7 @@ an authorisation.
 ## Decision authority (edit to your framework)
 
 | Decision | Made by |
-|---|---|
+| --- | --- |
 | Ethics approval, and its conditions | The partner HREC. Never recorded here as anything but a transcription of their letter |
 | Whether a quality or evaluation activity needs ethics review | Per your service's process for quality assurance and evaluation activities, recorded as `EthicsPathway` = *Quality assurance or evaluation - no ethics review* with the decision date in `Ethics Decision Date` |
 | Site authorisation, and its withdrawal | Chief Executive or delegate, on the research governance officer's assessment |
@@ -112,11 +113,11 @@ saved one — the view is stored sorted by title — and the overdue colouring
 marks the lapsed and lapsing rows red without moving them, so on a register
 of any size the ones you are looking for are scattered down the page until
 you sort. Then work it to a decision each month: an extension amendment
-lodged, or the project closed. On the day an approval passes its expiry, move
-`EthicsStatus` to *Expired*. That is what makes **Site Readiness** say *Site authorised -
-ethics not cleared*, in blocked red, for a project whose local paperwork
-still says yes. Until somebody moves it, the readiness column is stale and
-says so nowhere.
+lodged, or the project closed. On the day an approval passes its
+expiry, move `EthicsStatus` to *Expired*. That is what makes
+**Site Readiness** say *Site authorised - ethics not cleared*, in
+blocked red, for a project whose local paperwork still says yes. Until
+somebody moves it, the readiness column is stale and says so nowhere.
 
 **The reporting sweep.** Work *Reports due soon*. The red rows at the top are
 already late, and continued ethics approval is contingent on the progress
@@ -157,7 +158,7 @@ project was authorised on that date*, "the system would not have let us" is
 only an answer for the rows below.
 
 | Rule | Where it lives | Why there |
-|---|---|---|
+| --- | --- | --- |
 | **A project cannot be site-authorised unless ethics is cleared, or once was** | **Enforced at save**, on the list | The domain rule: authorisation is given against evidence of ethics approval. *Ethics review not required* counts as clearance, deliberately — refusing it would push adopters into recording a fake approval for a quality activity that correctly never went to a committee. *Expired* counts too, and for a different reason: a list validation formula sees only the row being saved, so it cannot tell an authorisation granted against a lapsed approval from an approval lapsing under one already granted. Refusing it would make the expiry sweep below impossible. What the rule still refuses are the statuses where clearance never existed |
 | A submission, ethics decision or site authorisation cannot be dated in the future | **Enforced at save**, on each column (three rules) | Each reads only its own column, so each keeps its own message. A forward-dated authorisation says the site cleared a project it has not. All three dates are optional, and each rule carries a blank arm — the rule is *if there is a date it is not in the future*, not *there is a date* |
 | Amendment count cannot be negative | **Enforced at save**, on the column | It is the only surviving trace of how many times the approved protocol has moved |
@@ -199,7 +200,7 @@ are from particular jurisdictions. **Check your own** — the framework is
 national; the forms, the timeframes and the delegations are not.
 
 | Claim | Source, and what it says |
-|---|---|
+| --- | --- |
 | Ethics approval and site authorisation are **separate**; the research governance officer assesses the site-specific assessment and **recommends**, and the Chief Executive or delegate **authorises**; ethics approval is a prerequisite for authorisation; a project needs **both** before it starts at a site | [SLHD RPA, Site Specific Application (Governance)](https://www.slhd.nsw.gov.au/rpa/research/Governance.html) — *"The RGO makes a recommendation to the Chief Executive (CE) or the CE's delegate who then authorises the research to be conducted at that site"*; *"Although SSAs can be submitted before ethics approval has been decided, they cannot be authorised until ethics approval for the study has been issued"* |
 | Progress reports go to the reviewing committee **at least annually**, and continued approval is contingent on them | [SLHD RPA post-approval guidelines](https://www.slhd.nsw.gov.au/rpa/research/postapproval.html) — *"reports on the progress of all approved studies must be submitted to the Committee at least annually"*, and approval runs *"subject to the receipt of satisfactory annual reports"* |
 | The report **due date** is set locally, not nationally | [RMH progress and final reports](https://www.thermh.org.au/research/office-for-research/post-approval-project-management/progress-and-final-reports) — *"Annual Progress Reports must be submitted by 31 March each year"*, a fixed institutional date set for that office's own reconciliation; other schemes use the approval anniversary. This is why the register stores a date you supply rather than deriving one from a cadence |
@@ -239,8 +240,8 @@ template needs an interval it stores a date you supply.
 
 ## Privacy
 
-- Project metadata only. See the boundary at the top of this page; it is the
-  load-bearing part of this document.
+- Project metadata only. See the boundary at the top of this page; the rest
+  of this document depends on it.
 - The register does hold **staff professional information** — who is
   investigating what — and the conditions a committee attached to somebody's
   project. Neither is health information about an identifiable person, which

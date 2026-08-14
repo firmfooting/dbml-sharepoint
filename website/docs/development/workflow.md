@@ -38,6 +38,7 @@ uv run pytest                              # full suite — all green, no skips 
 uv run ruff check src test website/scripts # lint
 uv run mypy                                # strict typing: src, test, website/scripts
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
+uv run prek run --all-files markdownlint-cli2 # markdown style; see .markdownlint-cli2.yaml
 ```
 
 - **Template lint (two layers).** `test/test_template_lint.py` lints

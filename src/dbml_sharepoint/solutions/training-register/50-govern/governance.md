@@ -3,7 +3,7 @@
 ## Ownership
 
 | Role | Held by | Accountable for |
-|---|---|---|
+| --- | --- | --- |
 | Compliance owner | *(e.g. HR / L&D / quality manager)* | The mandatory matrix, escalation, this document |
 | TR Training Coordinators | The maintaining group | Records, catalogue, weekly sweep |
 | Line managers | — | Acting on Expiring/Expired notifications for their people |
@@ -14,7 +14,7 @@
 don't fit a boolean — maintain them here and review annually:
 
 | Role / group | Required courses | Refresh |
-|---|---|---|
+| --- | --- | --- |
 | All staff | Induction; Code of conduct | Once; 24 months |
 | *(role)* | *(courses)* | *(interval)* |
 
@@ -42,7 +42,7 @@ and the difference is worth knowing precisely rather than assuming the
 software has your back:
 
 | Rule | Where it lives | Why there |
-|---|---|---|
+| --- | --- | --- |
 | Validity months is positive, or blank for never-expires | **Enforced at save**, on the column | Reads only its own column, so it carries a message that names the actual mistake. Written as an OR: SharePoint reads a blank number as zero, and a bare `> 0` would refuse every never-expiring course |
 | A completion cannot be dated in the future | **Enforced at save**, on the column | A forward-dated completion pushes the expiry out with it and drops the record off the sweep silently |
 | A record marked **Expiring** or **Expired** needs an expiry date | **Enforced at save**, on the list | Cross-column, so it shares the list's single validation formula. Either status is a statement about a date, and without one the record is unfalsifiable |

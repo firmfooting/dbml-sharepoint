@@ -53,7 +53,7 @@ Two things the form does as you move the status:
 Deployed with the list — there is nothing to build by hand.
 
 | View | Use it when |
-|---|---|
+| --- | --- |
 | **The worklist** *(default)* | The fortnightly programme meeting: everything unsettled, highest score first |
 | **Programme dashboard** | The quarterly counts, grouped by status — and a quick look for Digitised rows missing their link |
 | **By function** | Workshop prep and the annual refresh, one function at a time |
