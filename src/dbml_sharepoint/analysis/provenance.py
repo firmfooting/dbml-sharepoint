@@ -2,7 +2,7 @@
 """The one marker prefix every provisioned object opens with.
 
 Three surfaces record provenance in a description: a site group, a list, and
-(coming) a permission level. Each composes a different marker for its own
+a permission level. Each composes a different marker for its own
 description budget, but all three must open with the same text, because that
 text is what a human greps for to find everything this tool provisioned, and
 what the deploy tests before deciding whether adopting an existing object is

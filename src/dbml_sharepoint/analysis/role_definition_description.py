@@ -23,6 +23,19 @@ shared across families, so there is no tool-owned name and no `SHARED_MARKER`
 counterpart here; every level belongs to exactly one family and its marker
 always names it.
 
+THE FAMILY SLUG IS NOT INJECTIVE, and this module inherits that rather than
+introducing it. `list_description.normalise_family` folds `a_b`, `a/b` and
+`a-b` onto the same slug, and a schema declaring no DBML `Project` folds to
+the same `custom` as one that declares `Project custom`. That module's own
+docstring argues the collision is acceptable because it costs "a
+mis-attributed row in a report", reasoning written for a context where the
+slug only labelled output. The same slug now decides whether one
+declaration's marker can be found in an existing role definition's
+Description, which decides whether that declaration may adopt and rewrite a
+site-scoped role definition another declaration created. The behaviour is
+unchanged from what `normalise_family` already does; this paragraph exists
+so that carry-over is recorded rather than silently assumed still cheap.
+
 MEASURED, NOT ASSUMED. `test/manual/role-definition-probe.js` ran 2026-08-14,
 revisions `709c2549` and `4dd7de1c`, against a live tenant:
 `SP.RoleDefinition.Description` round-trips byte-identically through both the
