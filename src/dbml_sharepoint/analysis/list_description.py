@@ -21,21 +21,10 @@ from dbml_sharepoint.model.parser import Schema
 
 # The list Description budget the emitter has always applied.
 #
-# THIS TOOL'S BUDGET, NOT A SHAREPOINT LIMIT, and the difference is now
-# measured rather than assumed. `test/manual/list-description-probe.js` wrote
-# 1018 characters on 2026-08-14 and read all of them back intact, so the
-# platform accepts AT LEAST 1018. Documentation that called 255 a SharePoint
-# limit was wrong and has been corrected.
-#
-# That is a lower bound, not the absence of a limit. One length was sent and
-# no ceiling was searched for; a group Description, measured the same week,
-# refuses over 512.
-#
-# Kept at 255 anyway. One measurement establishes that a long Description
-# survives a REST write and read; it says nothing about whether the list
-# settings UI, the search index or the reporting pack carry it unchanged, and
-# every one of those reads this string. Raising it is a deliberate change with
-# its own evidence to gather, not a consequence of this one.
+# This tool's budget, not a SharePoint limit: MEASURED 2026-08-14, the
+# platform accepted at least 1018 characters. Kept at 255 because the list
+# settings UI, the search index and the reporting pack all read this string
+# and none of them has been measured at a greater length. See issue #219.
 DESCRIPTION_LIMIT = 255
 
 # The discovery marker. It is a sentence, not a tag, because it sits at the
@@ -211,14 +200,10 @@ def list_description(table_note: str, *, family: str, entity: str) -> str:
     `ENTITY_NOTE_TOO_LONG_FOR_MARKER` refuses the note at build time and this
     never runs on one. The clamp here is a backstop, not the enforcement.
 
-    A list Description DOES round-trip byte for byte -- MEASURED 2026-08-14
-    by `test/manual/list-description-probe.js`, over 1000 characters and
-    including an ampersand, a run of spaces and both a bare LF and a CRLF.
-    That was an inference until then, and `ENTITY_NOTE_MAY_NOT_ROUND_TRIP`
-    was the rule that kept the corpus inside what the inference could carry;
-    the measurement retired it. Nothing here ever depended on it either way:
-    a truncated marker is invisible to fleet reporting whether or not the
-    round trip is exact.
+    A list Description round-trips byte for byte, MEASURED 2026-08-14 by
+    `test/manual/list-description-probe.js`. Nothing here depends on that,
+    because a truncated marker is invisible to fleet reporting whether or not
+    the round trip is exact.
 
     Note the order of operations: the note is clamped BEFORE the marker is
     appended. Appending first and clamping the result is the defect -- it

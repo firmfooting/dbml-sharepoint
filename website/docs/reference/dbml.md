@@ -95,17 +95,15 @@ note under it. Exceeding it is `entity_note_too_long_for_marker`, an
 error.
 
 **255 is this tool's budget, not a SharePoint limit.** It is what the
-emitter has always applied, and the same 2026-08-14 probe that measured
-the round trip wrote **1018 characters and read all of them back
-intact** — so SharePoint accepts at least that many. That is a lower
-bound rather than the absence of a limit: one length was sent, and no
-ceiling was searched for.
+emitter has always applied. The 2026-08-14 probe that measured the round
+trip wrote 1018 characters and read all of them back intact, so
+SharePoint accepts at least that many. That is a lower bound rather than
+the absence of a limit, because one length was sent and no ceiling was
+searched for.
 
-The budget is kept deliberately rather than raised on the strength of it.
-Whether a longer Description survives the *list settings UI*, the search
-index and the reporting pack unchanged is a separate question nobody has
-asked, and all three read that string. Raising it is tracked, not
-assumed.
+The budget stays at 255 for now. Whether a longer Description survives
+the list settings UI, the search index and the reporting pack unchanged
+has not been measured, and all three read that string.
 
 **The note is refused; the marker is never cut.** This is the whole point
 of the rule and it is worth being explicit about why, because truncating
@@ -140,14 +138,14 @@ rather than noise they learn to skip:
 - **Write for somebody who has just opened the list** and does not know
   the template, has not read this documentation, and was not in the room
   when it was chosen.
-- **Keep it to one paragraph.** Advice now, not a rule. `&`, line breaks
-  and runs of spaces were refused as errors until 2026-08-14, when
+- **Keep it to one paragraph.** Advice, not a rule. `&`, line breaks and
+  runs of spaces were errors until 2026-08-14, when
   `test/manual/list-description-probe.js` measured the round trip against a
-  live site and found it exact — byte for byte, over 1000 characters,
-  including an ampersand, a run of two spaces, a bare LF and a CRLF. The
-  restriction existed because that round trip was *inferred* rather than
-  measured and the reconcile compares what it wrote against what came back;
-  the measurement retired it. One paragraph still reads better under list
+  live site and found it exact: byte for byte, at 1018 characters, including
+  an ampersand, a run of two spaces, a bare LF and a CRLF. The restriction
+  existed because that round trip was inferred rather than measured, and the
+  reconcile compares what it wrote against what came back. One paragraph
+  still reads better under list
   settings, which is the only reason left to prefer it.
 
 The shipped families are the worked examples — every

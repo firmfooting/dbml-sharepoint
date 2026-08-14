@@ -903,25 +903,12 @@
   // stored. Used for FIELD descriptions and, since 2026-08-12, for the LIST
   // Description that carries the provenance marker.
   //
-  // WHAT THIS ASSUMES, AND WHAT IS NOW MEASURED (2026-08-14). Both callers
-  // stake a byte-identical round trip: whatever is MERGEd comes back
-  // character for character. For fields that is long-standing behaviour here.
-  // For LISTS it was an inference from the field case until
-  // test/manual/list-description-probe.js measured it against a live site:
-  // exact, over 1000 characters, through both the create and the MERGE path,
-  // and including an ampersand, a run of two spaces, a bare LF and a CRLF.
-  //
-  // That closes the question this comment used to pose. The fear was that a
-  // Description might be normalised the way ValidationFormula demonstrably is
-  // — whitespace collapsed, newlines rewritten, `&` returned as `&amp;` —
-  // which would make a note containing one a PERMANENT abort: every re-paste
-  // MERGEs, reads back a difference that is not drift, and fails closed.
-  // `entity_note_may_not_round_trip` existed to keep notes clear of those
-  // characters until somebody measured. Somebody has, none of them
-  // normalise, and the rule is gone.
-  //
-  // The comparison stays a raw byte compare, which is now what the surface
-  // actually warrants rather than what was hoped.
+  // A raw byte compare, which the surface supports: MEASURED 2026-08-14 by
+  // test/manual/list-description-probe.js, a list Description returns
+  // unchanged through both the create and the MERGE path, including an
+  // ampersand, a run of two spaces, a bare LF and a CRLF, at 1018 characters.
+  // ValidationFormula is the counter-example that made this worth measuring,
+  // since SharePoint does normalise those and canonicalFormula exists for it.
   const normalizeDescription = (value) => value == null ? '' : String(value);
   const normalizeDefaultValue = (value) => value == null || value === '' ? null : String(value);
   const DERIVED_FIELD_PROPERTIES = [

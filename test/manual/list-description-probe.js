@@ -1,101 +1,50 @@
 /**
- * dbml-sharepoint PROBE — WHAT A LIST DESCRIPTION DOES ON THE WAY BACK
+ * dbml-sharepoint PROBE: does a list Description survive a write and read?
  *
- * WHY THIS EXISTS, in the words of the code that is waiting for it.
- * `templates/deploy/_field_reconcile.js.j2:35-42`:
+ * WHY. `reconcileListDescription` in `templates/deploy/_field_reconcile.js.j2`
+ * writes the composed Description, reads it back and compares the two byte for
+ * byte. Whether SharePoint returns a list Description unchanged was inferred
+ * from the field case rather than measured. `entity_note_may_not_round_trip`
+ * refused an ampersand, a line break and a run of spaces in every table note
+ * because of that gap, and both the rule and the deploy template named this
+ * probe as the thing that would settle it.
  *
- *     If a list Description is normalised the same way — whitespace
- *     collapsed, newlines rewritten, `&` returned as `&amp;` — then a note
- *     containing one becomes a PERMANENT abort: every re-paste MERGEs,
- *     reads back a difference that is not drift, and fails closed. Loud
- *     and safe, which is the right failure, but it would strand the
- *     operator with no way forward. Until test/manual/ closes it (set a
- *     description containing a newline, an `&` and a run of spaces; read
- *     it straight back; compare bytes), the shipped template notes stay
- *     clear of `&` and of newlines.
+ * SCOPE. `SP.List.Description` only. `test/manual/group-description-probe.js`
+ * measured `SP.Group.Description`, which is a different property on a
+ * different type: a group refuses over 512 characters and a list accepted
+ * 1018, so neither result is evidence for the other.
  *
- * This is that file. `analysis/checks/_structure.py` carries the same
- * instruction beside the rule it would retire.
+ * WHAT IT TOUCHES. One custom list, created and deleted under a run-unique
+ * name the probe prints before doing anything. It touches no group, no
+ * permission and no list it did not create. If the name is already taken it
+ * stops without writing or deleting.
  *
- * WHAT IS BEING REFUSED TODAY. `entity_note_may_not_round_trip` rejects a
- * table note containing `&`, a line break, or a run of spaces — at build
- * time, in every schema anyone writes. The rule is deliberately stronger
- * than the evidence: nobody had measured the surface, and a note that does
- * not survive the round trip aborts a paste part-way through a partially
- * provisioned site. Fail closed first, measure later. This is later.
+ * L7 REPORTS A LOWER BOUND, not the absence of a limit. It sends one length
+ * and does not search for a ceiling.
  *
- * IF L4, L5 AND L6 ALL PASS, the rule and the matching prose in
- * `website/docs/reference/dbml.md` come out, and #203 — which asks the same
- * question about the marker's own components — goes with them. If any of
- * them FAILS, this probe is the evidence that the rule was right, and the
- * failing character stays refused with a citation instead of a caveat.
+ * RUN 1, 2026-08-14, revision 25d4b223, one Microsoft 365 group-connected
+ * Team Site. Ten questions, ten answered, all PASS.
  *
- * NOT THE SAME SURFACE AS A GROUP. `test/manual/group-description-probe.js`
- * measured `SP.Group.Description` on 2026-08-13 and again on 2026-08-14: it
- * round-trips byte-identically, accepts `&` and a run of two spaces, caps at
- * 512 characters and accepts empty. NONE of that is evidence for a list.
- * `SP.List.Description` is a different property on a different type, and the
- * whole reason this project writes probes is that the plausible transfer is
- * how it has been wrong before. Where a question here mirrors one there, the
- * group's answer is noted only so a DIFFERENCE is obvious.
+ *     L1, L2   byte-identical through the create path and the MERGE path
+ *     L3       a MERGE omitting Description preserves it, so MERGE is
+ *              partial. The Title the request did carry changed in the same
+ *              call, so the result is not vacuous.
+ *     L4       an ampersand survives, and does not return as `&amp;`
+ *     L5       a run of two spaces survives, uncollapsed
+ *     L6       a bare LF survives, unrewritten
+ *     L7       1018 characters returned intact, so the accepted length is at
+ *              least 1018
+ *     L8       an empty description is accepted
+ *     L9       the composed note-plus-marker shape survives
  *
- * WHAT THE DEPLOY ALREADY DOES, which is why L2 matters most.
- * `reconcileListDescription` MERGEs the declared Description, reads the list
- * back, and THROWS when the two differ — `normalizeDescription` is
- * `String(value)`, so that comparison is raw bytes. Every question here is
- * asking what that existing read-back will see.
+ * RUN 2, 2026-08-14, revision 2759ce32, same site. Eleven questions, eleven
+ * answered. Every run-1 result reproduced, and L10 closed the last one: a
+ * CRLF survives byte-identical, with neither half stripped.
  *
- * SEPARATING WHAT IS DEPENDED ON FROM WHAT IS OBSERVED. L7 writes a long
- * description and REPORTS what comes back rather than asserting a ceiling.
- * Groups refuse over 512 with an HTTP 500; a list may truncate, may refuse,
- * may differ. Asserting the group's number here would be the transfer this
- * file exists to avoid.
- *
- * THE NEGATIVE CONTROL IS N1. Every question reads a list back and compares.
- * If a read of a list that does not exist came back 200, all of them would be
- * meaningless.
- *
- * WHAT THIS TOUCHES. One custom list, created and deleted by this probe under
- * a RUN-UNIQUE name it prints before doing anything. It touches no group, no
- * permission, and no list it did not create — and if the name is somehow
- * taken it stops without writing or deleting.
- *
- * RUN 1 — 2026-08-14, probe revision 25d4b223, one Microsoft 365
- * group-connected Team Site. Ten questions, ten answered, all PASS.
- *
- *     L1, L2  byte-identical through the create path and the MERGE path.
- *     L3      MERGE is PARTIAL — confirmed non-vacuously, the Title the
- *             request did carry changed in the same call.
- *     L4      an ampersand SURVIVES. It does not come back `&amp;`.
- *     L5      a run of two spaces SURVIVES, uncollapsed.
- *     L6      a bare LF SURVIVES, unrewritten.
- *     L7      1018 characters survived intact, so the accepted length is
- *             AT LEAST 1018. That is a lower bound and nothing more: the
- *             probe sent one length and no ceiling was searched for. A
- *             group Description refuses over 512, so the two surfaces
- *             differ — but "lists have no limit" is not something this
- *             measured and must not be written down as though it did.
- *     L8      empty accepted.
- *     L9      the composed note-plus-marker shape survives.
- *
- * RUN 2 — 2026-08-14, revision 2759ce32, same site. Eleven questions,
- * eleven answered. Every run-1 result reproduced, and the last one closed:
- *
- *     L10     a CRLF SURVIVES byte-identical. Neither half is stripped and
- *             the pair is not rewritten.
- *
- * THE RULE IS NOW FULLY MEASURED AND FULLY WRONG. `entity_note_may_not_
- * round_trip` refused an ampersand, a line feed, a carriage return and a
- * run of spaces. All four survive. It was written fail-closed because
- * nobody had measured the surface, which was the right call at the time and
- * is no longer the situation. Deleting it — and the docs caveat, and #203,
- * which asks the same question about the marker's own components — is the
- * follow-through.
- *
- * The contrast with the group surface is the reason this was measured
- * separately rather than inferred: same-named property, different type, and
- * a group refuses at 512 where a list took 1018. Transferring either answer
- * would have been wrong in both directions.
+ * OUTCOME. All four characters `entity_note_may_not_round_trip` refused
+ * survive, so the rule was deleted along with the caveat in
+ * `website/docs/reference/dbml.md`. Issue #203 asked the same question about
+ * the marker's own components and is answered by the same runs.
  *
  * HOW TO RUN
  *   1. Open the target site as somebody who can create a list.
@@ -303,35 +252,25 @@
     console.log('Copy this whole block back verbatim.');
   };
 
-  // Printed before any gate: a stale clipboard and a fix that did not
-  // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 10651ffa — quote this when reporting results.');
+  // Identifies which version was pasted, since a stale clipboard and a failed fix read the same.
+  log('INFO', 'probe revision 6a0cfae4. Quote this when reporting results.');
 
-  // Run-unique for the reason the group probe learned in review: a fixed
-  // name plus a pre-emptive delete destroys somebody else's list on the one
-  // site where the name is already taken.
+  // Run-unique so the probe never touches a list it did not create.
   const RUN = `${Date.now().toString(36)}`.slice(-6);
   const LIST = `dbmlsp Probe Description ${RUN}`;
 
   const PLAIN = 'dbmlsp probe plain description';
   const MERGED = 'dbmlsp probe merged description';
-  // The three the build refuses today. Each is asked separately so a partial
-  // answer is still actionable: if `&` survives and the newline does not,
-  // the rule narrows to newlines rather than staying whole.
+  // Asked separately so a partial answer narrows the rule instead of leaving it whole.
   const AMPERSAND = 'dbmlsp probe risks & issues';
   const SPACES = 'dbmlsp probe two  spaces';
   const NEWLINE = 'dbmlsp probe first line\nsecond line';
-  // RUN 1 measured a bare LF and lifted it. A carriage return was never
-  // sent, and a note authored on Windows carries CRLF, so the pair is its
-  // own question rather than a variation on L6. Built from char codes so no
-  // editor, renderer or copy-paste between here and the console can quietly
-  // normalise the very bytes being measured.
+  // Built from char codes so nothing between here and the console normalises the bytes.
   const CR = String.fromCharCode(13);
   const LF = String.fromCharCode(10);
   const CRLF_TEXT = `dbmlsp probe first line${CR}${LF}second line`;
   const LONG = `dbmlsp probe long ${'x'.repeat(1000)}`;
-  // The shape the tool actually writes: a note, then the provenance marker.
-  // MARKER_TEMPLATE in analysis/list_description.py.
+  // The shape the tool writes: a note, then MARKER_TEMPLATE from list_description.py.
   const COMPOSED = 'Risks and issues for the service. Provisioned by dbml-sharepoint from probe/Risk.';
 
   expect('N1', 'CONTROL: does reading a list that does not exist actually fail?');
@@ -347,7 +286,7 @@
   expect('L10', 'Does a CRLF survive, given a bare LF does?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
-    log('INFO', 'PLAN — nothing has been touched.');
+    log('INFO', 'PLAN. Nothing has been touched.');
     log('INFO', `This probe would create the custom list '${LIST}', write and`);
     log('INFO', 'read back its Description several ways, then delete it.');
     log('INFO', 'Set CONFIRMED = true and ALLOW_WRITES = true to run it.');
@@ -355,9 +294,7 @@
     return;
   }
 
-  // Mirrors _lists.js.j2 and _field_reconcile.js.j2 exactly — verbose body
-  // with __metadata — so a failure means the description did not survive,
-  // not that the probe framed the request differently from the deployer.
+  // Mirrors the deployer's request shape, so a failure means the value did not survive.
   const VERBOSE = { 'Content-Type': 'application/json;odata=verbose' };
 
   const readList = async () => spGet(`web/lists/getbytitle('${encodeURIComponent(LIST)}')`);
@@ -442,9 +379,7 @@
   await mergeAndRead('L2', 'Does a Description written by MERGE read back byte-identical?', MERGED);
 
   // ---- L3: partial MERGE ------------------------------------------------
-  // Must CHANGE something or it passes vacuously: a request that did nothing
-  // would also leave the Description intact. Title is safe to touch and
-  // reads back on the same object.
+  // Changes the Title as well, or a request that did nothing would also look like preservation.
   const RENAMED = `${LIST} b`;
   const d3 = await getDigest();
   const partial = await spPost(
@@ -472,22 +407,13 @@
           ? 'the Title did not change, so this request did not take effect and "preserved" would prove nothing'
           : (got === MERGED
             ? 'the Title changed AND the omitted Description survived, so MERGE is partial'
-            : `the Title changed but the Description became ${JSON.stringify(got)} — an omitted field is NOT preserved`));
+            : `the Title changed but the Description became ${JSON.stringify(got)}, so an omitted field is NOT preserved`));
     }
 
-    // RESTORE UNCONDITIONALLY, AND PROVE IT, before anything else measures.
-    //
-    // An earlier version restored only on the path where the read-back
-    // succeeded. If that read was throttled, the list stayed renamed, and
-    // every later question addressed a title that no longer existed: their
-    // MERGEs would 404, `isRefusal` would call a 404 a refusal, and L4-L10
-    // would report FAIL — definitive-looking verdicts about SharePoint,
-    // caused entirely by the probe's own plumbing. That is the worst thing
-    // a probe can do, and it is what this branch now prevents.
-    //
-    // The check is "does LIST answer again", which is correct whether or not
-    // the rename landed: if it never took, the restoring MERGE 404s
-    // harmlessly and LIST reads back anyway.
+    // Restored and verified unconditionally, because a list left renamed
+    // makes L4 to L10 report FAIL for a 404 they caused themselves.
+    // Reading LIST back is the right check either way: if the rename never
+    // landed, the restoring MERGE 404s harmlessly and the read still passes.
     const dr = await getDigest();
     await spPost(
       `web/lists/getbytitle('${encodeURIComponent(RENAMED)}')`,
@@ -506,9 +432,7 @@
   }
 
   // ---- L4/L5/L6: the three the build refuses today ----------------------
-  // Each reports the RETURNED value, so a transformation is visible rather
-  // than merely failing. `&` coming back as `&amp;` is the specific
-  // hypothesis _field_reconcile.js.j2 names.
+  // Each reports the returned value, so a transformation is visible rather than only a failure.
   await mergeAndRead('L4', 'Does an ampersand survive, or come back as &amp;?', AMPERSAND,
     (got) => (got === AMPERSAND ? 'PASS'
       : (typeof got === 'string' && got.includes('&amp;') ? 'FAIL (escaped to &amp;)' : 'FAIL')));
@@ -520,11 +444,7 @@
       : (typeof got === 'string' && got.includes('\r\n') ? 'FAIL (rewritten to CRLF)' : 'FAIL')));
 
   // ---- L7: length, OBSERVED ---------------------------------------------
-  // PASS here means "at least this many are accepted", and the evidence says
-  // so in as many words. A reader who sees a bare PASS against a question
-  // about length will remember it as "no limit", which is not what one
-  // length establishes -- and a later decision to raise DESCRIPTION_LIMIT
-  // would then rest on a ceiling nobody looked for.
+  // Says "lower bound" in the outcome, because a bare PASS here reads as "no limit".
   await mergeAndRead('L7', 'What comes back when 1000+ characters go out?', LONG,
     (got) => (got === LONG
       ? `PASS (lower bound only: ${LONG.length} accepted, no ceiling searched for)`
@@ -536,11 +456,7 @@
   await mergeAndRead('L9', 'Does the composed note-plus-marker shape survive intact?', COMPOSED);
 
   // ---- L10: the one byte run 1 never sent -------------------------------
-  // Run 1 lifted the ampersand, the space run and the bare LF. The carriage
-  // return stayed refused because nothing had measured it, and a rule that
-  // allows LF while refusing CR would still reject every note written on
-  // Windows. Reports which half survived, so a strip is distinguishable
-  // from an outright failure.
+  // Reports which half survived, so a stripped CR is distinguishable from a failure.
   await mergeAndRead('L10', 'Does a CRLF survive, given a bare LF does?', CRLF_TEXT,
     (got) => {
       if (got === CRLF_TEXT) return 'PASS';
@@ -558,7 +474,7 @@
   );
   log(removed.ok ? 'OK' : 'FAIL',
     removed.ok ? `Deleted '${LIST}'.`
-      : `Could not delete '${LIST}' (HTTP ${removed.status}) — remove it by hand.`);
+      : `Could not delete '${LIST}' (HTTP ${removed.status}). Remove it by hand.`);
 
   report();
   console.log('');

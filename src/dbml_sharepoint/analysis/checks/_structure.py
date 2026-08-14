@@ -166,12 +166,10 @@ def _note_fits_beside_marker(
     passes. Build time is the last point at which the mistake is still
     observable.
 
-    MEASURED 2026-08-14 by `test/manual/list-description-probe.js`: a list
-    Description does survive the round trip byte for byte, over 1000
-    characters, including an ampersand, a run of spaces and both a bare LF
-    and a CRLF. It makes no difference to this rule either way -- a truncated
-    marker is invisible whether the read-back compares equal or aborts the
-    run, so the note is refused regardless.
+    A list Description round-trips byte for byte, MEASURED 2026-08-14 by
+    `test/manual/list-description-probe.js`. This rule does not depend on
+    that, because a truncated marker is invisible whether the read-back
+    compares equal or aborts the run.
 
     The budget is computed rather than a constant, because it depends on the
     length of the family and entity names inside the marker. It comes from the

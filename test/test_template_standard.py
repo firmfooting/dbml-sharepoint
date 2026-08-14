@@ -1571,10 +1571,10 @@ def test_the_dbml_project_name_resolves_to_the_family_directory(template: str) -
     `Project asset_reg` inside `solutions/asset-register/` would deploy lists
     attributing themselves to a family that does not exist -- silently, since
     a description naming the wrong family saves and reconciles exactly like
-    one naming the right family. (A list Description does round-trip byte
-    for byte -- MEASURED 2026-08-14, see
-    `test/manual/list-description-probe.js` -- but a wrong family name would
-    be invisible either way, so nothing here rests on it.)
+    one naming the right family. A list Description round-trips byte for
+    byte (MEASURED 2026-08-14, see
+    `test/manual/list-description-probe.js`), but a wrong family name would
+    be invisible either way, so nothing here rests on it.
     """
     schema = _load(template).schema
     assert schema.project_name, f"{template}: schema.dbml declares no `Project` name"
