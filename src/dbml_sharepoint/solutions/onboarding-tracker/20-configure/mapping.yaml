@@ -340,7 +340,7 @@ demo_items:
         Notes: "Demo row. Part-time, Tuesday to Thursday. Second monitor and a locker, the kind of detail the functions read here rather than chase by email."
     - key: str-nurse
       values:
-        Title: "[DEMO] Registered nurse: started last week"
+        Title: "[DEMO] Registered nurse — started last week"
         Role: "Registered nurse"
         Department: "Ward 3"
         StartDate: "today-7"
@@ -349,7 +349,7 @@ demo_items:
         Notes: "Demo row. Before-start tasks all closed; the post-start ones run over the next fortnight."
     - key: str-admin
       values:
-        Title: "[DEMO] Administration officer: onboarding complete"
+        Title: "[DEMO] Administration officer — onboarding complete"
         Role: "Administration officer"
         Department: "Reception"
         StartDate: "today-60"
@@ -357,7 +357,7 @@ demo_items:
         Status: "Complete"
     - key: str-withdrawn
       values:
-        Title: "[DEMO] Withdrawn hire: offer declined"
+        Title: "[DEMO] Withdrawn hire — offer declined"
         Role: "Project officer"
         Department: "Programme office"
         StartDate: "today+30"

@@ -348,7 +348,7 @@ demo_items:
   Interaction:
     - key: int-council-review
       values:
-        Title: "[DEMO] Quarterly review, funding timeline discussed"
+        Title: "[DEMO] Quarterly review — funding timeline discussed"
         Contact: { demo_ref: con-council-grants }
         InteractionDate: "today-6"
         InteractionType: "Meeting"
@@ -356,7 +356,7 @@ demo_items:
         Summary: "Demo row. They will confirm the next round's opening date by the end of the month. That is a promise from their side, and recording promises (either side's) is the single habit that makes this register worth keeping."
     - key: int-supplier-call
       values:
-        Title: "[DEMO] Call: delivery schedule for the winter order"
+        Title: "[DEMO] Call — delivery schedule for the winter order"
         Contact: { demo_ref: con-supplier-account }
         InteractionDate: "today-20"
         InteractionType: "Call"
@@ -364,7 +364,7 @@ demo_items:
         Summary: "Demo row. Winter order splits across two deliveries; we agreed to confirm the second date a fortnight out."
     - key: int-community-visit
       values:
-        Title: "[DEMO] Site visit: shared transport pilot"
+        Title: "[DEMO] Site visit — shared transport pilot"
         Contact: { demo_ref: con-community-coord }
         InteractionDate: "today-45"
         InteractionType: "Site visit"
@@ -372,7 +372,7 @@ demo_items:
         Summary: "Demo row. They have capacity for a shared transport pilot from the new financial year and would want a written agreement first."
     - key: int-council-email
       values:
-        Title: "[DEMO] Email: acquittal template query"
+        Title: "[DEMO] Email — acquittal template query"
         Contact: { demo_ref: con-council-grants }
         InteractionDate: "today-70"
         InteractionType: "Email"
@@ -380,7 +380,7 @@ demo_items:
         Summary: "Demo row. Acquittal template has changed for this round; they sent the new one. Synthesised here rather than pasted; the attachment lives in the grants folder."
     - key: int-former-handover
       values:
-        Title: "[DEMO] Meeting: handover before the adviser moved on"
+        Title: "[DEMO] Meeting — handover before the adviser moved on"
         Contact: { demo_ref: con-council-former }
         InteractionDate: "today-160"
         InteractionType: "Meeting"

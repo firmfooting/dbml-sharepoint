@@ -312,7 +312,7 @@ demo_items:
   Contract:
     - key: ct-cleaning
       values:
-        Title: "[DEMO] Office cleaning, Sparkle Facilities"
+        Title: "[DEMO] Office cleaning — Sparkle Facilities"
         Counterparty: "[DEMO] Sparkle Facilities Pty Ltd"
         ContractRef: "[DEMO] CT-2024-011"
         ContractType: "Services"

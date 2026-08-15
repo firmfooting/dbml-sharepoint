@@ -423,7 +423,7 @@ demo_items:
   Practitioner:
     - key: prac-medical
       values:
-        Title: "[DEMO] Consultant physician: registration current"
+        Title: "[DEMO] Consultant physician — registration current"
         Discipline: "Medical"
         Role: "Consultant physician"
         RegistrationNumber: "[DEMO] MED-1000001"
@@ -435,7 +435,7 @@ demo_items:
         Notes: "Demo row. Approved at the credentialing committee; minute reference recorded here on a real row."
     - key: prac-nurse
       values:
-        Title: "[DEMO] Nurse practitioner: registration expiring"
+        Title: "[DEMO] Nurse practitioner — registration expiring"
         Discipline: "Nursing"
         Role: "Nurse practitioner"
         RegistrationNumber: "[DEMO] NMW-1000002"
@@ -446,7 +446,7 @@ demo_items:
         Status: "Current"
     - key: prac-allied
       values:
-        Title: "[DEMO] Senior physiotherapist: scope review due"
+        Title: "[DEMO] Senior physiotherapist — scope review due"
         Discipline: "Allied health"
         Role: "Senior physiotherapist"
         RegistrationNumber: "[DEMO] PHY-1000003"
@@ -458,7 +458,7 @@ demo_items:
         Notes: "Demo row. Three-year cycle, due inside the window. Registration is fine; the two dates are independent, which is why they are two views."
     - key: prac-technician
       values:
-        Title: "[DEMO] Sterilisation technician: under review"
+        Title: "[DEMO] Sterilisation technician — under review"
         Discipline: "Other credentialed role"
         Role: "Sterilisation technician"
         ScopeSummary: "Demo row. Reprocessing of reusable instruments within the agreed procedure set."
@@ -468,7 +468,7 @@ demo_items:
         Notes: "Demo row. Non-registered credentialed role, so no registration number; the pair is off the form entirely for this discipline. Background check lapsed; under review until the authority decides."
     - key: prac-dental
       values:
-        Title: "[DEMO] Dental officer: ceased"
+        Title: "[DEMO] Dental officer — ceased"
         Discipline: "Dental"
         Role: "Dental officer"
         RegistrationNumber: "[DEMO] DEN-1000005"

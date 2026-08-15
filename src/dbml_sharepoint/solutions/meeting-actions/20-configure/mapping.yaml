@@ -337,26 +337,26 @@ demo_items:
   Meeting:
     - key: mtg-ops
       values:
-        Title: "[DEMO] Ops team, this week"
+        Title: "[DEMO] Ops team — this week"
         MeetingType: "Team meeting"
         MeetingDate: "today-2"
         Chair: "@me"
         Notes: "Demo row. Weekly. First agenda item is the previous meeting's actions, read straight off the By meeting view."
     - key: mtg-project
       values:
-        Title: "[DEMO] Rollout project, fortnightly"
+        Title: "[DEMO] Rollout project — fortnightly"
         MeetingType: "Project meeting"
         MeetingDate: "today-14"
         Chair: "@me"
     - key: mtg-leadership
       values:
-        Title: "[DEMO] Leadership group, last month"
+        Title: "[DEMO] Leadership group — last month"
         MeetingType: "Leadership / board"
         MeetingDate: "today-28"
         Chair: "@me"
     - key: mtg-working-group
       values:
-        Title: "[DEMO] Access working group, foundation meeting"
+        Title: "[DEMO] Access working group — foundation meeting"
         MeetingType: "Working group"
         MeetingDate: "today-200"
         Chair: "@me"
