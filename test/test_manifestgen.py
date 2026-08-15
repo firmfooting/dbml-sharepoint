@@ -917,14 +917,11 @@ def test_manifest_reports_the_env_file_that_was_read() -> None:
 
 
 def test_the_versioning_and_field_count_bullets_stay_on_separate_lines() -> None:
-    """`trim_blocks` eats the newline after a block tag, so the `{% endif %}`
-    closing the Versioning bullet joined it onto the one below:
+    """The two bullets used to render as one line, because trim_blocks eats
+    the newline after the block tag that closed the Versioning branch.
 
-        - Versioning: enabled, 100 major versions   - Phase 2.1 fields: 3
-
-    Nothing asserted the two were separate, which is why it shipped. The
-    manifest is the document an operator is told to read before pasting a
-    script into production.
+    Nothing asserted they were separate, which is why it shipped in the
+    document an operator is told to read before pasting a script.
     """
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
