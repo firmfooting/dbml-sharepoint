@@ -84,6 +84,30 @@ class EnvProvenance:
     values: tuple[EnvValue, ...]
 
 
+# The provenance every artefact defaults to when a caller passes none: no
+# file was read. A single shared instance rather than each call site
+# spelling out `EnvProvenance(path=None, digest=None, values=())` -- the
+# three artefacts that render this (the manifest, index.md, the deploy
+# transcript) and `_resolve_env_settings`'s own no-file return all mean the
+# same thing, and should say so with the same object.
+NO_ENV_FILE: Final[EnvProvenance] = EnvProvenance(path=None, digest=None, values=())
+
+
+def describe_env_provenance(provenance: EnvProvenance) -> str:
+    """One line describing what dbml-sharepoint.env a build read, for an
+    artefact that is not the terminal the build ran in: the manifest,
+    index.md and the deploy transcript's `log()` line.
+
+    An absent line is indistinguishable from a feature that did not run, so
+    the no-file case is its own explicit sentence rather than nothing.
+    """
+    if provenance.path is None:
+        return "No dbml-sharepoint.env file was read."
+    used_keys = ", ".join(value.setting.key for value in provenance.values if value.used)
+    suffix = f" Used: {used_keys}." if used_keys else ""
+    return f"Read {provenance.path} (sha256 {provenance.digest}).{suffix}"
+
+
 class EnvFileError(Exception):
     """Base class for anything wrong with a dbml-sharepoint.env file."""
 

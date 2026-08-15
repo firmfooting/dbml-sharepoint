@@ -189,15 +189,19 @@ recorded digest matches the bytes on disk and the standard tools agree.
 ### `write_index`
 
 ```python
-def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False) -> None
+def write_index(out: pathlib.Path, *, reporting: bool = False, demo: bool = False, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> None
 ```
 
 Write ``index.md``: what is in the bundle, one row per artifact.
 
+``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
+composition point extension CLIs call directly, and a required
+parameter would break every one of them.
+
 ### `emit_bundle`
 
 ```python
-def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, enterprise_reader: str | None = None) -> str
+def emit_bundle(out: pathlib.Path, *, schema: 'Schema', mapping_bundle: 'MappingBundle', release: 'Release', site_url: str, site_role: str, schema_name: str, mapping_name: str, source_mtime: str, generated_at: str, seed: bool, extension: 'DeploymentExtension | None' = None, site_context: 'SiteContext | None' = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> str
 ```
 
 Emit the full post-validation bundle; returns the success message.
@@ -213,4 +217,8 @@ address or a mapping with no ``enroll_enterprise_reader`` group both
 refuse before this function is reached); it is passed through unchecked
 to ``generate_deploy_js`` so the deploy render context carries it for
 Task 5's template.
+
+``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
+composition point extension CLIs call directly, and a required
+parameter would break every one of them.
 

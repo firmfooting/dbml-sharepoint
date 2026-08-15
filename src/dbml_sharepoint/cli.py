@@ -46,6 +46,7 @@ from dbml_sharepoint.generators.reportgen import (
 from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
     ENV_SETTINGS,
+    NO_ENV_FILE,
     EnvFileError,
     EnvProvenance,
     EnvValue,
@@ -565,7 +566,7 @@ def _resolve_env_settings(
     for `build`); this function does no discovery of its own, only parsing.
     """
     if env_file is None:
-        return enterprise_reader, EnvProvenance(path=None, digest=None, values=())
+        return enterprise_reader, NO_ENV_FILE
 
     try:
         file_settings, digest = read_env_file(env_file)
@@ -780,6 +781,7 @@ def execute_build(
         # and the operator reading it should see what the flag would have
         # done once the errors are fixed.
         enterprise_reader=resolved_enterprise_reader,
+        env_provenance=env_provenance,
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
 
@@ -817,6 +819,7 @@ def execute_build(
             extension=ext,
             site_context=site_context,
             enterprise_reader=resolved_enterprise_reader,
+            env_provenance=env_provenance,
         )
     except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)

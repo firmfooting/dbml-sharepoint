@@ -900,6 +900,54 @@ def test_env_file_reader_arms_the_no_group_guard(tmp_path: Path) -> None:
     assert not (out_with / "deploy.js.txt").exists()
 
 
+def test_the_manifest_and_index_both_say_so_when_no_env_file_was_read(
+    tmp_path: Path,
+) -> None:
+    """A bundle must never silently claim no file was read: an absent line
+    is indistinguishable from a feature that did not run. Pinned at the CLI
+    path -- not merely by `generate_manifest`'s and `write_index`'s default
+    parameter -- because that default is what every other caller of those
+    19-plus call sites relies on, and a signature test alone would not catch
+    `execute_build` forgetting to pass the provenance it already built.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    index = (out / "index.md").read_text(encoding="utf-8")
+    assert "**Env file:** No dbml-sharepoint.env file was read." in manifest
+    assert "**Env file:** No dbml-sharepoint.env file was read." in index
+
+
+def test_the_manifest_and_index_both_report_the_env_file_that_was_read(
+    tmp_path: Path,
+) -> None:
+    env_path = _write_env_file(tmp_path / "custom.env")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code == 0, result.output
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    index = (out / "index.md").read_text(encoding="utf-8")
+    for artefact in (manifest, index):
+        assert "custom.env" in artefact
+        assert "DBMLSP_ENTERPRISE_READER" in artefact
+
+
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     """A failed build must leave only its error manifest — a stale script
     or stale INDEX/checksums beside it could send an operator to the wrong

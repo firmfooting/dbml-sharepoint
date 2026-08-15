@@ -68,6 +68,10 @@ KNOWN_CONTEXT = {
     "retired_columns",
     "form_visibility", "column_validation", "reconcile_modes", "list_validation",
     "prefix", "seed_items", "extra_sections", "extra_warnings",
+    # dbml-sharepoint.env provenance, one rendered line: what was read (or
+    # that nothing was), same wording in the manifest, index.md and the
+    # deploy transcript's log() line.
+    "env_file_line",
     # provided by deploy.js.j2's phase loop to included phase bodies
     "phase", "step", "group",
 }

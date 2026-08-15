@@ -42,6 +42,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
+
 if TYPE_CHECKING:
     from dbml_sharepoint.extension import DeploymentExtension, SiteContext
     from dbml_sharepoint.model.mapping_loader import MappingBundle
@@ -236,8 +238,19 @@ def write_checksums(out: Path, relpaths: list[str]) -> None:
     write_artifact(out / "checksums.txt", "\n".join(lines) + "\n")
 
 
-def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> None:
-    """Write ``index.md``: what is in the bundle, one row per artifact."""
+def write_index(
+    out: Path,
+    *,
+    reporting: bool = False,
+    demo: bool = False,
+    env_provenance: EnvProvenance = NO_ENV_FILE,
+) -> None:
+    """Write ``index.md``: what is in the bundle, one row per artifact.
+
+    ``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
+    composition point extension CLIs call directly, and a required
+    parameter would break every one of them.
+    """
     rows = list(_INDEX_ROWS)
     if demo:
         rows.append(_DEMO_ROW)
@@ -245,6 +258,8 @@ def write_index(out: Path, *, reporting: bool = False, demo: bool = False) -> No
         rows.append(_REPORTING_ROW)
     lines = [
         "# Deployment bundle index",
+        "",
+        f"**Env file:** {describe_env_provenance(env_provenance)}",
         "",
         "| File | Purpose |",
         "|---|---|",
@@ -295,6 +310,7 @@ def emit_bundle(
     extension: "DeploymentExtension | None" = None,
     site_context: "SiteContext | None" = None,
     enterprise_reader: str | None = None,
+    env_provenance: EnvProvenance = NO_ENV_FILE,
 ) -> str:
     """Emit the full post-validation bundle; returns the success message.
 
@@ -309,6 +325,10 @@ def emit_bundle(
     refuse before this function is reached); it is passed through unchecked
     to ``generate_deploy_js`` so the deploy render context carries it for
     Task 5's template.
+
+    ``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
+    composition point extension CLIs call directly, and a required
+    parameter would break every one of them.
     """
     # Imports here, not module top: the generators import mapping_loader /
     # parser themselves, and bundle.py stays importable for its pure
@@ -385,7 +405,7 @@ def emit_bundle(
         # the SiteUrl parameter.
         site_url=site_url,
     )
-    write_index(out, reporting=True, demo=seed)
+    write_index(out, reporting=True, demo=seed, env_provenance=env_provenance)
     relpaths.append("index.md")
     write_checksums(out, relpaths)
 

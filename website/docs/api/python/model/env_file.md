@@ -81,6 +81,25 @@ class EnvProvenance:
 What was read, for the build to report. `path` is None when no env
 file was found; the caller renders it relative rather than absolute.
 
+### `NO_ENV_FILE`
+
+```python
+NO_ENV_FILE = EnvProvenance(path=None, digest=None, values=())
+```
+
+### `describe_env_provenance`
+
+```python
+def describe_env_provenance(provenance: dbml_sharepoint.model.env_file.EnvProvenance) -> str
+```
+
+One line describing what dbml-sharepoint.env a build read, for an
+artefact that is not the terminal the build ran in: the manifest,
+index.md and the deploy transcript's `log()` line.
+
+An absent line is indistinguishable from a feature that did not run, so
+the no-file case is its own explicit sentence rather than nothing.
+
 ### `EnvFileError`
 
 Base class for anything wrong with a dbml-sharepoint.env file.

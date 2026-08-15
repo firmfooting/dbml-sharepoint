@@ -243,6 +243,37 @@ def test_write_index_reporting_row(tmp_path: Path) -> None:
     assert "`reporting/`" in (out / "index.md").read_text(encoding="utf-8")
 
 
+def test_write_index_says_so_when_no_env_file_was_read(tmp_path: Path) -> None:
+    """The default `env_provenance` must say explicitly that nothing was
+    read -- an absent line is indistinguishable from a feature that never
+    ran. Also pins that a caller passing no argument at all (the extension
+    CLI composition point `emit_bundle` and `write_index` both document)
+    still gets the honest line, not a crash from a missing parameter."""
+    out = tmp_path / "build"
+    out.mkdir()
+    write_index(out)
+    assert "No dbml-sharepoint.env file was read." in (out / "index.md").read_text(encoding="utf-8")
+
+
+def test_write_index_reports_the_env_file_that_was_read(tmp_path: Path) -> None:
+    from dbml_sharepoint.model.env_file import ENV_SETTINGS, EnvProvenance, EnvValue
+
+    out = tmp_path / "build"
+    out.mkdir()
+    provenance = EnvProvenance(
+        path="dbml-sharepoint.env",
+        digest="abc123def456",
+        values=(
+            EnvValue(setting=ENV_SETTINGS[0], value="svc@example.org", used=True, override=None),
+        ),
+    )
+    write_index(out, env_provenance=provenance)
+    md = (out / "index.md").read_text(encoding="utf-8")
+    assert "dbml-sharepoint.env" in md
+    assert "abc123def456" in md
+    assert "DBMLSP_ENTERPRISE_READER" in md
+
+
 def test_the_package_has_exactly_one_writer() -> None:
     """`write_artifact` is the only thing in the package allowed to write.
 
