@@ -66,7 +66,7 @@ columns, where each keeps its own message.
   is what the quarterly spot-check is for.
 
 Where the form helps rather than enforces: `NoticePeriodDays` disappears
-when `RenewalType` is *Fixed term — no renewal*, so the field is on screen
+when `RenewalType` is *Fixed term, no renewal*, so the field is on screen
 exactly when it can be mandatory. SharePoint cannot clear a hidden field's
 value, so a notice period entered before the type was switched survives:
 harmless, since nothing reads it in that state.

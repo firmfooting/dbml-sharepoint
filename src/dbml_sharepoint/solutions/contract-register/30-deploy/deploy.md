@@ -93,7 +93,7 @@ site that already holds real contracts.
       cosmetic and expected; on the Edit and Display forms the calculated
       value appears there, read-only.
 - [ ] The form reacts as you fill it in. On a New form, set
-      **Renewal type** to *Fixed term — no renewal* and **Notice period
+      **Renewal type** to *Fixed term, no renewal* and **Notice period
       days** disappears; set it back to *Auto-renews* or *Manual renewal*
       and the field returns, keeping whatever was typed. SharePoint has no
       mechanism to clear a hidden field's value, so a stale notice period

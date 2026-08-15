@@ -370,7 +370,7 @@ demo_items:
   TrainingRecord:
     - key: rec-induction
       values:
-        Title: "[DEMO] Corporate induction — completed at hire"
+        Title: "[DEMO] Corporate induction: completed at hire"
         Person: "@me"
         Course: { demo_ref: crs-induction }
         CompletedDate: "today-400"
@@ -378,7 +378,7 @@ demo_items:
         Notes: "Demo row. No expiry date, because the course has no validity months."
     - key: rec-records
       values:
-        Title: "[DEMO] Records and privacy awareness — in date"
+        Title: "[DEMO] Records and privacy awareness: in date"
         Person: "@me"
         Course: { demo_ref: crs-records }
         CompletedDate: "today-200"
@@ -386,7 +386,7 @@ demo_items:
         Status: "Current"
     - key: rec-manual-expiring
       values:
-        Title: "[DEMO] Manual handling — lapses inside 60 days"
+        Title: "[DEMO] Manual handling: lapses inside 60 days"
         Person: "@me"
         Course: { demo_ref: crs-manual-handling }
         CompletedDate: "today-690"
@@ -395,7 +395,7 @@ demo_items:
         Notes: "Demo row. Still Current, and already inside the sweep window; this is what the coordinator sees before anyone is late."
     - key: rec-bls-flagged
       values:
-        Title: "[DEMO] Basic life support — flagged by the sweep"
+        Title: "[DEMO] Basic life support: flagged by the sweep"
         Person: "@me"
         Course: { demo_ref: crs-bls }
         CompletedDate: "today-350"
@@ -404,7 +404,7 @@ demo_items:
         Notes: "Demo row. The sweep has been run: person and manager notified, refresher being booked."
     - key: rec-bls-expired
       values:
-        Title: "[DEMO] Basic life support — lapsed last year"
+        Title: "[DEMO] Basic life support: lapsed last year"
         Person: "@me"
         Course: { demo_ref: crs-bls }
         CompletedDate: "today-740"
@@ -413,7 +413,7 @@ demo_items:
         Notes: "Demo row. Escalated on the day it lapsed. Kept, not overwritten; the history is the audit trail."
     - key: rec-bls-refresher
       values:
-        Title: "[DEMO] Basic life support — refresher, recorded as a new row"
+        Title: "[DEMO] Basic life support: refresher, recorded as a new row"
         Person: "@me"
         Course: { demo_ref: crs-bls }
         CompletedDate: "today-3"
