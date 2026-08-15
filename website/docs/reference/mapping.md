@@ -1333,6 +1333,8 @@ groups:
     auto_accept_request_to_join_leave: false
     only_allow_members_view_membership: true
     enroll_enterprise_reader: true  # optional; target of `build --enterprise-reader`
+                                    # (or DBMLSP_ENTERPRISE_READER in
+                                    # dbml-sharepoint.env; see the CLI reference)
 
 list_permissions:
   default:
@@ -1492,7 +1494,21 @@ facts rule that out, together:
 
 The supported route is the `enroll_enterprise_reader` group above, enrolled
 with `build --enterprise-reader <account>`: a declared, reconcilable grant
-that survives redeploy instead of being deleted or blocking one.
+that survives redeploy instead of being deleted or blocking one. The same
+address can instead be set once as `DBMLSP_ENTERPRISE_READER` in a
+`dbml-sharepoint.env` file beside the project, so it does not need
+retyping on every build; see the [CLI reference](cli.md#build) for the
+file's format and precedence. Either way the value reaches `deploy.js.txt`
+in plain text, so `dbml-sharepoint.env` is a defaults file, not a place to
+keep this account's UPN confidential.
+
+A mapping with no `enroll_enterprise_reader` group at all still refuses
+`--enterprise-reader`, whichever supplied it. That refusal used to be rare
+because typing the flag by hand made it a one-off mistake; once
+`dbml-sharepoint.env` supplies the same value on every build in a project,
+the first build against a mapping that has not declared a reader group
+refuses every time, not just once. Declare the group, or remove the key
+from the file.
 
 **The flagged group must hold nobody but the named account.** Before enrolling
 anything, the deploy enumerates the group's membership (every page) and

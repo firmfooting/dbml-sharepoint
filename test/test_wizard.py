@@ -24,6 +24,8 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
     load_solution,
 )
+from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED
+from dbml_sharepoint.model.env_file import ENV_FILENAME
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 
@@ -52,6 +54,19 @@ class ScriptedConsole(Console):
     def text(self) -> str:
         assert isinstance(self.file, io.StringIO)
         return self.file.getvalue()
+
+
+@pytest.fixture(autouse=True)
+def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test in this module runs with an empty current directory.
+
+    `_ask_enterprise_reader` now reads a CWD-relative `dbml-sharepoint.env`
+    (`wizard._reader_from_env_file`), so without this a contributor's own
+    file sitting at the repository root would change what these tests
+    observe. `tmp_path` is unique per test and guaranteed not to contain
+    one; a test that wants the file present writes it there explicitly.
+    """
+    monkeypatch.chdir(tmp_path)
 
 
 def _answers(
@@ -97,7 +112,7 @@ def _answers(
     it produces exactly the one answer the gate actually consumes.
 
     The site role is absent because every shipped family declares exactly one
-    role, so the question is not put -- a family with two needs it inserted
+    role, so the question is not put. A family with two needs it inserted
     by hand.
 
     `template` and `site_url` are explicit keyword parameters, not a
@@ -1675,7 +1690,7 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
 
 
 def test_the_template_summary_names_the_declared_prefix() -> None:
-    """The prefix question is conditional, which is what makes this load-bearing.
+    """The prefix question is conditional, which is what makes this line matter.
 
     A template declaring no prefix is never asked for one, so this line is
     the ONLY place the operator learns what their lists will be called
@@ -1993,6 +2008,10 @@ def test_an_empty_reader_answer_means_no_flag(
     reports that the script ran out, while `"must not be empty" not in
     shown` reports that the wizard asked a question it should not have.
     Checking the exit code first would report the symptom, not the defect.
+
+    Asserts the `ENTERPRISE_READER_DECLINED` sentinel, not `None`: a blank
+    answer is the operator saying so, which must stay distinguishable from
+    no flag and no wizard answer at all -- see `EnterpriseReaderDeclined`.
     """
     captured = _capture_build(monkeypatch)
     console = ScriptedConsole(
@@ -2002,7 +2021,7 @@ def test_an_empty_reader_answer_means_no_flag(
     shown = _collapsed(console)
     assert "must not be empty" not in shown
     assert code == 0
-    assert captured["enterprise_reader"] is None
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
 
 
 def test_a_reader_answer_is_passed_through(
@@ -2080,6 +2099,13 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
     real answer and make the run succeed either way -- the exit-code
     assertion would then be pinning nothing, which is the whole reason
     `_answers` grew a `None`.
+
+    Never asked reaches `execute_build` as None, NOT as
+    `ENTERPRISE_READER_DECLINED`. The two stopped being interchangeable when
+    `dbml-sharepoint.env` gained the power to supply a reader: the declined
+    sentinel is explicit and outranks the file, so sending it here would hide
+    a configured account from the armed guard. Asked and left blank still
+    sends the sentinel (`test_an_empty_reader_answer_means_no_flag`).
     """
     solution = _fake_family(tmp_path / "fake")
     _offer_only(monkeypatch, solution)
@@ -2095,6 +2121,211 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
     assert "enrol" not in shown
     assert code == 0
     assert captured["enterprise_reader"] is None
+
+
+def _write_env_file(path: Path, address: str) -> None:
+    path.write_text(f"DBMLSP_ENTERPRISE_READER={address}\n", encoding="utf-8", newline="\n")
+
+
+def test_the_wizard_offers_the_env_files_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With a `dbml-sharepoint.env` in the current directory, the prompt
+    text names its suggested reader, and an operator who types that exact
+    value gets it passed through -- accepting the suggestion means typing
+    it, never pressing Enter, since Enter always means nobody.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(
+            tmp_path / "proj", build="y", seed="n",
+            reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["enterprise_reader"] == "svc-reporting@example.org"
+    shown = _collapsed(console)
+    assert ENV_FILENAME in shown
+    assert "svc-reporting@example.org" in shown
+
+
+def test_the_wizard_threads_the_env_file_into_execute_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_ask_enterprise_reader` reads `dbml-sharepoint.env` and offers its
+    UPN in the prompt text, but `execute_build` used to be called without
+    `env_file=` -- so every artefact the build wrote said "No
+    dbml-sharepoint.env file was read.", contradicting the prompt shown
+    seconds earlier in the same run. Pins the keyword the wizard now
+    assembles; the end-to-end version, reading the manifest a real build
+    wrote, is `test_a_wizard_build_with_an_env_file_names_it_in_the_manifest`.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(
+            tmp_path / "proj", build="y", seed="n",
+            reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["env_file"] == Path(ENV_FILENAME)
+
+
+def test_a_wizard_build_with_an_env_file_names_it_in_the_manifest(
+    tmp_path: Path,
+) -> None:
+    """Runs the real `execute_build`, not a stub, and reads back the
+    manifest it wrote -- the artefact a reviewer actually opens must name
+    the file the wizard just offered as a suggestion, not deny one was ever
+    read.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination, build="y", seed="n",
+            reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+
+    manifest = (destination / "build" / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert "No dbml-sharepoint.env file was read." not in manifest
+    assert ENV_FILENAME in manifest
+
+
+def test_a_blank_reader_answer_still_means_nobody_with_a_file_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The test that matters: a `dbml-sharepoint.env` supplying a reader
+    must not turn a blank answer into that reader. `_ask_enterprise_reader`
+    names the suggestion in the prompt TEXT rather than as `default=`
+    exactly so this stays true -- rich's `PromptBase.__call__` would
+    otherwise return a non-blank default before this function's own code
+    ever ran, making "enrol nobody" unreachable.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    assert "must not be empty" not in _collapsed(console)
+    assert code == 0
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+
+
+def test_an_invalid_env_file_reader_is_a_clean_message_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A malformed UPN in the file must not do what a malformed UPN typed at
+    the prompt used to: propagate `typer.BadParameter` -- a
+    `click.UsageError` the wizard's `except typer.Exit` does not catch -- as
+    an unhandled exception. `run_wizard` raising here would fail this test
+    with an error rather than an assertion, so the exit-code and message
+    checks below only prove the pass one way: cleanly.
+
+    Deliberately still a WARNING, not a refusal: the file's invalid value is
+    never used unvalidated (`_ask_enterprise_reader` never passes it as
+    `default=`), so nothing downstream ever asserts on it. Contrast the file
+    itself failing to PARSE, which is fatal --
+    `test_an_unparsable_env_file_refuses_the_wizard_not_a_traceback`.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc.reporting")  # no '@'
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    assert "not valid" in _collapsed(console)
+    assert code == 0
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+
+
+def test_an_unparsable_env_file_refuses_the_wizard_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `dbml-sharepoint.env` that cannot be PARSED is a different failure
+    from an invalid VALUE inside one that parses (see the sibling
+    `test_an_invalid_env_file_reader_is_a_clean_message_not_a_traceback`,
+    which stays a warning). This one used to be a warning too: printed, then
+    the wizard carried on as if no file were there, and its own artefacts
+    went on to say so -- false, since a file was there and the operator
+    wrote it on purpose. `build` refuses the same file over the same
+    message, so the wizard must refuse too, before anything is written.
+
+    Asserts the message names the file's own problem (line and text, from
+    `EnvFileError`), that nothing was scaffolded, and that the refusal is a
+    clean exit rather than an unhandled exception reaching `pytest` as an
+    error instead of an assertion.
+    """
+    (tmp_path / ENV_FILENAME).write_text(
+        "not a key-value line\n", encoding="utf-8", newline="\n",
+    )
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "expected KEY=value" in shown
+    assert "line 1" in shown
+    assert "Traceback" not in shown
+    assert code == 1
+    assert captured == {}
+    assert not destination.exists()
+
+
+def test_a_non_utf8_env_file_also_refuses_the_wizard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`EnvFileReadError` (raised for bytes that are not valid UTF-8, or a
+    file `read_bytes()` cannot read) is a subclass of `EnvFileError`, so it
+    reaches the same `raise WizardError` this module's other unparsable-file
+    test already pins -- proving that unconditionally, rather than trusting
+    the subclass relationship, is what makes the refusal apply here too.
+    """
+    (tmp_path / ENV_FILENAME).write_bytes(b"DBMLSP_ENTERPRISE_READER=Sh\xe9ry\n")
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "utf-8" in shown.lower()
+    assert code == 1
+    assert captured == {}
+    assert not destination.exists()
+
+
+def test_no_env_file_behaves_exactly_as_before(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No `dbml-sharepoint.env` at the CWD is the ordinary case: the prompt
+    carries no suggestion and blank still means nobody, unchanged."""
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    assert ENV_FILENAME not in _collapsed(console)
+    assert code == 0
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
 
 
 def test_a_template_declaring_no_demo_items_is_not_asked(
@@ -2383,3 +2614,101 @@ def test_a_seeded_run_names_the_guide_before_the_demo_script(
     assert shown.index("deploy.md", shown.index("Next")) < shown.index(
         "demo-data.js.txt", shown.index("Next"),
     )
+
+
+def test_the_env_file_is_read_even_without_a_declared_reader_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reader prompt is skipped where the mapping declares no group, but
+    the file must still be consulted and threaded through.
+
+    Gating the read on `facts.reader_group` let the wizard succeed while
+    ignoring a configured account, where `build` refuses the same file. The
+    resolved value must reach `execute_build` as None rather than as
+    `ENTERPRISE_READER_DECLINED`, because the sentinel is explicit and would
+    outrank the file, leaving the armed guard nothing to refuse.
+    """
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    captured = _capture_build(monkeypatch)
+
+    console = ScriptedConsole(
+        _answers(
+            tmp_path / "proj", template="fake-template", build="y", reader=None,
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["env_file"] == Path(ENV_FILENAME)
+    assert captured["enterprise_reader"] is None
+
+
+def test_the_wizard_refuses_a_directory_at_the_env_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A directory named `dbml-sharepoint.env` used to read as "no file",
+    so the build claimed none was consulted instead of failing closed.
+    """
+    (tmp_path / ENV_FILENAME).mkdir()
+    _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", reader=None), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 1
+    assert "is not a file" in _collapsed(console)
+
+
+def test_a_build_refusing_with_bad_parameter_exits_two_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`execute_build`'s armed guard raises `typer.BadParameter`, which is a
+    `click.UsageError`, NOT a `typer.Exit`.
+
+    Reaching it became possible when the wizard started passing `env_file`
+    through: a mapping with no reader group plus an env file that supplies
+    one is refused there. The existing `except typer.Exit` could not catch
+    it, so the wizard raised over a project it had already scaffolded.
+    """
+    import typer
+
+    from dbml_sharepoint import cli
+
+    def _refuse(**_kwargs: object) -> None:
+        raise typer.BadParameter("the mapping declares no reader group")
+
+    monkeypatch.setattr(cli, "execute_build", _refuse)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    assert code == 2
+    assert "declares no reader group" in _collapsed(console)
+    assert destination.exists()
+
+
+def test_the_wizard_copies_the_env_file_into_the_new_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every documented rebuild runs from inside the project directory, so
+    an env file left in the parent is invisible to it and the rebuild
+    quietly enrols nobody.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination, build="y", seed="n", reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    copied = destination / ENV_FILENAME
+    assert copied.is_file()
+    assert "svc-reporting@example.org" in copied.read_text(encoding="utf-8")

@@ -7,9 +7,8 @@ followed by the value prompt only when the answer is yes; a template
 declaring no prefix skips the pair entirely. Pressing Enter at that gate now
 produces unprefixed lists, the opposite of the old default. The Review
 panel's `Lists` row is what shows the operator the names they are actually
-about to create -- it is the safety net for that reversed default, not
-decoration, and stays load-bearing for as long as a blank prefix is a valid
-answer.
+about to create. It is the safety net for that reversed default, and it
+matters for as long as a blank prefix is a valid answer.
 
 Every question is asked before anything is written, and the whole decision is
 reviewed once. The alternative -- confirming a write, then being asked three
@@ -65,6 +64,12 @@ from dbml_sharepoint.catalogue import (
     SCHEMA_RELPATH,
     Solution,
     available_solutions,
+)
+from dbml_sharepoint.model.env_file import (
+    ENV_FILENAME,
+    ENV_SETTINGS,
+    EnvFileError,
+    read_env_file,
 )
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
@@ -168,8 +173,16 @@ class Answers:
     site_role: str
     templates: tuple[TemplateChoice, ...]
     build: bool
-    reader: str
+    #: None when the reader question was never asked, because the mapping
+    #: declares no group to enrol into. Blank means it was asked and answered
+    #: "nobody". The two must stay distinct: only the second one outranks a
+    #: value `dbml-sharepoint.env` supplies.
+    reader: str | None
     seed: bool
+    #: The `dbml-sharepoint.env` the wizard consulted, if any, threaded into
+    #: `execute_build` so its artefacts report the same file. None only when
+    #: no file was there to consult.
+    env_file: Path | None = None
 
 
 def _template_root(answers: Answers, choice: TemplateChoice) -> Path:
@@ -449,30 +462,86 @@ def _ask_site_role(console: Console, roles: list[str]) -> str:
     return Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
 
 
-def _ask_enterprise_reader(console: Console) -> str:
+def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
+    """The `dbml-sharepoint.env` consulted for a suggested UPN, and what it
+    suggested: `(path, upn)`, with `upn` None when it offered nothing usable.
+    None only when there was no file at all.
+
+    Read relative to the CURRENT directory, the location `build` defaults
+    to, not the destination about to be written: `_ask_destination` refuses a
+    non-empty destination and `_scaffold` copies the template in afterwards,
+    so only the CWD can already hold the file.
+
+    The path comes back even when the key is absent or its value invalid,
+    because the file was read and every provenance artefact must say so.
+
+    A file that fails to PARSE is fatal and raises `WizardError`, carrying
+    `EnvFileError`'s message, which already names the path, line and text.
+    `_run` catches it before anything is written. Warning and proceeding
+    would let the manifest and index.md claim no file was ever there.
+
+    An invalid VALUE in a file that parses is not fatal: it is reported, the
+    suggestion is withdrawn, and the path still threads through. Unlike
+    `build`, the value here is only ever a suggestion the operator must
+    retype, so whatever they answer is validated at the prompt regardless.
+    """
+    # Deferred for the same cycle as `validate_site_url` above -- #171.
+    from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
+
+    path = Path(ENV_FILENAME)
+    if not path.exists():
+        return None
+    if not path.is_file():
+        raise WizardError(
+            f"{ENV_FILENAME} exists but is not a file. Remove it, or build "
+            "with --env-file pointing at a real one.",
+        )
+    try:
+        file_settings, _digest = read_env_file(path)
+    except EnvFileError as exc:
+        raise WizardError(str(exc)) from exc
+    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
+    reader = file_settings.get(key)
+    if reader is None:
+        return path, None
+    try:
+        validate_enterprise_reader(reader)
+    except typer.BadParameter as exc:
+        console.print(
+            f"[red]{ENV_FILENAME} suggests a reader that is not valid: "
+            f"{exc.message}[/red]",
+        )
+        return path, None
+    return path, reader
+
+
+def _ask_enterprise_reader(
+    console: Console,
+    consulted: tuple[Path, str | None] | None,
+) -> str:
     """Prompt until the answer is blank or passes the CLI's own validator.
 
-    The same re-ask loop as `_ask_site_url`, for a sharper reason. This
-    answer used to travel unchecked all the way into `execute_build`, and
-    `validate_enterprise_reader` raises `typer.BadParameter` -- which is a
-    `click.UsageError`, NOT a `typer.Exit`. The wizard's one `except
-    typer.Exit` around the build therefore could not catch it, so a
-    mistyped UPN (`svc.reporting`, no `@`) left `run_wizard` as an
-    unhandled exception and printed a raw traceback -- on top of a project
-    directory the wizard had already written. Validating at the prompt
-    keeps the refusal where the answer was given, and keeps it recoverable.
+    `consulted` is `_reader_from_env_file`'s result, read by the caller so
+    the file is still consulted where this prompt is never offered.
 
-    Blank is deliberately NOT validated. It is the default and it means
-    "enrol nobody"; `validate_enterprise_reader` refuses an empty string,
-    so passing it through would make the safest answer the question offers
-    the one answer that cannot be given.
+    Validating at the prompt keeps a refusal recoverable. The answer used to
+    travel unchecked into `execute_build`, where `validate_enterprise_reader`
+    raises `typer.BadParameter`; that is a `click.UsageError`, not a
+    `typer.Exit`, so the wizard's one `except typer.Exit` could not catch it
+    and a mistyped UPN printed a raw traceback over an already-written
+    project directory.
 
-    The prompt is a bold noun phrase and the guidance sits on a dim line
-    ABOVE it, the shape `_ask_seed` uses. It read "Reporting service account
-    to enrol read-only (UPN), or blank for none", which is a sentence, a
-    definition and an escape hatch in one unbolded line -- the widest prompt
-    in the wizard, and the only one whose label did not survive being read at
-    a glance.
+    Blank is deliberately NOT validated. It is the default and means "enrol
+    nobody", and `validate_enterprise_reader` refuses an empty string, so
+    checking it would make the safest answer the one answer nobody can give.
+
+    A file suggestion is named in the PROMPT TEXT and NEVER passed as
+    `default=`. rich's `PromptBase.__call__` returns the default before this
+    function's own code runs, so a non-blank default would make a blank
+    answer resolve to the file's value instead of "enrol nobody", exactly
+    the defect `_ask_prefix`'s docstring records. WRITE THE REASON AT THIS
+    LINE if you are tempted to simplify this into a `default=`. Accepting
+    the suggestion means typing it; Enter always means nobody.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
@@ -482,12 +551,16 @@ def _ask_enterprise_reader(console: Console) -> str:
         "A service account enrolled read-only across every list this "
         "template creates, so it can report on them. Blank for none.",
     )
+    suggestion = consulted[1] if consulted is not None else None
+    label = "[bold]Reporting account (UPN)[/bold]"
+    if suggestion is not None:
+        label += (
+            f" ({ENV_FILENAME} suggests {escape(suggestion)}; type it to "
+            "accept, or leave blank for none)"
+        )
     while True:
-        reader = Prompt.ask(
-            "[bold]Reporting account (UPN)[/bold]",
-            default="",
-            console=console,
-        ).strip()
+        # NOT `default=suggestion` -- see the docstring above.
+        reader = Prompt.ask(label, default="", console=console).strip()
         if not reader:
             return ""
         try:
@@ -553,8 +626,8 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
     all of them and reorder the file.
 
     Verified through the real loader rather than by re-reading the text:
-    the question is not whether the line changed, it is whether the mapping
-    the build will load carries the prefix the user asked for.
+    what matters is whether the mapping the build will load carries the
+    prefix the user asked for, not whether the line changed.
     """
     text = mapping_path.read_text(encoding="utf-8")
     new_text, count = re.subn(
@@ -566,7 +639,7 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
             f"(found {count}). The template does not match the family "
             f"standard; refusing to guess where the prefix belongs.",
         )
-    # `write_artifact`, not `write_text`. The trap AGENTS.md records is
+    # `write_artifact`, not `write_text`. The defect AGENTS.md records is
     # per-call-site: text mode inherits the platform newline, so this wrote
     # CRLF on Windows and handed the operator a mapping whose line endings
     # depend on which machine ran the wizard. The templates ship LF.
@@ -708,7 +781,26 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
         )
         changed.extend(template_changed)
         applied.extend(s for s in template_applied if s not in applied)
+    _preserve_env_file(answers)
     return changed, applied
+
+
+def _preserve_env_file(answers: Answers) -> None:
+    """Copy the consulted `dbml-sharepoint.env` into the new project.
+
+    The wizard reads it from the CURRENT directory, but every documented
+    rebuild changes into the project first, so without this a rebuild
+    silently drops the reader the first build enrolled and emits a
+    different bundle. Never overwrites: a template that ships its own
+    defaults keeps them.
+    """
+    if answers.env_file is None:
+        return
+    source = answers.env_file
+    destination = answers.destination / ENV_FILENAME
+    if destination.exists() or not source.is_file():
+        return
+    write_artifact(destination, source.read_text(encoding="utf-8"))
 
 
 @dataclass(frozen=True)
@@ -816,7 +908,7 @@ def _review_row(label: str, value: str) -> str:
 def _review_panel(answers: Answers) -> Panel:
     """Every answer, once, before the single confirmation.
 
-    `Lists` is the load-bearing row. A blank prefix is a valid answer now, so
+    `Lists` is the row that matters. A blank prefix is a valid answer now, so
     this is the only place the operator sees whether they are about to create
     `Risk` or `ACME_Risk`. The titles are `prefix + entity`, which is what
     the generators do -- reported, not predicted.
@@ -995,22 +1087,29 @@ def _run(console: Console) -> int:
     build = Confirm.ask(
         "Build the deploy scripts now?", default=True, console=console,
     )
-    reader = ""
+    reader: str | None = None
+    env_file = None
     seed = False
     if build:
-        # Offered only where the mapping declares a group
-        # `--enterprise-reader` could enrol into. Blank stays the default and
-        # must map to None below, never "": an empty string would reach
-        # `validate_enterprise_reader` and abort a run where the operator
-        # simply pressed Enter, which is the safe answer the question exists
-        # to allow. Anything NON-blank is validated at the prompt and re-asked
-        # on refusal -- the `except typer.Exit` below cannot catch what
-        # `validate_enterprise_reader` raises, because `typer.BadParameter` is
-        # a `click.UsageError`.
-        if facts.reader_group:
-            reader = _ask_enterprise_reader(console)
-        if facts.demo_items:
-            seed = _ask_seed(console)
+        # Consulted even where the prompt is not offered, so a mapping with
+        # no reader group still reaches the armed guard.
+        try:
+            consulted = _reader_from_env_file(console)
+            env_file = consulted[0] if consulted is not None else None
+            # The prompt is offered only where a group exists to enrol into.
+            # Blank is its default and means nobody, so it must never reach
+            # `validate_enterprise_reader`, which refuses an empty string.
+            if facts.reader_group:
+                reader = _ask_enterprise_reader(console, consulted)
+            if facts.demo_items:
+                seed = _ask_seed(console)
+        except WizardError as exc:
+            # Before anything is written, same as the `_read_facts`/
+            # `_site_roles` guard above: `dbml-sharepoint.env` could not be
+            # parsed, and `_reader_from_env_file` raised rather than warning
+            # and letting the run proceed as though no file were there.
+            console.print(f"[red]{escape(str(exc))}[/red]")
+            return 1
 
     answers = Answers(
         destination=destination,
@@ -1020,6 +1119,7 @@ def _run(console: Console) -> int:
         build=build,
         reader=reader,
         seed=seed,
+        env_file=env_file,
     )
 
     # No `console.rule("Review")`. The other three sections are followed by
@@ -1063,7 +1163,10 @@ def _run(console: Console) -> int:
 
     # Deferred for a cycle: cli.py imports this module at its top, so this
     # direction stays lazy until `execute_build` leaves the CLI -- #171.
-    from dbml_sharepoint.cli import execute_build  # noqa: PLC0415
+    from dbml_sharepoint.cli import (  # noqa: PLC0415
+        ENTERPRISE_READER_DECLINED,
+        execute_build,
+    )
 
     for template in answers.templates:
         root = _template_root(answers, template)
@@ -1076,13 +1179,31 @@ def _run(console: Console) -> int:
                 site_role=answers.site_role,
                 out=root / "build",
                 seed=answers.seed,
-                enterprise_reader=answers.reader or None,
+                # None (never asked) leaves the file free to supply a value
+                # for the guard to refuse; blank (asked, said nobody)
+                # outranks the file. The two must not collapse.
+                enterprise_reader=(
+                    None
+                    if answers.reader is None
+                    else answers.reader or ENTERPRISE_READER_DECLINED
+                ),
+                # Named by the build's own artefacts, so they report the same
+                # file the wizard read.
+                env_file=answers.env_file,
             )
         except typer.Exit as exc:
             # The build refused and has already said why on stderr. Its exit
             # code is the documented contract; pass it through rather than
             # flattening every refusal to 1.
             return int(exc.exit_code)
+        except typer.BadParameter as exc:
+            # Reachable since the env file started reaching `execute_build`:
+            # its armed guard refuses a reader the mapping has no group for,
+            # and `BadParameter` is a `click.UsageError`, not a `typer.Exit`.
+            # Unhandled it printed a traceback over an already-scaffolded
+            # project. 2 is the documented code for a usage error.
+            console.print(f"[red]{escape(exc.message)}[/red]")
+            return 2
 
     console.print(_next_panel(answers))
     return 0

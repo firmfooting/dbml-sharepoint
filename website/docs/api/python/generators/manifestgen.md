@@ -1,6 +1,6 @@
 ---
 title: manifestgen
-sidebar_position: 19
+sidebar_position: 20
 ---
 
 # `dbml_sharepoint.generators.manifestgen`
@@ -12,7 +12,7 @@ Render deploy-manifest.md.
 ### `generate_manifest`
 
 ```python
-def generate_manifest(*, schema_json: dict[str, typing.Any], findings: list[dbml_sharepoint.analysis.findings.Finding], bundle: dbml_sharepoint.model._mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, manifest_extras: dbml_sharepoint.extension.ManifestExtras | None = None, enterprise_reader: str | None = None) -> str
+def generate_manifest(*, schema_json: dict[str, typing.Any], findings: list[dbml_sharepoint.analysis.findings.Finding], bundle: dbml_sharepoint.model._mapping_types.MappingBundle, release: dbml_sharepoint.model.release.Release, site_url: str, site_role: str, source_dbml: str, source_mtime: str, generated_at: str, manifest_extras: dbml_sharepoint.extension.ManifestExtras | None = None, enterprise_reader: str | None = None, env_provenance: dbml_sharepoint.model.env_file.EnvProvenance = EnvProvenance(path=None, digest=None, values=())) -> str
 ```
 
 Render the deploy manifest for ONE build.
@@ -24,4 +24,8 @@ reader enrolment is the one thing this bundle does that a rollback does
 not undo. Passing it only to ``generate_deploy_js`` left the manifest
 unable to say so, and left its group table reporting the permanently
 enrolled group as one nothing enrols into.
+
+``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
+required: this function has 19 call sites, and a required parameter
+would break every one of them.
 

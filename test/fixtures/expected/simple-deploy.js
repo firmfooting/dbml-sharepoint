@@ -18,6 +18,10 @@
   const SCHEMA_VERSION = "0.8";
 
   const log = (level, msg) => console.log(`[SP-DEPLOY] [${level}] ${msg}`);
+  // Baked in at build time from the dbml-sharepoint.env this run read (or
+  // that it read none) -- a log() line, not a header comment, because the
+  // operator pastes back the console transcript, not the file.
+  log('INFO', "No dbml-sharepoint.env file was read.");
   const RUN_STARTED_AT = Date.now();
   // Phase timings record on every run (cheap); they only PRINT under
   // DEBUG (declared in the shared HTTP partial included below).

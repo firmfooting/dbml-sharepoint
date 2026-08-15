@@ -2,10 +2,11 @@
 
 import datetime as dt
 from contextlib import suppress
+from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 from textwrap import wrap
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn
 from urllib.parse import urlparse, urlunparse
 
 import typer
@@ -40,6 +41,15 @@ from dbml_sharepoint.generators.reportgen import (
     generate_powerquery,
     generate_reporting_md,
     generate_sql_views,
+)
+from dbml_sharepoint.model.env_file import (
+    ENV_FILENAME,
+    ENV_SETTINGS,
+    NO_ENV_FILE,
+    EnvFileError,
+    EnvProvenance,
+    EnvValue,
+    read_env_file,
 )
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -146,8 +156,8 @@ def _clear_report_output(out: Path) -> None:
 
     `*.pq` is the one broad pattern, and it is deliberate: a stale query
     from a list that has left the schema is indistinguishable from a
-    hand-written one, and leaving it is the worse failure — it documents a
-    list that no longer exists. The docs say so; `--out` is not the place
+    hand-written one, and leaving it is the worse failure, because it
+    documents a list that no longer exists. The docs say so; `--out` is not the place
     to keep your own .pq files.
     """
     for dirname, pattern in _REPORT_DIRECTORY_CONTENTS:
@@ -244,6 +254,44 @@ def _project_input(
     )
 
 
+def _env_file_help() -> str:
+    """The `--env-file` option's help text, with every registry key spelled
+    out so the file's vocabulary is discoverable from `build --help` alone.
+
+    Built from `ENV_SETTINGS` rather than hand-listing today's one entry, so
+    a second key added to the registry is picked up here for free.
+    """
+    keys = "; ".join(f"{setting.key} ({setting.help})" for setting in ENV_SETTINGS)
+    return (
+        f"Path to a {ENV_FILENAME} defaults file. Default: {ENV_FILENAME} "
+        "in the current directory, when present. A flag given on the command "
+        f"line always wins over a value the file supplies. Accepted keys: {keys}"
+    )
+
+
+def _resolve_env_file(env_file: Path | None) -> Path | None:
+    """The env file `build` should read, or None when there is nothing to.
+
+    An explicit --env-file must exist, so a typo cannot silently build
+    without the settings the operator asked for. At the default location an
+    absent file is ordinary and not an error, but something present that is
+    not a readable file is refused rather than treated as absent.
+    """
+    if env_file is not None:
+        if not env_file.is_file():
+            raise typer.BadParameter(f"--env-file {env_file} does not exist.")
+        return env_file
+    default = Path(ENV_FILENAME)
+    if not default.exists():
+        return None
+    if not default.is_file():
+        raise typer.BadParameter(
+            f"{ENV_FILENAME} exists but is not a file. Remove it, or pass "
+            "--env-file with the path to a real one.",
+        )
+    return default
+
+
 def _require_known_site_role(bundle: MappingBundle, site_role: str) -> None:
     """Refuse a role the mapping does not declare.
 
@@ -270,10 +318,13 @@ def _require_known_site_role(bundle: MappingBundle, site_role: str) -> None:
 
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
     detail = f"missing required key {exc}" if isinstance(exc, KeyError) else str(exc)
-    typer.echo(f"[ERROR] {what} {path}: {detail}", err=True)
+    # `path=None` when `exc` already names the path, as every `EnvFileError`
+    # does; prepending it again printed "[ERROR] env file X: X: line 3: ...".
+    where = f" {path}" if path is not None else ""
+    typer.echo(f"[ERROR] {what}{where}: {detail}", err=True)
     # 1, not 2. The documented contract reserves 2 for the usage errors
-    # typer raises BEFORE the pipeline runs — a missing option, an unknown
-    # --site-role — and gives 1 to "the build refused", which explicitly
+    # typer raises BEFORE the pipeline runs (a missing option, an unknown
+    # --site-role), and gives 1 to "the build refused", which explicitly
     # includes an unreadable or invalid input file. A bad config is a
     # refused build, not a misuse of the command line, and a CI gate keying
     # on the documented table would have mis-classified it.
@@ -290,7 +341,7 @@ def _load_config(
     the single sentence saying what is wrong. The person who hits it is a
     SharePoint admin editing YAML: not one frame of that stack is
     actionable, and the semantic (post-load) errors beside it are already
-    clean one-liners — so the contrast made a config typo look like a crash
+    clean one-liners, so the contrast made a config typo look like a crash
     in the tool rather than a mistake in the file.
 
     This CLI has no verbosity flag, so the traceback is not tucked behind
@@ -363,6 +414,28 @@ def _site_url_notice(given: str, used: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class EnterpriseReaderDeclined:
+    """Sentinel: the operator was asked and chose nobody.
+
+    `execute_build`'s `enterprise_reader` parameter carries three states, not
+    two -- unset (no flag, no wizard answer, ``None``), this sentinel
+    (explicitly nobody), and a UPN (``str``). Only the unset state is a
+    default a future ``dbml-sharepoint.env`` may fill; this one must survive
+    untouched, because it is what the wizard sends for a deliberate blank
+    answer at `_ask_enterprise_reader`. A bare `object()` would work at
+    runtime but repr as an unreadable address; this dataclass gives it a
+    name instead.
+    """
+
+    def __repr__(self) -> str:
+        return "ENTERPRISE_READER_DECLINED"
+
+
+#: The one instance every caller shares -- see `EnterpriseReaderDeclined`.
+ENTERPRISE_READER_DECLINED: Final = EnterpriseReaderDeclined()
+
+
 def validate_enterprise_reader(address: str) -> None:
     """Refuse anything that is not a plain UPN.
 
@@ -418,11 +491,18 @@ def build(
     enterprise_reader: str | None = typer.Option(
         None,
         help="UPN of a reporting service account to enrol, read-only, into "
-        "the mapping's enterprise-reader group. Omit to enrol nobody.",
+        f"the mapping's enterprise-reader group. Omitted, this falls back to "
+        f"{ENV_FILENAME}'s DBMLSP_ENTERPRISE_READER when that file supplies "
+        "one, and otherwise enrols nobody.",
     ),
     extension: str | None = typer.Option(
         None,
         help="Extension name; overrides the mapping's `extension:` key. Resolved via entry points.",
+    ),
+    env_file: Path | None = typer.Option(
+        None,
+        "--env-file",
+        help=_env_file_help(),
     ),
 ) -> None:
     """Generate deploy.js.txt + manifest from the DBML schema and mapping.
@@ -472,7 +552,118 @@ def build(
         seed=seed,
         extension=extension,
         enterprise_reader=enterprise_reader,
+        env_file=_resolve_env_file(env_file),
     )
+
+
+def _relative_env_path(env_file: Path) -> str:
+    """Render for the provenance record and the printed report: relative to
+    the current directory, never absolute, so a build run on Windows and one
+    run on Linux describe the same file the same way. `_resolve_env_file`
+    already decided WHICH file this is; this only decides how to spell it.
+
+    Falls back to the path as given when there is no relative form at all --
+    an explicit `--env-file` on a different Windows drive than the current
+    directory -- rather than letting a display nicety crash the build.
+    """
+    cwd = Path.cwd()
+    absolute = env_file if env_file.is_absolute() else cwd / env_file
+    try:
+        return absolute.relative_to(cwd, walk_up=True).as_posix()
+    except ValueError:
+        return env_file.as_posix()
+
+
+class UnwiredEnvSettingError(RuntimeError):
+    """An `ENV_SETTINGS` entry whose `parameter` `_resolve_env_settings`
+    does not know how to apply.
+
+    Not a build-time failure a consumer's file can cause -- this fires only
+    when a contributor adds a registry entry without also teaching
+    `_resolve_env_settings` how to use it, so it is a programming error, not
+    an `EnvFileError`. It is still raised rather than logged and swallowed:
+    a contributor who adds the second entry gets a loud failure the moment a
+    build actually exercises the key, rather than a build that succeeds
+    while quietly discarding what the file asked for.
+    """
+
+
+def _resolve_env_settings(
+    env_file: Path | None,
+    enterprise_reader: str | EnterpriseReaderDeclined | None,
+) -> tuple[str | EnterpriseReaderDeclined | None, EnvProvenance]:
+    """Apply a resolved dbml-sharepoint.env file, honouring anything already
+    supplied explicitly. Builds the `EnvProvenance` in the same pass that
+    decides what is used, so the record can never drift from the decision it
+    describes -- there is exactly one place this precedence is applied.
+
+    Precedence: an explicit value -- a flag, or the wizard's declined
+    sentinel -- always wins over the file; the file wins over the built-in
+    default of nothing supplied at all.
+
+    `env_file` is a path already resolved by the caller (`_resolve_env_file`
+    for `build`); this function does no discovery of its own, only parsing.
+    """
+    if env_file is None:
+        return enterprise_reader, NO_ENV_FILE
+
+    try:
+        file_settings, digest = read_env_file(env_file)
+    except EnvFileError as exc:
+        # `path=None`: the exception message already names `env_file` (every
+        # `EnvFileError` does, see `_refuse` in `model/env_file.py`), so
+        # passing it again here just printed it twice.
+        _config_error("env file", None, exc)
+
+    resolved = enterprise_reader
+    values: list[EnvValue] = []
+    for setting in ENV_SETTINGS:
+        file_value = file_settings.get(setting.key)
+        if file_value is None:
+            continue
+        # Refuses rather than `continue`s: skipping an unwired key discarded
+        # a value the file was asked to set, with no artefact recording it.
+        if setting.parameter != "enterprise_reader":
+            raise UnwiredEnvSettingError(
+                f"{setting.key} sets execute_build's {setting.parameter!r} "
+                "parameter, which _resolve_env_settings does not know how "
+                "to apply. Wire it in here before adding it to ENV_SETTINGS.",
+            )
+        if enterprise_reader is None:
+            resolved = file_value
+            values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
+        else:
+            override = (
+                enterprise_reader
+                if isinstance(enterprise_reader, str)
+                else repr(enterprise_reader)
+            )
+            values.append(
+                EnvValue(setting=setting, value=file_value, used=False, override=override),
+            )
+
+    provenance = EnvProvenance(
+        path=_relative_env_path(env_file), digest=digest, values=tuple(values),
+    )
+    return resolved, provenance
+
+
+def _echo_env_provenance(provenance: EnvProvenance) -> None:
+    """Say what was read, and what won. An absent line here is
+    indistinguishable from a feature that did not run, so the no-file case
+    is stated explicitly rather than left silent."""
+    if provenance.path is None:
+        typer.echo("No dbml-sharepoint.env file was read.")
+        return
+    typer.echo(f"Read {provenance.path} (sha256 {provenance.digest}).")
+    for value in provenance.values:
+        if value.used:
+            typer.echo(f"  {value.setting.key} = {value.value} (from the file)")
+        else:
+            typer.echo(
+                f"  {value.setting.key} = {value.value} (from the file; overridden, "
+                f"using {value.override})",
+            )
 
 
 def execute_build(
@@ -486,7 +677,8 @@ def execute_build(
     dry_run: bool = False,
     seed: bool = False,
     extension: str | None = None,
-    enterprise_reader: str | None = None,
+    enterprise_reader: str | EnterpriseReaderDeclined | None = None,
+    env_file: Path | None = None,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
 
@@ -498,6 +690,17 @@ def execute_build(
     contract (2 for misuse, 1 for a refused build), and re-mapping them to
     an exception of its own here would give the wizard a second vocabulary
     for the same failures. The wizard catches it.
+
+    `enterprise_reader` carries three states: ``None`` (unset -- no flag was
+    given), `EnterpriseReaderDeclined` (the operator was asked and said
+    nobody), or a UPN. `env_file`, when given, is a `dbml-sharepoint.env`
+    ALREADY resolved to a path by the caller (`build` resolves the default
+    location the same way it resolves `--schema`, `--mapping` and
+    `--release`; this function does no discovery of its own). When the file
+    supplies a value for a setting that is still unset, that value is used;
+    an explicit `enterprise_reader` -- a flag or the declined sentinel --
+    always wins over the file, because both mean the operator already
+    decided.
     """
     # Reassigned, not merely checked: everything below -- SiteContext, the
     # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
@@ -523,7 +726,12 @@ def execute_build(
 
     _require_known_site_role(bundle, site_role)
 
-    if enterprise_reader is not None:
+    enterprise_reader, env_provenance = _resolve_env_settings(env_file, enterprise_reader)
+    _echo_env_provenance(env_provenance)
+
+    # `isinstance`, not `is not None`: the declined sentinel means nobody is
+    # enrolled and must skip validation and the group check just as `None` does.
+    if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
         perms = bundle.mapping.permissions
         targets = [
@@ -569,7 +777,7 @@ def execute_build(
     # Only render the schema view when the schema is valid: build_schema_json
     # calls map_column(), which raises on unsupported/legacy types that
     # validate() already flags. On error we still emit a manifest documenting
-    # the findings — using an empty schema view — then abort below.
+    # the findings (using an empty schema view), then abort below.
     schema_json = (
         _EMPTY_SCHEMA_JSON
         if errors
@@ -589,6 +797,12 @@ def execute_build(
         schema.stat().st_mtime, dt.UTC,
     ).isoformat(timespec="seconds")
 
+    # Narrowed here rather than by reassigning the parameter above, which
+    # would erase the unset/declined distinction before anything consumes it.
+    resolved_enterprise_reader = (
+        enterprise_reader if isinstance(enterprise_reader, str) else None
+    )
+
     manifest_md = generate_manifest(
         schema_json=schema_json,
         findings=findings,
@@ -605,7 +819,8 @@ def execute_build(
         # error path below: a build that refuses still writes a manifest,
         # and the operator reading it should see what the flag would have
         # done once the errors are fixed.
-        enterprise_reader=enterprise_reader,
+        enterprise_reader=resolved_enterprise_reader,
+        env_provenance=env_provenance,
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
 
@@ -642,7 +857,8 @@ def execute_build(
             seed=seed,
             extension=ext,
             site_context=site_context,
-            enterprise_reader=enterprise_reader,
+            enterprise_reader=resolved_enterprise_reader,
+            env_provenance=env_provenance,
         )
     except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)
@@ -838,8 +1054,8 @@ def report(
     )
 
     # Render everything before writing anything. This command does not
-    # validate — it documents the contract as "assumes a schema that `build`
-    # accepts" — so the generators are the first thing to meet a schema
+    # validate, documenting the contract as "assumes a schema that `build`
+    # accepts", so the generators are the first thing to meet a schema
     # mistake, and they signal one by raising: an unmapped column type, a
     # composite DBML index. Unhandled, that printed a traceback for a typo
     # in a file the operator hand-edited, which is exactly what
@@ -866,7 +1082,7 @@ def report(
         )
     except ValueError as exc:
         # The schema was read and refused, so whatever is in `out` describes
-        # a schema that no longer exists — clear it rather than leave a stale
+        # a schema that no longer exists. Clear it rather than leave a stale
         # set looking current. Only reachable once the config loaded and the
         # role resolved: a mistyped --schema path or an unknown --site-role
         # never learns anything about the report, and must not destroy the

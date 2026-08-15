@@ -27,8 +27,25 @@ from dbml_sharepoint.catalogue import (
 )
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extension import BaseExtension
+from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test in this module runs with an empty current directory.
+
+    `build` reads a CWD-relative `dbml-sharepoint.env` by default
+    (`_resolve_env_file`), so without this a contributor's own file sitting
+    at the repository root changes what these tests observe -- 22 of them
+    fail if one is there, because a build that expects no env file default
+    silently gets one anyway. `tmp_path` is unique per test and guaranteed
+    not to contain one; a test that wants the file present writes it there
+    explicitly. Mirrors `test_wizard.py`'s `_cwd_has_no_env_file`.
+    """
+    monkeypatch.chdir(tmp_path)
+
 
 #: Terminal styling, stripped before any assertion about a rendered message.
 #: CI emits it and a developer terminal usually does not, which is enough on
@@ -36,6 +53,39 @@ runner = CliRunner()
 #: `test_help_still_renders_as_rich_panels` records the same lesson about
 #: box-drawing corners.
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _normalise_rendered_output(text: str) -> str:
+    """Reduce rich's rendered output to the words it actually contains.
+
+    Strips ANSI escapes, strips the panel-border character, and collapses
+    whitespace. Rich decides wrap width from the environment, so a raw
+    string can land on one line at a wide width and get split across two,
+    border included, at a narrow one; normalising removes that dependency
+    instead of pinning the width. A test using this does not care, and
+    should not need to know, how many columns rich rendered at.
+
+    Use this for a PHRASE, where every break rich can make falls between
+    words. For a single token, use `_rendered_without_whitespace` instead,
+    and read why there.
+    """
+    return " ".join(_ANSI.sub("", text).replace("│", " ").split())
+
+
+def _rendered_without_whitespace(text: str) -> str:
+    """The same, with whitespace REMOVED rather than collapsed.
+
+    Rich breaks a long line wherever it must, including inside a filename.
+    CI caught this: a temp path wrapped mid-token and `nowhere.env` arrived
+    as `now here.env`, so collapsing to single spaces turned a break inside
+    the token into a space that was never in it. The Windows path was short
+    enough not to split there, which is why it passed locally.
+
+    So an assertion about one unbroken token compares against this, and an
+    assertion about a phrase compares against the collapsing helper above.
+    Neither pins the terminal width.
+    """
+    return "".join(_ANSI.sub("", text).replace("│", " ").split())
 
 
 def test_help_lists_build_command() -> None:
@@ -621,10 +671,458 @@ def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> Non
     assert "does not delete the group" in manifest
 
 
+def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`ENTERPRISE_READER_DECLINED` must survive `execute_build` as its own
+    state, distinct from both `None` (unset) and a real address, rather than
+    being collapsed into either at the first opportunity.
+
+    Run against `sharepoint-mapping-with-reader.yaml`, which DOES declare an
+    `enroll_enterprise_reader` group. That choice matters: the old gate was
+    `if enterprise_reader is not None`, and the sentinel is not `None`, so a
+    build that still used that gate would hand the sentinel to `validate_
+    enterprise_reader`, which calls `.strip()` on it and raises an unhandled
+    `AttributeError` rather than the clean refusal a bad address gets. This
+    test would error, not merely fail, if that regressed -- succeeding here
+    proves the sentinel is excluded from the gate on its own terms, not
+    merely because it happens to behave like `None` would against a mapping
+    with no group to enrol into (which is all `sharepoint-mapping.yaml`
+    would prove).
+
+    The spy then proves what `emit_bundle` actually receives: `None`. It and
+    `generate_manifest` do not know a third state yet -- teaching them one is
+    a later change -- so both must still see the same "nobody" `None` an
+    omitted flag produces. `execute_build` narrows to that `str | None` only
+    at each site that needs it, so this cannot pass merely because the
+    sentinel happened to overwrite the `enterprise_reader` parameter itself
+    early and lose the distinction before it reached here.
+    """
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, execute_build
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    out = tmp_path / "build"
+    execute_build(
+        schema=FIXTURES / "simple.dbml",
+        mapping=FIXTURES / "sharepoint-mapping-with-reader.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        out=out,
+        enterprise_reader=ENTERPRISE_READER_DECLINED,
+    )
+
+    assert captured["enterprise_reader"] is None
+    # Not a bare `"enterprise-reader" not in ...` check: this fixture's own
+    # group carries that substring in a static description ("Read-only
+    # enrolment target for --enterprise-reader") that renders regardless of
+    # whether anybody was actually enrolled. `READER_ADDRESS` is declared
+    # only inside `_reader_enrolment.js.j2`'s `{% if enterprise_reader %}`
+    # guard, so its absence is what actually proves no enrolment code emitted.
+    assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
+
+
+def _write_env_file(path: Path, address: str = "svc-reporting@example.org") -> Path:
+    path.write_text(f"DBMLSP_ENTERPRISE_READER={address}\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def test_env_file_missing_at_an_explicit_path_is_an_error(tmp_path: Path) -> None:
+    """`--env-file` names a specific file; a typo there must not silently
+    build without the settings the operator asked for.
+
+    Asserts on `_normalise_rendered_output(result.output)` rather than
+    pinning the terminal width: rich wraps its error panel to whatever
+    width the environment gives it, and at a narrow width the path can land
+    split across two lines with the panel border in between. Normalising
+    removes the coupling between this content assertion and rich's width
+    choice, rather than choosing a width wide enough to avoid the wrap.
+    """
+    missing = tmp_path / "nowhere.env"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+        "--env-file", str(missing),
+    ])
+    assert result.exit_code == 2
+    # The filename is one token and the temp path is long, so rich may break
+    # it mid-word. Compare against the whitespace-free form.
+    assert "nowhere.env" in _rendered_without_whitespace(result.output)
+
+
+def test_an_unparsable_env_file_is_refused_with_a_clean_message(tmp_path: Path) -> None:
+    """`_resolve_env_settings`'s `except EnvFileError: _config_error(...)`
+    was untested: deleting it broke nothing, because `read_env_file`'s own
+    `EnvFileSyntaxError` would otherwise propagate as an unhandled exception
+    and this test would fail with an error rather than an assertion.
+
+    Also pins the message staying free of the duplicate path `_config_error`
+    used to produce: `EnvFileSyntaxError` already names the path itself (see
+    `_refuse` in `model/env_file.py`), and `_config_error` used to prepend it
+    again -- "[ERROR] env file X: X: line 1: ...".
+    """
+    env_path = tmp_path / "custom.env"
+    env_path.write_text("not a key-value line\n", encoding="utf-8", newline="\n")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code == 1
+    assert "expected KEY=value" in result.output
+    assert result.output.count(str(env_path)) == 1
+    assert not (out / "deploy.js.txt").exists()
+
+
+def test_no_env_file_at_the_default_location_is_not_an_error(tmp_path: Path) -> None:
+    """No `dbml-sharepoint.env` at all is the ordinary case, not a refusal.
+
+    The module's `_cwd_has_no_env_file` fixture is what actually neutralises
+    the default location here: `tmp_path` is guaranteed not to contain one.
+
+    Also pins the "say so explicitly" requirement: an absent env file must
+    be a printed line, not silence a later regression could not tell apart
+    from a feature that never ran.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "No dbml-sharepoint.env file was read." in result.output
+
+
+def test_env_file_at_the_default_location_is_used(tmp_path: Path) -> None:
+    """The other half of the default-location pair: present, it is read."""
+    _write_env_file(tmp_path / ENV_FILENAME)
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "svc-reporting@example.org" in (out / "deploy-manifest.md").read_text(encoding="utf-8")
+
+
+def test_an_env_file_value_reaches_execute_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mirror of `test_a_valid_reader_flag_reaches_emit_bundle`, sourced
+    from `--env-file` at a temp path rather than the default location -- so
+    this test is not itself CWD-dependent."""
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    env_path = _write_env_file(tmp_path / "custom.env")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code == 0, result.output
+    assert captured["enterprise_reader"] == "svc-reporting@example.org"
+
+
+def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
+    """Precedence, and the provenance record it leaves behind -- in the
+    terminal echo AND in the manifest's own env-file line. The manifest
+    line used to say only that the file was read, never that the flag beat
+    it: a reviewer reading the manifest alone could not tell this build
+    apart from one where the file was never consulted.
+    """
+    file_address = "file-reader@example.org"
+    flag_address = "flag-reader@example.org"
+    env_path = _write_env_file(tmp_path / "custom.env", file_address)
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+        "--enterprise-reader", flag_address,
+    ])
+    assert result.exit_code == 0, result.output
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert flag_address in manifest
+    assert file_address not in manifest
+    assert f"Overridden: DBMLSP_ENTERPRISE_READER (using {flag_address})." in manifest
+    assert (
+        f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
+        f"using {flag_address})"
+    ) in result.output
+
+
+def test_the_declined_sentinel_beats_the_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The sentinel is not reachable through a CLI flag -- there is no way to
+    type "declined" on the command line -- so, like
+    `test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value`, this
+    calls `execute_build` directly."""
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, execute_build
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    file_address = "file-reader@example.org"
+    env_path = _write_env_file(tmp_path / "custom.env", file_address)
+    out = tmp_path / "build"
+
+    execute_build(
+        schema=FIXTURES / "simple.dbml",
+        mapping=FIXTURES / "sharepoint-mapping-with-reader.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        out=out,
+        enterprise_reader=ENTERPRISE_READER_DECLINED,
+        env_file=env_path,
+    )
+
+    assert captured["enterprise_reader"] is None
+    assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
+    printed = capsys.readouterr().out
+    assert (
+        f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
+        "using ENTERPRISE_READER_DECLINED)"
+    ) in printed
+
+
+def test_an_env_file_value_that_fails_validation_is_refused_like_a_bad_flag(
+    tmp_path: Path,
+) -> None:
+    """A file value takes the same `validate_enterprise_reader` call a flag
+    value does, so a bad UPN is refused with the same message either way."""
+    env_path = _write_env_file(tmp_path / "custom.env", "not-an-address")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code != 0
+    assert "one '@'" in result.output
+    assert not (out / "deploy.js.txt").exists()
+
+
+def test_env_file_reader_arms_the_no_group_guard(tmp_path: Path) -> None:
+    """The guard in `execute_build` that refuses `--enterprise-reader`
+    against a mapping with no `enroll_enterprise_reader` group already
+    exists; this feature arms it for a build that used to succeed, because
+    no flag was ever given. Deliberately pinned rather than left for a
+    consumer to discover.
+    """
+    env_path = _write_env_file(tmp_path / "custom.env")
+    base_args = [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),  # no such group
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+    ]
+
+    out_without = tmp_path / "without-file"
+    without_file = runner.invoke(app, [*base_args, "--out", str(out_without)])
+    assert without_file.exit_code == 0, without_file.output
+    assert (out_without / "deploy.js.txt").is_file()
+
+    out_with = tmp_path / "with-file"
+    with_file = runner.invoke(
+        app, [*base_args, "--out", str(out_with), "--env-file", str(env_path)],
+    )
+    assert with_file.exit_code != 0
+    assert "enroll_enterprise_reader" in with_file.output
+    assert not (out_with / "deploy.js.txt").exists()
+
+
+def test_an_unwired_env_setting_refuses_instead_of_discarding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_resolve_env_settings` used to `continue` past any `ENV_SETTINGS`
+    entry whose `parameter` was not `"enterprise_reader"`, discarding the
+    value silently: a file could ask for a second setting, `build --help`
+    could advertise the key, and the build would still succeed as though the
+    file had said nothing. The registry's whole premise -- "adding a key
+    later is one entry" -- is false unless a second entry that is not wired
+    in fails loudly the moment a file actually sets it. Registers a fake
+    entry rather than a real second parameter, so this test does not need
+    one to exist: `test_env_settings_has_exactly_the_registered_fields`
+    already pins the registry's current shape and is not a substitute for
+    this, because it asserts a count, not that an unwired parameter is
+    refused.
+    """
+    from dbml_sharepoint import cli
+    from dbml_sharepoint.model import env_file as env_file_module
+    from dbml_sharepoint.model.env_file import EnvSetting
+
+    fake_setting = EnvSetting(
+        key="DBMLSP_FAKE_SETTING", parameter="fake_parameter", help="test only.",
+    )
+    fake_settings = (*env_file_module.ENV_SETTINGS, fake_setting)
+    monkeypatch.setattr(env_file_module, "ENV_SETTINGS", fake_settings)
+    monkeypatch.setattr(cli, "ENV_SETTINGS", fake_settings)
+
+    env_path = tmp_path / "custom.env"
+    env_path.write_text("DBMLSP_FAKE_SETTING=whatever\n", encoding="utf-8", newline="\n")
+
+    with pytest.raises(cli.UnwiredEnvSettingError, match="DBMLSP_FAKE_SETTING"):
+        cli.execute_build(
+            schema=FIXTURES / "simple.dbml",
+            mapping=FIXTURES / "sharepoint-mapping.yaml",
+            release=FIXTURES / "release.yaml",
+            site_url="https://example.sharepoint.com/sites/test",
+            site_role="default",
+            out=tmp_path / "build",
+            env_file=env_path,
+        )
+
+
+def test_the_manifest_and_index_both_say_so_when_no_env_file_was_read(
+    tmp_path: Path,
+) -> None:
+    """A bundle must never silently claim no file was read: an absent line
+    is indistinguishable from a feature that did not run. Pinned at the CLI
+    path -- not merely by `generate_manifest`'s and `write_index`'s default
+    parameter -- because that default is what every other caller of those
+    19-plus call sites relies on, and a signature test alone would not catch
+    `execute_build` forgetting to pass the provenance it already built.
+    """
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    index = (out / "index.md").read_text(encoding="utf-8")
+    assert "**Env file:** No dbml-sharepoint.env file was read." in manifest
+    assert "**Env file:** No dbml-sharepoint.env file was read." in index
+
+
+def test_the_manifest_and_index_both_report_the_env_file_that_was_read(
+    tmp_path: Path,
+) -> None:
+    env_path = _write_env_file(tmp_path / "custom.env")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code == 0, result.output
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    index = (out / "index.md").read_text(encoding="utf-8")
+    for artefact in (manifest, index):
+        assert "custom.env" in artefact
+        assert "DBMLSP_ENTERPRISE_READER" in artefact
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="cross-drive paths are a Windows concept")
+def test_a_cross_drive_env_path_falls_back_to_the_path_as_given(tmp_path: Path) -> None:
+    """`_relative_env_path` switched from `os.path.relpath` to
+    `Path.relative_to(..., walk_up=True)` -- the pathlib equivalent, per the
+    plan's "pathlib always". Both raise `ValueError` for a path on a
+    different Windows drive than the current directory (`tmp_path`, never
+    `Z:`, is what the current directory is under pytest), and the fallback
+    branch that catches it was otherwise unexercised by any test.
+    """
+    from dbml_sharepoint.cli import _relative_env_path
+
+    assert not str(tmp_path).upper().startswith("Z:")
+    env_file = Path("Z:/nowhere/dbml-sharepoint.env")
+    assert _relative_env_path(env_file) == env_file.as_posix()
+
+
+def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
+    """`EnvSetting.help` is otherwise dead weight: nothing else reads it.
+
+    A key not rendered here is a key an operator can only discover by
+    reading source, which defeats the point of a registry. Walking
+    `ENV_SETTINGS` rather than pinning today's one entry means a second key
+    added later is covered for free, with no second place to edit.
+
+    Rich wraps the panel to the terminal width, so a multi-word help line
+    can land across several output lines, each carrying its own panel-border
+    character and its own re-wrapped whitespace, the same way
+    `test_help_still_renders_as_rich_panels` treats layout as incidental and
+    content as what is asserted. `_normalise_rendered_output` strips the
+    ANSI escapes, the border, and the whitespace, which is what makes this
+    test indifferent to the width rich chose. Pinning the width to avoid the
+    wrap would have worked too, but it couples a content assertion to a
+    presentation decision that has nothing to do with what is being tested.
+    """
+    result = runner.invoke(app, ["build", "--help"])
+    assert result.exit_code == 0
+    collapsed = _normalise_rendered_output(result.stdout)
+    for setting in ENV_SETTINGS:
+        assert setting.key in collapsed, f"{setting.key} missing from build --help"
+        help_collapsed = " ".join(setting.help.split())
+        assert help_collapsed in collapsed, f"help for {setting.key} missing from build --help"
+
+
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
-    """A failed build must leave only its error manifest — a stale script
-    or stale INDEX/checksums beside it could send an operator to the wrong
-    release."""
+    """A failed build must leave only its error manifest. A stale
+    script or stale INDEX/checksums beside it could send an operator to the
+    wrong release."""
     out = tmp_path / "build"
     out.mkdir()
     for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
@@ -665,9 +1163,9 @@ def test_build_never_clears_output_before_it_accepts_its_inputs(tmp_path: Path) 
 
     The twin of `test_report_never_clears_output_before_it_reads_the_schema`,
     and it exists because `build` used to disagree with `report` about this.
-    Clearing on the way in meant a mistyped `--site-url` — which exits 2 for
-    "usage error, before the pipeline runs at all", having read nothing and
-    learnt nothing — deleted a bundle the operator may have been part-way
+    Clearing on the way in meant a mistyped `--site-url`, which exits 2 for
+    "usage error, before the pipeline runs at all" having read nothing and
+    learnt nothing, deleted a bundle the operator may have been part-way
     through pasting.
 
     The three refusals asserted here are exactly the ones that happen before
@@ -952,7 +1450,7 @@ def _cli(*args: str) -> subprocess.CompletedProcess[str]:
     """Run the real CLI in a subprocess.
 
     CliRunner CATCHES the exception and stores it on the result, so a
-    traceback never reaches its stdout — a test written against it passes
+    traceback never reaches its stdout, so a test written against it passes
     whether or not the operator sees 20 lines of loader internals. Only a
     real process shows what the person running the tool actually gets.
     """
@@ -1106,7 +1604,7 @@ def test_unknown_dbml_index_column_is_a_message_not_a_traceback(tmp_path: Path) 
 
 
 def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
-    """`report` does not validate — the generators meet a bad schema first.
+    """`report` does not validate, so the generators meet a bad schema first.
 
     They refuse by raising, and unhandled that printed a traceback for a
     hand-edited typo. Both refusals reachable from a parseable schema are
@@ -1278,9 +1776,9 @@ def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -
 
     `--out` is routinely aimed at a directory holding the operator's own
     work, and `sql/`/`powerquery/` are generic enough names to collide with
-    it. Clearing on the way in meant a mistyped --schema path — or an
+    it. Clearing on the way in meant a mistyped --schema path (or an
     unknown --site-role, which exits 2 for "usage error, before the
-    pipeline runs" — deleted both trees whole before reading anything.
+    pipeline runs") deleted both trees whole before reading anything.
     """
     mapping = write_mapping(tmp_path, entities("Risk"))
     out = tmp_path / "shared"
@@ -1323,7 +1821,7 @@ def test_report_clearing_spares_operator_files_inside_owned_directories(
     (out / "sql" / "001_migration.sql").write_text("-- hand written", encoding="utf-8")
     (out / "powerquery" / "notes.md").write_text("mine", encoding="utf-8")
 
-    # A refusal clears what this command wrote — and stops there.
+    # A refusal clears what this command wrote, and stops there.
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status blob"))
     refused = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),
@@ -1873,3 +2371,28 @@ def test_a_wrong_section_shape_is_a_message_not_a_traceback(tmp_path: Path) -> N
     # Names the section, so the operator knows which line to look at.
     assert "views" in output
     assert len([ln for ln in output.splitlines() if ln.strip()]) <= 2, output
+
+
+def test_a_directory_at_the_default_env_path_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`is_file()` is false for a directory, which used to make one named
+    `dbml-sharepoint.env` indistinguishable from no file at all.
+
+    The build then succeeded while printing "No dbml-sharepoint.env file was
+    read.", and `read_env_file` never got the chance to raise the
+    `EnvFileReadError` it defines for exactly this. Fail closed instead.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ENV_FILENAME).mkdir()
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code != 0
+    assert "is not a file" in _normalise_rendered_output(result.output)
