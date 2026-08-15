@@ -16,9 +16,8 @@ followed by the value prompt only when the answer is yes; a template
 declaring no prefix skips the pair entirely. Pressing Enter at that gate now
 produces unprefixed lists, the opposite of the old default. The Review
 panel's `Lists` row is what shows the operator the names they are actually
-about to create -- it is the safety net for that reversed default, not
-decoration, and stays load-bearing for as long as a blank prefix is a valid
-answer.
+about to create. It is the safety net for that reversed default, and it
+matters for as long as a blank prefix is a valid answer.
 
 Every question is asked before anything is written, and the whole decision is
 reviewed once. The alternative -- confirming a write, then being asked three

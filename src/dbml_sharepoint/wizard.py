@@ -7,9 +7,8 @@ followed by the value prompt only when the answer is yes; a template
 declaring no prefix skips the pair entirely. Pressing Enter at that gate now
 produces unprefixed lists, the opposite of the old default. The Review
 panel's `Lists` row is what shows the operator the names they are actually
-about to create -- it is the safety net for that reversed default, not
-decoration, and stays load-bearing for as long as a blank prefix is a valid
-answer.
+about to create. It is the safety net for that reversed default, and it
+matters for as long as a blank prefix is a valid answer.
 
 Every question is asked before anything is written, and the whole decision is
 reviewed once. The alternative -- confirming a write, then being asked three
@@ -627,8 +626,8 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
     all of them and reorder the file.
 
     Verified through the real loader rather than by re-reading the text:
-    the question is not whether the line changed, it is whether the mapping
-    the build will load carries the prefix the user asked for.
+    what matters is whether the mapping the build will load carries the
+    prefix the user asked for, not whether the line changed.
     """
     text = mapping_path.read_text(encoding="utf-8")
     new_text, count = re.subn(
@@ -640,7 +639,7 @@ def _rewrite_prefix(mapping_path: Path, prefix: str) -> None:
             f"(found {count}). The template does not match the family "
             f"standard; refusing to guess where the prefix belongs.",
         )
-    # `write_artifact`, not `write_text`. The trap AGENTS.md records is
+    # `write_artifact`, not `write_text`. The defect AGENTS.md records is
     # per-call-site: text mode inherits the platform newline, so this wrote
     # CRLF on Windows and handed the operator a mapping whose line endings
     # depend on which machine ran the wizard. The templates ship LF.
@@ -890,7 +889,7 @@ def _review_row(label: str, value: str) -> str:
 def _review_panel(answers: Answers) -> Panel:
     """Every answer, once, before the single confirmation.
 
-    `Lists` is the load-bearing row. A blank prefix is a valid answer now, so
+    `Lists` is the row that matters. A blank prefix is a valid answer now, so
     this is the only place the operator sees whether they are about to create
     `Risk` or `ACME_Risk`. The titles are `prefix + entity`, which is what
     the generators do -- reported, not predicted.

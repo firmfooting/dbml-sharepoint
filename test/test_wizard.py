@@ -112,7 +112,7 @@ def _answers(
     it produces exactly the one answer the gate actually consumes.
 
     The site role is absent because every shipped family declares exactly one
-    role, so the question is not put -- a family with two needs it inserted
+    role, so the question is not put. A family with two needs it inserted
     by hand.
 
     `template` and `site_url` are explicit keyword parameters, not a
@@ -1690,7 +1690,7 @@ def test_the_declined_build_prints_a_command_carrying_the_site_role(
 
 
 def test_the_template_summary_names_the_declared_prefix() -> None:
-    """The prefix question is conditional, which is what makes this load-bearing.
+    """The prefix question is conditional, which is what makes this line matter.
 
     A template declaring no prefix is never asked for one, so this line is
     the ONLY place the operator learns what their lists will be called

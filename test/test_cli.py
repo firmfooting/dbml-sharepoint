@@ -1120,9 +1120,9 @@ def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
 
 
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
-    """A failed build must leave only its error manifest — a stale script
-    or stale INDEX/checksums beside it could send an operator to the wrong
-    release."""
+    """A failed build must leave only its error manifest. A stale
+    script or stale INDEX/checksums beside it could send an operator to the
+    wrong release."""
     out = tmp_path / "build"
     out.mkdir()
     for name in ("deploy.js.txt", "rollback.js.txt", "assess.js.txt", "assess-manifest.md",
@@ -1163,9 +1163,9 @@ def test_build_never_clears_output_before_it_accepts_its_inputs(tmp_path: Path) 
 
     The twin of `test_report_never_clears_output_before_it_reads_the_schema`,
     and it exists because `build` used to disagree with `report` about this.
-    Clearing on the way in meant a mistyped `--site-url` — which exits 2 for
-    "usage error, before the pipeline runs at all", having read nothing and
-    learnt nothing — deleted a bundle the operator may have been part-way
+    Clearing on the way in meant a mistyped `--site-url`, which exits 2 for
+    "usage error, before the pipeline runs at all" having read nothing and
+    learnt nothing, deleted a bundle the operator may have been part-way
     through pasting.
 
     The three refusals asserted here are exactly the ones that happen before
@@ -1450,7 +1450,7 @@ def _cli(*args: str) -> subprocess.CompletedProcess[str]:
     """Run the real CLI in a subprocess.
 
     CliRunner CATCHES the exception and stores it on the result, so a
-    traceback never reaches its stdout — a test written against it passes
+    traceback never reaches its stdout, so a test written against it passes
     whether or not the operator sees 20 lines of loader internals. Only a
     real process shows what the person running the tool actually gets.
     """
@@ -1604,7 +1604,7 @@ def test_unknown_dbml_index_column_is_a_message_not_a_traceback(tmp_path: Path) 
 
 
 def test_report_renders_generator_refusals_as_messages(tmp_path: Path) -> None:
-    """`report` does not validate — the generators meet a bad schema first.
+    """`report` does not validate, so the generators meet a bad schema first.
 
     They refuse by raising, and unhandled that printed a traceback for a
     hand-edited typo. Both refusals reachable from a parseable schema are
@@ -1776,9 +1776,9 @@ def test_report_never_clears_output_before_it_reads_the_schema(tmp_path: Path) -
 
     `--out` is routinely aimed at a directory holding the operator's own
     work, and `sql/`/`powerquery/` are generic enough names to collide with
-    it. Clearing on the way in meant a mistyped --schema path — or an
+    it. Clearing on the way in meant a mistyped --schema path (or an
     unknown --site-role, which exits 2 for "usage error, before the
-    pipeline runs" — deleted both trees whole before reading anything.
+    pipeline runs") deleted both trees whole before reading anything.
     """
     mapping = write_mapping(tmp_path, entities("Risk"))
     out = tmp_path / "shared"
@@ -1821,7 +1821,7 @@ def test_report_clearing_spares_operator_files_inside_owned_directories(
     (out / "sql" / "001_migration.sql").write_text("-- hand written", encoding="utf-8")
     (out / "powerquery" / "notes.md").write_text("mine", encoding="utf-8")
 
-    # A refusal clears what this command wrote — and stops there.
+    # A refusal clears what this command wrote, and stops there.
     schema = write_dbml(tmp_path, table("Risk", ID_PK, "Status blob"))
     refused = _cli(
         "report", "--schema", str(schema), "--mapping", str(mapping), "--out", str(out),

@@ -156,8 +156,8 @@ def _clear_report_output(out: Path) -> None:
 
     `*.pq` is the one broad pattern, and it is deliberate: a stale query
     from a list that has left the schema is indistinguishable from a
-    hand-written one, and leaving it is the worse failure — it documents a
-    list that no longer exists. The docs say so; `--out` is not the place
+    hand-written one, and leaving it is the worse failure, because it
+    documents a list that no longer exists. The docs say so; `--out` is not the place
     to keep your own .pq files.
     """
     for dirname, pattern in _REPORT_DIRECTORY_CONTENTS:
@@ -323,8 +323,8 @@ def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
     where = f" {path}" if path is not None else ""
     typer.echo(f"[ERROR] {what}{where}: {detail}", err=True)
     # 1, not 2. The documented contract reserves 2 for the usage errors
-    # typer raises BEFORE the pipeline runs — a missing option, an unknown
-    # --site-role — and gives 1 to "the build refused", which explicitly
+    # typer raises BEFORE the pipeline runs (a missing option, an unknown
+    # --site-role), and gives 1 to "the build refused", which explicitly
     # includes an unreadable or invalid input file. A bad config is a
     # refused build, not a misuse of the command line, and a CI gate keying
     # on the documented table would have mis-classified it.
@@ -341,7 +341,7 @@ def _load_config(
     the single sentence saying what is wrong. The person who hits it is a
     SharePoint admin editing YAML: not one frame of that stack is
     actionable, and the semantic (post-load) errors beside it are already
-    clean one-liners — so the contrast made a config typo look like a crash
+    clean one-liners, so the contrast made a config typo look like a crash
     in the tool rather than a mistake in the file.
 
     This CLI has no verbosity flag, so the traceback is not tucked behind
@@ -775,7 +775,7 @@ def execute_build(
     # Only render the schema view when the schema is valid: build_schema_json
     # calls map_column(), which raises on unsupported/legacy types that
     # validate() already flags. On error we still emit a manifest documenting
-    # the findings — using an empty schema view — then abort below.
+    # the findings (using an empty schema view), then abort below.
     schema_json = (
         _EMPTY_SCHEMA_JSON
         if errors
@@ -1052,8 +1052,8 @@ def report(
     )
 
     # Render everything before writing anything. This command does not
-    # validate — it documents the contract as "assumes a schema that `build`
-    # accepts" — so the generators are the first thing to meet a schema
+    # validate, documenting the contract as "assumes a schema that `build`
+    # accepts", so the generators are the first thing to meet a schema
     # mistake, and they signal one by raising: an unmapped column type, a
     # composite DBML index. Unhandled, that printed a traceback for a typo
     # in a file the operator hand-edited, which is exactly what
@@ -1080,7 +1080,7 @@ def report(
         )
     except ValueError as exc:
         # The schema was read and refused, so whatever is in `out` describes
-        # a schema that no longer exists — clear it rather than leave a stale
+        # a schema that no longer exists. Clear it rather than leave a stale
         # set looking current. Only reachable once the config loaded and the
         # role resolved: a mistyped --schema path or an unknown --site-role
         # never learns anything about the report, and must not destroy the
