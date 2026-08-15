@@ -27,7 +27,7 @@ from dbml_sharepoint.catalogue import (
 )
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extension import BaseExtension
-from dbml_sharepoint.model.env_file import ENV_FILENAME
+from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
 
 runner = CliRunner()
 
@@ -946,6 +946,29 @@ def test_the_manifest_and_index_both_report_the_env_file_that_was_read(
     for artefact in (manifest, index):
         assert "custom.env" in artefact
         assert "DBMLSP_ENTERPRISE_READER" in artefact
+
+
+def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
+    """`EnvSetting.help` is otherwise dead weight: nothing else reads it.
+
+    A key not rendered here is a key an operator can only discover by
+    reading source, which defeats the point of a registry. Walking
+    `ENV_SETTINGS` rather than pinning today's one entry means a second key
+    added later is covered for free, with no second place to edit.
+
+    Rich wraps the panel to the terminal width, so a multi-word help line
+    can land across several output lines, each carrying its own panel-border
+    "|" and re-wrapped whitespace. Both are stripped before matching, the
+    same way `test_help_still_renders_as_rich_panels` treats layout as
+    incidental and content as what is asserted.
+    """
+    result = runner.invoke(app, ["build", "--help"])
+    assert result.exit_code == 0
+    collapsed = " ".join(result.stdout.replace("│", " ").split())
+    for setting in ENV_SETTINGS:
+        assert setting.key in collapsed, f"{setting.key} missing from build --help"
+        help_collapsed = " ".join(setting.help.split())
+        assert help_collapsed in collapsed, f"help for {setting.key} missing from build --help"
 
 
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:

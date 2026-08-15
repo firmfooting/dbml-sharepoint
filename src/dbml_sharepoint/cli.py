@@ -255,6 +255,21 @@ def _project_input(
     )
 
 
+def _env_file_help() -> str:
+    """The `--env-file` option's help text, with every registry key spelled
+    out so the file's vocabulary is discoverable from `build --help` alone.
+
+    Built from `ENV_SETTINGS` rather than hand-listing today's one entry, so
+    a second key added to the registry is picked up here for free.
+    """
+    keys = "; ".join(f"{setting.key} ({setting.help})" for setting in ENV_SETTINGS)
+    return (
+        f"Path to a {ENV_FILENAME} defaults file. Default: {ENV_FILENAME} "
+        "in the current directory, when present. A flag given on the command "
+        f"line always wins over a value the file supplies. Accepted keys: {keys}"
+    )
+
+
 def _resolve_env_file(env_file: Path | None) -> Path | None:
     """The env file `build` should read, or None when there is nothing to.
 
@@ -477,9 +492,7 @@ def build(
     env_file: Path | None = typer.Option(
         None,
         "--env-file",
-        help=f"Path to a {ENV_FILENAME} defaults file. Default: {ENV_FILENAME} "
-        "in the current directory, when present. A flag given on the command "
-        "line always wins over a value the file supplies.",
+        help=_env_file_help(),
     ),
 ) -> None:
     """Generate deploy.js.txt + manifest from the DBML schema and mapping.
