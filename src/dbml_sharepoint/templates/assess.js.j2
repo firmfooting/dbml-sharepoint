@@ -25,7 +25,7 @@
 
 {% include "_http.js.j2" %}
   const absListUrl = (title) => `${window.location.origin}${WEB}/Lists/${encodeURIComponent(title)}`;
-  log('INFO', 'Read-only assessment — no changes are made.');
+  log('INFO', 'Read-only assessment. No changes are made.');
 
   // Read-only GET helper: returns parsed .d (or the raw json) or null.
   async function probeGet(suffix) {
@@ -41,11 +41,11 @@
 {% include "_digest_cached.js.j2" %}
 
   // ===================================================================
-  // Tier 1 — always-run enumerations
+  // Tier 1: always-run enumerations
   // ===================================================================
   log('INFO', 'Tier 1: site capability enumeration.');
 
-  // Site identity & provisioning template — the best single capability tell.
+  // Site identity & provisioning template, the best single capability tell.
   {
     const web = await probeGet('web?$select=WebTemplate,Configuration,Language,UIVersion');
     if (web.ok) finding(1, 'web_template', 'INFO',
@@ -53,7 +53,7 @@
     else finding(1, 'web_template', 'INFO', `Could not read web template (HTTP ${web.status || web.error}).`);
   }
 
-  // Site lock / read-only — a locked site blocks any deploy.
+  // Site lock / read-only: a locked site blocks any deploy.
   {
     const site = await probeGet('site?$select=ReadOnly,LockIssue');
     if (site.ok && (site.d.ReadOnly === true || site.d.LockIssue)) {
@@ -74,20 +74,20 @@
     finding(1, 'platform_build', 'INFO', `Could not read build version (${err.message}).`);
   }
 
-  // Effective permissions — decode the bits the deploy needs + NoScript.
+  // Effective permissions: decode the bits the deploy needs + NoScript.
   {
     const perms = await probeGet('web?$select=EffectiveBasePermissions');
     if (perms.ok && perms.d.EffectiveBasePermissions) {
       const low = Number(perms.d.EffectiveBasePermissions.Low || 0);
       const has = (bit) => (low & bit) === bit;
       finding(1, 'manage_lists_bit', has(0x800) ? 'PASS' : 'BLOCKED',
-        has(0x800) ? 'Operator holds ManageLists.' : 'Operator LACKS ManageLists — lists cannot be created.');
+        has(0x800) ? 'Operator holds ManageLists.' : 'Operator LACKS ManageLists, so lists cannot be created.');
       const cu = await probeGet('web/currentuser?$select=IsSiteAdmin');
       const sca = cu.ok && cu.d.IsSiteAdmin === true;
       finding(1, 'manage_permissions_bit', (has(0x2000000) || sca) ? 'PASS' : 'BLOCKED',
-        (has(0x2000000) || sca) ? 'Operator holds ManagePermissions (or is a site collection admin).' : 'Operator LACKS ManagePermissions — ACL/group work cannot run.');
+        (has(0x2000000) || sca) ? 'Operator holds ManagePermissions (or is a site collection admin).' : 'Operator LACKS ManagePermissions, so ACL/group work cannot run.');
       finding(1, 'noscript', has(0x40000) ? 'INFO' : 'INFO',
-        has(0x40000) ? 'Custom scripting allowed (AddAndCustomizePages present).' : 'NoScript is ON (AddAndCustomizePages stripped) — not required by this pack, but note it.');
+        has(0x40000) ? 'Custom scripting allowed (AddAndCustomizePages present).' : 'NoScript is ON (AddAndCustomizePages stripped); not required by this pack, but note it.');
     } else {
       finding(1, 'manage_lists_bit', 'WARN', `Could not read effective permissions (HTTP ${perms.status || perms.error}).`);
     }
@@ -111,7 +111,7 @@
     }
   }
 
-  // Regional settings & languages — locale drives date rendering.
+  // Regional settings & languages: locale drives date rendering.
   {
     const rs = await probeGet('web/regionalsettings?$select=LocaleId');
     if (rs.ok) finding(1, 'regional_settings', 'INFO', `Site LocaleId ${rs.d.LocaleId}.`);
@@ -154,12 +154,12 @@
   }
 
   // ===================================================================
-  // Tier 2 — pack-driven attempt-probes
+  // Tier 2: pack-driven attempt-probes
   // ===================================================================
   log('INFO', 'Tier 2: pack-driven attempt-probes.');
 
   // The provenance marker on an EXISTING declared list. Reported, never
-  // repaired — this script writes nothing, and that is its whole contract.
+  // repaired: this script writes nothing, and that is its whole contract.
   //
   // WHY IT IS HERE AND NOT ONLY IN THE DEPLOY. deploy.js reconciles a drifted
   // Description, but only at the NEXT run. In the gap, a list whose
@@ -179,7 +179,7 @@
   // ignored.
   //
   // The expected text arrives in TARGETS from `analysis.list_description`
-  // and is never re-spelled here — see assess_targets' docstring.
+  // and is never re-spelled here (see assess_targets' docstring).
   //
   // Looked up with hasOwnProperty, not with a bare index: a list titled
   // `constructor` or `toString` would otherwise resolve to something off
@@ -196,7 +196,7 @@
     } else {
       finding(2, key, 'WARN',
         `'${title}' exists but its Description no longer carries the provenance marker `
-        + `"${expected}" — fleet reporting cannot see '${title}' until a deploy restores it.`);
+        + `"${expected}". Fleet reporting cannot see '${title}' until a deploy restores it.`);
     }
   };
 
@@ -206,9 +206,9 @@
     const key = `collision:${title}`;
     const list = await probeGet(`web/lists/getbytitle('${odataName(title)}')?$select=Title,BaseTemplate,Description`);
     if (!list.ok && list.status === 404) {
-      finding(2, key, 'PASS', `'${title}' absent — clean provision target.`);
+      finding(2, key, 'PASS', `'${title}' absent, a clean provision target.`);
     } else if (list.ok) {
-      finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${list.d.BaseTemplate}) — redeploy/reconcile target.`);
+      finding(2, key, 'INFO', `'${title}' already exists (BaseTemplate ${list.d.BaseTemplate}), a redeploy/reconcile target.`);
       markerFinding(title, list.d.Description);
     } else {
       finding(2, key, 'WARN', `Could not probe '${title}' (HTTP ${list.status || list.error}).`);
@@ -216,7 +216,7 @@
   }
 
   // Property-surface probes against the first EXISTING declared list, else
-  // the site's own lists — 200 PASS, non-200 WARN.
+  // the site's own lists: 200 PASS, non-200 WARN.
   {
     let probeList = null;
     for (const title of TARGETS.list_titles) {
@@ -241,7 +241,7 @@
     if (TARGETS.declares_versioning && probeList) {
       const vp = await probeGet(`web/lists/getbytitle('${odataName(probeList)}')?$expand=VersionPolicies&$select=VersionPolicies/DefaultTrimMode`);
       if (vp.ok && vp.d.VersionPolicies && Number(vp.d.VersionPolicies.DefaultTrimMode) === 2) {
-        finding(2, 'version_trim_mode', 'WARN', 'Service-managed auto-trim is ON — it can override the declared MajorVersionLimit.');
+        finding(2, 'version_trim_mode', 'WARN', 'Service-managed auto-trim is ON and can override the declared MajorVersionLimit.');
       } else if (vp.ok) {
         finding(2, 'version_trim_mode', 'PASS', 'No service-managed auto-trim overriding declared version limits.');
       } else {
@@ -252,7 +252,7 @@
     }
   }
 
-  // CSOM ProcessQuery availability (read-only Current-Web-Title query) —
+  // CSOM ProcessQuery availability (read-only Current-Web-Title query),
   // needed for group owner correction when the pack declares groups.
   if (TARGETS.declares_groups) {
     try {
@@ -278,17 +278,17 @@
     const sl = await probeGet('site/SensitivityLabelInfo');
     if (sl.ok && sl.d && sl.d.DisplayName) finding(2, 'sensitivity_label', 'INFO', `Site sensitivity label: ${sl.d.DisplayName}.`);
     const phl = await probeGet("web/lists/getbytitle('Preservation Hold Library')?$select=Title");
-    if (phl.ok) finding(2, 'preservation_hold', 'INFO', 'Preservation Hold Library present — the site is under a retention policy or hold.');
+    if (phl.ok) finding(2, 'preservation_hold', 'INFO', 'Preservation Hold Library present; the site is under a retention policy or hold.');
   }
 
   // ===================================================================
-  // Tier 3 — not assessable (printed honesty block)
+  // Tier 3: not assessable (printed honesty block)
   // ===================================================================
-  log('INFO', 'Tier 3: not assessable from operator site context —');
+  log('INFO', 'Tier 3: not assessable from operator site context.');
   for (const item of NOT_ASSESSABLE) finding(3, 'not_assessable', 'NOT-ASSESSABLE', item);
 
   // ===================================================================
-  // Verdict — worst outcome over the pack's requirement keys.
+  // Verdict: worst outcome over the pack's requirement keys.
   // ===================================================================
   const byKey = {};
   for (const f of summary.findings) {
@@ -306,7 +306,7 @@
   const prefix = (TARGETS.list_titles[0] || '').split('_')[0] + '_';
   if (blocked) {
     summary.verdict = 'BLOCKED';
-    log('DONE', `${prefix} pack: BLOCKED (${blocked.key} — ${blocked.description}). Resolve before deploying.`);
+    log('DONE', `${prefix} pack: BLOCKED (${blocked.key}: ${blocked.description}). Resolve before deploying.`);
   } else if (warnings > 0) {
     summary.verdict = 'DEGRADED';
     log('DONE', `${prefix} pack: DEGRADED (${warnings} warning(s)). Deployable; review the WARN findings above.`);

@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Title the row \"Forum — date\": every decision and every action finds its meeting by this line."
+          "txtContent": "Title the row \"Forum, date\": every decision and every action finds its meeting by this line."
         }
       ]
     }

@@ -22,7 +22,7 @@
   // === Enterprise reader enrolment (--enterprise-reader) ===
   // Grants one named service account read-only access to the registers
   // this bundle provisions, by adding it to the group the mapping flagged
-  // with `enroll_enterprise_reader` — a group the validator requires to
+  // with `enroll_enterprise_reader`, a group the validator requires to
   // hold Read and nothing more. The group's grants are unchanged here;
   // this phase only decides WHO is in it.
   //
@@ -37,7 +37,7 @@
   //
   // The group must hold nobody but the named account. If it already holds
   // anyone else, this phase ABORTS the run before adding anything and
-  // removes nobody — a second reader is a permanent grant nothing here can
+  // removes nobody: a second reader is a permanent grant nothing here can
   // safely undo, so it goes to a human.
   //
   // Everything below is a guard against granting Read to the wrong
@@ -47,7 +47,7 @@
   // security group, a distribution list, or an everyone-claim, so each is
   // refused explicitly and the run aborts before any list is created.
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   // Declared outside the block below so the abort at the end of this phase
@@ -86,7 +86,7 @@
 
         // 2. Principal type, STRICT equality. Microsoft Learn documents
         // SP.PrincipalType as None 0, User 1, DistributionList 2,
-        // SecurityGroup 4, SharePointGroup 8, All 15 — and marks it
+        // SecurityGroup 4, SharePointGroup 8, All 15, and marks it
         // [Flags]. A bitwise `& 1` would therefore admit any combination
         // that happens to carry the User bit, so the comparison is `!== 1`
         // and stays that way.
@@ -99,13 +99,13 @@
         }
 
         // 3. The tenant-wide claims. Granting one hands Read on this
-        // register to every account in the tenant — the one mistake in this
+        // register to every account in the tenant, the one mistake in this
         // phase with no cheap undo.
         //
         // MEASURED 2026-08-12, on ONE tenant, by group B of
         // `test/manual/enterprise-reader-probe.js`: `web/ensureuser` for
-        // BOTH display names — "Everyone" and "Everyone except external
-        // users" — resolved to the SAME principal, a
+        // BOTH display names ("Everyone" and "Everyone except external
+        // users") resolved to the SAME principal, a
         // `c:0-.f|rolemanager|spo-grid-all-users/<tenantid>` login typed
         // PrincipalType 4 (SecurityGroup). So the strict `!== 1` check
         // above refuses them on its own, before this list is consulted.
@@ -127,7 +127,7 @@
         // users, All Authenticated Users, All Forms Users. The three
         // needles below cover the first two. Learn publishes no login-name
         // encoding for the other two, and they are still deliberately NOT
-        // guessed here — a needle invented from plausibility would read
+        // guessed here: a needle invented from plausibility would read
         // like a guard and catch nothing, which is worse than an
         // acknowledged gap.
         //
@@ -163,7 +163,7 @@
         // holds Read. Two addresses are compared, and either may match: the
         // mailbox Email, and the UPN the claims LoginName ends in. They are
         // routinely different for the same account (an alias mailbox), so
-        // requiring the Email alone would refuse correct resolutions — while
+        // requiring the Email alone would refuse correct resolutions, while
         // a resolution of a DIFFERENT account matches neither.
         const upnPart = (name) => {
           const parts = String(name).split('|');
@@ -192,7 +192,7 @@
           throw new Error(`group probe for '${grp.name}' returned an invalid response`);
         }
 
-        // 6. Membership, enumerated in full — every page, because the gate
+        // 6. Membership, enumerated in full (every page), because the gate
         // at step 7 is only as good as the weakest page of the read: a
         // stranger on page two that this loop never fetched would read as
         // an empty group. The same read verifies the write below.
@@ -236,8 +236,8 @@
         // record was one INFO line in a run that reported success, which is
         // to say no record at all.
         //
-        // The named account already being a member is NOT this case — a
-        // redeploy with the same flag has to stay green — so it is filtered
+        // The named account already being a member is NOT this case (a
+        // redeploy with the same flag has to stay green), so it is filtered
         // out by isReader before the count is taken.
         // ONE spelling of the invariant, because it is checked twice: here
         // against the state this run found, and again against the state it
@@ -253,8 +253,8 @@
             `group '${grp.name}' already holds ${others.length} principal(s) other than `
             + `'${READER_ADDRESS}': ${listed}. This group is shared by every family deployed `
             + `to the site, so an unexpected member is most likely another family's enterprise `
-            + `reader rather than a mistake — removing it by hand would silently break that `
-            + `family's reporting. Nothing was granted and nobody was removed — this needs a `
+            + `reader rather than a mistake; removing it by hand would silently break that `
+            + `family's reporting. Nothing was granted and nobody was removed. This needs a `
             + `human decision. The site must agree on one reader account: either remove them in `
             + `Site permissions > Groups only after confirming no other family still needs them, `
             + `or rebuild WITHOUT --enterprise-reader, which leaves the membership exactly as it `

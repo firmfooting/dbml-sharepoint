@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "One row per completion, with the evidence linked — a refresher is a new row, never an overwrite of the old one."
+          "txtContent": "One row per completion, with the evidence linked. A refresher is a new row, never an overwrite of the old one."
         }
       ]
     }

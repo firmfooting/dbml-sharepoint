@@ -6,7 +6,7 @@
   // the modern view bar. Authored views are managed alongside it. Other views
   // are user content and are never touched (unlike exact-mode ACLs).
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   // Readback normalization: SP collapses nothing between tags but DOES write
@@ -54,7 +54,7 @@
   }
   // Existence checks read ONE enumeration per list: views/getbytitle on an
   // absent view answers HTTP 400, which the browser console paints red even
-  // though isAbsent400 handles it — operators read those lines as failures.
+  // though isAbsent400 handles it; operators read those lines as failures.
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
@@ -121,7 +121,7 @@
       // rename possible: `title: Open` with `renamed_from: [open]` matches
       // the same live view twice under case-insensitive comparison, and the
       // conflict check below would then refuse to choose between a view and
-      // itself — on every run, so the rename could never land.
+      // itself, on every run, so the rename could never land.
       const previousMatches = listedViews.filter(
         (v) => (!existing || v.Id !== existing.Id)
           && view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
@@ -139,7 +139,7 @@
       // A slug-titled view already sitting on the clean URL is our own
       // half-finished migration (we only ever create with Title=slug):
       // adopt it instead of creating a second page. A FOREIGN view on that
-      // URL is never touched — the create below would get a suffixed .aspx
+      // URL is never touched: the create below would get a suffixed .aspx
       // and the URL drift gate fails the view closed.
       const halfMigrated = listedViews.find(
         (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
@@ -161,7 +161,7 @@
         if (urlBasename(existing) !== desiredBasename) {
           // URL migration to the clean URL: renames cannot change the .aspx
           // name, so the escaped-URL view is recreated. Declared views are
-          // deployer-owned — every setting is reasserted below; only
+          // deployer-owned: every setting is reasserted below; only
           // bookmarks to the old URL break (one-time, noted in deploy.md).
           log('INFO', `[Phase {{ phase.number }}] Migrating view '${view.title}' on '${view.list}' from ${urlBasename(existing)} to ${desiredBasename}...`);
           if (!halfMigrated) await createViewWithCleanUrl();
@@ -217,7 +217,7 @@
       // reach the verify below with none and fail its own first deploy.
       //
       // A view with no declaration keeps whatever is live, matching
-      // CustomFormatter and widths — so deleting a totals block does NOT
+      // CustomFormatter and widths, so deleting a totals block does NOT
       // clear a deployed total.
       //
       // normalizeViewQuery is required here, not tidiness: SP reads back
@@ -269,7 +269,7 @@
       }
       // Default flag last: SharePoint un-defaults the previous default view
       // automatically, and only a declared default may claim it. The
-      // phase-start shape decides — nothing this lane writes clears a
+      // phase-start shape decides: nothing this lane writes clears a
       // DefaultView (only ONE declared default exists per list, validated),
       // and the fresh verify below fail-closes any surprise.
       const preFlag = existing || await readViewShape(viewUrl);
@@ -323,7 +323,7 @@
         throw new Error(`did not retain declared view setting(s): ${drifted.join(', ')}`);
       }
       // Declared column widths ride SP's whole-document SetViewXml()
-      // surface — the call the modern Lists UI makes when saving a dragged
+      // surface, the call the modern Lists UI makes when saving a dragged
       // width (live capture 2026-07-24). ColumnWidth FieldRefs bind by
       // DISPLAY name; internal names are accepted and silently reset the
       // widths. A property MERGE of ListViewXml is DESTRUCTIVE (treats the
@@ -381,6 +381,6 @@
     }
   };
   // One lane per list: views live in the list schema, and concurrent schema
-  // writes to the same list race into save conflicts — different lists are
+  // writes to the same list race into save conflicts; different lists are
   // independent, so their lanes run concurrently.
   await mapLanes(SCHEMA.views, (view) => view.list, deployView, 4);

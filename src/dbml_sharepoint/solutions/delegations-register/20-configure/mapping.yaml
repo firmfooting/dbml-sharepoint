@@ -1,4 +1,4 @@
-# Delegations register — physical mapping.
+# Delegations register: physical mapping.
 prefix: "DG_"
 
 entities:
@@ -16,7 +16,7 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
-# Security: the register transcribes a formally approved instrument —
+# Security: the register transcribes a formally approved instrument, so
 # governance coordinators maintain; everyone reads (that is the point);
 # Full Control confined to the empty-by-default admin group.
 groups:
@@ -66,11 +66,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -83,7 +83,7 @@ display_names:
   mode: auto
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 column_formatting:
@@ -92,7 +92,7 @@ column_formatting:
     # names "Current" in the in-motion band explicitly, and the point of
     # that table is that colour means the same thing in twenty-nine
     # templates rather than reflecting twenty-nine judgements. `good` is
-    # the complete-and-healthy band — a delegation in force is neither
+    # the complete-and-healthy band: a delegation in force is neither
     # complete nor an achievement, it is simply the live state.
     Status: { style: severity, map: { Current: low, Superseded: muted } }
     # The register's deadline. Guarded on Superseded, the terminal status:
@@ -101,7 +101,7 @@ column_formatting:
     # finished trains people to ignore the colour.
     ReviewDate: { style: overdue-date, guard: { field: Status, not: [Superseded] } }
     # ApprovedDate is deliberately unformatted. It stamps when the
-    # delegating authority approved the instrument this row came from —
+    # delegating authority approved the instrument this row came from,
     # a historical fact with no late state.
 
 # Every lens shows the same four identifying columns before its own
@@ -113,7 +113,7 @@ field_sets:
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). These are the four rows the old "Recommended
 # views" table asked the adopter to build by hand, now with filters, sorts,
-# grouping and pixel widths. Widths are keyed on INTERNAL names — the build
+# grouping and pixel widths. Widths are keyed on INTERNAL names. The build
 # rewrites them to display titles, because ColumnWidth binds by display
 # name and an internal name silently resets.
 views:
@@ -137,7 +137,7 @@ views:
         DelegationLimit: 200
         Conditions: 220
         SourceInstrument: 220
-    # "What can this role approve?" — the ten-second check the staff guide
+    # "What can this role approve?", the ten-second check the staff guide
     # sends people to before they sign something.
     - title: "By role"
       fields: ["@identity", DelegationLimit, Conditions, SourceInstrument]
@@ -158,7 +158,7 @@ views:
     # here: a superseded row's review date is a fact about a delegation
     # that no longer exists, and leaving those in the queue asks the
     # quarterly spot-check to re-review authority nobody holds. today+90 is
-    # a ROLLING ninety days — CAML has no calendar-period predicate, and
+    # a ROLLING ninety days; CAML has no calendar-period predicate, and
     # 50-govern's cadence is quarterly, so rolling is also the honest read.
     - title: "Reviews due"
       fields: ["@identity", ReviewDate, ApprovedDate, SourceInstrument]
@@ -177,7 +177,7 @@ views:
         SourceInstrument: 220
     # The audit trail of authority over time. Notes is in this view rather
     # than the others because on a superseded row it carries the
-    # supersession trail — which is the one thing an auditor
+    # supersession trail, which is the one thing an auditor
     # reconstructing an old approval is reading this view for, and is what
     # the save rule below makes sure is there.
     - title: "History"
@@ -197,7 +197,7 @@ views:
         Notes: 200
 
 # Form layouts: a strapline header and a sectioned body. Per-field
-# description hints render on the NEW form only — the edit form suppresses
+# description hints render on the NEW form only. The edit form suppresses
 # column descriptions (platform limitation). Section field lists are
 # authored with INTERNAL names; the build rewrites them to display titles.
 #
@@ -214,7 +214,7 @@ views:
 # site-relative path is not a valid substitution.
 #
 # Deliberately NOT declared: form_visibility. Nothing on this list is
-# conditional — every column applies to every row, including a superseded
+# conditional: every column applies to every row, including a superseded
 # one, whose limit and conditions are precisely what an auditor is reading.
 # Hiding Notes until supersession was considered and rejected: it also
 # carries interpretation rulings, which belong on live rows.
@@ -224,14 +224,14 @@ form_formatting:
     body: formatting/delegation-form-body.json
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule has to share one message.
 column_validation:
   Delegation:
     columns:
       # An instrument cannot have been approved by the delegating
       # authority on a date that has not happened. A future ApprovedDate
-      # is a typed year, and it silently reorders the History view — which
+      # is a typed year, and it silently reorders the History view, which
       # sorts on this column and is the thing an auditor reconstructs an
       # old approval from.
       ApprovedDate:
@@ -247,20 +247,20 @@ list_validation:
       # 50-govern's instrument-change workflow: an authority that is
       # removed becomes Superseded "with the supersession noted". Without
       # the note, the History view shows an authority that stopped existing
-      # and nothing about what replaced it — which is the one question the
+      # and nothing about what replaced it, which is the one question the
       # view exists to answer.
       - any_of:
           - { field: Status, op: neq, value: "Superseded" }
           - { field: Notes, op: is_not_null }
-    message: "A superseded delegation needs its supersession recorded in Notes — which instrument version replaced it, and where the authority went. The History view is only an audit trail if that line is there."
+    message: "A superseded delegation needs its supersession recorded in Notes: which instrument version replaced it, and where the authority went. The History view is only an audit trail if that line is there."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # review surfaces land on whatever day the demo runs.
 #
-# Coverage: four current authorities across four areas and four roles — so
-# both grouped views have more than one group — two of them inside the
+# Coverage: four current authorities across four areas and four roles, so
+# both grouped views have more than one group, two of them inside the
 # ninety-day review window, and one superseded row carrying its
 # supersession trail.
 demo_items:

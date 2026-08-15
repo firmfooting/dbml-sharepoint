@@ -1,5 +1,5 @@
 // ============================================================================
-// Audit actions — audits/reviews, and their recommendations tracked to closure.
+// Audit actions: audits/reviews, and their recommendations tracked to closure.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -55,14 +55,14 @@ Table Recommendation {
   AgreedAction  richtext       [not null, note: 'The agreed management action, as formally responded']
   Owner         person         [not null, note: 'Who delivers the agreed action']
   DueDate       date           [not null, note: 'The committed date from the management response']
-  RevisedDue    date           [note: 'Current committed date if formally extended — see governance for who may extend']
+  RevisedDue    date           [note: 'Current committed date if formally extended (see governance for who may extend)']
   Status        rec_status     [not null, default: 'Open']
   ClosedDate    date
-  // Calculated — formula in mapping.yaml. Guarded against early closure because
+  // Calculated: formula in mapping.yaml. Guarded against early closure because
   // DATEDIF rejects negative ranges: closed on/before the committed date -> 0.
   // Committed date = RevisedDue when set, else DueDate.
   DaysLate      calculated_number [note: 'How many days past the committed date this was closed. Shows 0 when closed on time or early. Fills itself in once the closed date is entered.']
-  EvidenceUrl   hyperlink      [note: 'The closure evidence — what proves the action happened (required to close; see governance)']
+  EvidenceUrl   hyperlink      [note: 'The closure evidence, what proves the action happened (required to close; see governance)']
   Notes         richtext       [note: 'Progress updates, dated, newest first']
 
   indexes {

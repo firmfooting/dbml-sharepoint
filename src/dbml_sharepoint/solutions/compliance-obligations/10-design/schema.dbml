@@ -1,5 +1,5 @@
 // ============================================================================
-// Compliance obligations — one register: obligation, owner, status, evidence.
+// Compliance obligations. One register: obligation, owner, status, evidence.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -26,7 +26,7 @@ Table Obligation {
   Title            nvarchar          [not null, note: 'The obligation as a duty: "Report notifiable incidents to the regulator within 24 hours"']
   SourceInstrument nvarchar          [not null, note: 'Where it comes from, precisely: act + section, standard + action number, agreement + clause']
   SourceType       source_type       [not null]
-  ObligationDetail richtext          [note: 'What compliance actually requires in practice — the obligation translated into our operations']
+  ObligationDetail richtext          [note: 'What compliance actually requires in practice, the obligation translated into our operations']
   Owner            person            [not null, note: 'The person accountable for this obligation being met']
   ComplianceStatus compliance_status [not null, default: 'Not assessed']
   EvidenceUrl      hyperlink         [note: 'The primary evidence of compliance, linked from your records system']

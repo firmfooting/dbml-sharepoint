@@ -1,4 +1,4 @@
-# Asset register — physical mapping.
+# Asset register: physical mapping.
 prefix: "AS_"
 
 entities:
@@ -21,7 +21,7 @@ calculated_formulas:
   Asset:
     WarrantyMonths: '=IF(OR(ISBLANK([PurchaseDate]),ISBLANK([WarrantyExpiry])),"",DATEDIF([PurchaseDate],[WarrantyExpiry],"m"))'
 
-# Security: assets are maintained by many hands — Members and Owners hold
+# Security: assets are maintained by many hands. Members and Owners hold
 # Contribute; Full Control lives only in the empty-by-default admin group.
 groups:
   - name: "dbml List Administrators"
@@ -61,11 +61,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -108,7 +108,7 @@ column_formatting:
       guard: { field: Status, not: ["Retired", "Disposed"] }
     WarrantyMonths: { style: data-bar, max: 60, calculated: true }
 
-# The identifying spine every Asset view opens with — four of the five use
+# The identifying spine every Asset view opens with. Four of the five use
 # it, past §1.9's three-repetition threshold.
 field_sets:
   Asset:
@@ -116,7 +116,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view, keyed on
-# INTERNAL names — the build rewrites them to display titles, and
+# INTERNAL names. The build rewrites them to display titles, and
 # ColumnWidth binds by display name.
 views:
   Location:
@@ -201,9 +201,9 @@ views:
         PurchaseDate: 160
         WarrantyExpiry: 180
         WarrantyMonths: 150
-    # The history lens. Retired and disposed items stay in the register —
+    # The history lens. Retired and disposed items stay in the register;
     # deleting them is how a register loses the answer to "what happened
-    # to that laptop?" — and this is where they live so the working views
+    # to that laptop?", and this is where they live so the working views
     # do not carry them.
     - title: "Retired and disposed"
       fields: [Title, AssetTag, Category, Location, Status, PurchaseDate,
@@ -226,7 +226,7 @@ views:
 # left service is a small thing that stops the register accumulating
 # assignments to people who left years ago.
 #
-# reconcile: exact makes this file authoritative for the whole list —
+# reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy.
 form_visibility:
   Asset:
@@ -266,7 +266,7 @@ column_validation:
 # Save-time enforcement, on the LIST so it may reference more than one
 # column. WarrantyMonths is computed from both dates, so a warranty expiry
 # recorded without a purchase date produces a blank month count and an
-# item whose warranty term nobody can check — the exact question the
+# item whose warranty term nobody can check, the exact question the
 # column exists to answer.
 list_validation:
   Asset:
@@ -277,7 +277,7 @@ list_validation:
     message: "An asset with a Warranty Expiry needs a Purchase Date as well, or the warranty term cannot be calculated."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Locations are created
 # first and the assets reference them by demo key, which is also the
 # cheapest way to see that the lookup deployed correctly. Coverage: one

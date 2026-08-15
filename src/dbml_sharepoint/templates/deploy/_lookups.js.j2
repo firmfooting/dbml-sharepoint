@@ -1,8 +1,8 @@
-{# Phase body: add the deferred lookup columns — self-references and
-   members of reference cycles — now that every target list exists. #}
+{# Phase body: add the deferred lookup columns (self-references and
+   members of reference cycles) now that every target list exists. #}
   // === Phase {{ phase.number }}: deferred lookups ===
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   invalidateFieldShapes();  // probes reflect phase-start state

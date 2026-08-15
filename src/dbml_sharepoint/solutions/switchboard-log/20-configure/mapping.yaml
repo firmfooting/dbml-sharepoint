@@ -1,4 +1,4 @@
-# Switchboard log — physical mapping.
+# Switchboard log: physical mapping.
 prefix: "SB_"
 
 entities:
@@ -26,7 +26,7 @@ calculated_formulas:
   MessageLog:
     MinutesToRelay: '=IF(OR(ISBLANK([TakenAt]),ISBLANK([RelayedAt])),"",ROUND(([RelayedAt]-[TakenAt])*1440,0))'
 
-# Security — switchboard traffic is sensitive (welfare calls, police
+# Security. Switchboard traffic is sensitive (welfare calls, police
 # contact, after-hours movements): ordinary site Members have NO grant;
 # operators record and maintain; Full Control confined to the empty-by-
 # default admin group. Scope SITE membership to switchboard + supervisors.
@@ -75,11 +75,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -103,8 +103,8 @@ display_names:
 # instance of this theme's blank-means-something pattern (visitor-log's
 # SignedOutAt and vehicle-log's ReturnedAt are the others). A blank cell
 # here is not missing data: it is a code that has not been stood down.
-# Where the other two render blank in the `low` treatment — a visitor is on
-# site, a car is out, both unremarkable — this one renders `severe` with a
+# Where the other two render blank in the `low` treatment (a visitor is on
+# site, a car is out, both unremarkable), this one renders `severe` with a
 # warning icon and the word "Running", because a code with no all-clear is
 # either live or an incomplete record, and governance calls the missing
 # all-clear "the classic gap".
@@ -113,14 +113,14 @@ display_names:
 # waiting to reach an on-call manager at 2 a.m. is the definition of needs
 # attention; the role table puts Waiting on `warning`, and that is where it
 # goes. "Closed - no relay needed" takes `muted` rather than a second
-# green — it is a decision that no relay was required, not a relay.
+# green: it is a decision that no relay was required, not a relay.
 #
 # MinutesToRelay takes its bar fill from Urgency, so twenty minutes reads
 # green on a Routine message and red on an Emergency one without the
 # operator consulting the escalation table.
 #
 # Deliberately NOT formatted: CodeType (nine emergency codes with no
-# gradient between them — a colour ladder over them would invent a
+# gradient between them; a colour ladder over them would invent a
 # hierarchy your procedures do not have), and the two boolean columns,
 # which SharePoint renders as Yes/No and which no style in the library
 # covers.
@@ -163,7 +163,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Twelve across four lists. Widths are pixel
-# ColumnWidth per view, keyed on INTERNAL names — the build rewrites them
+# ColumnWidth per view, keyed on INTERNAL names. The build rewrites them
 # to display titles, and ColumnWidth binds by display name.
 views:
   CodeEvent:
@@ -200,7 +200,7 @@ views:
         InitiatedBy: 200
     # Governance asks for drill coverage per code type, and says the
     # IsDrill filter should make the coverage GAP visible in one view.
-    # A flat filtered list cannot show a gap; grouping by code type can —
+    # A flat filtered list cannot show a gap; grouping by code type can:
     # a type with no group is a type nobody has drilled.
     - title: "Drills"
       fields: ["@identity", DurationMinutes]
@@ -243,7 +243,7 @@ views:
     #
     # The published table asked for "Urgency then oldest". SharePoint sorts
     # a Choice column as text, and this enum sorts Emergency, Routine,
-    # Urgent — so neither direction gives the intended order, and there is
+    # Urgent, so neither direction gives the intended order, and there is
     # no numeric rank column to sort on. The view sorts oldest first, and
     # urgency is carried by the pill and by the row wash instead, which is
     # the honest substitution. 30-deploy/deploy.md says so.
@@ -254,7 +254,7 @@ views:
     # stay in this view's `fields`: a view formatter can only see the
     # columns its own view displays. It compares with `==` because Urgency
     # is a plain Choice column and a view formatter's [$Field] arrives
-    # clean — the `string;#` prefix belongs to column formatting over
+    # clean; the `string;#` prefix belongs to column formatting over
     # calculated columns and would be wrong here.
     - title: "Pending relay"
       default: true
@@ -276,7 +276,7 @@ views:
         RelayedTo: 200
         RelayedAt: 180
     # The published table promised an "Overnight report" filtered to the
-    # last 24 hours. CAML has no rolling-hours predicate — `today-1` is
+    # last 24 hours. CAML has no rolling-hours predicate; `today-1` is
     # midnight yesterday, so this view is the last one to two days
     # depending on when it is opened. That is right for a morning handover
     # and wrong for an exact 24-hour count; 30-deploy/deploy.md says which.
@@ -299,7 +299,7 @@ views:
         RelayedAt: 180
         MinutesToRelay: 150
     # Governance publishes a relay target per urgency band. This is where
-    # the manager finds out whether the targets are met — grouped by band,
+    # the manager finds out whether the targets are met, grouped by band,
     # rolling thirty days, with each message's own minutes and a bar. There
     # is no mean under a group: column aggregations are not a capability
     # this tool ships.
@@ -338,7 +338,7 @@ views:
         Covers: 240
         Restrictions: 280
         Active: 110
-    # A lost or retired key is unticked, never deleted — the movements
+    # A lost or retired key is unticked, never deleted; the movements
     # against it are security evidence, and the lock-change decision is
     # recorded here. This is where those keys live.
     - title: "Retired and lost keys"
@@ -392,8 +392,8 @@ views:
         Notes: 200
     # Every movement ever, grouped under its key and collapsed. This is the
     # quarterly catalogue audit's working surface: pick the key, expand it,
-    # read its whole history. A per-key FILTER is not buildable — SharePoint
-    # has no per-parent view — and grouping is the idiom that replaces it
+    # read its whole history. A per-key FILTER is not buildable (SharePoint
+    # has no per-parent view) and grouping is the idiom that replaces it
     # (§2.4), one view rather than one per key.
     - title: "By key"
       fields: ["@identity", Notes]
@@ -417,7 +417,7 @@ views:
 # Each second-pass field is off the New form, and the relay and return
 # fields also wait until the status that gives them meaning.
 #
-# reconcile: exact makes this file authoritative for each list — every
+# reconcile: exact makes this file authoritative for each list; every
 # other column's conditional formula is cleared on each deploy.
 form_visibility:
   CodeEvent:
@@ -446,7 +446,7 @@ form_visibility:
 
 # Form layouts: a strapline header and sections on all four lists. The
 # KeyMovement title line falls back to "Key movement" rather than "New key
-# movement", because Title is optional there — a movement is identified by
+# movement", because Title is optional there; a movement is identified by
 # its key and its time, so an empty Title does not mean the row is new.
 # Section field lists are authored with INTERNAL names; the build rewrites
 # them to display titles.
@@ -465,8 +465,8 @@ form_formatting:
     body: formatting/keymovement-form-body.json
 
 # Per-column save rules, each with its own message. Every one of these
-# columns is a DATETIME, and `now` renders as NOW() in a validation formula
-# — verified on a live tenant on 2026-07-29
+# columns is a DATETIME, and `now` renders as NOW() in a validation formula,
+# verified on a live tenant on 2026-07-29
 # (test/manual/datetime-sentinel-probe.js), against Microsoft's own formula
 # reference, which says Lists do not support NOW(). True of calculated
 # columns, false here.
@@ -515,8 +515,8 @@ column_validation:
 # Save-time enforcement, on the LIST so it may reference more than one
 # column.
 #
-# MessageLog is governance's data-quality rule 3 — messages record who
-# ACTUALLY received them, not who was attempted — and it is the rule the
+# MessageLog is governance's data-quality rule 3 (messages record who
+# ACTUALLY received them, not who was attempted) and it is the rule the
 # whole message book stands on. "Left voicemail" is not relayed; a message
 # marked Relayed with no name and no time is a 2 a.m. call with no trail,
 # which is the failure the register exists to prevent.
@@ -549,7 +549,7 @@ list_validation:
     message: "A key marked Returned needs the time it came back."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Keys are created before
 # the movements that reference them. Coverage: every Status and Urgency
 # member, real events and drills on both sides of the IsDrill filter, a

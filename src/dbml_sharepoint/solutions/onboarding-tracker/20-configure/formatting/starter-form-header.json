@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "The start date is the deadline every task on this hire counts back from — get it right before the tasks exist."
+          "txtContent": "The start date is the deadline every task on this hire counts back from. Get it right before the tasks exist."
         }
       ]
     }

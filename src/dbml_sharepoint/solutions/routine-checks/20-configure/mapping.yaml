@@ -1,4 +1,4 @@
-# Routine checks — physical mapping.
+# Routine checks: physical mapping.
 prefix: "RC_"
 
 entities:
@@ -22,7 +22,7 @@ watched_lists: []
 # detection depends on TODAY. The recorder judges Result against the
 # checkpoint's stated range; governance owns missed-check monitoring.
 
-# Security: checks are recorded by the people doing the rounds — Members
+# Security: checks are recorded by the people doing the rounds. Members
 # and Owners hold Contribute; Full Control confined to the empty-by-default
 # admin group.
 groups:
@@ -63,11 +63,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -91,7 +91,7 @@ display_names:
 # the reason anybody deployed this.
 #
 # "Out of range - escalated" maps to `blocked` rather than `severe`
-# because the role table puts Escalated there — the check did not merely
+# because the role table puts Escalated there: the check did not merely
 # fail, it left the hands of the person who did it, and that is a
 # different fact from a fault the checker fixed on the spot.
 #
@@ -122,7 +122,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view, keyed on
-# INTERNAL names — the build rewrites them to display titles, and
+# INTERNAL names. The build rewrites them to display titles, and
 # ColumnWidth binds by display name.
 views:
   CheckPoint:
@@ -143,7 +143,7 @@ views:
         AcceptableRange: 220
         Owner: 160
         Active: 110
-    # Retiring a checkpoint means unticking Active, not deleting the row —
+    # Retiring a checkpoint means unticking Active, not deleting the row;
     # its history is compliance evidence. This is where the retired ones
     # live, so the catalogue does not carry them.
     - title: "Retired checkpoints"
@@ -165,7 +165,7 @@ views:
     # grouped by checkpoint.
     #
     # The published table specified `CheckedAt = today`. That filter
-    # returns nothing on a datetime column — CAML's <Today/> is midnight,
+    # returns nothing on a datetime column; CAML's <Today/> is midnight,
     # so an equality test matches only a check stamped at exactly 00:00.
     # `geq today` is today's checks, and is what ships.
     - title: "Today"
@@ -217,12 +217,12 @@ views:
         Result: 220
         ActionTaken: 200
         CheckedBy: 160
-    # The published table promised "Per checkpoint" — one view filtered to
+    # The published table promised "Per checkpoint", one view filtered to
     # one checkpoint, described as the history an auditor reads. A static
     # view cannot filter to one parent: building it meant hard-coding a
     # checkpoint into a filter that rots the moment the catalogue changes,
     # or one view per fridge. Per §2.4 of the family standard this ships as
-    # ONE view grouped on the CheckPoint lookup, collapsed — the real
+    # ONE view grouped on the CheckPoint lookup, collapsed, the real
     # SharePoint idiom, which gives an auditor the same per-checkpoint
     # history and absorbs a new checkpoint with no work.
     - title: "By checkpoint"
@@ -243,7 +243,7 @@ views:
 # under every in-range fridge reading is a box people learn to skip, and a
 # box people learn to skip is empty on the day it matters.
 #
-# reconcile: exact makes this file authoritative for the whole list —
+# reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy.
 form_visibility:
   CheckEntry:
@@ -257,7 +257,7 @@ form_visibility:
 
 # Form layouts: a strapline header and sections on both lists. The
 # CheckEntry title line falls back to "Check" rather than "New check",
-# because Title is optional there — an entry is identified by its
+# because Title is optional there; an entry is identified by its
 # checkpoint and its time, so an empty Title does not mean the row is new.
 # Section field lists are authored with INTERNAL names; the build rewrites
 # them to display titles.
@@ -270,7 +270,7 @@ form_formatting:
     body: formatting/checkentry-form-body.json
 
 # Per-column save rules, each with its own message. Every column here is a
-# DATETIME, and `now` renders as NOW() in a validation formula — verified
+# DATETIME, and `now` renders as NOW() in a validation formula, verified
 # against a live tenant on 2026-07-29
 # (test/manual/datetime-sentinel-probe.js), against Microsoft's own formula
 # reference, which says Lists do not support NOW(). That is true of
@@ -302,7 +302,7 @@ column_validation:
 # formula can reach. Frequency and Owner are already required by the
 # schema; Instructions is rich text, which SharePoint validation formulas
 # cannot reference at all. AcceptableRange is the one that was optional and
-# load-bearing — every entry's Result is a judgement against those words,
+# decisive: every entry's Result is a judgement against those words,
 # so a checkpoint without them cannot be checked, only guessed at.
 list_validation:
   CheckEntry:
@@ -320,7 +320,7 @@ list_validation:
     message: "An active checkpoint needs its acceptable range written out - every entry is judged against those words."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Checkpoints are created
 # first and the entries reference them by demo key. Coverage: one entry per
 # Result, including the escalated cold-chain breach that is the reason this

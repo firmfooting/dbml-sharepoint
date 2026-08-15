@@ -3,14 +3,14 @@
  * its own list).
  *
  * Answers one question the documentation does not: does a SharePoint list
- * validation formula honour a HYPERLINK (URL) column operand — and if it
+ * validation formula honour a HYPERLINK (URL) column operand, and if it
  * does, which half of the column does it compare?
  *
  * WHY THIS EXISTS. `templates/audit-actions` shipped a rule requiring an
  * EvidenceUrl before a recommendation could be closed. Nobody had ever
  * read one back from a live tenant. A URL column is not a scalar: it
  * stores a Url AND a Description, and no first-party source says which a
- * formula sees, or whether ISBLANK on one means anything at all — so the
+ * formula sees, or whether ISBLANK on one means anything at all, so the
  * fear was that the rule stored, read back byte-identical, passed every
  * deploy check and enforced nothing.
  *
@@ -18,7 +18,7 @@
  * `_FORBIDDEN_OPERAND_TYPES`). This probe is what put it there, and is how
  * it would be lifted. Microsoft's published unsupported-type list for
  * CONDITIONAL SHOW/HIDE does not name Hyperlink, but that governs a
- * different surface and is not evidence about this one — which is the
+ * different surface and is not evidence about this one, which is the
  * whole reason a probe was needed rather than a search.
  *
  * WHAT IT WRITES: one list, named by PROBE_LIST below, created at start
@@ -28,7 +28,7 @@
  *
  * HOW TO RUN
  *   1. Paste it once: it prints the web and stops. Set CONFIRMED = true.
- *   2. Open that site's classic settings page — /_layouts/15/settings.aspx —
+ *   2. Open that site's classic settings page (/_layouts/15/settings.aspx),
  *      signed in as a Site Owner. The site guard needs _spPageContextInfo.
  *   3. F12 -> Console -> type `allow pasting` if the browser objects ->
  *      paste this whole file -> Enter.
@@ -39,7 +39,7 @@
  *
  * NOTHING HERE IS MANUAL. Unlike the aggregations probe, every question is
  * answered by whether SharePoint accepts or refuses a write, so the script
- * settles it end to end — there is nothing to go and look at.
+ * settles it end to end. There is nothing to go and look at.
  *
  * READ Q2 FIRST. It is the whole question. Q1 only asks whether SharePoint
  * stores the formula, and a stored formula that never fires is precisely
@@ -56,7 +56,7 @@
  *     "One or more column references are not allowed, because the columns
  *      are defined as a data type that is not supported in formulas."
  *
- *   So Q2 through Q5 have no subject — a formula that never stores cannot
+ *   So Q2 through Q5 have no subject: a formula that never stores cannot
  *   fire, and the question of which half of a URL column it would compare
  *   does not arise. `hyperlink` sits in _FORBIDDEN_OPERAND_TYPES in
  *   analysis/conditions.py on the strength of this run.
@@ -72,8 +72,8 @@
  *
  * ONE OPERATIONAL NOTE from that run: cleanup failed with "List cannot be
  * deleted while on hold or retention policy." A site under a retention
- * policy will not let this probe remove its own list, so delete it by hand
- * — the probe prints the URL.
+ * policy will not let this probe remove its own list, so delete it by hand.
+ * The probe prints the URL.
  */
 (async () => {
   // ---- Operator settings -------------------------------------------------
@@ -97,7 +97,7 @@
     } else {
       results.push({ id, question, observed, detail: detail || '' });
     }
-    log('INFO', `${id}: ${observed}${detail ? ` — ${detail}` : ''}`);
+    log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
   expect('Q0', 'the probe list, its URL column and a control row are set up');
   expect('Q1', 'SharePoint ACCEPTS a ValidationFormula referencing a URL column');
@@ -108,7 +108,7 @@
 
   // === Preflight: confirm the site ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
-  // '/_api/web/...' targets the tenant root web — NOT the sub-site you are
+  // '/_api/web/...' targets the tenant root web, NOT the sub-site you are
   // viewing. Prefix every call with the current web's server-relative URL.
   if (typeof _spPageContextInfo === 'undefined') {
     log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the web context. Open /_layouts/15/settings.aspx and retry.');
@@ -182,7 +182,7 @@
   }
   const merge = (suffix, body) => post(suffix, body, { 'X-HTTP-Method': 'MERGE', 'IF-MATCH': '*' });
   // An item POST's __metadata.type must be the LIST'S OWN entity type,
-  // never the generic SP.Data.ListItem — that mistake cost the aggregations
+  // never the generic SP.Data.ListItem. That mistake cost the aggregations
   // probe two silent HTTP 400s.
   async function entityTypeFor(listTitle) {
     const r = await get(
@@ -273,13 +273,13 @@
       set1.ok ? 'ACCEPTED' : 'REFUSED',
       set1.ok
         ? `HTTP ${set1.status}; stored as ${JSON.stringify(set1.stored)}`
-        : `HTTP ${set1.status} — ${set1.error}`,
+        : `HTTP ${set1.status}: ${set1.error}`,
     );
 
     if (set1.ok) {
       // === Q2: does it FIRE? ============================================
       // THE question. An ACCEPTED row here means the rule is stored,
-      // reads back byte-identical, and does nothing — the silent failure
+      // reads back byte-identical, and does nothing, the silent failure
       // that made audit-actions' evidence requirement untrustworthy.
       const violating = await tryCreate('Doc empty, rule requires it', { Title: 'violating' });
       record(
@@ -287,12 +287,12 @@
         'the rule FIRES: a violating row is refused',
         violating.ok ? 'DID NOT FIRE' : 'FIRED',
         violating.ok
-          ? 'the row was ACCEPTED with Doc blank — the rule is stored and inert, which is exactly the failure the build refuses the operand to avoid'
+          ? 'the row was ACCEPTED with Doc blank, so the rule is stored and inert, which is exactly the failure the build refuses the operand to avoid'
           : `refused with HTTP ${violating.status}: ${violating.error}`,
       );
 
       // === Q3: does it pass a compliant row? ============================
-      // Guards against the opposite error — a rule that refuses everything
+      // Guards against the opposite error, a rule that refuses everything
       // would also "fire" on Q2 while being equally useless.
       const compliant = await tryCreate('Doc filled', {
         Title: 'compliant', Doc: urlValue(EVIDENCE),
@@ -303,7 +303,7 @@
         compliant.ok ? 'PASSED' : 'REFUSED EVERYTHING',
         compliant.ok
           ? 'a filled Doc saves, so the rule discriminates'
-          : `a filled Doc was ALSO refused (HTTP ${compliant.status}: ${compliant.error}) — the formula rejects every row regardless, which is not enforcement`,
+          : `a filled Doc was ALSO refused (HTTP ${compliant.status}: ${compliant.error}), so the formula rejects every row regardless, which is not enforcement`,
       );
 
       // === Q4: Url present, Description empty ===========================
@@ -319,7 +319,7 @@
         noDescription.ok ? 'SEES THE URL' : 'SEES THE DESCRIPTION',
         noDescription.ok
           ? 'a Url with no Description satisfies NOT(ISBLANK(...)), so the formula reads the Url'
-          : `refused (HTTP ${noDescription.status}) — the formula is reading the DESCRIPTION, so a pasted link with no label would be rejected as missing`,
+          : `refused (HTTP ${noDescription.status}), so the formula is reading the DESCRIPTION, and a pasted link with no label would be rejected as missing`,
       );
 
       // === Q5: which half does an equality comparison see? ==============

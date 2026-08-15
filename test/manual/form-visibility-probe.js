@@ -13,7 +13,7 @@
  *
  * HOW TO RUN
  *   1. Paste it once: it prints the web and stops. Set CONFIRMED = true.
- *   2. Open that site's classic settings page — /_layouts/15/settings.aspx —
+ *   2. Open that site's classic settings page (/_layouts/15/settings.aspx),
  *      signed in as a Site Owner. The site guard needs _spPageContextInfo.
  *   3. F12 -> Console -> type `allow pasting` if the browser objects ->
  *      paste this whole file -> Enter.
@@ -59,7 +59,7 @@
     } else {
       results.push({ id, question, observed, detail: detail || '' });
     }
-    log('INFO', `${id}: ${observed}${detail ? ` — ${detail}` : ''}`);
+    log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
   expect('Q1', 'setshowinnewform(false) persists with no Update()');
   expect('Q2', 'new=false + edit=true can coexist');
@@ -71,7 +71,7 @@
 
   // === Preflight: confirm the site ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
-  // '/_api/web/...' targets the tenant root web — NOT the sub-site you are
+  // '/_api/web/...' targets the tenant root web, NOT the sub-site you are
   // viewing. Prefix every call with the current web's server-relative URL.
   if (typeof _spPageContextInfo === 'undefined') {
     log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the web context. Open /_layouts/15/settings.aspx and retry.');
@@ -150,7 +150,7 @@
   const listUrl = `${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`;
 
   // ShowInNewForm/ShowInEditForm/ShowInDisplayForm are NOT properties on
-  // SP.Field — the CSOM type exposes only the three Set* methods, so no
+  // SP.Field. The CSOM type exposes only the three Set* methods, so no
   // $select can return them. SchemaXml is the only readable source of
   // truth, and an absent attribute means "shown".
   async function visibility(name) {
@@ -202,7 +202,7 @@
 
   // === RECHECK_ONLY: report current state, change nothing ===
   if (RECHECK_ONLY) {
-    log('INFO', 'RECHECK_ONLY — reading current visibility, making no changes.');
+    log('INFO', 'RECHECK_ONLY: reading current visibility, making no changes.');
     const exists = await get(`${listPath}?$select=Title`);
     if (!exists.ok) {
       log('ERROR', `Probe list '${PROBE_LIST}' not found. Run once with CLEANUP_AT_END = false first.`);
@@ -219,7 +219,7 @@
         ? `Probe list '${PROBE_LIST}' deleted.`
         : `CLEANUP_AT_END FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
     } else {
-      log('WARN', `CLEANUP_AT_END is false — '${PROBE_LIST}' is still on the site: ${listUrl}`);
+      log('WARN', `CLEANUP_AT_END is false, so '${PROBE_LIST}' is still on the site: ${listUrl}`);
     }
     log('DONE', 'Recheck complete. Compare against the values from the probe run.');
     return { results };
@@ -263,14 +263,14 @@
   try {
     // --- Q1: does a setter persist with no following Update()? ------------
     // Undocumented by Microsoft. Over REST each call is its own request, so
-    // there is no way to batch an Update() with it — if this reads back
+    // there is no way to batch an Update() with it. If this reads back
     // FALSE, the single POST is self-sufficient.
     const before1 = await visibility(FIELDS.persist);
     const set1 = await setVis(FIELDS.persist, 'setshowinnewform', false);
     const after1 = await visibility(FIELDS.persist);
     record('Q1', 'setshowinnewform(false) persists with no Update()',
       !set1.ok ? `CALL FAILED (HTTP ${set1.status})`
-        : after1.ok && !after1.newForm ? 'YES — read back as hidden' : 'NO — read back still shown',
+        : after1.ok && !after1.newForm ? 'YES: read back as hidden' : 'NO: read back still shown',
       `${set1.ok ? 'POST ok' : set1.error}; before ${before1.ok ? shape(before1) : '?'}; after ${after1.ok ? shape(after1) : '?'}`);
 
     // --- Q2: are new and edit independent? --------------------------------
@@ -281,7 +281,7 @@
     const after2 = await visibility(FIELDS.split);
     record('Q2', 'new=false + edit=true can coexist',
       !(setN.ok && setE.ok) ? `CALL FAILED (new ${setN.status}, edit ${setE.status})`
-        : after2.ok && !after2.newForm && after2.editForm ? 'YES — independent' : 'NO — coupled or overwritten',
+        : after2.ok && !after2.newForm && after2.editForm ? 'YES: independent' : 'NO: coupled or overwritten',
       after2.ok ? shape(after2) : after2.error);
 
     // --- Q3: does setter(true) undo a hide? -------------------------------
@@ -294,7 +294,7 @@
     const after3 = await visibility(FIELDS.reshow);
     record('Q3', 'setshowinnewform(true) re-shows a hidden field',
       !set3.ok ? `CALL FAILED (HTTP ${set3.status})`
-        : after3.ok && after3.newForm ? 'YES — shown again' : 'NO — still hidden',
+        : after3.ok && after3.newForm ? 'YES: shown again' : 'NO: still hidden',
       `hidden first: ${hidden3.ok ? shape(hidden3) : '?'}; after re-show: ${after3.ok ? shape(after3) : '?'} ${set3.ok ? '' : set3.error}`);
 
     // --- Q4: does Sealed block the setters? -------------------------------
@@ -306,10 +306,10 @@
     const set4 = await setVis(FIELDS.sealed, 'setshowinnewform', false);
     const after4 = await visibility(FIELDS.sealed);
     record('Q4', 'setters work on a Sealed field',
-      !seal.ok ? `INCONCLUSIVE — could not seal (HTTP ${seal.status})`
-        : !sealedState.sealed ? 'INCONCLUSIVE — Sealed did not stick'
-          : set4.ok && after4.ok && !after4.newForm ? 'YES — sealing does not block them'
-            : 'NO — blocked while sealed',
+      !seal.ok ? `INCONCLUSIVE: could not seal (HTTP ${seal.status})`
+        : !sealedState.sealed ? 'INCONCLUSIVE: Sealed did not stick'
+          : set4.ok && after4.ok && !after4.newForm ? 'YES: sealing does not block them'
+            : 'NO: blocked while sealed',
       `sealed=${sealedState.sealed}; POST ${set4.ok ? 'ok' : `HTTP ${set4.status} ${set4.error}`}; after ${after4.ok ? shape(after4) : '?'}`);
 
     // --- Q5: what happens on a calculated column? -------------------------
@@ -319,21 +319,21 @@
     const set5 = await setVis(FIELDS.calc, 'setshowinnewform', false);
     const after5 = await visibility(FIELDS.calc);
     record('Q5', 'setshowinnewform(false) on a calculated column',
-      !calcAdded.ok ? 'INCONCLUSIVE — calculated field was not created'
+      !calcAdded.ok ? 'INCONCLUSIVE: calculated field was not created'
         : !set5.ok ? `REJECTED (HTTP ${set5.status})`
           : after5.ok && !after5.newForm ? 'ACCEPTED and stuck' : 'ACCEPTED but no effect',
       set5.ok ? (after5.ok ? shape(after5) : '?') : set5.error);
 
     // --- Q6: manual UI step ----------------------------------------------
     record('Q6', 'the modern "Edit form columns" panel writes these attributes',
-      'MANUAL — see instructions below', 'cannot be exercised from script');
+      'MANUAL: see instructions below', 'cannot be exercised from script');
 
     // --- Q7: creation-time SchemaXml ---------------------------------------
     // The only form Microsoft actually shows a sample for.
     const after7 = await visibility(FIELDS.declared);
     record('Q7', "AddFieldAsXml with ShowInNewForm='FALSE' at creation",
       !declaredAdded.ok ? `FIELD CREATE FAILED (HTTP ${declaredAdded.status})`
-        : after7.ok && !after7.newForm ? 'YES — honoured at creation' : 'NO — attribute not retained',
+        : after7.ok && !after7.newForm ? 'YES: honoured at creation' : 'NO: attribute not retained',
       after7.ok ? shape(after7) : after7.error);
 
     console.table(results.map(({ id, question, observed, detail }) => ({ id, question, observed, detail })));
@@ -346,9 +346,9 @@
         log('ERROR', `CLEANUP_AT_END FAILED (HTTP ${del.status} ${del.error}). Delete it by hand: ${listUrl}`);
       }
     } else {
-      log('WARN', `CLEANUP_AT_END is false — '${PROBE_LIST}' is still on the site: ${listUrl}`);
+      log('WARN', `CLEANUP_AT_END is false, so '${PROBE_LIST}' is still on the site: ${listUrl}`);
       log('INFO', 'Manual step for Q6: open the list -> Edit form -> Edit columns, toggle a Probe* column off, then re-run this script with RECHECK_ONLY = true.');
-      log('INFO', `Also check whether ${FIELDS.sealed} (Sealed) can be toggled in that panel at all — that answers whether sealing protects form visibility from UI drift.`);
+      log('INFO', `Also check whether ${FIELDS.sealed} (Sealed) can be toggled in that panel at all, which answers whether sealing protects form visibility from UI drift.`);
     }
   }
 

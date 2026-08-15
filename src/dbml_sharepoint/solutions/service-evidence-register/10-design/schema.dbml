@@ -1,5 +1,5 @@
 // ============================================================================
-// Service evidence register — a contemporaneous record of what an external
+// Service evidence register: a contemporaneous record of what an external
 // service provider is actually delivering, the chases it took to get an
 // answer, and the themes worth raising formally.
 //
@@ -17,7 +17,7 @@
 Project service_evidence_register { database_type: 'SharePoint Online Lists' }
 
 // Generic enough to describe any outsourced arrangement. Replace these
-// members with your own service breakdown before first deploy — renaming a
+// members with your own service breakdown before first deploy; renaming a
 // choice afterwards strands the rows already on the old value.
 Enum service_domain {
   "Requests or help desk"
@@ -185,7 +185,7 @@ Enum event_outcome {
 }
 
 // Where the row sits in OUR evidence process - not where the provider's
-// ticket sits. "Not substantiated" is load-bearing: a register that can
+// ticket sits. "Not substantiated" does real work: a register that can
 // never say a row does not hold up is not a credible register, and it is the
 // first thing a competent provider will test.
 Enum event_status {

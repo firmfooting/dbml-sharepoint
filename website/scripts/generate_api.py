@@ -48,7 +48,7 @@ MODULES: list[tuple[str, str]] = [
     ("model.release", "load release.yaml provenance"),
     ("model.env_file", "parse dbml-sharepoint.env build defaults"),
     ("model.conditions", "the shared condition grammar's types and parser"),
-    ("analysis.findings", "what a finding is — code, severity, section, location"),
+    ("analysis.findings", "what a finding is: code, severity, section, location"),
     ("analysis.validator", "fail-closed build-time rules"),
     ("analysis.limits", "the SharePoint ceilings, each named once"),
     ("analysis.ordering", "dependency ordering and site filtering"),
@@ -64,19 +64,19 @@ MODULES: list[tuple[str, str]] = [
     ("generators.demogen", "demo-data.js"),
     ("generators.manifestgen", "deploy-manifest.md"),
     ("generators.reportgen", "Power Query / SQL reporting pack"),
-    ("bundle", "Packaging — the one emission sequence"),
-    ("templating", "Packaging — the shared Jinja environment"),
-    ("extension", "Packaging — the extension protocol"),
-    ("cli", "Packaging — the command-line interface"),
-    ("catalogue", "Packaging — the shipped solution templates, as data"),
-    ("wizard", "Packaging — the interactive template wizard"),
+    ("bundle", "Packaging: the one emission sequence"),
+    ("templating", "Packaging: the shared Jinja environment"),
+    ("extension", "Packaging: the extension protocol"),
+    ("cli", "Packaging: the command-line interface"),
+    ("catalogue", "Packaging: the shipped solution templates, as data"),
+    ("wizard", "Packaging: the interactive template wizard"),
 ]
 
 # Sub-package sidebar categories, in layout order.
 LAYERS: dict[str, str] = {
-    "model": "model — inputs to typed objects",
-    "analysis": "analysis — rules and projections",
-    "generators": "generators — one artifact family each",
+    "model": "model: inputs to typed objects",
+    "analysis": "analysis: rules and projections",
+    "generators": "generators: one artifact family each",
 }
 
 _CODE_SPAN = re.compile(r"(`[^`]*`)")
@@ -398,7 +398,7 @@ def generate_templates_page() -> None:
     for group in phases_context():
         for step in group["steps"]:
             phase_by_template[step["template"]] = (
-                f"Phase {step['number']} ({group['name']}) — {step['name']}"
+                f"Phase {step['number']} ({group['name']}): {step['name']}"
             )
 
     page = (
@@ -406,7 +406,7 @@ def generate_templates_page() -> None:
         "# Template reference\n\n"
         "Every generated script is rendered from these Jinja2 templates. "
         "Each template opens with a contract comment stating what it does "
-        "and what it expects — reproduced here verbatim (extracted, not "
+        "and what it expects, reproduced here verbatim (extracted, not "
         "transcribed). Underscore-prefixed templates are shared partials "
         "or phase bodies included by the entry-point scripts.\n\n"
     )
@@ -483,7 +483,7 @@ def generate_conditions_page() -> None:
         "# Condition grammar", "",
         ":::note Generated",
         "Every rendering below is produced by running the renderer, not written",
-        "by hand — see `website/scripts/generate_api.py`.",
+        "by hand; see `website/scripts/generate_api.py`.",
         ":::", "",
         docstring_block(model), "",
         "## Operators", "",
@@ -501,7 +501,7 @@ def generate_conditions_page() -> None:
                 cells.append("`" + render(condition, types) + "`")
             except ValueError as exc:
                 reason = str(exc).split(": ", 1)[-1].split(" (target")[0]
-                cells.append("_not supported — " + md_escape(reason) + "_")
+                cells.append("_not supported: " + md_escape(reason) + "_")
         lines.append("| `" + label + "` | " + " | ".join(cells) + " |")
 
     # The heading is unconditional; the SENTENCE under it is not. An empty
@@ -521,7 +521,7 @@ def generate_conditions_page() -> None:
     else:
         lines += [
             "Nothing is waiting on a probe that has been written and not run. That",
-            "is what this section reports, and an empty one is the good state — so",
+            "is what this section reports, and an empty one is the good state, so",
             "it says so rather than leaving a blank.", "",
             "It is not a claim that every operator was watched in a form. The four",
             "text operators were; the comparison and null tests rest on formulas",
@@ -537,7 +537,7 @@ def generate_conditions_page() -> None:
     lines += [
         "", "## Bounds", "",
         "At most **" + str(conditions.MAX_DEPTH) + "** nested groups and **"
-        + str(conditions.MAX_LEAVES) + "** conditions, counted after normalisation —",
+        + str(conditions.MAX_LEAVES) + "** conditions, counted after normalisation;",
         "negation expands each leaf and `in` expands to one condition per value.", "",
         "## Normalisation", "",
         docstring_block(conditions), "",
@@ -554,7 +554,7 @@ def generate_index() -> None:
     page = (
         "---\ntitle: Overview\nsidebar_position: 1\n---\n\n"
         "# API reference\n\n"
-        "Generated by `website/scripts/generate_api.py` — do not edit these "
+        "Generated by `website/scripts/generate_api.py`; do not edit these "
         "pages by hand; rerun the script after changing the source. "
         "Signatures and docstrings come from the modules themselves; the "
         "template contracts come from each template's leading comment.\n\n"

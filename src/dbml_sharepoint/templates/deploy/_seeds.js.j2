@@ -3,7 +3,7 @@
    (exactSeedValueEqual), missing rows created, drift reported. #}
   // === Phase {{ phase.number }}: seed singleton list items (extension-provided) ===
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
 
@@ -94,7 +94,7 @@
         }
       }
       // Fetch the list's ListItemEntityTypeFullName so __metadata.type is
-      // correct for ANY list title — SharePoint encodes non-alphanumeric
+      // correct for ANY list title: SharePoint encodes non-alphanumeric
       // characters (e.g. '_') in the entity type name, so a hardcoded
       // 'SP.Data.<Title>ListItem' literal is wrong for underscore-containing
       // titles.
@@ -139,7 +139,7 @@
 
   // Operator-perspective diagnostic (after enrolment cleanup, so the
   // run-scoped admin membership does not inflate the numbers): list ACLs
-  // can LOOK correct while the signed-in account still deletes happily —
+  // can LOOK correct while the signed-in account still deletes happily:
   // site collection administrators and Full Control holders bypass list
   // ACLs entirely. Member-level behaviour must be verified with an
   // ordinary member account.
@@ -157,7 +157,7 @@
       const canDelete = (low & 8) === 8;          // DeleteListItems
       const canManage = (low & 2048) === 2048;    // ManageLists
       const isSiteAdmin = typeof _spPageContextInfo !== 'undefined' && _spPageContextInfo.isSiteAdmin === true;
-      log('INFO', `Operator effective rights on '${listTitle}': delete items = ${canDelete}, manage list = ${canManage}, site collection admin = ${isSiteAdmin}. Site collection admins and Full Control holders bypass list ACLs (owners of a group-connected site are site collection admins, invisible in Check Permissions) — verify member behaviour with an ordinary member account.`);
+      log('INFO', `Operator effective rights on '${listTitle}': delete items = ${canDelete}, manage list = ${canManage}, site collection admin = ${isSiteAdmin}. Site collection admins and Full Control holders bypass list ACLs (owners of a group-connected site are site collection admins, invisible in Check Permissions). Verify member behaviour with an ordinary member account.`);
     } catch (err) {
       log('INFO', `Operator effective rights on '${listTitle}': probe failed (${err.message}).`);
     }

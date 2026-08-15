@@ -1,13 +1,13 @@
 # The PR title becomes the commit subject on `main`, because this repository
 # squash-merges and `squash_merge_commit_title` is set to PR_TITLE. release-please
 # builds the changelog by parsing those subjects, so a non-conventional title is
-# silently dropped from the release notes — the release still happens and only the
+# silently dropped from the release notes. The release still happens and only the
 # notes are wrong. That failure cost four PRs in 0.4.0 (#41, #42, #45, #51) and had
 # to be back-filled by hand in #57.
 #
 # Enforcing the title is sufficient *only* under squash merging. If merge commits
 # are ever re-enabled, the branch commits reach `main` instead and this check stops
-# covering anything — enforce per-commit then (`cz check --rev-range`).
+# covering anything, so enforce per-commit then (`cz check --rev-range`).
 name: PR title
 
 on:

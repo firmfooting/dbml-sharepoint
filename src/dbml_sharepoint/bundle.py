@@ -118,7 +118,7 @@ _LEGACY_ARTIFACTS: tuple[str, ...] = (
 # duplication, so the run sequence cannot drift between the two.
 _INDEX_ROWS: tuple[tuple[str, str], ...] = (
     ("deploy-manifest.md",
-     "Build report and the numbered run sequence — read first."),
+     "Build report and the numbered run sequence. Read first."),
     (ASSESS_SCRIPT,
      ("Read-only site capability probe; paste in the target site's console "
       "before deploying.")),

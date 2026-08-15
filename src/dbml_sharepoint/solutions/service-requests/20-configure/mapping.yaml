@@ -1,4 +1,4 @@
-# Service requests — physical mapping.
+# Service requests: physical mapping.
 prefix: "SR_"
 
 entities:
@@ -81,11 +81,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -147,12 +147,12 @@ field_sets:
 # Declared views. SIX rather than the usual five, because §2.5 of the
 # family standard resolves this template's literal `*(one per category)*`
 # table row into a grouped queue view PLUS the two per-team queues the
-# template actually names — three queue lenses where other lists have one.
+# template actually names: three queue lenses where other lists have one.
 #
 # Sorting by Priority descending puts Urgent above Normal above Low, and
 # it does so by luck: SharePoint sorts a Choice column as text, and
 # "Urgent" > "Normal" > "Low" alphabetically. RENAMING A PRIORITY MEMBER
-# CAN THEREFORE REORDER EVERY QUEUE — see the checklist in
+# CAN THEREFORE REORDER EVERY QUEUE. See the checklist in
 # 30-deploy/deploy.md before editing that enum.
 views:
   Request:
@@ -252,7 +252,7 @@ views:
     # remains, stated in 30-deploy/deploy.md: CAML has no calendar-month
     # predicate, so this is a rolling ninety days.
     #
-    # The per-category figure IS here, as a mean rather than a sum — adding
+    # The per-category figure IS here, as a mean rather than a sum; adding
     # up day-counts answers nothing, and "how long does this team take" is
     # the question the report exists for. Grouped and collapsed, SharePoint
     # renders it per category as well as overall.
@@ -283,7 +283,7 @@ views:
 # that asks a requester who will fix their screen and when it was
 # completed teaches them the form is not for them.
 #
-# reconcile: exact makes this file authoritative for the whole list —
+# reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy.
 form_visibility:
   Request:
@@ -303,7 +303,7 @@ form_visibility:
               value: ["Waiting - parts or approval", "Completed", "Declined"] }
 
 # Form layout: a strapline header and five sections following the standard
-# arc. Per-field description hints render on the NEW form only —
+# arc. Per-field description hints render on the NEW form only.
 # SharePoint suppresses column descriptions on the Edit form. Section field
 # lists are authored with INTERNAL names; the build rewrites them.
 form_formatting:
@@ -311,7 +311,7 @@ form_formatting:
     header: formatting/request-form-header.json
     body: formatting/request-form-body.json
 
-# Per-column save rules. Each carries its own message, and they all run —
+# Per-column save rules. Each carries its own message, and they all run,
 # unlike list_validation, where one formula and one message serve the whole
 # list.
 column_validation:
@@ -333,7 +333,7 @@ column_validation:
 # dressed as an answer.
 #
 # NOTE: `Detail` is rich text, which SharePoint validation formulas cannot
-# reference at all — the "photos and detail help" ask stays a habit.
+# reference at all, so the "photos and detail help" ask stays a habit.
 list_validation:
   Request:
     when:
@@ -345,7 +345,7 @@ list_validation:
     message: "Completing or declining a request needs a Completed Date and one line in Resolution saying what was done, or why it was declined and where to go instead."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. "@me" is the pasting
 # operator, which is also what makes "My requests" show content on a
 # seeded site. Coverage: one row per Status and one per Priority, a

@@ -3,7 +3,7 @@
    the flag is the deployer's contract. #}
   // === Phase {{ phase.number }}: indexed columns ===
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   digest = await getDigest();

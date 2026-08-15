@@ -1,5 +1,5 @@
 // ============================================================================
-// Incident management — the incident, and the fixes linked to it.
+// Incident management: the incident, and the fixes linked to it.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -42,7 +42,7 @@ Table Incident {
   Category      incident_category  [not null]
   Severity      incident_severity  [not null, default: 'Minor']
   Status        incident_status    [not null, default: 'Reported']
-  ReportedBy    person             [note: 'Who reported it (defaults to you — leave it)']
+  ReportedBy    person             [note: 'Who reported it (defaults to you, leave it)']
   ReportedDate  date               [not null, note: 'When it was reported']
   OccurredDate  date               [note: 'When it actually happened, if different']
   Detail        richtext           [note: 'What happened, where, who was involved, immediate action taken']

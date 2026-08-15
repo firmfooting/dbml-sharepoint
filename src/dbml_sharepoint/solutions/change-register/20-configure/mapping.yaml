@@ -1,4 +1,4 @@
-# Change register — physical mapping.
+# Change register: physical mapping.
 prefix: "CH_"
 
 entities:
@@ -21,7 +21,7 @@ calculated_formulas:
     DaysToDecision: '=IF(OR(ISBLANK([RequestedDate]),ISBLANK([DecisionDate])),"",DATEDIF([RequestedDate],[DecisionDate],"d"))'
 
 # Security: everyone may SUBMIT (custom submit-only level: add + read, no
-# editing — the request as submitted is the evidential baseline); change
+# editing; the request as submitted is the evidential baseline); change
 # managers triage and maintain; Full Control confined to the empty-by-
 # default admin group.
 groups:
@@ -82,11 +82,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -104,7 +104,7 @@ display_names:
 
 # Column formatting: the fleet style standard (dbml-sharepoint
 # website/docs/reference/style-guide.md). Tokens map by the ROLE a member
-# plays in its lifecycle, never by its wording — which is why Rejected is
+# plays in its lifecycle, never by its wording, which is why Rejected is
 # `muted` here rather than the `blocked` it shipped with. A rejected change
 # is a decision that was taken, not a change that failed; `blocked` is for
 # Failed, Withdrawn and Escalated, and spending the alarm colour on an
@@ -114,7 +114,7 @@ display_names:
 # these five templates is a data-bar with an explicit `max`, taking its
 # fill from the band column beside it so the bar and that column can never
 # disagree. Here the band is Urgency, because Urgency is what decides
-# whether a given number of days was acceptable — the same 12 days is fine
+# whether a given number of days was acceptable. The same 12 days is fine
 # for a Routine change and a governance failure for an Emergency one. The
 # max is 21 calendar days: the slowest SLA in 50-govern/governance.md is
 # 15 business days, so a full bar is a change that took longer than the
@@ -140,7 +140,7 @@ column_formatting:
         field: Urgency
         map: { Routine: neutral, Priority: warning, Emergency: severe }
 
-# The intake spine every lens repeats — who asked, for what, when. Five
+# The intake spine every lens repeats: who asked, for what, when. Five
 # views share it, above §1.9's three-repetition threshold.
 field_sets:
   ChangeRequest:
@@ -149,12 +149,12 @@ field_sets:
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). "In flight" is the default: everything still
 # moving, oldest first, which is the list a change manager works from.
-# The four lenses are the register's own workflow — the triage queue, the
+# The four lenses are the register's own workflow: the triage queue, the
 # decision queue grouped by who holds the authority, the approved-but-not-
 # yet-done backlog, and the decision log that is the audit evidence.
 #
 # Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
-# rewrites them to display titles — ColumnWidth binds by display name, and
+# rewrites them to display titles; ColumnWidth binds by display name, and
 # internal names silently reset).
 #
 # Every view showing DaysToDecision also shows Urgency: the bar's fill is
@@ -232,7 +232,7 @@ views:
         DecisionDate: 160
         DaysToDecision: 150
     # The audit answer: who approved this change, when, and how long it
-    # took. DaysToDecision is here for the monthly SLA review — sortable,
+    # took. DaysToDecision is here for the monthly SLA review, sortable,
     # and coloured by the urgency it was supposed to meet.
     - title: "Decision log"
       fields: ["@intake", Impact, Urgency, Status, Approver, DecisionDate,
@@ -256,13 +256,13 @@ views:
         ImplementedDate: 180
 
 # Form layouts: a strapline header and a sectioned body. SharePoint renders
-# per-field description hints inside sectioned forms on the NEW form only —
+# per-field description hints inside sectioned forms on the NEW form only;
 # the edit form suppresses column descriptions (platform limitation).
 # Section field lists are authored with INTERNAL names; the build rewrites
 # them to display titles.
 #
 # System is last and holds only DaysToDecision, so on the New form it is a
-# heading with nothing under it — calculated columns never render on entry
+# heading with nothing under it; calculated columns never render on entry
 # forms. Cosmetic and expected, the same shape risk-register's System
 # section has; the validator exempts the last section for exactly this
 # reason.
@@ -274,11 +274,11 @@ form_formatting:
 # The intake is submit-only for ordinary Members, and this section is what
 # makes the New form match that: a requester describes the change and says
 # how urgent it is, and everything triage and decision own is off the form
-# they see. Nothing here reduces a permission — the ACLs above do that —
+# they see. Nothing here reduces a permission (the ACLs above do that);
 # it stops a submitter being shown fields whose answer is not theirs.
 #
 # Deliberately NOT declared: any rule conditioned on DaysToDecision.
-# Conditional show/hide cannot read a calculated column — the formula stays
+# Conditional show/hide cannot read a calculated column. The formula stays
 # syntactically valid, so it saves, the readback compares equal and the
 # phase passes, but the form never reacts. The build refuses it.
 form_visibility:
@@ -296,7 +296,7 @@ form_visibility:
       # A decision date and its reasoning exist once a decision does, and
       # they stay on the form for every state DOWNSTREAM of one. Listing
       # only Approved and Rejected would hide the recorded decision the
-      # moment a change was implemented — and worse, a manager moving
+      # moment a change was implemented, and worse, a manager moving
       # straight to Implemented or Closed would be refused by the save rule
       # below for a missing DecisionDate with no field on screen to supply
       # it. The visible set must cover every state the rule fires in.
@@ -316,7 +316,7 @@ form_visibility:
           - { field: Status, op: in, value: ["Implemented", "Closed"] }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has a
+# message, and they all run, unlike list_validation, where a list has a
 # single ValidationFormula and every cross-column rule shares one message.
 # Both dates below are inputs to DaysToDecision, which is why a typo in
 # either is worth refusing: the SLA number the monthly review reads is
@@ -341,7 +341,7 @@ column_validation:
 list_validation:
   ChangeRequest:
     # TWO rules, chained. A list has ONE ValidationFormula, so every
-    # cross-column rule shares this slot — the top-level list is an AND, so
+    # cross-column rule shares this slot: the top-level list is an AND, so
     # they compose, and each is written as an implication: `if A then B` is
     # `any_of[not A, B]`.
     when:
@@ -362,12 +362,12 @@ list_validation:
     message: "This change cannot be saved yet. A decided change (Approved, Rejected, Implemented or Closed) needs a Decision Date, and an Implemented change needs an Implemented Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # queue and SLA surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every
 # impact and urgency band renders, and the decision log holds one change
-# per outcome — including an Emergency decided in a day (a short red bar)
+# per outcome, including an Emergency decided in a day (a short red bar)
 # and a Routine one that took three weeks (a full grey one), which is the
 # comparison the bar exists to make.
 demo_items:
@@ -403,7 +403,7 @@ demo_items:
         Urgency: "Priority"
         Status: "Under review"
         Approver: "@me"
-    # Approved 63 days ago and still not implemented — governance rule 2's
+    # Approved 63 days ago and still not implemented, governance rule 2's
     # stalled approval, sorted to the top of "Approved, not yet implemented"
     # by that view's oldest-decision-first ordering.
     - key: change-signage

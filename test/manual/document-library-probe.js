@@ -1,8 +1,8 @@
 /**
- * dbml-sharepoint PROBE — WHAT A DOCUMENT LIBRARY DOES WITH THE STANDARD
+ * dbml-sharepoint PROBE: WHAT A DOCUMENT LIBRARY DOES WITH THE STANDARD
  *
  * QUESTION: can a `kind: DocumentLibrary` carry declared views, a form
- * header and demo rows — and if not, what should it carry instead?
+ * header and demo rows, and if not, what should it carry instead?
  *
  * WHY: `policy-library` is the LAST entry on the family sweep's
  * NOT_YET_UPLIFTED roster. The family-standard spec said that set must
@@ -24,11 +24,11 @@
  * The fourth is not a build error and is worse, and it is why this probe
  * exists: demo_items on a library generate a POST to /items, which asks
  * SharePoint to create an item WITH NO FILE BEHIND IT. That has never been
- * run against a tenant. It is currently a build error taken on suspicion —
- * a reasonable place to stand, but not an answered question.
+ * run against a tenant. It is currently a build error taken on suspicion
+ * (a reasonable place to stand, but not an answered question).
  *
  * WHAT IT ASKS
- *   LN   NEGATIVE CONTROL — is a POST to /items naming a column that does
+ *   LN   NEGATIVE CONTROL: is a POST to /items naming a column that does
  *        not exist REFUSED? Establishes this probe can see a failed item
  *        write at all. Without it, L2 refusing proves nothing.
  *   L1   does a document library create at all (BaseTemplate 101)?
@@ -36,8 +36,8 @@
  *        Refused outright would be the happy answer: demo data simply
  *        cannot be generated and the build error stands on evidence.
  *   L3   ...and if it SUCCEEDS, what was created? FileSystemObjectType,
- *        FileRef, FileLeafRef and Title are read back. A "ghost" — an item
- *        with no file — is the outcome the build error was guessing at,
+ *        FileRef, FileLeafRef and Title are read back. A "ghost" (an item
+ *        with no file) is the outcome the build error was guessing at,
  *        and this is what proves or disproves it.
  *   L4   ...and does that ghost APPEAR to a user? An invisible row and a
  *        visible broken one are very different problems: one is untidy,
@@ -50,7 +50,7 @@
  *        could be lifted, or a platform one that cannot.
  *   L7   does a library content type accept a ClientFormCustomFormatter
  *        whose title line reads [$FileLeafRef] instead of [$Title]?
- *        STORAGE ONLY — whether it renders needs eyes, and the checklist
+ *        STORAGE ONLY: whether it renders needs eyes, and the checklist
  *        at the end asks for them.
  *
  * L7 HAS NOT BEEN RE-RUN SINCE 2026-07-29. The run on that date took the
@@ -62,7 +62,7 @@
  * content type until it is run again. Nothing shipped rests on it: the
  * refusal of `kind: DocumentLibrary` names L2 (a POST to /items is refused)
  * and L5 (Title is null after an upload), plus the fact that this tool has
- * no upload step — none of which touch the content type L7 wrote to.
+ * no upload step, none of which touch the content type L7 wrote to.
  *
  * READ LN FIRST. If a nonsense item write is ACCEPTED, this probe cannot
  * distinguish refusal from success and L2 is unproven rather than answered.
@@ -85,7 +85,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -98,7 +98,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -124,11 +124,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -136,7 +136,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -145,7 +145,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -186,7 +186,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -198,7 +198,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -245,7 +245,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -256,9 +256,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -313,7 +313,7 @@
   const existing = await spGet(listPath);
   if (existing.ok) {
     record('L1', 'A document library is created (BaseTemplate 101)', 'ALREADY PRESENT',
-           'reusing an existing library — set CLEANUP = true for a clean answer');
+           'reusing an existing library. Set CLEANUP = true for a clean answer');
   } else {
     const made = await spPost('web/lists', {
       Title: LIB,
@@ -333,7 +333,7 @@
   record('LN', 'NEGATIVE CONTROL: an item POST naming a missing column is refused',
          junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
-           ? 'an item POST naming a column that does not exist was ACCEPTED — this '
+           ? 'an item POST naming a column that does not exist was ACCEPTED. This '
              + 'probe cannot tell a refused item write from a successful one, so L2 '
              + 'is unproven whichever way it goes'
            : isRefusal(junk.status)
@@ -351,13 +351,13 @@
   if (!ghost.ok) {
     // THE row the shipped refusal rests on, so it says which kind of "no"
     // it got. The recorded 2026-07-29 answer was a 500 carrying
-    // "To add an item to a document library, use SPFileCollection.Add()" —
-    // content-specific, and a 500 on its own is not: a throttle or an
-    // outage lands in the same branch. What makes it evidence is the
+    // "To add an item to a document library, use SPFileCollection.Add()",
+    // which is content-specific, and a 500 on its own is not: a throttle or
+    // an outage lands in the same branch. What makes it evidence is the
     // MESSAGE, so the message is what the verdict turns on.
     const saysWhy = /SPFileCollection|document library/i.test(ghost.text || '');
     record('L2', 'POST /items on a document library',
-           saysWhy ? 'REFUSED — AND SAYS WHY'
+           saysWhy ? 'REFUSED, AND SAYS WHY'
                    : isRefusal(ghost.status) ? 'REFUSED' : 'NOT ESTABLISHED',
            saysWhy
              ? `HTTP ${ghost.status}: ${ghost.text.slice(0, 300)}. This is the GOOD `
@@ -369,8 +369,8 @@
                  + 'body does not say a library is why. Read it before treating this '
                  + 'as the library answer.'
                : `HTTP ${ghost.status}: ${ghost.text.slice(0, 300)}. That is not the `
-                 + 'server refusing the content — a throttle or an outage lands here '
-                 + 'too — so this run has not established what a library does with '
+                 + 'server refusing the content (a throttle or an outage lands here '
+                 + 'too), so this run has not established what a library does with '
                  + 'a fileless POST. Re-run.');
     for (const id of ['L3', 'L4']) {
       record(id, RESULTS.find((r) => r.id === id).question, 'NOT APPLICABLE',
@@ -379,7 +379,7 @@
   } else {
     const id = ghost.body && ghost.body.Id;
     record('L2', 'POST /items on a document library', 'ACCEPTED',
-           `HTTP ${ghost.status}, item ${id} — SharePoint did NOT refuse a fileless `
+           `HTTP ${ghost.status}, item ${id}. SharePoint did NOT refuse a fileless `
            + 'item, so the question becomes what it created (L3) and whether anyone '
            + 'can see it (L4)');
     const back = await spGet(
@@ -405,7 +405,7 @@
              ? `RenderListDataAsStream did not answer: HTTP ${rendered.status} `
                + rendered.text.slice(0, 200)
              : visible
-               ? 'the fileless item appears in the default rendering — staff would see '
+               ? 'the fileless item appears in the default rendering, so staff would see '
                  + 'a document-shaped row with no document'
                : 'the item exists over REST but does not appear in the default '
                  + 'rendering, which is untidy rather than user-facing');
@@ -444,8 +444,8 @@
     const title = row ? row.Title : undefined;
     const empty = title === null || title === '' || title === undefined;
     record('L5', 'Is Title populated after a real file upload',
-           row ? (empty ? 'TITLE IS EMPTY — assumption HOLDS'
-                        : 'TITLE IS POPULATED — assumption WRONG')
+           row ? (empty ? 'TITLE IS EMPTY, assumption HOLDS'
+                        : 'TITLE IS POPULATED, assumption WRONG')
                : 'NOT ESTABLISHED',
            row
              ? `${JSON.stringify(row)}. `
@@ -477,7 +477,7 @@
     const back = await spGet(
       `${listPath}/views/getbytitle('${VIEW}')/viewfields`);
     // A failed READ-BACK is not a refusal. Conflating them would let a
-    // throttled GET print "REFUSED" — a claim about the platform — on no
+    // throttled GET print "REFUSED" (a claim about the platform) on no
     // observation at all, and report() would count the question answered.
     if (readFailed(back)) {
       record('L6', 'Can a library view carry FileLeafRef through REST', 'NOT ESTABLISHED',
@@ -514,7 +514,7 @@
     }],
   };
   // The collection is unordered and a library carries a Folder content type
-  // as well as a Document one, so value[0] can be the folder — which would
+  // as well as a Document one, so value[0] can be the folder, which would
   // store the formatter somewhere no document ever reads it and report STORED
   // regardless. Same rule the deploy uses (src/dbml_sharepoint/templates/
   // deploy/_forms.js.j2): the first id under 0x01 that is not under 0x0120.
@@ -553,8 +553,8 @@
                stored && String(stored).includes('FileLeafRef')
                  ? 'STORED' : 'ACCEPTED THEN DISCARDED',
                `on content type '${ct.Name}' (${ctId}), reads back `
-               + `${JSON.stringify(String(stored).slice(0, 220))}. STORAGE ONLY — `
-               + 'see the checklist below.');
+               + `${JSON.stringify(String(stored).slice(0, 220))}. STORAGE ONLY. `
+               + 'See the checklist below.');
       }
     }
   }

@@ -1183,7 +1183,7 @@ Per entity, `reconcile` takes `exact` (**the default**) or `declared`.
 This is destructive by default and it is not scoped to what you declared.
 The `column_validation` example above declares **two** columns of a
 13-column list and clears the formula on the other **ten**.
-`deploy-manifest.md` lists every one as `— cleared` before you paste
+`deploy-manifest.md` lists every one as `: cleared` before you paste
 anything; read that section.
 
 **The same key means the opposite thing under
@@ -1212,7 +1212,7 @@ entity**, not every field on the live list. Built-ins other than `Title`
 touched, and neither is any column of an entity with no block at all.
 `form_visibility` also skips calculated columns, since declaring one is an
 error; `column_validation` currently includes them, so a calculated column
-picks up a `— cleared` line in the manifest.
+picks up a `: cleared` line in the manifest.
 
 One thing `exact` does **not** reach: a **deferred lookup**, a circular or
 self-referencing lookup created in Phase 2 rather than Phase 1. A

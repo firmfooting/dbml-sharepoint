@@ -48,7 +48,7 @@
 
   // === Preflight: site match ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
-  // '/_api/web/...' targets the tenant root web — NOT the sub-site or site
+  // '/_api/web/...' targets the tenant root web, NOT the sub-site or site
   // collection you're viewing. Every API call is prefixed with the current
   // web's server-relative URL so calls hit the web the operator is on.
   const expectedOrigin = new URL(SITE_URL).origin;
@@ -73,7 +73,7 @@
 
   // Flip to true for per-request timing diagnostics (method, URL, status,
   // ms). Default false keeps the console readable; edit in the pasted
-  // script — no rebuild needed. deploy.js.txt additionally prints a per-phase
+  // script (no rebuild needed). deploy.js.txt additionally prints a per-phase
   // seconds table before DONE when this is on.
   const DEBUG = false;
   const dbg = (msg) => { if (DEBUG) log('DEBUG', msg); };
@@ -81,7 +81,7 @@
   const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
   // SharePoint's REST error body carries the human-readable reason at
-  // error.message.value; fall back to (bounded) raw text — a bare HTTP
+  // error.message.value; fall back to (bounded) raw text. A bare HTTP
   // status left a blocked run undiagnosable (live finding 2026-07-24).
   const spError = (text) => {
     try {
@@ -147,7 +147,7 @@
 
   // Which list titles exist, from ONE enumeration. A by-title GET for a list
   // that is not there answers 404, which the browser paints red and an
-  // operator reads as a failure — on a first deploy EVERY list probe is that
+  // operator reads as a failure; on a first deploy EVERY list probe is that
   // 404. Enumerating once tells us absence locally, so a clean run stays
   // clean. Null means "not yet known"; invalidateListShapes() after any
   // list create or delete.
@@ -229,10 +229,10 @@
   // paint red and operators read as failures (seen live, twice); and bulk
   // probe loops (preflight / unseal / reconcile / seal over ~52 columns)
   // were paying one GET per column per phase. Freshness contract: probes
-  // reflect PHASE-START state — each field-touching phase opens with
+  // reflect PHASE-START state; each field-touching phase opens with
   // invalidateFieldShapes(); verify-after-write reads pass fresh=true and
   // bypass the cache entirely (verification never trusts a cache). An
-  // absent LIST yields an uncached empty result — the list may be created
+  // absent LIST yields an uncached empty result; the list may be created
   // later in this same run.
   const _FIELD_SHAPE_SELECT = [
     'Id', 'InternalName', 'Title', 'TypeAsString', 'Description', 'Required',
@@ -240,7 +240,7 @@
   ].join(',');
   let fieldShapesByList = {};
   // No argument: full reset (phase starts). With a list name: drop only
-  // that list's snapshot — lanes refresh their own list after writes
+  // that list's snapshot, so lanes refresh their own list after writes
   // without thrashing the other lanes' caches.
   const invalidateFieldShapes = (listName) => {
     if (listName == null) { fieldShapesByList = {}; return; }
@@ -249,7 +249,7 @@
   async function listFieldShapes(listName) {
     if (listName in fieldShapesByList) return fieldShapesByList[listName];
     // A list we already know is absent has no fields, and asking anyway
-    // costs a 404 the browser paints red — on a first deploy, once per
+    // costs a 404 the browser paints red: on a first deploy, once per
     // declared list in maintenance unseal, before a single list exists.
     // The enumeration is already in hand for exactly this reason; this
     // just spends it here too.
@@ -267,8 +267,8 @@
       if (r.status === 404 || isAbsent400(r.status, text)) {
         // Cache the ABSENCE too. Leaving it uncached made every column in a
         // bulk loop re-enumerate an absent list: a first deploy paid one
-        // 404 per declared column per phase — 88 red console lines in
-        // maintenance unseal alone — which is the exact cost this cache
+        // 404 per declared column per phase (88 red console lines in
+        // maintenance unseal alone), which is the exact cost this cache
         // exists to remove. Safe because every field-touching phase opens
         // with invalidateFieldShapes(), so a list created later in the run
         // is re-read at the next phase boundary rather than staying absent.
@@ -282,7 +282,7 @@
     // TWO indexes, not one keyspace. getbyinternalnameortitle resolves an
     // internal name first, so folding both into a single map lets one
     // field's display Title shadow another field's InternalName whenever
-    // they match case-insensitively — and the loser is then read as an
+    // they match case-insensitively, and the loser is then read as an
     // impostor by the immutable-shape check, aborting preflight over a
     // field SharePoint can resolve perfectly well. First writer wins
     // WITHIN each index; internal names win BETWEEN them, matching the
@@ -313,7 +313,7 @@
       shape = (await listFieldShapes(listName)).get(columnName) || null;
       if (!shape) return null;
       // Cached entries were validated at enumeration time by the same checks
-      // below; re-validate anyway — one shared gate for both paths.
+      // below; re-validate anyway, one shared gate for both paths.
     } else {
       const r = await fetchWithRetry(apiUrl(`${fieldPath}?$select=${_FIELD_SHAPE_SELECT}`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
@@ -408,7 +408,7 @@
 
   // Bounded per-lane parallelism. SharePoint stores fields and views in the
   // list schema, and concurrent schema writes to the SAME list race into
-  // save conflicts — but different lists are fully independent. So the unit
+  // save conflicts, but different lists are fully independent. So the unit
   // of parallelism is the list: items are grouped into lanes by key, items
   // within a lane run strictly sequentially, lanes run concurrently up to
   // `limit`. Workers keep their own per-item try/catch, so error
@@ -474,7 +474,7 @@
 
   // Canonical JSON for declared-vs-readback comparison of formatter blobs
   // (CustomFormatter and friends): parse strings, sort object keys
-  // recursively, stringify — whitespace and key order differences are not
+  // recursively, stringify; whitespace and key order differences are not
   // drift. A non-JSON string compares as itself (fail closed via mismatch).
   const canonicalJson = (value) => {
     if (value == null || value === '') return null;
@@ -931,8 +931,8 @@
 
   // The restoration itself, called from the finally in deploy.js.j2 rather
   // than from PROTECTION. Every phase between PREPARE and PROTECTION can
-  // return early by design — schema errors, lookup errors, ACL errors all
-  // abort before touching more of the site — and each of those returns
+  // return early by design (schema errors, lookup errors, ACL errors all
+  // abort before touching more of the site), and each of those returns
   // used to skip the re-seal, ending the run with a column LESS protected
   // than it found it. A failed run must not weaken a site, so the
   // guarantee has to sit on the exit path, which is the only path every
@@ -959,7 +959,7 @@
         } catch (err) {
           // Loud, and recorded: the operator has to know the site was left
           // open, because nothing else in the run will say so.
-          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
+          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED; re-seal it before handing the site back.`);
           summary.errors.push({ phase: 'exit', list: listTitle, column: columnTitle, error: err.message });
         }
       }
@@ -967,7 +967,7 @@
   }
 
   // The ONE constructor for the synthetic Title field. Title is not a
-  // declared column — it arrives as list.title_patch — so every consumer of
+  // declared column (it arrives as list.title_patch), so every consumer of
   // a declared field has to synthesise one. Keep it here: a second copy
   // elsewhere will drift out of step with this one.
   function syntheticTitleField(list) {
@@ -975,7 +975,7 @@
       title: 'Title',
       body: { ...list.title_patch, FieldTypeKind: 2 },
       // Title is not a declared field, so it carries no declared formulas.
-      // All three sentinels must be explicit — `undefined !== UNMANAGED`
+      // All three sentinels must be explicit: `undefined !== UNMANAGED`
       // reads as "managed", which MERGEs an empty message onto the built-in
       // Title column and aborts the phase.
       client_validation_formula: UNMANAGED,
@@ -994,7 +994,7 @@
   // and returns it with XML character entities intact (`<>` reads back as
   // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
   // rewrites the identical formula and the readback still "differs". Compare
-  // formulas on their XML-decoded canonical form — both sides, so encoded
+  // formulas on their XML-decoded canonical form (both sides), so encoded
   // and decoded readbacks both match. `&amp;` decodes LAST: decoding it
   // earlier would corrupt double-encoded text (`&amp;lt;` must yield the
   // literal `&lt;`, not `<`).
@@ -1007,7 +1007,7 @@
 
   // A second storage canonicalisation (PnP provisioning documents the same
   // trap): SharePoint strips square brackets from column references that do
-  // not need delimiting — `[Likelihood]` is stored and read back as
+  // not need delimiting: `[Likelihood]` is stored and read back as
   // `Likelihood`; names with spaces keep their brackets. Strip removable
   // brackets on both sides, but only OUTSIDE string literals (split keeps
   // `"..."` tokens, with `""` as the escaped quote, at odd indices):
@@ -1084,7 +1084,7 @@
 
   // List validation reconciles AFTER the list's fields exist: the formula
   // references columns (by display name) that the same run may be creating
-  // and renaming — merging it with the pre-field list settings fails with
+  // and renaming, so merging it with the pre-field list settings fails with
   // "The formula refers to a column that does not exist". Declared-null
   // means "never touch" (a hand-set validation survives).
   async function reconcileListValidation(list, digest) {
@@ -1109,7 +1109,7 @@
   }
 
   // Declared list-deletion block: AllowDeletion=false rejects UI deletion
-  // of the LIST object even for admins (friction, not enforcement — an
+  // of the LIST object even for admins (friction, not enforcement; an
   // admin can flip it back via API). Isolated probe/MERGE so an
   // unsupported tenant surface fails only this step.
   async function reconcileListDeletionBlock(list, digest) {
@@ -1139,24 +1139,24 @@
   // one list-level string recording which template family and entity
   // produced this list, and the only thing fleet reporting has to find it
   // by. It is written in the creation POST AND reconciled here, because a
-  // list provisioned before markers existed — or one whose description an
-  // owner edited in list settings — otherwise keeps a description discovery
+  // list provisioned before markers existed (or one whose description an
+  // owner edited in list settings) otherwise keeps a description discovery
   // cannot match, forever, while every deploy phase reports success.
   //
   // There is no lock to lean on. Fields have Sealed and lists have
-  // AllowDeletion; SharePoint offers no equivalent for a Description —
+  // AllowDeletion; SharePoint offers no equivalent for a Description.
   // SP.List.Description is a plain read-write property updated by the same
   // MERGE as any other list setting (Learn, checked 2026-08-12:
   // learn.microsoft.com/dotnet/api/microsoft.sharepoint.client.list.description
   // and .../sp-add-ins/working-with-lists-and-list-items-with-rest). So
   // reconcile-and-read-back is the entire control, and the read-back is
-  // load-bearing rather than ceremonial: a MERGE that answers 200 while the
+  // real rather than ceremonial: a MERGE that answers 200 while the
   // stored value stays stale reports success on a list that is still
   // invisible, which is precisely the failure class this repository exists
   // to catch.
   //
   // `actual` is the shape reconcileListShape already holds, so an unchanged
-  // description costs no request at all — a re-paste must not churn every
+  // description costs no request at all; a re-paste must not churn every
   // list it looks at. Only a repair pays the MERGE and its fresh re-read.
   async function reconcileListDescription(list, actual, digest) {
     const desired = normalizeDescription(list.description);
@@ -1285,7 +1285,7 @@
   //
   // SchemaXml's ShowInNewForm/ShowInEditForm are deliberately NOT written.
   // Saving the form designer migrates them into FieldLink.Hidden, which
-  // hides a column from EVERY form and is not writable over REST — so a
+  // hides a column from EVERY form and is not writable over REST, so a
   // per-form declaration would silently become hide-everywhere the first
   // time anyone opened the designer.
   async function enforceDeclaredFormulas(listName, field, digest) {
@@ -1328,7 +1328,7 @@
     if (alreadyRight) return;
 
     // Log what is being REPLACED before replacing it. `before` was read,
-    // compared and discarded, and on success nothing was logged at all —
+    // compared and discarded, and on success nothing was logged at all,
     // so a deploy that removed or rewrote an existing formula left no
     // record of what had been there. Under `reconcile: exact` an
     // undeclared column's formula is cleared outright, which is precisely
@@ -1354,7 +1354,7 @@
     if (replaced.length > 0) {
       const action = field.client_validation_formula === '' && field.validation_formula === ''
         ? 'clearing' : 'overwriting';
-      log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas — ${replaced.join('; ')}`);
+      log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas: ${replaced.join('; ')}`);
     }
 
     const r = await fetchWithRetry(url, {
@@ -1365,7 +1365,7 @@
     if (!r.ok) {
       const text = await r.text();
       // CLEARING a formula from a field type that cannot carry one is a
-      // no-op, not a failure: the desired end state — no formula — already
+      // no-op, not a failure: the desired end state (no formula) already
       // holds, and SharePoint is refusing the property rather than the
       // value. Aborting a whole paste over it means one URL column stops a
       // deploy that has nothing wrong with it.
@@ -1378,7 +1378,7 @@
       const clearingOnly = (field.validation_formula === '' || field.validation_formula === UNMANAGED)
         && (field.client_validation_formula === '' || field.client_validation_formula === UNMANAGED);
       if (clearingOnly && /does not support validation formulas/i.test(text)) {
-        // A MERGE is atomic, so the refusal applied NONE of this body —
+        // A MERGE is atomic, so the refusal applied NONE of this body,
         // including any ClientValidationFormula clear it also carried,
         // which a URL field does support. Returning here would report
         // success while a stale show/hide rule stayed live and the
@@ -1610,23 +1610,23 @@
   // by EVERY exit: the normal `return summary` at the end of the last
   // phase, the seven early returns that abort a broken run, and a throw
   // nobody caught. Anything a run must hand back regardless of outcome
-  // belongs in that finally and nowhere else — putting it on the success
+  // belongs in that finally and nowhere else; putting it on the success
   // path is how a failed run came to leave a Title unsealed. The phase
   // bodies keep their own indentation: they are 3,000 lines of included
   // partials, and re-indenting them to sit under this try would bury the
   // change in whitespace.
   try {
-  markPhase('Phase 1.1 — read-only preflight');
+  markPhase('Phase 1.1: read-only preflight');
   // === Preflight: fail-closed adoption of existing schema objects ===
   // A matching display name is not proof that an existing list or field was
   // created from this schema. Validate every immutable identity before Phase 1.2
   // performs its first write. Mutable declared settings are reconciled and
   // read back in Phase 2.1, but a wrong template/type/internal-name/lookup target
   // always requires an explicit migration.
-  log('INFO', 'Group 1 — PREPARE');
+  log('INFO', 'Group 1: PREPARE');
   log('INFO', 'Starting Phase 1.1: read-only preflight.');
   invalidateFieldShapes();  // probes reflect phase-start state
-  // Read-only, so lanes are free of write races — but the field wave still
+  // Read-only, so lanes are free of write races, but the field wave still
   // waits for ALL list shapes: lookup fields validate against their target
   // list's GUID, which another lane may still be reading.
   const preflightListShapes = {};
@@ -1680,7 +1680,7 @@
     return { ...summary, aborted: 'existing-schema-shape-errors' };
   }
 
-  markPhase('Phase 1.2 — permission levels and site groups');
+  markPhase('Phase 1.2: permission levels and site groups');
   // === Phase 1.2: custom permission levels + site groups ===
   log('INFO', 'Starting Phase 1.2: permission levels and site groups.');
   {
@@ -1939,7 +1939,7 @@
 
     // Which groups exist, from ONE enumeration. A by-name GET for a group
     // that is not there answers 404, which the browser paints red and an
-    // operator reads as a failure — and on a first deploy EVERY declared
+    // operator reads as a failure, and on a first deploy EVERY declared
     // group is that 404. Same treatment the list and view probes already
     // get: enumerate once, answer absence locally, keep a clean run clean.
     // Not fatal if refused; we fall back to probing, which is noisier and
@@ -1954,7 +1954,7 @@
         // nameSet/hasName: SharePoint group names are unique and resolved
         // case-insensitively, so an existing 'or list administrators'
         // must not read as absent against a declared 'OR List
-        // Administrators' — that turns an adoptable group into a create
+        // Administrators'; that turns an adoptable group into a create
         // that fails on a name collision.
         knownGroupNames = nameSet(
           ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),
@@ -2453,11 +2453,11 @@
     return { ...summary, aborted: 'phase-0-security-errors' };
   }
 
-  markPhase('Phase 1.3 — operator self-enrolment');
+  markPhase('Phase 1.3: operator self-enrolment');
   // === Operator self-enrolment (groups[].enroll_operator_during_deploy) ===
   // Some mappings route all list administration through an empty-by-default
-  // admin group (Owners hold only Contribute on the lists). Later phases —
-  // field reconciliation, indexes, ACL work — then need the operator to hold
+  // admin group (Owners hold only Contribute on the lists). Later phases
+  // (field reconciliation, indexes, ACL work) then need the operator to hold
   // that group's grants, so the script enrols the operator for the duration
   // of the run and removes them at the end. An operator who was ALREADY a
   // member is left untouched. Only principals who can already manage the
@@ -2508,8 +2508,8 @@
     log('ERROR', 'Operator self-enrolment failed; aborting before list creation.');
     return { ...summary, aborted: 'operator-enrolment-errors' };
   }
-  markPhase('Phase 1.4 — enterprise reader enrolment');
-  markPhase('Phase 1.5 — maintenance unseal');
+  markPhase('Phase 1.4: enterprise reader enrolment');
+  markPhase('Phase 1.5: maintenance unseal');
   // === Maintenance unseal (declared-seal columns) ===
   // Sealed columns reject UI schema edits even for site admins; the ONLY
   // legitimate maintenance path is this script. Unseal declared fields so
@@ -2528,7 +2528,7 @@
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
     // The built-in Title is not a declared column, so it was never in this
-    // set — and Phase 1 writes list.title_patch to it. A Title sealed by
+    // set, and Phase 1 writes list.title_patch to it. A Title sealed by
     // anything other than this tool therefore made the run un-completable
     // and un-repairable: the write failed, and the only maintenance path
     // that can unseal walked declared columns only. Probed unconditionally
@@ -2564,9 +2564,9 @@
       log('INFO', `Maintenance unseal complete (${unsealedCount} column(s) unsealed for this run).`);
     }
   }
-  markPhase('Phase 2.1 — list creation');
+  markPhase('Phase 2.1: list creation');
   // === Phase 2.1: lists + non-lookup columns + same-site lookups ===
-  log('INFO', 'Group 2 — STRUCTURE');
+  log('INFO', 'Group 2: STRUCTURE');
   log('INFO', `Starting Phase 2.1: list creation. Release ${RELEASE_TAG}.`);
   invalidateFieldShapes();  // probes reflect phase-start state
   let digest = await getDigest();
@@ -2575,7 +2575,7 @@
     .filter(la => la.break_inheritance && la.reconcile_mode === 'exact')
     .map(la => la.list));
 
-  // Wave 1 — sequential, in dependency order: list existence, declared
+  // Wave 1 is sequential, in dependency order: list existence, declared
   // list shape, GUID capture, early ACL isolation. Sequential because
   // wave 2's same-site lookup fields need every target list's GUID.
   const fieldWork = [];
@@ -2602,7 +2602,7 @@
           BaseTemplate: list.base_template,
           // Creation is not where the Description is guaranteed. It carries
           // the provenance marker, and this POST only runs for a list that
-          // does not exist yet — reconcileListDescription (called from
+          // does not exist yet; reconcileListDescription (called from
           // reconcileListShape just below, on both paths) is what reads it
           // back and what repairs an adopted list whose description predates
           // markers or was edited by an owner.
@@ -2683,7 +2683,7 @@
     }
   }
 
-  // Wave 2 — field provisioning, one lane per list: every target GUID now
+  // Wave 2 is field provisioning, one lane per list: every target GUID now
   // exists, and concurrent schema writes to the SAME list race into save
   // conflicts while different lists are independent, so each list's fields
   // run sequentially inside a lane and the lanes run concurrently.
@@ -2760,7 +2760,7 @@
     log('ERROR', 'Phase 2.1 schema reconciliation failed; aborting before deferred lookups and ACL work.');
     return { ...summary, aborted: 'phase-1-schema-errors' };
   }
-  markPhase('Phase 2.2 — deferred lookups');
+  markPhase('Phase 2.2: deferred lookups');
   // === Phase 2.2: deferred lookups ===
   log('INFO', 'Starting Phase 2.2: deferred lookups.');
   invalidateFieldShapes();  // probes reflect phase-start state
@@ -2802,7 +2802,7 @@
     log('ERROR', 'Phase 2.2 lookup reconciliation failed; aborting before indexes and ACL work.');
     return { ...summary, aborted: 'phase-2-schema-errors' };
   }
-  markPhase('Phase 2.3 — indexed columns');
+  markPhase('Phase 2.3: indexed columns');
   // === Phase 2.3: indexed columns ===
   log('INFO', 'Starting Phase 2.3: indexed columns.');
   digest = await getDigest();
@@ -2816,7 +2816,7 @@
     }
   }
 
-  markPhase('Phase 2.4 — field defaults');
+  markPhase('Phase 2.4: field defaults');
   // === Phase 2.4: reconcile declared field defaults ===
   // Defaults are included in create-field bodies, but existing columns are
   // skipped in Phase 2.1. Re-applying the declared value makes upgrades
@@ -2850,7 +2850,7 @@
     }
   }
 
-  markPhase('Phase 3.1 — views');
+  markPhase('Phase 3.1: views');
   // === Phase 3.1: managed views ===
   // Fields created through the REST field collection join no view, so a
   // fresh list shows a Title-only default view. Every list gets a generated,
@@ -2858,7 +2858,7 @@
   // schema; when an authored default exists the recovery view is hidden from
   // the modern view bar. Authored views are managed alongside it. Other views
   // are user content and are never touched (unlike exact-mode ACLs).
-  log('INFO', 'Group 3 — PRESENTATION');
+  log('INFO', 'Group 3: PRESENTATION');
   log('INFO', 'Starting Phase 3.1: views.');
   // Readback normalization: SP collapses nothing between tags but DOES write
   // self-closing tags with a space (`<FieldRef Name="X" />`); compare both
@@ -2905,7 +2905,7 @@
   }
   // Existence checks read ONE enumeration per list: views/getbytitle on an
   // absent view answers HTTP 400, which the browser console paints red even
-  // though isAbsent400 handles it — operators read those lines as failures.
+  // though isAbsent400 handles it; operators read those lines as failures.
   const viewShapesByList = {};
   async function listViewShapes(listPath) {
     if (!(listPath in viewShapesByList)) {
@@ -2972,7 +2972,7 @@
       // rename possible: `title: Open` with `renamed_from: [open]` matches
       // the same live view twice under case-insensitive comparison, and the
       // conflict check below would then refuse to choose between a view and
-      // itself — on every run, so the rename could never land.
+      // itself, on every run, so the rename could never land.
       const previousMatches = listedViews.filter(
         (v) => (!existing || v.Id !== existing.Id)
           && view.renamed_from.some((t) => nameKey(t) === nameKey(v.Title)),
@@ -2990,7 +2990,7 @@
       // A slug-titled view already sitting on the clean URL is our own
       // half-finished migration (we only ever create with Title=slug):
       // adopt it instead of creating a second page. A FOREIGN view on that
-      // URL is never touched — the create below would get a suffixed .aspx
+      // URL is never touched: the create below would get a suffixed .aspx
       // and the URL drift gate fails the view closed.
       const halfMigrated = listedViews.find(
         (v) => nameKey(v.Title) === nameKey(view.url_slug) && urlBasename(v) === desiredBasename,
@@ -3012,7 +3012,7 @@
         if (urlBasename(existing) !== desiredBasename) {
           // URL migration to the clean URL: renames cannot change the .aspx
           // name, so the escaped-URL view is recreated. Declared views are
-          // deployer-owned — every setting is reasserted below; only
+          // deployer-owned: every setting is reasserted below; only
           // bookmarks to the old URL break (one-time, noted in deploy.md).
           log('INFO', `[Phase 3.1] Migrating view '${view.title}' on '${view.list}' from ${urlBasename(existing)} to ${desiredBasename}...`);
           if (!halfMigrated) await createViewWithCleanUrl();
@@ -3068,7 +3068,7 @@
       // reach the verify below with none and fail its own first deploy.
       //
       // A view with no declaration keeps whatever is live, matching
-      // CustomFormatter and widths — so deleting a totals block does NOT
+      // CustomFormatter and widths, so deleting a totals block does NOT
       // clear a deployed total.
       //
       // normalizeViewQuery is required here, not tidiness: SP reads back
@@ -3120,7 +3120,7 @@
       }
       // Default flag last: SharePoint un-defaults the previous default view
       // automatically, and only a declared default may claim it. The
-      // phase-start shape decides — nothing this lane writes clears a
+      // phase-start shape decides: nothing this lane writes clears a
       // DefaultView (only ONE declared default exists per list, validated),
       // and the fresh verify below fail-closes any surprise.
       const preFlag = existing || await readViewShape(viewUrl);
@@ -3174,7 +3174,7 @@
         throw new Error(`did not retain declared view setting(s): ${drifted.join(', ')}`);
       }
       // Declared column widths ride SP's whole-document SetViewXml()
-      // surface — the call the modern Lists UI makes when saving a dragged
+      // surface, the call the modern Lists UI makes when saving a dragged
       // width (live capture 2026-07-24). ColumnWidth FieldRefs bind by
       // DISPLAY name; internal names are accepted and silently reset the
       // widths. A property MERGE of ListViewXml is DESTRUCTIVE (treats the
@@ -3232,13 +3232,13 @@
     }
   };
   // One lane per list: views live in the list schema, and concurrent schema
-  // writes to the same list race into save conflicts — different lists are
+  // writes to the same list race into save conflicts; different lists are
   // independent, so their lanes run concurrently.
   await mapLanes(SCHEMA.views, (view) => view.list, deployView, 4);
-  markPhase('Phase 3.2 — form formatting');
+  markPhase('Phase 3.2: form formatting');
   // === Phase 3.2: form formatting ===
   // Declared list-form layouts (header/body/footer JSON) live on the list's
-  // default item content type as ClientFormCustomFormatter — a JSON string
+  // default item content type as ClientFormCustomFormatter, a JSON string
   // whose *JSONFormatter keys hold part OBJECTS (the pane-native encoding;
   // the Format pane displays string-encoded parts escaped). Lists without
   // a declaration are never touched.
@@ -3307,14 +3307,14 @@
     }
   }
 
-  markPhase('Phase 4.1 — seal declared columns');
+  markPhase('Phase 4.1: seal declared columns');
   // === Phase 4.1: seal declared columns ===
   // Re-seal after every field write (1/2/3/3b/3d): sealed columns block UI
-  // schema edits and deletion even for site admins — the strongest defense
+  // schema edits and deletion even for site admins, the strongest defense
   // when team owners are unavoidably site collection admins. Friction, not
   // enforcement: an admin can unseal via API, which is deliberate work, not
   // an accident.
-  log('INFO', 'Group 4 — PROTECTION');
+  log('INFO', 'Group 4: PROTECTION');
   log('INFO', 'Starting Phase 4.1: seal declared columns.');
   invalidateFieldShapes();  // probes reflect phase-start state
   {
@@ -3335,7 +3335,7 @@
     let sealedCount = 0;
     // One lane per list (field MERGEs on the same list race into save
     // conflicts; lists are independent). After a lane's writes, ONE fresh
-    // per-list enumeration serves every column's verify readback — the
+    // per-list enumeration serves every column's verify readback; the
     // per-field fresh GETs paid ~one round-trip per column for the same
     // server evidence (live DEBUG timing: this phase alone was 13.3s of a
     // 52s run). Verification still never trusts phase-start state: the
@@ -3380,7 +3380,7 @@
       log('INFO', `Phase 4.1 complete: ${sealDeclared.length} column(s) sealed and verified (${sealedCount} newly sealed).`);
     }
   }
-  markPhase('Phase 4.2 — role inheritance and assignments');
+  markPhase('Phase 4.2: role inheritance and assignments');
   // === Phase 4.2: break inheritance + role assignments ===
   log('INFO', 'Starting Phase 4.2: role inheritance and assignments.');
   {
@@ -3540,7 +3540,7 @@
         // assignment methods below use their documented named parameters.
         // ONE enumeration answers every question below. getbyprincipalid
         // answers 404 for a principal that has no assignment on this list
-        // yet — which every declared principal is on a first deploy — and
+        // yet (which every declared principal is on a first deploy), and
         // the browser paints that red whether or not the script handles it.
         // Same treatment lists, views and site groups already get.
         //
@@ -3704,9 +3704,9 @@
     log('ERROR', 'Deployment has unresolved schema or ACL errors; aborting before seed items.');
     return { ...summary, aborted: 'pre-seed-errors' };
   }
-  markPhase('Phase 5.1 — seed items');
+  markPhase('Phase 5.1: seed items');
   // === Phase 5.1: seed singleton list items (extension-provided) ===
-  log('INFO', 'Group 5 — DATA');
+  log('INFO', 'Group 5: DATA');
   log('INFO', 'Starting Phase 5.1: seed items.');
 
   function exactSeedValueEqual(actual, expected) {
@@ -3796,7 +3796,7 @@
         }
       }
       // Fetch the list's ListItemEntityTypeFullName so __metadata.type is
-      // correct for ANY list title — SharePoint encodes non-alphanumeric
+      // correct for ANY list title: SharePoint encodes non-alphanumeric
       // characters (e.g. '_') in the entity type name, so a hardcoded
       // 'SP.Data.<Title>ListItem' literal is wrong for underscore-containing
       // titles.
@@ -3841,7 +3841,7 @@
 
   // Operator-perspective diagnostic (after enrolment cleanup, so the
   // run-scoped admin membership does not inflate the numbers): list ACLs
-  // can LOOK correct while the signed-in account still deletes happily —
+  // can LOOK correct while the signed-in account still deletes happily:
   // site collection administrators and Full Control holders bypass list
   // ACLs entirely. Member-level behaviour must be verified with an
   // ordinary member account.
@@ -3859,7 +3859,7 @@
       const canDelete = (low & 8) === 8;          // DeleteListItems
       const canManage = (low & 2048) === 2048;    // ManageLists
       const isSiteAdmin = typeof _spPageContextInfo !== 'undefined' && _spPageContextInfo.isSiteAdmin === true;
-      log('INFO', `Operator effective rights on '${listTitle}': delete items = ${canDelete}, manage list = ${canManage}, site collection admin = ${isSiteAdmin}. Site collection admins and Full Control holders bypass list ACLs (owners of a group-connected site are site collection admins, invisible in Check Permissions) — verify member behaviour with an ordinary member account.`);
+      log('INFO', `Operator effective rights on '${listTitle}': delete items = ${canDelete}, manage list = ${canManage}, site collection admin = ${isSiteAdmin}. Site collection admins and Full Control holders bypass list ACLs (owners of a group-connected site are site collection admins, invisible in Check Permissions). Verify member behaviour with an ordinary member account.`);
     } catch (err) {
       log('INFO', `Operator effective rights on '${listTitle}': probe failed (${err.message}).`);
     }

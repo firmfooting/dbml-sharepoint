@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Name the grant owner before you submit — if this wins, they own every obligation in the agreement, and those outlive the celebration."
+          "txtContent": "Name the grant owner before you submit. If this wins, they own every obligation in the agreement, and those outlive the celebration."
         }
       ]
     }

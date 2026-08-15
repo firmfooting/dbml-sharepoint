@@ -337,7 +337,7 @@ def main() -> None:
     # Derived, never hand-listed. A hand-written list of the columns needing
     # conversion omitted ClosedAt, and ten rows silently failed to load.
     print()
-    print("The .json files carry real nulls — point your flow at those and no")
+    print("The .json files carry real nulls, so point your flow at those and no")
     print("conversion is needed. If you load the .csv files instead, every one")
     print("of these columns arrives as \"\" when blank and SharePoint rejects it:")
     for column, kind in NULLABLE_COLUMNS.items():

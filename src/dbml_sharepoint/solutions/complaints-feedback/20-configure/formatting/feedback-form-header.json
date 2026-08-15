@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Acknowledge before you investigate — the acknowledgement clock is the one most organisations fail first."
+          "txtContent": "Acknowledge before you investigate. The acknowledgement clock is the one most organisations fail first."
         }
       ]
     }

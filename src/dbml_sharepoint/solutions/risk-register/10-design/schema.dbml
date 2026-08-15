@@ -1,5 +1,5 @@
 // ============================================================================
-// Risk register — one list; the 5x5 matrix is calculated (formulas in
+// Risk register: one list; the 5x5 matrix is calculated (formulas in
 // mapping.yaml). Render the ERD by pasting this file into dbdiagram.io
 // ============================================================================
 
@@ -40,7 +40,7 @@ Enum risk_rating {
 }
 
 // Register lifecycle. New risks are Provisional until the sponsor opens them;
-// Status is lifecycle only — the chosen strategy is RiskResponse.
+// Status is lifecycle only; the chosen strategy is RiskResponse.
 Enum risk_status {
   "Provisional"
   "Open"
@@ -70,7 +70,7 @@ Enum control_effectiveness {
 // Matrix versions whose cells may have produced a rating. Seeded with the
 // CURRENT version only. When the matrix revs, APPEND the new version here,
 // move the column default, update the version literal in the two matrix
-// formulas, and rebuild — all in one change. Never remove old members, or
+// formulas, and rebuild, all in one change. Never remove old members, or
 // historical rows lose a valid stamp. The formulas are version-guarded
 // ([MatrixVersion]<>"1.0" shows blank), so replacing them at a rev cannot
 // silently re-rate rows stamped to an older matrix.
@@ -85,25 +85,25 @@ Table Risk {
   Category    risk_category    [note: 'The main area this risk relates to. Choose the closest fit, or leave blank until the risk has been classified']
   Likelihood  risk_likelihood  [note: 'How likely the assessed consequence is, with current controls in effect']
   Consequence risk_consequence [note: 'The highest reasonable consequence, with current controls in effect']
-  // Calculated — the 5x5 matrix formula lives in mapping.yaml so the rating
+  // Calculated: the 5x5 matrix formula lives in mapping.yaml so the rating
   // cannot drift from the governance matrix. Matrix cells are under change
   // control: read 50-govern/governance.md before editing them.
   ResidualRiskRating calculated_text [note: 'Calculated automatically from Likelihood and Consequence: Low, Medium, High or Extreme. Blank until both are set']
-  // Calculated — the matrix score 1-25, for prioritisation.
+  // Calculated: the matrix score 1-25, for prioritisation.
   RiskScore   calculated_number [note: 'Calculated automatically: the matrix score 1-25. Sort the register by this, highest first. Blank until Likelihood and Consequence are set']
-  // A target is an appetite decision, not a derivation — which is why this
+  // A target is an appetite decision, not a derivation, which is why this
   // one IS a manual choice.
   TargetRiskRating risk_rating [note: 'The rating you are aiming to reach, in line with risk appetite. Set by judgement, not calculated']
   LevelsAboveTarget calculated_number [note: 'Calculated automatically: how many rating levels the residual risk sits above the target (negative means below). Two or more levels above means at-least-quarterly review. Blank until both ratings are set']
   MatrixVersion matrix_version [not null, default: '1.0', note: 'Which version of the risk matrix rated this row. Filled automatically - change it only if you re-assess the risk under a newer matrix version']
   RiskOwner   person           [not null, note: 'Manages the risk day to day']
-  // ADOPTER CHOICE — sponsor required, or not. Both are supported; pick one
+  // ADOPTER CHOICE: sponsor required, or not. Both are supported; pick one
   // before first deploy, because changing it later re-validates every row.
   //
   //   As shipped (optional): a risk can be raised without naming a sponsor,
   //   and one is added when the register knows who it is. The cost is that
   //   a risk can reach Open, Tolerate or Closed with nobody accountable for
-  //   the decision — SharePoint cannot refuse that, because validation
+  //   the decision; SharePoint cannot refuse that, because validation
   //   formulas cannot read person columns at all, so there is no rule that
   //   says "sponsor required once it leaves Provisional". It is a
   //   governance check, listed as one in 50-govern/governance.md.

@@ -1,4 +1,4 @@
-# Visitor log — physical mapping.
+# Visitor log: physical mapping.
 prefix: "VI_"
 
 entities:
@@ -16,10 +16,10 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
-# Security: sign-ins are recorded by reception and by hosts — Members and
+# Security: sign-ins are recorded by reception and by hosts. Members and
 # Owners hold Contribute; Full Control confined to the empty-by-default
 # admin group. Visit rows are personal data: retention rules in 50-govern
-# are load-bearing.
+# do real work.
 groups:
   - name: "dbml List Administrators"
     description: "Full Control for schema changes and redeploys. Empty by default; the deploy script enrols the running operator per run."
@@ -58,11 +58,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -84,15 +84,15 @@ display_names:
 #
 # SignedOutAt is a bespoke file rather than a style because the shape the
 # library covers is the opposite of what this column means. Everywhere
-# else a blank cell is missing data; here a blank cell IS the fact — the
-# person is still in the building — and it is the single fact the whole
+# else a blank cell is missing data; here a blank cell IS the fact (the
+# person is still in the building) and it is the single fact the whole
 # register exists to publish. So blank renders as an "On site" chip in the
 # `low` treatment, and a filled cell renders as the plain local time they
 # left. Documented sp-field-severity classes only; no hexes.
 #
 # Deliberately NOT declared: a row-level wash (§1.6). The worst state here
 # is "signed in yesterday, still shown as on site", and that state already
-# has a whole view of its own — a wash would be a second signal for a
+# has a whole view of its own; a wash would be a second signal for a
 # condition the filter has already isolated, which is the noise §1.6
 # exists to prevent.
 column_formatting:
@@ -111,7 +111,7 @@ column_formatting:
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). "On site now" is the default because it is the
 # muster list: at the assembly point nobody should have to pick a view.
-# Widths are pixel ColumnWidth per view, keyed on INTERNAL names — the
+# Widths are pixel ColumnWidth per view, keyed on INTERNAL names. The
 # build rewrites them to display titles, and ColumnWidth binds by display
 # name.
 views:
@@ -171,7 +171,7 @@ views:
         InductionSighted: 130
         SignedInAt: 170
     # The morning tidy-up. Still shown as on site, but signed in before
-    # today — on a muster list that is a warden searching a building for
+    # today; on a muster list that is a warden searching a building for
     # someone who went home at three yesterday afternoon.
     - title: "Never signed out"
       fields: [Title, Organisation, VisitorType, Host, VisitLocation,
@@ -194,7 +194,7 @@ views:
 # asked of a courier is a question that trains people to tick without
 # reading. Both fields therefore appear only when they mean something.
 #
-# reconcile: exact makes this file authoritative for the whole list —
+# reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy. Read
 # the Reconciliation section of the mapping reference before copying the
 # pattern onto a hand-configured list.
@@ -209,7 +209,7 @@ form_visibility:
               value: ["Contractor", "Student / placement"] }
 
 # Form layout: a strapline header and three sections. Per-field
-# description hints render on the NEW form only — SharePoint suppresses
+# description hints render on the NEW form only. SharePoint suppresses
 # column descriptions on the Edit form. Section field lists are authored
 # with INTERNAL names; the build rewrites them to display titles.
 form_formatting:
@@ -218,7 +218,7 @@ form_formatting:
     body: formatting/visit-form-body.json
 
 # Per-column save rules, each with its own message. Every column here is a
-# DATETIME, and `now` renders as NOW() in a validation formula — verified
+# DATETIME, and `now` renders as NOW() in a validation formula, verified
 # against a live tenant on 2026-07-29
 # (test/manual/datetime-sentinel-probe.js), against Microsoft's own formula
 # reference, which says Lists do not support NOW(). That is true of
@@ -244,13 +244,13 @@ column_validation:
 #
 # The two cross-column rules this register wants are both unbuildable.
 # "Signed out at or after signed in" needs a column-to-column comparison,
-# which the condition grammar does not express — every operand is a
+# which the condition grammar does not express; every operand is a
 # literal. "Everyone but a delivery driver needs a host" needs a person
 # column as an operand, which SharePoint validation formulas cannot read
 # at all. Both stay governance checks; 50-govern/governance.md says so.
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Dates are today±N so the
 # muster surfaces land correctly whenever the demo runs; "@me" is the
 # pasting operator. Coverage: three people still on site (one of them

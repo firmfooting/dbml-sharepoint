@@ -1,5 +1,5 @@
 // ============================================================================
-// Vehicle log — the fleet catalogue + every trip, kilometres calculated.
+// Vehicle log: the fleet catalogue + every trip, kilometres calculated.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -20,7 +20,7 @@ Enum trip_type {
 Table Vehicle {
   Id           int            [pk, increment]
   Title        nvarchar       [not null, note: 'How staff refer to it: "White HiLux", "Pool car 2"']
-  Rego         nvarchar       [not null, unique, note: 'Registration plate — unique']
+  Rego         nvarchar       [not null, unique, note: 'Registration plate (unique)']
   MakeModel    nvarchar       [not null]
   HomeLocation nvarchar       [note: 'Where it lives / where keys are kept']
   Status       vehicle_status [not null, default: 'In service']
@@ -40,13 +40,13 @@ Table Trip {
   Vehicle    int       [not null, ref: > Vehicle.Id, note: 'The vehicle this trip belongs to']
   Driver     person    [not null, note: 'Who drove (defaults to you)']
   TripType   trip_type [not null, default: 'Business']
-  Purpose    nvarchar  [not null, note: 'Destination and business reason: "Warragul clinic - equipment delivery". This column is your tax substantiation — specific, not "errands"']
+  Purpose    nvarchar  [not null, note: 'Destination and business reason: "Warragul clinic - equipment delivery". This column is your tax substantiation: specific, not "errands"']
   DepartedAt datetime  [not null]
   ReturnedAt datetime
-  OdoStart   number    [not null, note: 'Odometer reading at departure — read it, do not guess it']
+  OdoStart   number    [not null, note: 'Odometer reading at departure: read it, do not guess it']
   OdoEnd     number    [note: 'Odometer at return']
-  // calculated_number — formula in mapping.yaml (OdoEnd minus OdoStart).
-  TripKm     calculated_number [note: 'Calculated automatically: kilometres travelled, end odometer minus start. Fills itself in once both readings are entered. A negative number means a mis-read odometer — fix the readings']
+  // calculated_number: formula in mapping.yaml (OdoEnd minus OdoStart).
+  TripKm     calculated_number [note: 'Calculated automatically: kilometres travelled, end odometer minus start. Fills itself in once both readings are entered. A negative number means a mis-read odometer; fix the readings']
   Notes      nvarchar  [note: 'Fuel added, damage noticed, warning lights']
 
   indexes {

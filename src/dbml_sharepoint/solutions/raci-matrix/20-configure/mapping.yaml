@@ -1,8 +1,8 @@
-# RACI matrix — physical mapping.
+# RACI matrix: physical mapping.
 #
 # Three lists, and the shape is forced by the platform as much as by the
 # method. Consulted and Informed are inherently many-valued, and the mapper
-# resolves no multi-value person or lookup type (see typemap.py:321 — only a
+# resolves no multi-value person or lookup type (see typemap.py:321; only a
 # DBML enum becomes MultiChoice). A wide, one-row-per-activity RACI therefore
 # cannot be built here except with free text. The child list that follows is
 # also what makes the most-cited RACI failure impossible: Accountable is a
@@ -42,13 +42,13 @@ watched_lists: []
 # change. Tracked as issue #5.
 #
 # CHANGE CONTROL: SharePoint recalculates every existing row when a formula
-# changes — read 50-govern/governance.md before editing this.
+# changes; read 50-govern/governance.md before editing this.
 calculated_formulas:
   Activity:
     ConfirmationDue: '=IF(OR(ISBLANK([LastConfirmed]),[ReviewStatus]="Retired"),"",DATE(YEAR([LastConfirmed]),MONTH([LastConfirmed])+IF([Criticality]="Statutory",6,IF([Criticality]="High",12,24)),DAY([LastConfirmed])))'
 
 # Security: the matrix is maintained centrally and read by everyone. Nobody
-# edits their own row — a register whose subjects can rewrite their own
+# edits their own row: a register whose subjects can rewrite their own
 # accountability is not a register.
 groups:
   - name: "RACI Matrix Maintainers"
@@ -103,14 +103,14 @@ display_names:
 column_formatting:
   Activity:
     # Criticality is an assessment scale, not a lifecycle, so it takes the
-    # severity tokens the way risk-register's TargetRiskRating does — least
+    # severity tokens the way risk-register's TargetRiskRating does: least
     # severe to `good`, ascending from there.
     Criticality: { style: severity, map: { Statutory: severe, High: warning,
                                            Routine: good } }
     ReviewStatus: { style: severity, map: { Current: low,
                                             "Needs review": warning,
                                             Retired: muted } }
-    # `calculated: true` is REQUIRED here — calculated values arrive prefixed
+    # `calculated: true` is REQUIRED here; calculated values arrive prefixed
     # `string;#`. It is WRONG in a view formatter, where [$Field] arrives
     # clean. Getting it backwards costs a silently-not-firing format either
     # way.
@@ -118,7 +118,7 @@ column_formatting:
                        guard: { field: ReviewStatus, not: [Retired] } }
     # ActivityKind is DELIBERATELY unformatted. Task, Approval and Decision
     # are a category with no ordering, and `pill` requires an explicit token
-    # map — so formatting it at all would mean inventing a colour ranking,
+    # map, so formatting it at all would mean inventing a colour ranking,
     # which is the "colour by word, not by role" failure the style standard
     # exists to prevent. It does its work through the view filter and the
     # save rule instead.
@@ -324,7 +324,7 @@ form_visibility:
       # back-date the baseline the whole cadence counts from.
       LastConfirmed: { new: false }
       # Visible exactly when one of the two save-rule branches below can
-      # bite — a Decision, or anything Statutory — rather than sitting
+      # bite (a Decision, or anything Statutory) rather than sitting
       # blank on every routine task. The two conditions must match the
       # two branches of `list_validation` or the form and the save rule
       # disagree.
@@ -338,7 +338,7 @@ form_visibility:
       # is written over REST rather than through the form.
       #
       # Changing the kind or the criticality back does NOT clear a route
-      # already entered — SharePoint has no such mechanism — so the field
+      # already entered (SharePoint has no such mechanism), so the field
       # hides while keeping its value.
       EscalationRoute:
         when:
@@ -347,7 +347,7 @@ form_visibility:
             - { field: Criticality, op: eq, value: "Statutory" }
 
 # Deliberately absent: any rule conditioned on ConfirmationDue. Conditional
-# show/hide cannot read a calculated column — the formula stays syntactically
+# show/hide cannot read a calculated column. The formula stays syntactically
 # valid, it saves, the readback compares equal, the phase passes, and the
 # form never reacts. The build refuses it; see analysis/conditions.py.
 
@@ -369,7 +369,7 @@ column_validation:
 # Both operands of both rules are Choice or Text on purpose. SharePoint
 # refuses person and lookup operands in validation formulas
 # (analysis/conditions.py:332), so no rule here can reference Responsible,
-# Accountable or AccountableForum — which is why EscalationRoute is typed
+# Accountable or AccountableForum, which is why EscalationRoute is typed
 # nvarchar rather than a multi-line column: validation cannot read those
 # either, and a rule that cannot fire is worse than no rule.
 list_validation:
@@ -385,7 +385,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). All four
 # PartyKind members appear among the ACTIVE rows, because "By kind" filters on
-# Active — a member that only exists on the retired row would leave its group
+# Active; a member that only exists on the retired row would leave its group
 # absent from the only view that groups them. Two forums, so the activity
 # register's grouped view has two groups to show.
 demo_items:

@@ -5,11 +5,11 @@
   // read back in Phase 2.1, but a wrong template/type/internal-name/lookup target
   // always requires an explicit migration.
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   invalidateFieldShapes();  // probes reflect phase-start state
-  // Read-only, so lanes are free of write races — but the field wave still
+  // Read-only, so lanes are free of write races, but the field wave still
   // waits for ALL list shapes: lookup fields validate against their target
   // list's GUID, which another lane may still be reading.
   const preflightListShapes = {};

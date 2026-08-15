@@ -203,7 +203,7 @@ def test_rollback_relocks_when_delete_fails_after_unlock() -> None:
     )
     assert "unlockedForDelete" in js
     relock_idx = js.index("setAllowDeletion(name, false)")
-    throw_idx = js.index("throw new Error(`HTTP ${r.status}${detail ? ` — ${detail}` : ''}`)")
+    throw_idx = js.index("throw new Error(`HTTP ${r.status}${detail ? `, ${detail}` : ''}`)")
     assert relock_idx < throw_idx
 
 
@@ -280,7 +280,7 @@ def test_rollback_surfaces_server_error_detail() -> None:
         schema=schema, bundle=bundle, release=release, **_COMMON_ARGS,
     )
     assert "error?.message?.value" in js
-    assert "detail ? ` — ${detail}` : ''" in js
+    assert "detail ? `, ${detail}` : ''" in js
 
 
 def test_rollback_retention_block_gets_targeted_advisory() -> None:

@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Get the end date and the renewal type right — every expiry view and every notice window is derived from those two."
+          "txtContent": "Get the end date and the renewal type right. Every expiry view and every notice window is derived from those two."
         }
       ]
     }

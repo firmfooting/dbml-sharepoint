@@ -3,19 +3,19 @@
    what each tier probes (always-run enumerations, pack-driven
    attempt-probes, the printed not-assessable honesty block), and how to
    read the COMPATIBLE / DEGRADED / BLOCKED verdict. #}
-# Site assessment — `{{ prefix }}` pack
+# Site assessment: `{{ prefix }}` pack
 
 **Target site:** {{ site_url }}
 
 Run `assess.js.txt` (generated beside this file) from the target site's browser
 console: open the site, press F12 → Console, paste the whole script, press
-Enter. It is **read-only** — it makes no changes. Read the final
+Enter. It is **read-only** and makes no changes. Read the final
 `[SP-ASSESS] [DONE]` line for the verdict:
 
-- **COMPATIBLE** — no blocking or degrading findings; deploy.
-- **DEGRADED (n warnings)** — deployable, but review each `WARN` finding
+- **COMPATIBLE**: no blocking or degrading findings; deploy.
+- **DEGRADED (n warnings)**: deployable, but review each `WARN` finding
   above the DONE line first.
-- **BLOCKED (reason)** — a hard requirement is unmet; fix the site (or
+- **BLOCKED (reason)**: a hard requirement is unmet; fix the site (or
   the operator's rights) before deploying.
 
 ## Requirements this pack checks

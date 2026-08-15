@@ -1,4 +1,4 @@
-# Service evidence register — physical mapping.
+# Service evidence register: physical mapping.
 #
 # Access is restricted by design: no grant reaches site Members or Owners.
 # A register that characterises another organisation's performance carries
@@ -701,7 +701,7 @@ form_formatting:
 # `leq today` is therefore correct, and every date column below uses it.
 #
 # OccurredAt is the one DATETIME here, and it takes `now`, which renders as
-# NOW() — verified on a live tenant on 2026-07-29
+# NOW(), verified on a live tenant on 2026-07-29
 # (test/manual/datetime-sentinel-probe.js).
 #
 # The whole-day alternative, `today+1`, would permit up to twenty-four
@@ -808,8 +808,8 @@ column_validation:
 # column, which the build reports as an error rather than discovering on a
 # live tenant. So ResponseSummary, RemedyAgreed and Outcome cannot be
 # required here even though each is the substance of its stage. Each stage
-# is gated on its DATE instead — you cannot record a response date without
-# having had a response — and the narrative fields are carried by the form
+# is gated on its DATE instead (you cannot record a response date without
+# having had a response), and the narrative fields are carried by the form
 # notes and the review cadence in 50-govern/governance.md. A message that
 # promised more than the formula enforces would be worse than the gap.
 list_validation:

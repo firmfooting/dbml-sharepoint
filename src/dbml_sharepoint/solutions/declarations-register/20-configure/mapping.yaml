@@ -1,4 +1,4 @@
-# Declarations register — physical mapping.
+# Declarations register: physical mapping.
 prefix: "DR_"
 
 entities:
@@ -17,14 +17,14 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
-# Security: declarations are evidential — staff submit and read but never
+# Security: declarations are evidential. Staff submit and read but never
 # edit after submission; the compliance coordinators assess and maintain;
 # Full Control confined to the empty-by-default admin group.
 # NOTE on visibility: this default lets all site members read all
 # declarations (many public-sector codes expect exactly that). If your
 # context requires a confidential register, scope the SITE membership to
 # the compliance function and take staff declarations via the coordinators
-# — record the decision in 50-govern.
+# and record the decision in 50-govern.
 groups:
   - name: "DR Compliance Coordinators"
     description: "Assess declarations, record management plans and decisions, run the review cadence."
@@ -83,11 +83,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -100,15 +100,15 @@ display_names:
   mode: auto
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template. Tokens map by the ROLE a member plays in its lifecycle.
 column_formatting:
   Interest:
     # Two changes to the shipped map. "Declared" moves from `low` to
-    # `neutral`: it is the intake band by definition — a declaration
+    # `neutral`: it is the intake band by definition, a declaration
     # nobody has assessed yet, against a ten-day assessment SLA in
-    # 50-govern — and the "Awaiting assessment" view exists precisely to
+    # 50-govern, and the "Awaiting assessment" view exists precisely to
     # empty it. And "Assessed - managed" moves off `good`: it shared a
     # token with "Assessed - no action", which erased the only distinction
     # on this list that carries an ongoing obligation. A managed conflict
@@ -134,7 +134,7 @@ column_formatting:
     # needs-attention band, and it is the only row on this list anybody
     # has to act on. Surrendered and Declined share `good` deliberately:
     # they are different acts with the same result, which is that nothing
-    # is held — and what is held is the question this register answers.
+    # is held, and what is held is the question this register answers.
     # Retained is `low` rather than `good` for the same reason: it is the
     # outcome that stays on the books and reads out in the annual
     # disclosure.
@@ -149,14 +149,14 @@ column_formatting:
     # $150: anything at or over the "integrity owner decides, default
     # surrender" line reads as a nearly full bar at a glance. This is the
     # one currency column in the theme that gets a bar, and the reason is
-    # that it HAS a defensible max — contract-register's AnnualValue and
+    # that it HAS a defensible max; contract-register's AnnualValue and
     # grants-register's AmountSought do not, and are left plain.
     #
     # EDIT THIS `max` IF YOU EDIT THE THRESHOLDS. A bar scaled to
     # somebody else's ladder is a bar that means nothing.
     EstimatedValue: { style: data-bar, max: 200 }
     # OfferedDate is deliberately unformatted. It is when the offer was
-    # made — a fact, never a deadline. The thing with a clock on it is the
+    # made: a fact, never a deadline. The thing with a clock on it is the
     # decision, and that is what the "Pending decisions" view is for.
 
 # Every lens on each list shows the same identifying columns before its own
@@ -168,7 +168,7 @@ field_sets:
     identity: [Title, GiftCategory, OfferedTo, OfferedBy, Decision]
 
 # Declared views (deployed and reconciled by the views phase; undeclared
-# views are never touched). Widths are keyed on INTERNAL names — the build
+# views are never touched). Widths are keyed on INTERNAL names. The build
 # rewrites them to display titles, because ColumnWidth binds by display
 # name and an internal name silently resets.
 views:
@@ -209,7 +209,7 @@ views:
         CeasedDate: 160
         Detail: 200
     # Not in the old "Recommended views" table, and the gap it fills is
-    # 50-govern's ten-business-day assessment SLA — which had a deadline
+    # 50-govern's ten-business-day assessment SLA, which had a deadline
     # and no queue to read it from. Oldest first, because the oldest
     # unassessed declaration is the one closest to breaching it.
     - title: "Awaiting assessment"
@@ -225,7 +225,7 @@ views:
         Status: 160
         DeclaredDate: 170
         Detail: 200
-    # today+30 is a ROLLING thirty days, not "this month" — CAML has no
+    # today+30 is a ROLLING thirty days, not "this month"; CAML has no
     # calendar-period predicate, and the cadence that reads this is
     # monthly, so rolling is also the honest reading. ManagementPlan is in
     # this view rather than the others because reviewing a managed
@@ -261,7 +261,7 @@ views:
         Detail: 200
   GiftBenefit:
     # A ROLLING twelve months, not a calendar year. CAML has no
-    # calendar-period predicate, and the two readings differ on 1 July —
+    # calendar-period predicate, and the two readings differ on 1 July,
     # which anyone reconciling an annual disclosure pack will notice.
     - title: "Last 12 months"
       default: true
@@ -334,7 +334,7 @@ views:
         EstimatedValue: 150
 
 # Form layouts: a strapline header and a sectioned body per list. Per-field
-# description hints render on the NEW form only — the edit form suppresses
+# description hints render on the NEW form only. The edit form suppresses
 # column descriptions (platform limitation). Section field lists are
 # authored with INTERNAL names; the build rewrites them to display titles.
 #
@@ -353,8 +353,8 @@ form_formatting:
     body: formatting/giftbenefit-form-body.json
 
 # The assessment half of each form does not belong to the person
-# declaring. 50-govern is explicit — the declarer never assesses their own
-# declaration, and the person offered a gift never decides their own gift —
+# declaring. 50-govern is explicit: the declarer never assesses their own
+# declaration, and the person offered a gift never decides their own gift,
 # and both lists deploy with staff on a submit-only permission level, so
 # the New form is the ONLY form most people will ever see. Taking the
 # assessment fields off it is what makes that rule structural rather than
@@ -365,8 +365,8 @@ form_formatting:
 # from the New form would fail every save, and the build proves that
 # before it happens.
 #
-# Changing a status back does NOT clear values already entered —
-# SharePoint has no such mechanism — so these fields hide while keeping
+# Changing a status back does NOT clear values already entered
+# (SharePoint has no such mechanism), so these fields hide while keeping
 # whatever was typed.
 form_visibility:
   Interest:
@@ -393,7 +393,7 @@ form_visibility:
           - { field: Decision, op: neq, value: "Pending decision" }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule has to share one message.
 column_validation:
   Interest:
@@ -421,11 +421,11 @@ column_validation:
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
 # TWO rules on Interest, chained: a list has ONE ValidationFormula, the
-# top-level list is an AND, and each is an implication — `if A then B` is
+# top-level list is an AND, and each is an implication: `if A then B` is
 # `any_of[not A, B]`.
 #
 # GiftBenefit gets NO list rule, and the reason is worth recording. The one
-# cross-column rule it wants — a decided gift needs a DecisionBy — cannot
+# cross-column rule it wants (a decided gift needs a DecisionBy) cannot
 # be written: SharePoint validation formulas cannot reference a person
 # column at all, so the build refuses it rather than emitting a formula
 # that would be rejected at save. It stays a governance check; see
@@ -448,7 +448,7 @@ list_validation:
     message: "This declaration cannot be saved yet. Check both: an interest assessed as managed needs a Review Date, and a ceased interest needs the Ceased Date. The management plan itself cannot be checked here - see the governance rules."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # review and disclosure surfaces land on whatever day the demo runs; "@me"
 # is the pasting operator.

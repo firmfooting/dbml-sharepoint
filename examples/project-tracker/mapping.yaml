@@ -1,5 +1,5 @@
 # ============================================================================
-# dbml-sharepoint example: Project Tracker — physical mapping
+# dbml-sharepoint example: Project Tracker (physical mapping)
 # ============================================================================
 # Deployment and presentation configuration that does not belong in the DBML:
 # the list prefix, templates, versioning, calculated-column formulas, and the
@@ -30,7 +30,7 @@ enum_sources: {}
 watched_lists: []
 
 # Calculated columns: the DBML declares the column (calculated_text /
-# calculated_number); the formula lives here. SharePoint rules apply —
+# calculated_number); the formula lives here. SharePoint rules apply:
 # single-select Choice/Text/Number/Date references only (no Lookup, Person
 # or [Today]), 1024 chars max, and the referenced columns must be declared
 # BEFORE the calculated column in the DBML so they exist at creation time.
@@ -38,12 +38,12 @@ calculated_formulas:
   Project:
     BudgetHealth: '=IF(OR(ISBLANK([Budget]),ISBLANK([Spent])),"",IF([Spent]>[Budget],"Over budget",IF([Spent]>[Budget]*0.9,"At risk","Within budget")))'
 
-# --- Security (optional — delete everything below for inherited ACLs) ------
+# --- Security (optional, delete everything below for inherited ACLs) -------
 # Model: everyone on the site works with items (Contribute), nobody can
 # alter list schema; Full Control lives only in an empty-by-default admin
 # group. The deploy script corrects group ownership automatically (CSOM) and
 # enrols the running operator into flagged groups for the duration of the
-# run, removing them at the end — so redeploys need no manual group juggling.
+# run, removing them at the end, so redeploys need no manual group juggling.
 
 groups:
   - name: "PT List Administrators"

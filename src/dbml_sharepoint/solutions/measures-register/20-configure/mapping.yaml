@@ -1,4 +1,4 @@
-# Measures register — physical mapping.
+# Measures register: physical mapping.
 prefix: "MR_"
 
 entities:
@@ -69,25 +69,25 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
 
 # Backend internal names stay exactly as authored in the DBML (views,
 # indexes and formulas all key on them); the deployer renames the display
-# Title after create — "MeasureArea" shows as "Measure Area". Auto
+# Title after create: "MeasureArea" shows as "Measure Area". Auto
 # PascalCase splitting handles every column here correctly, so there are no
 # overrides.
 display_names:
   mode: auto
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — tokens are chosen by the ROLE a
+# website/docs/reference/style-guide.md). Tokens are chosen by the ROLE a
 # member plays in the lifecycle, not by its wording, so a colour means the
 # same thing here as it does in every other template.
 #
@@ -109,14 +109,14 @@ field_sets:
     identity: [Title, MeasureArea, Owner]
 
 # Declared views (deployed and reconciled by the views phase; undeclared
-# views are never touched). "The catalogue" is the default — the register
+# views are never touched). "The catalogue" is the default, the register
 # as a browsable, area-grouped list of what is actually in force. The four
 # lenses are the ones the register is used through: what each forum
 # receives, what needs a definition review, what is still being defined,
 # and what has been retired but must stay readable to decode old reports.
 #
 # Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
-# rewrites them to display titles — ColumnWidth binds by display name, and
+# rewrites them to display titles; ColumnWidth binds by display name, and
 # internal names silently reset).
 #
 # ReviewDate's overdue formatting reads [$Status] through its guard, so
@@ -186,7 +186,7 @@ views:
         Definition: 200
         DataSource: 180
         Status: 110
-    # Retired measures are kept permanently — they are what makes an old
+    # Retired measures are kept permanently; they are what makes an old
     # report readable. This is where a custodian finds the definition
     # behind a number nobody produces any more.
     - title: "Retired"
@@ -204,7 +204,7 @@ views:
         Notes: 200
 
 # Form layouts: a strapline header and a sectioned body. SharePoint renders
-# per-field description hints inside sectioned forms on the NEW form only —
+# per-field description hints inside sectioned forms on the NEW form only;
 # the edit form suppresses column descriptions (platform limitation).
 # Section field lists are authored with INTERNAL names; the build rewrites
 # them to display titles.
@@ -219,13 +219,13 @@ form_formatting:
 
 # Deliberately NOT declared: form_visibility. Every column on this list is
 # authored by a human at some point in a measure's life, and none of them
-# is conditional on another — a measure under development still needs its
+# is conditional on another: a measure under development still needs its
 # definition drafted, and a retired one still shows everything it was.
 # Declaring an empty `columns: {}` under the default `exact` reconciliation
 # would clear formulas nobody set; declaring nothing leaves the list alone.
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has a
+# message, and they all run, unlike list_validation, where a list has a
 # single ValidationFormula and every cross-column rule shares one message.
 column_validation:
   Measure:
@@ -234,7 +234,7 @@ column_validation:
       # years out is not a slower cadence, it is a measure that has left
       # the cull: it never appears in "Definition reviews due" and nobody
       # is ever asked whether the definition still holds. The blank arm is
-      # deliberate — a measure Under development has nothing to review yet,
+      # deliberate: a measure Under development has nothing to review yet,
       # and the list rule below is what requires the date once it is Active.
       ReviewDate:
         when:
@@ -255,7 +255,7 @@ list_validation:
     message: "An active measure needs a Review Date. Without one it never reaches the review queue and its definition is never re-tested."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # review-cadence surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: every declared view returns rows, every
@@ -282,7 +282,7 @@ demo_items:
         Title: "[DEMO] Service request turnaround (median days)"
         MeasureArea: "Service"
         Owner: "@me"
-        Definition: "Demo row. Median of (ClosedDate - LoggedDate) in calendar days over requests closed in the month. Excludes requests closed as Duplicate. Median, not mean — the mean is dominated by three annual outliers."
+        Definition: "Demo row. Median of (ClosedDate - LoggedDate) in calendar days over requests closed in the month. Excludes requests closed as Duplicate. Median, not mean; the mean is dominated by three annual outliers."
         DataSource: "Service requests (SR_Request)"
         Frequency: "Monthly"
         Direction: "Lower is better"
@@ -290,7 +290,7 @@ demo_items:
         ReportedTo: "Team meeting"
         Status: "Active"
         ReviewDate: "today-20"
-        Notes: "Demo row. Definition review overdue — the date anchor was queried at the last committee and has not been settled."
+        Notes: "Demo row. Definition review overdue; the date anchor was queried at the last committee and has not been settled."
     - key: measure-turnover
       values:
         Title: "[DEMO] Voluntary staff turnover (12-month rolling %)"

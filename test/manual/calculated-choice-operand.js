@@ -1,5 +1,5 @@
 /**
- * dbml-sharepoint PROBE — CALCULATED COLUMN OVER CHOICE OPERANDS
+ * dbml-sharepoint PROBE: CALCULATED COLUMN OVER CHOICE OPERANDS
  *
  * QUESTION: does SharePoint accept a calculated column whose operands are
  * two single-select Choice columns?
@@ -11,7 +11,7 @@
  * where both operands are Choice. No first-party Microsoft source states
  * whether that is supported, and this project has been wrong about
  * unexercised SharePoint behaviour more than once. If it is refused,
- * deploy.js fails PART-WAY THROUGH provisioning — the same failure shape
+ * deploy.js fails PART-WAY THROUGH provisioning, the same failure shape
  * website/docs/reference/dbml.md warns about for person and lookup
  * operands.
  *
@@ -30,9 +30,9 @@
  *       [Raised At Tier] before deploying, so C1 alone tests a formula
  *       deploy.js never sends.
  *
- *   NUM1  ResultType Number over a Choice operand — accepted?
+ *   NUM1  ResultType Number over a Choice operand: accepted?
  *   NUM2  ...and does it compute the branch the Choice selects?
- *   DAT1  ResultType DateTime over Choice + Date operands — accepted?
+ *   DAT1  ResultType DateTime over Choice + Date operands: accepted?
  *   DAT2  ...and does the date offset compute?
  *       Both are declarable today (calculated_number, calculated_date) and
  *       are where this template goes next: a priority that sets a response
@@ -51,12 +51,12 @@
  *   P2  a Person column in a CONDITIONAL VISIBILITY formula
  *   L3  a Lookup column in a CONDITIONAL VISIBILITY formula
  *       analysis/conditions.py forbids person in validation but permits
- *       lookup there, and permits both in conditional visibility — none of
+ *       lookup there, and permits both in conditional visibility, none of
  *       it evidenced. A rule that forbids what SharePoint allows is merely
  *       restrictive; one that PERMITS what SharePoint refuses fails at
  *       deploy time, part-way through provisioning.
  *
- *   N1  NEGATIVE CONTROL — is a Person operand refused?
+ *   N1  NEGATIVE CONTROL: is a Person operand refused?
  *
  * SECOND LIST: the lookup questions need something to point at, so this
  * also creates "<list> Target" with one row. CLEANUP removes both.
@@ -86,7 +86,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -99,7 +99,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -125,11 +125,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -137,7 +137,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -146,7 +146,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -187,7 +187,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -199,7 +199,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -246,7 +246,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -257,9 +257,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -354,7 +354,7 @@
     }
     log('OK', `Created list '${LIST}'.`);
   } else {
-    log('INFO', `List '${LIST}' already exists — topping up.`);
+    log('INFO', `List '${LIST}' already exists, topping up.`);
   }
 
   const fieldsPath = `web/lists/getbytitle('${LIST}')/fields`;
@@ -363,7 +363,7 @@
   const addField = async (schemaXml) => {
     digest = await getDigest();
     // No __metadata: the harness sends odata=nometadata, and that format
-    // REJECTS the type hint rather than ignoring it —
+    // REJECTS the type hint rather than ignoring it:
     //   "The property '__metadata' does not exist on type
     //    'SP.XmlSchemaFieldCreationInformation'"
     // The odata=verbose examples in Microsoft's docs all carry it, which is
@@ -381,7 +381,7 @@
 
   // DisplayName and Name differ deliberately on the spaced columns. The
   // build rewrites [InternalName] to [Display Name] before deploying, and
-  // auto_display_name turns RaisedAtTier into "Raised At Tier" — so the
+  // auto_display_name turns RaisedAtTier into "Raised At Tier", so the
   // formula SharePoint actually receives references a name with SPACES.
   // Columns whose display and internal names match cannot exercise that.
   const choiceXml = (internal, display, choices) =>
@@ -392,7 +392,7 @@
   const bootstrap = [
     ['RaisedAtTier', 'RaisedAtTier', choiceXml('RaisedAtTier', 'RaisedAtTier', [...TIERS, NASTY])],
     ['TargetTier', 'TargetTier', choiceXml('TargetTier', 'TargetTier', [...TIERS, NASTY])],
-    // Spaced display names — the shape the tool actually emits.
+    // Spaced display names, the shape the tool actually emits.
     ['SpacedFrom', 'Spaced From Tier', choiceXml('SpacedFrom', 'Spaced From Tier', TIERS)],
     ['SpacedTo', 'Spaced To Tier', choiceXml('SpacedTo', 'Spaced To Tier', TIERS)],
     // Drives a numeric score and a date offset, the two future shapes.
@@ -610,12 +610,12 @@
   // The tool's own rules here are uneven, and none of them were evidenced:
   //   analysis/conditions.py forbids `person` in a VALIDATION formula via
   //   _FORBIDDEN_OPERAND_TYPES, and forbids `lookup` there via a SEPARATE
-  //   guard (_lookup_problem) — a lookup is int-typed in DBML, so the type
+  //   guard (_lookup_problem). A lookup is int-typed in DBML, so the type
   //   map alone cannot see it. Both are permitted in an EXPRESSION
   //   (conditional visibility) formula.
   // A rule that forbids something SharePoint allows is merely restrictive.
   // A rule that PERMITS something SharePoint refuses fails at deploy time,
-  // part-way through provisioning — so L2, P2 and L3 are the ones that
+  // part-way through provisioning, so L2, P2 and L3 are the ones that
   // matter most.
   const targetList = `${LIST} Target`;
   let lookupReady = false;
@@ -639,7 +639,7 @@
     lookupReady = await fieldExists('ProbeLookup');
   }
 
-  // L1 — a Lookup operand in a calculated formula. N1 establishes that a
+  // L1: a Lookup operand in a calculated formula. N1 establishes that a
   // Person operand is refused, but the error names no type list, so Lookup
   // has to be asked separately rather than assumed to behave the same.
   if (!lookupReady) {
@@ -650,7 +650,7 @@
     record('L1', 'A Lookup operand in a CALCULATED formula',
            made.ok ? 'ACCEPTED' : 'REFUSED',
            made.ok
-             ? `HTTP ${made.status} — SharePoint ALLOWS this; the README says it does not`
+             ? `HTTP ${made.status}: SharePoint ALLOWS this; the README says it does not`
              : `HTTP ${made.status}: ${made.text.slice(0, 300)}`);
   } else {
     record('L1', 'A Lookup operand in a CALCULATED formula', 'ACCEPTED',
@@ -659,7 +659,7 @@
 
   // Both validation stores live on the field and are set by MERGE.
   // ValidationFormula takes DOUBLE-quoted literals and AND()/OR();
-  // ClientValidationFormula takes SINGLE quotes and &&/|| — established
+  // ClientValidationFormula takes SINGLE quotes and &&/||, established
   // earlier by form-visibility-evidence-probe.js.
   const setOnField = async (field, body) => {
     digest = await getDigest();
@@ -716,7 +716,7 @@
     record('N1', 'NEGATIVE CONTROL: a Person operand is refused',
            negative.ok ? 'FAIL' : 'PASS',
            negative.ok
-             ? 'Person operand was ACCEPTED — this probe cannot detect a refusal, '
+             ? 'Person operand was ACCEPTED. This probe cannot detect a refusal, '
                + 'so treat every other row as unproven'
              : `refused with HTTP ${negative.status}: ${negative.text.slice(0, 300)}`);
   } else {

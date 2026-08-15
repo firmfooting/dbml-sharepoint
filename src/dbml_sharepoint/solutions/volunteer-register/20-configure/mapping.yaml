@@ -1,4 +1,4 @@
-# Volunteer register — physical mapping.
+# Volunteer register: physical mapping.
 prefix: "VL_"
 
 entities:
@@ -16,7 +16,7 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
-# Security — volunteer records are personal data: ordinary site Members
+# Security. Volunteer records are personal data: ordinary site Members
 # have NO grant; coordinators maintain; Full Control confined to the
 # empty-by-default admin group. Scope SITE membership to the volunteer
 # programme.
@@ -65,11 +65,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -78,7 +78,7 @@ prevent_list_deletion: true
 # indexes and the reporting bundle all key on them); the deployer renames
 # the display Title after create.
 #
-# Auto splitting already reads WWCCNumber and WWCCExpiry correctly — the
+# Auto splitting already reads WWCCNumber and WWCCExpiry correctly; the
 # acronym-run rule breaks before the LAST capital of a run, so "WWCCExpiry"
 # becomes "WWCC Expiry" with no help. They are declared anyway, because
 # these are the two columns 30-deploy/deploy.md tells an adopter to
@@ -95,7 +95,7 @@ display_names:
       WWCCExpiry: "WWCC Expiry"
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 #
@@ -114,7 +114,7 @@ column_formatting:
 # views are never touched). Five lenses on one list: the roster, the two
 # sweep surfaces, the onboarding pipeline, and the people who are no longer
 # turning up. Widths are pixel ColumnWidth per view and the keys are
-# INTERNAL names — the build rewrites them to display titles, because
+# INTERNAL names. The build rewrites them to display titles, because
 # ColumnWidth binds by display name and an internal name silently resets.
 views:
   Volunteer:
@@ -140,7 +140,7 @@ views:
     # The monthly sweep, and the reason both expiry columns are indexed.
     # `leq` is three-valued in CAML: a blank expiry does NOT match, so a
     # volunteer who holds no WWCC at all cannot arrive here through the
-    # WWCC arm. That is correct — a check nobody holds is not a check
+    # WWCC arm. That is correct: a check nobody holds is not a check
     # about to expire, and "Missing checks" below is where it belongs.
     - title: "Checks expiring 90 days"
       fields: [Title, VolunteerRole, Team, Coordinator, Status,
@@ -165,7 +165,7 @@ views:
     # static view cannot read a table in a Markdown file. So this view is
     # deliberately WIDER than the matrix: it surfaces every active
     # volunteer missing any of the three, and the coordinator applies the
-    # matrix to the result. Over-reporting is the safe direction — a row
+    # matrix to the result. Over-reporting is the safe direction: a row
     # here that turns out not to need a WWCC costs ten seconds; a row the
     # view never showed costs a reportable failure.
     - title: "Missing checks"
@@ -229,7 +229,7 @@ views:
 
 # Form layouts: a strapline header and a sectioned body. Section field
 # lists are authored with INTERNAL names; the build rewrites them to
-# display titles. Per-field description hints render on the NEW form only —
+# display titles. Per-field description hints render on the NEW form only.
 # SharePoint suppresses column descriptions on the Edit form.
 form_formatting:
   Volunteer:
@@ -242,8 +242,8 @@ form_formatting:
 # so the field is absent on the New form and appears the moment the
 # coordinator moves the volunteer off Applying.
 #
-# Moving BACK to Applying does not clear a date already entered —
-# SharePoint has no such mechanism — so the field hides while keeping its
+# Moving BACK to Applying does not clear a date already entered
+# (SharePoint has no such mechanism), so the field hides while keeping its
 # value, and the save rule below reads the value rather than the field's
 # visibility.
 form_visibility:
@@ -254,14 +254,14 @@ form_visibility:
           - { field: Status, op: neq, value: "Applying" }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
   Volunteer:
     columns:
       # An induction that has not happened yet is not an induction, and a
       # forward-dated one silently satisfies the Active gate below and
-      # drops the volunteer out of "Missing checks" — no error, no empty
+      # drops the volunteer out of "Missing checks": no error, no empty
       # cell, just a volunteer nobody is asked about again.
       InductionDate:
         when:
@@ -274,7 +274,7 @@ column_validation:
 # Induction and a start date are the two requirements the governance matrix
 # states for EVERY role type, so they are the two a formula can hold. WHICH
 # police check or WWCC a given role needs varies by role and stays a
-# governance check — see 50-govern/governance.md, which now says so
+# governance check; see 50-govern/governance.md, which now says so
 # explicitly, and "Missing checks" above, which is the surface for it.
 list_validation:
   Volunteer:
@@ -284,16 +284,16 @@ list_validation:
         - all_of:
             - { field: InductionDate, op: is_not_null }
             - { field: StartDate, op: is_not_null }
-    message: "An Active volunteer needs an induction date and a start date. Complete the checks first — the role's check requirements are in the governance matrix, and the Missing checks view is where gaps show."
+    message: "An Active volunteer needs an induction date and a start date. Complete the checks first; the role's check requirements are in the governance matrix, and the Missing checks view is where gaps show."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Dates are today±N so the
 # sweep-derived views land correctly on whatever day the demo runs, and
 # "@me" is the pasting operator.
 #
 # The titles describe a ROLE rather than naming a person. This register
-# holds personal data and its governance doc is load-bearing about that;
+# holds personal data and its governance doc is explicit about that;
 # seeding it with invented names would teach exactly the wrong reflex on
 # the first screen anyone sees.
 #
@@ -304,7 +304,7 @@ demo_items:
   Volunteer:
     - key: vol-ward
       values:
-        Title: "[DEMO] Ward visitor — all checks current"
+        Title: "[DEMO] Ward visitor: all checks current"
         VolunteerRole: "Ward visitor"
         Team: "Ward visiting"
         Coordinator: "@me"
@@ -318,7 +318,7 @@ demo_items:
         Notes: "Demo row. Tuesday and Thursday mornings; asks to stay on the rehabilitation ward."
     - key: vol-driver
       values:
-        Title: "[DEMO] Community transport driver — police check expiring"
+        Title: "[DEMO] Community transport driver: police check expiring"
         VolunteerRole: "Driver"
         Team: "Transport"
         Coordinator: "@me"
@@ -329,10 +329,10 @@ demo_items:
         WWCCExpiry: "today+400"
         InductionDate: "today-705"
         EmergencyContact: "Demo contact, 00 0000 0000"
-        Notes: "Demo row. Renewal conversation due now — a police check takes weeks, which is why the window is 90 days and not 30."
+        Notes: "Demo row. Renewal conversation due now; a police check takes weeks, which is why the window is 90 days and not 30."
     - key: vol-events
       values:
-        Title: "[DEMO] Events helper — no police check recorded"
+        Title: "[DEMO] Events helper: no police check recorded"
         VolunteerRole: "Events"
         Team: "Events"
         Coordinator: "@me"
@@ -343,7 +343,7 @@ demo_items:
         Notes: "Demo row. Started while the check was still being processed and it was never recorded afterwards. This is the row Missing checks exists to find, and the reason the matrix is a gate rather than a guideline."
     - key: vol-applicant
       values:
-        Title: "[DEMO] Op-shop applicant — awaiting checks"
+        Title: "[DEMO] Op-shop applicant: awaiting checks"
         VolunteerRole: "Op-shop"
         Team: "Op-shop"
         Coordinator: "@me"
@@ -351,7 +351,7 @@ demo_items:
         Notes: "Demo row. Police check lodged, induction booked. Nothing starts until both are back and recorded."
     - key: vol-paused
       values:
-        Title: "[DEMO] Ward visitor — on extended leave"
+        Title: "[DEMO] Ward visitor: on extended leave"
         VolunteerRole: "Ward visitor"
         Team: "Ward visiting"
         Coordinator: "@me"
@@ -362,10 +362,10 @@ demo_items:
         WWCCExpiry: "today+150"
         InductionDate: "today-905"
         EmergencyContact: "Demo contact, 00 0000 0000"
-        Notes: "Demo row. Away for six months and intends to return, so the checks are still swept — that is why the overdue guard names Exited and not Inactive."
+        Notes: "Demo row. Away for six months and intends to return, so the checks are still swept; that is why the overdue guard names Exited and not Inactive."
     - key: vol-exited
       values:
-        Title: "[DEMO] Op-shop volunteer — exited and trimmed"
+        Title: "[DEMO] Op-shop volunteer: exited and trimmed"
         VolunteerRole: "Op-shop"
         Team: "Op-shop"
         Coordinator: "@me"
