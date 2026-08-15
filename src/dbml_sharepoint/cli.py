@@ -313,7 +313,12 @@ def _require_known_site_role(bundle: MappingBundle, site_role: str) -> None:
 
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
     detail = f"missing required key {exc}" if isinstance(exc, KeyError) else str(exc)
-    typer.echo(f"[ERROR] {what} {path}: {detail}", err=True)
+    # `path=None` skips the ": {path}" segment entirely, for a caller whose
+    # `exc` already names the path itself -- `EnvFileError` messages all do
+    # (see `_refuse` in `model/env_file.py`), and prepending it again here
+    # printed the same path twice: "[ERROR] env file X: X: line 3: ...".
+    where = f" {path}" if path is not None else ""
+    typer.echo(f"[ERROR] {what}{where}: {detail}", err=True)
     # 1, not 2. The documented contract reserves 2 for the usage errors
     # typer raises BEFORE the pipeline runs — a missing option, an unknown
     # --site-role — and gives 1 to "the build refused", which explicitly
@@ -598,7 +603,10 @@ def _resolve_env_settings(
     try:
         file_settings, digest = read_env_file(env_file)
     except EnvFileError as exc:
-        _config_error("env file", env_file, exc)
+        # `path=None`: the exception message already names `env_file` (every
+        # `EnvFileError` does, see `_refuse` in `model/env_file.py`), so
+        # passing it again here just printed it twice.
+        _config_error("env file", None, exc)
 
     resolved = enterprise_reader
     values: list[EnvValue] = []

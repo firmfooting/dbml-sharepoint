@@ -703,6 +703,35 @@ def test_env_file_missing_at_an_explicit_path_is_an_error(tmp_path: Path) -> Non
     assert "nowhere.env" in result.output
 
 
+def test_an_unparsable_env_file_is_refused_with_a_clean_message(tmp_path: Path) -> None:
+    """`_resolve_env_settings`'s `except EnvFileError: _config_error(...)`
+    was untested: deleting it broke nothing, because `read_env_file`'s own
+    `EnvFileSyntaxError` would otherwise propagate as an unhandled exception
+    and this test would fail with an error rather than an assertion.
+
+    Also pins the message staying free of the duplicate path `_config_error`
+    used to produce: `EnvFileSyntaxError` already names the path itself (see
+    `_refuse` in `model/env_file.py`), and `_config_error` used to prepend it
+    again -- "[ERROR] env file X: X: line 1: ...".
+    """
+    env_path = tmp_path / "custom.env"
+    env_path.write_text("not a key-value line\n", encoding="utf-8", newline="\n")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code == 1
+    assert "expected KEY=value" in result.output
+    assert result.output.count(str(env_path)) == 1
+    assert not (out / "deploy.js.txt").exists()
+
+
 def test_no_env_file_at_the_default_location_is_not_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
