@@ -46,6 +46,7 @@ MODULES: list[tuple[str, str]] = [
     ("model.parser", "parse DBML into the in-memory schema"),
     ("model.mapping_loader", "load mapping.yaml and referenced config"),
     ("model.release", "load release.yaml provenance"),
+    ("model.env_file", "parse dbml-sharepoint.env build defaults"),
     ("model.conditions", "the shared condition grammar's types and parser"),
     ("analysis.findings", "what a finding is — code, severity, section, location"),
     ("analysis.validator", "fail-closed build-time rules"),

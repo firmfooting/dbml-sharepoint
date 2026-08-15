@@ -39,6 +39,7 @@ from dbml_sharepoint.analysis.typemap import (
 from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators._indexes import deployable_index_columns
+from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 from dbml_sharepoint.model.mapping_loader import (
     ColumnValidation,
     EntityMapping,
@@ -86,6 +87,7 @@ def generate_deploy_js(
     extension: DeploymentExtension | None = None,
     site_context: SiteContext | None = None,
     enterprise_reader: str | None = None,
+    env_provenance: EnvProvenance = NO_ENV_FILE,
 ) -> str:
     env = script_env()
     ext: DeploymentExtension = extension if extension is not None else NullExtension()
@@ -120,6 +122,11 @@ def generate_deploy_js(
         # Which declared group that is stays the template's job: it filters
         # SCHEMA.groups on the flag emitted in build_schema_json.
         enterprise_reader=enterprise_reader,
+        # Static text baked in at build time -- deploy.js.j2 logs it as a
+        # console line rather than a header comment, because the artefact
+        # that matters is the transcript the operator pastes back, not the
+        # file. It reads nothing from the tenant and must not imply it did.
+        env_file_line=describe_env_provenance(env_provenance),
     )
 
 

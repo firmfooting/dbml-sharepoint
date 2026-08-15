@@ -10,6 +10,7 @@ from dbml_sharepoint.analysis.phases import phase_numbers
 from dbml_sharepoint.analysis.validator import Finding
 from dbml_sharepoint.extension import ManifestExtras
 from dbml_sharepoint.generators.jsgen import UNMANAGED
+from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
 from dbml_sharepoint.model.mapping_loader import MappingBundle
 from dbml_sharepoint.model.release import Release
 from dbml_sharepoint.templating import script_env
@@ -28,6 +29,7 @@ def generate_manifest(
     generated_at: str,
     manifest_extras: ManifestExtras | None = None,
     enterprise_reader: str | None = None,
+    env_provenance: EnvProvenance = NO_ENV_FILE,
 ) -> str:
     """Render the deploy manifest for ONE build.
 
@@ -38,6 +40,10 @@ def generate_manifest(
     not undo. Passing it only to ``generate_deploy_js`` left the manifest
     unable to say so, and left its group table reporting the permanently
     enrolled group as one nothing enrols into.
+
+    ``env_provenance`` defaults to ``NO_ENV_FILE`` rather than being
+    required: this function has 19 call sites, and a required parameter
+    would break every one of them.
     """
     template = script_env().get_template("manifest.md.j2")
 
@@ -289,4 +295,5 @@ def generate_manifest(
         extra_warnings=extras.warnings,
         enterprise_reader=enterprise_reader,
         reader_excluded_lists=reader_excluded_lists,
+        env_file_line=describe_env_provenance(env_provenance),
     )

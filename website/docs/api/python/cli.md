@@ -1,6 +1,6 @@
 ---
 title: cli
-sidebar_position: 24
+sidebar_position: 25
 ---
 
 # `dbml_sharepoint.cli`
@@ -67,6 +67,30 @@ rather than making the operator edit it. But a silent rewrite of what
 somebody typed is its own defect, so the caller is expected to compare
 and say so; see `_site_url_notice`.
 
+### `EnterpriseReaderDeclined`
+
+```python
+@dataclass(frozen=True)
+class EnterpriseReaderDeclined:
+```
+
+Sentinel: the operator was asked and chose nobody.
+
+`execute_build`'s `enterprise_reader` parameter carries three states, not
+two -- unset (no flag, no wizard answer, ``None``), this sentinel
+(explicitly nobody), and a UPN (``str``). Only the unset state is a
+default a future ``dbml-sharepoint.env`` may fill; this one must survive
+untouched, because it is what the wizard sends for a deliberate blank
+answer at `_ask_enterprise_reader`. A bare `object()` would work at
+runtime but repr as an unreadable address; this dataclass gives it a
+name instead.
+
+### `ENTERPRISE_READER_DECLINED`
+
+```python
+ENTERPRISE_READER_DECLINED = ENTERPRISE_READER_DECLINED
+```
+
 ### `validate_enterprise_reader`
 
 ```python
@@ -84,7 +108,7 @@ parsing claims, and no legitimate UPN contains one.
 ### `build`
 
 ```python
-def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ...) -> None
+def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ..., env_file: pathlib.Path | None = ...) -> None
 ```
 
 Generate deploy.js.txt + manifest from the DBML schema and mapping.
@@ -96,10 +120,23 @@ CLIs compose. Those callers know exactly which files they mean, and a
 path that silently came from the working directory would be a surprise
 in a library call.
 
+### `UnwiredEnvSettingError`
+
+An `ENV_SETTINGS` entry whose `parameter` `_resolve_env_settings`
+does not know how to apply.
+
+Not a build-time failure a consumer's file can cause -- this fires only
+when a contributor adds a registry entry without also teaching
+`_resolve_env_settings` how to use it, so it is a programming error, not
+an `EnvFileError`. It is still raised rather than logged and swallowed:
+a contributor who adds the second entry gets a loud failure the moment a
+build actually exercises the key, rather than a build that succeeds
+while quietly discarding what the file asked for.
+
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | None = None) -> None
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.cli.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None) -> None
 ```
 
 The `build` pipeline, callable without going through typer.
@@ -112,6 +149,17 @@ Still raises `typer.Exit` on refusal: the exit codes are the documented
 contract (2 for misuse, 1 for a refused build), and re-mapping them to
 an exception of its own here would give the wizard a second vocabulary
 for the same failures. The wizard catches it.
+
+`enterprise_reader` carries three states: ``None`` (unset -- no flag was
+given), `EnterpriseReaderDeclined` (the operator was asked and said
+nobody), or a UPN. `env_file`, when given, is a `dbml-sharepoint.env`
+ALREADY resolved to a path by the caller (`build` resolves the default
+location the same way it resolves `--schema`, `--mapping` and
+`--release`; this function does no discovery of its own). When the file
+supplies a value for a setting that is still unset, that value is used;
+an explicit `enterprise_reader` -- a flag or the declined sentinel --
+always wins over the file, because both mean the operator already
+decided.
 
 ### `validate`
 

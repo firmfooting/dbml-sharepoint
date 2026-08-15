@@ -862,4 +862,55 @@ def test_manifest_prints_resolved_view_fields_with_set_footnote(tmp_path: Path) 
     assert "@header" not in md
     # A view that named its columns directly carries no footnote.
     assert "**Plain** on APP_Board: Title\n" in md
+
+
+def test_manifest_says_so_when_no_env_file_was_read() -> None:
+    """The default `env_provenance` must say explicitly that nothing was
+    read. An absent line is indistinguishable from a feature that never
+    ran, and this is also the un-narrowed default `generate_manifest`'s 19
+    call sites get without passing the parameter at all."""
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+    assert "**Env file:** No dbml-sharepoint.env file was read." in md
+
+
+def test_manifest_reports_the_env_file_that_was_read() -> None:
+    from dbml_sharepoint.model.env_file import ENV_SETTINGS, EnvProvenance, EnvValue
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    provenance = EnvProvenance(
+        path="dbml-sharepoint.env",
+        digest="abc123def456",
+        values=(
+            EnvValue(setting=ENV_SETTINGS[0], value="svc@example.org", used=True, override=None),
+        ),
+    )
+    md = generate_manifest(
+        schema_json=build_schema_json(schema, bundle, "default"),
+        findings=[],
+        bundle=bundle,
+        release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+        env_provenance=provenance,
+    )
+    assert "**Env file:** Read dbml-sharepoint.env (sha256 abc123def456)." in md
+    assert "DBMLSP_ENTERPRISE_READER" in md
     assert "Field lists are shown RESOLVED" in md

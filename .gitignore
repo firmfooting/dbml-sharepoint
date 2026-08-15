@@ -16,6 +16,10 @@ examples/**/reports/
 src/dbml_sharepoint/solutions/**/build/
 src/dbml_sharepoint/solutions/**/reports/
 
+# A consumer's build defaults, which can carry their tenant's
+# enterprise-reader UPN. Not ours to commit.
+dbml-sharepoint.env
+
 # Generated fixture data for the threshold index probe.
 test/manual/rows/
 
