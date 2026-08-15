@@ -3,7 +3,7 @@
    CSOM ProcessQuery where the REST surface cannot). #}
   // === Phase {{ phase.number }}: custom permission levels + site groups ===
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   {
@@ -262,7 +262,7 @@
 
     // Which groups exist, from ONE enumeration. A by-name GET for a group
     // that is not there answers 404, which the browser paints red and an
-    // operator reads as a failure — and on a first deploy EVERY declared
+    // operator reads as a failure, and on a first deploy EVERY declared
     // group is that 404. Same treatment the list and view probes already
     // get: enumerate once, answer absence locally, keep a clean run clean.
     // Not fatal if refused; we fall back to probing, which is noisier and
@@ -277,7 +277,7 @@
         // nameSet/hasName: SharePoint group names are unique and resolved
         // case-insensitively, so an existing 'or list administrators'
         // must not read as absent against a declared 'OR List
-        // Administrators' — that turns an adoptable group into a create
+        // Administrators'; that turns an adoptable group into a create
         // that fails on a name collision.
         knownGroupNames = nameSet(
           ((j && j.d && j.d.results) || []).map((g) => g.Title).filter((t) => typeof t === 'string'),

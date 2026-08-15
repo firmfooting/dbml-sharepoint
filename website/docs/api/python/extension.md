@@ -5,7 +5,7 @@ sidebar_position: 24
 
 # `dbml_sharepoint.extension`
 
-*Packaging — the extension protocol*
+*Packaging: the extension protocol*
 
 The deployment-extension protocol: the hook
 names, parameter order, and return types; this skeleton conforms to it.

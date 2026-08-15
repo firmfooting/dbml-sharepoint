@@ -1,4 +1,4 @@
-# Equipment maintenance — physical mapping.
+# Equipment maintenance: physical mapping.
 prefix: "EM_"
 
 entities:
@@ -73,11 +73,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -104,7 +104,7 @@ display_names:
 # unmissable.
 #
 # NextDueDate carries the fleet's deadline treatment. Its guard names
-# Retired ONLY — an out-of-service item whose test date has passed is
+# Retired ONLY: an out-of-service item whose test date has passed is
 # still overdue, and arguably the most urgent row in the register, so it
 # keeps shouting. Only a retired item stops mattering.
 #
@@ -142,7 +142,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view, keyed on
-# INTERNAL names — the build rewrites them to display titles, and
+# INTERNAL names. The build rewrites them to display titles, and
 # ColumnWidth binds by display name.
 views:
   Equipment:
@@ -223,12 +223,12 @@ views:
         Status: 220
         Notes: 200
   MaintenanceEvent:
-    # The published table promised "Per item" — a view filtered to one
+    # The published table promised "Per item", a view filtered to one
     # piece of equipment, described as the service history an auditor
     # reads. A static view cannot filter to one parent: building it meant
     # hard-coding one item into a filter that rots, or one view per item.
     # Per §2.4 of the family standard it ships as ONE view grouped on the
-    # Equipment lookup, collapsed — and it is the DEFAULT, because
+    # Equipment lookup, collapsed, and it is the DEFAULT, because
     # 50-govern/governance.md names accreditors and insurers as this
     # view's audience and their first click should not be a view picker.
     - title: "Service history"
@@ -290,7 +290,7 @@ views:
 # have one would make the form react for no reason.
 
 # Form layouts: a strapline header and three sections each. Per-field
-# description hints render on the NEW form only — SharePoint suppresses
+# description hints render on the NEW form only. SharePoint suppresses
 # column descriptions on the Edit form. Section field lists are authored
 # with INTERNAL names; the build rewrites them to display titles.
 form_formatting:
@@ -318,7 +318,7 @@ column_validation:
 
 # Save-time enforcement, on the LIST so it may reference more than one
 # column. Anything other than a clean pass leaves something for somebody to
-# do, and Notes is where it goes — governance's evidence standard calls an
+# do, and Notes is where it goes; governance's evidence standard calls an
 # action noted nowhere else an action lost, and a failure with no
 # explanation is a row an auditor will ask about.
 #
@@ -330,7 +330,7 @@ column_validation:
 #
 # Deliberately NOT enforced on Equipment: "an in-service item has a
 # future-or-today NextDueDate", which is governance's data-quality rule 1.
-# As a save rule it would refuse to store an OVERDUE item — the exact state
+# As a save rule it would refuse to store an OVERDUE item, the exact state
 # the Overdue view exists to surface, and the one a real register must be
 # able to hold. A rule that makes the problem unrecordable does not fix it.
 list_validation:
@@ -342,13 +342,13 @@ list_validation:
     message: "An event that passed with actions, or failed, needs a note: what arose, what was done, and who owns what is left."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Equipment is created first
 # and the events reference items by demo key.
 #
 # ONE ITEM IS DELIBERATELY OVERDUE, and it is the point of the seed. The
 # Overdue view's target on a live register is empty, but a view that demos
-# empty teaches the adopter it does not work — which is precisely the
+# empty teaches the adopter it does not work, which is precisely the
 # failure the family standard's demo-coverage bar exists to prevent. The
 # infusion pump is eighteen days out of test and still in service, which is
 # both the clinical exposure this register is bought for and the only way

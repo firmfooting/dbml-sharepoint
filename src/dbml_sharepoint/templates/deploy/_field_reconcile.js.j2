@@ -12,7 +12,7 @@
      Collection(Edm.String).
 
      RENDERED FROM `analysis/typemap.py`, not typed out here. These eleven
-     pairs were transcribed by hand, as integers, in a Jinja template — the
+     pairs were transcribed by hand, as integers, in a Jinja template: the
      one copy of the field-kind vocabulary that the build could not check.
      Adding a twelfth field kind in Python and forgetting this list did not
      fail a test; it threw `TYPE_AS_STRING_BY_KIND.get(...)` undefined in the
@@ -52,8 +52,8 @@
 
   // The restoration itself, called from the finally in deploy.js.j2 rather
   // than from PROTECTION. Every phase between PREPARE and PROTECTION can
-  // return early by design — schema errors, lookup errors, ACL errors all
-  // abort before touching more of the site — and each of those returns
+  // return early by design (schema errors, lookup errors, ACL errors all
+  // abort before touching more of the site), and each of those returns
   // used to skip the re-seal, ending the run with a column LESS protected
   // than it found it. A failed run must not weaken a site, so the
   // guarantee has to sit on the exit path, which is the only path every
@@ -80,7 +80,7 @@
         } catch (err) {
           // Loud, and recorded: the operator has to know the site was left
           // open, because nothing else in the run will say so.
-          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED — re-seal it before handing the site back.`);
+          log('ERROR', `Could not re-seal '${listTitle}.${columnTitle}': ${err.message}. The column is left UNSEALED; re-seal it before handing the site back.`);
           summary.errors.push({ phase: 'exit', list: listTitle, column: columnTitle, error: err.message });
         }
       }
@@ -88,7 +88,7 @@
   }
 
   // The ONE constructor for the synthetic Title field. Title is not a
-  // declared column — it arrives as list.title_patch — so every consumer of
+  // declared column (it arrives as list.title_patch), so every consumer of
   // a declared field has to synthesise one. Keep it here: a second copy
   // elsewhere will drift out of step with this one.
   function syntheticTitleField(list) {
@@ -96,7 +96,7 @@
       title: 'Title',
       body: { ...list.title_patch, FieldTypeKind: 2 },
       // Title is not a declared field, so it carries no declared formulas.
-      // All three sentinels must be explicit — `undefined !== UNMANAGED`
+      // All three sentinels must be explicit: `undefined !== UNMANAGED`
       // reads as "managed", which MERGEs an empty message onto the built-in
       // Title column and aborts the phase.
       client_validation_formula: UNMANAGED,
@@ -115,7 +115,7 @@
   // and returns it with XML character entities intact (`<>` reads back as
   // `&lt;&gt;`), so a byte comparison never converges: the drift MERGE
   // rewrites the identical formula and the readback still "differs". Compare
-  // formulas on their XML-decoded canonical form — both sides, so encoded
+  // formulas on their XML-decoded canonical form (both sides), so encoded
   // and decoded readbacks both match. `&amp;` decodes LAST: decoding it
   // earlier would corrupt double-encoded text (`&amp;lt;` must yield the
   // literal `&lt;`, not `<`).
@@ -128,7 +128,7 @@
 
   // A second storage canonicalisation (PnP provisioning documents the same
   // trap): SharePoint strips square brackets from column references that do
-  // not need delimiting — `[Likelihood]` is stored and read back as
+  // not need delimiting: `[Likelihood]` is stored and read back as
   // `Likelihood`; names with spaces keep their brackets. Strip removable
   // brackets on both sides, but only OUTSIDE string literals (split keeps
   // `"..."` tokens, with `""` as the escaped quote, at odd indices):
@@ -205,7 +205,7 @@
 
   // List validation reconciles AFTER the list's fields exist: the formula
   // references columns (by display name) that the same run may be creating
-  // and renaming — merging it with the pre-field list settings fails with
+  // and renaming, so merging it with the pre-field list settings fails with
   // "The formula refers to a column that does not exist". Declared-null
   // means "never touch" (a hand-set validation survives).
   async function reconcileListValidation(list, digest) {
@@ -230,7 +230,7 @@
   }
 
   // Declared list-deletion block: AllowDeletion=false rejects UI deletion
-  // of the LIST object even for admins (friction, not enforcement — an
+  // of the LIST object even for admins (friction, not enforcement; an
   // admin can flip it back via API). Isolated probe/MERGE so an
   // unsupported tenant surface fails only this step.
   async function reconcileListDeletionBlock(list, digest) {
@@ -260,24 +260,24 @@
   // one list-level string recording which template family and entity
   // produced this list, and the only thing fleet reporting has to find it
   // by. It is written in the creation POST AND reconciled here, because a
-  // list provisioned before markers existed — or one whose description an
-  // owner edited in list settings — otherwise keeps a description discovery
+  // list provisioned before markers existed (or one whose description an
+  // owner edited in list settings) otherwise keeps a description discovery
   // cannot match, forever, while every deploy phase reports success.
   //
   // There is no lock to lean on. Fields have Sealed and lists have
-  // AllowDeletion; SharePoint offers no equivalent for a Description —
+  // AllowDeletion; SharePoint offers no equivalent for a Description.
   // SP.List.Description is a plain read-write property updated by the same
   // MERGE as any other list setting (Learn, checked 2026-08-12:
   // learn.microsoft.com/dotnet/api/microsoft.sharepoint.client.list.description
   // and .../sp-add-ins/working-with-lists-and-list-items-with-rest). So
   // reconcile-and-read-back is the entire control, and the read-back is
-  // load-bearing rather than ceremonial: a MERGE that answers 200 while the
+  // real rather than ceremonial: a MERGE that answers 200 while the
   // stored value stays stale reports success on a list that is still
   // invisible, which is precisely the failure class this repository exists
   // to catch.
   //
   // `actual` is the shape reconcileListShape already holds, so an unchanged
-  // description costs no request at all — a re-paste must not churn every
+  // description costs no request at all; a re-paste must not churn every
   // list it looks at. Only a repair pays the MERGE and its fresh re-read.
   async function reconcileListDescription(list, actual, digest) {
     const desired = normalizeDescription(list.description);
@@ -406,7 +406,7 @@
   //
   // SchemaXml's ShowInNewForm/ShowInEditForm are deliberately NOT written.
   // Saving the form designer migrates them into FieldLink.Hidden, which
-  // hides a column from EVERY form and is not writable over REST — so a
+  // hides a column from EVERY form and is not writable over REST, so a
   // per-form declaration would silently become hide-everywhere the first
   // time anyone opened the designer.
   async function enforceDeclaredFormulas(listName, field, digest) {
@@ -449,7 +449,7 @@
     if (alreadyRight) return;
 
     // Log what is being REPLACED before replacing it. `before` was read,
-    // compared and discarded, and on success nothing was logged at all —
+    // compared and discarded, and on success nothing was logged at all,
     // so a deploy that removed or rewrote an existing formula left no
     // record of what had been there. Under `reconcile: exact` an
     // undeclared column's formula is cleared outright, which is precisely
@@ -475,7 +475,7 @@
     if (replaced.length > 0) {
       const action = field.client_validation_formula === '' && field.validation_formula === ''
         ? 'clearing' : 'overwriting';
-      log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas — ${replaced.join('; ')}`);
+      log('INFO', `Field '${listName}.${field.title}' ${action} declared formulas: ${replaced.join('; ')}`);
     }
 
     const r = await fetchWithRetry(url, {
@@ -486,7 +486,7 @@
     if (!r.ok) {
       const text = await r.text();
       // CLEARING a formula from a field type that cannot carry one is a
-      // no-op, not a failure: the desired end state — no formula — already
+      // no-op, not a failure: the desired end state (no formula) already
       // holds, and SharePoint is refusing the property rather than the
       // value. Aborting a whole paste over it means one URL column stops a
       // deploy that has nothing wrong with it.
@@ -499,7 +499,7 @@
       const clearingOnly = (field.validation_formula === '' || field.validation_formula === UNMANAGED)
         && (field.client_validation_formula === '' || field.client_validation_formula === UNMANAGED);
       if (clearingOnly && /does not support validation formulas/i.test(text)) {
-        // A MERGE is atomic, so the refusal applied NONE of this body —
+        // A MERGE is atomic, so the refusal applied NONE of this body,
         // including any ClientValidationFormula clear it also carried,
         // which a URL field does support. Returning here would report
         // success while a stale show/hide rule stayed live and the

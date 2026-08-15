@@ -1,5 +1,5 @@
 // ============================================================================
-// Training register — the catalogue (Course) and completions (TrainingRecord).
+// Training register: the catalogue (Course) and completions (TrainingRecord).
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -46,8 +46,8 @@ Table TrainingRecord {
   CompletedDate date           [not null]
   // Expiry = CompletedDate + Course.ValidityMonths; entered manually, not calculated.
   ExpiryDate    date           [note: 'When this completion lapses: the completed date plus the course validity period. Leave blank for courses that never expire']
-  // Maintained by the coordinator expiry sweep — procedure in governance.
-  Status        record_status  [not null, default: 'Current', note: 'Whether this completion is still current. The training coordinator keeps this up to date as expiry dates approach — leave as Current for a new record']
+  // Maintained by the coordinator expiry sweep; procedure in governance.
+  Status        record_status  [not null, default: 'Current', note: 'Whether this completion is still current. The training coordinator keeps this up to date as expiry dates approach; leave as Current for a new record']
   EvidenceUrl   hyperlink      [note: 'Link to the certificate / attendance evidence in its document store']
   Notes         nvarchar       [note: 'Score, trainer, anything auditors ask about']
 

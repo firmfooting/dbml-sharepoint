@@ -8,7 +8,7 @@
  *   When you hide a column using the modern list UI
  *   ("Edit form" -> "Edit columns"), WHERE does SharePoint record it?
  *
- * It is not the field's SchemaXml — a sealed field, which the API refuses
+ * It is not the field's SchemaXml. A sealed field, which the API refuses
  * to modify, can still be hidden through that panel, and the field's
  * SchemaXml comes back unchanged afterwards. So there is a second store,
  * and anything that reconciles form visibility has to know about it or it
@@ -165,7 +165,7 @@
 
   log('INFO', `Form formatter JSON present on a content type: ${formatterText ? `YES (${formatterText.length} chars)` : 'no'}`);
   if (formatterText) {
-    log('INFO', 'Formatter JSON follows — look for a fields/sections/fieldsettings block naming the hidden columns:');
+    log('INFO', 'Formatter JSON follows, look for a fields/sections/fieldsettings block naming the hidden columns:');
     try {
       console.log(JSON.stringify(JSON.parse(formatterText), null, 2));
     } catch {

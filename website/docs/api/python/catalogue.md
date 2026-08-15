@@ -5,7 +5,7 @@ sidebar_position: 26
 
 # `dbml_sharepoint.catalogue`
 
-*Packaging — the shipped solution templates, as data*
+*Packaging: the shipped solution templates, as data*
 
 The shipped solution templates, as data the wizard can offer.
 

@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Name it the way people say it out loud — this is the dropdown every asset picks from."
+          "txtContent": "Name it the way people say it out loud. This is the dropdown every asset picks from."
         }
       ]
     }

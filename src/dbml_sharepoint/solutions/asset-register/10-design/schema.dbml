@@ -1,5 +1,5 @@
 // ============================================================================
-// Asset register — a reference list (Location) plus the register (Asset).
+// Asset register: a reference list (Location) plus the register (Asset).
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -36,12 +36,12 @@ Table Location {
 Table Asset {
   Id             int             [pk, increment]
   Title          nvarchar        [not null, note: 'What the asset is, plainly ("Dell XPS 15 laptop")']
-  AssetTag       nvarchar        [not null, unique, note: 'The physical tag / serial you actually track — must be unique']
+  AssetTag       nvarchar        [not null, unique, note: 'The physical tag / serial you actually track (must be unique)']
   Category       asset_category  [not null]
   Status         asset_status    [not null, default: 'In service']
   // Lookup to Location.
   Location       int             [ref: > Location.Id, note: 'Where this asset normally lives']
-  AssignedTo     person          [note: 'Who currently holds it — blank when unassigned']
+  AssignedTo     person          [note: 'Who currently holds it (blank when unassigned)']
   PurchaseDate   date
   PurchaseCost   number          [note: 'In your base currency']
   WarrantyExpiry date

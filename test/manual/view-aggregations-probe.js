@@ -5,7 +5,7 @@
  * built into the tool: HOW is a view's totals row actually written, and
  * does writing it actually make a total appear?
  *
- * Three templates publish a totals view they cannot build — vehicle-log's
+ * Three templates publish a totals view they cannot build: vehicle-log's
  * "Monthly km by vehicle" (sum TripKm), service-requests' turnaround
  * report and complaints-feedback's monthly report. `Aggregations` is a
  * property of SP.View rather than part of ViewQuery, and which write path
@@ -20,7 +20,7 @@
  *
  * HOW TO RUN
  *   1. Paste it once: it prints the web and stops. Set CONFIRMED = true.
- *   2. Open that site's classic settings page — /_layouts/15/settings.aspx —
+ *   2. Open that site's classic settings page (/_layouts/15/settings.aspx),
  *      signed in as a Site Owner. The site guard needs _spPageContextInfo.
  *   3. F12 -> Console -> type `allow pasting` if the browser objects ->
  *      paste this whole file -> Enter.
@@ -30,7 +30,7 @@
  * THE MANUAL STEP (Q4 cannot be answered from script)
  *   A property that round-trips but renders no totals row is
  *   indistinguishable from a working one on every check a deploy can
- *   perform — which is exactly the failure class this repository keeps
+ *   perform, which is exactly the failure class this repository keeps
  *   closing. So set CLEANUP_AT_END = false, run, then OPEN THE VIEW URL
  *   the probe prints and LOOK for the totals row under the Amount column.
  *   Re-run with CLEANUP_AT_END = true to remove the list.
@@ -46,14 +46,14 @@
  * the aa79f6c4 run needed.
  *
  * RE-RUN 2026-08-14, revision aa79f6c4, on a different site. Every result
- * below REPRODUCED — mechanism=patch (HTTP 204), readback exact, a Sum of 42
+ * below REPRODUCED: mechanism=patch (HTTP 204), readback exact, a Sum of 42
  * rendered, internal names bound, both columns rendered in order.
  *
  * It also surfaced something the 2026-07-29 record does not mention, and it
  * matters more than it looks:
  *
  *   AN AGGREGATION OVER AN EMPTY COLUMN RENDERS NOTHING AT ALL. No label,
- *   no zero, no blank total — the column footer is simply absent. The probe
+ *   no zero, no blank total. The column footer is simply absent. The probe
  *   created `SecondAmount` AFTER seeding its rows, so both were empty, and
  *   the operator running it saw exactly what a FAILED BINDING looks like.
  *   Q5 could only be settled by hand-typing values into the list, at which
@@ -62,7 +62,7 @@
  *
  *   That is a diagnostic trap for anyone deploying a totals view onto a NEW
  *   list: it will look broken until the first row carries a value. It is
- *   also why this probe now seeds the second column itself — a probe that
+ *   also why this probe now seeds the second column itself. A probe that
  *   cannot answer its own question without manual data entry is one whose
  *   answer depends on the operator guessing what to try.
  *
@@ -78,33 +78,33 @@
  *   because the simpler mechanism won. The probe is kept for re-running
  *   against a tenant whose behaviour is in doubt.
  *
- *   Q5 — AGGREGATIONS BINDS BY INTERNAL NAME. A FieldRef naming
- *        `SecondAmount` produced a figure under its display title
- *        "Second Amount Display". This is the opposite of the sibling
- *        ColumnWidth property, which binds by DISPLAY title and silently
- *        resets when given internal names — so the two are written
- *        differently on purpose, and neither can be inferred from the
- *        other.
- *   Q6 — TWO AGGREGATIONS BOTH RENDER, and the readback preserves
- *        declaration order:
- *        `<FieldRef Name="Amount" Type="Sum" /><FieldRef Name="SecondAmount" Type="AVG" />`
- *        The deployer compares that string exactly, so order mattering is
- *        the safe outcome. Tokens also round-trip verbatim — `Sum` stays
- *        `Sum` and `AVG` stays `AVG` — so SharePoint normalises neither
- *        case nor spelling, and the only difference to absorb is the
- *        pre-`/>` space.
+ *   Q5: AGGREGATIONS BINDS BY INTERNAL NAME. A FieldRef naming
+ *       `SecondAmount` produced a figure under its display title
+ *       "Second Amount Display". This is the opposite of the sibling
+ *       ColumnWidth property, which binds by DISPLAY title and silently
+ *       resets when given internal names, so the two are written
+ *       differently on purpose, and neither can be inferred from the
+ *       other.
+ *   Q6: TWO AGGREGATIONS BOTH RENDER, and the readback preserves
+ *       declaration order:
+ *       `<FieldRef Name="Amount" Type="Sum" /><FieldRef Name="SecondAmount" Type="AVG" />`
+ *       The deployer compares that string exactly, so order mattering is
+ *       the safe outcome. Tokens also round-trip verbatim (`Sum` stays
+ *       `Sum` and `AVG` stays `AVG`), so SharePoint normalises neither
+ *       case nor spelling, and the only difference to absorb is the
+ *       pre-`/>` space.
  *
  *   THE AGGREGATION TYPE IS AN ENUMERATION, NOT ENGLISH: AVG, COUNT, MAX,
  *   MIN, SUM, STDEV, VAR, per FieldRef element (Query), case-insensitive.
  *   A non-member such as "Average" is ACCEPTED, stored and read back
- *   unchanged, and then the view will not render at all — "Unknown render
- *   failure". That is worse than a silent no-op, and it is observed
+ *   unchanged, and then the view will not render at all ("Unknown render
+ *   failure"). That is worse than a silent no-op, and it is observed
  *   behaviour on this tenant, not a caution.
  *
  *   To recover a view in that state, MERGE it with Aggregations: '' and
  *   AggregationsStatus: 'Off'.
  *
- *   SEEDING IS Q0 — posted, counted, and read back from ItemCount — and a
+ *   SEEDING IS Q0 (posted, counted, and read back from ItemCount), and a
  *   failed seed downgrades the verdict line rather than sitting quietly
  *   beneath it. An empty list shows no totals row whether the feature works
  *   or not, so a `rendered=no` from an unseeded run means nothing.
@@ -123,7 +123,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 62fc335f — quote this when reporting results.');
+  log('INFO', 'probe revision 95d6a0fc. Quote this when reporting results.');
   const results = [];
   const expect = (id, question) => {
     results.push({ id, question, observed: 'NOT ESTABLISHED', detail: 'the run did not reach this question' });
@@ -135,7 +135,7 @@
     } else {
       results.push({ id, question, observed, detail: detail || '' });
     }
-    log('INFO', `${id}: ${observed}${detail ? ` — ${detail}` : ''}`);
+    log('INFO', `${id}: ${observed}${detail ? ` (${detail})` : ''}`);
   };
   expect('Q0', 'two rows actually seeded, so the manual check has something to total');
   expect('Q1', 'REST PATCH of SP.View Aggregations/AggregationsStatus is accepted');
@@ -147,7 +147,7 @@
 
   // === Preflight: confirm the site ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
-  // '/_api/web/...' targets the tenant root web — NOT the sub-site you are
+  // '/_api/web/...' targets the tenant root web, NOT the sub-site you are
   // viewing. Prefix every call with the current web's server-relative URL.
   if (typeof _spPageContextInfo === 'undefined') {
     log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the web context. Open /_layouts/15/settings.aspx and retry.');
@@ -220,7 +220,7 @@
     return { ok: true, status: r.status, d: (await r.json()).d };
   }
   // An item POST's __metadata.type must be the LIST'S OWN entity type
-  // (SP.Data.<MangledListName>ListItem), not the generic SP.Data.ListItem —
+  // (SP.Data.<MangledListName>ListItem), not the generic SP.Data.ListItem,
   // which the first version of this probe sent, earning two HTTP 400s that
   // it then reported as "Seeded two rows". deploy.js has always resolved
   // this properly; the probe did not.
@@ -288,7 +288,7 @@
         : `ItemCount=${rowCount}; ${AGG_TYPE} of ${AGG_FIELD} should be 42`,
     );
     if (rowCount !== 2) {
-      log('ERROR', 'The list is not correctly seeded — Q4 cannot be answered by looking at it. Fix this before trusting the verdict.');
+      log('ERROR', 'The list is not correctly seeded. Q4 cannot be answered by looking at it. Fix this before trusting the verdict.');
     }
 
     const view = await post(`${listPath}/views`, {
@@ -321,7 +321,7 @@
       'Q1',
       'REST PATCH of SP.View Aggregations/AggregationsStatus is accepted',
       patched.ok ? 'ACCEPTED' : 'REFUSED',
-      patched.ok ? `HTTP ${patched.status}` : `HTTP ${patched.status} — ${patched.error}`,
+      patched.ok ? `HTTP ${patched.status}` : `HTTP ${patched.status} (${patched.error})`,
     );
 
     // === Q2: the SetViewXml path, guarded exactly as widths are ==========
@@ -355,7 +355,7 @@
             'Q2',
             'GetViewXml/SetViewXml carries an <Aggregations> block',
             set.ok ? 'ACCEPTED' : 'REFUSED',
-            set.ok ? `HTTP ${set.status}` : `HTTP ${set.status} — ${set.error}`,
+            set.ok ? `HTTP ${set.status}` : `HTTP ${set.status} (${set.error})`,
           );
         }
       }
@@ -380,7 +380,7 @@
     // === Q5/Q6: the naming question, and two columns at once =============
     //
     // WHY Q5 MATTERS MORE THAN THE REST. The sibling ColumnWidth property
-    // binds by DISPLAY title — internal names are accepted and silently
+    // binds by DISPLAY title. Internal names are accepted and silently
     // reset the widths (live finding, see jsgen). Aggregations is written
     // with INTERNAL names on the assumption that it does not behave the
     // same way, and the original run of this probe could not tell: it
@@ -388,7 +388,7 @@
     // hypotheses were indistinguishable.
     //
     // Every template that ships totals uses display_names: auto, so every
-    // totalled column's display title DIFFERS from its internal name —
+    // totalled column's display title DIFFERS from its internal name,
     // i.e. all of them are in the case this probe never covered. If the
     // property binds by display title, the XML round-trips, both verify
     // halves pass, and no figure renders. That is the exact silent
@@ -398,7 +398,7 @@
       __metadata: { type: 'SP.FieldNumber' }, FieldTypeKind: 9, Title: SECOND,
     });
     if (second.ok) {
-      // Rename the DISPLAY title, leaving the internal name as created —
+      // Rename the DISPLAY title, leaving the internal name as created,
       // the same create-then-rename trick deploy.js uses for every column.
       await post(
         `${listPath}/fields/getbyinternalnameortitle('${odataName(SECOND)}')`,
@@ -410,7 +410,7 @@
       // SEED THE SECOND COLUMN, because run 1 could not answer its own
       // question without it. The field is created after the rows, so both
       // were empty, and SharePoint renders NOTHING for an aggregation over
-      // an empty column — no label, no zero. An operator looking for a
+      // an empty column (no label, no zero). An operator looking for a
       // figure under "Second Amount Display" therefore saw exactly what a
       // FAILED BINDING would look like, and Q5 could only be settled by
       // hand-typing values into the list. That ambiguity is the probe's
@@ -444,7 +444,7 @@
             + `OPEN THE VIEW: a figure under "Second Amount Display" means INTERNAL names bind `
             + `(what the tool assumes). No figure under it means DISPLAY titles bind, and every `
             + `shipped totals view is silently empty.`
-          : `HTTP ${wrote.status} — ${wrote.error}`,
+          : `HTTP ${wrote.status} (${wrote.error})`,
       );
       record(
         'Q6',
@@ -452,7 +452,7 @@
         wrote.ok ? 'MANUAL' : 'NOT REACHED',
         wrote.ok
           ? 'the same view now declares two aggregations; confirm BOTH figures appear, and that '
-            + 'the readback above preserved declaration order — the deployer compares the string '
+            + 'the readback above preserved declaration order. The deployer compares the string '
             + 'exactly, so a reordered readback would drift on every redeploy'
           : 'the two-column write was refused',
       );
@@ -470,7 +470,7 @@
       + `readback=${matches ? 'ok' : 'mismatch'} rendered=<fill in after looking>`,
     );
     if (rowCount !== 2) {
-      log('ERROR', 'seeded=FAILED — an empty list shows no totals row whether the feature works or not, so `rendered=no` from this run would mean nothing. Fix the seeding and re-run before reporting.');
+      log('ERROR', 'seeded=FAILED. An empty list shows no totals row whether the feature works or not, so `rendered=no` from this run would mean nothing. Fix the seeding and re-run before reporting.');
     }
     log('INFO', 'Paste the VERDICT line back, with rendered= set to yes or no.');
     return { seeded: rowCount, mechanism, readback: matches ? 'ok' : 'mismatch', viewUrl, results };

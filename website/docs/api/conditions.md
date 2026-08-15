@@ -7,7 +7,7 @@ sidebar_position: 4
 
 :::note Generated
 Every rendering below is produced by running the renderer, not written
-by hand — see `website/scripts/generate_api.py`.
+by hand; see `website/scripts/generate_api.py`.
 :::
 
 The shared condition grammar's types and structural parser.
@@ -47,15 +47,15 @@ everywhere else in this package.
 | `not_in` | `<Or><IsNull><FieldRef Name="Status"/></IsNull><And><Neq><FieldRef Name="Status"/><Value Type="Text">A</Value></Neq><Neq><FieldRef Name="Status"/><Value Type="Text">B</Value></Neq></And></Or>` | `([$Status] != 'A' && [$Status] != 'B')` | `AND([Status]<>"A",[Status]<>"B")` |
 | `contains` | `<Contains><FieldRef Name="Note"/><Value Type="Text">x</Value></Contains>` | `indexOf([$Note], 'x') >= 0` | `ISNUMBER(FIND("x",[Note]))` |
 | `begins_with` | `<BeginsWith><FieldRef Name="Note"/><Value Type="Text">ab</Value></BeginsWith>` | `indexOf([$Note], 'ab') == 0` | `LEFT([Note],2)="ab"` |
-| `includes` | `<Eq><FieldRef Name="Events"/><Value Type="Text">View</Value></Eq>` | _not supported — operator 'includes' has no rendering_ | _not supported — operator 'includes' has no rendering_ |
-| `not_includes` | `<Or><IsNull><FieldRef Name="Events"/></IsNull><Neq><FieldRef Name="Events"/><Value Type="Text">View</Value></Neq></Or>` | _not supported — operator 'not_includes' has no rendering_ | _not supported — operator 'not_includes' has no rendering_ |
-| `measure: length` | _not supported — 'measure' cannot be rendered: CAML has no LEN_ | _not supported — 'measure' cannot be rendered: list formatting's length() counts array items and returns 1/0 for other types -- it does not measure a string, so the formula would be false for every value_ | `LEN([Note])>10` |
-| `property (person)` | _not supported — CAML cannot reach person or lookup sub-properties_ | `[$Owner.title] != ''` | _not supported — person and lookup operands are unsupported in validation formulas_ |
+| `includes` | `<Eq><FieldRef Name="Events"/><Value Type="Text">View</Value></Eq>` | _not supported: operator 'includes' has no rendering_ | _not supported: operator 'includes' has no rendering_ |
+| `not_includes` | `<Or><IsNull><FieldRef Name="Events"/></IsNull><Neq><FieldRef Name="Events"/><Value Type="Text">View</Value></Neq></Or>` | _not supported: operator 'not_includes' has no rendering_ | _not supported: operator 'not_includes' has no rendering_ |
+| `measure: length` | _not supported: 'measure' cannot be rendered: CAML has no LEN_ | _not supported: 'measure' cannot be rendered: list formatting's length() counts array items and returns 1/0 for other types -- it does not measure a string, so the formula would be false for every value_ | `LEN([Note])>10` |
+| `property (person)` | _not supported: CAML cannot reach person or lookup sub-properties_ | `[$Owner.title] != ''` | _not supported: person and lookup operands are unsupported in validation formulas_ |
 
 ## Not yet verified
 
 Nothing is waiting on a probe that has been written and not run. That
-is what this section reports, and an empty one is the good state — so
+is what this section reports, and an empty one is the good state, so
 it says so rather than leaving a blank.
 
 It is not a claim that every operator was watched in a form. The four
@@ -72,7 +72,7 @@ rendering is derived rather than observed, the source says so.
 
 ## Bounds
 
-At most **4** nested groups and **32** conditions, counted after normalisation —
+At most **4** nested groups and **32** conditions, counted after normalisation;
 negation expands each leaf and `in` expands to one condition per value.
 
 ## Normalisation

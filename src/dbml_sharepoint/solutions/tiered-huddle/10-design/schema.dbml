@@ -1,5 +1,5 @@
 // ============================================================================
-// Tiered huddle boards — the daily operating system.
+// Tiered huddle boards: the daily operating system.
 // One row per day per tier, one status column per reporting stream, plus a
 // cross-tier escalation list.
 // Render the ERD by pasting this file into https://dbdiagram.io
@@ -75,13 +75,13 @@ Enum escalation_priority {
 // due-date, routing and ownership filters.
 
 // ---------------------------------------------------------------------------
-// Tier 1 — the frontline team huddle. Six streams.
+// Tier 1: the frontline team huddle. Six streams.
 // ---------------------------------------------------------------------------
 Table Tier1Board {
   Id                int          [pk, increment]
   // SharePoint always creates Title; declared optional because the date is
   // the key and demanding a title on a daily record is pure overhead.
-  Title             nvarchar     [note: 'Optional — the date is what identifies this board']
+  Title             nvarchar     [note: 'Optional; the date is what identifies this board']
   BoardDate         date         [not null, unique, note: 'The day this board covers; one row per day']
   Chair             person       [not null, note: 'Who ran the huddle today']
   HuddleHeld        huddle_held  [not null, default: 'Held', note: 'Held, or say why it was not']
@@ -101,7 +101,7 @@ Table Tier1Board {
   QualityNote       longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   ImprovementStatus rag_status   [note: 'Leave blank if improvement did not report; blank is a visible gap, not a pass']
   ImprovementNote   longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
-  Recognition       longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
+  Recognition       longtext     [note: 'Anything worth calling out: a good catch, a fix, a thank you']
   OtherUpdates      longtext     [note: 'Anything that does not belong to a stream']
 
   indexes {
@@ -113,11 +113,11 @@ Table Tier1Board {
 }
 
 // ---------------------------------------------------------------------------
-// Tier 2 — the department or service huddle. Eight streams.
+// Tier 2: the department or service huddle. Eight streams.
 // ---------------------------------------------------------------------------
 Table Tier2Board {
   Id                   int          [pk, increment]
-  Title                nvarchar     [note: 'Optional — the date is what identifies this board']
+  Title                nvarchar     [note: 'Optional; the date is what identifies this board']
   BoardDate            date         [not null, unique, note: 'The day this board covers; one row per day']
   Chair                person       [not null, note: 'Who ran the huddle today']
   HuddleHeld           huddle_held  [not null, default: 'Held', note: 'Held, or say why it was not']
@@ -139,7 +139,7 @@ Table Tier2Board {
   FinanceNote          longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   ImprovementStatus    rag_status   [note: 'Leave blank if improvement did not report; blank is a visible gap, not a pass']
   ImprovementNote      longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
-  Recognition          longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
+  Recognition          longtext     [note: 'Anything worth calling out: a good catch, a fix, a thank you']
   OtherUpdates         longtext     [note: 'Anything that does not belong to a stream']
 
   indexes {
@@ -151,12 +151,12 @@ Table Tier2Board {
 }
 
 // ---------------------------------------------------------------------------
-// Tier 3 — the site or executive huddle. Ten live streams, plus one retired
+// Tier 3: the site or executive huddle. Ten live streams, plus one retired
 // pair kept as a worked example of the retirement mechanism (see below).
 // ---------------------------------------------------------------------------
 Table Tier3Board {
   Id                    int          [pk, increment]
-  Title                 nvarchar     [note: 'Optional — the date is what identifies this board']
+  Title                 nvarchar     [note: 'Optional; the date is what identifies this board']
   BoardDate             date         [not null, unique, note: 'The day this board covers; one row per day']
   Chair                 person       [not null, note: 'Who ran the huddle today']
   HuddleHeld            huddle_held  [not null, default: 'Held', note: 'Held, or say why it was not']
@@ -178,8 +178,8 @@ Table Tier3Board {
   // audit then reports forever. See 30-deploy/deploy.md.
   // Never deployed this template before? Then nothing exists yet and you
   // may delete this pair and its retired_columns entry outright.
-  EnvironmentStatus     rag_status   [note: 'Retired — kept so the history stays readable; use Facilities instead']
-  EnvironmentNote       longtext     [note: 'Retired — kept so the history stays readable; use Facilities instead']
+  EnvironmentStatus     rag_status   [note: 'Retired, kept so the history stays readable; use Facilities instead']
+  EnvironmentNote       longtext     [note: 'Retired, kept so the history stays readable; use Facilities instead']
   TechnologyStatus      rag_status   [note: 'Leave blank if technology did not report; blank is a visible gap, not a pass']
   TechnologyNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   FinanceStatus         rag_status   [note: 'Leave blank if finance did not report; blank is a visible gap, not a pass']
@@ -192,7 +192,7 @@ Table Tier3Board {
   ComplianceNote        longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
   CommunicationsStatus  rag_status   [note: 'Leave blank if communications did not report; blank is a visible gap, not a pass']
   CommunicationsNote    longtext     [note: 'Needed when the status is not Green: what changed, and what you are doing about it']
-  Recognition           longtext     [note: 'Anything worth calling out — a good catch, a fix, a thank you']
+  Recognition           longtext     [note: 'Anything worth calling out: a good catch, a fix, a thank you']
   OtherUpdates          longtext     [note: 'Anything that does not belong to a stream']
 
   indexes {
@@ -204,7 +204,7 @@ Table Tier3Board {
 }
 
 // ---------------------------------------------------------------------------
-// Escalation — what could not be resolved at the tier that raised it.
+// Escalation: what could not be resolved at the tier that raised it.
 // Items travel in both directions: up when a tier cannot fix something,
 // down when work belongs closer to the front line, and back again as
 // "Returned to tier" when the target tier hands it back.
@@ -237,7 +237,7 @@ Table Escalation {
   // column, and SharePoint validation cannot reference multi-line columns.
   Resolution   nvarchar             [note: 'Required to resolve or close: one line on what was actually done']
   ResolvedDate date                 [note: 'Required to resolve or close']
-  Notes        longtext             [note: 'The longer story — discussion, options, who was consulted']
+  Notes        longtext             [note: 'The longer story: discussion, options, who was consulted']
 
   indexes {
     Status

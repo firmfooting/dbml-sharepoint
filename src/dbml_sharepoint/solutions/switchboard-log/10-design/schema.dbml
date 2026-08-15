@@ -1,11 +1,11 @@
 // ============================================================================
-// Switchboard log — code events, the message book, and the key register.
+// Switchboard log: code events, the message book, and the key register.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
 Project switchboard_log { database_type: 'SharePoint Online Lists' }
 
-// AS 4083 (Australia) — replace with your jurisdiction's code set.
+// AS 4083 (Australia). Replace with your jurisdiction's code set.
 Enum code_type {
   "Code Blue - medical emergency"
   "Code Red - fire / smoke"
@@ -39,15 +39,15 @@ Table CodeEvent {
   Id              int       [pk, increment]
   Title           nvarchar  [not null, note: 'Code + location in one line: "Code Blue - Ward 2 North"']
   CodeType        code_type [not null]
-  CodeLocation    nvarchar  [not null, note: 'Where, precisely — building, ward, room']
-  IsDrill         boolean   [default: false, note: 'Drills are logged exactly like real events — that is the point of drills']
-  AnnouncedAt     datetime  [not null, note: 'When the code was announced — logged live, not reconstructed']
+  CodeLocation    nvarchar  [not null, note: 'Where, precisely: building, ward, room']
+  IsDrill         boolean   [default: false, note: 'Drills are logged exactly like real events; that is the point of drills']
+  AnnouncedAt     datetime  [not null, note: 'When the code was announced, logged live, not reconstructed']
   AllClearAt      datetime  [note: 'When stand-down was announced']
-  // calculated_number — formula in mapping.yaml (AnnouncedAt to AllClearAt, in minutes).
+  // calculated_number: formula in mapping.yaml (AnnouncedAt to AllClearAt, in minutes).
   DurationMinutes calculated_number [note: 'Calculated automatically from the announced and all-clear times: how long the code ran, in minutes. Blank until both times are entered']
   AnnouncedBy     person    [note: 'The operator who made the announcement (defaults to you)']
   InitiatedBy     nvarchar  [note: 'Who called it in: role/extension/name as known at the time']
-  EventNotes      richtext  [note: 'What the switchboard did and observed: pages sent, services called, instructions received. Operational facts only — clinical detail belongs in clinical systems']
+  EventNotes      richtext  [note: 'What the switchboard did and observed: pages sent, services called, instructions received. Operational facts only; clinical detail belongs in clinical systems']
 
   indexes {
     CodeType
@@ -70,7 +70,7 @@ Table MessageLog {
   Status         message_status  [not null, default: 'Pending relay']
   RelayedTo      nvarchar        [note: 'Who actually received it (name), and how (phone/page/in person)']
   RelayedAt      datetime
-  // calculated_number — formula in mapping.yaml (TakenAt to RelayedAt, in minutes).
+  // calculated_number: formula in mapping.yaml (TakenAt to RelayedAt, in minutes).
   MinutesToRelay calculated_number [note: 'Calculated automatically from the taken and relayed times: how long the message waited, in minutes. Blank until both times are entered']
   TakenBy        person          [note: 'The operator (defaults to you)']
 
@@ -86,10 +86,10 @@ Table MessageLog {
 Table Key {
   Id           int      [pk, increment]
   Title        nvarchar [not null, note: 'The key/card as labelled: "Pharmacy main", "Master - admin wing"']
-  KeyRef       nvarchar [not null, unique, note: 'The tag number physically on the key — unique']
+  KeyRef       nvarchar [not null, unique, note: 'The tag number physically on the key (unique)']
   Covers       nvarchar [note: 'What it opens']
   Restrictions nvarchar [note: 'Who may take it, per your procedure: "Pharmacist or director on-call only"']
-  Active       boolean  [default: true, note: 'Uncheck for retired/lost keys — history stays']
+  Active       boolean  [default: true, note: 'Uncheck for retired/lost keys; history stays']
 
   indexes {
     Active
@@ -103,7 +103,7 @@ Table KeyMovement {
   Title      nvarchar   [note: 'Optional note; movements are identified by key + time']
   // Lookup to Key.
   Key        int        [not null, ref: > Key.Id, note: 'The key this movement is for']
-  IssuedTo   nvarchar   [not null, note: 'Who took it — name AND role/company; sight ID for non-staff']
+  IssuedTo   nvarchar   [not null, note: 'Who took it: name AND role/company; sight ID for non-staff']
   IssuedAt   datetime   [not null]
   Status     key_status [not null, default: 'Out']
   ReturnedAt datetime

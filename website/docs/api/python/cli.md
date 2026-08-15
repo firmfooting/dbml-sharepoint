@@ -5,7 +5,7 @@ sidebar_position: 25
 
 # `dbml_sharepoint.cli`
 
-*Packaging — the command-line interface*
+*Packaging: the command-line interface*
 
 Command-line interface for dbml-sharepoint.
 

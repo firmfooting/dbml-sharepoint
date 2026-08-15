@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Record each check's expiry date the day you sight it — the monthly sweep works those dates, and a blank one is invisible to it."
+          "txtContent": "Record each check's expiry date the day you sight it. The monthly sweep works those dates, and a blank one is invisible to it."
         }
       ]
     }

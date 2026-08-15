@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Ethics approval and site authorisation are two separate gates — a project needs both before it starts here."
+          "txtContent": "Ethics approval and site authorisation are two separate gates. A project needs both before it starts here."
         }
       ]
     }

@@ -1,4 +1,4 @@
-# Credentialing register — physical mapping.
+# Credentialing register: physical mapping.
 prefix: "CR_"
 
 entities:
@@ -18,13 +18,13 @@ enum_sources: {}
 watched_lists: []
 
 # No calculated columns: expiry urgency depends on TODAY (banned in SP
-# calculated columns) — the coordinator expiry sweep and the indexed date
+# calculated columns). The coordinator expiry sweep and the indexed date
 # columns carry that discipline (see 50-govern).
 
 # Security: coordinators maintain (credentialing entries follow committee
 # decisions); all site members read (who-may-do-what is operational
 # information); Full Control confined to the empty-by-default admin group.
-# Scope SITE membership deliberately — this holds staff professional data.
+# Scope SITE membership deliberately: this holds staff professional data.
 groups:
   - name: "CR Credentialing Coordinators"
     description: "Maintain practitioner records and credentials per credentialing committee decisions; run the expiry and review sweeps."
@@ -72,11 +72,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -92,7 +92,7 @@ display_names:
       EvidenceUrl: "Evidence URL"
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 #
@@ -102,7 +102,7 @@ display_names:
 # reminded about is the failure this register exists to prevent.
 #
 # The guards name the states where the date is history rather than a
-# deadline. On a practitioner that is Ceased alone — a Lapsed or Under
+# deadline. On a practitioner that is Ceased alone: a Lapsed or Under
 # review practitioner's dates must keep shouting, because that is exactly
 # when someone is deciding what they may still do.
 column_formatting:
@@ -125,7 +125,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view and the
-# keys are INTERNAL names — the build rewrites them to display titles,
+# keys are INTERNAL names. The build rewrites them to display titles,
 # because ColumnWidth binds by display name and an internal name silently
 # resets.
 views:
@@ -214,7 +214,7 @@ views:
         ScopeApprovedDate: 180
         ScopeReviewDate: 180
   Credential:
-    # THE PUBLISHED ROW WAS "Per practitioner — filter by Practitioner".
+    # THE PUBLISHED ROW WAS "Per practitioner, filter by Practitioner".
     # A static view cannot filter to one parent; the choices were N views
     # that rot as the workforce changes, or one grouped view that does
     # not. Collapsed, unfiltered: opening a practitioner's group IS the
@@ -223,7 +223,7 @@ views:
     # ONE row-level signal on this list, and this is where it earns its
     # place: an Expired credential sitting inside a practitioner's own
     # file is the state the whole register exists to make impossible to
-    # miss. It compares with `==` and needs no `calculated:` flag — Status
+    # miss. It compares with `==` and needs no `calculated:` flag; Status
     # is a Choice, and the `string;#` prefix that would matter belongs to
     # COLUMN formatting on a calculated column, which this is not.
     #
@@ -265,8 +265,8 @@ views:
     # The compensating control for the one data-quality rule this register
     # cannot enforce at save. "No Current credential without linked,
     # sighted evidence" is governance, because SharePoint REFUSES a URL
-    # column as a validation operand — settled by probe on 2026-07-29, and a
-    # build error — and "linked" is not "sighted" in any case. But "linked"
+    # column as a validation operand (settled by probe on 2026-07-29, and a
+    # build error), and "linked" is not "sighted" in any case. But "linked"
     # is at least checkable, and this is where it gets checked.
     - title: "Missing evidence"
       fields: ["@credential", IssuedDate, EvidenceUrl]
@@ -301,7 +301,7 @@ views:
 
 # Form layouts: a strapline header and a sectioned body per list. Section
 # field lists are authored with INTERNAL names; the build rewrites them to
-# display titles. Per-field description hints render on the NEW form only —
+# display titles. Per-field description hints render on the NEW form only.
 # SharePoint suppresses column descriptions on the Edit form.
 #
 # NEITHER HEADER CARRIES A GUIDE LINK, and that is a revision of the
@@ -311,7 +311,7 @@ views:
 #
 # Revised, because the document this register points at is not one the
 # TEMPLATE can name. governance.md defers to "your by-laws" and "your
-# credentialing committee" — a class of document, not a document — so the
+# credentialing committee" (a class of document, not a document), so the
 # only shippable link is a REPLACE-WITH placeholder, which is precisely
 # the live hazard that removed risk-register's. It would be worse here
 # than there: this form is where a coordinator transcribes a committee
@@ -335,12 +335,12 @@ form_formatting:
 # pair is asked for everywhere else and not there.
 #
 # Both fields SHOW while Discipline is still blank, which is what a new
-# form starts as — the condition hides them only once the catch-all
+# form starts as. The condition hides them only once the catch-all
 # member is actually chosen. Neither is required, so hiding them can
 # never fail a save.
 #
 # ADOPTERS: which disciplines carry a registration number is
-# jurisdictional. If yours differ, this is the block to edit — see
+# jurisdictional. If yours differ, this is the block to edit. See
 # 30-deploy/deploy.md.
 form_visibility:
   Practitioner:
@@ -353,7 +353,7 @@ form_visibility:
           - { field: Discipline, op: neq, value: "Other credentialed role" }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
   Practitioner:
@@ -378,14 +378,14 @@ column_validation:
 # Practitioner: a Current practitioner has had a scope decision, and a
 # decision has a date. The register's own governance says "rows follow
 # decisions, never precede them", and this is the half of that a formula
-# can hold. The OTHER half — that ScopeSummary carries the approved
-# wording — is NOT enforceable: ScopeSummary is rich text, and SharePoint
+# can hold. The OTHER half (that ScopeSummary carries the approved
+# wording) is NOT enforceable: ScopeSummary is rich text, and SharePoint
 # validation formulas cannot reference a multi-line column at all. It
 # stays a governance check, and 50-govern/governance.md now says so.
 #
 # Credential: Expired is a claim about a date, and a claim with no date
 # behind it cannot be checked by anyone. Withdrawn is deliberately not
-# included — a credential withdrawn by its issuing body may never have
+# included; a credential withdrawn by its issuing body may never have
 # carried an expiry.
 list_validation:
   Practitioner:
@@ -393,27 +393,27 @@ list_validation:
       any_of:
         - { field: Status, op: neq, value: "Current" }
         - { field: ScopeApprovedDate, op: is_not_null }
-    message: "A Current practitioner needs a scope-approved date — the register records decisions, and a decision has a date. If the scope has not been decided yet, the status is Under review."
+    message: "A Current practitioner needs a scope-approved date: the register records decisions, and a decision has a date. If the scope has not been decided yet, the status is Under review."
   Credential:
     when:
       any_of:
         - { field: Status, op: neq, value: "Expired" }
         - { field: ExpiryDate, op: is_not_null }
-    message: "A credential marked Expired needs an expiry date — that date is what the sweep, the views and the escalation all count from."
+    message: "A credential marked Expired needs an expiry date. That date is what the sweep, the views and the escalation all count from."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Dates are today±N so the
 # sweep-derived views land correctly on whatever day the demo runs.
 #
 # The practitioner titles describe a ROLE rather than naming a person.
 # This register holds staff professional data and its governance doc is
-# load-bearing about that; five invented names would teach the wrong
+# explicit about that; five invented names would teach the wrong
 # reflex on the first screen anyone sees.
 #
 # EvidenceUrl is left blank on every demo row, which is why every current
 # credential arrives in "Missing evidence" on a seeded site. That is not a
-# defect and it makes a useful demonstration — link one by hand and watch
+# defect and it makes a useful demonstration. Link one by hand and watch
 # the row leave the view. A SharePoint URL column takes a structured
 # SP.FieldUrlValue over REST rather than a bare string (see the note at
 # generators/reportgen.py, which handles the read side of exactly that
@@ -455,7 +455,7 @@ demo_items:
         ScopeApprovedDate: "today-1070"
         ScopeReviewDate: "today+25"
         Status: "Current"
-        Notes: "Demo row. Three-year cycle, due inside the window. Registration is fine — the two dates are independent, which is why they are two views."
+        Notes: "Demo row. Three-year cycle, due inside the window. Registration is fine; the two dates are independent, which is why they are two views."
     - key: prac-technician
       values:
         Title: "[DEMO] Sterilisation technician — under review"
@@ -465,7 +465,7 @@ demo_items:
         ScopeApprovedDate: "today-600"
         ScopeReviewDate: "today-5"
         Status: "Under review"
-        Notes: "Demo row. Non-registered credentialed role, so no registration number — the pair is off the form entirely for this discipline. Background check lapsed; under review until the authority decides."
+        Notes: "Demo row. Non-registered credentialed role, so no registration number; the pair is off the form entirely for this discipline. Background check lapsed; under review until the authority decides."
     - key: prac-dental
       values:
         Title: "[DEMO] Dental officer — ceased"
@@ -477,7 +477,7 @@ demo_items:
         ScopeApprovedDate: "today-1500"
         ScopeReviewDate: "today-100"
         Status: "Ceased"
-        Notes: "Demo row. Left the service. Never deleted — the historical record is the register's legal value — and the stale dates stop being coloured, because at Ceased they are history rather than deadlines."
+        Notes: "Demo row. Left the service. Never deleted (the historical record is the register's legal value), and the stale dates stop being coloured, because at Ceased they are history rather than deadlines."
   Credential:
     - key: cred-medical-reg
       values:
@@ -506,7 +506,7 @@ demo_items:
         IssuedDate: "today-310"
         ExpiryDate: "today+55"
         Status: "Expiring"
-        Notes: "Demo row. Swept and notified. Renewal sighted, expiry updated and evidence linked is the sequence — in that order."
+        Notes: "Demo row. Swept and notified. Renewal sighted, expiry updated and evidence linked is the sequence, in that order."
     - key: cred-nurse-als
       values:
         Title: "[DEMO] Advanced life support"
@@ -535,4 +535,4 @@ demo_items:
         IssuedDate: "today-1100"
         ExpiryDate: "today-40"
         Status: "Expired"
-        Notes: "Demo row. The lapse that put the practitioner Under review — the pair the escalation rule in governance is written about."
+        Notes: "Demo row. The lapse that put the practitioner Under review, the pair the escalation rule in governance is written about."

@@ -1,4 +1,4 @@
-# Grants register — physical mapping.
+# Grants register: physical mapping.
 prefix: "GR_"
 
 entities:
@@ -67,11 +67,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -100,7 +100,7 @@ column_formatting:
     # Tokens by ROLE. "Submitted" sits in the in-motion band rather than
     # the intake band the style guide's example list puts it in: in most
     # templates Submitted means "arrived here, not yet triaged", and here
-    # it means "lodged with the funder, who is deciding" — which is the
+    # it means "lodged with the funder, who is deciding", which is the
     # under-review role. "Withdrawn" and "Unsuccessful" are different
     # kinds of ending and are coloured as such: we stopped, versus they
     # said no.
@@ -123,14 +123,14 @@ column_formatting:
     # data-bar needs an explicit `max`, and a grant portfolio has no
     # defensible one: a bar scaled to somebody else's rounds reads as full
     # or empty for everyone. SubmittedDate and ProjectEndDate are
-    # deliberately unformatted too — neither has a late state. The end of
+    # deliberately unformatted too; neither has a late state. The end of
     # funded activity is not a deadline; the obligations that trail it are,
     # and those are rows on the other list.
   Acquittal:
     # "Submitted" is `warning` here and `low` on Submission, which looks
     # inconsistent and is not. The staff guide's monthly sweep says to
     # chase the funder's acceptance where that is a thing, so a submitted
-    # acquittal is a row still WAITING on someone — the needs-attention
+    # acquittal is a row still WAITING on someone, the needs-attention
     # role. A submitted bid is not waiting on us at all.
     AcqStatus:
       style: severity
@@ -141,7 +141,7 @@ column_formatting:
         "Accepted by funder": good
         "Overdue": severe
     # Guarded once the thing has actually been filed. An Overdue row keeps
-    # both signals — the status chip and the red date — and they agree,
+    # both signals (the status chip and the red date) and they agree,
     # which is the point: 50-govern treats an overdue acquittal as a
     # funder-relationship incident rather than an admin slip.
     DueDate:
@@ -159,7 +159,7 @@ field_sets:
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). These are the five rows the old "Recommended
 # views" table asked the adopter to build by hand, plus a history lens on
-# each list. Widths are keyed on INTERNAL names — the build rewrites them
+# each list. Widths are keyed on INTERNAL names. The build rewrites them
 # to display titles, because ColumnWidth binds by display name and an
 # internal name silently resets.
 views:
@@ -197,7 +197,7 @@ views:
         AgreementUrl: 180
     # 50-govern calls this the relationship file: every submission and
     # outcome for one funder, in one place, before any meeting with them.
-    # No filter, deliberately — a lost bid is part of that history.
+    # No filter, deliberately: a lost bid is part of that history.
     - title: "By funder"
       fields: ["@identity", AmountSought, AmountAwarded, SubmittedDate]
       group_by: { field: Funder, collapsed: true }
@@ -235,7 +235,7 @@ views:
     # opposite of what a default is for.
     #
     # This list's ONE row-level signal (§1.6) lives here. It reads
-    # AcqStatus, so that column must stay in this view's `fields` — view
+    # AcqStatus, so that column must stay in this view's `fields`; view
     # formatting can only read columns the view displays, and dropping it
     # would stop the wash firing with a clean build. It compares with `==`
     # even though a severity map elsewhere needs contains-matching: the
@@ -257,7 +257,7 @@ views:
         ResponsibleTo: 200
         SubmittedDate: 170
     # THE view, per the old table. today+90 is a ROLLING ninety days, not
-    # "next quarter" — CAML has no calendar-period predicate, and the
+    # "next quarter"; CAML has no calendar-period predicate, and the
     # monthly sweep in 40-adopt is what reads this, so rolling is also the
     # honest reading.
     - title: "Due 90 days"
@@ -288,7 +288,7 @@ views:
         Notes: 200
     # A static view cannot filter to one parent, so "the obligations of
     # THIS grant" is one grouped view on the lookup rather than one view
-    # per grant — the real SharePoint idiom, and it stays correct as grants
+    # per grant, the real SharePoint idiom, and it stays correct as grants
     # are added. The group column is in `fields`, because SharePoint groups
     # by a column the view does not display and then has nothing to label
     # the headers with.
@@ -321,7 +321,7 @@ views:
         EvidenceUrl: 180
 
 # Form layouts: a strapline header and a sectioned body per list. Per-field
-# description hints render on the NEW form only — the edit form suppresses
+# description hints render on the NEW form only. The edit form suppresses
 # column descriptions (platform limitation). Section field lists are
 # authored with INTERNAL names; the build rewrites them to display titles.
 form_formatting:
@@ -338,8 +338,8 @@ form_formatting:
 # funder has not agreed to, which is exactly what 50-govern's third
 # data-quality rule is about ("from the agreement, not the announcement").
 #
-# Changing an outcome back does NOT clear values already entered —
-# SharePoint has no such mechanism — so these fields hide while keeping
+# Changing an outcome back does NOT clear values already entered
+# (SharePoint has no such mechanism), so these fields hide while keeping
 # whatever was typed.
 form_visibility:
   Submission:
@@ -366,7 +366,7 @@ form_visibility:
           - { field: AcqStatus, op: in, value: ["Submitted", "Accepted by funder"] }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule has to share one message.
 column_validation:
   Submission:
@@ -392,7 +392,7 @@ column_validation:
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
 # Each list has ONE ValidationFormula, the top-level list is an AND, and
-# each rule is written as an implication — `if A then B` is
+# each rule is written as an implication: `if A then B` is
 # `any_of[not A, B]`, which is why every branch starts with the case the
 # rule does not apply to.
 #
@@ -421,15 +421,15 @@ list_validation:
   Acquittal:
     when:
       # 50-govern's second data-quality rule, the half of it a formula can
-      # reach. The other half — the filed, linked copy — is a hyperlink
+      # reach. The other half (the filed, linked copy) is a hyperlink
       # column and stays a governance check.
       - any_of:
           - { field: AcqStatus, op: not_in, value: ["Submitted", "Accepted by funder"] }
           - { field: SubmittedDate, op: is_not_null }
-    message: "An obligation that has been filed needs the date it was filed. Add the Evidence URL as well — the list cannot check that one, and an acquittal nobody can produce a copy of is the same as one that was never sent."
+    message: "An obligation that has been filed needs the date it was filed. Add the Evidence URL as well; the list cannot check that one, and an acquittal nobody can produce a copy of is the same as one that was never sent."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # deadline surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator; { demo_ref: key } resolves to the Id of the submission

@@ -21,7 +21,7 @@ This browser script supports a **clean first provision** and resuming the
 **same generated release** after a partial failure. It is not evidence of a
 general in-place schema upgrade. Before writing, it proves list template plus
 field internal name/type/writability and lookup target, then narrowly reconciles
-and reads back the declared mutable list/field settings—including required,
+and reads back the declared mutable list/field settings, including required,
 unique/indexed, default, Choice members and type-specific display/storage
 properties. An unsupported or unproven shape aborts for explicit migration.
 
@@ -32,12 +32,12 @@ properties. An unsupported or unproven shape aborts for explicit migration.
 
 ## How to run this deployment
 
-1. **Assess the site first** — paste `assess.js.txt` (read-only — it makes no
+1. **Assess the site first**: paste `assess.js.txt` (read-only; it makes no
    changes) into the target site's browser console and read
    `assess-manifest.md`. The final `[SP-ASSESS] [DONE]` verdict must be
    **COMPATIBLE**, or a **DEGRADED** whose warnings you have reviewed and
    accepted. Resolve **BLOCKED** before going further.
-2. **Review this manifest** — the Summary below must show 0 validation
+2. **Review this manifest**: the Summary below must show 0 validation
    errors, and the lists/ACLs must be what you intend to provision.
 3. **Open a CLASSIC page of the target site**, signed in as a Site Owner:
    `{{ site_url }}/_layouts/15/settings.aspx`
@@ -54,16 +54,16 @@ properties. An unsupported or unproven shape aborts for explicit migration.
    groups, then lists → columns → lookups → indexes → ACLs → seeds, and prints
    a summary object: `listsCreated`, `columnsCreated`, `columnsSkipped`,
    `errors`. Success is `errors: []`.
-7. **On any `[ERROR]`**, stop and read it — the script fails closed rather
+7. **On any `[ERROR]`**, stop and read it; the script fails closed rather
    than guessing. Fix the stated cause, then paste the SAME script again:
    reruns are safe for this release (completed work is verified and skipped).
    Only `[SP-DEPLOY] [ERROR]` lines and a non-empty `errors` array are
-   failures — the browser may paint stray read-probe requests red; those
+   failures. The browser may paint stray read-probe requests red; those
    are absence checks the script handles.
-8. **Verify** — run the pack's verification checklist (its deploy.md /
+8. **Verify**: run the pack's verification checklist (its deploy.md /
    runbook) before handing the site over.
 9. **`rollback.js.txt` is ONLY for abandoning a failed FIRST provision on an
-   empty site** — never against a site containing real records (see the
+   empty site**, never against a site containing real records (see the
    fail-closed note above).
 
 Required rights: **Manage Lists**{% if schema_json.requires_manage_permissions %} plus **Manage Permissions** (this
@@ -78,7 +78,7 @@ the owner in **Site permissions** and rerun.
 Operator self-enrolment: for the groups flagged below, the script adds YOU
 (the running operator) to the group after Phase {{ phase_num['security'] }} so later phases hold that
 group's list grants, and you are removed automatically at the end of the run
-— on success or abort. If you were already a member, your membership is left
+(on success or abort). If you were already a member, your membership is left
 untouched. If an unexpected crash strands the enrolment, remove yourself in
 **Site permissions → Groups**.
 {% endif %}
@@ -89,9 +89,9 @@ untouched. If an unexpected crash strands the enrolment, remove yourself in
    ownership note above and markdown renders the two as one. #}
 {% if reader_groups and enterprise_reader %}
 
-**Enterprise reader enrolment — this membership is PERMANENT.** This bundle was
+**Enterprise reader enrolment: this membership is PERMANENT.** This bundle was
 built with `--enterprise-reader {{ enterprise_reader }}`, so Phase {{ phase_num['reader_enrolment'] }} adds that ONE
-account to **{{ reader_group_names }}** — a group granted the built-in **Read** and
+account to **{{ reader_group_names }}**, a group granted the built-in **Read** and
 nothing more. It is NOT like the operator self-enrolment above: that one exists
 only to let this run write and removes itself at the end of the run, whereas a
 reporting account has to keep reading between runs, so nothing removes this one.
@@ -100,14 +100,14 @@ needs access.
 
 **Check that group's membership before you paste.** Phase {{ phase_num['reader_enrolment'] }} enrols nobody and
 **aborts the whole run** if **{{ reader_group_names }}** already holds any principal
-other than `{{ enterprise_reader }}` — it names each one and removes none, because a
+other than `{{ enterprise_reader }}`; it names each one and removes none, because a
 second holder of **Read** on
 {% if reader_excluded_lists %}all but {{ reader_excluded_lists | join(", ") }}
 {% else %}every list here{% endif %} is your decision, not the script's.
 If that stops you: remove them in **Site permissions → Groups** and paste again,
 or rebuild without `--enterprise-reader`, which leaves the membership untouched
 and still deploys the group and its grant. `{{ enterprise_reader }}` already being a
-member is fine — a repeat paste of this bundle is a no-op there.
+member is fine; a repeat paste of this bundle is a no-op there.
 
 Read that alongside the rollback note: `rollback.js.txt` deletes the lists this
 bundle provisioned, but it does not delete the group and it does not remove the
@@ -123,7 +123,7 @@ account, and nothing here checks or reports who is currently a member. The group
 holds the built-in **Read**, so anyone in it can read
 {% if reader_excluded_lists %}every list this bundle provisions EXCEPT
 {{ reader_excluded_lists | join(", ") }}, which
-{{ "does" if reader_excluded_lists | length == 1 else "do" }} not grant it —
+{{ "does" if reader_excluded_lists | length == 1 else "do" }} not grant it;
 an override may leave the group out deliberately, so this is reported rather
 than refused{% else %}every list this bundle provisions{% endif %}.
 Check **Site permissions → Groups** if you need to know.
@@ -171,7 +171,7 @@ Power Automate flows must validate these at write time.
 
 {% endfor %}
 Each list's **Description** is set to the text shown above, **replacing
-whatever it currently holds** — including a description an owner wrote by
+whatever it currently holds**, including a description an owner wrote by
 hand, which is not preserved. The previous value is printed in the run
 transcript on the line that reports the change, so copy anything you need out
 of it before pasting.
@@ -185,7 +185,7 @@ of it before pasting.
 | {{ p.list }} | {{ p.field.title }} | {{ p.target_list }} |
 {% endfor %}
 {% else %}
-_(none — all lookups resolved in phase 1)_
+_(none; all lookups resolved in phase 1)_
 {% endif %}
 
 ## Phase {{ phase_num['indexes'] }}: indexed columns
@@ -202,7 +202,7 @@ _(none configured)_
 
 {% if views %}
 {% for v in views %}
-- **{{ v.title }}** on {{ v.list }}{{ ' (default)' if v.set_default else '' }}{{ ' [hidden]' if v.hidden else '' }}{{ ' [row-formatted]' if v.formatting else '' }}: {{ v.view_fields | join(', ') }}{{ ' — renamed from: ' + (v.renamed_from | join(', ')) if v.renamed_from else '' }}{{ ' — ' + v.summary if v.summary else '' }}{{ ' — expanded from field sets: ' + v.expanded_from if v.expanded_from else '' }}
+- **{{ v.title }}** on {{ v.list }}{{ ' (default)' if v.set_default else '' }}{{ ' [hidden]' if v.hidden else '' }}{{ ' [row-formatted]' if v.formatting else '' }}: {{ v.view_fields | join(', ') }}{{ '; renamed from: ' + (v.renamed_from | join(', ')) if v.renamed_from else '' }}{{ '; ' + v.summary if v.summary else '' }}{{ '; expanded from field sets: ' + v.expanded_from if v.expanded_from else '' }}
 {% endfor %}
 
 The generated **All Items** recovery view is unfiltered and contains every
@@ -251,7 +251,7 @@ deletable column the schema no longer declares.
 
 {% if form_visibility %}
 {% for fv in form_visibility %}
-- {{ fv.list }}.{{ fv.column }}{% if fv.cleared %} — cleared{% else %}
+- {{ fv.list }}.{{ fv.column }}{% if fv.cleared %}: cleared{% else %}
   `{{ fv.formula }}`{% endif %}
 
 {% endfor %}
@@ -274,7 +274,7 @@ _(none declared)_
 
 {% if column_validation %}
 {% for cv in column_validation %}
-- {{ cv.list }}.{{ cv.column }}{% if cv.cleared %} — cleared{% else %}
+- {{ cv.list }}.{{ cv.column }}{% if cv.cleared %}: cleared{% else %}
   `{{ cv.formula }}`
   message: {{ cv.message }}{% endif %}
 
@@ -295,7 +295,7 @@ _(none declared)_
 
 {% if list_validation %}
 {% for lv in list_validation %}
-- {{ lv.list }} — {{ lv.described }}
+- {{ lv.list }}: {{ lv.described }}
   message: {{ lv.message }}
 
 {% endfor %}
@@ -348,12 +348,12 @@ _(none declared)_
    `meta.find_undeclared_variables`, which `test_template_variables_are_known_
    context` runs over every template, reports a name assigned inside a
    conditional as undeclared at its use site. #}
-{% set reader_cell = enterprise_reader ~ " — PERMANENT, not removed at the end of the run" if enterprise_reader else "nobody — built without `--enterprise-reader`; created empty" %}
+{% set reader_cell = enterprise_reader ~ " (PERMANENT, not removed at the end of the run)" if enterprise_reader else "nobody (built without `--enterprise-reader`; created empty)" %}
 {% if schema_json.groups %}
 | Name | Required owner | Must be empty at deploy | Enrolled by this deploy | Description |
 |------|----------------|-------------------------|-------------------------|-------------|
 {% for grp in schema_json.groups %}
-| {{ grp.name }} | {{ grp.owner_group }} | {{ "yes" if grp.require_empty_at_deploy else "no" }} | {% if grp.enroll_operator_during_deploy and grp.enroll_enterprise_reader %}you (the operator) — removed automatically at the end of the run; and {{ reader_cell }}{% elif grp.enroll_operator_during_deploy %}you (the operator) — removed automatically at the end of the run{% elif grp.enroll_enterprise_reader %}{{ reader_cell }}{% else %}nobody{% endif %} | {{ grp.description }} |
+| {{ grp.name }} | {{ grp.owner_group }} | {{ "yes" if grp.require_empty_at_deploy else "no" }} | {% if grp.enroll_operator_during_deploy and grp.enroll_enterprise_reader %}you (the operator), removed automatically at the end of the run; and {{ reader_cell }}{% elif grp.enroll_operator_during_deploy %}you (the operator), removed automatically at the end of the run{% elif grp.enroll_enterprise_reader %}{{ reader_cell }}{% else %}nobody{% endif %} | {{ grp.description }} |
 {% endfor %}
 {% else %}
 _(none declared)_
@@ -411,7 +411,7 @@ match exactly (allowing only SharePoint REST's `null`/empty-text equivalence);
 mismatches or duplicates fail closed. A newly inserted seed is re-read and
 verified to detect a concurrent insert.
 {% else %}
-_(no seed items — the active extension provides none)_
+_(no seed items; the active extension provides none)_
 {% endif %}
 {% if extra_sections %}
 {% for heading, body in extra_sections.items() %}

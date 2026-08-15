@@ -1,4 +1,4 @@
-# Incident management — physical mapping.
+# Incident management: physical mapping.
 prefix: "IN_"
 
 entities:
@@ -24,7 +24,7 @@ calculated_formulas:
 # Security model:
 #   - ALL staff (Members) hold the custom "IN Report Only" level on both
 #     lists: they can submit incidents and read everything, but cannot edit
-#     or delete anything — including their own report after submission
+#     or delete anything, including their own report after submission
 #     (SharePoint levels cannot scope "own items"; see 50-govern).
 #   - IN Incident Handlers hold Contribute: triage, update, resolve, and
 #     maintain corrective actions.
@@ -87,11 +87,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -160,7 +160,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view, keyed on
-# INTERNAL names — the build rewrites them to display titles, and
+# INTERNAL names. The build rewrites them to display titles, and
 # ColumnWidth binds by display name.
 views:
   Incident:
@@ -174,7 +174,7 @@ views:
         - { field: ReportedDate, direction: asc }
       # ONE row-level signal, reserved for Critical (§1.6). An open
       # Critical incident is the drop-everything row and it has no view of
-      # its own, so the wash is where it earns its place — the same shape
+      # its own, so the wash is where it earns its place, the same shape
       # as risk-register's Extreme wash, for the same reason.
       #
       # The wash reads [$Severity], so Severity must stay in this view's
@@ -285,7 +285,7 @@ views:
     # An incident closes only when every linked action is Done or
     # Cancelled, and until now nothing showed you that. Grouped on the
     # Incident lookup and collapsed: expand the incident, read the four
-    # actions, close it or don't. It is also the quarterly sample's view —
+    # actions, close it or don't. It is also the quarterly sample's view:
     # "check corrective actions were real, not paperwork" needs the actions
     # of one incident in one place.
     - title: "By incident"
@@ -307,7 +307,7 @@ views:
 # off it: a reporter who is asked who the handler is and when it was
 # resolved learns that the form is not for them.
 #
-# reconcile: exact makes this file authoritative for the whole list —
+# reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy.
 form_visibility:
   Incident:
@@ -327,7 +327,7 @@ form_visibility:
           - { field: Status, op: eq, value: "Done" }
 
 # Form layouts: a strapline header and sections on both lists. Per-field
-# description hints render on the NEW form only — SharePoint suppresses
+# description hints render on the NEW form only. SharePoint suppresses
 # column descriptions on the Edit form. Section field lists are authored
 # with INTERNAL names; the build rewrites them to display titles.
 form_formatting:
@@ -371,7 +371,7 @@ column_validation:
 # it to be discovered:
 #   - "Every incident past Reported has a Handler" (rule 1). Handler is a
 #     person column, and SharePoint validation formulas cannot reference
-#     person columns at all — not as an operand, not as a null test.
+#     person columns at all, not as an operand, not as a null test.
 #   - "Closed requires all linked actions terminal" (the rest of rule 2).
 #     The actions are on another list, and a save rule reaches only its
 #     own. The "By incident" view is the reconciliation.
@@ -392,11 +392,11 @@ list_validation:
     message: "An action marked Done needs a Done Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Incidents are created
 # first and the actions reference them by demo key. Coverage: one incident
-# per Status and one per Severity — including the open Critical one that
-# drives the row wash — and one action per Status, including an overdue one
+# per Status and one per Severity (including the open Critical one that
+# drives the row wash) and one action per Status, including an overdue one
 # hanging off that same Critical incident, which is the pairing the whole
 # template exists to make visible.
 #

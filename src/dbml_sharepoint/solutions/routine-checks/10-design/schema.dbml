@@ -1,5 +1,5 @@
 // ============================================================================
-// Routine checks — the checkpoint catalogue + every check performed.
+// Routine checks: the checkpoint catalogue + every check performed.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -49,11 +49,11 @@ Table CheckPoint {
 
 Table CheckEntry {
   Id          int          [pk, increment]
-  // Title deliberately optional — entries are identified by checkpoint + time.
-  Title       nvarchar     [note: 'Optional short note — fine to leave blank']
+  // Title deliberately optional; entries are identified by checkpoint + time.
+  Title       nvarchar     [note: 'Optional short note, fine to leave blank']
   // Lookup to CheckPoint.
   CheckPoint  int          [not null, ref: > CheckPoint.Id, note: 'The checkpoint that was checked']
-  CheckedAt   datetime     [not null, note: 'When the check was actually performed — entered at the time, not reconstructed']
+  CheckedAt   datetime     [not null, note: 'When the check was actually performed, entered at the time, not reconstructed']
   Reading     nvarchar     [not null, note: 'What was observed: "4.2 C", "all present", "door found unlocked"']
   Result      check_result [not null]
   ActionTaken nvarchar     [note: 'REQUIRED in practice for any out-of-range result: what you did, who you told']

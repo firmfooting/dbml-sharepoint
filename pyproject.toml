@@ -1,7 +1,7 @@
 [project]
 name = "dbml-sharepoint"
 version = "0.1.0"
-description = "Turn a DBML schema + YAML mapping into an idempotent, fail-closed browser-console deploy.js that provisions SharePoint Online lists — no tenant admin, no premium licence, no install on the target."
+description = "Turn a DBML schema + YAML mapping into an idempotent, fail-closed browser-console deploy.js that provisions SharePoint Online lists, with no tenant admin, no premium licence, and no install on the target."
 readme = "README.md"
 requires-python = ">=3.13"
 authors = [{ name = "Shaun Eccles-Smith" }]
@@ -109,7 +109,7 @@ ignore = [
 #   FA100 / FA102 -- both push TOWARDS `from __future__ import annotations`,
 #     which is the wrong direction here, and neither can remove one. See #164:
 #     PEP 649 shipped in 3.14, this project supports 3.13, so the quoted
-#     forward references are load-bearing, not legacy.
+#     forward references are current practice, not legacy.
 
 [tool.ruff.lint.flake8-tidy-imports]
 # Default is "parents", which bans `..` and leaves `from . import x` alone.

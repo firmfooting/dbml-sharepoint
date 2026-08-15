@@ -23,7 +23,7 @@
 {% include "_http_write.js.j2" %}
 
 {% include "_digest_cached.js.j2" %}
-  log('WARN', 'Rollback deletes lists BY TITLE. A pre-existing non-deploy list whose title collides with a APP_ list would be deleted — verify the target list is deploy-owned before confirming.');
+  log('WARN', 'Rollback deletes lists BY TITLE. A pre-existing non-deploy list whose title collides with a APP_ list would be deleted. Verify the target list is deploy-owned before confirming.');
 
   const typed = prompt(`Type the site leaf path to confirm rollback (${SITE_PATH_LEAF}):`);
   if (typed !== SITE_PATH_LEAF) {
@@ -50,7 +50,7 @@
   // by-title GET on an absent list answers 404, which the browser paints
   // red and operators read as a failure (same live finding as deploy.js.txt's
   // absence probes; seen on this script 2026-07-24). The enumeration is
-  // always HTTP 200. Counts are a start-of-run snapshot — classification
+  // always HTTP 200. Counts are a start-of-run snapshot; classification
   // and recycling read live items anyway.
   let listCountsByTitle = null;
   async function itemCount(name) {
@@ -72,7 +72,7 @@
 
   // Demo-aware non-empty gate: rows seeded by demo-data.js.txt all carry the
   // '[DEMO] ' Title marker. A list whose items are ALL demo rows is
-  // demo-only content — deleting the list deletes them, so it proceeds
+  // demo-only content: deleting the list deletes them, so it proceeds
   // without the DELETE NON-EMPTY prompt (deploy, demonstrate, delete).
   // ANY item without the marker keeps the refusal, and anything
   // unreadable or larger than a demo could ever be is treated as real.
@@ -93,13 +93,13 @@
   // 2026-07-24 (two teardowns on a retention-governed site): SharePoint
   // refuses to delete a list that still CONTAINS items ("List cannot be
   // deleted while on hold or retention policy"), while an emptied list
-  // deletes fine and item recycling is always allowed — the policy keeps
+  // deletes fine and item recycling is always allowed; the policy keeps
   // its copies in the Preservation Hold Library
   // (https://learn.microsoft.com/purview/retention-policies-sharepoint).
   // recycle(), never a permanent DELETE: nothing this script does is
   // unrestorable. Demo-only lists require the '[DEMO] ' marker on every
   // row at the moment of recycling (an unmarked item aborts, fail
-  // closed); the DELETE NON-EMPTY override path recycles EVERY item —
+  // closed); the DELETE NON-EMPTY override path recycles EVERY item:
   // the operator just authorised deleting the list including its
   // contents, and emptying it first is what makes that delete actually
   // succeed under retention.
@@ -132,13 +132,13 @@
   }
 
   // AllowDeletion=false (deployed via prevent_list_deletion, or set by
-  // hand) rejects list DELETE on EVERY surface — UI, CSOM and this
+  // hand) rejects list DELETE on EVERY surface: UI, CSOM and this
   // script's REST call all get "This list cannot be deleted." Rollback
   // probes the ACTUAL state once deletion is authorised for a list,
   // unlocks it, and re-locks on a failed delete. Sealed COLUMNS need no
   // counterpart here: SP.Field.Sealed guards the field object (its
   // schema edits and its own deletion), and list deletion never consults
-  // per-field Sealed — every out-of-the-box list carries built-in sealed
+  // per-field Sealed; every out-of-the-box list carries built-in sealed
   // fields and deletes fine. Do NOT add an unseal pass.
   async function readAllowDeletion(name) {
     const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(name)}')?$select=AllowDeletion`), {
@@ -165,7 +165,7 @@
       if (count === null) { summary.skipped.push({ list: name, reason: 'not-found' }); continue; }
       if (count > 0) {
         if (await allItemsAreDemo(name, count)) {
-          log('INFO', `'${name}': ${count} item(s), all '[DEMO] '-marked — demo-only content; recycling the demo rows, then deleting the list.`);
+          log('INFO', `'${name}': ${count} item(s), all '[DEMO] '-marked, demo-only content; recycling the demo rows, then deleting the list.`);
           await recycleItems(name, true);
         } else {
           // Re-prompt PER non-empty list. A single global unlock would let one
@@ -212,17 +212,17 @@
         if (/hold or retention policy/i.test(detail)) {
           // Live-confirmed 2026-07-24: retention blocks deleting a list
           // that still CONTAINS items; an emptied list deletes fine. If
-          // an EMPTY list is still refused, a site-level hold applies —
-          // compliance enforcement this script will never bypass.
-          log('WARN', `${name}: SharePoint refused the LIST delete under a retention policy or hold. Rollback empties lists before deleting (demo-only lists automatically; others after your DELETE NON-EMPTY confirmation) — if this list was emptied and is STILL refused, a site-level hold applies and a compliance admin must release it (a delay hold can persist after release) before rollback can proceed.`);
+          // an EMPTY list is still refused, a site-level hold applies,
+          // which is compliance enforcement this script will never bypass.
+          log('WARN', `${name}: SharePoint refused the LIST delete under a retention policy or hold. Rollback empties lists before deleting (demo-only lists automatically; others after your DELETE NON-EMPTY confirmation). If this list was emptied and is STILL refused, a site-level hold applies and a compliance admin must release it (a delay hold can persist after release) before rollback can proceed.`);
         }
         if (unlockedForDelete) {
           // Best-effort re-lock: this run removed the protection and the
-          // delete did not go through — never strand the list unprotected.
+          // delete did not go through; never strand the list unprotected.
           const relocked = await setAllowDeletion(name, false).catch(() => false);
           log(relocked ? 'INFO' : 'ERROR', `${name}: deletion block ${relocked ? 'restored' : 'could NOT be restored'} after failed delete.`);
         }
-        throw new Error(`HTTP ${r.status}${detail ? ` — ${detail}` : ''}`);
+        throw new Error(`HTTP ${r.status}${detail ? `, ${detail}` : ''}`);
       }
       summary.deleted.push(name);
       log('INFO', `Deleted ${name}.`);

@@ -5,7 +5,7 @@ sidebar_position: 23
 
 # `dbml_sharepoint.templating`
 
-*Packaging — the shared Jinja environment*
+*Packaging: the shared Jinja environment*
 
 The one canonical Jinja environment for every rendered artifact.
 

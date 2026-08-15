@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Category is not a label, it is the routing — it decides whose queue this lands in."
+          "txtContent": "Category is not a label, it is the routing. It decides whose queue this lands in."
         }
       ]
     }

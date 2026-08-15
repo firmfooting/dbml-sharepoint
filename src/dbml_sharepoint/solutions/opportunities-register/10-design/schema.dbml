@@ -1,5 +1,5 @@
 // ============================================================================
-// Opportunities register — a thin routing layer for business problems that a
+// Opportunities register: a thin routing layer for business problems that a
 // project discovers but cannot own. It captures once, routes once, and avoids
 // duplicating clinical, risk, complaints, project or delivery systems.
 // Render the ERD by pasting this file into https://dbdiagram.io

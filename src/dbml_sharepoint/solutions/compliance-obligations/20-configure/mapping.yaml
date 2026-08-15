@@ -1,4 +1,4 @@
-# Compliance obligations — physical mapping.
+# Compliance obligations: physical mapping.
 prefix: "CO_"
 
 entities:
@@ -65,11 +65,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -90,7 +90,7 @@ display_names:
 # gap visible rendered every status as identical grey text.
 column_formatting:
   Obligation:
-    # Tokens by ROLE, not by word. "Not assessed" is the intake band — a
+    # Tokens by ROLE, not by word. "Not assessed" is the intake band, a
     # row nobody has looked at yet, which is exactly what it means here and
     # why the staff guide insists on leaving it there rather than guessing
     # optimistically. "Not applicable" is the superseded band: still
@@ -112,7 +112,7 @@ column_formatting:
     # silence the rows most likely to have gone stale.
     ReviewDate: { style: overdue-date }
     # LastAssessedDate is deliberately unformatted. It is a historical
-    # stamp, not a deadline — there is no state in which it is "late", and
+    # stamp, not a deadline; there is no state in which it is "late", and
     # an overdue-date treatment on it would colour every mature row red.
 
 # Every lens shows the same five identifying columns before its own
@@ -124,7 +124,7 @@ field_sets:
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). These are the five rows the old "Recommended
 # views" table asked the adopter to build by hand, now with filters, sorts,
-# grouping and pixel widths. Widths are keyed on INTERNAL names — the build
+# grouping and pixel widths. Widths are keyed on INTERNAL names. The build
 # rewrites them to display titles, because ColumnWidth binds by display
 # name and an internal name silently resets.
 #
@@ -132,8 +132,8 @@ field_sets:
 # alternative was a sixth, filterless view, and §1.4 allows a default plus
 # four lenses; more to the point, this register has no row that stops
 # mattering, so an unfiltered list and a grouped-by-owner list contain
-# exactly the same rows. Grouping is what makes the daily question — "which
-# of these are mine" — answerable at a glance.
+# exactly the same rows. Grouping is what makes the daily question ("which
+# of these are mine") answerable at a glance.
 views:
   Obligation:
     - title: "By owner"
@@ -152,7 +152,7 @@ views:
         LastAssessedDate: 180
     # The executive view, and the worklist 50-govern's remediation rules
     # run on. Sorted by status ascending, which puts Non-compliant above
-    # Partially compliant alphabetically — the order that happens to be the
+    # Partially compliant alphabetically, the order that happens to be the
     # order of severity here, and is asserted by nothing, so check it if you
     # rename either member.
     - title: "The gap list"
@@ -204,7 +204,7 @@ views:
     # The accreditation pack, and the view two-level group_by was built
     # for. SharePoint's own ceiling is two levels, which is exactly what
     # this needs: instrument type, then the named instrument inside it.
-    # Both group columns are in `fields` — SharePoint groups by a column
+    # Both group columns are in `fields`, or SharePoint groups by a column
     # the view does not display and then has nothing to label the headers
     # with.
     - title: "By source"
@@ -222,13 +222,13 @@ views:
         EvidenceUrl: 180
 
 # Form layouts: a strapline header and a sectioned body. Per-field
-# description hints render on the NEW form only — the edit form suppresses
+# description hints render on the NEW form only. The edit form suppresses
 # column descriptions (platform limitation). Section field lists are
 # authored with INTERNAL names; the build rewrites them to display titles.
 #
 # NO guide link in the header, and that is a decision rather than an
 # omission. The standard permits one where a template genuinely points at
-# an external document, and this register points at DOZENS — a different
+# an external document, and this register points at DOZENS, a different
 # instrument per row, which is what SourceInstrument and EvidenceUrl are
 # for. A single header link could only ever be a placeholder the adopter
 # must remember to fix, on the form every obligation owner opens.
@@ -239,12 +239,12 @@ form_formatting:
 
 # An assessment date only exists once an assessment has happened. Off the
 # form until the status leaves "Not assessed", which is also exactly when
-# the save rule below starts requiring it — the field is visible precisely
+# the save rule below starts requiring it. The field is visible precisely
 # when it is mandatory, rather than sitting on every form and firing a
 # rejection whose cause the author cannot see.
 #
 # Changing the status back to "Not assessed" does NOT clear a date already
-# entered — SharePoint has no such mechanism — so the field hides while
+# entered (SharePoint has no such mechanism), so the field hides while
 # keeping its value.
 form_visibility:
   Obligation:
@@ -254,7 +254,7 @@ form_visibility:
           - { field: ComplianceStatus, op: neq, value: "Not assessed" }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule has to share one message.
 column_validation:
   Obligation:
@@ -270,7 +270,7 @@ column_validation:
 
 # Save-time enforcement, stored on the LIST so it may reference any column.
 # TWO rules, chained: a list has ONE ValidationFormula, the top-level list
-# is an AND, and each is written as an implication — `if A then B` is
+# is an AND, and each is written as an implication: `if A then B` is
 # `any_of[not A, B]`, which is why every branch starts with the case the
 # rule does not apply to.
 #
@@ -294,7 +294,7 @@ list_validation:
           - { field: LastAssessedDate, op: is_not_null }
       # …and the other half of the same rule: evidence. "Not applicable" is
       # excluded because its reasoning belongs in Notes, which validation
-      # cannot read — requiring EvidenceNotes there would ask for evidence
+      # cannot read; requiring EvidenceNotes there would ask for evidence
       # of a duty that does not apply.
       - any_of:
           - { field: ComplianceStatus, op: not_in,
@@ -303,13 +303,13 @@ list_validation:
     message: "This obligation cannot be saved yet. Check both: any status other than 'Not assessed' needs a Last Assessed Date, and Compliant, Partially compliant or Non-compliant also needs Evidence Notes saying what the evidence is and where it lives."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # review surfaces land on whatever day the demo runs; "@me" is the pasting
 # operator.
 #
 # Coverage: one row per ComplianceStatus member, four of the five source
-# types, and TWO instruments under one type — without that the "By source"
+# types, and TWO instruments under one type. Without that the "By source"
 # view demonstrates two-level grouping with only one level of content.
 demo_items:
   Obligation:

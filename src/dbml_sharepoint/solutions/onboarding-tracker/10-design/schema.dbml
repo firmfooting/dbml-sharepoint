@@ -1,5 +1,5 @@
 // ============================================================================
-// Onboarding tracker — starters, and the cross-functional tasks per starter.
+// Onboarding tracker: starters, and the cross-functional tasks per starter.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -33,7 +33,7 @@ Table Starter {
   Role       nvarchar        [not null, note: 'Position title']
   Department nvarchar        [note: 'Team / department they join']
   StartDate  date            [not null]
-  Manager    person          [not null, note: 'Hiring manager — owns the overall experience']
+  Manager    person          [not null, note: 'Hiring manager, owns the overall experience']
   Status     starter_status  [not null, default: 'Preparing']
   Notes      richtext        [note: 'Anything the functions need to know (part-time pattern, location, equipment specifics)']
 
@@ -52,7 +52,7 @@ Table OnboardingTask {
   Starter      int            [not null, ref: > Starter.Id, note: 'The new starter this task is for']
   TaskFunction task_function  [not null, note: 'Which function owns this task']
   AssignedTo   person         [note: 'The specific person, once picked up']
-  DueDate      date           [not null, note: 'Usually relative to the start date — before or shortly after']
+  DueDate      date           [not null, note: 'Usually relative to the start date, before or shortly after']
   Status       task_status    [not null, default: 'Open']
   DoneDate     date
   Notes        nvarchar

@@ -1,4 +1,4 @@
-# Audit actions — physical mapping.
+# Audit actions: physical mapping.
 prefix: "AU_"
 
 entities:
@@ -75,11 +75,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -97,13 +97,13 @@ display_names:
       EvidenceUrl: "Evidence URL"
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 #
 # AU_Audit gets none, deliberately. It is a header record: a report, its
 # date, who wrote it and who answers for it. There is no lifecycle on it
-# and no deadline — everything with a clock or a state lives on the
+# and no deadline. Everything with a clock or a state lives on the
 # recommendations that hang off it.
 column_formatting:
   Recommendation:
@@ -111,8 +111,8 @@ column_formatting:
     # distinction this register exists to make: "Implemented - awaiting
     # evidence" is not closed, "Risk accepted" is not delivered, and
     # Closed is. Now each carries its own role. "Implemented - awaiting
-    # evidence" is the waiting band — the coordinator has something to
-    # chase — and "Risk accepted" is the superseded band, an honest
+    # evidence" is the waiting band (the coordinator has something to
+    # chase) and "Risk accepted" is the superseded band, an honest
     # ending in which the action will not happen.
     #
     # "Open" moves to `neutral` against the style guide's own example
@@ -127,7 +127,7 @@ column_formatting:
         "Implemented - awaiting evidence": warning
         "Closed": good
         "Risk accepted": muted
-    # The rating the REPORT gave the finding, and until now unformatted —
+    # The rating the REPORT gave the finding, and until now unformatted,
     # so a Critical finding rendered in the same grey as a Low one on the
     # view the audit committee reads. Same four bands and the same tokens
     # as risk-register's rating columns, on purpose: a Critical is a
@@ -140,7 +140,7 @@ column_formatting:
         "High": severe
         "Critical": blocked
     # BOTH dates carry the deadline treatment, because the committed date
-    # is whichever of them is set — that is what DaysLate computes against
+    # is whichever of them is set. That is what DaysLate computes against
     # and what the "Overdue" view filters on. Guarded on both endings: a
     # date that keeps shouting after the row is closed or accepted trains
     # people to ignore the colour.
@@ -151,7 +151,7 @@ column_formatting:
       style: overdue-date
       guard: { field: Status, not: ["Closed", "Risk accepted"] }
     # Days past the committed date, taking its fill from the finding's own
-    # rating so the bar and the rating pill beside it can never disagree —
+    # rating so the bar and the rating pill beside it can never disagree:
     # a forty-day-late Critical reads differently from a forty-day-late
     # Low, which is the whole point of showing lateness as a number. The
     # value arrives prefixed `number;#`, hence `calculated: true`;
@@ -168,14 +168,14 @@ column_formatting:
 
 # Form visibility: the closure columns only exist as questions once there
 # is something to close, so they are off the New form and appear as the
-# status moves. Nothing here restricts access — a hidden column is still
+# status moves. Nothing here restricts access: a hidden column is still
 # populated, still queryable, still in the reporting bundle; this is about
 # not asking someone raising a recommendation to fill in how it ended.
 #
 # `reconcile: exact` (the default) makes this block authoritative for the
 # whole Recommendation list: every column NOT listed here has its
 # conditional-visibility formula cleared on every deploy. That is what you
-# want on a template — deployed state matches the file — but read the
+# want on a template (deployed state matches the file), but read the
 # "Reconciliation" section of the mapping reference before you copy this
 # pattern onto a list someone has configured by hand.
 form_visibility:
@@ -196,7 +196,7 @@ form_visibility:
           - { field: Status, op: in, value: ["Implemented - awaiting evidence", "Closed"] }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule has to share one message.
 # So anything expressible on one column belongs here, where the person who
 # broke it is told which rule they broke.
@@ -213,7 +213,7 @@ column_validation:
   Recommendation:
     columns:
       # DaysLate is computed from this date. A future ClosedDate produces
-      # a negative range, which the formula's own guard turns into 0 — so
+      # a negative range, which the formula's own guard turns into 0, so
       # a recommendation closed "next month" reports as closed on time,
       # silently, on the number the audit committee reads.
       ClosedDate:
@@ -228,13 +228,13 @@ column_validation:
 # starts with the case the rule does not apply to.
 #
 # TWO rules now, chained. A list has ONE ValidationFormula, so the
-# top-level list is an AND and they compose — and they share ONE message,
+# top-level list is an AND and they compose, and they share ONE message,
 # which is why it names both checks rather than describing one. 50-govern's
 # second data-quality rule is "no Closed without EvidenceUrl AND
 # ClosedDate"; only the first half was enforced.
 #
 # There is no evidence rule here because SharePoint refuses a HYPERLINK
-# column as a validation operand — settled by probe on 2026-07-29. See the
+# column as a validation operand, settled by probe on 2026-07-29. See the
 # note below, and analysis/conditions.py's _FORBIDDEN_OPERAND_TYPES, which
 # makes it a build error for the whole fleet.
 #
@@ -264,8 +264,8 @@ column_validation:
 #
 # BOTH terminal statuses need the date, not just Closed. Risk accepted is
 # an ending too: it leaves the default and Overdue queues the way a closure
-# does, and the "Closed, last 90 days" view — the committee's closure
-# report — filters `ClosedDate >= today-90`. A null cannot satisfy that
+# does, and the "Closed, last 90 days" view (the committee's closure
+# report) filters `ClosedDate >= today-90`. A null cannot satisfy that
 # comparison, so a Risk accepted row saved without a date is absent from
 # every queue AND from the report, which is the one place an accepted risk
 # most needs to be seen. ClosedDate is already on the form for both
@@ -276,18 +276,18 @@ list_validation:
       - any_of:
           - { field: Status, op: not_in, value: ["Closed", "Risk accepted"] }
           - { field: ClosedDate, op: is_not_null }
-    message: "Ending a recommendation needs the Closed Date it was verified or accepted on — for Risk accepted as well as Closed. DaysLate is computed from that date and the closure report filters on it, so without one the row leaves every queue and never reaches the committee. The Evidence URL is also required at closure; that one is a governance check, not a save rule (see 50-govern/governance.md)."
+    message: "Ending a recommendation needs the Closed Date it was verified or accepted on, for Risk accepted as well as Closed. DaysLate is computed from that date and the closure report filters on it, so without one the row leaves every queue and never reaches the committee. The Evidence URL is also required at closure; that one is a governance check, not a save rule (see 50-govern/governance.md)."
 
 # All five Recommendation lenses show the same six identifying columns
 # before their own payload, so the spine is declared once (§1.9). AU_Audit
-# has two views and gets no set — below the three-repetition bar, the
+# has two views and gets no set. Below the three-repetition bar, the
 # indirection costs more than it saves.
 field_sets:
   Recommendation:
     identity: [Title, Audit, FindingRating, Owner, Status, DueDate]
 
 # Declared views (deployed and reconciled by the views phase; undeclared
-# views are never touched). Widths are keyed on INTERNAL names — the build
+# views are never touched). Widths are keyed on INTERNAL names. The build
 # rewrites them to display titles, because ColumnWidth binds by display
 # name and an internal name silently resets.
 views:
@@ -337,7 +337,7 @@ views:
         DueDate: 160
         RevisedDue: 170
         Notes: 200
-    # "(RevisedDue or DueDate) < today" — the committed date is RevisedDue
+    # "(RevisedDue or DueDate) < today". The committed date is RevisedDue
     # when a formal extension exists and DueDate otherwise, which is
     # exactly what the DaysLate formula computes against. The grammar
     # expresses it by nesting: either there IS a revised date and it has
@@ -346,7 +346,7 @@ views:
     # `RevisedDue < today` would drop every unextended row (a CAML
     # comparison does not match an empty column) and a bare
     # `DueDate < today` would re-surface every row that WAS extended into
-    # the future — the mistake the extension mechanism exists to prevent.
+    # the future, the mistake the extension mechanism exists to prevent.
     - title: "Overdue"
       fields: ["@identity", RevisedDue, Notes]
       where:
@@ -390,7 +390,7 @@ views:
     # The old table asked for this sorted by FindingRating. That is NOT
     # what ships, and the reason is worth stating: SharePoint orders a
     # Choice column by its stored text, so "descending" would give
-    # Moderate, Low, High, Critical — not severity order, and worse than
+    # Moderate, Low, High, Critical: not severity order, and worse than
     # no rating sort at all because it looks like one. The pack ships
     # grouped by audit and sorted by committed date, with FindingRating
     # carrying the severity colours; 30-deploy/deploy.md says so and
@@ -413,7 +413,7 @@ views:
         AgreedAction: 200
     # "Closed this quarter" is not buildable: CAML has no calendar-period
     # predicate. This is a ROLLING ninety days, and the two differ on the
-    # first day of a quarter — which somebody reconciling a committee pack
+    # first day of a quarter, which somebody reconciling a committee pack
     # will notice, so deploy.md says it too.
     - title: "Closed, last 90 days"
       fields: ["@identity", ClosedDate, DaysLate, EvidenceUrl]
@@ -434,13 +434,13 @@ views:
         EvidenceUrl: 180
 
 # Form layouts: a strapline header and a sectioned body per list. Per-field
-# description hints render on the NEW form only — the edit form suppresses
+# description hints render on the NEW form only. The edit form suppresses
 # column descriptions (platform limitation). Section field lists are
 # authored with INTERNAL names; the build rewrites them to display titles.
 #
 # Recommendation's System section holds DaysLate alone. Calculated columns
 # never render on entry forms, so on the NEW form that section is a bare
-# heading with nothing under it — cosmetic and expected, exactly as
+# heading with nothing under it, cosmetic and expected, exactly as
 # risk-register's is, and the reason the empty-section refusal is not
 # asserted of the LAST section.
 #
@@ -450,7 +450,7 @@ views:
 #
 # Also deliberately NOT declared: a row-level formatter. §1.6 allows one
 # per list, for a single worst state. The worst row here is an overdue
-# Critical — a compound of two columns, not one — and both already
+# Critical (a compound of two columns, not one) and both already
 # escalate in their own cells on every view that shows them. A wash would
 # duplicate rather than add.
 form_formatting:
@@ -462,14 +462,14 @@ form_formatting:
     body: formatting/recommendation-form-body.json
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # overdue and closure surfaces land on whatever day the demo runs; "@me" is
 # the pasting operator; { demo_ref: key } resolves to the Id of the audit
 # created under that key.
 #
 # Coverage: one audit per AuditType, one recommendation per Status and per
-# FindingRating, and — the row that earns its place — an extended
+# FindingRating, and (the row that earns its place) an extended
 # recommendation whose ORIGINAL date has passed and whose REVISED date has
 # not. Without it the Overdue view demonstrates the nesting only in the
 # direction that fires, and the branch that SUPPRESSES a properly extended

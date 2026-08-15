@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "State the problem to solve, and name one owner — never a team."
+          "txtContent": "State the problem to solve, and name one owner (never a team)."
         }
       ]
     }

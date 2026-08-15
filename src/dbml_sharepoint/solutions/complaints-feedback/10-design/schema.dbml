@@ -1,5 +1,5 @@
 // ============================================================================
-// Complaints & feedback — one register with two calculated response clocks.
+// Complaints & feedback: one register with two calculated response clocks.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -47,13 +47,13 @@ Table Feedback {
   RecordedBy       person            [note: 'Staff member who recorded it']
   Handler          person            [note: 'Set at triage: who owns the response']
   AcknowledgedDate date              [note: 'When the person was told we have it and who is handling it']
-  // Calculated column — formula in mapping.yaml (ReceivedDate -> AcknowledgedDate).
+  // Calculated column: formula in mapping.yaml (ReceivedDate -> AcknowledgedDate).
   DaysToAcknowledge calculated_number [note: 'How many days it took to acknowledge this item. Calculated automatically from the received and acknowledged dates. Blank until both are set.']
   ClosedDate       date
-  // Calculated column — formula in mapping.yaml (ReceivedDate -> ClosedDate).
+  // Calculated column: formula in mapping.yaml (ReceivedDate -> ClosedDate).
   DaysToClose      calculated_number [note: 'How many days it took to close this item. Calculated automatically from the received and closed dates. Blank until both are set.']
   Outcome          feedback_outcome  [note: 'Required at closure']
-  Learning         richtext          [note: 'What changes because of this item — the point of the register']
+  Learning         richtext          [note: 'What changes because of this item, the point of the register']
 
   indexes {
     Status

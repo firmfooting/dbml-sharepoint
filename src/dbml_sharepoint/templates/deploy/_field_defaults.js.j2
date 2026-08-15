@@ -3,7 +3,7 @@
   // skipped in Phase 2.1. Re-applying the declared value makes upgrades
   // idempotent and lets a provisioned constant replace after-create flows.
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   for (const fieldDefault of SCHEMA.field_defaults) {

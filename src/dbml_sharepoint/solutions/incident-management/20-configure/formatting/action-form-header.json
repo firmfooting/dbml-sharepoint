@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "One named person and one date — an action owned by a team is owned by nobody."
+          "txtContent": "One named person and one date. An action owned by a team is owned by nobody."
         }
       ]
     }

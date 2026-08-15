@@ -5,7 +5,7 @@ sidebar_position: 27
 
 # `dbml_sharepoint.wizard`
 
-*Packaging — the interactive template wizard*
+*Packaging: the interactive template wizard*
 
 The interactive template wizard: the default `dbml-sharepoint` command.
 

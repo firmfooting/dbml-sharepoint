@@ -1,11 +1,11 @@
   // === Phase {{ phase.number }}: seal declared columns ===
   // Re-seal after every field write (1/2/3/3b/3d): sealed columns block UI
-  // schema edits and deletion even for site admins — the strongest defense
+  // schema edits and deletion even for site admins, the strongest defense
   // when team owners are unavoidably site collection admins. Friction, not
   // enforcement: an admin can unseal via API, which is deliberate work, not
   // an accident.
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   invalidateFieldShapes();  // probes reflect phase-start state
@@ -27,7 +27,7 @@
     let sealedCount = 0;
     // One lane per list (field MERGEs on the same list race into save
     // conflicts; lists are independent). After a lane's writes, ONE fresh
-    // per-list enumeration serves every column's verify readback — the
+    // per-list enumeration serves every column's verify readback; the
     // per-field fresh GETs paid ~one round-trip per column for the same
     // server evidence (live DEBUG timing: this phase alone was 13.3s of a
     // 52s run). Verification still never trusts phase-start state: the

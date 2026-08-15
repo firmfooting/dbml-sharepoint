@@ -1,4 +1,4 @@
-# Process register — physical mapping.
+# Process register: physical mapping.
 prefix: "PR_"
 
 entities:
@@ -20,7 +20,7 @@ calculated_formulas:
   BusinessProcess:
     DigitisationPriority: '=IF(OR(ISBLANK([Criticality]),ISBLANK([PainLevel])),"",IF([Criticality]="Low",1,IF([Criticality]="Medium",2,3))*IF([PainLevel]="Minor",1,IF([PainLevel]="Moderate",2,3)))'
 
-# Security: the inventory is built by everyone who runs a process — Members
+# Security: the inventory is built by everyone who runs a process. Members
 # and Owners hold Contribute; Full Control confined to the empty-by-default
 # admin group.
 groups:
@@ -61,11 +61,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -88,7 +88,7 @@ display_names:
 #
 # Tokens map by the ROLE a member plays. CurrentState is the honest answer
 # to "how is this done today", so its colours run from severe (paper) to
-# good (a system of record) — which is also, deliberately, a picture of the
+# good (a system of record), which is also, deliberately, a picture of the
 # programme's remaining work. Not worth digitising is `muted`, not
 # `blocked`: governance is explicit that deciding NOT to digitise is
 # legitimate output, and painting it with the alarm colour would argue the
@@ -97,7 +97,7 @@ display_names:
 # DigitisationPriority takes the theme's shared treatment: data-bar,
 # explicit max, fill translated from the band column beside it so the bar
 # and that column can never disagree. The band is PainLevel, because pain
-# is what a tall bar here means — the direction is deliberately the
+# is what a tall bar here means; the direction is deliberately the
 # opposite of the project pipeline's, where a tall bar is an opportunity
 # and runs to good. Same mechanism, opposite subject matter.
 column_formatting:
@@ -147,12 +147,12 @@ field_sets:
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). "The worklist" is the default and is the
 # product: everything not yet settled, ranked by the score. The three
-# lenses are the programme's own cadence — the quarterly dashboard, the
+# lenses are the programme's own cadence: the quarterly dashboard, the
 # per-function workshop and review unit, and the slide leadership actually
 # remembers.
 #
 # Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
-# rewrites them to display titles — ColumnWidth binds by display name, and
+# rewrites them to display titles; ColumnWidth binds by display name, and
 # internal names silently reset).
 #
 # Two formatters read columns other than their own, so every view carries
@@ -180,7 +180,7 @@ views:
         DigitisationPriority: 150
         DigitisationStatus: 180
         ReviewDate: 170
-    # SystemUrl is on this view for governance data-quality rule 3 —
+    # SystemUrl is on this view for governance data-quality rule 3:
     # "Digitised rows carry a SystemUrl". That rule is NOT enforceable at
     # save (see list_validation below), so the compensating control is
     # visual: collapse to the Digitised group and a missing link is an
@@ -220,7 +220,7 @@ views:
     # Two columns, one filter: a bare list is all_of, so this is
     # "high-criticality AND still on paper or in a spreadsheet". PainNotes
     # is on it because the quarterly slide needs the sentence, not just the
-    # row — "only one person knows how" is what leadership remembers.
+    # row: "only one person knows how" is what leadership remembers.
     - title: "Key-person risk"
       fields: ["@identity", Criticality, CurrentState, PainLevel, PainNotes,
                DigitisationPriority, DigitisationStatus]
@@ -241,13 +241,13 @@ views:
         DigitisationStatus: 180
 
 # Form layouts: a strapline header and a sectioned body. SharePoint renders
-# per-field description hints inside sectioned forms on the NEW form only —
+# per-field description hints inside sectioned forms on the NEW form only;
 # the edit form suppresses column descriptions (platform limitation).
 # Section field lists are authored with INTERNAL names; the build rewrites
 # them to display titles.
 #
 # System is last and holds only DigitisationPriority, so on the New form it
-# is a bare heading — calculated columns never render on entry forms.
+# is a bare heading; calculated columns never render on entry forms.
 # Cosmetic and expected, the same shape risk-register's System section has.
 form_formatting:
   BusinessProcess:
@@ -256,12 +256,12 @@ form_formatting:
 
 # The inventory workshop is three minutes per process, timeboxed, and the
 # facilitator is typing while people talk. What the workshop does not do is
-# decide where anything ends up — governance is explicit that solving comes
-# later, ranked — so the two fields that answer "where does it go" stay off
+# decide where anything ends up (governance is explicit that solving comes
+# later, ranked), so the two fields that answer "where does it go" stay off
 # the form until the status says somebody has decided.
 #
 # Deliberately NOT declared: any rule conditioned on DigitisationPriority.
-# Conditional show/hide cannot read a calculated column — the formula stays
+# Conditional show/hide cannot read a calculated column. The formula stays
 # syntactically valid, so it saves, the readback compares equal and the
 # phase passes, but the form never reacts. The build refuses it, and the
 # most natural rule here ("ask for a target state once the score is 6 or
@@ -278,7 +278,7 @@ form_visibility:
           - { field: DigitisationStatus, op: in, value: ["In progress", "Digitised"] }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has a
+# message, and they all run, unlike list_validation, where a list has a
 # single ValidationFormula and every cross-column rule shares one message.
 column_validation:
   BusinessProcess:
@@ -286,7 +286,7 @@ column_validation:
       # Governance sets a full inventory refresh annually. A review date
       # further out than that is not a slower cadence, it is a row that has
       # left the refresh: it never appears overdue and nobody is asked
-      # whether it is still true. The blank arm is deliberate — a row
+      # whether it is still true. The blank arm is deliberate: a row
       # captured in a workshop and not yet given a review date is a normal
       # intermediate state, not an error.
       ReviewDate:
@@ -300,7 +300,7 @@ column_validation:
 list_validation:
   BusinessProcess:
     # ONE rule. Once somebody has decided to do something about a process,
-    # the register has to say where it is going — otherwise "Planned" is a
+    # the register has to say where it is going; otherwise "Planned" is a
     # status with no content and the programme dashboard counts intentions.
     # Written as an implication: `if A then B` is `any_of[not A, B]`, which
     # is why the branch starts with the states the rule does not apply to.
@@ -309,15 +309,15 @@ list_validation:
         - { field: DigitisationStatus, op: in,
             value: ["Not assessed", "Assessed", "Not worth digitising"] }
         - { field: TargetState, op: is_not_null }
-    message: "A process that is Planned, In progress or Digitised needs a Target State — which system, which template, which form. Say where it is going before you say it is on its way."
+    message: "A process that is Planned, In progress or Digitised needs a Target State: which system, which template, which form. Say where it is going before you say it is on its way."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # review cadence lands on whatever day the demo runs; "@me" is the pasting
 # operator. Coverage: every declared view returns rows, every member of
-# every formatted column renders at least once — all five current states,
-# all six digitisation statuses, all three criticality and pain bands — and
+# every formatted column renders at least once: all five current states,
+# all six digitisation statuses, all three criticality and pain bands, and
 # two rows land in "Key-person risk", which is the slide the whole
 # quarterly cadence is built around. The review date appears overdue (red)
 # on a live row and long past but PLAIN on a digitised one, so the guard
@@ -400,6 +400,6 @@ demo_items:
         Criticality: "Low"
         CurrentState: "Email / ad hoc"
         PainLevel: "Minor"
-        PainNotes: "Demo row. An email to the supplier once a month. It works, it costs nobody anything, and digitising it would cost more than it saves — recorded as a decision rather than left on the list forever."
+        PainNotes: "Demo row. An email to the supplier once a month. It works, it costs nobody anything, and digitising it would cost more than it saves, recorded as a decision rather than left on the list forever."
         DigitisationStatus: "Not worth digitising"
         ReviewDate: "today+300"

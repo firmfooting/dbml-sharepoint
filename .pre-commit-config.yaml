@@ -4,7 +4,7 @@
 #
 # The lint/type/template/test hooks are LOCAL and shell out to the
 # project's own pinned tools via `uv run`, so a hook can never drift from
-# the version CI uses — the pre-commit gates ARE the CI gates. Line
+# the version CI uses. The pre-commit gates ARE the CI gates. Line
 # endings are governed by .gitattributes (eol=lf) and Python whitespace
 # by ruff's W-rules, so no mutating hygiene hooks are needed (they would
 # only churn a Windows CRLF working tree); the remote hooks below are
@@ -12,7 +12,7 @@
 minimum_pre_commit_version: "3.0.0"
 
 # Without this, `prek install` writes only the pre-commit shim, and the
-# pytest hook below — declared `stages: [pre-push]` — is never installed, so
+# pytest hook below (declared `stages: [pre-push]`) is never installed, so
 # the "full suite on push" gate silently does not exist. Measured on prek
 # 0.4.11: with the key absent, `install` produced `.git/hooks/pre-commit`
 # alone; with it present, pre-commit and pre-push both.

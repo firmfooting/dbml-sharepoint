@@ -1,9 +1,9 @@
 {# test/manual/templates/expression-text-operators-probe.js.j2 #}
 /**
- * dbml-sharepoint PROBE — TEXT OPERATORS ON THE EXPRESSION TARGET
+ * dbml-sharepoint PROBE: TEXT OPERATORS ON THE EXPRESSION TARGET
  *
  * QUESTION: how should `contains`, `not_contains`, `begins_with` and
- * `not_begins_with` be rendered into a ClientValidationFormula — and does
+ * `not_begins_with` be rendered into a ClientValidationFormula, and does
  * the rendering actually WORK, rather than merely save?
  *
  * WHY: `analysis/conditions.py` disables all four on the expression target:
@@ -12,27 +12,27 @@
  *
  * and the build error tells the author to "confirm it with
  * test/manual/form-visibility-evidence-probe.js". That probe does not test
- * them — its questions are collision, canonical syntax, round-trip fidelity
+ * them. Its questions are collision, canonical syntax, round-trip fidelity
  * and length limit. So the tool points at a probe that cannot settle the
  * thing it is cited for. This probe is what that error should have named.
  *
- * The validation target already renders all four — `ISNUMBER(FIND(...))`
- * and `LEFT([Col],n)=...` — so this is only about the client-side
+ * The validation target already renders all four (`ISNUMBER(FIND(...))`
+ * and `LEFT([Col],n)=...`), so this is only about the client-side
  * expression language, which is a different language with different
  * functions.
  *
  * WHY STORAGE IS NOT THE ANSWER, and why this probe ends with an eyes-on
  * checklist you have to fill in: this project has already been caught by
  * `length()`, which is documented, saves cleanly, reads back byte-identical
- * and returns an ARRAY's item count — so `length([$Note]) > 3` is false for
+ * and returns an ARRAY's item count, so `length([$Note]) > 3` is false for
  * every possible value and hides the column unconditionally. A formula that
  * stores perfectly and silently evaluates false is the exact failure this
  * whole surface keeps producing, and no headless script can see it. The
  * console half of this probe narrows the candidates; only your eyes can
  * finish it.
  *
- * WHAT IT ASKS — console half
- *   X0   NEGATIVE CONTROL — is a formula calling a function that does not
+ * WHAT IT ASKS (console half)
+ *   X0   NEGATIVE CONTROL: is a formula calling a function that does not
  *        exist REFUSED? If SharePoint stores nonsense, then "accepted"
  *        below means nothing and only the eyes-on half is evidence.
  *   X1   indexOf(...) >= 0            candidate for `contains`
@@ -50,7 +50,7 @@
  *   first had settled X1-X5 over three typed values. Both were previously
  *   carried on arithmetic rather than observation: `!= 0` is the exact
  *   negation of the `== 0` watched at X3, and the empty-box behaviour that
- *   `none_of[not_contains]` depends on had never been typed. Result — all
+ *   `none_of[not_contains]` depends on had never been typed. Result: all
  *   TWENTY-FOUR cells of the six-candidate by four-row table matched the
  *   predicted truth table exactly:
  *
@@ -65,21 +65,21 @@
  *   operators visible for the empty box, which is the observation
  *   `analysis/conditions.py` needs to keep none_of[not_contains] from
  *   re-admitting the empty value. The open form, before anything was typed,
- *   independently showed the same two columns — the same answer seen twice.
+ *   independently showed the same two columns, the same answer seen twice.
  *
  *   X1-X5 are unchanged byte-for-byte across both passes, so the first run's
  *   recorded results still describe exactly the strings that produced them.
- *   X0 failed again in the second pass — the nonsense function was stored
- *   byte-identical a second time — so the eyes-on table remains the only
+ *   X0 failed again in the second pass (the nonsense function was stored
+ *   byte-identical a second time), so the eyes-on table remains the only
  *   evidence here, and all six candidates storing cleanly means nothing on
  *   its own.
  *
- * WHAT YOU ANSWER — the eyes-on half
+ * WHAT YOU ANSWER (the eyes-on half)
  *   The probe prints a four-row table. You open the New form, put each
- *   value into "ProbeText" — the last row is the box left EMPTY — and write
+ *   value into "ProbeText" (the last row is the box left EMPTY) and write
  *   down which of the six columns appear. A candidate that works shows for
  *   SOME values and not others. A candidate that is broken shows for NONE
- *   (or for ALL) — and those two are indistinguishable from a formula that
+ *   (or for ALL), and those two are indistinguishable from a formula that
  *   stored perfectly.
  *
  * HOW TO RUN
@@ -129,7 +129,7 @@
   //   ""                       the empty box
   //
   // The empty row is not decoration. Both NEGATIVE operators are true for a
-  // blank — indexOf('', 'needle') is -1, which is `< 0` and also `!= 0` —
+  // blank (indexOf('', 'needle') is -1, which is `< 0` and also `!= 0`),
   // and `analysis/conditions.py` relies on exactly that to decide that
   // none_of[not_contains] must NOT re-admit the empty value. That was
   // reasoned from the arithmetic, never printed as a row. It is a row now.
@@ -223,7 +223,7 @@
   // Returns the request outcome ALONGSIDE the value. Collapsing a failed
   // GET to null would make a throttled read indistinguishable from a
   // successful read of an empty property, and the classifier below would
-  // then print 'ACCEPTED THEN DISCARDED' — a claim about SharePoint — on
+  // then print 'ACCEPTED THEN DISCARDED' (a claim about SharePoint) on
   // no observation.
   const readExpression = async (field) => {
     const r = await spGet(
@@ -247,7 +247,7 @@
          junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? `a call to dbmlspNoSuchFunction was ACCEPTED and stored as `
-             + `${JSON.stringify(junkStored)} — SharePoint is not validating these `
+             + `${JSON.stringify(junkStored)}. SharePoint is not validating these `
              + 'formulas on write, so treat every candidate "ACCEPTED" as storage only '
              + 'and rely entirely on the eyes-on table'
            : isRefusal(junk.status)
@@ -301,13 +301,13 @@
   report();
 
   // ---- The half a console cannot answer -------------------------------
-  console.log('\n============ EYES-ON CHECKLIST — REQUIRED ============');
+  console.log('\n============ EYES-ON CHECKLIST (REQUIRED) ============');
   console.log('The rows above say only whether SharePoint KEPT each formula.');
   console.log('They cannot say whether it EVALUATES. Do this now:\n');
   console.log(`  1. Open ${WEB}/Lists/${encodeURIComponent(LIST)}/NewForm.aspx`);
   console.log(`     (or the list -> New). All ${CANDIDATES.length} Show* columns should be`);
-  console.log('     on the form; if a column is missing entirely, say so —');
-  console.log('     that is a different finding from it being hidden.');
+  console.log('     on the form; if a column is missing entirely, say so.');
+  console.log('     That is a different finding from it being hidden.');
   console.log(`  2. Put each value below into "${SUBJECT}" and write down`);
   console.log('     which Show* columns are VISIBLE. Do not save.\n');
   CASES.forEach(([value, meaning], i) => {

@@ -1,4 +1,4 @@
-# Training register — physical mapping.
+# Training register: physical mapping.
 prefix: "TR_"
 
 entities:
@@ -22,7 +22,7 @@ watched_lists: []
 # coordinators' expiry sweep (50-govern) or an automation you add later;
 # the ExpiryDate index makes both cheap.
 
-# Security: training records are evidence — staff read their coverage,
+# Security: training records are evidence. Staff read their coverage,
 # coordinators maintain records, Full Control confined to the empty-by-
 # default admin group.
 groups:
@@ -72,11 +72,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -92,7 +92,7 @@ display_names:
       EvidenceUrl: "Evidence URL"
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 #
@@ -102,12 +102,12 @@ display_names:
 # trains people to stop reading the colour.
 #
 # NOTHING IS DECLARED ON Course, and both omissions are deliberate.
-# Category is a taxonomy, not a lifecycle — mapping "Compliance" onto a
+# Category is a taxonomy, not a lifecycle; mapping "Compliance" onto a
 # severity token would give the fleet's colour vocabulary a second,
 # incompatible meaning (see the style guide's role-not-word rule).
 # ValidityMonths is not given a data-bar either: blank means "never
 # expires", and an empty bar beside a filled one reads as "expires
-# immediately" — the exact inverse of the truth.
+# immediately", the exact inverse of the truth.
 column_formatting:
   TrainingRecord:
     Status: { style: severity, map: { Current: good, Expiring: severe, Expired: blocked, "Not required": muted } }
@@ -123,7 +123,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view and the
-# keys are INTERNAL names — the build rewrites them to display titles,
+# keys are INTERNAL names. The build rewrites them to display titles,
 # because ColumnWidth binds by display name and an internal name silently
 # resets.
 views:
@@ -239,7 +239,7 @@ views:
 
 # Form layouts: a strapline header and a sectioned body per list. Section
 # field lists are authored with INTERNAL names; the build rewrites them to
-# display titles. Per-field description hints render on the NEW form only —
+# display titles. Per-field description hints render on the NEW form only.
 # SharePoint suppresses column descriptions on the Edit form.
 form_formatting:
   Course:
@@ -250,7 +250,7 @@ form_formatting:
     body: formatting/trainingrecord-form-body.json
 
 # Status is maintained by the weekly sweep, not by whoever records the
-# completion — the column's own schema note says "leave as Current for a
+# completion; the column's own schema note says "leave as Current for a
 # new record", and the column defaults to exactly that. So it leaves the
 # New form and stays on Edit and Display, where the sweep works it.
 #
@@ -263,7 +263,7 @@ form_visibility:
       Status: { new: false }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
   Course:
@@ -277,11 +277,11 @@ column_validation:
           any_of:
             - { field: ValidityMonths, op: is_null }
             - { field: ValidityMonths, op: gt, value: 0 }
-        message: "Validity months must be a positive number of months. Leave it blank for a course that never expires — blank is how the catalogue says that."
+        message: "Validity months must be a positive number of months. Leave it blank for a course that never expires; blank is how the catalogue says that."
   TrainingRecord:
     columns:
       # A completion dated in the future pushes the expiry out with it and
-      # drops the record off the sweep silently — no error, no empty cell,
+      # drops the record off the sweep silently: no error, no empty cell,
       # just coverage nobody is asked to check again.
       CompletedDate:
         when:
@@ -291,13 +291,13 @@ column_validation:
 # Save-time enforcement, stored on the LIST so it may reference any column.
 # ONE rule: a record the sweep has flagged has to say what it is counting
 # down from. Expiring and Expired are both statements about a date, and a
-# record carrying either with no ExpiryDate is unfalsifiable — it cannot
+# record carrying either with no ExpiryDate is unfalsifiable; it cannot
 # appear in "Expiring 60 days", cannot be sorted by lapse, and cannot be
 # checked by anyone.
 #
 # NOT enforced here, deliberately: the governance rule that a Current
 # record must link its evidence. Two reasons, and the second is the one
-# that matters — the build has no verified evidence that a URL column can
+# that matters: the build has no verified evidence that a URL column can
 # be an operand in a SharePoint validation formula, and "linked" is not
 # "sighted" in any case. A rule that passes on a link to the wrong
 # document buys nothing and costs the coordinator a save. It stays a
@@ -308,24 +308,24 @@ list_validation:
       any_of:
         - { field: Status, op: not_in, value: ["Expiring", "Expired"] }
         - { field: ExpiryDate, op: is_not_null }
-    message: "A record marked Expiring or Expired needs an expiry date — that date is what the sweep, the views and the escalation all count from."
+    message: "A record marked Expiring or Expired needs an expiry date. That date is what the sweep, the views and the escalation all count from."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Dates are today±N so the
 # sweep-derived views land correctly on whatever day the demo runs, and
 # "@me" is the pasting operator.
 #
 # EvidenceUrl is left blank on every demo row. A SharePoint URL column
 # takes a structured value over REST rather than a bare string, and this
-# repository has not read that write back from a live list — a demo paste
+# repository has not read that write back from a live list. A demo paste
 # failing in front of an audience is exactly the failure the demo
 # validation exists to prevent. Link one by hand after the paste; the
 # checklist in 30-deploy/deploy.md says so.
 #
 # Coverage: a five-course catalogue including two that never expire and
 # three that are mandatory, and six records spanning current, expiring,
-# flagged and expired — including a lapse and its refresher as two rows,
+# flagged and expired, including a lapse and its refresher as two rows,
 # which is the register's central data-quality rule made visible.
 demo_items:
   Course:
@@ -335,7 +335,7 @@ demo_items:
         Category: "Induction"
         Mandatory: true
         Provider: "People & Culture"
-        Notes: "Demo row. Once, at hire. No validity months — an induction is not repeated, which is what a blank says here."
+        Notes: "Demo row. Once, at hire. No validity months; an induction is not repeated, which is what a blank says here."
     - key: crs-manual-handling
       values:
         Title: "[DEMO] Manual handling"
@@ -351,7 +351,7 @@ demo_items:
         ValidityMonths: 12
         Mandatory: false
         Provider: "Clinical education"
-        Notes: "Demo row. Annual reaccreditation. Mandatory for clinical roles only — which is a role requirement, so it lives in the governance matrix rather than in this checkbox."
+        Notes: "Demo row. Annual reaccreditation. Mandatory for clinical roles only, which is a role requirement, so it lives in the governance matrix rather than in this checkbox."
     - key: crs-records
       values:
         Title: "[DEMO] Records and privacy awareness"
@@ -366,7 +366,7 @@ demo_items:
         Category: "Systems & IT"
         Mandatory: false
         Provider: "IT service desk"
-        Notes: "Demo row. No expiry — and worth an annual look at whether that is still true, which is what the Never expires view is for."
+        Notes: "Demo row. No expiry, and worth an annual look at whether that is still true, which is what the Never expires view is for."
   TrainingRecord:
     - key: rec-induction
       values:
@@ -392,7 +392,7 @@ demo_items:
         CompletedDate: "today-690"
         ExpiryDate: "today+40"
         Status: "Current"
-        Notes: "Demo row. Still Current, and already inside the sweep window — this is what the coordinator sees before anyone is late."
+        Notes: "Demo row. Still Current, and already inside the sweep window; this is what the coordinator sees before anyone is late."
     - key: rec-bls-flagged
       values:
         Title: "[DEMO] Basic life support — flagged by the sweep"
@@ -410,7 +410,7 @@ demo_items:
         CompletedDate: "today-740"
         ExpiryDate: "today-10"
         Status: "Expired"
-        Notes: "Demo row. Escalated on the day it lapsed. Kept, not overwritten — the history is the audit trail."
+        Notes: "Demo row. Escalated on the day it lapsed. Kept, not overwritten; the history is the audit trail."
     - key: rec-bls-refresher
       values:
         Title: "[DEMO] Basic life support — refresher, recorded as a new row"
