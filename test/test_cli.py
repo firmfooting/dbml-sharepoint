@@ -702,9 +702,18 @@ def _write_env_file(path: Path, address: str = "svc-reporting@example.org") -> P
     return path
 
 
-def test_env_file_missing_at_an_explicit_path_is_an_error(tmp_path: Path) -> None:
+def test_env_file_missing_at_an_explicit_path_is_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`--env-file` names a specific file; a typo there must not silently
     build without the settings the operator asked for."""
+    # Fix the width and drop the colour, for the reason the panel test below
+    # already records: rich wraps the refusal into a box at the terminal's
+    # width, so a path asserted raw is green on a developer machine and red
+    # on both CI runners for reasons unrelated to the behaviour under test.
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("NO_COLOR", "1")
+
     missing = tmp_path / "nowhere.env"
     result = runner.invoke(app, [
         "build",
@@ -1049,7 +1058,9 @@ def test_a_cross_drive_env_path_falls_back_to_the_path_as_given(tmp_path: Path) 
     assert _relative_env_path(env_file) == env_file.as_posix()
 
 
-def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
+def test_build_help_lists_every_env_setting_and_its_help_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """`EnvSetting.help` is otherwise dead weight: nothing else reads it.
 
     A key not rendered here is a key an operator can only discover by
@@ -1062,7 +1073,16 @@ def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
     "|" and re-wrapped whitespace. Both are stripped before matching, the
     same way `test_help_still_renders_as_rich_panels` treats layout as
     incidental and content as what is asserted.
+
+    Stripping is not enough on its own. At a narrow width rich also
+    interleaves colour escapes with the border characters, and this test was
+    green on a developer machine and red on both CI runners until the width
+    was fixed and the colour dropped, which is the same failure the panel
+    test further down already records.
     """
+    monkeypatch.setenv("COLUMNS", "200")
+    monkeypatch.setenv("NO_COLOR", "1")
+
     result = runner.invoke(app, ["build", "--help"])
     assert result.exit_code == 0
     collapsed = " ".join(result.stdout.replace("│", " ").split())
