@@ -2,10 +2,11 @@
 
 import datetime as dt
 from contextlib import suppress
+from dataclasses import dataclass
 from difflib import get_close_matches
 from pathlib import Path
 from textwrap import wrap
-from typing import Any, NoReturn
+from typing import Any, Final, NoReturn
 from urllib.parse import urlparse, urlunparse
 
 import typer
@@ -363,6 +364,28 @@ def _site_url_notice(given: str, used: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class EnterpriseReaderDeclined:
+    """Sentinel: the operator was asked and chose nobody.
+
+    `execute_build`'s `enterprise_reader` parameter carries three states, not
+    two -- unset (no flag, no wizard answer, ``None``), this sentinel
+    (explicitly nobody), and a UPN (``str``). Only the unset state is a
+    default a future ``dbml-sharepoint.env`` may fill; this one must survive
+    untouched, because it is what the wizard sends for a deliberate blank
+    answer at `_ask_enterprise_reader`. A bare `object()` would work at
+    runtime but repr as an unreadable address; this dataclass gives it a
+    name instead.
+    """
+
+    def __repr__(self) -> str:
+        return "ENTERPRISE_READER_DECLINED"
+
+
+#: The one instance every caller shares -- see `EnterpriseReaderDeclined`.
+ENTERPRISE_READER_DECLINED: Final = EnterpriseReaderDeclined()
+
+
 def validate_enterprise_reader(address: str) -> None:
     """Refuse anything that is not a plain UPN.
 
@@ -486,7 +509,7 @@ def execute_build(
     dry_run: bool = False,
     seed: bool = False,
     extension: str | None = None,
-    enterprise_reader: str | None = None,
+    enterprise_reader: str | EnterpriseReaderDeclined | None = None,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
 
@@ -498,6 +521,12 @@ def execute_build(
     contract (2 for misuse, 1 for a refused build), and re-mapping them to
     an exception of its own here would give the wizard a second vocabulary
     for the same failures. The wizard catches it.
+
+    `enterprise_reader` carries three states: ``None`` (unset -- no flag was
+    given), `EnterpriseReaderDeclined` (the operator was asked and said
+    nobody), or a UPN. Nothing here resolves a `dbml-sharepoint.env` default
+    for the unset case yet -- that is a later change -- so this function only
+    has to keep the three states distinct rather than act on the difference.
     """
     # Reassigned, not merely checked: everything below -- SiteContext, the
     # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
@@ -523,7 +552,11 @@ def execute_build(
 
     _require_known_site_role(bundle, site_role)
 
-    if enterprise_reader is not None:
+    # `isinstance`, not `is not None`: `EnterpriseReaderDeclined` is also not
+    # `None`, and must skip validation and the group check exactly as `None`
+    # does -- both mean nobody is enrolled. Narrowing here also gives mypy a
+    # `str` inside the block for the `validate_enterprise_reader` call below.
+    if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
         perms = bundle.mapping.permissions
         targets = [
@@ -589,6 +622,16 @@ def execute_build(
         schema.stat().st_mtime, dt.UTC,
     ).isoformat(timespec="seconds")
 
+    # `generate_manifest` and `emit_bundle` know only `str | None`; teaching
+    # them the third state is a later change. Narrowed here, right before
+    # their first use, rather than by reassigning the `enterprise_reader`
+    # parameter above -- reassigning it would erase the distinction this
+    # function exists to preserve, before anything downstream gets a chance
+    # to consume it.
+    resolved_enterprise_reader = (
+        enterprise_reader if isinstance(enterprise_reader, str) else None
+    )
+
     manifest_md = generate_manifest(
         schema_json=schema_json,
         findings=findings,
@@ -605,7 +648,7 @@ def execute_build(
         # error path below: a build that refuses still writes a manifest,
         # and the operator reading it should see what the flag would have
         # done once the errors are fixed.
-        enterprise_reader=enterprise_reader,
+        enterprise_reader=resolved_enterprise_reader,
     )
     write_artifact(out / "deploy-manifest.md", manifest_md)
 
@@ -642,7 +685,7 @@ def execute_build(
             seed=seed,
             extension=ext,
             site_context=site_context,
-            enterprise_reader=enterprise_reader,
+            enterprise_reader=resolved_enterprise_reader,
         )
     except SeedRequiresDemoItemsError as exc:
         typer.echo(str(exc), err=True)

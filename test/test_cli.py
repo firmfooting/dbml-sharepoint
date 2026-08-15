@@ -621,6 +621,65 @@ def test_a_valid_reader_flag_reaches_the_written_manifest(tmp_path: Path) -> Non
     assert "does not delete the group" in manifest
 
 
+def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`ENTERPRISE_READER_DECLINED` must survive `execute_build` as its own
+    state, distinct from both `None` (unset) and a real address, rather than
+    being collapsed into either at the first opportunity.
+
+    Run against `sharepoint-mapping-with-reader.yaml`, which DOES declare an
+    `enroll_enterprise_reader` group. That choice matters: the old gate was
+    `if enterprise_reader is not None`, and the sentinel is not `None`, so a
+    build that still used that gate would hand the sentinel to `validate_
+    enterprise_reader`, which calls `.strip()` on it and raises an unhandled
+    `AttributeError` rather than the clean refusal a bad address gets. This
+    test would error, not merely fail, if that regressed -- succeeding here
+    proves the sentinel is excluded from the gate on its own terms, not
+    merely because it happens to behave like `None` would against a mapping
+    with no group to enrol into (which is all `sharepoint-mapping.yaml`
+    would prove).
+
+    The spy then proves what `emit_bundle` actually receives: `None`. It and
+    `generate_manifest` do not know a third state yet -- teaching them one is
+    a later change -- so both must still see the same "nobody" `None` an
+    omitted flag produces. `execute_build` narrows to that `str | None` only
+    at each site that needs it, so this cannot pass merely because the
+    sentinel happened to overwrite the `enterprise_reader` parameter itself
+    early and lose the distinction before it reached here.
+    """
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, execute_build
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    out = tmp_path / "build"
+    execute_build(
+        schema=FIXTURES / "simple.dbml",
+        mapping=FIXTURES / "sharepoint-mapping-with-reader.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        out=out,
+        enterprise_reader=ENTERPRISE_READER_DECLINED,
+    )
+
+    assert captured["enterprise_reader"] is None
+    # Not a bare `"enterprise-reader" not in ...` check: this fixture's own
+    # group carries that substring in a static description ("Read-only
+    # enrolment target for --enterprise-reader") that renders regardless of
+    # whether anybody was actually enrolled. `READER_ADDRESS` is declared
+    # only inside `_reader_enrolment.js.j2`'s `{% if enterprise_reader %}`
+    # guard, so its absence is what actually proves no enrolment code emitted.
+    assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
+
+
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:
     """A failed build must leave only its error manifest — a stale script
     or stale INDEX/checksums beside it could send an operator to the wrong

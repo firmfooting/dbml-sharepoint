@@ -24,6 +24,7 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
     load_solution,
 )
+from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 
@@ -1993,6 +1994,10 @@ def test_an_empty_reader_answer_means_no_flag(
     reports that the script ran out, while `"must not be empty" not in
     shown` reports that the wizard asked a question it should not have.
     Checking the exit code first would report the symptom, not the defect.
+
+    Asserts the `ENTERPRISE_READER_DECLINED` sentinel, not `None`: a blank
+    answer is the operator saying so, which must stay distinguishable from
+    no flag and no wizard answer at all -- see `EnterpriseReaderDeclined`.
     """
     captured = _capture_build(monkeypatch)
     console = ScriptedConsole(
@@ -2002,7 +2007,7 @@ def test_an_empty_reader_answer_means_no_flag(
     shown = _collapsed(console)
     assert "must not be empty" not in shown
     assert code == 0
-    assert captured["enterprise_reader"] is None
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
 
 
 def test_a_reader_answer_is_passed_through(
@@ -2080,6 +2085,12 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
     real answer and make the run succeed either way -- the exit-code
     assertion would then be pinning nothing, which is the whole reason
     `_answers` grew a `None`.
+
+    `answers.reader` stays "" whether the question was never asked (this
+    case) or asked and left blank (`test_an_empty_reader_answer_means_no_
+    flag`); both reach `execute_build` as `ENTERPRISE_READER_DECLINED`, and
+    that is correct -- with no group to enrol into, "unset" and "declined"
+    behave identically either way.
     """
     solution = _fake_family(tmp_path / "fake")
     _offer_only(monkeypatch, solution)
@@ -2094,7 +2105,7 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
     shown = _collapsed(console).lower()
     assert "enrol" not in shown
     assert code == 0
-    assert captured["enterprise_reader"] is None
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
 
 
 def test_a_template_declaring_no_demo_items_is_not_asked(

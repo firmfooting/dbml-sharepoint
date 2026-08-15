@@ -1000,13 +1000,13 @@ def _run(console: Console) -> int:
     if build:
         # Offered only where the mapping declares a group
         # `--enterprise-reader` could enrol into. Blank stays the default and
-        # must map to None below, never "": an empty string would reach
-        # `validate_enterprise_reader` and abort a run where the operator
-        # simply pressed Enter, which is the safe answer the question exists
-        # to allow. Anything NON-blank is validated at the prompt and re-asked
-        # on refusal -- the `except typer.Exit` below cannot catch what
-        # `validate_enterprise_reader` raises, because `typer.BadParameter` is
-        # a `click.UsageError`.
+        # must map to `ENTERPRISE_READER_DECLINED` below, never "": an empty
+        # string would reach `validate_enterprise_reader` and abort a run
+        # where the operator simply pressed Enter, which is the safe answer
+        # the question exists to allow. Anything NON-blank is validated at
+        # the prompt and re-asked on refusal -- the `except typer.Exit` below
+        # cannot catch what `validate_enterprise_reader` raises, because
+        # `typer.BadParameter` is a `click.UsageError`.
         if facts.reader_group:
             reader = _ask_enterprise_reader(console)
         if facts.demo_items:
@@ -1063,7 +1063,10 @@ def _run(console: Console) -> int:
 
     # Deferred for a cycle: cli.py imports this module at its top, so this
     # direction stays lazy until `execute_build` leaves the CLI -- #171.
-    from dbml_sharepoint.cli import execute_build  # noqa: PLC0415
+    from dbml_sharepoint.cli import (  # noqa: PLC0415
+        ENTERPRISE_READER_DECLINED,
+        execute_build,
+    )
 
     for template in answers.templates:
         root = _template_root(answers, template)
@@ -1076,7 +1079,11 @@ def _run(console: Console) -> int:
                 site_role=answers.site_role,
                 out=root / "build",
                 seed=answers.seed,
-                enterprise_reader=answers.reader or None,
+                # `None`, plain, would mean "no flag and no wizard answer" --
+                # unset, the state a future `dbml-sharepoint.env` may fill.
+                # `answers.reader` blank means the operator was asked and
+                # said nobody, which must stay distinguishable from that.
+                enterprise_reader=answers.reader or ENTERPRISE_READER_DECLINED,
             )
         except typer.Exit as exc:
             # The build refused and has already said why on stderr. Its exit

@@ -67,6 +67,30 @@ rather than making the operator edit it. But a silent rewrite of what
 somebody typed is its own defect, so the caller is expected to compare
 and say so; see `_site_url_notice`.
 
+### `EnterpriseReaderDeclined`
+
+```python
+@dataclass(frozen=True)
+class EnterpriseReaderDeclined:
+```
+
+Sentinel: the operator was asked and chose nobody.
+
+`execute_build`'s `enterprise_reader` parameter carries three states, not
+two -- unset (no flag, no wizard answer, ``None``), this sentinel
+(explicitly nobody), and a UPN (``str``). Only the unset state is a
+default a future ``dbml-sharepoint.env`` may fill; this one must survive
+untouched, because it is what the wizard sends for a deliberate blank
+answer at `_ask_enterprise_reader`. A bare `object()` would work at
+runtime but repr as an unreadable address; this dataclass gives it a
+name instead.
+
+### `ENTERPRISE_READER_DECLINED`
+
+```python
+ENTERPRISE_READER_DECLINED = ENTERPRISE_READER_DECLINED
+```
+
 ### `validate_enterprise_reader`
 
 ```python
@@ -99,7 +123,7 @@ in a library call.
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | None = None) -> None
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.cli.EnterpriseReaderDeclined | None = None) -> None
 ```
 
 The `build` pipeline, callable without going through typer.
@@ -112,6 +136,12 @@ Still raises `typer.Exit` on refusal: the exit codes are the documented
 contract (2 for misuse, 1 for a refused build), and re-mapping them to
 an exception of its own here would give the wizard a second vocabulary
 for the same failures. The wizard catches it.
+
+`enterprise_reader` carries three states: ``None`` (unset -- no flag was
+given), `EnterpriseReaderDeclined` (the operator was asked and said
+nobody), or a UPN. Nothing here resolves a `dbml-sharepoint.env` default
+for the unset case yet -- that is a later change -- so this function only
+has to keep the three states distinct rather than act on the difference.
 
 ### `validate`
 
