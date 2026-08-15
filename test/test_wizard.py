@@ -10,6 +10,7 @@ import hashlib
 import io
 import shutil
 import sys
+import tempfile
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -25,7 +26,7 @@ from dbml_sharepoint.catalogue import (
     load_solution,
 )
 from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED
-from dbml_sharepoint.model.env_file import ENV_FILENAME
+from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 
@@ -2769,3 +2770,28 @@ def test_preserving_the_env_file_keeps_lines_it_does_not_own() -> None:
     assert "# defaults" in rewritten
     assert "svc-old@example.org" not in rewritten
     assert "DBMLSP_ENTERPRISE_READER=svc-new@example.org" in rewritten
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [
+        "svc-reporting@example.org",
+        "'quoted@example.org",
+        '"quoted@example.org',
+        "'both'@example.org",
+    ],
+)
+def test_a_preserved_reader_round_trips_through_the_parser(reader: str) -> None:
+    """`validate_enterprise_reader` accepts a leading quote, which the
+    parser would read as an opening quote and refuse for never closing.
+
+    The initial build used the explicit answer and succeeded, so the
+    breakage only appeared later, when the documented rebuild tried to
+    parse the file the wizard had written.
+    """
+    text = wizard._env_text_for_answer("# defaults\n", reader)
+    path = Path(tempfile.mkdtemp()) / ENV_FILENAME
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+    settings, _digest = read_env_file(path)
+    assert settings["DBMLSP_ENTERPRISE_READER"] == reader

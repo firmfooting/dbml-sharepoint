@@ -806,8 +806,21 @@ def _env_text_for_answer(text: str, reader: str | None) -> str:
     key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
     kept = [line for line in text.splitlines() if not _is_setting_line(line, key)]
     if reader:
-        kept.append(f"{key}={reader}")
+        kept.append(f"{key}={_env_value_literal(reader)}")
     return "\n".join(kept) + "\n" if kept else ""
+
+
+def _env_value_literal(value: str) -> str:
+    """`value` written so `read_env_file` reads it back unchanged.
+
+    `validate_enterprise_reader` accepts a leading `'` or `"`, which the
+    parser would read as an opening quote and then refuse for never being
+    closed. Wrapping in the OTHER quote round-trips, because `_unquote`
+    strips exactly one outer pair.
+    """
+    if value[:1] in ("'", '"'):
+        return f'"{value}"' if value[0] == "'" else f"'{value}'"
+    return value
 
 
 def _preserve_env_file(answers: Answers) -> None:
@@ -833,8 +846,31 @@ def _preserve_env_file(answers: Answers) -> None:
     if destination.exists() or not source.is_file():
         return
     text = _env_text_for_answer(source.read_text(encoding="utf-8"), answers.reader)
-    if text:
-        write_artifact(destination, text)
+    if not text:
+        return
+    write_artifact(destination, text)
+    _verify_preserved_env_file(destination, answers.reader)
+
+
+def _verify_preserved_env_file(destination: Path, reader: str | None) -> None:
+    """Read the copy back and confirm it says what the operator answered.
+
+    `AGENTS.md`: anything that writes must read back and verify. The file
+    is only useful if `build` can parse it, and an unparseable one would
+    surface as a failed rebuild long after the wizard reported success.
+    """
+    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
+    try:
+        settings, _digest = read_env_file(destination)
+    except EnvFileError as exc:
+        raise WizardError(
+            f"wrote {destination} but could not read it back: {exc}",
+        ) from exc
+    if reader is not None and settings.get(key, "") != reader:
+        raise WizardError(
+            f"{destination} reads back as {settings.get(key, '')!r}, "
+            f"not the {reader!r} that was answered.",
+        )
 
 
 @dataclass(frozen=True)
