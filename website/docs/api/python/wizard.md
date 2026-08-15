@@ -114,6 +114,7 @@ class Answers:
     build: bool
     reader: str
     seed: bool
+    env_file: pathlib.Path | None = None
 ```
 
 What the wizard collected, before anything is written.

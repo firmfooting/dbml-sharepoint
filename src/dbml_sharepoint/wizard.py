@@ -176,6 +176,11 @@ class Answers:
     build: bool
     reader: str
     seed: bool
+    #: The `dbml-sharepoint.env` `_ask_enterprise_reader` consulted, if any --
+    #: threaded into `execute_build` so its artefacts report the same file
+    #: this prompt read from. None when the question was never asked (no
+    #: reader group to enrol into) or no file was there to consult.
+    env_file: Path | None = None
 
 
 def _template_root(answers: Answers, choice: TemplateChoice) -> Path:
@@ -455,8 +460,11 @@ def _ask_site_role(console: Console, roles: list[str]) -> str:
     return Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
 
 
-def _reader_from_env_file(console: Console) -> str | None:
-    """The UPN `dbml-sharepoint.env` suggests for enrolment, or None.
+def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
+    """The `dbml-sharepoint.env` file consulted for a suggested UPN, and
+    what it suggested: `(path, upn)`, `upn` is None when the file has
+    nothing usable to offer. Returns None only when there was no file to
+    thread through to the build at all -- never when one was read.
 
     Read from a file relative to the CURRENT directory -- the same location
     `build` defaults to -- not the destination the wizard is about to write.
@@ -465,12 +473,27 @@ def _reader_from_env_file(console: Console) -> str | None:
     scaffolded project cannot contain the file at prompt time; the CWD is
     the one place it could already be.
 
+    The path is returned even when there is no reader suggestion (an absent
+    key) or the suggestion is invalid, so the caller can still pass it on to
+    `execute_build`: the file WAS read, and every artefact reporting
+    provenance must say so, whether or not this particular key mattered.
+    `execute_build`'s own precedence rules -- an explicit wizard answer
+    always wins over the file -- take it from there.
+
     A missing file is the ordinary case and stays silent (LBYL, not a caught
-    `FileNotFoundError`). A file that fails to parse, or a value in it that
-    `validate_enterprise_reader` refuses, is reported here as one clean
-    message and treated as no suggestion -- never raised. Both
-    `EnvFileError` and `typer.BadParameter` are exceptions this function's
-    caller has no handler for, and `typer.BadParameter` is a
+    `FileNotFoundError`), and returns None: there is genuinely nothing to
+    thread through. A file that fails to PARSE is different: it is reported
+    here as one clean message and treated as no suggestion, but the path is
+    also withheld, because passing a file `execute_build` cannot read either
+    would only repeat the same failure -- one already shown here -- as an
+    unhandled `typer.Exit` later in the run. `typer.BadParameter` (an
+    invalid value the file itself is not to blame for) is different again:
+    the value is dropped but the path is threaded through, because
+    `execute_build`'s own precedence resolves it without ever calling
+    `validate_enterprise_reader` on the file's value directly.
+
+    Both `EnvFileError` and `typer.BadParameter` are exceptions this
+    function's caller has no handler for, and `typer.BadParameter` is a
     `click.UsageError` the wizard's `except typer.Exit` around the build
     does not catch either -- the same defect `_ask_enterprise_reader`'s own
     docstring already records fixing once, for the value an operator types
@@ -490,7 +513,7 @@ def _reader_from_env_file(console: Console) -> str | None:
     key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
     reader = file_settings.get(key)
     if reader is None:
-        return None
+        return path, None
     try:
         validate_enterprise_reader(reader)
     except typer.BadParameter as exc:
@@ -498,12 +521,16 @@ def _reader_from_env_file(console: Console) -> str | None:
             f"[red]{ENV_FILENAME} suggests a reader that is not valid: "
             f"{exc.message}[/red]",
         )
-        return None
-    return reader
+        return path, None
+    return path, reader
 
 
-def _ask_enterprise_reader(console: Console) -> str:
+def _ask_enterprise_reader(console: Console) -> tuple[str, Path | None]:
     """Prompt until the answer is blank or passes the CLI's own validator.
+    Returns the answer alongside the `dbml-sharepoint.env` path this prompt
+    consulted, if any -- the caller threads it into `execute_build` so the
+    build's own artefacts report the same file this prompt just read from,
+    rather than denying one was ever consulted.
 
     The same re-ask loop as `_ask_site_url`, for a sharper reason. This
     answer used to travel unchecked all the way into `execute_build`, and
@@ -546,7 +573,9 @@ def _ask_enterprise_reader(console: Console) -> str:
         "A service account enrolled read-only across every list this "
         "template creates, so it can report on them. Blank for none.",
     )
-    suggestion = _reader_from_env_file(console)
+    consulted = _reader_from_env_file(console)
+    env_file = consulted[0] if consulted is not None else None
+    suggestion = consulted[1] if consulted is not None else None
     label = "[bold]Reporting account (UPN)[/bold]"
     if suggestion is not None:
         label += (
@@ -557,13 +586,13 @@ def _ask_enterprise_reader(console: Console) -> str:
         # NOT `default=suggestion` -- see the docstring above.
         reader = Prompt.ask(label, default="", console=console).strip()
         if not reader:
-            return ""
+            return "", env_file
         try:
             validate_enterprise_reader(reader)
         except typer.BadParameter as exc:
             console.print(f"[red]{exc.message}[/red]")
             continue
-        return reader
+        return reader, env_file
 
 
 def _ask_seed(console: Console) -> bool:
@@ -1064,6 +1093,7 @@ def _run(console: Console) -> int:
         "Build the deploy scripts now?", default=True, console=console,
     )
     reader = ""
+    env_file = None
     seed = False
     if build:
         # Offered only where the mapping declares a group
@@ -1076,7 +1106,7 @@ def _run(console: Console) -> int:
         # cannot catch what `validate_enterprise_reader` raises, because
         # `typer.BadParameter` is a `click.UsageError`.
         if facts.reader_group:
-            reader = _ask_enterprise_reader(console)
+            reader, env_file = _ask_enterprise_reader(console)
         if facts.demo_items:
             seed = _ask_seed(console)
 
@@ -1088,6 +1118,7 @@ def _run(console: Console) -> int:
         build=build,
         reader=reader,
         seed=seed,
+        env_file=env_file,
     )
 
     # No `console.rule("Review")`. The other three sections are followed by
@@ -1152,6 +1183,12 @@ def _run(console: Console) -> int:
                 # `answers.reader` blank means the operator was asked and
                 # said nobody, which must stay distinguishable from that.
                 enterprise_reader=answers.reader or ENTERPRISE_READER_DECLINED,
+                # The file `_ask_enterprise_reader` already consulted, so the
+                # build's own artefacts (manifest, index.md, transcript) name
+                # it too -- an explicit `answers.reader` always outranks it
+                # inside `execute_build`, so threading it through here never
+                # changes which UPN gets enrolled, only what gets reported.
+                env_file=answers.env_file,
             )
         except typer.Exit as exc:
             # The build refused and has already said why on stderr. Its exit

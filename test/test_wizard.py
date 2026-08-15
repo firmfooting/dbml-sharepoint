@@ -2151,6 +2151,56 @@ def test_the_wizard_offers_the_env_files_reader(
     assert "svc-reporting@example.org" in shown
 
 
+def test_the_wizard_threads_the_env_file_into_execute_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_ask_enterprise_reader` reads `dbml-sharepoint.env` and offers its
+    UPN in the prompt text, but `execute_build` used to be called without
+    `env_file=` -- so every artefact the build wrote said "No
+    dbml-sharepoint.env file was read.", contradicting the prompt shown
+    seconds earlier in the same run. Pins the keyword the wizard now
+    assembles; the end-to-end version, reading the manifest a real build
+    wrote, is `test_a_wizard_build_with_an_env_file_names_it_in_the_manifest`.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(
+            tmp_path / "proj", build="y", seed="n",
+            reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["env_file"] == Path(ENV_FILENAME)
+
+
+def test_a_wizard_build_with_an_env_file_names_it_in_the_manifest(
+    tmp_path: Path,
+) -> None:
+    """Runs the real `execute_build`, not a stub, and reads back the
+    manifest it wrote -- the artefact a reviewer actually opens must name
+    the file the wizard just offered as a suggestion, not deny one was ever
+    read.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination, build="y", seed="n",
+            reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+
+    manifest = (destination / "build" / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert "No dbml-sharepoint.env file was read." not in manifest
+    assert ENV_FILENAME in manifest
+
+
 def test_a_blank_reader_answer_still_means_nobody_with_a_file_present(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
