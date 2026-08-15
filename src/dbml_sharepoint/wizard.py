@@ -781,7 +781,26 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
         )
         changed.extend(template_changed)
         applied.extend(s for s in template_applied if s not in applied)
+    _preserve_env_file(answers)
     return changed, applied
+
+
+def _preserve_env_file(answers: Answers) -> None:
+    """Copy the consulted `dbml-sharepoint.env` into the new project.
+
+    The wizard reads it from the CURRENT directory, but every documented
+    rebuild changes into the project first, so without this a rebuild
+    silently drops the reader the first build enrolled and emits a
+    different bundle. Never overwrites: a template that ships its own
+    defaults keeps them.
+    """
+    if answers.env_file is None:
+        return
+    source = answers.env_file
+    destination = answers.destination / ENV_FILENAME
+    if destination.exists() or not source.is_file():
+        return
+    write_artifact(destination, source.read_text(encoding="utf-8"))
 
 
 @dataclass(frozen=True)
@@ -1177,6 +1196,14 @@ def _run(console: Console) -> int:
             # code is the documented contract; pass it through rather than
             # flattening every refusal to 1.
             return int(exc.exit_code)
+        except typer.BadParameter as exc:
+            # Reachable since the env file started reaching `execute_build`:
+            # its armed guard refuses a reader the mapping has no group for,
+            # and `BadParameter` is a `click.UsageError`, not a `typer.Exit`.
+            # Unhandled it printed a traceback over an already-scaffolded
+            # project. 2 is the documented code for a usage error.
+            console.print(f"[red]{escape(exc.message)}[/red]")
+            return 2
 
     console.print(_next_panel(answers))
     return 0

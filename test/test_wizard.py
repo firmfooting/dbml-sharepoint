@@ -2659,3 +2659,56 @@ def test_the_wizard_refuses_a_directory_at_the_env_path(
 
     assert wizard.run_wizard(console) == 1
     assert "is not a file" in _collapsed(console)
+
+
+def test_a_build_refusing_with_bad_parameter_exits_two_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`execute_build`'s armed guard raises `typer.BadParameter`, which is a
+    `click.UsageError`, NOT a `typer.Exit`.
+
+    Reaching it became possible when the wizard started passing `env_file`
+    through: a mapping with no reader group plus an env file that supplies
+    one is refused there. The existing `except typer.Exit` could not catch
+    it, so the wizard raised over a project it had already scaffolded.
+    """
+    import typer
+
+    from dbml_sharepoint import cli
+
+    def _refuse(**_kwargs: object) -> None:
+        raise typer.BadParameter("the mapping declares no reader group")
+
+    monkeypatch.setattr(cli, "execute_build", _refuse)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    assert code == 2
+    assert "declares no reader group" in _collapsed(console)
+    assert destination.exists()
+
+
+def test_the_wizard_copies_the_env_file_into_the_new_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every documented rebuild runs from inside the project directory, so
+    an env file left in the parent is invisible to it and the rebuild
+    quietly enrols nobody.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination, build="y", seed="n", reader="svc-reporting@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    copied = destination / ENV_FILENAME
+    assert copied.is_file()
+    assert "svc-reporting@example.org" in copied.read_text(encoding="utf-8")

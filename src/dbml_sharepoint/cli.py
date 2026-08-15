@@ -491,7 +491,9 @@ def build(
     enterprise_reader: str | None = typer.Option(
         None,
         help="UPN of a reporting service account to enrol, read-only, into "
-        "the mapping's enterprise-reader group. Omit to enrol nobody.",
+        f"the mapping's enterprise-reader group. Omitted, this falls back to "
+        f"{ENV_FILENAME}'s DBMLSP_ENTERPRISE_READER when that file supplies "
+        "one, and otherwise enrols nobody.",
     ),
     extension: str | None = typer.Option(
         None,
