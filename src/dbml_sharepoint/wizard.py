@@ -482,22 +482,30 @@ def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
 
     A missing file is the ordinary case and stays silent (LBYL, not a caught
     `FileNotFoundError`), and returns None: there is genuinely nothing to
-    thread through. A file that fails to PARSE is different: it is reported
-    here as one clean message and treated as no suggestion, but the path is
-    also withheld, because passing a file `execute_build` cannot read either
-    would only repeat the same failure -- one already shown here -- as an
-    unhandled `typer.Exit` later in the run. `typer.BadParameter` (an
-    invalid value the file itself is not to blame for) is different again:
-    the value is dropped but the path is threaded through, because
-    `execute_build`'s own precedence resolves it without ever calling
-    `validate_enterprise_reader` on the file's value directly.
+    thread through.
 
-    Both `EnvFileError` and `typer.BadParameter` are exceptions this
-    function's caller has no handler for, and `typer.BadParameter` is a
-    `click.UsageError` the wizard's `except typer.Exit` around the build
-    does not catch either -- the same defect `_ask_enterprise_reader`'s own
-    docstring already records fixing once, for the value an operator types
-    rather than one the file supplies.
+    A file that fails to PARSE is FATAL: this raises `WizardError`, carrying
+    `EnvFileError`'s own message, which already names the path, the line and
+    the offending text (`_refuse` in `model/env_file.py`). `build` refuses
+    the same file the same way, over the same message; a file the operator
+    wrote on purpose and got wrong must not be answered with a warning that
+    lets the wizard proceed as though no file were there -- that is what
+    `_run`'s manifest and index.md would then go on to claim. `_run` catches
+    `WizardError` here before anything is written, the same way it already
+    does around `_read_facts`.
+
+    An invalid VALUE inside a file that DOES parse is a different failure and
+    stays as it was: reported here as one message, treated as no suggestion,
+    with the path still threaded through. This is not an inconsistency with
+    `build`: `build` only ever validates a file's reader value because that
+    value becomes the one `execute_build` uses, when no flag overrides it.
+    Here the file's value is never more than a suggestion the operator must
+    retype to accept -- `_ask_enterprise_reader` never passes it as
+    `default=` -- so an invalid suggestion is simply withdrawn, and whatever
+    the operator goes on to answer (blank, or a real UPN) is validated at the
+    prompt exactly as if the file had said nothing at all. Making this fatal
+    too would refuse a run over a value nothing downstream was ever going to
+    use unvalidated.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
@@ -508,8 +516,7 @@ def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
     try:
         file_settings, _digest = read_env_file(path)
     except EnvFileError as exc:
-        console.print(f"[red]{escape(str(exc))}[/red]")
-        return None
+        raise WizardError(str(exc)) from exc
     key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
     reader = file_settings.get(key)
     if reader is None:
@@ -553,6 +560,12 @@ def _ask_enterprise_reader(console: Console) -> tuple[str, Path | None]:
     definition and an escape hatch in one unbolded line -- the widest prompt
     in the wizard, and the only one whose label did not survive being read at
     a glance.
+
+    A `dbml-sharepoint.env` present but unparseable is not answered here at
+    all: `_reader_from_env_file` raises `WizardError` straight through this
+    function, and `_run` catches it before anything is written -- see that
+    function's own docstring for why the two failures inside the same file
+    (cannot parse, versus parses but the value is invalid) are not the same.
 
     A `dbml-sharepoint.env` suggestion, when `_reader_from_env_file` finds
     one, is named in the PROMPT TEXT and NEVER passed as `default=`. rich's
@@ -1105,10 +1118,18 @@ def _run(console: Console) -> int:
         # the prompt and re-asked on refusal -- the `except typer.Exit` below
         # cannot catch what `validate_enterprise_reader` raises, because
         # `typer.BadParameter` is a `click.UsageError`.
-        if facts.reader_group:
-            reader, env_file = _ask_enterprise_reader(console)
-        if facts.demo_items:
-            seed = _ask_seed(console)
+        try:
+            if facts.reader_group:
+                reader, env_file = _ask_enterprise_reader(console)
+            if facts.demo_items:
+                seed = _ask_seed(console)
+        except WizardError as exc:
+            # Before anything is written, same as the `_read_facts`/
+            # `_site_roles` guard above: `dbml-sharepoint.env` could not be
+            # parsed, and `_reader_from_env_file` raised rather than warning
+            # and letting the run proceed as though no file were there.
+            console.print(f"[red]{escape(str(exc))}[/red]")
+            return 1
 
     answers = Answers(
         destination=destination,

@@ -2232,6 +2232,12 @@ def test_an_invalid_env_file_reader_is_a_clean_message_not_a_traceback(
     an unhandled exception. `run_wizard` raising here would fail this test
     with an error rather than an assertion, so the exit-code and message
     checks below only prove the pass one way: cleanly.
+
+    Deliberately still a WARNING, not a refusal: the file's invalid value is
+    never used unvalidated (`_ask_enterprise_reader` never passes it as
+    `default=`), so nothing downstream ever asserts on it. Contrast the file
+    itself failing to PARSE, which is fatal --
+    `test_an_unparsable_env_file_refuses_the_wizard_not_a_traceback`.
     """
     _write_env_file(tmp_path / ENV_FILENAME, "svc.reporting")  # no '@'
     captured = _capture_build(monkeypatch)
@@ -2245,60 +2251,64 @@ def test_an_invalid_env_file_reader_is_a_clean_message_not_a_traceback(
     assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
 
 
-def test_an_unparsable_env_file_is_also_a_clean_message(
+def test_an_unparsable_env_file_refuses_the_wizard_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The other exception `_reader_from_env_file` guards against:
-    `read_env_file` itself raises `EnvFileError` for a file it cannot parse,
-    which is not a `typer.BadParameter` and needs its own catch.
+    """A `dbml-sharepoint.env` that cannot be PARSED is a different failure
+    from an invalid VALUE inside one that parses (see the sibling
+    `test_an_invalid_env_file_reader_is_a_clean_message_not_a_traceback`,
+    which stays a warning). This one used to be a warning too: printed, then
+    the wizard carried on as if no file were there, and its own artefacts
+    went on to say so -- false, since a file was there and the operator
+    wrote it on purpose. `build` refuses the same file over the same
+    message, so the wizard must refuse too, before anything is written.
 
-    Asserts on the message too, like its sibling
-    `test_an_invalid_env_file_reader_is_a_clean_message_not_a_traceback`
-    does for the `typer.BadParameter` case -- deleting the
-    `except EnvFileError` this test guards would still exit 0 with the
-    sentinel (the exception propagates past `_ask_enterprise_reader`'s own
-    loop and `run_wizard`'s `except EOFError`/`KeyboardInterrupt` do not
-    catch it either, so the run would in fact raise): pinning only the exit
-    code and the sentinel could not tell that apart from the message this
-    catch exists to print.
+    Asserts the message names the file's own problem (line and text, from
+    `EnvFileError`), that nothing was scaffolded, and that the refusal is a
+    clean exit rather than an unhandled exception reaching `pytest` as an
+    error instead of an assertion.
     """
     (tmp_path / ENV_FILENAME).write_text(
         "not a key-value line\n", encoding="utf-8", newline="\n",
     )
     captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
     console = ScriptedConsole(
-        _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
+        _answers(destination, build="y", seed="n", reader=""), width=400,
     )
 
     code = wizard.run_wizard(console)
     shown = _collapsed(console)
     assert "expected KEY=value" in shown
     assert "line 1" in shown
-    assert code == 0
-    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+    assert "Traceback" not in shown
+    assert code == 1
+    assert captured == {}
+    assert not destination.exists()
 
 
-def test_a_non_utf8_env_file_is_also_a_clean_message_not_a_traceback(
+def test_a_non_utf8_env_file_also_refuses_the_wizard(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`EnvFileReadError` (raised for bytes that are not valid UTF-8, or a
     file `read_bytes()` cannot read) is a subclass of `EnvFileError`, so it
-    reaches the same `except EnvFileError` this module's other two clean-
-    message tests already pin -- proving that unconditionally, rather than
-    trusting the subclass relationship, is what protects a build already in
-    progress from an unhandled traceback over a project already written.
+    reaches the same `raise WizardError` this module's other unparsable-file
+    test already pins -- proving that unconditionally, rather than trusting
+    the subclass relationship, is what makes the refusal apply here too.
     """
     (tmp_path / ENV_FILENAME).write_bytes(b"DBMLSP_ENTERPRISE_READER=Sh\xe9ry\n")
     captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
     console = ScriptedConsole(
-        _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
+        _answers(destination, build="y", seed="n", reader=""), width=400,
     )
 
     code = wizard.run_wizard(console)
     shown = _collapsed(console)
     assert "utf-8" in shown.lower()
-    assert code == 0
-    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+    assert code == 1
+    assert captured == {}
+    assert not destination.exists()
 
 
 def test_no_env_file_behaves_exactly_as_before(
