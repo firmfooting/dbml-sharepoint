@@ -31,6 +31,22 @@ from dbml_sharepoint.model.env_file import ENV_FILENAME, ENV_SETTINGS
 
 runner = CliRunner()
 
+
+@pytest.fixture(autouse=True)
+def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every test in this module runs with an empty current directory.
+
+    `build` reads a CWD-relative `dbml-sharepoint.env` by default
+    (`_resolve_env_file`), so without this a contributor's own file sitting
+    at the repository root changes what these tests observe -- 22 of them
+    fail if one is there, because a build that expects no env file default
+    silently gets one anyway. `tmp_path` is unique per test and guaranteed
+    not to contain one; a test that wants the file present writes it there
+    explicitly. Mirrors `test_wizard.py`'s `_cwd_has_no_env_file`.
+    """
+    monkeypatch.chdir(tmp_path)
+
+
 #: Terminal styling, stripped before any assertion about a rendered message.
 #: CI emits it and a developer terminal usually does not, which is enough on
 #: its own to make an assertion pass locally and fail on both runners --
@@ -732,21 +748,16 @@ def test_an_unparsable_env_file_is_refused_with_a_clean_message(tmp_path: Path) 
     assert not (out / "deploy.js.txt").exists()
 
 
-def test_no_env_file_at_the_default_location_is_not_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_no_env_file_at_the_default_location_is_not_an_error(tmp_path: Path) -> None:
     """No `dbml-sharepoint.env` at all is the ordinary case, not a refusal.
 
-    `monkeypatch.chdir` to a fresh `tmp_path` -- rather than leaving the
-    working directory at the repository root, where a contributor's own
-    `dbml-sharepoint.env` could be sitting -- is what actually neutralises
+    The module's `_cwd_has_no_env_file` fixture is what actually neutralises
     the default location here: `tmp_path` is guaranteed not to contain one.
 
     Also pins the "say so explicitly" requirement: an absent env file must
     be a printed line, not silence a later regression could not tell apart
     from a feature that never ran.
     """
-    monkeypatch.chdir(tmp_path)
     out = tmp_path / "build"
     result = runner.invoke(app, [
         "build",
@@ -760,11 +771,8 @@ def test_no_env_file_at_the_default_location_is_not_an_error(
     assert "No dbml-sharepoint.env file was read." in result.output
 
 
-def test_env_file_at_the_default_location_is_used(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_env_file_at_the_default_location_is_used(tmp_path: Path) -> None:
     """The other half of the default-location pair: present, it is read."""
-    monkeypatch.chdir(tmp_path)
     _write_env_file(tmp_path / ENV_FILENAME)
     out = tmp_path / "build"
     result = runner.invoke(app, [
