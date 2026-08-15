@@ -56,6 +56,40 @@ def test_generated_deploy_js_contains_lifecycle_markers() -> None:
     assert "0.1.0-test" in js  # release tag rendered
 
 
+def test_deploy_js_says_so_when_no_env_file_was_read() -> None:
+    """The default `env_provenance` must produce an explicit log() line, not
+    silence a later regression could not tell apart from a feature that
+    never ran. It is a plain log() call, not a header comment: the operator
+    pastes back the console transcript, not the file."""
+    js = _generate_simple_js()
+    assert "log('INFO', \"No dbml-sharepoint.env file was read.\");" in js
+
+
+def test_deploy_js_logs_the_env_file_path_digest_and_keys_used() -> None:
+    from dbml_sharepoint.model.env_file import ENV_SETTINGS, EnvProvenance, EnvValue
+
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    provenance = EnvProvenance(
+        path="dbml-sharepoint.env",
+        digest="abc123def456",
+        values=(
+            EnvValue(setting=ENV_SETTINGS[0], value="svc@example.org", used=True, override=None),
+        ),
+    )
+    js = generate_deploy_js(
+        schema=schema, bundle=bundle, release=release, env_provenance=provenance, **_FIXED_ARGS,
+    )
+    log_line = next(line for line in js.splitlines() if line.strip().startswith("log('INFO',"))
+    assert "dbml-sharepoint.env" in log_line
+    assert "abc123def456" in log_line
+    assert "DBMLSP_ENTERPRISE_READER" in log_line
+    # The static line is baked at build time -- it must not read as a live
+    # observation of the tenant.
+    assert "svc@example.org" not in log_line
+
+
 def test_schema_output_takes_indexes_from_dbml(tmp_path: Path) -> None:
     from dbml_sharepoint.generators.jsgen import build_schema_json
 

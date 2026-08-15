@@ -215,10 +215,10 @@ checksums.txt — shared by the core CLI and every extension CLI. Raises
 ``enterprise_reader`` is already validated by the caller (a malformed
 address or a mapping with no ``enroll_enterprise_reader`` group both
 refuse before this function is reached); it is passed through unchecked
-to ``generate_deploy_js`` so the deploy render context carries it for
-Task 5's template.
+to ``generate_deploy_js`` so the deploy render context carries it.
 
-``env_provenance`` defaults to ``NO_ENV_FILE``: this is a documented
-composition point extension CLIs call directly, and a required
-parameter would break every one of them.
+``env_provenance`` defaults to ``NO_ENV_FILE`` and is passed through to
+``generate_deploy_js`` (the console transcript) and ``write_index``: this
+is a documented composition point extension CLIs call directly, and a
+required parameter would break every one of them.
 
