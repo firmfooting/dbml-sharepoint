@@ -2250,7 +2250,18 @@ def test_an_unparsable_env_file_is_also_a_clean_message(
 ) -> None:
     """The other exception `_reader_from_env_file` guards against:
     `read_env_file` itself raises `EnvFileError` for a file it cannot parse,
-    which is not a `typer.BadParameter` and needs its own catch."""
+    which is not a `typer.BadParameter` and needs its own catch.
+
+    Asserts on the message too, like its sibling
+    `test_an_invalid_env_file_reader_is_a_clean_message_not_a_traceback`
+    does for the `typer.BadParameter` case -- deleting the
+    `except EnvFileError` this test guards would still exit 0 with the
+    sentinel (the exception propagates past `_ask_enterprise_reader`'s own
+    loop and `run_wizard`'s `except EOFError`/`KeyboardInterrupt` do not
+    catch it either, so the run would in fact raise): pinning only the exit
+    code and the sentinel could not tell that apart from the message this
+    catch exists to print.
+    """
     (tmp_path / ENV_FILENAME).write_text(
         "not a key-value line\n", encoding="utf-8", newline="\n",
     )
@@ -2260,6 +2271,9 @@ def test_an_unparsable_env_file_is_also_a_clean_message(
     )
 
     code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "expected KEY=value" in shown
+    assert "line 1" in shown
     assert code == 0
     assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
 
