@@ -64,8 +64,28 @@ def _normalise_rendered_output(text: str) -> str:
     border included, at a narrow one; normalising removes that dependency
     instead of pinning the width. A test using this does not care, and
     should not need to know, how many columns rich rendered at.
+
+    Use this for a PHRASE, where every break rich can make falls between
+    words. For a single token, use `_rendered_without_whitespace` instead,
+    and read why there.
     """
     return " ".join(_ANSI.sub("", text).replace("│", " ").split())
+
+
+def _rendered_without_whitespace(text: str) -> str:
+    """The same, with whitespace REMOVED rather than collapsed.
+
+    Rich breaks a long line wherever it must, including inside a filename.
+    CI caught this: a temp path wrapped mid-token and `nowhere.env` arrived
+    as `now here.env`, so collapsing to single spaces turned a break inside
+    the token into a space that was never in it. The Windows path was short
+    enough not to split there, which is why it passed locally.
+
+    So an assertion about one unbroken token compares against this, and an
+    assertion about a phrase compares against the collapsing helper above.
+    Neither pins the terminal width.
+    """
+    return "".join(_ANSI.sub("", text).replace("│", " ").split())
 
 
 def test_help_lists_build_command() -> None:
@@ -737,7 +757,9 @@ def test_env_file_missing_at_an_explicit_path_is_an_error(tmp_path: Path) -> Non
         "--env-file", str(missing),
     ])
     assert result.exit_code == 2
-    assert "nowhere.env" in _normalise_rendered_output(result.output)
+    # The filename is one token and the temp path is long, so rich may break
+    # it mid-word. Compare against the whitespace-free form.
+    assert "nowhere.env" in _rendered_without_whitespace(result.output)
 
 
 def test_an_unparsable_env_file_is_refused_with_a_clean_message(tmp_path: Path) -> None:
