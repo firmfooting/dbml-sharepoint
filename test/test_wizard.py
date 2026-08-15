@@ -2214,6 +2214,29 @@ def test_an_unparsable_env_file_is_also_a_clean_message(
     assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
 
 
+def test_a_non_utf8_env_file_is_also_a_clean_message_not_a_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`EnvFileReadError` (raised for bytes that are not valid UTF-8, or a
+    file `read_bytes()` cannot read) is a subclass of `EnvFileError`, so it
+    reaches the same `except EnvFileError` this module's other two clean-
+    message tests already pin -- proving that unconditionally, rather than
+    trusting the subclass relationship, is what protects a build already in
+    progress from an unhandled traceback over a project already written.
+    """
+    (tmp_path / ENV_FILENAME).write_bytes(b"DBMLSP_ENTERPRISE_READER=Sh\xe9ry\n")
+    captured = _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", reader=""), width=400,
+    )
+
+    code = wizard.run_wizard(console)
+    shown = _collapsed(console)
+    assert "utf-8" in shown.lower()
+    assert code == 0
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+
+
 def test_no_env_file_behaves_exactly_as_before(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -120,6 +120,19 @@ class UnknownEnvKeyError(EnvFileError):
     """A DBMLSP_-prefixed key that is not in ENV_SETTINGS."""
 
 
+class EnvFileReadError(EnvFileError):
+    """The file could not be read or decoded.
+
+    Covers `path.read_bytes()` raising `OSError` (a permission error, or a
+    directory sitting at that name) and the bytes it does return not being
+    valid UTF-8. Both are caught here rather than left to propagate, because
+    every catch site downstream only handles `EnvFileError` -- an unguarded
+    `UnicodeDecodeError` or `OSError` would reach a caller with no handler
+    for it and print a raw traceback instead of the one clean message this
+    module exists to guarantee.
+    """
+
+
 def _refuse(path: Path, line_no: int, text: str, reason: str) -> NoReturn:
     raise EnvFileSyntaxError(f"{path}: line {line_no}: {reason}: {text!r}")
 
@@ -145,11 +158,18 @@ def read_env_file(path: Path) -> tuple[dict[str, str], str]:
     function returning both, rather than a digest helper a caller might call
     against a file that changed between the two reads.
     """
-    raw = path.read_bytes()
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise EnvFileReadError(f"{path}: could not read: {exc}") from exc
     digest = hashlib.sha256(raw).hexdigest()[:12]
     known_keys = tuple(setting.key for setting in ENV_SETTINGS)
     settings: dict[str, str] = {}
-    for line_no, line in enumerate(raw.decode("utf-8").splitlines(), start=1):
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise EnvFileReadError(f"{path}: not valid UTF-8: {exc}") from exc
+    for line_no, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue

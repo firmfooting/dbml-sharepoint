@@ -7,6 +7,7 @@ import pytest
 from dbml_sharepoint.model.env_file import (
     ENV_FILENAME,
     ENV_SETTINGS,
+    EnvFileReadError,
     EnvFileSyntaxError,
     EnvSetting,
     UnknownEnvKeyError,
@@ -165,3 +166,36 @@ def test_read_env_file_reads_the_bytes_exactly_once(tmp_path: Path) -> None:
     with patch.object(Path, "read_bytes", autospec=True, wraps=Path.read_bytes) as spy:
         read_env_file(path)
     assert spy.call_count == 1
+
+
+def test_non_utf8_bytes_raise_a_named_error_naming_the_path(tmp_path: Path) -> None:
+    """`raw.decode("utf-8")` used to run unguarded: a latin-1 encoded UPN
+    dumped a full traceback instead of the one clean message every other
+    parse failure in this module produces. `EnvFileReadError` is a subclass
+    of `EnvFileError`, so every existing `except EnvFileError` catch site
+    (`cli.py`, `wizard.py`) already handles this without any change there.
+    """
+    path = tmp_path / ENV_FILENAME
+    path.write_bytes(b"DBMLSP_ENTERPRISE_READER=Sh\xe9ry\n")  # latin-1, not UTF-8
+    with pytest.raises(EnvFileReadError) as err:
+        read_env_file(path)
+    message = str(err.value)
+    assert str(path) in message
+    assert "utf-8" in message.lower()
+
+
+def test_an_unreadable_file_raises_a_named_error_naming_the_path(
+    tmp_path: Path,
+) -> None:
+    """`path.read_bytes()` has the same exposure as the decode: a permission
+    error or a directory sitting at this name must not propagate as a bare
+    `OSError` either."""
+    path = _write(tmp_path, "DBMLSP_ENTERPRISE_READER=svc@example.org\n")
+    with (
+        patch.object(Path, "read_bytes", autospec=True, side_effect=OSError("denied")),
+        pytest.raises(EnvFileReadError) as err,
+    ):
+        read_env_file(path)
+    message = str(err.value)
+    assert str(path) in message
+    assert "denied" in message

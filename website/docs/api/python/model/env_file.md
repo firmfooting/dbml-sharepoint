@@ -112,6 +112,18 @@ A line does not parse as KEY=value under this file's rules.
 
 A DBMLSP_-prefixed key that is not in ENV_SETTINGS.
 
+### `EnvFileReadError`
+
+The file could not be read or decoded.
+
+Covers `path.read_bytes()` raising `OSError` (a permission error, or a
+directory sitting at that name) and the bytes it does return not being
+valid UTF-8. Both are caught here rather than left to propagate, because
+every catch site downstream only handles `EnvFileError` -- an unguarded
+`UnicodeDecodeError` or `OSError` would reach a caller with no handler
+for it and print a raw traceback instead of the one clean message this
+module exists to guarantee.
+
 ### `read_env_file`
 
 ```python
