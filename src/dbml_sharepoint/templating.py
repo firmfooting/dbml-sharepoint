@@ -2,9 +2,9 @@
 """The one canonical Jinja environment for every rendered artifact.
 
 One constructor for every generator, including the ``comment_safe``
-filter the pasteable scripts need. That means a rendering rule —
-StrictUndefined so a missing variable fails the build instead of emitting
-``undefined`` into a script, and the A5 header-injection guard — is fixed
+filter the pasteable scripts need. That means a rendering rule
+(StrictUndefined so a missing variable fails the build instead of emitting
+``undefined`` into a script, and the A5 header-injection guard) is fixed
 in exactly one place.
 """
 
@@ -35,7 +35,7 @@ def script_env() -> Environment:
     env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
         undefined=StrictUndefined,
-        autoescape=False,  # noqa: S701 — see comment above
+        autoescape=False,  # noqa: S701 (see comment above)
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,
@@ -45,7 +45,7 @@ def script_env() -> Environment:
     # every script that reconciles a field and no generator should be able to
     # forget it. The eleven pairs were previously typed out by hand inside
     # `deploy/_field_reconcile.js.j2`, three languages away from the Python
-    # that assigns them — and a missing entry there does not fail this build.
+    # that assigns them, and a missing entry there does not fail this build.
     # It throws in the operator's browser, mid-deploy, on a customer site.
     # `analysis/typemap.py` owns the pairing; `test_typemap.py` asserts the
     # rendered Map covers every FieldKind.

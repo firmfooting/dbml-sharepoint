@@ -11,13 +11,13 @@ The fleet style standard: semantic tokens + parameterised column styles.
 
 Tokens resolve to SharePoint's OWN documented formatting classes (the
 sp-field-severity--* set plus sanctioned Fluent UI background classes)
-with the Learn reference's canonical Fluent icon pairings — never raw
+with the Learn reference's canonical Fluent icon pairings, never raw
 hexes. Styles expand at mapping-load time into plain SP formatter JSON,
 so the validator, jsgen and the deploy machinery see ordinary formatters.
 Reference:
 https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/column-formatting
 (style guidelines; conditional formatting / data bar / trending / date
-examples — the emitted structures mirror those samples).
+examples; the emitted structures mirror those samples).
 
 ### `StyleToken`
 

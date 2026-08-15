@@ -43,7 +43,7 @@ def test_rollback_includes_typed_confirmation_and_target_lists() -> None:
 def test_rollback_prompts_per_non_empty_list() -> None:
     """A6: each non-empty list requires its own DELETE NON-EMPTY confirmation.
     The old single global `allowNonEmpty` latch (one confirmation authorised
-    deleting EVERY remaining non-empty list) is removed — a coarse blast radius
+    deleting EVERY remaining non-empty list) is removed, a coarse blast radius
     for a live site."""
     schema, bundle, release = _load_fixtures()
     js = generate_rollback_js(
@@ -160,8 +160,8 @@ def test_rollback_order_is_reverse_of_deploy_order() -> None:
 def test_rollback_unlocks_deletion_blocked_lists_before_delete() -> None:
     """prevent_list_deletion deploys AllowDeletion=false, which blocks the
     list DELETE on every surface (REST included). Rollback must probe the
-    ACTUAL state per list — only after that list's deletion is authorised,
-    so skipped lists keep their protection — and MERGE AllowDeletion=true
+    ACTUAL state per list (only after that list's deletion is authorised,
+    so skipped lists keep their protection) and MERGE AllowDeletion=true
     (readback-verified) before attempting the DELETE."""
     schema, bundle, release = _load_fixtures()
     js = generate_rollback_js(
@@ -208,9 +208,9 @@ def test_rollback_relocks_when_delete_fails_after_unlock() -> None:
 
 
 def test_rollback_documents_why_sealed_columns_need_no_unseal() -> None:
-    """Sealed columns get NO unseal pass (SP.Field.Sealed guards the field
-    object — its schema edits and its own deletion — not deletion of the
-    containing list). The generated script carries the rationale so a later
+    """Sealed columns get NO unseal pass. SP.Field.Sealed guards the field
+    object (its schema edits and its own deletion), not deletion of the
+    containing list. The generated script carries the rationale so a later
     maintainer doesn't 'fix' rollback by adding one."""
     schema, bundle, release = _load_fixtures()
     js = generate_rollback_js(
@@ -255,7 +255,7 @@ def test_rollback_recycles_items_before_list_delete() -> None:
     delete a list that still CONTAINS items, while an emptied list deletes
     fine. Demo-only lists recycle their rows automatically (marker
     re-checked per row, fail closed); the DELETE NON-EMPTY override path
-    recycles EVERY item — the operator just authorised deleting the list
+    recycles EVERY item. The operator just authorised deleting the list
     with its contents, and emptying first is what makes the delete
     succeed. recycle(), never a permanent DELETE."""
     schema, bundle, release = _load_fixtures()
@@ -298,7 +298,7 @@ def test_rollback_retention_block_gets_targeted_advisory() -> None:
 
 
 def test_rollback_counts_ride_one_lists_enumeration() -> None:
-    """A by-title ItemCount GET on an absent list answers 404 — painted
+    """A by-title ItemCount GET on an absent list answers 404, painted
     red in the console and read as a failure (live, 2026-07-24). Counts
     now come from ONE always-200 lists enumeration."""
     schema, bundle, release = _load_fixtures()

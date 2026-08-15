@@ -4,8 +4,8 @@
 Phase 2.1: create lists in topological order, with non-lookup columns and as
 many lookup columns as can be resolved (target already created).
 
-Phase 2.2: add the remaining lookup columns — self-references and any side
-of a strongly connected component.
+Phase 2.2: add the remaining lookup columns (self-references and any side
+of a strongly connected component).
 """
 
 from collections import defaultdict
@@ -53,9 +53,9 @@ def compute_phases(schema: Schema) -> DeployPlan:
         placed.add(name)
 
     # Identify edges that still cross from earlier-placed src to later-placed
-    # dst — these are circular-dependency lookups that must be deferred to
+    # dst. These are circular-dependency lookups that must be deferred to
     # phase 2. Defer EVERY column from src that points at dst, not just the
-    # first one — otherwise a table with multiple lookups to the same later
+    # first one. Otherwise a table with multiple lookups to the same later
     # table will fail at deploy time on the second-and-later column.
     for src in table_names:
         for dst in edges[src]:
@@ -108,7 +108,7 @@ def is_deployed_here(
 
     `site_tables_in_order` below applies it in dependency order for the
     generators that DEPLOY. `generators.reportgen` applies it in declaration
-    order, because a report has no creation sequence to respect — the
+    order, because a report has no creation sequence to respect. The
     ordering legitimately differs and the membership question does not, which
     is why the predicate is factored out and the ordering is not.
 

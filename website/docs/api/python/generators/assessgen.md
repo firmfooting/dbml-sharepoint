@@ -12,7 +12,7 @@ Site-assessment generator: read-only assess.js + assess-manifest.md.
 Derives a pack's deployment requirements from its schema+mapping and emits
 a browser-console script that probes a target site for them across three
 tiers (always-run enumerations, pack-driven attempt-probes, and a printed
-not-assessable honesty block). STRICTLY read-only — see the read-only
+not-assessable honesty block). STRICTLY read-only. See the read-only
 guarantee test. Spec: docs/plans/2026-07-24-tenant-assessment-design.md.
 
 ### `Requirement`

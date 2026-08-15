@@ -2,7 +2,7 @@
 """Map DBML column types to SharePoint field descriptors.
 
 The output (SPField) is what the deploy.js template renders. The kind-token to
-SP REST `FieldTypeKind` pairing is `FIELD_TYPE_KIND_BY_KIND` below — the one
+SP REST `FieldTypeKind` pairing is `FIELD_TYPE_KIND_BY_KIND` below, the one
 place the numbers are written, rather than a list in this docstring that
 nothing could check and that had already lost Calculated and MultiChoice.
 """
@@ -55,7 +55,7 @@ FIELD_TYPE_KIND_BY_KIND: dict[FieldKind, int] = {
 }
 
 #: The inverse. What SharePoint reports as `TypeAsString` on read-back is this
-#: codebase's kind token for every kind it emits — verified on a live tenant
+#: codebase's kind token for every kind it emits, verified on a live tenant
 #: rather than transcribed from a page, which is what makes the deployer's
 #: immutable-shape assertion trustworthy (a wrong string there fails a field
 #: that is in fact correct). 15/MultiChoice was measured on 2026-08-10
@@ -67,7 +67,7 @@ FIELD_KIND_BY_TYPE_KIND: dict[int, FieldKind] = {
 #: The same pairing shaped for a JavaScript `new Map([...])` constructor.
 #:
 #: A LIST OF PAIRS rather than the dict, because `tojson` on a dict with
-#: integer keys emits `{"2": "Text"}` — JSON object keys are strings — and the
+#: integer keys emits `{"2": "Text"}` (JSON object keys are strings), and the
 #: deployer looks a field's numeric `FieldTypeKind` up in that Map. A Map built
 #: from string keys misses every lookup, silently, and the field it was
 #: verifying is then reported as shape-mismatched. Pairs keep the key an
@@ -87,7 +87,7 @@ CALCULATED_OUTPUT_TYPES: dict[str, int] = {
 }
 
 # THE calculated type vocabulary. This map is where it belongs, because a
-# calculated type that has no OutputType cannot be deployed at all — so
+# calculated type that has no OutputType cannot be deployed at all, so
 # adding one here is not optional, which is what makes the keys
 # authoritative. Everything else derives; a second hand-written copy is a
 # set that can silently disagree, leaving a new type uncovered by every
@@ -99,7 +99,7 @@ CALCULATED_TYPES = frozenset(CALCULATED_OUTPUT_TYPES)
 # The same vocabulary spelled for a human to read, because prose enumerating
 # a set is a copy of that set. The `formula_target_not_calculated` message and
 # its catalogue entry both listed "calculated_text or calculated_number" and
-# both omitted calculated_date — so the one rule that has to tell an author
+# both omitted calculated_date, so the one rule that has to tell an author
 # what IS allowed named a legal type as illegal, in the terminal and in
 # `explain` alike, while `risk-register` shipped a calculated date the build
 # accepted without complaint. Derived here so a fourth type reaches every
@@ -116,7 +116,7 @@ KNOWN_SCALARS = frozenset({
     "boolean", "hyperlink",
 })
 
-# WHAT COUNTS AS A DATE, and WHAT COUNTS AS A NUMBER — each in one place, for
+# WHAT COUNTS AS A DATE, and WHAT COUNTS AS A NUMBER, each in one place, for
 # the same reason TODAY_SENTINEL below is. Both sets were spelled out
 # byte-identically in two modules apiece: `_DATE_TYPES` in `conditions.py` and
 # `validator.py`, `_NUMBER_TYPES` in `conditions.py` and (as
@@ -127,8 +127,8 @@ KNOWN_SCALARS = frozenset({
 # renders on one path and is refused on the other, or worse, is accepted by
 # the check and emitted as the literal string "today". `typemap.py:TODAY_
 # SENTINEL` records that this exact problem was found and fixed for the
-# sentinel — "Comments said they must agree; nothing checked it, so now there
-# is one pattern and a test" — and the type sets it is matched against did not
+# sentinel ("Comments said they must agree; nothing checked it, so now there
+# is one pattern and a test"), and the type sets it is matched against did not
 # get the same treatment at the time.
 #
 # This module is the right home because its docstring already claims to be the
@@ -136,8 +136,8 @@ KNOWN_SCALARS = frozenset({
 # the module a new DBML type cannot be added without editing.
 #
 # The calculated members are IN. A `calculated_date` is a date for every
-# purpose these sets serve — comparison rendering, `today` sentinel
-# admission, view totals — and excluding them is what made the demo planner
+# purpose these sets serve (comparison rendering, `today` sentinel
+# admission, view totals), and excluding them is what made the demo planner
 # and the condition renderer disagree in the first place. Note that
 # `generators/demogen.py` keeps its own, SMALLER date set on purpose: it
 # seeds authored rows, and a calculated column cannot be written to.
@@ -339,7 +339,7 @@ def map_column(col: Column, enum_names: set[str]) -> SPField:
     The uniqueness gate runs after the type resolves, not before: an
     unrecognised type is the more useful complaint, and checking `[unique]`
     first answered `blob [unique]` with "unique is not supported for 'blob'
-    columns" — true, but it buries the actual mistake. Resolving first also
+    columns" (true, but it buries the actual mistake). Resolving first also
     keeps the supported-type vocabulary in one place, the match statement
     below, rather than in a second hand-maintained set beside it.
     """
@@ -512,7 +512,7 @@ def _scalar(col: Column, description: str, enum_names: set[str]) -> SPField:
 # what it becomes in CAML, and the demo planner decides what it becomes in
 # a seeded row. A copy that drifts wider or narrower than another passes
 # the build with zero findings and emits the literal string "today" into a
-# script — the same shape of failure as two readers disagreeing about a
+# script, the same shape of failure as two readers disagreeing about a
 # hyperlink value. Comments said they must agree; nothing checked it, so
 # now there is one pattern and a test.
 TODAY_SENTINEL = re.compile(r"^today(?:([+-])(\d+))?$")
@@ -537,9 +537,9 @@ NOW_SENTINEL = re.compile(r"^now$")
 # MAX, MIN, SUM, STDEV and VAR and notes they are case-insensitive:
 # https://learn.microsoft.com/sharepoint/dev/schema/fieldref-element-query
 #
-# `avg` is the trap: the English word is "Average" and the token is "AVG".
-# A non-member is ACCEPTED — SharePoint stores it and reads it back
-# unchanged — and then fails the whole view with "Unknown render failure".
+# `avg` is the exception: the English word is "Average" and the token is "AVG".
+# A non-member is ACCEPTED (SharePoint stores it and reads it back
+# unchanged) and then fails the whole view with "Unknown render failure".
 # Nothing in the build or the readback can see the difference; a person
 # opening the view is the only witness. `SUM` hides this, being both the
 # token and the word, so transcribe from the reference rather than typing
@@ -575,7 +575,7 @@ def format_description(note: str) -> str:
 
 # SharePoint refuses an index on these, whatever the schema asks for. Kept here
 # rather than in one check because two now need it: _structure rejects a
-# DECLARED index on them, and _views must not RECOMMEND one — a remedy that
+# DECLARED index on them, and _views must not RECOMMEND one. A remedy that
 # fails the build is worse than the warning it answers.
 #
 # Calculated columns belong to the same class and are not listed, because they

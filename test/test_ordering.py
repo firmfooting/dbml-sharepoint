@@ -37,7 +37,7 @@ def test_circular_dependency_goes_to_phase2_for_one_side() -> None:
 def test_circular_with_multiple_lookups_defers_all_matching_columns() -> None:
     """Regression: when an earlier-placed table has more than one lookup to
     a later-placed table inside a cycle, EVERY matching column must be
-    deferred to phase 2 — not just the first one.
+    deferred to phase 2, not just the first one.
 
     Fixture circular-multi.dbml: A has BRef1 and BRef2 → B; B has ARef → A.
     Whichever side the topo sort places first, ALL its lookups to the other

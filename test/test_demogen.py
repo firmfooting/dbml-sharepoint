@@ -83,7 +83,7 @@ def test_demo_plan_types_fields_at_generation() -> None:
 def test_bare_today_is_offset_zero() -> None:
     """The validator accepts a bare `today` on demo date values (it shares
     the view-condition sentinel, where bare `today` is correct). Generation
-    must accept it too and mean offset 0 — otherwise a demo row declaring
+    must accept it too and mean offset 0. Otherwise a demo row declaring
     `today` passes the build with zero findings and emits the literal
     string "today" into demo-data.js."""
     schema = make_schema(
@@ -133,7 +133,7 @@ def test_demo_script_contract() -> None:
 
 
 def test_a_hyperlink_demo_value_becomes_a_field_url_value_record() -> None:
-    """A SharePoint URL column is a record over REST (SP.FieldUrlValue —
+    """A SharePoint URL column is a record over REST (SP.FieldUrlValue,
     Url plus Description), not a scalar, and a bare string is rejected at
     create time. Before this, a hyperlink column could not be seeded at
     all: four templates in the people theme shipped their EvidenceUrl and
@@ -172,7 +172,7 @@ def test_every_reader_of_the_today_sentinel_shares_one_pattern() -> None:
     becomes in a seeded row. Three readers of one authored value.
 
     A copy that drifted wider or narrower than another would pass the build
-    with zero findings and emit the literal string "today" into a script —
+    with zero findings and emit the literal string "today" into a script,
     the same shape as any two readers disagreeing about one declaration.
     Comments asserted the agreement; this asserts it.
     """
@@ -207,8 +207,8 @@ def test_a_today_offset_keeps_its_sign_through_the_planner() -> None:
 
 def test_the_demo_validator_refuses_everything_the_planner_refuses() -> None:
     """The planner and the validator are two readers of one authored value.
-    Where the planner raises, the validator must already have reported —
-    otherwise an invalid mapping reaches generation and surfaces as a build
+    Where the planner raises, the validator must already have reported.
+    Otherwise an invalid mapping reaches generation and surfaces as a build
     traceback rather than a finding an author can act on.
 
     This asserts the property directly rather than trusting the two to be

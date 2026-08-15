@@ -118,9 +118,9 @@ def test_every_finding_site_carries_a_location() -> None:
 
     A site that passes none leaves the path existing only inside a sentence,
     so a consumer that wants to say which declaration is at fault has to
-    parse prose — the trap this suite's `_findings.py` opens by describing,
+    parse prose (the defect this suite's `_findings.py` opens by describing,
     and one `manifestgen`, the reporting output and extension authors all
-    inherit.
+    inherit).
 
     Adding a location WITHOUT reworking such a message is no better: two
     spellings of one fact, free to drift apart. `validator.py` renders its
@@ -133,7 +133,7 @@ def test_every_finding_site_carries_a_location() -> None:
     import ast
 
     def constructs_a_finding(func: ast.expr) -> bool:
-        """`Finding(...)` and `findings.Finding(...)` — both are written."""
+        """Both `Finding(...)` and `findings.Finding(...)` are written."""
         if isinstance(func, ast.Name):
             return func.id == "Finding"
         return isinstance(func, ast.Attribute) and func.attr == "Finding"

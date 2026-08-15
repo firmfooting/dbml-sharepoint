@@ -10,9 +10,9 @@ sidebar_position: 23
 The one canonical Jinja environment for every rendered artifact.
 
 One constructor for every generator, including the ``comment_safe``
-filter the pasteable scripts need. That means a rendering rule —
-StrictUndefined so a missing variable fails the build instead of emitting
-``undefined`` into a script, and the A5 header-injection guard — is fixed
+filter the pasteable scripts need. That means a rendering rule
+(StrictUndefined so a missing variable fails the build instead of emitting
+``undefined`` into a script, and the A5 header-injection guard) is fixed
 in exactly one place.
 
 ### `TEMPLATES_DIR`

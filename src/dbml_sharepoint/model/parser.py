@@ -64,7 +64,7 @@ class TableIndex:
 
 @dataclass
 class Table:
-    """A DBML Table — name, columns, indexes, optional table-level note."""
+    """A DBML Table (name, columns, indexes, optional table-level note)."""
 
     name: str
     columns: list[Column] = field(default_factory=list)
@@ -159,7 +159,7 @@ def parse_dbml(path: Path) -> Schema:
         # parser exception types, so normal CLI config-error handling would
         # otherwise miss them and print a traceback for a schema typo.
         #
-        # pydbml's index message ends in an unformatted f-string fragment —
+        # pydbml's index message ends in an unformatted f-string fragment,
         # a literal `{self.name}` where the table name belongs. Drop the
         # whole clause, preposition included, rather than leaving the
         # sentence hanging on "not defined in.". The caller names the file,

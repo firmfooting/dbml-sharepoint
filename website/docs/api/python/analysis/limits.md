@@ -17,7 +17,7 @@ dozen places and hoping.
 
 That shape fails in the direction this project cares about most. A message
 saying "SharePoint's limit is 1024" beside a check that now tests 2048 is not a
-crash — it is a build that passes, a deploy that verifies, and an operator told
+crash. It is a build that passes, a deploy that verifies, and an operator told
 a number that is not the one being enforced. Nothing downstream can see it.
 
 So: the number lives here, and every enforcement site and every sentence that

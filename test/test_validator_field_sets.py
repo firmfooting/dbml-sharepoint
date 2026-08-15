@@ -229,7 +229,7 @@ def test_valid_field_set_produces_no_errors(tmp_path: Path) -> None:
 
 def test_unreferenced_field_set_is_a_warning(tmp_path: Path) -> None:
     """Dead config wastes nothing but the reader's time, so it warns rather
-    than failing the build — the fail-closed line is drawn at declarations
+    than failing the build. The fail-closed line is drawn at declarations
     that would break the list.
 
     Stays on the filesystem: "referenced" means present in a view's
@@ -259,7 +259,7 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
     """Expansion runs first, so the column is stripped from every view that
     pulls the set in and the strip is recorded against the VIEW. The set
     itself is where the author fixes it, so it gets its own warning naming
-    the set — otherwise the only report points at a view that no longer
+    the set. Otherwise the only report points at a view that no longer
     mentions the column.
 
     Stays on the filesystem: it asserts on the stripped view, and both the
@@ -290,8 +290,8 @@ def test_retired_column_in_a_field_set_is_a_warning(tmp_path: Path) -> None:
 
 def test_view_formatting_may_only_read_columns_the_view_displays() -> None:
     """SharePoint resolves a view formatter's [$Field] against the columns
-    that view renders, not the list's columns — "reference to other fields
-    will work only if they are included in the same view". A reference to a
+    that view renders, not the list's columns ("reference to other fields
+    will work only if they are included in the same view"). A reference to a
     real column the view omits therefore resolves to nothing: the format
     silently never fires, the build exits 0, and the only symptom is a row
     wash nobody sees. Catching it needs the VIEW's field list, which is why
@@ -403,7 +403,7 @@ def test_view_formatting_may_only_read_system_columns_the_view_displays() -> Non
 
 def test_a_form_header_may_not_read_a_calculated_column() -> None:
     """A calculated column resolves to an empty string in a form header or
-    footer — verified on a live tenant against a saved item that had a
+    footer, verified on a live tenant against a saved item that had a
     value. Nothing errors: the header renders, that one value is blank. The
     deploy cannot see it either, because the formatter saves and reads back
     byte-identical. So the build is the only place it can be caught.
@@ -433,7 +433,7 @@ def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> 
     """No collection may re-list the three calculated DBML types.
 
     They belong to typemap's CALCULATED_OUTPUT_TYPES, because each needs an
-    SP OutputType — a calculated type without one cannot deploy, which is
+    SP OutputType. A calculated type without one cannot deploy, which is
     what forces that map to stay complete and makes its keys authoritative.
     Everywhere else derives from CALCULATED_TYPES.
 
@@ -444,8 +444,8 @@ def test_the_calculated_type_vocabulary_is_enumerated_in_exactly_one_place() -> 
 
     The rule is per-COLLECTION, not per-file. `conditions.py` legitimately
     names calculated_number in its numeric types, calculated_date in its
-    date types and calculated_text in its measurable types — three
-    different classifications that each happen to include one. That is not
+    date types and calculated_text in its measurable types (three
+    different classifications that each happen to include one). That is not
     a copy of the vocabulary; a single literal holding all three is.
     """
     names = {"calculated_text", "calculated_number", "calculated_date"}
@@ -541,7 +541,7 @@ def test_the_last_section_may_be_empty_because_it_is_the_catch_all() -> None:
 def test_a_column_in_no_section_warns_rather_than_failing() -> None:
     """It is drift, not breakage: SharePoint appends the column to the last
     section, so the form renders it. What is lost is the guarantee that the
-    declared arrangement is the deployed one — and every column added later
+    declared arrangement is the deployed one, and every column added later
     lands in that same section."""
     schema, bundle = _calculated_project(
         form_formatting=_body({"displayname": "Main", "fields": ["Title"]}),
@@ -556,7 +556,7 @@ def test_a_column_in_no_section_warns_rather_than_failing() -> None:
 def test_a_retired_column_in_no_section_does_not_warn(tmp_path: Path) -> None:
     """Retirement STRIPS a column from body sections on purpose, and warns
     separately about the declarations it rewrote. Warning again here would
-    ask the author to re-add exactly what the fold just removed — which is
+    ask the author to re-add exactly what the fold just removed, which is
     what the first version of the rule did to tiered-huddle.
 
     Stays on the filesystem: `_apply_retirement` runs in the loader and is
@@ -604,7 +604,7 @@ def test_demo_items_on_a_document_library_are_refused() -> None:
 
     This built GREEN until the policy-library uplift went looking: the
     bundle would have shipped and failed at paste time, in front of whoever
-    was being shown the demo — which is the audience this tool's fail-closed
+    was being shown the demo, which is the audience this tool's fail-closed
     posture exists to protect.
     """
     errors = _docs_errors(
@@ -624,8 +624,8 @@ def test_a_document_library_entity_is_refused_outright() -> None:
     library, use SPFileCollection.Add()", and an uploaded file reads back
     with `Title: null`, so the standard form header renders blank.
 
-    Half-support — a library that provisions but carries no usable header,
-    no view naming its files and no demo rows — reads as a bug in every
+    Half-support (a library that provisions but carries no usable header,
+    no view naming its files and no demo rows) reads as a bug in every
     direction, so the kind is refused until that work is done. The message
     must offer the way round, because an adopter hitting this needs to know
     a List plus a hyperlink column is the supported shape.

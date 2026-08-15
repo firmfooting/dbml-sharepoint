@@ -7,7 +7,7 @@ one field from another. No parsing and no file access live here, so a
 reader answering "what does this section become?" does not have to read the
 parser to find out.
 
-Re-exported by ``mapping_loader`` — import these from there.
+Re-exported by ``mapping_loader``. Import these from there.
 """
 
 import re
@@ -70,7 +70,7 @@ def view_url_slug(title: str) -> str:
 
     A view's .aspx file name is fixed at creation from its Title, so views
     are created with this slug and renamed to the declared title afterwards
-    ("Open by score" lives at OpenByScore.aspx, not Open%20by%20score.aspx —
+    ("Open by score" lives at OpenByScore.aspx, not Open%20by%20score.aspx,
     the same create-then-rename trick fields use for display titles)."""
     words = re.split(r"[^A-Za-z0-9]+", title)
     return "".join(w[:1].upper() + w[1:] for w in words if w)
@@ -90,7 +90,7 @@ class EntityMapping:
     # built-in "Title" (e.g. Membership uses DisplayName). Absent → "Title".
     display_column: str | None = None
     # The author's deliberate acceptance that this entity's display column is
-    # calculated, and therefore cannot be indexed — so a lookup into this list
+    # calculated, and therefore cannot be indexed, so a lookup into this list
     # stops being settable once it passes ~5,000 items. Legitimate for a list
     # that will stay small. Silences the warning completely; the acceptance is
     # visible here, where a reviewer sees it.
@@ -99,8 +99,8 @@ class EntityMapping:
     # accepted is the list view LOOKUP threshold: an entity may legitimately
     # carry more than 12 join-bearing columns while no declared view needs that
     # many, and without this the build refuses a schema over a view nobody
-    # wrote. Every named column must be join-bearing and rendered — see
-    # analysis/checks/_views.py — because `All Items` renders everything for a
+    # wrote. Every named column must be join-bearing and rendered (see
+    # analysis/checks/_views.py) because `All Items` renders everything for a
     # reason and this is not a general hide-this feature. Declared views are
     # unaffected; they keep every field they declare.
     hide_from_all_items: tuple[str, ...] = ()
@@ -135,7 +135,7 @@ class Versioning:
 
     THE DEFAULTS LIVE HERE, on the dataclass, and that is the point. With all
     three fields required, the default for each had nowhere to live but the
-    caller — so `versioning.default.major_version_limit` absent meant every
+    caller, so `versioning.default.major_version_limit` absent meant every
     reader wrote `500` for itself, and the merge of a per-entity override onto
     the default was open-coded three times over (`jsgen`, `reportgen`,
     `assessgen`) in three different spellings. The third used bare truthiness
@@ -173,7 +173,7 @@ class FormVisibility:
     """One column's declared form behaviour.
 
     `existing` covers the Edit form AND the Display form, which SharePoint
-    does not let us separate — the modern Display form reads ShowInEditForm
+    does not let us separate. The modern Display form reads ShowInEditForm
     and ignores ShowInDisplayForm entirely. The key is named for what it
     does rather than for the form an author might expect.
     """
@@ -249,12 +249,12 @@ class ViewDef:
     # live property is never touched.
     formatting: dict[str, Any] | None = None
     # Optional per-column pixel widths, INTERNAL names (jsgen rewrites to
-    # display titles — SP's ColumnWidth binds by display name). Empty = the
+    # display titles; SP's ColumnWidth binds by display name). Empty = the
     # live widths are never touched.
     widths: dict[str, int] = field(default_factory=dict)
     # Optional per-column aggregations, INTERNAL names, values from
     # typemap.TOTAL_FUNCTIONS. Empty = the live Aggregations property is
-    # never touched, matching widths and formatting — so DELETING a totals
+    # never touched, matching widths and formatting, so DELETING a totals
     # block does not remove a total from an already-deployed view.
     totals: dict[str, str] = field(default_factory=dict)
     # The `field_sets` entries this view's `fields` was expanded from, in
@@ -269,9 +269,9 @@ class ViewDef:
 class DemoItem:
     """One declared demo/sample row (mapping `demo_items:` section).
 
-    `values` are authored with INTERNAL column names. The value grammar —
-    "@me" (deploying operator) on person columns, "today+N"/"today-N" on
-    date columns, {demo_ref: key} on lookups — is resolved by the generated
+    `values` are authored with INTERNAL column names. The value grammar
+    ("@me" (deploying operator) on person columns, "today+N"/"today-N" on
+    date columns, {demo_ref: key} on lookups) is resolved by the generated
     demo-data.js at RUN time; semantic rules live in the validator. Every
     Title must start with "[DEMO] ": that marker is what the teardown
     trusts to distinguish demo rows from real records."""
@@ -298,7 +298,7 @@ class ListValidation:
     """Declared SP list validation (ValidationFormula/ValidationMessage).
 
     Cross-column: unlike `column_validation`, the condition may name any
-    column on the list. Authored as a condition tree — the raw `formula:`
+    column on the list. Authored as a condition tree. The raw `formula:`
     key is gone, because it was the last surface where an author wrote
     SharePoint syntax by hand and so the last place the quoting and
     operator differences between the targets could bite them.
@@ -313,10 +313,10 @@ class RetiredColumn:
     """One retired column (mapping `retired_columns:` section).
 
     Retirement is a deployment-lifecycle fact, not a logical-model one: the
-    column stays declared in the DBML and keeps its data — deleting the
+    column stays declared in the DBML and keeps its data (deleting the
     declaration would leave a live, deletable column the schema no longer
     knows about, which the generated `_UserAddedColumns.pq` drift audit
-    would report forever — but it leaves the New form and every declared
+    would report forever), but it leaves the New form and every declared
     view, and its display title carries RETIRED_SUFFIX.
 
     `hide_existing` additionally hides it from the Edit form, which on a
@@ -380,7 +380,7 @@ class SiteGroup:
     # Optional operator self-enrolment. When true, deploy.js adds the running
     # operator to this group after Phase 1.2 (so later phases hold the group's
     # list grants, e.g. an empty-by-default Full Control admin group) and
-    # removes them again at the end of the run — unless they were already a
+    # removes them again at the end of the run, unless they were already a
     # member, in which case membership is left untouched.
     enroll_operator_during_deploy: bool = False
     # Optional enterprise-reader enrolment target. When true, `build
@@ -460,22 +460,22 @@ class Mapping:
     # columns (SP.FieldCalculated). Formulas stay out of DBML (pydbml has no
     # attribute to carry them); the validator enforces the pairing.
     calculated_formulas: dict[str, dict[str, str]] = field(default_factory=dict)
-    # {entity: EntitySection[FormVisibility]} — declared form behaviour.
+    # {entity: EntitySection[FormVisibility]} (declared form behaviour).
     form_visibility: dict[str, EntitySection[FormVisibility]] = field(default_factory=dict)
-    # {entity: EntitySection[ColumnValidation]} — per-column save rules.
+    # {entity: EntitySection[ColumnValidation]} (per-column save rules).
     column_validation: dict[str, EntitySection[ColumnValidation]] = field(
         default_factory=dict,
     )
-    # {entity: [ViewDef]} — declared list views. Semantic rules (field
+    # {entity: [ViewDef]} (declared list views). Semantic rules (field
     # existence, operator allowlist, single default) live in the validator.
     views: dict[str, list[ViewDef]] = field(default_factory=dict)
-    # {entity: {set name: [columns]}} — named, reusable column lists that a
-    # view's `fields` pulls in with "@setname". Expanded into ViewDef.fields
+    # {entity: {set name: [columns]}} (named, reusable column lists that a
+    # view's `fields` pulls in with "@setname"). Expanded into ViewDef.fields
     # at load time (see _expand_field_sets); retained here as the
     # authoritative declaration for the manifest footnote and the
     # validator's unreferenced-set warning.
     field_sets: dict[str, dict[str, list[str]]] = field(default_factory=dict)
-    # {entity: [DemoItem]} — declared demo/sample rows, emitted as
+    # {entity: [DemoItem]} (declared demo/sample rows), emitted as
     # demo-data.js ONLY when the build passes --seed. Empty = feature off.
     demo_items: dict[str, list[DemoItem]] = field(default_factory=dict)
     # display_names section: internal names stay authoritative; display
@@ -487,16 +487,16 @@ class Mapping:
     # the expanded formatter JSON so the validator can check map keys
     # against enum members after load-time expansion.
     column_style_specs: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
-    # {entity: {column: formatter-JSON dict}} — SP CustomFormatter, declared
+    # {entity: {column: formatter-JSON dict}}, SP CustomFormatter, declared
     # per column. Reconciled as a mutable field property; absent = the live
     # property is never touched.
     column_formatting: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
-    # {entity: FormFormatting} — declared list-form layouts. Absent = the
+    # {entity: FormFormatting} (declared list-form layouts). Absent = the
     # live content type's form formatter is never touched.
     form_formatting: dict[str, FormFormatting] = field(default_factory=dict)
-    # {entity: ListValidation} — save-time enforcement. Absent = untouched.
+    # {entity: ListValidation} (save-time enforcement). Absent = untouched.
     list_validation: dict[str, ListValidation] = field(default_factory=dict)
-    # {entity: {column: RetiredColumn}} — the authoritative retirement
+    # {entity: {column: RetiredColumn}}, the authoritative retirement
     # record. _apply_retirement folds these into form_visibility,
     # display_name_overrides, each ViewDef and each form body at load time;
     # the dict itself is retained for the manifest, the data dictionary and
@@ -506,7 +506,7 @@ class Mapping:
     # replaced, kept so the validator can warn about declarations the fold
     # silently rewrote.
     retirement_strips: list[RetirementStrip] = field(default_factory=list)
-    # UI hardening (friction, not enforcement — site admins can undo via
+    # UI hardening (friction, not enforcement; site admins can undo via
     # API): seal every deployed column (blocks UI schema edits even for
     # admins; the deployer unseals for its own runs) and block UI deletion
     # of the list objects.
@@ -533,8 +533,8 @@ class Mapping:
     def cross_site_keys(self) -> set[tuple[str, str]]:
         """`{(entity, column)}` for every declared cross-site reference.
 
-        The same three-line comprehension stood at four call sites — `jsgen`,
-        `reportgen` three times over, and `checks/_naming` — each turning the
+        The same three-line comprehension stood at four call sites (`jsgen`,
+        `reportgen` three times over, and `checks/_naming`), each turning the
         list of `CrossSiteRef` into the pair set every consumer actually
         wants. Nothing was wrong with any copy; a method is simply where the
         shape belongs once four callers need it, and it is the fact `jsgen`
@@ -552,7 +552,7 @@ class Mapping:
 
         The per-entity override merged onto the default, key by key: an
         override block naming only `major_version_limit` keeps the default's
-        two booleans. THE one merge — `jsgen`, `reportgen` and `assessgen`
+        two booleans. THE one merge: `jsgen`, `reportgen` and `assessgen`
         each re-derived it, and the third did so with bare truthiness and no
         default fallback, which is the divergence a shared accessor removes
         rather than merely tidies.
@@ -583,7 +583,7 @@ class Mapping:
     def permissions_for_entity(self, entity_name: str) -> "ListPermissionPolicy | None":
         """Return the per-list permission policy for the given entity name.
 
-        Returns override if present, else the default policy — but the default
+        Returns override if present, else the default policy, but the default
         only applies when its site-role scope (if any) matches the entity's
         site_role. A default scoped to one role must not re-ACL lists
         belonging to another role.

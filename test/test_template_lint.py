@@ -209,7 +209,7 @@ def test_generated_api_docs_are_current(tmp_path: Path) -> None:
     fresh = pages(tmp_path)
     have = pages(committed)
     assert have == fresh, (
-        "generated API docs are stale — regenerate with:\n"
+        "generated API docs are stale. Regenerate with:\n"
         "  uv run python website/scripts/generate_api.py"
     )
 

@@ -75,7 +75,7 @@ class Table:
     note: str = ''
 ```
 
-A DBML Table — name, columns, indexes, optional table-level note.
+A DBML Table (name, columns, indexes, optional table-level note).
 
 ### `EnumDef`
 

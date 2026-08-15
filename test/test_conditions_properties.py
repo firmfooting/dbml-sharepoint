@@ -515,7 +515,7 @@ def test_a_bool_on_a_numeric_column_is_refused(target: str) -> None:
 
     Pinned deterministically rather than left to a Hypothesis draw. The
     permissive `leaves()` strategy includes `st.booleans()`, so this refusal
-    was already being reached — but only on roughly one run in ten, which made
+    was already being reached, but only on roughly one run in ten, which made
     the suite's COVERAGE nondeterministic: `conditions.py` reported 11 or 12
     missing lines depending on whether that draw came up.
 

@@ -26,7 +26,7 @@ from dbml_sharepoint.model.parser import Column, Schema
 
 
 def _persons(count: int) -> list[Column]:
-    """`count` person columns, P1..Pn — the cheapest join-bearing column."""
+    """`count` person columns, P1..Pn, the cheapest join-bearing column."""
     return [person(f"P{n}") for n in range(1, count + 1)]
 
 def _join_inputs(
@@ -69,7 +69,7 @@ def _join_inputs(
         ),
     )
 
-#: The two codes `_join_finding` can produce — one rule, two severities.
+#: The two codes `_join_finding` can produce (one rule, two severities).
 _JOIN_CODES = frozenset(
     {FindingCode.JOIN_THRESHOLD_EXCEEDED, FindingCode.JOIN_THRESHOLD_APPROACHED},
 )
@@ -97,7 +97,7 @@ def _join_findings(
     Identified by code and structured location. This used to require two
     substrings ('join-bearing columns' AND 'join operations') to tell the
     threshold rule apart from the unnecessary-suppression warning, which says
-    the first but not the second — a distinction that lived entirely in prose
+    the first but not the second, a distinction that lived entirely in prose
     and would have collapsed the moment either sentence was reworded.
     """
     return [
@@ -112,8 +112,8 @@ def _named(message: str) -> list[str]:
     whether a column name is present or absent. `_join_finding` appends a shared
     sentence reading "...including Created By (Author) and Modified By (Editor);
     Created and Modified are inferred to cost nothing...", so
-    `"Created" not in f.message` and `"Author" in f.message` are BOTH vacuous —
-    the first can never pass and the second passes even if the column was never
+    `"Created" not in f.message` and `"Author" in f.message` are BOTH vacuous.
+    The first can never pass and the second passes even if the column was never
     counted. The parenthesised list is the only part of the message that varies
     with the count.
 
@@ -161,7 +161,7 @@ def test_author_and_editor_each_cost_a_join_and_the_dates_cost_none() -> None:
     system PERSON column fails while adding two system DATES does not.
 
     Every name assertion goes through `_named`. Asserted against the whole
-    message they would all be vacuous — the shared sentence `_join_finding`
+    message they would all be vacuous. The shared sentence `_join_finding`
     appends says "including Created By (Author) and Modified By (Editor); Created
     and Modified are inferred to cost nothing", so "Created"/"Modified"/"Author"
     are in EVERY join message regardless of what was counted."""
@@ -284,9 +284,9 @@ def test_a_declared_view_counts_every_join_it_declares_even_when_hidden() -> Non
     """`hide_from_all_items` must not reach the DECLARED-view count.
 
     The generator-side half of this rule is tested in test_jsgen.py; this is the
-    VALIDATOR-side half, and without it a plausible 'consistency' edit — both
+    VALIDATOR-side half, and without it a plausible 'consistency' edit (both
     derivations sit in the same entity loop, so subtracting `all_items_hidden`
-    from the per-view count looks tidy — would quietly stop erroring on a view
+    from the per-view count looks tidy) would quietly stop erroring on a view
     over 13 join columns with the whole suite still green.
 
     13, not 11: P1 and P2 are hidden from All Items and the declared view keeps
@@ -304,7 +304,7 @@ def test_a_declared_view_counts_every_join_it_declares_even_when_hidden() -> Non
 
 def test_the_generated_all_items_counts_author_and_editor_as_joins() -> None:
     """11 declared join columns + Author + Editor = 13. Nothing declares this
-    view — the generator appends both system columns unconditionally — so the
+    view (the generator appends both system columns unconditionally), so the
     message has to name all three contributions and point at the only remedy.
 
     All three name assertions go through `_named`. Against the whole message
@@ -357,8 +357,8 @@ def test_hide_from_all_items_does_not_lift_the_join_ceiling() -> None:
     does not remove the limit on what a VIEW may render."
 
     Without this, an implementation that computed `shown_joins` on `rendered`
-    only when `hidden` is empty — or that skipped the band check whenever
-    `hide_from_all_items` is set — passes every other test in the plan. The
+    only when `hidden` is empty (or that skipped the band check whenever
+    `hide_from_all_items` is set) passes every other test in the plan. The
     clears-the-error test above only proves suppression can make a finding go
     away; nothing else proves INSUFFICIENT suppression still errors.
 
@@ -379,14 +379,14 @@ def test_a_document_library_gets_no_all_items_join_finding() -> None:
 
     `jsgen.py:597` builds `All Items` only when the kind is not
     `DocumentLibrary`, so counting one here would refuse a schema over a view
-    the generator never creates — the exact validator/generator disagreement
+    the generator never creates, the exact validator/generator disagreement
     this module exists to avoid. Deleting the clause must turn a test red, and
     only the pair does that: the count alone proves nothing, because the same
     13 columns are what the List case is asserted on.
 
     `kind: DocumentLibrary` is separately an ERROR from `_structure.py:101-111`,
     so this build is already red for another reason. That is not a licence to
-    skip the guard — it is why the guard is easy to delete unnoticed."""
+    skip the guard. It is why the guard is easy to delete unnoticed."""
     schema, bundle = _join_inputs(_persons(13), kind="DocumentLibrary")
     assert _join_findings(schema, bundle, _all_items()) == []
 
@@ -401,12 +401,12 @@ def test_hide_from_all_items_on_a_document_library_is_refused() -> None:
     """The refusal above the loop's `continue`, exercised for the first time in
     this file. No other test in this section supplies `hide_from_all_items` on
     an entity the loop skips, so without this the branch that answers it has
-    no red/green cycle anywhere in the suite — `_join_findings` would not even
+    no red/green cycle anywhere in the suite. `_join_findings` would not even
     see it, since it carries a different code entirely.
 
     Task 5's own covering test for this branch is already green at its
     fail-first gate, by design, because Task 4 answers this key before Task 5
-    exists — that is documented there, not a gap here.
+    exists. That is documented there, not a gap here.
 
     Pairs with `test_a_document_library_gets_no_all_items_join_finding` above:
     that one catches deleting the loop's `continue`, this one catches deleting
@@ -420,8 +420,8 @@ def test_hide_from_all_items_on_a_document_library_is_refused() -> None:
     )
 
 def test_a_cross_site_ref_costs_no_join_on_all_items() -> None:
-    """A cross-site column is rendered as a Choice + URL PAIR — two rendered
-    columns — and still costs nothing. Paired with the control below."""
+    """A cross-site column is rendered as a Choice + URL PAIR (two rendered
+    columns) and still costs nothing. Paired with the control below."""
     elsewhere = [*_persons(10), column("Elsewhere", "int", ref="Person.Id")]
     schema, bundle = _join_inputs(
         elsewhere,
@@ -464,8 +464,8 @@ def test_hiding_a_column_all_items_does_not_render_errors() -> None:
 # test_hiding_a_column_on_an_entity_with_no_all_items_errors is deliberately
 # NOT duplicated here. Task 4's fix round already added
 # test_hide_from_all_items_on_a_document_library_is_refused above, which
-# exercises the identical branch — a hide_from_all_items key on a
-# DocumentLibrary, refused above this loop's `continue` — and asserts exactly
+# exercises the identical branch (a hide_from_all_items key on a
+# DocumentLibrary, refused above this loop's `continue`) and asserts exactly
 # one "error" finding whose message starts with the same
 # "entities[Project].hide_from_all_items" prefix. A second test asserting the
 # same branch would be duplication, not coverage.
@@ -494,7 +494,7 @@ def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo() -> None:
     NOTE on what this test can and cannot pin, recorded here because it is
     not obvious from the assertions alone. `_join_inputs` declares `Title`
     as a real DBML column on `Project`, so `_rendered_columns` alone already
-    puts 'Title' in `rendered` — the explicit `| {"Title"}` union inside
+    puts 'Title' in `rendered`. The explicit `| {"Title"}` union inside
     `analysis/joins.py::all_items_rendered` is redundant for THIS fixture
     and this test cannot observe it being dropped. That is by design, not
     an oversight: this test pins the branch choice for an entity that DOES
@@ -508,12 +508,12 @@ def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo() -> None:
     none_of(found, FindingCode.HIDE_OF_UNRENDERED_COLUMN)
 
 def test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch() -> None:
-    """The fixture `_join_inputs` builds cannot pin this — see the NOTE on
-    `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` above.
+    """The fixture `_join_inputs` builds cannot pin this (see the NOTE on
+    `test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo` above).
     This entity's DBML declares NO `Title` column at all, which is legal:
     SharePoint's base-template `Title` exists on every provisioned list
     regardless of whether the schema names it. So 'Title' reaches
-    `all_items_rendered`'s result ONLY through its `| {"Title"}` union —
+    `all_items_rendered`'s result ONLY through its `| {"Title"}` union.
     `_rendered_columns` alone has nothing to contribute for a column that
     is not in `table.columns`. `hide_from_all_items: [Title]` must still be
     refused for costing no join, not reported as an unrecognised column."""
@@ -563,8 +563,8 @@ def test_unnecessary_hide_from_all_items_warns() -> None:
 
     THREE cases, because the condition is a band boundary at 12/13 and the
     boundary is where it breaks. Written `< JOIN_LIMIT` instead of `<=`, the
-    check silently stops nagging the entity that most deserves it — 12
-    unsuppressed joins with the key set for nothing — and a suite that only
+    check silently stops nagging the entity that most deserves it (12
+    unsuppressed joins with the key set for nothing) and a suite that only
     exercised 4 and 13 would stay green through it."""
     # Well inside: P1, P2, Author, Editor with nothing hidden.
     schema, bundle = _join_inputs(_persons(2), hide_from_all_items=("Author",))

@@ -5,7 +5,7 @@ Generic core loader. Resolves relative config paths
 (enum_sources values, retention_policies_source) relative to the mapping
 YAML's own directory, so the deployer can be invoked from any working
 directory. Project-specific config lives under `extensions: {<name>: {...}}`
-and is passed through untyped as `MappingBundle.extension_configs` — this
+and is passed through untyped as `MappingBundle.extension_configs`. This
 module knows nothing about what any particular extension's block means, and
 selection by name is deferred to `MappingBundle.extension_config_for` so it
 honors the RESOLVED extension (a CLI `--extension` override may differ from
@@ -103,7 +103,7 @@ __all__ = [
 
 
 # Every top-level key load_mapping understands. A misspelling must fail
-# rather than be ignored — `form_visibilty:` would otherwise build clean,
+# rather than be ignored. `form_visibilty:` would otherwise build clean,
 # report "(none declared)" and deploy nothing.
 #
 # EVERY entry here must have a reader in load_mapping or _parse_permissions
@@ -123,7 +123,7 @@ KNOWN_SECTIONS = frozenset({
     "style_theme",
     "column_validation", "seal_columns", "prevent_list_deletion", "demo_items",
     # Permissions are declared as three top-level sections, not one nested
-    # `permissions:` block — see _parse_permissions.
+    # `permissions:` block (see _parse_permissions).
     "groups", "permission_levels", "list_permissions",
     *_REMOVED_SECTIONS,
 })
@@ -146,7 +146,7 @@ _GROUP_KEYS = frozenset({
     "only_allow_members_view_membership", "require_empty_at_deploy",
     "enroll_operator_during_deploy", "enroll_enterprise_reader",
 })
-# `site_role` scopes the DEFAULT policy — which entities it applies to — and
+# `site_role` scopes the DEFAULT policy (which entities it applies to) and
 # is read only there. On an override it was parsed and silently discarded,
 # so an author who had seen it work on the default reasonably expected it to
 # narrow an override too and got a list that was not scoped at all. Rejected
@@ -306,8 +306,8 @@ def load_mapping(mapping_path: Path) -> MappingBundle:
 
     field_sets = _parse_field_sets(raw.get("field_sets"))
     # Resolve "@setname" references BEFORE anything downstream sees a view.
-    # Every consumer from here on — retirement folding, the validator,
-    # jsgen — reads a flat list of internal column names.
+    # Every consumer from here on (retirement folding, the validator,
+    # jsgen) reads a flat list of internal column names.
     expanded_views = _expand_field_sets(
         {
             entity: [
@@ -488,7 +488,7 @@ def _load_enum_choices(
 def _load_json_value(base_dir: Path, value: Any, context: str) -> dict[str, Any]:
     """A formatter declaration: a relative path to a JSON file (resolved
     against the mapping's directory, like enum_sources) or an inline
-    mapping. Anything else — or malformed JSON — is a load error naming the
+    mapping. Anything else (or malformed JSON) is a load error naming the
     offending declaration."""
     if isinstance(value, dict):
         return dict(value)
@@ -556,7 +556,7 @@ def _parse_form_formatting(base_dir: Path, parts: Any, context: str) -> FormForm
         raise ValueError(f"{context}: declare at least one of header/body/footer")
     # Every accepted part must be carried. Dropping one here is invisible:
     # `footer` was allow-listed, loaded and then discarded, so a declaration
-    # validated clean, reported no findings and deployed nothing — and a
+    # validated clean, reported no findings and deployed nothing, and a
     # footer-only declaration passed the "at least one part" check above and
     # then emitted an empty formatter.
     return FormFormatting(
@@ -604,13 +604,13 @@ def _strict_bool(
     """Read a boolean without truthiness-coercing malformed YAML.
 
     `bool("false")` is True, so a quoted boolean would silently mean its
-    opposite — and a visibility flag reading backwards hides nothing while
+    opposite, and a visibility flag reading backwards hides nothing while
     reporting success.
 
     `default` is the absent-key value, and it is a parameter only so a caller
     whose default already has a home elsewhere can point at it rather than
-    restate it — see the `versioning.default` block, which reads its three
-    fallbacks off `Versioning`. The three form-visibility and permission
+    restate it (see the `versioning.default` block, which reads its three
+    fallbacks off `Versioning`). The three form-visibility and permission
     callers keep the true default they have always had.
     """
     value = raw.get(key, default)
@@ -637,7 +637,7 @@ def _parse_form_visibility(block: Any, context: str) -> EntitySection[FormVisibi
         columns[name] = FormVisibility(
             new=_strict_bool(raw, "new", where),
             existing=_strict_bool(raw, "existing", where),
-            # An empty `when` is a mistake, not an absence — the same
+            # An empty `when` is a mistake, not an absence. The same
             # declaration errors in column_validation and as an empty group.
             when=parse_condition(raw["when"], f"{where}.when") if "when" in raw else None,
         )
@@ -781,7 +781,7 @@ def _parse_view(raw_view: Any, context: str, base_dir: Path) -> ViewDef:
 def _parse_field_sets(raw_sets: Any) -> dict[str, dict[str, list[str]]]:
     """Structural parse of the `field_sets:` section.
 
-    Shape only — an unknown entity, an undeclared column, an '@' in a set
+    Shape only: an unknown entity, an undeclared column, an '@' in a set
     name and an empty set are semantic and live in the validator, which
     reports them as findings beside the view checks. A declaration mistake
     should hand the operator a manifest full of findings, not a traceback.
@@ -815,14 +815,14 @@ def _expand_field_sets(
 
     Expansion is in declaration order and duplicates are dropped keeping
     FIRST position, so ["@header", "BoardDate"] is a no-op rather than an
-    error. Sets do NOT nest — one level only, deliberately: a set member
+    error. Sets do NOT nest (one level only, deliberately): a set member
     that itself looks like a reference is left literal and the validator
     reports it. An "@name" with no matching set on the entity is likewise
     left in place untouched, so nothing is silently dropped; the validator
     names it and cli.py aborts before jsgen is ever reached.
 
     Applies to `fields` ONLY. `widths`, `sort`, `group_by` and `where`
-    continue to name columns directly — a set has no meaningful expansion
+    continue to name columns directly. A set has no meaningful expansion
     there.
 
     Runs BEFORE _apply_retirement so retirement filters the already-expanded
@@ -927,7 +927,7 @@ def _parse_policy(
     )
     # Read STRICTLY, and before the reconcile guard below. bool("false") is
     # True, so a lenient read coerces the quoted spelling to True and the
-    # guard then tests the coerced value — breaking inheritance the author
+    # guard then tests the coerced value, breaking inheritance the author
     # asked to keep.
     break_inheritance = _strict_bool(raw_policy, "break_inheritance", context)
     reconcile_mode = cast("ReconcileMode", str(raw_policy.get("reconcile", "configured")))
@@ -977,7 +977,7 @@ def _optional_str(raw: dict[str, Any], key: str, context: str) -> str | None:
 
     `display_column: [Title]` is a plausible typo and YAML accepts it as a list.
     Passed through, it reaches a set-membership test deep in validation and
-    raises `TypeError: unhashable type: 'list'` — a traceback instead of the
+    raises `TypeError: unhashable type: 'list'`, a traceback instead of the
     ordinary "this column does not exist" error the author needed. Refuse the
     shape here, where the context string can name the key.
     """
@@ -1010,8 +1010,8 @@ def _optional_int(raw: dict[str, Any], key: str, context: str) -> int | None:
 
     `int(raw)` accepted three wrong things silently or badly: `yes` became 1,
     `"100"` became 100 (so a quoted number worked by accident and taught the
-    wrong lesson), and `many` raised `invalid literal for int() with base 10`
-    — a message naming neither the key, the view, nor the entity.
+    wrong lesson), and `many` raised `invalid literal for int() with base 10`,
+    a message naming neither the key, the view, nor the entity.
     """
     value = raw.get(key)
     if value is None:
@@ -1036,7 +1036,7 @@ def _optional_str_list(raw: dict[str, Any], key: str, context: str) -> tuple[str
     """Read an optional list of strings, refusing the shapes YAML also accepts.
 
     `hide_from_all_items: Author` is the plausible typo, and YAML hands it back
-    as a `str` — which iterates CHARACTER BY CHARACTER, so the column names
+    as a `str`, which iterates CHARACTER BY CHARACTER, so the column names
     silently become 'A', 'u', 't', 'h'... and every one reports as a column that
     does not exist. Refuse the shape here, where the context string can name the
     key. `_optional_str` is the mirror of this and deliberately rejects a list.

@@ -46,7 +46,7 @@ The insight the design turns on: **filtering works everywhere in SharePoint
 except a lookup picker.** Remove the child lists and the accumulation problem
 becomes one SharePoint solves well: a default view filtered to live
 projects. That is what *Project Stage* and the **Live projects** view do, and
-they are load-bearing rather than housekeeping.
+they do real work rather than housekeeping.
 
 **What is genuinely lost**, stated plainly rather than discovered later:
 

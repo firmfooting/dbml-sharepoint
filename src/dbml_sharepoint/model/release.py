@@ -27,7 +27,7 @@ def load_release(path: Path) -> Release:
 
     Every key is checked. The file was read key-by-key with everything else
     ignored, so `schema_verison:` stamped the bundle with the wrong schema
-    version and reported nothing — and the version stamp is precisely what
+    version and reported nothing, and the version stamp is precisely what
     a later run compares against. A missing key raised a bare
     KeyError('release'), which reaches the operator as a traceback naming a
     dict lookup rather than the file they mistyped.

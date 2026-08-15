@@ -59,8 +59,8 @@ def check(vc: ValidationContext) -> list[Finding]:
             col_at = replace(at, column=col_name)
             if col_name not in rendered:
                 # Its own code, not the generic COLUMN_NOT_RENDERED: the
-                # consequence differs — deleting the DBML declaration leaves
-                # the column live on the site forever — and so does the fix.
+                # consequence differs (deleting the DBML declaration leaves
+                # the column live on the site forever), and so does the fix.
                 findings.append(Finding(
                     FindingCode.RETIRED_COLUMN_NOT_RENDERED,
                     f"{ctx}: {col_name!r} is not a rendered column of "
@@ -170,7 +170,7 @@ def check(vc: ValidationContext) -> list[Finding]:
 
         # A save rule ON a retired column, rather than one referencing it.
         # Retirement hides the column from the NEW form, so a rule the blank
-        # value fails — is_not_null being the obvious one — rejects every new
+        # value fails (is_not_null being the obvious one) rejects every new
         # item with no field on the form to satisfy it. The list stops
         # accepting rows, and nothing in the build says why.
         #

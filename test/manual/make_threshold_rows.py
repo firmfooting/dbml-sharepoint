@@ -21,8 +21,8 @@ MATCHING_ROWS rows, on offsets chosen to be pairwise disjoint. So:
     OwnerId eq <id>    indexed Person   60 rows
     ParentId eq <id>   indexed Lookup   60 rows
 
-Each of those differs from the first in exactly one respect — the index, the
-operator, or the field type — so a divergence has one candidate explanation
+Each of those differs from the first in exactly one respect (the index, the
+operator, or the field type), so a divergence has one candidate explanation
 instead of three. An earlier draft had these at 60, 60, 1200, 1500 and 6000
 rows, which would have made "comparison served, null test refused"
 uninterpretable: the two queries differed in result size by twenty times as
@@ -37,19 +37,19 @@ would be ambiguous with selectivity itself.
 
 BLANK CELLS AND TYPED COLUMNS. Three columns are blank on the rows outside
 their population: ClosedAt on 60, OwnerId and ParentId on 5940 each. That is
-the design — a filter matching every row would breach the threshold on
+the design. A filter matching every row would breach the threshold on
 result-set size alone and prove nothing about indexing.
 
 None of the three is a string column, and SharePoint refuses "" for a DateTime,
 a Person id or a Lookup id alike. A CSV cannot express null, so a blank cell
-arrives as the empty string and the item is rejected — silently, batch creation
-being non-transactional. This cost a real load: ten rows vanished from a
+arrives as the empty string and the item is rejected (silently, batch creation
+being non-transactional). This cost a real load: ten rows vanished from a
 thousand, exactly the ClosedAt population, because that column was left out of
 a hand-written list of the ones needing conversion.
 
 So the list is no longer hand-written. NULLABLE_COLUMNS below is the single
 source of truth, main() prints the flow expression for each, and a test asserts
-it holds exactly the columns that are ever blank — in both directions, so a
+it holds exactly the columns that are ever blank, in both directions, so a
 column added to one and not the other fails rather than silently loading short.
 
 The JSON files written alongside the CSVs avoid the problem entirely: they carry
@@ -73,7 +73,7 @@ CHECKPOINTS: tuple[int, ...] = (1000, 3000, 4900, 5100, 6000)
 # SharePoint INTERNAL column names, in CSV column order. The Power Automate
 # batch-create pattern maps headers straight through to the request body, so
 # Person and Lookup columns must appear with the `Id` suffix the REST API
-# expects — `Owner` and `Parent` would be silently ignored.
+# expects. `Owner` and `Parent` would be silently ignored.
 #
 # Order matches the insertion order in build_rows() so the two can be read
 # against each other without a diff.
@@ -105,7 +105,7 @@ RARE_BUCKET = "Z"
 MATCHING_ROWS = TOTAL // 100
 
 # Distinct residues mod 100, which is what makes the five populations pairwise
-# disjoint — no row is both a `Z` and a blank `ClosedAt`, so no result can be
+# disjoint. No row is both a `Z` and a blank `ClosedAt`, so no result can be
 # read as a consequence of another. Change one of these and the disjointness
 # test in test_threshold_rows.py fails, which is the point of it.
 _Z_OFFSET = 3
@@ -136,7 +136,7 @@ def bucket_for(row: int) -> str:
 
 
 def closed_at_for(row: int) -> str:
-    """Blank on one row in a hundred — the null-test population.
+    """Blank on one row in a hundred, the null-test population.
 
     Non-blank values repeat (`row % 1000`), so this column supports `eq null`
     and nothing else. Range filters over it have no expected count and are out
@@ -159,7 +159,7 @@ def sort_bait_for(row: int) -> str:
     byte-identical across separate interpreter runs, or regenerating mid-run
     leaves the list holding a mixture and the sort observation is void.
     435761 is coprime to 1e6, so the leading half alone is injective for every
-    row below a million — the `-{row}` suffix is for readability, not
+    row below a million. The `-{row}` suffix is for readability, not
     uniqueness.
     """
     return f"{(row * 2654435761) % 1_000_000:06d}-{row:06d}"
@@ -192,8 +192,8 @@ def split_plan(
 
     Split to match the RUN PLAN rather than the batch size. SharePoint's batch
     API takes up to a thousand operations per request and the flow chunks
-    internally, so file boundaries are free to mean something else — here,
-    "load this and the list is at the next checkpoint".
+    internally, so file boundaries are free to mean something else (here,
+    "load this and the list is at the next checkpoint").
     """
     plan: list[tuple[int, int, int]] = []
     previous = 0
@@ -214,7 +214,7 @@ def as_json_rows(rows: list[dict[str, str]]) -> list[dict[str, object]]:
 
     A blank cell becomes null, and an id becomes a number rather than a quoted
     digit string. This is the shape a batch-create body wants, so a flow reading
-    these needs no per-column conversion — which is the whole point, the
+    these needs no per-column conversion, which is the whole point, the
     conversions having already eaten one load.
     """
     typed: list[dict[str, object]] = []
@@ -263,14 +263,14 @@ def write_csvs(rows: list[dict[str, str]], out_dir: Path) -> list[Path]:
         # only signal would be a missing line of output.
         staging = target.with_name(target.name + ".tmp")
         # newline="" stops the OS translating what csv writes, so a terminator
-        # cannot be doubled into \r\r\n. It does NOT decide the terminator —
+        # cannot be doubled into \r\r\n. It does NOT decide the terminator.
         # csv.writer defaults to \r\n on every platform, which is the part an
         # earlier version of this comment got wrong and paid for.
         #
         # lineterminator="\n" because Power Automate split rows on LF and got a
         # bare CR as the value of the LAST column. That was ParentId, a Lookup
-        # id, so SharePoint received "\r" and refused the item — silently, batch
-        # creation being non-transactional. A trailing CR is invisible in a
+        # id, so SharePoint received "\r" and refused the item (silently, batch
+        # creation being non-transactional). A trailing CR is invisible in a
         # spreadsheet and fatal to a typed field.
         with staging.open("w", encoding="utf-8", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(HEADERS),
@@ -286,7 +286,7 @@ def _site_id(value: str, label: str) -> str:
     """A SharePoint item or user id, or "" for not-supplied.
 
     Validated because a login claim or a stray character pasted out of the
-    console produces a well-formed CSV that SharePoint rejects per item — and
+    console produces a well-formed CSV that SharePoint rejects per item, and
     batch creation is non-transactional, so those rejections are silent.
     """
     if not value:
@@ -327,7 +327,7 @@ def main() -> None:
     if not owner_id or not parent_id:
         # Not an error: generating without a tenant is useful. But the two
         # columns will be empty, and the Person and Lookup questions then have
-        # no data to answer from — say so rather than let a run report them
+        # no data to answer from. Say so rather than let a run report them
         # NOT ESTABLISHED for a reason nobody remembers.
         print(
             "WARNING: --owner-id and/or --parent-id were not supplied (or were "

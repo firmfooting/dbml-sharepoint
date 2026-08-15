@@ -77,7 +77,7 @@ from dbml_sharepoint.model.parser import (
 
 def test_style_map_keys_must_be_enum_members(tmp_path: Path) -> None:
     """A severity/pill map naming a choice the column's enum does not
-    contain is a declaration bug — same ethos as [$Field] checking."""
+    contain is a declaration bug, same ethos as [$Field] checking."""
     schema, bundle = pack(
         tmp_path,
         dbml=blocks(
@@ -406,8 +406,8 @@ def test_every_schema_finding_opens_with_its_own_location_path() -> None:
 
     `test_findings.test_every_finding_site_carries_a_location` proves a
     location is passed; it cannot see whether the sentence then spells the
-    same path a second time. That is the drift #99 is actually about — two
-    copies of one fact, and only one of them structured — so it is asserted
+    same path a second time. That is the drift #99 is actually about (two
+    copies of one fact, and only one of them structured), so it is asserted
     here, at runtime, over every rule this entry point can reach.
 
     Deliberately not a substring check on prose: nothing is asserted about
@@ -600,7 +600,7 @@ def test_enum_default_in_members_is_ok() -> None:
 
 def test_enum_source_with_no_matching_dbml_enum_is_warning() -> None:
     """An enum_sources entry with no
-    matching DBML enum is a warning, not an error — the schema simply hasn't
+    matching DBML enum is a warning, not an error. The schema simply hasn't
     defined that enum yet, which by itself isn't wrong. simple.dbml has no
     'topic' enum, but the fixture mapping configures enum_sources['topic']."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
@@ -702,7 +702,7 @@ def test_dbml_indexes_reject_unsupported_field_types() -> None:
     )
     # The SharePoint type name is the value: it is what tells the author why
     # this column cannot carry an index. ("Note" was previously asserted
-    # alongside "Notes", which contains it — the check could not fail.)
+    # alongside "Notes", which contains it. The check could not fail.)
     refused = messages(errors, FindingCode.INDEX_COLUMN_TYPE_UNINDEXABLE)
     assert len(refused) == 2, refused
     assert any("Notes" in m and "Multiple lines of text" in m for m in refused)
@@ -876,7 +876,7 @@ def test_index_headroom_no_warning_at_seventeen() -> None:
 def test_exactly_twenty_indexes_warns_and_does_not_error() -> None:
     """The upper edge of the warning band, which nothing pinned.
 
-    The suite covered 17, 18 and 21 — so the band's top was inferred from two
+    The suite covered 17, 18 and 21, so the band's top was inferred from two
     inequalities and never observed. It matters because the catalogue entry
     for this rule SAID "18 or 19 of its 20 indexes" while the rule fires from
     `INDEX_WARN_AT` through `MAX_LIST_INDEXES` inclusive: a list sitting on
@@ -905,7 +905,7 @@ def test_index_error_at_twentyone_excludes_headroom_warning() -> None:
 
 def test_twenty_declared_on_a_lookup_target_names_the_twentyfirst() -> None:
     """The case this whole rule exists for. The author declared twenty, has no
-    unique columns, and the only hint used to be "(including unique columns)" —
+    unique columns, and the only hint used to be "(including unique columns)",
     which is false here. The error must name the display column as the index
     they cannot see."""
     indexed = [f"C{i}" for i in range(1, 21)]
@@ -1092,7 +1092,7 @@ def test_principal_group_using_associated_alias_is_error() -> None:
         )
         assert finding.severity == "error"
         # The principal kind to switch to is the remedy, and it differs per
-        # alias — the one value this message must carry.
+        # alias, the one value this message must carry.
         assert suggested_kind in finding.message, f"for alias {alias!r}"
 
 def test_principal_custom_group_name_still_passes() -> None:
@@ -1169,7 +1169,7 @@ def test_lookup_display_column_must_name_a_real_target_column() -> None:
     """PR #43 review: a mapping may set display_column, but if the named column
     does not exist on the target table (typo, or the column was removed) jsgen
     emits LookupField=<bad name> and the deploy fails at runtime. The validator
-    must catch it — including when the target also has a Title column, since
+    must catch it, including when the target also has a Title column, since
     jsgen prefers display_column over Title."""
     def _bundle(display: str) -> MappingBundle:
         return make_bundle(entities={
@@ -1204,7 +1204,7 @@ def test_lookup_display_column_must_name_a_real_target_column() -> None:
 
 def test_cross_site_role_lookup_is_error() -> None:
     """A7: a plain lookup whose source and target map to different site_roles
-    (one role ↔ another) can never be a SharePoint lookup — lookups cannot span
+    (one role ↔ another) can never be a SharePoint lookup. Lookups cannot span
     webs. It must error unless declared in cross_site_reference_columns (which
     expands it to a Choice+URL pair instead of a lookup)."""
     def _bundle(cross_site: list[CrossSiteRef]) -> MappingBundle:
@@ -1250,7 +1250,7 @@ def _retention_findings(findings: list[Finding]) -> list[Finding]:
 
     Both of them (an unknown entity and an unknown policy) predate the message
     convention and are written as prose, so `location.section` is the only
-    thing that identifies them as retention's — searching for the word
+    thing that identifies them as retention's. Searching for the word
     "retention" in the prose is what these two tests used to do.
     """
     return [
@@ -1260,7 +1260,7 @@ def _retention_findings(findings: list[Finding]) -> list[Finding]:
 
 def test_no_retention_config_no_retention_findings() -> None:
     """When no retention_policies_source is configured, mapping_loader loads
-    retention_policies and retention_list_defaults as empty together — the
+    retention_policies and retention_list_defaults as empty together. The
     retention cross-checks must be silent in that state."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")

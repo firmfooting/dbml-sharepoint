@@ -3,13 +3,13 @@
 
 Tokens resolve to SharePoint's OWN documented formatting classes (the
 sp-field-severity--* set plus sanctioned Fluent UI background classes)
-with the Learn reference's canonical Fluent icon pairings — never raw
+with the Learn reference's canonical Fluent icon pairings, never raw
 hexes. Styles expand at mapping-load time into plain SP formatter JSON,
 so the validator, jsgen and the deploy machinery see ordinary formatters.
 Reference:
 https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/column-formatting
 (style guidelines; conditional formatting / data bar / trending / date
-examples — the emitted structures mirror those samples).
+examples; the emitted structures mirror those samples).
 """
 
 from dataclasses import dataclass
@@ -70,7 +70,7 @@ _PILL_CLASSES: dict[str, str] = {
 _HIDE_BLANK = "=if(@currentField == '', 'none', 'flex')"
 # Cell inset shared by every filled style: adjacent same-coloured fills
 # (e.g. a blocked-red score bar beside a blocked-red rating cell) blend
-# into one block without it — the radius + right/vertical gap makes each
+# into one block without it. The radius + right/vertical gap makes each
 # cell read as its own element.
 _CELL_INSET: dict[str, str] = {"border-radius": "4px", "margin": "1px 4px 1px 0"}
 # SP renders calculated-text values as 'string;#Value'; strip for display.
@@ -229,7 +229,7 @@ def _data_bar(
         # its fill from the severity token mapped from ANOTHER column's
         # value, so a score bar wears the same standardised colours as the
         # rating column beside it. The native sp-field-dataBars class is
-        # dropped — its fixed theme fill would fight the conditional one.
+        # dropped. Its fixed theme fill would fight the conditional one.
         if not isinstance(color_by, dict):
             raise _fail(context, "color_by must be a mapping with 'field' and 'map'")
         field_name = color_by.get("field")

@@ -68,7 +68,7 @@ def test_a_ref_to_a_missing_table_is_a_message_not_a_traceback(tmp_path: Path) -
 
     The CLI's config-error handling keys on `ValueError`, so without the
     translation in `parse_dbml` a schema typo prints a traceback at the person
-    least able to read one — a SharePoint admin editing DBML. This is the same
+    least able to read one, a SharePoint admin editing DBML. This is the same
     contract `test_cli.test_malformed_dbml_is_a_message_not_a_traceback`
     asserts end to end; here it is pinned at the boundary that does the work.
 

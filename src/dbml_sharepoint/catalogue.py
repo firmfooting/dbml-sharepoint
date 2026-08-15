@@ -3,13 +3,13 @@
 One `Solution` per directory under `solutions/`. Everything here is
 read-only discovery: nothing in this module writes, validates or deploys.
 
-Discovered by glob, never by roster. A hardcoded list of names fails open —
-a new template is simply never offered, and every test stays green saying
+Discovered by glob, never by roster. A hardcoded list of names fails open.
+A new template is simply never offered, and every test stays green saying
 so. `.github/workflows/ci.yml` builds the same set the same way, and
 `test_template_standard.py` derives its conformance cases from it.
 
 The directory is located the way `templating.py` locates the Jinja
-templates — relative to this file, inside the installed package. That is
+templates, relative to this file, inside the installed package. That is
 the whole reason the templates were moved here: the audience for the wizard
 is somebody who ran `uvx dbml-sharepoint` and has no checkout.
 """

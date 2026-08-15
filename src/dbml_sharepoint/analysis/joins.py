@@ -3,7 +3,7 @@
 Shared for the same reason `lookups.py` is: the validator refuses a view the
 platform would render blank, and `generators.jsgen` builds the one view no
 author declares. Computed separately, a drift between them means a build that
-passes a view the deploy then creates over the ceiling — or one refused that was
+passes a view the deploy then creates over the ceiling, or one refused that was
 never going to exist. A generator must not import from `analysis/checks/`, which
 is the other half of why this is a module and not a helper in `_views.py`.
 
@@ -29,7 +29,7 @@ Each suspect was tested at the ceiling PLUS EXACTLY ONE column, because that is
 the only shape that discriminates: against a ceiling of 12, adding one column to
 a base of 11 lands on 12 and renders whether or not it counts. An earlier
 revision made that mistake and reported Person as not counting. A lookup holding
-NO DATA still counts — all 14 probe columns were empty and the ceiling was still
+NO DATA still counts. All 14 probe columns were empty and the ceiling was still
 12.
 
 `Created` and `Modified` are NOT counted, and that row is INFERRED rather than
@@ -42,7 +42,7 @@ A CROSS-SITE reference costs nothing: it is expanded into a Choice + URL pair, s
 no Lookup exists to join through. Same exclusion as the lookup ShowField work,
 off the same `cross_site_pairs`.
 
-A LOOKUP'S ADDITIONAL-FIELD PROJECTIONS cost nothing extra — measured free twice,
+A LOOKUP'S ADDITIONAL-FIELD PROJECTIONS cost nothing extra, measured free twice,
 JOINPRJ on runs 35700faa and f663165e, and on the later run the dependent field
 was verified PRESENT in the returned row (31 keys) rather than assumed. A view
 that silently dropped the field would have rendered too, which is how the earlier
@@ -50,7 +50,7 @@ LOOPRJ question misled. So a lookup showing five of its target's fields costs
 ONE, not six. NOTHING IN THIS MODULE EXCLUDES THEM, because this tool cannot
 declare such a projection at all: there is no `projected_fields` or equivalent
 key in `_mapping_types.py` or `mapping_loader.py`. That is also why the fact is
-recorded HERE rather than in a test — there is no way to write one. If
+recorded HERE rather than in a test, since there is no way to write one. If
 projections ever become declarable, this paragraph is what a test hangs off.
 
 8 IS NOT THE NUMBER. It comes from `MaxQueryLookupFields`, a farm property that
@@ -84,8 +84,8 @@ JOIN_WARN_AT = 9
 # two nobody counts. DERIVED, not written out: `conditions.SYSTEM_COLUMN_TYPES`
 # already records that Author and Editor are `person` while Created and Modified
 # are `datetime`, and a second hand-written copy of that fact is exactly what
-# goes stale. `Created` and `Modified` fall out of this expression on their own
-# — which is the INFERRED half of the rule, never measured; see the module
+# goes stale. `Created` and `Modified` fall out of this expression on their own,
+# which is the INFERRED half of the rule, never measured; see the module
 # docstring. `test/test_joins.py::test_the_bands_are_nine_and_twelve` pins what
 # this must evaluate to.
 SYSTEM_JOIN_COLUMNS = frozenset(
@@ -135,7 +135,7 @@ def all_items_hidden(entity: EntityMapping) -> frozenset[str]:
     """Columns the generated `All Items` view must not render.
 
     One line, in the shared module, so the validator counts exactly what the
-    generator omits. Declared views are unaffected — they keep every field they
+    generator omits. Declared views are unaffected. They keep every field they
     declare, and nothing here is consulted for them.
     """
     return frozenset(entity.hide_from_all_items)
@@ -146,21 +146,21 @@ def all_items_rendered(table: Table, cross_site_cols: AbstractSet[str]) -> set[s
 
     `_rendered_columns` plus `Title` plus the five `SYSTEM_COLUMNS`. The
     `{"Title"}` union is not redundant padding: a DBML table need not declare
-    its own `Title` column at all — SharePoint's base-template `Title` exists
+    its own `Title` column at all, because SharePoint's base-template `Title` exists
     on every list regardless, and `jsgen.py` writes it into `All Items`
     literally (see that file's `title_patch` branch), never through
     `_rendered_columns`, which only sees columns `table.columns` actually
     lists. An entity that DOES declare `Title` masks this: `_rendered_columns`
     already contains it with no union applied, which is exactly what let this
-    union go silently unread by one of its two former call sites — see
+    union go silently unread by one of its two former call sites. See
     `test/test_validator.py::test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo`
     for the fixture shaped to catch that.
 
     ONE place this set is written down, on purpose: `all_items_joining_fields`
     below and `_views.py`'s entity loop both call this rather than each
     carrying their own copy of the same three-term union. Two copies of an
-    identical-looking expression is how a dropped term goes unnoticed —
-    the two used to be `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS`
+    identical-looking expression is how a dropped term goes unnoticed.
+    The two used to be `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS`
     written out twice, and dropping the term from either one alone left the
     other's callers unaffected, which is what the test above exists to catch
     now that there is only one copy for it to catch a drift in.
@@ -177,12 +177,12 @@ def all_items_joining_fields(
     minus whatever `hide_from_all_items` hides, narrowed to what
     `join_bearing_columns` counts. `_views.py`'s entity loop and
     `test_template_standard.py`'s shipped-template survey both call this
-    rather than each carrying their own copy — a survey test that re-typed
+    rather than each carrying their own copy, because a survey test that re-typed
     the formula by hand would be pinning its OWN arithmetic, not what the
     validator computes, and would keep passing even if the validator's copy
     silently dropped a term.
 
-    NOT the same code the generator runs — read this honestly. jsgen builds
+    NOT the same code the generator runs. Read this honestly. jsgen builds
     All Items from `emitted_fields` (phase-1 titles plus the phase-2 lookup
     titles), which is a different code path that happens to produce the same
     set. `test/test_jsgen.py::test_the_validator_and_the_generator_agree_on_what_all_items_renders`

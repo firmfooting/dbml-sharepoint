@@ -70,14 +70,14 @@ _FALLBACK_ROW_COUNT = LIST_VIEW_THRESHOLD_FALLBACK_ROWS
 # value)" and "Managed Metadata" as lookup fields, and its note says to consult
 # that table to decide what counts as one. So a PERSON column is a lookup field
 # for this purpose even though its DBML declaration looks nothing like a `ref`,
-# and indexing it does not avert a threshold breach either. Read narrowly —
-# `col.ref is not None` only — this check would score an indexed Person filter
+# and indexing it does not avert a threshold breach either. Read narrowly
+# (`col.ref is not None` only), this check would score an indexed Person filter
 # as safe when Microsoft says it is not.
 #
 # TWO citations, and keep both. The support article carries the supported-column
 # table that makes Person a lookup field. The schema reference carries the same
 # threshold rule attached to the `Indexed` attribute itself, which is the
-# property the deployer writes — so it is the one a reader checking THIS code
+# property the deployer writes, so it is the one a reader checking THIS code
 # against the platform contract will want. A review of this file removed it as
 # "a schema page that says nothing about thresholds"; that was wrong, the Note
 # under `Indexed` says exactly this, and it went back in.
@@ -86,13 +86,13 @@ _FALLBACK_ROW_COUNT = LIST_VIEW_THRESHOLD_FALLBACK_ROWS
 #
 # THAT RULE IS NOT FOLLOWED HERE: it is measured, and it does not hold. This is
 # the only place in this project where a Microsoft-documented statement is set
-# aside, so the evidence is set out in full and reinstating it is one line —
-# put "person" back in the frozenset and restore the branch in check().
+# aside, so the evidence is set out in full and reinstating it is one line.
+# Put "person" back in the frozenset and restore the branch in check().
 #
 # MEASURED 2026-07-31 AT ODDS WITH THAT RULE, on the shape this check governs.
-# At 6,000 items, with both controls valid in the same run — indexed Text
+# At 6,000 items, with both controls valid in the same run (indexed Text
 # comparison served, unindexed twin of identical selectivity refused
-# SPQueryThrottledException — an indexed Person and an indexed Lookup filtered
+# SPQueryThrottledException), an indexed Person and an indexed Lookup filtered
 # to 60 of 6,000 were SERVED across seven query shapes: OData; CAML in the
 # LookupId form; CAML in the projected-value form; and CAML naming the lookup
 # column in <ViewFields>, which is what a real view renders.
@@ -100,13 +100,13 @@ _FALLBACK_ROW_COUNT = LIST_VIEW_THRESHOLD_FALLBACK_ROWS
 # The last pair is the one that counts, and it is self-verified: the probe reads
 # the returned rows' keys back and records `PROJECTED: Title=Title,
 # Parent=Parent`. So the JOIN was paid for and the query was still served.
-# Without that readback the row is unreadable — RenderListDataAsStream sends a
+# Without that readback the row is unreadable. RenderListDataAsStream sends a
 # standard field preamble whatever is asked for, so ViewFields being silently
 # ignored looks exactly like a join that succeeded.
 #
 # THE APPARENT COUNTER-EXAMPLE IS NOT ONE. Adding `Parent` to an All Items view
-# of the same fixture does fail — "The number of items in the list exceeds the
-# list view threshold, which is 5000 items." That view has NO selective filter,
+# of the same fixture does fail ("The number of items in the list exceeds the
+# list view threshold, which is 5000 items."). That view has NO selective filter,
 # so the join runs across all 6,000 rows. No index on any column averts that,
 # lookup or otherwise. The two observations agree: the index makes the FILTER
 # selective, and the join is then cheap because it runs over 60 rows.
@@ -116,12 +116,12 @@ _FALLBACK_ROW_COUNT = LIST_VIEW_THRESHOLD_FALLBACK_ROWS
 # cheapest that exists and proves nothing on its own. With 6,500 items in the
 # TARGET and 6,000 in the source, it is served, 60 of 60.
 #
-# SCOPE, and it is the usual scope: one tenant, one day, one selectivity — 60 of
-# 6,000, which is 1%. A less selective filter is untested and Microsoft's claim
+# SCOPE, and it is the usual scope: one tenant, one day, one selectivity (60 of
+# 6,000, which is 1%). A less selective filter is untested and Microsoft's claim
 # is general, so an indexed lookup filter is safe at high selectivity and
 # unmeasured below it.
 #
-# A LARGE LOOKUP TARGET IS STILL A REAL PROBLEM — just not this check's. With
+# A LARGE LOOKUP TARGET IS STILL A REAL PROBLEM, just not this check's. With
 # the target list past 5,000 the NEW-ITEM FORM breaks: the lookup picker refuses
 # with "This is a lookup column that displays data from another list that
 # currently exceeds the List View Threshold defined by the administrator
@@ -133,7 +133,7 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 
 # SYSTEM_COLUMNS (ID, Created, Modified, Author, Editor) are dropped from this
 # check entirely, and there is no companion "natively indexed" set to pair with
-# them — that set would be unreachable, because the names are gone before any
+# them. That set would be unreachable, because the names are gone before any
 # intersection runs.
 #
 # The reason is the DBML side, not the SharePoint side, and that matters: they
@@ -143,15 +143,15 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # remedy nobody can carry out, whatever SharePoint does internally.
 #
 # Which is fortunate, because what SharePoint does internally is NOT
-# established for any of the five — INCLUDING ID. "SharePoint indexes ID
+# established for any of the five, INCLUDING ID. "SharePoint indexes ID
 # natively" is repeated widely and by this repository (see the comment in
 # validator._rendered_columns), and Microsoft documents it nowhere: not in the
 # index article, not in the large-list article, and the protocol spec defines
 # tp_Id as a column without enumerating the table's indexes.
 #
 # test/manual/native-index-probe.js was RUN on 2026-07-30 and established
-# NOTHING. Its control failed: SP.Field.Indexed — documented as "TRUE if the
-# column is indexed for use in view filters" — read FALSE for ID itself on 7 of
+# NOTHING. Its control failed: SP.Field.Indexed (documented as "TRUE if the
+# column is indexed for use in view filters") read FALSE for ID itself on 7 of
 # 7 lists. Either that property reports only registered list-column indexes and
 # whatever serves ID sits outside that model, or ID carries no such index. The
 # probe cannot separate those and neither can the documentation, so this comment
@@ -163,25 +163,25 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 #
 # test/manual/threshold-index-probe.js is the fixture that can answer this. It
 # provisions a list past the threshold and filters Created, Modified, Author and
-# Editor directly — a behavioural answer, where a flag read is what failed. Note
+# Editor directly, a behavioural answer, where a flag read is what failed. Note
 # what it will NOT settle: those four are set by the loader on every row, so no
 # selective filter over them exists, and a refusal there is attributable to
 # result-set size rather than to indexing. Only a SERVED would be informative.
 #
-# Measured 2026-07-31 at 6,000 items, and STILL NOT ESTABLISHED — exactly as
+# Measured 2026-07-31 at 6,000 items, and STILL NOT ESTABLISHED, exactly as
 # that probe warns it cannot be. All four were refused with HTTP 500
 # SPQueryThrottledException, which is uninformative here: the loader owns every
 # row, so each filter matches the whole list and breaches on result-set size
 # alone. Only a SERVED would have said anything about indexing. Answering this
 # needs a fixture whose rows are created by more than one principal over more
-# than one interval — a different fixture, not a longer run.
+# than one interval, a different fixture, not a longer run.
 #
 # The exclusion rests on the DBML side, so this check is unaffected either way.
 
 # FILTER ORDER DOES NOT DECIDE IT, measured 2026-07-31 at 6,000 items. The
 # fixture's unindexed column carries byte-identical data to its indexed twin, so
-# `indexed='Z' AND unindexed='Z'` matches exactly the rows either matches alone
-# — the AND restricts nothing, and the pair differs only in which condition is
+# `indexed='Z' AND unindexed='Z'` matches exactly the rows either matches alone.
+# The AND restricts nothing, and the pair differs only in which condition is
 # written first. Both orderings were served, 60 of 60.
 #
 # The unindexed condition ALONE is refused with SPQueryThrottledException in the
@@ -192,7 +192,7 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 #
 # What that does NOT license: the AND here is degenerate, both conditions
 # matching the same 60 rows. An AND whose conditions select different sets, or
-# an OR, is unmeasured — OR especially, since it cannot narrow to either index.
+# an OR, is unmeasured (OR especially, since it cannot narrow to either index).
 #
 # NEITHER A CALCULATED NOR A MULTI-LINE TEXT COLUMN CAN CARRY AN INDEX. Both
 # were created and MERGEd with Indexed=true; the request was accepted and the
@@ -202,7 +202,7 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # Operators that test only for presence. Microsoft's threshold guidance is
 # written for comparison filters; whether an index serves a CAML <IsNull> is
 # unverified here. A null-only filter therefore still gets the exposure
-# warning — the truncation risk is real either way — but NOT the "add an
+# warning (the truncation risk is real either way) but NOT the "add an
 # index" remedy, which this project cannot yet claim would help.
 #
 # test/manual/native-index-probe.js asks this too and, as of its 2026-07-30
@@ -222,7 +222,7 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 #
 # It does not have to. The conclusion below rests on NNIDX and NNUNI, which are
 # two DateTime columns holding identical values on the same rows and differing
-# ONLY in the index — and on NULIDX, the same presence test over the same
+# ONLY in the index, and on NULIDX, the same presence test over the same
 # column on the OData path. Making CMPCAM and NULCAM a true one-variable pair
 # needs an equality population on the DateTime column, which is a generator
 # change rather than a probe one.
@@ -230,12 +230,12 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # ANSWERED 2026-07-31, revision 1799a1e8, at 6,000 items on one site: YES, a
 # CAML <IsNull> on an INDEXED DateTime column IS served past the threshold.
 # NULCAM returned HTTP 200 with exactly its 60 expected rows, while the negative
-# control — an UNINDEXED Text comparison of identical selectivity, 60 of 6,000 —
+# control (an UNINDEXED Text comparison of identical selectivity, 60 of 6,000)
 # was refused HTTP 500 SPQueryThrottledException, "the attempted operation is
 # prohibited because it exceeds the list view threshold", and the positive
 # control on an indexed column was served. Controls valid in both directions, so
 # the null test is not riding on a threshold that failed to engage. OData
-# `ClosedAt eq null` was served at 60 rows too — a second code path agreeing.
+# `ClosedAt eq null` was served at 60 rows too, a second code path agreeing.
 #
 # The remedy below therefore recommends an index for a null-only filter.
 #
@@ -245,8 +245,8 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # written in a single MERGE per row so they cannot diverge, differing ONLY in
 # the index. At 6,000 items, a CAML <IsNotNull> over each:
 #
-#   INDEXED    HTTP 200, 60 rows — correct
-#   UNINDEXED  HTTP 200, 50 rows — WRONG, AND NOT AN ERROR
+#   INDEXED    HTTP 200, 60 rows (correct)
+#   UNINDEXED  HTTP 200, 50 rows (WRONG, AND NOT AN ERROR)
 #
 # The unindexed column was not refused. It returned a partial answer, with a
 # success status and nothing to say it was partial. A separate readback through
@@ -254,7 +254,7 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # SharePoint truncating rather than data that was never there.
 #
 # That is the silent truncation described at the top of this block, caught in
-# the act — and note it truncated to 50, not to the documented 1,250 fallback,
+# the act, and note it truncated to 50, not to the documented 1,250 fallback,
 # so that figure is a ceiling rather than a prediction. A view built this way
 # does not break. It quietly shows the wrong rows, forever, and nothing in a
 # build or a deploy can see it.
@@ -303,12 +303,12 @@ def _index_covered(node: Condition, indexed: frozenset[str] | set[str]) -> bool:
 
     The shape matters, and one rule per operator is the whole point:
 
-    `all_of` — ONE indexed condition is enough, wherever it sits. Measured at
+    `all_of`, ONE indexed condition is enough, wherever it sits. Measured at
     6,000 items: an unindexed comparison that is refused on its own is served
     when ANDed with an indexed one, in either order, so SharePoint picks the
     index rather than taking the first column and stopping.
 
-    `any_of` — EVERY branch must be narrowable, and this is deliberately
+    `any_of`, EVERY branch must be narrowable, and this is deliberately
     conservative rather than measured. An OR cannot narrow to one index: a row
     matching only the unindexed branch is still a row SharePoint has to find,
     so an indexed branch beside an unindexed one buys nothing the unindexed
@@ -382,7 +382,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     # Field sets: named column lists a view's `fields` pulls in with
     # "@setname". The loader expands them into ViewDef.fields before
     # anything downstream reads a view, so what is checked here is the
-    # DECLARATION — otherwise a bad set surfaces as a confusing error about
+    # DECLARATION. Otherwise a bad set surfaces as a confusing error about
     # the expanded columns, or (for an unresolved @name) as a CAML field
     # reference SharePoint rejects live in the browser.
     for entity_name, entity_sets in bundle.mapping.field_sets.items():
@@ -398,7 +398,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             | {"Title"} | SYSTEM_COLUMNS
         )
         # A set is "referenced" if some view on this entity actually
-        # expanded it — ViewDef.expanded_sets is the loader's record of
+        # expanded it. ViewDef.expanded_sets is the loader's record of
         # that, since the "@name" tokens themselves are gone by the time we
         # see fields.
         referenced_sets = {
@@ -455,7 +455,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
 
     # Declared views: everything checkable at build time IS checked at build
-    # time — a deploy-time CAML rejection in the browser console is exactly
+    # time. A deploy-time CAML rejection in the browser console is exactly
     # the failure class this tool exists to prevent.
     for entity_name, views in bundle.mapping.views.items():
         view_table = tables_by_name.get(entity_name)
@@ -471,7 +471,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         xcols = cross_site_by_entity.get(entity_name, set())
         # The built-in Title always exists on a provisioned list, declared or not.
         # This is the DECLARED view's rendered set, not `joins.all_items_rendered`
-        # (the generated All Items one) — same shape, different subject, kept
+        # (the generated All Items one), same shape, different subject, kept
         # separate on purpose; do not fold this into that helper.
         view_rendered = _rendered_columns(view_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         # The type map must cover everything view_rendered admits, or a
@@ -674,7 +674,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 if filtered and filtered <= view_rendered:
                     # Whether an index can narrow this filter, judged on the
                     # condition SHAPE rather than on "is any filtered column
-                    # indexed" — that question ignores how the conditions
+                    # indexed". That question ignores how the conditions
                     # combine, and scored an OR with one indexed branch and one
                     # unindexed one as safe. See _index_covered.
                     covered = _index_covered(
@@ -705,7 +705,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # An index is only a remedy for a column that can carry one.
                     # SharePoint refuses one on a Note or Hyperlink field and
                     # cannot put one on a Calculated column at all, and
-                    # _structure.py errors on exactly those — so recommending an
+                    # _structure.py errors on exactly those, so recommending an
                     # index there prescribes a change that fails the build. A
                     # CAML null test over such a column is otherwise legal, so
                     # the exposure is real and only the remedy has to change.
@@ -884,7 +884,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                         f"2000 pixels (got {width_px}).",
                         location=at_view,
                     ))
-            # Totals bind to a displayed column, like widths — SharePoint
+            # Totals bind to a displayed column, like widths. SharePoint
             # accepts an Aggregations entry naming a field the view has no
             # column for, and then renders no figure.
             for total_col, func in view.totals.items():
@@ -900,7 +900,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # SYSTEM_COLUMN_TYPES for the same reason the `where` check
                 # merges it: ID, Created, Modified, Author and Editor are
                 # renderable in a view without being DBML columns, and
-                # without their types they report as the empty string —
+                # without their types they report as the empty string,
                 # which made Author escape the arithmetic rule and produced
                 # a message reading "is ." on every system column.
                 col_type = {**SYSTEM_COLUMN_TYPES, **types_by_col}.get(total_col, "")
@@ -932,8 +932,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                         location=at_view,
                     ))
 
-    # The GENERATED `All Items` view. It is not declared anywhere — jsgen builds
-    # it from every rendered column and appends the system fields — so an entity
+    # The GENERATED `All Items` view. It is not declared anywhere (jsgen builds
+    # it from every rendered column and appends the system fields), so an entity
     # crossing the join ceiling breaks a view with no declaration to point at,
     # and authors are forbidden from declaring one (see the 'All Items' error
     # above). It is also the RECOVERY view: the one you fall back to when a
@@ -954,7 +954,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         #
         # But a hide_from_all_items key on an entity this loop SKIPS must still
         # be refused, or the loop silently accepts a key that can never do
-        # anything — which is the opposite of the "a typo must not silently do
+        # anything, which is the opposite of the "a typo must not silently do
         # nothing" rule the key's own validation exists to enforce. So the key
         # is answered here, BEFORE the continue: there is no generated view yet
         # for `all_items_joining_fields` to measure, so nothing downstream
@@ -972,13 +972,13 @@ def check(vc: ValidationContext) -> list[Finding]:
         xcols = cross_site_by_entity.get(entity_name, set())
         # `rendered` and `bearing` are the same two building blocks
         # `all_items_joining_fields` composes internally; bound here as well
-        # because the validations below need the UNDIMINISHED sets — whether a
-        # name renders at all, and whether it costs a join — not the
+        # because the validations below need the UNDIMINISHED sets (whether a
+        # name renders at all, and whether it costs a join), not the
         # post-suppression result `shown_joins` carries. Both are genuine
         # calls into analysis/joins.py, not re-typed copies of its formulas.
         # `rendered` used to be its own
         # `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS` written out a
-        # second time in this file — textually identical to the one inside
+        # second time in this file, textually identical to the one inside
         # `all_items_joining_fields`, but a separate expression the escape-hatch
         # checks below actually read. Dropping a term from either copy alone
         # left the other's callers unaffected, which is how that drift went
@@ -1004,7 +1004,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # would report as a typo and the author would go looking for one.
         #
         # `hide_ctx` is ALREADY BOUND at the top of this loop, above the
-        # `continue` that skips a DocumentLibrary or a table-less entity — the
+        # `continue` that skips a DocumentLibrary or a table-less entity. The
         # skipped case refuses the key there. Do not re-assign it here.
         for col_name in entity.hide_from_all_items:
             if col_name in xcols:

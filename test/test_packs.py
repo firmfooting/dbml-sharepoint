@@ -2,7 +2,7 @@
 
 They are about to be used by several hundred call sites. A builder that emits
 subtly wrong YAML would change what all of those tests exercise while leaving
-every one of them green — which is the exact failure the conversion they serve
+every one of them green, which is the exact failure the conversion they serve
 exists to avoid.
 """
 
@@ -85,7 +85,7 @@ def test_write_dbml_leaves_a_declared_note_alone(tmp_path: Path, keyword: str) -
     Parametrised over the CASE of the keyword because pydbml ignores it and a
     case-sensitive detector here would not. `note:` at the start of a line is
     a table note as surely as `Note:` is; if the detector missed it the helper
-    would append its default afterwards, and pydbml takes the LAST note — so
+    would append its default afterwards, and pydbml takes the LAST note, so
     the fixture would read as bespoke prose in the source while `Table.note`
     held the generic sentence. Nothing would report that.
     """
@@ -153,7 +153,7 @@ def test_with_tail_leaves_the_tail_indentation_alone() -> None:
 
     This is the case `blocks()` gets wrong: it would dedent the four-space tail
     flush and reparent `views:` from under `Project` to the top level of the
-    document — still valid YAML, silently a different mapping.
+    document, still valid YAML, silently a different mapping.
     """
     assert with_tail("""
         entities:
@@ -165,8 +165,8 @@ def test_with_tail_leaves_the_tail_indentation_alone() -> None:
 
 
 def test_with_tail_matches_blocks_when_the_tail_is_flush() -> None:
-    """Where the tail is a top-level section, the two agree — the difference
-    only shows up for a tail whose indent is load-bearing."""
+    """Where the tail is a top-level section, the two agree. The difference
+    only shows up for a tail whose indent matters."""
     body = """
         entities:
           Project: {}
@@ -183,7 +183,7 @@ def test_blocks_refuses_a_bare_entity_line() -> None:
 
     `blocks` dedents each part against its own margin, and for a lone indented
     line that margin IS the indentation, so `  Risk: {...}` becomes
-    `Risk: {...}` — outside the `entities:` key. YAML loads that happily and
+    `Risk: {...}`, outside the `entities:` key. YAML loads that happily and
     the mapping ends up with no entities at all: a green test asserting
     nothing. Caught by a conversion agent, not by review.
     """

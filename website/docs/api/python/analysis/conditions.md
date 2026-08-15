@@ -23,7 +23,7 @@ The transformation is mechanical, terminating and depth-preserving:
     !(any_of[X, Y])   ->  all_of[!X, !Y]
 
 Implications need no operator of their own. A validation rule is usually
-"if A then B", which is `any_of[none_of[A], B]` — expressible in the
+"if A then B", which is `any_of[none_of[A], B]`, expressible in the
 grammar as authored and normalised by the rules above.
 
 ### `NEGATION`

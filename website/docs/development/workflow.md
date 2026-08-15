@@ -34,7 +34,7 @@ The [philosophy](philosophy.md) says why; this page says how.
 ## The gates
 
 ```bash
-uv run pytest                              # full suite — all green, no skips added
+uv run pytest                              # full suite, all green, no skips added
 uv run ruff check src test website/scripts # lint
 uv run mypy                                # strict typing: src, test, website/scripts
 uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates

@@ -747,7 +747,7 @@ def test_dictionary_powerquery_stamps_release_metadata() -> None:
 
 def test_dictionary_powerquery_escapes_embedded_quotes() -> None:
     """Calculated formulas contain double quotes; M doubles them in string
-    literals — an unescaped quote would break the whole query."""
+    literals. An unescaped quote would break the whole query."""
     schema, bundle = _calculated()
     dd = generate_dictionary_powerquery(schema, bundle, "default")["_DataDictionary.pq"]
     assert '=IF([Severity]=""High"",10,1)' in dd
@@ -895,7 +895,7 @@ def test_user_added_columns_powerquery_audits_every_list() -> None:
 
 
 def test_user_added_columns_expected_sets_use_internal_names() -> None:
-    """The anti-join set must hold declared INTERNAL field names — the
+    """The anti-join set must hold declared INTERNAL field names, the
     lookup as 'Project', never the OData item path 'Project/Title' nor the
     derived join-key output 'ProjectId' (those exist only in the data
     queries' $select)."""
@@ -910,7 +910,7 @@ def test_user_added_columns_expected_sets_use_internal_names() -> None:
 def test_user_added_columns_sql_view_antijoins_information_schema() -> None:
     """vw_<prefix>UserAddedColumns lists landed columns the schema does not
     declare: INFORMATION_SCHEMA.COLUMNS over the landing tables, NOT EXISTS
-    against embedded (list, expected column) VALUES — Id plus each landed
+    against embedded (list, expected column) VALUES, Id plus each landed
     name (lookups land as <name>Id). Empty by default; sees only what the
     extractor lands."""
     schema, bundle = _simple()
@@ -962,7 +962,7 @@ def test_emit_reporting_writes_bundle_and_returns_relpaths(tmp_path: Path) -> No
 
 def test_calculated_date_reports_as_date() -> None:
     """A calculated date column must land as a date in both reporting
-    surfaces — M `type date` and SQL `DATE` — not the text fallback."""
+    surfaces (M `type date` and SQL `DATE`), not the text fallback."""
     schema = make_schema(
         make_table(
             "Risk",
@@ -1062,7 +1062,7 @@ def test_user_added_columns_selects_the_deployed_formula_properties() -> None:
     """_UserAddedColumns is the only LIVE query in the bundle and already
     calls /fields on every refresh. Selecting the two formula properties
     turns it into a refresh-time check that the deployed contract still
-    matches the dictionary — for free."""
+    matches the dictionary, for free."""
     schema, bundle = _declared()
     pq = generate_dictionary_powerquery(schema, bundle, "default")["_UserAddedColumns.pq"]
     assert "ClientValidationFormula" in pq
@@ -1070,7 +1070,7 @@ def test_user_added_columns_selects_the_deployed_formula_properties() -> None:
 
 
 def test_undeclared_columns_read_as_dashes_not_blanks() -> None:
-    """Absence must be legible. An empty cell reads as missing data — the
+    """Absence must be legible. An empty cell reads as missing data. The
     analyst cannot tell "no rule declared" from "the generator did not
     know", which is the same ambiguity this whole change exists to remove."""
     schema, bundle = _declared()
@@ -1227,7 +1227,7 @@ def test_the_dictionary_refuses_a_field_kind_it_has_no_arm_for(
 
 
 def _multi_value(*, display_names: bool = False) -> tuple[Schema, MappingBundle]:
-    """A schema declaring a multi-value column — the thing S9 exists to report.
+    """A schema declaring a multi-value column, the thing S9 exists to report.
 
     `AuditEvents` rather than `Events` so the display-name test has a name that
     auto-splits, and one member carries a space because that is what rules the
@@ -1249,7 +1249,7 @@ def _multi_value(*, display_names: bool = False) -> tuple[Schema, MappingBundle]
 def test_powerquery_joins_a_multi_value_column_into_one_text_cell() -> None:
     """MEASURED 2026-08-10: under `odata=nometadata`, which is what the
     Power Query layer speaks, a multi-value item value comes back as a bare
-    JSON array — so the cell holds a LIST, not text.
+    JSON array, so the cell holds a LIST, not text.
 
     The scalar arm's `Table.TransformColumnTypes(…, type text)` over a list
     does not produce a mistyped column; it produces an Error value in every
@@ -1275,7 +1275,7 @@ def test_powerquery_renders_an_empty_multi_value_set_as_blank() -> None:
     NOT as `[]`.
 
     `Text.Combine(null, "; ")` raises, and a raise inside a transform fails
-    the whole refresh — one row that has never had a value would take the
+    the whole refresh. One row that has never had a value would take the
     report down. Guarded, the cell is blank, which is what "no members" means.
     """
     schema, bundle = _multi_value()
@@ -1294,8 +1294,8 @@ def test_sql_view_gives_a_multi_value_column_nvarchar_max() -> None:
 
 
 def test_both_drift_audits_agree_about_a_multi_value_column() -> None:
-    """The audits are built from two different lists — the M one from
-    `field_internal_names`, the SQL one from `sql_columns` — and a kind that
+    """The audits are built from two different lists (the M one from
+    `field_internal_names`, the SQL one from `sql_columns`), and a kind that
     lands in one but not the other makes them contradict each other over the
     same deployment. A multi-value column must be expected by both."""
     schema, bundle = _multi_value()
@@ -1323,7 +1323,7 @@ def test_dictionary_describes_a_multi_value_column_in_human_words() -> None:
 
 def test_display_names_still_reach_a_multi_value_column() -> None:
     """The joined column is not in `m_types`, which is where every other
-    renameable output name comes from — so without an explicit entry the one
+    renameable output name comes from, so without an explicit entry the one
     column type this stage added would be the one that never got its display
     title, and only a reader comparing two report pages would ever notice."""
     schema, bundle = _multi_value(display_names=True)
