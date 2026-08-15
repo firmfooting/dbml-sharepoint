@@ -108,7 +108,7 @@ parsing claims, and no legitimate UPN contains one.
 ### `build`
 
 ```python
-def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ...) -> None
+def build(schema: pathlib.Path | None = ..., mapping: pathlib.Path | None = ..., release: pathlib.Path | None = ..., site_url: str = ..., site_role: str = ..., out: pathlib.Path = ..., dry_run: bool = ..., seed: bool = ..., enterprise_reader: str | None = ..., extension: str | None = ..., env_file: pathlib.Path | None = ...) -> None
 ```
 
 Generate deploy.js.txt + manifest from the DBML schema and mapping.
@@ -123,7 +123,7 @@ in a library call.
 ### `execute_build`
 
 ```python
-def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.cli.EnterpriseReaderDeclined | None = None) -> None
+def execute_build(*, schema: pathlib.Path, mapping: pathlib.Path, release: pathlib.Path, site_url: str, site_role: str, out: pathlib.Path = Path('build'), dry_run: bool = False, seed: bool = False, extension: str | None = None, enterprise_reader: str | dbml_sharepoint.cli.EnterpriseReaderDeclined | None = None, env_file: pathlib.Path | None = None) -> None
 ```
 
 The `build` pipeline, callable without going through typer.
@@ -139,9 +139,14 @@ for the same failures. The wizard catches it.
 
 `enterprise_reader` carries three states: ``None`` (unset -- no flag was
 given), `EnterpriseReaderDeclined` (the operator was asked and said
-nobody), or a UPN. Nothing here resolves a `dbml-sharepoint.env` default
-for the unset case yet -- that is a later change -- so this function only
-has to keep the three states distinct rather than act on the difference.
+nobody), or a UPN. `env_file`, when given, is a `dbml-sharepoint.env`
+ALREADY resolved to a path by the caller (`build` resolves the default
+location the same way it resolves `--schema`, `--mapping` and
+`--release`; this function does no discovery of its own). When the file
+supplies a value for a setting that is still unset, that value is used;
+an explicit `enterprise_reader` -- a flag or the declined sentinel --
+always wins over the file, because both mean the operator already
+decided.
 
 ### `validate`
 

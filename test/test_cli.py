@@ -27,6 +27,7 @@ from dbml_sharepoint.catalogue import (
 )
 from dbml_sharepoint.cli import app
 from dbml_sharepoint.extension import BaseExtension
+from dbml_sharepoint.model.env_file import ENV_FILENAME
 
 runner = CliRunner()
 
@@ -678,6 +679,225 @@ def test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value(
     # only inside `_reader_enrolment.js.j2`'s `{% if enterprise_reader %}`
     # guard, so its absence is what actually proves no enrolment code emitted.
     assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
+
+
+def _write_env_file(path: Path, address: str = "svc-reporting@example.org") -> Path:
+    path.write_text(f"DBMLSP_ENTERPRISE_READER={address}\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def test_env_file_missing_at_an_explicit_path_is_an_error(tmp_path: Path) -> None:
+    """`--env-file` names a specific file; a typo there must not silently
+    build without the settings the operator asked for."""
+    missing = tmp_path / "nowhere.env"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(tmp_path / "build"),
+        "--env-file", str(missing),
+    ])
+    assert result.exit_code == 2
+    assert "nowhere.env" in result.output
+
+
+def test_no_env_file_at_the_default_location_is_not_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No `dbml-sharepoint.env` at all is the ordinary case, not a refusal.
+
+    `monkeypatch.chdir` to a fresh `tmp_path` -- rather than leaving the
+    working directory at the repository root, where a contributor's own
+    `dbml-sharepoint.env` could be sitting -- is what actually neutralises
+    the default location here: `tmp_path` is guaranteed not to contain one.
+
+    Also pins the "say so explicitly" requirement: an absent env file must
+    be a printed line, not silence a later regression could not tell apart
+    from a feature that never ran.
+    """
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "No dbml-sharepoint.env file was read." in result.output
+
+
+def test_env_file_at_the_default_location_is_used(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other half of the default-location pair: present, it is read."""
+    monkeypatch.chdir(tmp_path)
+    _write_env_file(tmp_path / ENV_FILENAME)
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code == 0, result.output
+    assert "svc-reporting@example.org" in (out / "deploy-manifest.md").read_text(encoding="utf-8")
+
+
+def test_an_env_file_value_reaches_execute_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The mirror of `test_a_valid_reader_flag_reaches_emit_bundle`, sourced
+    from `--env-file` at a temp path rather than the default location -- so
+    this test is not itself CWD-dependent."""
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    env_path = _write_env_file(tmp_path / "custom.env")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code == 0, result.output
+    assert captured["enterprise_reader"] == "svc-reporting@example.org"
+
+
+def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
+    """Precedence, and the provenance record it leaves behind."""
+    file_address = "file-reader@example.org"
+    flag_address = "flag-reader@example.org"
+    env_path = _write_env_file(tmp_path / "custom.env", file_address)
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+        "--enterprise-reader", flag_address,
+    ])
+    assert result.exit_code == 0, result.output
+    manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
+    assert flag_address in manifest
+    assert file_address not in manifest
+    assert (
+        f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
+        f"using {flag_address})"
+    ) in result.output
+
+
+def test_the_declined_sentinel_beats_the_env_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The sentinel is not reachable through a CLI flag -- there is no way to
+    type "declined" on the command line -- so, like
+    `test_the_declined_sentinel_is_treated_as_nobody_not_as_a_value`, this
+    calls `execute_build` directly."""
+    from dbml_sharepoint.bundle import emit_bundle as real_emit_bundle
+    from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED, execute_build
+
+    captured: dict[str, object] = {}
+
+    def spy(out: Path, **kwargs: Any) -> str:
+        captured.update(kwargs)
+        return real_emit_bundle(out, **kwargs)
+
+    monkeypatch.setattr("dbml_sharepoint.cli.emit_bundle", spy)
+
+    file_address = "file-reader@example.org"
+    env_path = _write_env_file(tmp_path / "custom.env", file_address)
+    out = tmp_path / "build"
+
+    execute_build(
+        schema=FIXTURES / "simple.dbml",
+        mapping=FIXTURES / "sharepoint-mapping-with-reader.yaml",
+        release=FIXTURES / "release.yaml",
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        out=out,
+        enterprise_reader=ENTERPRISE_READER_DECLINED,
+        env_file=env_path,
+    )
+
+    assert captured["enterprise_reader"] is None
+    assert "READER_ADDRESS" not in (out / "deploy.js.txt").read_text(encoding="utf-8")
+    printed = capsys.readouterr().out
+    assert (
+        f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
+        "using ENTERPRISE_READER_DECLINED)"
+    ) in printed
+
+
+def test_an_env_file_value_that_fails_validation_is_refused_like_a_bad_flag(
+    tmp_path: Path,
+) -> None:
+    """A file value takes the same `validate_enterprise_reader` call a flag
+    value does, so a bad UPN is refused with the same message either way."""
+    env_path = _write_env_file(tmp_path / "custom.env", "not-an-address")
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping-with-reader.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+        "--env-file", str(env_path),
+    ])
+    assert result.exit_code != 0
+    assert "one '@'" in result.output
+    assert not (out / "deploy.js.txt").exists()
+
+
+def test_env_file_reader_arms_the_no_group_guard(tmp_path: Path) -> None:
+    """The guard in `execute_build` that refuses `--enterprise-reader`
+    against a mapping with no `enroll_enterprise_reader` group already
+    exists; this feature arms it for a build that used to succeed, because
+    no flag was ever given. Deliberately pinned rather than left for a
+    consumer to discover.
+    """
+    env_path = _write_env_file(tmp_path / "custom.env")
+    base_args = [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),  # no such group
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+    ]
+
+    out_without = tmp_path / "without-file"
+    without_file = runner.invoke(app, [*base_args, "--out", str(out_without)])
+    assert without_file.exit_code == 0, without_file.output
+    assert (out_without / "deploy.js.txt").is_file()
+
+    out_with = tmp_path / "with-file"
+    with_file = runner.invoke(
+        app, [*base_args, "--out", str(out_with), "--env-file", str(env_path)],
+    )
+    assert with_file.exit_code != 0
+    assert "enroll_enterprise_reader" in with_file.output
+    assert not (out_with / "deploy.js.txt").exists()
 
 
 def test_validation_failure_clears_stale_artifacts(tmp_path: Path) -> None:

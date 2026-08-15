@@ -1,6 +1,7 @@
 """Command-line interface for dbml-sharepoint."""
 
 import datetime as dt
+import os
 from contextlib import suppress
 from dataclasses import dataclass
 from difflib import get_close_matches
@@ -41,6 +42,14 @@ from dbml_sharepoint.generators.reportgen import (
     generate_powerquery,
     generate_reporting_md,
     generate_sql_views,
+)
+from dbml_sharepoint.model.env_file import (
+    ENV_FILENAME,
+    ENV_SETTINGS,
+    EnvFileError,
+    EnvProvenance,
+    EnvValue,
+    read_env_file,
 )
 from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
 from dbml_sharepoint.model.parser import Schema, parse_dbml
@@ -245,6 +254,23 @@ def _project_input(
     )
 
 
+def _resolve_env_file(env_file: Path | None) -> Path | None:
+    """The env file `build` should read, or None when there is nothing to.
+
+    Same rule `_project_input` applies to the other three inputs: an
+    explicit --env-file always wins, and must exist -- a typo here must not
+    silently build without the settings the operator asked for. The default
+    location is different: no file there is the ordinary case (most
+    projects have none), so its absence is not an error.
+    """
+    if env_file is not None:
+        if not env_file.is_file():
+            raise typer.BadParameter(f"--env-file {env_file} does not exist.")
+        return env_file
+    default = Path(ENV_FILENAME)
+    return default if default.is_file() else None
+
+
 def _require_known_site_role(bundle: MappingBundle, site_role: str) -> None:
     """Refuse a role the mapping does not declare.
 
@@ -447,6 +473,13 @@ def build(
         None,
         help="Extension name; overrides the mapping's `extension:` key. Resolved via entry points.",
     ),
+    env_file: Path | None = typer.Option(
+        None,
+        "--env-file",
+        help=f"Path to a {ENV_FILENAME} defaults file. Default: {ENV_FILENAME} "
+        "in the current directory, when present. A flag given on the command "
+        "line always wins over a value the file supplies.",
+    ),
 ) -> None:
     """Generate deploy.js.txt + manifest from the DBML schema and mapping.
 
@@ -495,7 +528,96 @@ def build(
         seed=seed,
         extension=extension,
         enterprise_reader=enterprise_reader,
+        env_file=_resolve_env_file(env_file),
     )
+
+
+def _relative_env_path(env_file: Path) -> str:
+    """Render for the provenance record and the printed report: relative to
+    the current directory, never absolute, so a build run on Windows and one
+    run on Linux describe the same file the same way. `_resolve_env_file`
+    already decided WHICH file this is; this only decides how to spell it.
+
+    Falls back to the path as given when there is no relative form at all --
+    an explicit `--env-file` on a different Windows drive than the current
+    directory -- rather than letting a display nicety crash the build.
+    """
+    try:
+        return Path(os.path.relpath(env_file, Path.cwd())).as_posix()
+    except ValueError:
+        return env_file.as_posix()
+
+
+def _resolve_env_settings(
+    env_file: Path | None,
+    enterprise_reader: str | EnterpriseReaderDeclined | None,
+) -> tuple[str | EnterpriseReaderDeclined | None, EnvProvenance]:
+    """Apply a resolved dbml-sharepoint.env file, honouring anything already
+    supplied explicitly. Builds the `EnvProvenance` in the same pass that
+    decides what is used, so the record can never drift from the decision it
+    describes -- there is exactly one place this precedence is applied.
+
+    Precedence: an explicit value -- a flag, or the wizard's declined
+    sentinel -- always wins over the file; the file wins over the built-in
+    default of nothing supplied at all.
+
+    `env_file` is a path already resolved by the caller (`_resolve_env_file`
+    for `build`); this function does no discovery of its own, only parsing.
+    """
+    if env_file is None:
+        return enterprise_reader, EnvProvenance(path=None, digest=None, values=())
+
+    try:
+        file_settings, digest = read_env_file(env_file)
+    except EnvFileError as exc:
+        _config_error("env file", env_file, exc)
+
+    resolved = enterprise_reader
+    values: list[EnvValue] = []
+    for setting in ENV_SETTINGS:
+        file_value = file_settings.get(setting.key)
+        if file_value is None:
+            continue
+        # Mapped explicitly rather than by generic dict-splat: a second
+        # entry in ENV_SETTINGS must not silently start landing on the
+        # wrong keyword parameter here.
+        if setting.parameter != "enterprise_reader":
+            continue
+        if enterprise_reader is None:
+            resolved = file_value
+            values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))
+        else:
+            override = (
+                enterprise_reader
+                if isinstance(enterprise_reader, str)
+                else repr(enterprise_reader)
+            )
+            values.append(
+                EnvValue(setting=setting, value=file_value, used=False, override=override),
+            )
+
+    provenance = EnvProvenance(
+        path=_relative_env_path(env_file), digest=digest, values=tuple(values),
+    )
+    return resolved, provenance
+
+
+def _echo_env_provenance(provenance: EnvProvenance) -> None:
+    """Say what was read, and what won. An absent line here is
+    indistinguishable from a feature that did not run, so the no-file case
+    is stated explicitly rather than left silent."""
+    if provenance.path is None:
+        typer.echo("No dbml-sharepoint.env file was read.")
+        return
+    typer.echo(f"Read {provenance.path} (sha256 {provenance.digest}).")
+    for value in provenance.values:
+        if value.used:
+            typer.echo(f"  {value.setting.key} = {value.value} (from the file)")
+        else:
+            typer.echo(
+                f"  {value.setting.key} = {value.value} (from the file; overridden, "
+                f"using {value.override})",
+            )
 
 
 def execute_build(
@@ -510,6 +632,7 @@ def execute_build(
     seed: bool = False,
     extension: str | None = None,
     enterprise_reader: str | EnterpriseReaderDeclined | None = None,
+    env_file: Path | None = None,
 ) -> None:
     """The `build` pipeline, callable without going through typer.
 
@@ -524,9 +647,14 @@ def execute_build(
 
     `enterprise_reader` carries three states: ``None`` (unset -- no flag was
     given), `EnterpriseReaderDeclined` (the operator was asked and said
-    nobody), or a UPN. Nothing here resolves a `dbml-sharepoint.env` default
-    for the unset case yet -- that is a later change -- so this function only
-    has to keep the three states distinct rather than act on the difference.
+    nobody), or a UPN. `env_file`, when given, is a `dbml-sharepoint.env`
+    ALREADY resolved to a path by the caller (`build` resolves the default
+    location the same way it resolves `--schema`, `--mapping` and
+    `--release`; this function does no discovery of its own). When the file
+    supplies a value for a setting that is still unset, that value is used;
+    an explicit `enterprise_reader` -- a flag or the declined sentinel --
+    always wins over the file, because both mean the operator already
+    decided.
     """
     # Reassigned, not merely checked: everything below -- SiteContext, the
     # manifest, and the reporting pack's `SiteRoot` and SQLCMD `SiteUrl` --
@@ -551,6 +679,9 @@ def execute_build(
         raise typer.Exit(code=2)
 
     _require_known_site_role(bundle, site_role)
+
+    enterprise_reader, env_provenance = _resolve_env_settings(env_file, enterprise_reader)
+    _echo_env_provenance(env_provenance)
 
     # `isinstance`, not `is not None`: `EnterpriseReaderDeclined` is also not
     # `None`, and must skip validation and the group check exactly as `None`
