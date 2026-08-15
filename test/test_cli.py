@@ -1019,6 +1019,22 @@ def test_the_manifest_and_index_both_report_the_env_file_that_was_read(
         assert "DBMLSP_ENTERPRISE_READER" in artefact
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="cross-drive paths are a Windows concept")
+def test_a_cross_drive_env_path_falls_back_to_the_path_as_given(tmp_path: Path) -> None:
+    """`_relative_env_path` switched from `os.path.relpath` to
+    `Path.relative_to(..., walk_up=True)` -- the pathlib equivalent, per the
+    plan's "pathlib always". Both raise `ValueError` for a path on a
+    different Windows drive than the current directory (`tmp_path`, never
+    `Z:`, is what the current directory is under pytest), and the fallback
+    branch that catches it was otherwise unexercised by any test.
+    """
+    from dbml_sharepoint.cli import _relative_env_path
+
+    assert not str(tmp_path).upper().startswith("Z:")
+    env_file = Path("Z:/nowhere/dbml-sharepoint.env")
+    assert _relative_env_path(env_file) == env_file.as_posix()
+
+
 def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
     """`EnvSetting.help` is otherwise dead weight: nothing else reads it.
 

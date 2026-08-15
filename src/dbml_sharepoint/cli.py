@@ -1,7 +1,6 @@
 """Command-line interface for dbml-sharepoint."""
 
 import datetime as dt
-import os
 from contextlib import suppress
 from dataclasses import dataclass
 from difflib import get_close_matches
@@ -561,8 +560,10 @@ def _relative_env_path(env_file: Path) -> str:
     an explicit `--env-file` on a different Windows drive than the current
     directory -- rather than letting a display nicety crash the build.
     """
+    cwd = Path.cwd()
+    absolute = env_file if env_file.is_absolute() else cwd / env_file
     try:
-        return Path(os.path.relpath(env_file, Path.cwd())).as_posix()
+        return absolute.relative_to(cwd, walk_up=True).as_posix()
     except ValueError:
         return env_file.as_posix()
 
