@@ -6,7 +6,7 @@ Stdlib only. Two sources of truth, extracted rather than transcribed:
 - Python: each module's own top-level definitions (found via ast, so
   re-exports never masquerade as local API), paired with the imported
   module for signatures and docstrings via inspect. Underscore-prefixed
-  names are module-private and excluded — the public API is exactly the
+  names are module-private and excluded. The public API is exactly the
   unprefixed surface.
 - Templates: every .j2 file's leading `{# ... #}` contract comment, plus
   the deploy-phase manifest (phases.py) so phase templates carry their
@@ -506,7 +506,7 @@ def generate_conditions_page() -> None:
 
     # The heading is unconditional; the SENTENCE under it is not. An empty
     # set is the good state, and printing a bare header with nothing beneath
-    # it reads as a truncated page rather than as "nothing is pending" —
+    # it reads as a truncated page rather than as "nothing is pending",
     # which is the opposite of the claim the emptiness is meant to make.
     lines += ["", "## Not yet verified", ""]
     if conditions.DISABLED_PENDING_PROBE:
