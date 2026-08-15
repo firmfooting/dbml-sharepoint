@@ -100,11 +100,27 @@ def describe_env_provenance(provenance: EnvProvenance) -> str:
 
     An absent line is indistinguishable from a feature that did not run, so
     the no-file case is its own explicit sentence rather than nothing.
+
+    Reports overridden keys as well as used ones -- naming only the key and
+    the value that won, never the file's own value, so a losing candidate
+    (a flag beat it, or the wizard's declined sentinel did) never appears in
+    a written artefact. Without this, a build where a flag beat the file
+    left the manifest indistinguishable from one where the file was never
+    consulted at all.
     """
     if provenance.path is None:
         return "No dbml-sharepoint.env file was read."
-    used_keys = ", ".join(value.setting.key for value in provenance.values if value.used)
-    suffix = f" Used: {used_keys}." if used_keys else ""
+    used = [value for value in provenance.values if value.used]
+    overridden = [value for value in provenance.values if not value.used]
+    parts = []
+    if used:
+        parts.append(f"Used: {', '.join(value.setting.key for value in used)}.")
+    if overridden:
+        described = ", ".join(
+            f"{value.setting.key} (using {value.override})" for value in overridden
+        )
+        parts.append(f"Overridden: {described}.")
+    suffix = f" {' '.join(parts)}" if parts else ""
     return f"Read {provenance.path} (sha256 {provenance.digest}).{suffix}"
 
 

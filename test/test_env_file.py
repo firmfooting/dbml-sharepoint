@@ -9,8 +9,11 @@ from dbml_sharepoint.model.env_file import (
     ENV_SETTINGS,
     EnvFileReadError,
     EnvFileSyntaxError,
+    EnvProvenance,
     EnvSetting,
+    EnvValue,
     UnknownEnvKeyError,
+    describe_env_provenance,
     read_env_file,
 )
 
@@ -199,3 +202,48 @@ def test_an_unreadable_file_raises_a_named_error_naming_the_path(
     message = str(err.value)
     assert str(path) in message
     assert "denied" in message
+
+
+def test_describe_env_provenance_names_an_overridden_key() -> None:
+    """`describe_env_provenance` used to filter on `value.used`, so a key a
+    flag beat left no trace in the manifest, index.md or the deploy
+    transcript -- indistinguishable from a build where the file was never
+    consulted at all. Spec Part 3 asks each record to name, per key, where
+    the used value came from; "used" is only half of that.
+    """
+    provenance = EnvProvenance(
+        path="dbml-sharepoint.env",
+        digest="abc123def456",
+        values=(
+            EnvValue(
+                setting=ENV_SETTINGS[0],
+                value="file-reader@example.org",
+                used=False,
+                override="flag-reader@example.org",
+            ),
+        ),
+    )
+    line = describe_env_provenance(provenance)
+    assert "Overridden: DBMLSP_ENTERPRISE_READER (using flag-reader@example.org)." in line
+    # The losing candidate must never appear in a written artefact.
+    assert "file-reader@example.org" not in line
+
+
+def test_describe_env_provenance_names_both_used_and_overridden_keys() -> None:
+    """Both categories render together when a provenance record carries
+    both, rather than one silently crowding the other out."""
+    used_setting = EnvSetting(key="DBMLSP_USED", parameter="used_param", help="")
+    overridden_setting = EnvSetting(
+        key="DBMLSP_OVERRIDDEN", parameter="overridden_param", help="",
+    )
+    provenance = EnvProvenance(
+        path="dbml-sharepoint.env",
+        digest="abc123def456",
+        values=(
+            EnvValue(setting=used_setting, value="a", used=True, override=None),
+            EnvValue(setting=overridden_setting, value="b", used=False, override="c"),
+        ),
+    )
+    line = describe_env_provenance(provenance)
+    assert "Used: DBMLSP_USED." in line
+    assert "Overridden: DBMLSP_OVERRIDDEN (using c)." in line

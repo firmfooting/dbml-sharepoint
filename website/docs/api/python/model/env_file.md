@@ -100,6 +100,13 @@ index.md and the deploy transcript's `log()` line.
 An absent line is indistinguishable from a feature that did not run, so
 the no-file case is its own explicit sentence rather than nothing.
 
+Reports overridden keys as well as used ones -- naming only the key and
+the value that won, never the file's own value, so a losing candidate
+(a flag beat it, or the wizard's declined sentinel did) never appears in
+a written artefact. Without this, a build where a flag beat the file
+left the manifest indistinguishable from one where the file was never
+consulted at all.
+
 ### `EnvFileError`
 
 Base class for anything wrong with a dbml-sharepoint.env file.

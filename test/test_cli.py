@@ -811,7 +811,12 @@ def test_an_env_file_value_reaches_execute_build(
 
 
 def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
-    """Precedence, and the provenance record it leaves behind."""
+    """Precedence, and the provenance record it leaves behind -- in the
+    terminal echo AND in the manifest's own env-file line. The manifest
+    line used to say only that the file was read, never that the flag beat
+    it: a reviewer reading the manifest alone could not tell this build
+    apart from one where the file was never consulted.
+    """
     file_address = "file-reader@example.org"
     flag_address = "flag-reader@example.org"
     env_path = _write_env_file(tmp_path / "custom.env", file_address)
@@ -830,6 +835,7 @@ def test_an_explicit_flag_beats_the_env_file(tmp_path: Path) -> None:
     manifest = (out / "deploy-manifest.md").read_text(encoding="utf-8")
     assert flag_address in manifest
     assert file_address not in manifest
+    assert f"Overridden: DBMLSP_ENTERPRISE_READER (using {flag_address})." in manifest
     assert (
         f"DBMLSP_ENTERPRISE_READER = {file_address} (from the file; overridden, "
         f"using {flag_address})"
