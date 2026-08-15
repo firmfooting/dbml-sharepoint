@@ -29,15 +29,15 @@
 
   // `Z` on one row in a hundred, else the B1-B7 cycle. The substitution
   // OVERRIDES the cycle rather than extending it, so the seven common values
-  // are not evenly sized — deliberate, and harmless because the filters only
-  // ever ask for `Z`.
+  // are not evenly sized (deliberate, and harmless because the filters only
+  // ever ask for `Z`).
   const thresholdBucket = (row) => (
     row % 100 === THRESHOLD_Z_OFFSET
       ? THRESHOLD_RARE
       : THRESHOLD_BUCKETS[(row - 1) % THRESHOLD_BUCKETS.length]
   );
 
-  // Blank on one row in a hundred — the null-test population. Non-blank values
+  // Blank on one row in a hundred, the null-test population. Non-blank values
   // repeat every 1,000 days, so this column supports a presence test and
   // nothing else.
   const thresholdClosedAt = (row) => {
@@ -45,7 +45,7 @@
     const stamp = new Date(THRESHOLD_EPOCH_MS + (row % 1000) * THRESHOLD_DAY_MS);
     // ISO-8601 UTC with a Z. toISOString always emits milliseconds; SharePoint
     // accepts the seconds form the Python writer produces, so trim to match it
-    // byte for byte — the agreement test compares these as strings.
+    // byte for byte. The agreement test compares these as strings.
     return `${stamp.toISOString().slice(0, 19)}Z`;
   };
 

@@ -1,5 +1,5 @@
 /**
- * dbml-sharepoint PROBE — NATIVE INDEXES AND NULL-TEST FILTERS
+ * dbml-sharepoint PROBE: NATIVE INDEXES AND NULL-TEST FILTERS
  *
  * TWO QUESTIONS, both raised by the filtered-view index check in
  * analysis/checks/_views.py, and both currently recorded there as unknown:
@@ -9,14 +9,14 @@
  *      currently treats ONLY ID as natively indexed and stays silent about
  *      the other four rather than guessing either way.
  *
- *   2. Can a null test — CAML <IsNull>, OData `eq null` — be served past the
+ *   2. Can a null test (CAML <IsNull>, OData `eq null`) be served past the
  *      list view threshold when the column IS indexed? Microsoft's threshold
  *      guidance is written for comparison filters and says nothing about
  *      presence tests. The check therefore warns about the exposure but
  *      refuses to recommend an index for a null-only filter.
  *
  * WHY IT MATTERS: on question 1, a warning naming a system column would
- * demand a remedy nobody can carry out — `indexes { Created }` is rejected by
+ * demand a remedy nobody can carry out. `indexes { Created }` is rejected by
  * the DBML parser, because a system column is not a DBML column. On question
  * 2, four views in the shipped template library filter on nothing but
  * `is_null` (the library's "blank means still open" idiom), and the answer
@@ -27,7 +27,7 @@
  *   https://support.microsoft.com/en-us/office/manage-large-lists-and-libraries-b8588dae-9387-48c2-9248-c24122f07c59
  *
  * WHAT IT ASKS
- *   NATID   ID        — the CONTROL; read its answer FIRST (see below)
+ *   NATID   ID          the CONTROL; read its answer FIRST (see below)
  *   NATCRE  Created   NATMOD  Modified
  *   NATAUT  Author    NATEDI  Editor
  *   CMPIDX  indexed column, COMPARISON filter, list past the threshold
@@ -39,7 +39,7 @@
  * built-in columns of lists this web already has. It is SCREENING ONLY, and
  * NATID is its control: SharePoint is widely held to maintain an index on ID,
  * so if `Indexed` reads false there, the property reports author-added
- * indexes only and cannot answer the question for any column — or else ID
+ * indexes only and cannot answer the question for any column, or else ID
  * carries no index and the premise was wrong. This probe cannot tell those
  * apart. Either way the four dependent rows are void, and the probe now
  * records them NOT ESTABLISHED itself rather than trusting a reader to
@@ -49,11 +49,11 @@
  * asks what the check actually cares about: can SharePoint answer this query
  * at all? It needs a list already past the threshold. On a web whose largest
  * list is small, both rows come back NOT ESTABLISHED and the probe has
- * answered nothing — which is the correct outcome, not a failure.
+ * answered nothing, which is the correct outcome, not a failure.
  *
  * THIS PROBE IS READ-ONLY. Every request is a GET. It creates nothing,
  * changes nothing and deletes nothing, so the inherited CONFIRMED /
- * ALLOW_WRITES / CLEANUP gates below are never consulted — they come from the
+ * ALLOW_WRITES / CLEANUP gates below are never consulted. They come from the
  * shared harness and are left in place rather than deleted, so one probe
  * cannot drift from the others. spPost() and resetList() are never called.
  *
@@ -74,19 +74,19 @@
  * The control FAILED: `Indexed` read false for ID on 7 of 7 generic lists, so
  * the property read cannot speak to platform indexes and all five of its rows
  * are void. The first version of this probe reported those five as
- * "INDEXED ON NONE" — five confident rows its own header said to disregard,
+ * "INDEXED ON NONE", five confident rows its own header said to disregard,
  * which is precisely the shape of false finding this directory exists to
  * prevent. The control's consequence is enforced in code as a result.
  *
  * AutoIndexed was NOT read on that run. It was added afterwards, so no
- * observation of it exists yet — and none would have been visible anyway, for
+ * observation of it exists yet, and none would have been visible anyway, for
  * the same reason the behavioural test did not run: the web's largest generic
  * list held 21 items against a 5,000 threshold, so no automatic index would
  * have been created for the flag to report.
  *
  * So both of the check's unknowns in analysis/checks/_views.py REMAIN
- * unknown, and its conservative behaviour is unchanged and still correct —
- * system columns stay out of the warning because no author can index them
+ * unknown, and its conservative behaviour is unchanged and still correct.
+ * System columns stay out of the warning because no author can index them
  * whatever the answer, and a null-only filter still gets no index
  * recommendation. Nothing is blocked on this probe; it would only let the
  * check say more.
@@ -108,7 +108,7 @@
  *     model has a primary and an optional secondary column; SPFieldIndex and
  *     SPList.FieldIndexes are server-only with no CSOM or REST equivalent. So
  *     `Indexed` says a column takes part in indexing and never says in what
- *     shape — which also means the deployer's per-field view of the 20-index
+ *     shape, which also means the deployer's per-field view of the 20-index
  *     budget is an approximation of SharePoint's own accounting.
  */
 (async () => {
@@ -120,7 +120,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -133,7 +133,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -159,11 +159,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -171,7 +171,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -180,7 +180,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -221,7 +221,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -233,7 +233,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -280,7 +280,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -291,9 +291,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -344,8 +344,8 @@
     report();
     return;
   }
-  // BaseTemplate 100 is the generic list — the only shape this tool builds,
-  // and the shape the check's warning is about.
+  // BaseTemplate 100 is the generic list (the only shape this tool builds,
+  // and the shape the check's warning is about).
   const candidates = (lists.body.value || [])
     .filter((l) => l.Hidden === false && l.BaseTemplate === 100);
   log('INFO', `${candidates.length} visible generic list(s) on this web.`);
@@ -367,15 +367,15 @@
   // {column: {yes: [], no: [], auto: [], autoAbsent: n, unread: n}}
   //
   // `auto` is tallied apart from `yes` because they are different claims.
-  // SP.Field.Indexed is documented — "TRUE if the column is indexed for use in
-  // view filters" (schema/field-element-field) — and is read/write: it is the
+  // SP.Field.Indexed is documented, "TRUE if the column is indexed for use in
+  // view filters" (schema/field-element-field), and is read/write: it is the
   // lever List Settings and this deployer both pull.
   //
   // SP.Field.AutoIndexed has a CSOM signature and NO first-party prose
   // anywhere: get-only, and absent from the Field schema element's attribute
   // list, so it is server-maintained rather than authorable. Get-only plus
   // unauthorable is CONSISTENT with "an index SharePoint created for itself",
-  // and that reading is inference — community sources attest a large-list
+  // and that reading is inference. Community sources attest a large-list
   // timer job and modern-UI sort creating indexes automatically. Nothing
   // Microsoft publishes states the semantics, so this probe REPORTS the flag
   // and does not interpret it.
@@ -420,8 +420,8 @@
         `${read} of ${sample.length} list(s) read: Indexed true on ${t.yes.length}, ` +
         `false on ${t.no.length}, unreadable on ${t.unread}; ` +
         `AutoIndexed true on ${t.auto.length}, not exposed on ${t.autoAbsent}` +
-        (t.yes.length ? ` — Indexed on: ${t.yes.slice(0, 5).join(', ')}` : '') +
-        (t.auto.length ? ` — AutoIndexed on: ${t.auto.slice(0, 5).join(', ')}` : ''),
+        (t.yes.length ? `; Indexed on: ${t.yes.slice(0, 5).join(', ')}` : '') +
+        (t.auto.length ? `; AutoIndexed on: ${t.auto.slice(0, 5).join(', ')}` : ''),
     };
   };
 
@@ -430,14 +430,14 @@
   // NATID first. That is not good enough: the first run of this probe printed
   // five rows reading "INDEXED ON NONE", which looks exactly like five
   // answers, and only the header said they were void. A probe must not need a
-  // careful reader to avoid publishing a false finding — so the control's
+  // careful reader to avoid publishing a false finding, so the control's
   // consequence is code now.
   //
   // SharePoint is widely held to maintain an index on ID. If that is true and
   // `Indexed` still reads false there, then `Indexed` reports author-added
   // indexes only and cannot answer this question for ANY column. If instead
   // ID genuinely carries no index, the premise was wrong. This probe cannot
-  // tell those two apart, and it must not pick one — either way the four
+  // tell those two apart, and it must not pick one. Either way the four
   // dependent rows are unusable, which is the finding.
   const control = describe(CONTROL);
   const controlTally = tally[CONTROL];
@@ -447,7 +447,7 @@
     `${CONTROL}: does the Indexed property expose a platform-maintained index?`,
     control.read === 0 ? 'NOT ESTABLISHED'
       : controlIndexed ? 'CONTROL HELD'
-      : 'CONTROL FAILED — METHOD VOID',
+      : 'CONTROL FAILED, METHOD VOID',
     control.evidence + (
       controlIndexed ? '' :
       '. Indexed is false on ID, so either the property reports only ' +
@@ -479,7 +479,7 @@
       read === 0 ? 'NOT ESTABLISHED'
       : tally[column].no.length === 0 ? 'INDEXED ON ALL'
       : tally[column].yes.length === 0 ? 'INDEXED ON NONE'
-      : 'MIXED — PER LIST';
+      : 'MIXED, PER LIST';
     record(QUESTION_FOR_COLUMN[column], `${column}: platform index?`, outcome, evidence);
   }
 
@@ -515,7 +515,7 @@
     return;
   }
   // Lookup and User are excluded because Microsoft already documents that
-  // indexing them does not avert the threshold — including one here would
+  // indexing them does not avert the threshold. Including one here would
   // make a failure ambiguous between "null tests cannot use an index" and
   // "this was a lookup field all along", which is the whole finding.
   const usable = (fields.body.value || []).find(
@@ -548,14 +548,14 @@
     record(
       id, question,
       r.ok ? 'SERVED' : (isRefusal(r.status) ? 'REFUSED' : 'NOT ESTABLISHED'),
-      `$filter=${filter} on ${big.ItemCount} items — HTTP ${r.status}: ${body}`,
+      `$filter=${filter} on ${big.ItemCount} items, HTTP ${r.status}: ${body}`,
     );
     return r.ok;
   };
 
   // The comparison filter FIRST, as the positive control. If the documented
   // case is itself refused on this list, the null result below says nothing
-  // about null tests — it says this list cannot be queried by filter at all.
+  // about null tests. It says this list cannot be queried by filter at all.
   const compared = await ask(
     'CMPIDX', 'Comparison filter on an indexed column survives the threshold',
     `${col} ne null`);

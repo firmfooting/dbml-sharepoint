@@ -1,12 +1,12 @@
 /**
- * dbml-sharepoint FORM VISIBILITY — INTERACTIVE SURFACE PROBE
+ * dbml-sharepoint FORM VISIBILITY: INTERACTIVE SURFACE PROBE
  *
  * Walks the whole form-visibility surface one question at a time. It asks
  * about a single column, you answer with one letter, it asks the next.
  * No JSON, no lists to assemble by hand.
  *
  * WHY: SharePoint records "is this column on the form?" in at least two
- * places — the field's own SchemaXml (written by SetShowIn*Form) and the
+ * places: the field's own SchemaXml (written by SetShowIn*Form) and the
  * content type's FieldLink.Hidden (written by the modern
  * "Edit form -> Edit columns" panel). They disagree, sealing protects only
  * the first, and which one actually drives rendering decides whether a
@@ -21,7 +21,7 @@
  *   3. It prints the web it would write to and stops. Check that, then set
  *      CONFIRMED = true at the top and paste again.
  *
- * ANSWERING — just type the word and press Enter. No brackets, no quotes.
+ * ANSWERING: just type the word and press Enter. No brackets, no quotes.
  *   y          yes, I can see that column on this form
  *   n          no, it is not on this form
  *   undo       go back one question
@@ -100,7 +100,7 @@
     return r.ok ? { ok: true, status: r.status } : { ok: false, status: r.status, error: spError(await r.text()) };
   }
 
-  // CSOM ProcessQuery — the same mechanism deploy.js already uses to set a
+  // CSOM ProcessQuery, the same mechanism deploy.js already uses to set a
   // site group's Owner, which plain REST also refuses. Response is a JSON
   // array whose [0].ErrorInfo is non-null on failure; a 200 alone is not
   // evidence of success.
@@ -128,7 +128,7 @@
   const base = `${window.location.origin}${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`;
 
   const MATRIX = [
-    { name: 'Ctl',     note: 'control — nothing done to it' },
+    { name: 'Ctl',     note: 'control, nothing done to it' },
     { name: 'NewOff',  note: 'setshowinnewform(false)' },
     { name: 'EditOff', note: 'setshowineditform(false)' },
     { name: 'DispOff', note: 'setshowindisplayform(false)' },
@@ -141,7 +141,7 @@
   const NAMES = ['Title', ...MATRIX.map((m) => m.name)];
 
   // === One-word answering =================================================
-  // Defined as window getters, so `y` + Enter is enough — no parentheses.
+  // Defined as window getters, so `y` + Enter is enough, no parentheses.
   let gate = null;
   const wait = () => new Promise((res) => { gate = res; });
   const answer = (v) => {
@@ -226,7 +226,7 @@
     while (i < columns.length) {
       const name = columns[i];
       rule();
-      console.log(`%c  Q${i + 1}/${columns.length} · ${form.toUpperCase()} form — can you see:   %c${name}`,
+      console.log(`%c  Q${i + 1}/${columns.length} · ${form.toUpperCase()} form, can you see:   %c${name}`,
         'color:#888', 'font-weight:bold;font-size:14px;color:#06c');
       if (NOTE.get(name)) say(`        (${NOTE.get(name)})`);
       console.log('%c        y   or   n', 'color:#0a7;font-weight:bold');
@@ -259,7 +259,7 @@
       });
     }
     const n = rows.length;
-    rule(); log(`${form.toUpperCase()} form — predicted vs what you saw`);
+    rule(); log(`${form.toUpperCase()} form: predicted vs what you saw`);
     console.table(rows);
     log(`Agreement:  SchemaXml ${xmlHits}/${n} · FieldLink ${linkHits}/${n} · AND-of-both ${andHits}/${n}`);
     const best = Math.max(xmlHits, linkHits, andHits);
@@ -267,7 +267,7 @@
     if (andHits === best) win.push('AND-of-both');
     if (linkHits === best) win.push('FieldLink.Hidden');
     if (xmlHits === best) win.push('SchemaXml');
-    log(`Best explanation: ${win.join(' or ')}${best < n ? ' — but nothing explains every column' : ''}`);
+    log(`Best explanation: ${win.join(' or ')}${best < n ? ', but nothing explains every column' : ''}`);
     return { form, n, xmlHits, linkHits, andHits };
   }
 
@@ -282,7 +282,7 @@
   rule();
   log('Setting up: one list, eight columns, one item. Nothing else is touched.');
   if ((await get(`${listPath}?$select=Title`)).ok) {
-    log('A previous probe list exists — deleting it for a clean run.');
+    log('A previous probe list exists, deleting it for a clean run.');
     const del = await post(listPath, undefined, { 'IF-MATCH': '*', 'X-HTTP-Method': 'DELETE' });
     if (!del.ok) { console.error(`[PROBE] could not delete it: HTTP ${del.status} ${del.error}`); return { aborted: 'stale-list' }; }
   }
@@ -316,7 +316,7 @@
   //   ClientContext.Current.Web.Lists.GetByTitle(list)
   //     .ContentTypes.GetById(ctId).FieldLinks.GetById(guid).Hidden = value
   //   then ContentType.Update(false)
-  // The Update call is required — without it the SetProperty is discarded.
+  // The Update call is required. Without it the SetProperty is discarded.
   // REST_FIRST re-runs the refused MERGE before the CSOM attempt, so both
   // outcomes appear side by side in the transcript.
   const REST_FIRST = true;
@@ -353,27 +353,27 @@
   if (et.ok) await post(`${listPath}/items`, { __metadata: { type: et.d.ListItemEntityTypeFullName }, Title: 'probe row' });
 
   stores = await readStores();
-  showTable('Baseline — what each store says');
+  showTable('Baseline: what each store says');
   rule();
   bold('THE MATRIX');
   for (const m of MATRIX) say(`  ${m.name.padEnd(8)} ${m.note}`);
   urlsBanner();
 
   // === Round 1 ============================================================
-  bold('ROUND 1 of 3 — what do the forms actually render?');
+  bold('ROUND 1 of 3: what do the forms actually render?');
   const cols = NAMES.filter((n) => stores.has(n));
   const r1 = [];
   for (const form of ['new', 'edit', 'display']) r1.push(analyse(form, await askForm(form, cols)));
 
   // === Round 2 ============================================================
   rule();
-  bold('ROUND 2 of 3 — where does the modern UI write?');
+  bold('ROUND 2 of 3: where does the modern UI write?');
   await instruct([
     'In the list, open an item and choose "Edit form" -> "Edit columns".',
     'UNTICK these two, then save:',
     '',
     '    Ctl        an ordinary column',
-    '    SealedF    a SEALED column — note whether the UI even lets you',
+    '    SealedF    a SEALED column, note whether the UI even lets you',
     '',
   ]);
   const before = stores;
@@ -390,9 +390,9 @@
 
   // === Round 3 ============================================================
   rule();
-  bold('ROUND 3 of 3 — can CSOM undo a UI hide?');
+  bold('ROUND 3 of 3: can CSOM undo a UI hide?');
   say('REST cannot write FieldLink.Hidden. This tries CSOM ProcessQuery on');
-  say('BOTH columns you just hid — one ordinary, one SEALED — so we learn');
+  say('BOTH columns you just hid (one ordinary, one SEALED), so we learn');
   say('whether sealing the FIELD also protects its content-type FieldLink.');
   const undoNote = await setLinkHidden('Ctl', false);
   log(`Ctl (ordinary)  → ${undoNote}`);

@@ -1,5 +1,5 @@
 // ============================================================================
-// Credentialing register — practitioners + their credentials and scope.
+// Credentialing register: practitioners + their credentials and scope.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -44,12 +44,12 @@ Table Practitioner {
   RegistrationNumber nvarchar            [unique, note: 'Professional registration number (e.g. AHPRA); blank for non-registered credentialed roles']
   // The renewal sweep works this column.
   RegistrationExpiry date                [note: 'When the current registration period ends']
-  ScopeSummary       richtext            [note: 'The APPROVED scope of practice, as decided — what this person is credentialed to do here, including any conditions or exclusions']
+  ScopeSummary       richtext            [note: 'The APPROVED scope of practice, as decided: what this person is credentialed to do here, including any conditions or exclusions']
   ScopeApprovedDate  date                [note: 'When the current scope was decided']
   // The governance review cycle runs on this date.
   ScopeReviewDate    date                [not null, note: 'Next scheduled credentialing review']
   Status             practitioner_status [not null, default: 'Current']
-  Notes              richtext            [note: 'Committee references, conditions history — professional facts only']
+  Notes              richtext            [note: 'Committee references, conditions history; professional facts only']
 
   indexes {
     Discipline

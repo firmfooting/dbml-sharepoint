@@ -1,16 +1,16 @@
 /**
- * dbml-sharepoint PROBE — WHAT A LOOKUP SHOWS, AND WHAT IT OFFERS
+ * dbml-sharepoint PROBE: WHAT A LOOKUP SHOWS, AND WHAT IT OFFERS
  *
  * TWO QUESTIONS about the same column type, asked together because they
  * need the same pair of lists.
  *
- * QUESTION A — DOES A LOOKUP LEAK ACROSS AN ACL? When list A carries a
+ * QUESTION A: DOES A LOOKUP LEAK ACROSS AN ACL? When list A carries a
  * Lookup into list B, and a reader is DENIED list B, does the referencing
  * item on list A still show them B's display value?
  *
  * WHY: service-evidence-register puts `RelatedIssue` on `ServiceEvent`,
  * which every contributor can read, pointing at `ServiceIssue`, which they
- * are deliberately denied — 50-govern says "Contributors deliberately
+ * are deliberately denied. 50-govern says "Contributors deliberately
  * cannot see ServiceIssue... a leaked one is worse than no register at
  * all". A review raised that the lookup may render the theme's title on
  * the event anyway, defeating the boundary. Nobody has measured it. This
@@ -18,14 +18,14 @@
  * before, so the register ships the guidance that is safe under both
  * answers and this file exists to settle which answer it is.
  *
- * QUESTION B — CAN A LOOKUP OFFER FEWER ROWS? A lookup picker lists every
+ * QUESTION B: CAN A LOOKUP OFFER FEWER ROWS? A lookup picker lists every
  * item in the target, which stops being usable at a few hundred rows and
  * offers choices that are wrong rather than merely many: a closed theme
  * should not be selectable for a new event. The widely-repeated remedy is
  * to point the lookup at a CALCULATED column that returns an empty string
  * for the rows you want hidden, on the belief that the picker omits rows
  * whose display value is empty. Two things about that are unverified here
- * and one of them is a trap:
+ * and one of them can lose data:
  *
  *   - does SharePoint accept a calculated column as a lookup's display
  *     field at all? The tool's own validator does not check the TYPE of
@@ -53,7 +53,7 @@
  *   K5   does SharePoint accept a CALCULATED column as a lookup's display
  *        field (LookupFieldName)?
  *   K6   ...and with the label empty for a row, what does an item ALREADY
- *        LINKED to that row read back as? This is the trap: a theme that
+ *        LINKED to that row read back as? This is the risky one: a theme that
  *        closes must not blank the link on the events behind it.
  *   K7   EYES-ON: does the New form's picker actually omit the row whose
  *        calculated label is empty? A picker is a rendering surface and no
@@ -62,16 +62,16 @@
  * READ K1 AND K4 FIRST. K2 is evidence only when the account is provably
  * denied the target AND provably allowed the source.
  *
- * TWO ACCOUNTS, TWO PASTES — question A only. No probe here has needed a
+ * TWO ACCOUNTS, TWO PASTES (question A only). No probe here has needed a
  * second identity before, and a site collection administrator cannot deny
  * themselves, so running it all as one person would answer a question
  * nobody asked.
  *
- *   PASS 1 — as a SITE OWNER. MODE = 'setup'. Creates two lists, links
+ *   PASS 1: as a SITE OWNER. MODE = 'setup'. Creates two lists, links
  *            rows, answers K5 and K6, prints the K7 checklist, then breaks
  *            inheritance on the target and strips every assignment except
  *            Site Owners.
- *   PASS 2 — as a SECOND, NON-PRIVILEGED account: a member or visitor of
+ *   PASS 2: as a SECOND, NON-PRIVILEGED account, a member or visitor of
  *            this site who is NOT a site owner, site collection admin or
  *            tenant admin. MODE = 'read'. Writes NOTHING.
  *
@@ -99,7 +99,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -112,7 +112,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -138,11 +138,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -150,7 +150,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -159,7 +159,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -200,7 +200,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -212,7 +212,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -259,7 +259,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -270,9 +270,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -339,14 +339,14 @@
       : `could not read web/currentuser (HTTP ${me.status})`;
     log('INFO', `Running as: ${who}`);
 
-    // K1 — the control. A site collection admin is never denied anything,
+    // K1 is the control. A site collection admin is never denied anything,
     // so an admin running this pass invalidates the run and must be told,
     // not quietly passed.
     const target = await spGet(`web/lists/getbytitle('${TARGET}')/items?$select=Title&$top=5`);
     const isAdmin = me.ok && me.body && me.body.IsSiteAdmin === true;
     // Only 401/403 is a DENIAL. A 429 or a 500 also fails, and reading
     // either as "denied" would let K2 run believing a premise it has not
-    // established — the throttled case would then report the lookup value
+    // established. The throttled case would then report the lookup value
     // withheld from an account that was never actually refused anything.
     const deniedTarget = target.status === 401 || target.status === 403;
     if (!me.ok) {
@@ -378,21 +378,21 @@
              + `target list. Running as: ${who}`);
     }
 
-    // K4 — the other control, asked before K2 so the read-out order is the
+    // K4 is the other control, asked before K2 so the read-out order is the
     // order a reader needs them in.
     const source = await spGet(
       `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}Id&$top=10`);
     const rows = (source.ok && source.body && source.body.value) || [];
     // Reading the list is not enough. K2 concludes "withheld" from the
     // ABSENCE of a string, so the row that would carry it has to be proven
-    // present and linked first — otherwise a deleted fixture, or one past
+    // present and linked first. Otherwise a deleted fixture, or one past
     // the page limit, reads as a clean security result.
     const fixture = rows.find((r) => r.Title === 'dbmlsp-probe-source-row');
     const fixtureLinked = Boolean(fixture && fixture[`${LOOKUP}Id`]);
     record('K4', 'CONTROL: can the denied account read the SOURCE list at all?',
            !source.ok ? 'FAIL' : fixtureLinked ? 'PASS' : 'NOT ESTABLISHED',
            !source.ok
-             ? `refused with HTTP ${source.status} — K2 and K3 are silent for the `
+             ? `refused with HTTP ${source.status}. K2 and K3 are silent for the `
                + 'wrong reason. Grant this account read on the source list and re-run.'
              : fixtureLinked
                ? `read ${rows.length} row(s), including the linked fixture row `
@@ -405,9 +405,9 @@
 
     if (!me.ok || !source.ok || !fixtureLinked || isAdmin || target.ok || !deniedTarget) {
       record('K2', 'Reading the SOURCE item as the denied account, does the lookup display value come back?',
-             'NOT ESTABLISHED', 'a control above did not hold — see K1 and K4');
+             'NOT ESTABLISHED', 'a control above did not hold (see K1 and K4)');
       record('K3', 'Does $expand on the lookup reach the target row\'s other columns?',
-             'NOT ESTABLISHED', 'a control above did not hold — see K1 and K4');
+             'NOT ESTABLISHED', 'a control above did not hold (see K1 and K4)');
     } else {
       const expanded = await spGet(
         `web/lists/getbytitle('${SOURCE}')/items?$select=Title,${LOOKUP}/Title`
@@ -438,7 +438,7 @@
       const sideRaw = side.ok ? JSON.stringify(side.body) : '';
       // A refusal is the server rejecting the query or the access. A 429 or
       // a 500 is neither, and calling one REFUSED would turn a throttle into
-      // an ACL result — the trap K1 and K2 above already avoid.
+      // an ACL result, which K1 and K2 above already avoid.
       const sideRefused = isRefusal(side.status)
         || side.status === 401 || side.status === 403;
       record('K3', 'Does $expand on the lookup reach the target row\'s other columns?',
@@ -495,7 +495,7 @@
   const ensureList = async (title) => {
     const found = await spGet(`web/lists/getbytitle('${title}')`);
     if (found.ok) {
-      log('INFO', `List '${title}' already exists — reusing it.`);
+      log('INFO', `List '${title}' already exists, reusing it.`);
       return found.body;
     }
     digest = await getDigest();
@@ -522,12 +522,12 @@
   const targetList = await ensureList(TARGET);
   if (!targetList) {
     return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
-                `the target list could not be created — see the FAIL above`);
+                `the target list could not be created (see the FAIL above)`);
   }
   const sourceList = await ensureList(SOURCE);
   if (!sourceList) {
     return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
-                `the source list could not be created — see the FAIL above`);
+                `the source list could not be created (see the FAIL above)`);
   }
 
   // A second target column, so K3 can ask whether $expand reaches past the
@@ -554,7 +554,7 @@
                                { Title: SECRET, ProbeSide: SIDE, ProbeStatus: 'Open' }, digest);
   digest = await getDigest();
   // Created OPEN, so its calculated label is populated. K6 closes it AFTER
-  // the link exists — the transition is the question, and a row born closed
+  // the link exists. The transition is the question, and a row born closed
   // would only have shown what linking to an already-empty label does.
   const closedRow = await spPost(`web/lists/getbytitle('${TARGET}')/items`,
                                  { Title: CLOSED_TITLE, ProbeStatus: 'Open' }, digest);
@@ -579,7 +579,7 @@
     }, digest);
   };
 
-  // The ordinary lookup, on Title — this is the one question A is about.
+  // The ordinary lookup, on Title. This is the one question A is about.
   const plainLookup = await addLookup(LOOKUP, 'Title');
   if (!plainLookup.ok) {
     return bail('K1', 'CONTROL: is the second account actually denied the TARGET list?',
@@ -588,7 +588,7 @@
   }
   log('OK', `Added lookup '${LOOKUP}' -> ${TARGET}.Title.`);
 
-  // K5 — the calculated display field. The tool's validator would let this
+  // K5 is the calculated display field. The tool's validator would let this
   // through (it checks the NAME exists, never the type), so whether the
   // platform accepts it is the whole question.
   const calcLookup = await addLookup(PICK, LABEL);
@@ -605,7 +605,7 @@
              + 'point a lookup at: ' + labelMade.text.slice(0, 200)
            : calcLookup.ok
              ? `addfield with LookupFieldName='${LABEL}' (a Calculated column) returned `
-               + `HTTP ${calcLookup.status}. Accepted is not the same as usable — K6 and `
+               + `HTTP ${calcLookup.status}. Accepted is not the same as usable. K6 and `
                + 'K7 are what decide that.'
              : isRefusal(calcLookup.status)
                ? `HTTP ${calcLookup.status}: ${calcLookup.text.slice(0, 300)}. The `
@@ -626,7 +626,7 @@
   }
   log('OK', 'Created and linked one source row.');
 
-  // K6 — the trap, and the ORDER is the whole point. Link a row through the
+  // K6 is the risk, and the ORDER is the whole point. Link a row through the
   // CALCULATED lookup while the target's label is still populated, THEN
   // close the target so the label empties, THEN read the link back. If it
   // comes back blank, closing a theme would blank the link on every event
@@ -654,7 +654,7 @@
       // BEFORE closing: prove the label is actually rendering. K6's whole
       // conclusion is drawn from the title's ABSENCE afterwards, so without
       // this a calculated column that never computed at all would read as
-      // "the transition blanked it" — the absence has to be shown to be a
+      // "the transition blanked it". The absence has to be shown to be a
       // CHANGE rather than the way it always was.
       const before = await spGet(
         `web/lists/getbytitle('${SOURCE}')/items(${linkedToClosed.body.Id})`
@@ -713,7 +713,7 @@
   }
 
   // Break inheritance on the TARGET and strip every assignment except the
-  // owners group — the same shape `list_permissions` deploys, done by hand
+  // owners group, the same shape `list_permissions` deploys, done by hand
   // because this probe asks what that shape actually buys.
   digest = await getDigest();
   const broke = await spPost(
@@ -736,33 +736,33 @@
           ? `Granted Full Control on '${TARGET}' to '${owners.body.Title}' only.`
           : `Could not grant owners on '${TARGET}': HTTP ${granted.status}`);
   } else {
-    log('FAIL', 'Could not read the associated owner group — grant yourself access '
+    log('FAIL', 'Could not read the associated owner group. Grant yourself access '
                 + `to '${TARGET}' by hand before deleting it.`);
   }
 
   report();
-  console.log('\n============ EYES-ON, PASS 1 — K7 ============');
+  console.log('\n============ EYES-ON, PASS 1 (K7) ============');
   console.log('Do this BEFORE signing out; a picker is a rendering surface and');
   console.log('no REST call can answer it.');
   console.log(`  1. Open ${WEB}/Lists/${encodeURIComponent(SOURCE)}/NewForm.aspx`);
-  console.log(`  2. Open the '${PICK}' picker — the one on the CALCULATED label.`);
+  console.log(`  2. Open the '${PICK}' picker, the one on the CALCULATED label.`);
   console.log(`     Rows on the target are "${SECRET}" (label populated) and`);
   console.log(`     "${CLOSED_TITLE}" (label empty, because it is Closed).`);
   console.log('     Which rows does the picker offer?');
   console.log('     offered: ______________________________________');
-  console.log(`  3. Open the '${LOOKUP}' picker — the one on Title — for contrast.`);
+  console.log(`  3. Open the '${LOOKUP}' picker (the one on Title) for contrast.`);
   console.log('     offered: ______________________________________');
   console.log('');
   console.log('  A picker that omits the empty-label row is the mechanism for a');
   console.log('  shorter, correct choice list. One that offers a BLANK entry is');
   console.log('  worse than doing nothing: the choice is still there and now has');
-  console.log('  no name. Read this together with K6 — if a linked row goes blank');
+  console.log('  no name. Read this together with K6: if a linked row goes blank');
   console.log('  when its label empties, the trick costs history to buy tidiness.');
   console.log('');
   console.log('============ NOW RUN PASS 2 ============');
   console.log('Question A is unanswered until a SECOND account runs the read');
   console.log('pass. That account must NOT be a site owner, site collection');
-  console.log('administrator or tenant administrator — K1 checks.');
+  console.log('administrator or tenant administrator. K1 checks.');
   console.log('');
   console.log(`  1. Give the second account read access to '${SOURCE}' only.`);
   console.log(`     It must have NOTHING on '${TARGET}'.`);

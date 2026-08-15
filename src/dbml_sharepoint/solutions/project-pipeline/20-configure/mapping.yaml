@@ -1,4 +1,4 @@
-# Project pipeline — physical mapping.
+# Project pipeline: physical mapping.
 prefix: "PP_"
 
 entities:
@@ -17,13 +17,13 @@ enum_sources: {}
 watched_lists: []
 
 # PriorityScore = Benefit (1-3) x Feasibility (1-3), so 1-9. Deliberately
-# unweighted: sort by score, then let humans argue about the ties — that
+# unweighted: sort by score, then let humans argue about the ties; that
 # argument is the prioritisation meeting working as intended.
 calculated_formulas:
   Proposal:
     PriorityScore: '=IF(OR(ISBLANK([Benefit]),ISBLANK([Feasibility])),"",IF([Benefit]="Low",1,IF([Benefit]="Medium",2,3))*IF([Feasibility]="Hard",1,IF([Feasibility]="Moderate",2,3)))'
 
-# Security: ideas come from everywhere — Members and Owners hold Contribute
+# Security: ideas come from everywhere. Members and Owners hold Contribute
 # (proposers refine their own proposals through Scoping); gate decisions are
 # authority, not permissions (see 50-govern). Full Control confined to the
 # empty-by-default admin group.
@@ -65,18 +65,18 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
 
 # Backend internal names stay exactly as authored in the DBML (views,
 # indexes and formulas all key on them); the deployer renames the display
-# Title after create — "PriorityScore" shows as "Priority Score". Auto
+# Title after create: "PriorityScore" shows as "Priority Score". Auto
 # PascalCase splitting handles every column here correctly, so there are no
 # overrides.
 display_names:
@@ -88,7 +88,7 @@ display_names:
 # plays in its lifecycle: Idea is intake, Scoping and In delivery are in
 # motion, Ready for decision is the one state that needs attention from
 # somebody other than its proposer, and Declined and Parked are muted
-# rather than blocked — a declined proposal is a decision that was taken,
+# rather than blocked: a declined proposal is a decision that was taken,
 # not a project that failed.
 #
 # PriorityScore takes the theme's shared treatment: data-bar, explicit max,
@@ -137,13 +137,13 @@ field_sets:
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). "The funnel" is the default: everything still
 # alive, grouped by the gate it is waiting at, ranked by score inside each
-# group. The four lenses are the pipeline's own cadence — the monthly gate
+# group. The four lenses are the pipeline's own cadence: the monthly gate
 # agenda, the quarterly portfolio-against-capacity read, the annual
 # graveyard read-through, and the delivered work that is the only evidence
 # any of it was worth doing.
 #
 # Widths are pixel ColumnWidth per view, keyed on INTERNAL names (the build
-# rewrites them to display titles — ColumnWidth binds by display name, and
+# rewrites them to display titles; ColumnWidth binds by display name, and
 # internal names silently reset).
 #
 # Every view showing PriorityScore also shows Benefit: the bar's fill is
@@ -175,8 +175,8 @@ views:
         CostBand: 220
         ProposedDate: 160
     # The gate agenda, in score order. Governance is explicit that the score
-    # ranks the conversation rather than ending it — a strategic Hard/High
-    # at 3 can beat a trivial Easy/Medium at 6 — so this view puts the
+    # ranks the conversation rather than ending it (a strategic Hard/High
+    # at 3 can beat a trivial Easy/Medium at 6), so this view puts the
     # inputs beside the score, because overruling it out loud is only
     # possible if everyone can see what it was computed from.
     - title: "Decision queue"
@@ -212,7 +212,7 @@ views:
         DecisionDate: 160
     # Kept, and kept under this name. Governance schedules an annual
     # read-through of it, because patterns in what gets declined are
-    # strategy telling you something — and a "Closed proposals" view nobody
+    # strategy telling you something, and a "Closed proposals" view nobody
     # opens would not be read once a year. DecisionNotes is on it for the
     # same reason: an unannotated graveyard is a list of dates.
     - title: "Graveyard"
@@ -256,7 +256,7 @@ views:
         DeliveredDate: 160
 
 # Form layouts: a strapline header and a sectioned body. SharePoint renders
-# per-field description hints inside sectioned forms on the NEW form only —
+# per-field description hints inside sectioned forms on the NEW form only;
 # the edit form suppresses column descriptions (platform limitation).
 # Section field lists are authored with INTERNAL names; the build rewrites
 # them to display titles.
@@ -266,20 +266,20 @@ views:
 # which on the New form is a heading with nothing under it at all.
 #
 # System is last and holds only PriorityScore, so on the New form it is a
-# bare heading — calculated columns never render on entry forms. Cosmetic
+# bare heading; calculated columns never render on entry forms. Cosmetic
 # and expected, the same shape risk-register's System section has.
 form_formatting:
   Proposal:
     header: formatting/proposal-form-header.json
     body: formatting/proposal-form-body.json
 
-# Ideas are welcome half-formed — that is the staff guide's promise, and
+# Ideas are welcome half-formed. That is the staff guide's promise, and
 # this is what keeps the New form honest about it. A proposer writes the
 # problem and the outcome; the sponsor and the gate record arrive later,
 # when there is something to record.
 #
 # Deliberately NOT declared: any rule conditioned on PriorityScore.
-# Conditional show/hide cannot read a calculated column — the formula stays
+# Conditional show/hide cannot read a calculated column. The formula stays
 # syntactically valid, so it saves, the readback compares equal and the
 # phase passes, but the form never reacts. The build refuses it, and the
 # most natural rule here ("ask for a sponsor once the score is 6 or more")
@@ -314,7 +314,7 @@ form_visibility:
           - { field: Stage, op: eq, value: "Delivered" }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has a
+# message, and they all run, unlike list_validation, where a list has a
 # single ValidationFormula and every cross-column rule shares one message.
 column_validation:
   Proposal:
@@ -339,7 +339,7 @@ column_validation:
 list_validation:
   Proposal:
     # THREE rules, chained. A list has ONE ValidationFormula, so every
-    # cross-column rule shares this slot — the top-level list is an AND, so
+    # cross-column rule shares this slot: the top-level list is an AND, so
     # they compose, and each is written as an implication: `if A then B` is
     # `any_of[not A, B]`.
     when:
@@ -352,7 +352,7 @@ list_validation:
               - { field: Benefit, op: is_not_null }
               - { field: Feasibility, op: is_not_null }
               - { field: CostBand, op: is_not_null }
-      # Every gate outcome carries its date — and so does everything
+      # Every gate outcome carries its date, and so does everything
       # downstream of one, since a proposal in delivery passed a gate to get
       # there.
       - any_of:
@@ -364,12 +364,12 @@ list_validation:
     message: "This proposal cannot be saved yet. Check all three: Ready for decision needs Benefit, Feasibility and Cost Band; anything past the gate needs a Decision Date; and Delivered needs a Delivered Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # funnel lands on whatever day the demo runs; "@me" is the pasting operator.
 # Coverage: every declared view returns rows, every benefit, feasibility
 # and cost band renders, and one row is deliberately left at Idea with
-# nothing scored so the blank score is visible — an unscored proposal
+# nothing scored so the blank score is visible; an unscored proposal
 # showing a zero-length bar rather than a 1 is the difference between "not
 # yet assessed" and "assessed as worthless".
 demo_items:

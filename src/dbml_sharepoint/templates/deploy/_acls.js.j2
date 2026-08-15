@@ -5,7 +5,7 @@
    Owner/Member/Visitor groups; levels by role-definition name. #}
   // === Phase {{ phase.number }}: break inheritance + role assignments ===
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   {
@@ -165,7 +165,7 @@
         // assignment methods below use their documented named parameters.
         // ONE enumeration answers every question below. getbyprincipalid
         // answers 404 for a principal that has no assignment on this list
-        // yet — which every declared principal is on a first deploy — and
+        // yet (which every declared principal is on a first deploy), and
         // the browser paints that red whether or not the script handles it.
         // Same treatment lists, views and site groups already get.
         //

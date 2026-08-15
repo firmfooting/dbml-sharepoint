@@ -1,5 +1,5 @@
 // ============================================================================
-// Process register — the business-process inventory with a calculated
+// Process register: the business-process inventory with a calculated
 // digitisation-priority score. Render the ERD on https://dbdiagram.io
 // ============================================================================
 
@@ -39,12 +39,12 @@ Table BusinessProcess {
   Title                nvarchar             [not null, note: 'The process, verb first: "Approve staff travel", "Register visitors"']
   Function             nvarchar             [not null, note: 'Which team or function runs it']
   Owner                person               [not null, note: 'The person accountable for how this process works']
-  Purpose              richtext             [note: 'What the process achieves and for whom — two sentences']
+  Purpose              richtext             [note: 'What the process achieves and for whom (two sentences)']
   Criticality          process_criticality  [not null, default: 'Medium', note: 'Scored against the governance definitions']
-  CurrentState         process_state        [not null, note: 'How it is actually done today — be honest, the spreadsheet counts as a spreadsheet']
+  CurrentState         process_state        [not null, note: 'How it is actually done today. Be honest, the spreadsheet counts as a spreadsheet']
   PainLevel            pain_level           [not null, default: 'Moderate', note: 'How much the current state hurts: rework, delays, errors, key-person risk']
   PainNotes            richtext             [note: 'The specific pain: where it breaks, who it burns, what it costs']
-  // Calculated — formula in mapping.yaml. The programme worklist sorts by this score.
+  // Calculated: formula in mapping.yaml. The programme worklist sorts by this score.
   DigitisationPriority calculated_number    [note: 'Digitisation priority from 1 to 9: criticality multiplied by pain level. Higher means digitise sooner. Calculates itself once Criticality and Pain level are set.']
   DigitisationStatus   digitisation_status  [not null, default: 'Not assessed']
   TargetState          nvarchar             [note: 'Where it should end up: which system, which template, which form']

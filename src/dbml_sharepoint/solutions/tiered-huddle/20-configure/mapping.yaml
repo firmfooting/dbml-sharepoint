@@ -1,4 +1,4 @@
-# Tiered huddle — physical mapping.
+# Tiered huddle: physical mapping.
 prefix: "TH_"
 
 entities:
@@ -42,7 +42,7 @@ display_names:
 # Named column lists, referenced from views with "@name". Adding or retiring
 # a stream is edited HERE, once, and every view that uses the set picks it
 # up. This is also why the heat grid can hold every status column and no
-# note column — "fields: all" could not express that.
+# note column; "fields: all" could not express that.
 field_sets:
   Tier1Board:
     header:   [BoardDate, Chair, HuddleHeld, OverallStatus]
@@ -63,7 +63,7 @@ field_sets:
 # Four views per board, identical everywhere. "Last 14 days" IS the wall
 # chart: statuses only, newest first, so the fortnight reads as a grid.
 # "Attention" filters on OverallStatus and not on the stream columns because
-# view conditions are ANDed — "any stream amber or red" is not expressible,
+# view conditions are ANDed; "any stream amber or red" is not expressible,
 # which is the reason OverallStatus exists as a chair-set headline.
 views:
   Tier1Board:
@@ -186,14 +186,14 @@ views:
 # Route exists to group the escalation queue by where things travel. Both
 # operands are single-select Choice and both are declared BEFORE Route in
 # the DBML. ASCII arrow so the generated formula carries no encoding
-# question. Verify it renders after the first paste — see the checklist in
+# question. Verify it renders after the first paste. See the checklist in
 # 30-deploy/deploy.md.
 calculated_formulas:
   Escalation:
     Route: '=[RaisedAtTier]&" -> "&[TargetTier]'
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template. Blank stays blank and renders grey: that grey cell is the
 # unreported-stream signal the whole board design exists to give you.
@@ -246,7 +246,7 @@ column_formatting:
 # ADDING A STREAM: add its pair to the Streams section of the matching file.
 # Headers carry the fleet anatomy: icon, live title line, strapline. The
 # boards' title line falls back to "Tier N board" rather than "New Tier N
-# board", because Title is optional here — the date identifies a board, so
+# board", because Title is optional here; the date identifies a board, so
 # an empty Title does not mean the row is new.
 form_formatting:
   Tier1Board:
@@ -265,7 +265,7 @@ form_formatting:
 # Ask for the stood-down reason only when there is one to give. Every other
 # day the chair never sees the field, which is the whole point: the form is
 # filled in daily and every avoidable question is a daily cost.
-# reconcile: exact makes this file authoritative for the whole list — every
+# reconcile: exact makes this file authoritative for the whole list; every
 # other column's conditional formula is cleared on each deploy. That is what
 # you want on a template; read the Reconciliation section of the mapping
 # reference before copying the pattern onto a hand-configured list.
@@ -328,10 +328,10 @@ list_validation:
     message: "Resolving or closing an escalation needs a resolution and a resolved date."
 
 # A worked, live example of the stream lifecycle: Environment folded into
-# Facilities. One entry per column is the whole edit — the pair leaves every
+# Facilities. One entry per column is the whole edit: the pair leaves every
 # view and the New form, its titles gain " (retired)", and every value ever
 # recorded stays readable and stays in the reporting bundle. The DBML
-# declaration stays put; deleting it is the trap 30-deploy/deploy.md spells
+# declaration stays put; deleting it is the failure 30-deploy/deploy.md spells
 # out.
 # Deploying this template for the first time and you never ran an
 # Environment stream? Then nothing exists to preserve: delete this block and
@@ -352,7 +352,7 @@ retired_columns:
 # fortnight of Tier 3 boards and six escalations: every declared view has
 # content on the day you demonstrate it. Dates are today-relative sentinels.
 # Two stream columns are omitted DELIBERATELY (ComplianceStatus on th3-d03,
-# SupplyChainStatus on th3-d01) so the unreported-grey cell is visible — do
+# SupplyChainStatus on th3-d01) so the unreported-grey cell is visible. Do
 # not fill them in. Every Title carries the [DEMO] marker: rows are matched
 # by Title on re-paste, and rollback treats an all-demo list as removable.
 #
@@ -360,8 +360,8 @@ retired_columns:
 # the long Tier 3 run is the heat grid over time; tiers 1 and 2 only need
 # every declared view to have content, which four days do: a board today, an
 # Amber board for "Attention", a stood-down board for "Not held", and one
-# older board inside the fortnight. Shipping them with none — as this
-# template did until the family standard was applied — left eight declared
+# older board inside the fortnight. Shipping them with none (as this
+# template did until the family standard was applied) left eight declared
 # views demonstrably empty on a seeded site.
 demo_items:
   Tier1Board:
@@ -455,7 +455,7 @@ demo_items:
         BoardDate: "today-5"
         Chair: "@me"
         HuddleHeld: "Cancelled"
-        StoodDownReason: "Chair unavailable and no deputy nominated — the gap this column exists to make visible."
+        StoodDownReason: "Chair unavailable and no deputy nominated, the gap this column exists to make visible."
     - key: th2-d09
       values:
         Title: "[DEMO] Service board — last week"
@@ -530,7 +530,7 @@ demo_items:
         BoardDate: "today-10"
         Chair: "@me"
         HuddleHeld: "Stood down"
-        StoodDownReason: "Public holiday — no huddle scheduled."
+        StoodDownReason: "Public holiday, no huddle scheduled."
     - key: th3-d09
       values:
         Title: "[DEMO] Site board — 9 days ago"
@@ -658,7 +658,7 @@ demo_items:
         SupplyChainStatus: "Green"
         ServiceDeliveryStatus: "Green"
         CommunicationsStatus: "Green"
-        OtherUpdates: "Compliance did not report today — chased for tomorrow. The blank cell in the grid is the record of that."
+        OtherUpdates: "Compliance did not report today, chased for tomorrow. The blank cell in the grid is the record of that."
     - key: th3-d02
       values:
         Title: "[DEMO] Site board — 2 days ago"
@@ -693,7 +693,7 @@ demo_items:
         ServiceDeliveryStatus: "Green"
         ComplianceStatus: "Green"
         CommunicationsStatus: "Green"
-        OtherUpdates: "Supply chain representative on leave, no delegate named — second unreported cell this fortnight."
+        OtherUpdates: "Supply chain representative on leave, no delegate named; second unreported cell this fortnight."
     - key: th3-d00
       values:
         Title: "[DEMO] Site board — today"
@@ -703,7 +703,7 @@ demo_items:
         OverallStatus: "Amber"
         OperationsStatus: "Green"
         WorkforceStatus: "Amber"
-        WorkforceNote: "One vacancy still awaiting recruitment approval — escalated to Tier 3."
+        WorkforceNote: "One vacancy still awaiting recruitment approval, escalated to Tier 3."
         QualitySafetyStatus: "Green"
         FacilitiesStatus: "Green"
         TechnologyStatus: "Green"
@@ -753,7 +753,7 @@ demo_items:
         DueDate: "today-6"
         Priority: "High"
         Status: "Open"
-        Notes: "Work cannot start without passes. Third time raised — overdue and going nowhere."
+        Notes: "Work cannot start without passes. Third time raised, overdue and going nowhere."
     - key: esc-stock
       values:
         Title: "[DEMO] Daily stock count to move to team level"
@@ -797,7 +797,7 @@ demo_items:
         Notes: "Kept open until the Tier 2 board confirmed the backlog had actually cleared, not just that cover was approved."
 
 # Security: house standard, no deviation. Recording the huddle is everyone's
-# job — Members and Owners hold Contribute; Full Control is confined to the
+# job. Members and Owners hold Contribute; Full Control is confined to the
 # empty-by-default admin group the deploy script enrols the operator into
 # for the duration of its own run.
 groups:
@@ -838,11 +838,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true

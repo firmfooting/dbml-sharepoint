@@ -128,8 +128,8 @@ jobs:
             echo "::endgroup::"
           done
           echo "Seeded $found of $expected template(s)."
-          # Every template ships demo_items — it is part of the family
-          # standard, not a feature some of them happen to use — so the
+          # Every template ships demo_items. It is part of the family
+          # standard, not a feature some of them happen to use, so the
           # honest assertion is equality, not a floor. A floor written when
           # two templates seeded stays green while twenty-seven stop, which
           # is the same open failure a hardcoded roster gives you, spelled

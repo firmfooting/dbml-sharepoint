@@ -1,4 +1,4 @@
-# Vehicle log — physical mapping.
+# Vehicle log: physical mapping.
 prefix: "VE_"
 
 entities:
@@ -21,7 +21,7 @@ calculated_formulas:
   Trip:
     TripKm: '=IF(OR(ISBLANK([OdoStart]),ISBLANK([OdoEnd])),"",[OdoEnd]-[OdoStart])'
 
-# Security: every driver records their own trips — Members and Owners hold
+# Security: every driver records their own trips. Members and Owners hold
 # Contribute; Full Control confined to the empty-by-default admin group.
 groups:
   - name: "dbml List Administrators"
@@ -61,11 +61,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -90,7 +90,7 @@ display_names:
 # style-guide.md).
 #
 # TripType is a pill rather than a severity box because it is a
-# classification, not a state — but Private and Commute are NOT neutral
+# classification, not a state, but Private and Commute are NOT neutral
 # here. They are the rows finance has to look at, they are what makes the
 # business/private split defensible, and they earn the `warning`
 # treatment for exactly that reason: the tax value of the whole log rests
@@ -122,7 +122,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view, keyed on
-# INTERNAL names — the build rewrites them to display titles, and
+# INTERNAL names. The build rewrites them to display titles, and
 # ColumnWidth binds by display name.
 views:
   Vehicle:
@@ -172,19 +172,19 @@ views:
         DepartedAt: 180
         OdoStart: 150
         ReturnedAt: 180
-    # The published table promised "Per vehicle" — one view filtered to one
+    # The published table promised "Per vehicle", one view filtered to one
     # vehicle. A static view cannot do that: SharePoint has no per-parent
     # filter, so following the table meant either hard-coding one vehicle
     # into a filter that rots the moment the fleet changes, or building one
     # view per car. Per §2.4 of the family standard this ships as ONE view
-    # grouped on the Vehicle lookup, collapsed — which is the real
+    # grouped on the Vehicle lookup, collapsed, which is the real
     # SharePoint idiom, stays correct as vehicles are added, and gives the
     # continuous log book the old row was actually asking for.
     #
     # THE ROW WASH LIVES HERE, and this is the one list-level signal this
     # template gets (§1.6). A negative Trip km means a mis-read odometer,
     # which is the single worst state in a log book whose whole value is
-    # odometer continuity — and this is the view where continuity is read,
+    # odometer continuity, and this is the view where continuity is read,
     # one vehicle's trips in a row. The formatter reads [$TripKm], so
     # TripKm must stay in this view's `fields`: a view formatter can only
     # see the columns its own view displays. It compares with Number()
@@ -228,13 +228,13 @@ views:
         OdoEnd: 150
         TripKm: 150
         ReturnedAt: 180
-    # The published table promised "Monthly km by vehicle — DepartedAt in
+    # The published table promised "Monthly km by vehicle: DepartedAt in
     # month, group by Vehicle, SUM TripKm". ONE substitution remains, and it
     # is stated in 30-deploy/deploy.md: CAML has no calendar-month
     # predicate, so this is a rolling thirty days and the title says so.
     #
     # Grouped by vehicle and collapsed, SharePoint renders a per-group
-    # subtotal as well as an overall one — the fleet-review figure the
+    # subtotal as well as an overall one, the fleet-review figure the
     # published table asked for.
     - title: "Last 30 days by vehicle"
       fields: ["@identity", OdoStart, OdoEnd, TripKm]
@@ -261,7 +261,7 @@ views:
 # the driver can answer at the key cupboard: the return fields appear on
 # the Edit form, which is what "Out now" is for.
 #
-# reconcile: exact makes this file authoritative for the whole list —
+# reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy.
 form_visibility:
   Trip:
@@ -272,7 +272,7 @@ form_visibility:
 
 # Form layouts: a strapline header and sections on both lists. The Trip
 # title line falls back to "Trip" rather than "New trip", because Title is
-# optional here — a trip is identified by its vehicle and time, so an empty
+# optional here; a trip is identified by its vehicle and time, so an empty
 # Title does not mean the row is new. Section field lists are authored with
 # INTERNAL names; the build rewrites them to display titles.
 form_formatting:
@@ -284,7 +284,7 @@ form_formatting:
     body: formatting/trip-form-body.json
 
 # Per-column save rules, each with its own message. Every column here is a
-# DATETIME, and `now` renders as NOW() in a validation formula — verified
+# DATETIME, and `now` renders as NOW() in a validation formula, verified
 # against a live tenant on 2026-07-29
 # (test/manual/datetime-sentinel-probe.js), against Microsoft's own formula
 # reference, which says Lists do not support NOW(). That is true of
@@ -312,12 +312,12 @@ column_validation:
 
 # Save-time enforcement, on the LIST so it may reference more than one
 # column. A trip marked as returned with no closing odometer leaves Trip km
-# blank, which breaks the continuity check the whole register rests on —
+# blank, which breaks the continuity check the whole register rests on;
 # the next trip's start reading has nothing to reconcile against.
 #
 # Deliberately NOT enforced here: that OdoEnd is greater than OdoStart.
 # That is a column-to-column comparison and the condition grammar does not
-# express one — every operand is a literal. A negative Trip km is instead
+# express one; every operand is a literal. A negative Trip km is instead
 # made LOUD, by the row wash on the "By vehicle" view, which is where a
 # fleet owner reads odometer continuity anyway.
 list_validation:
@@ -329,12 +329,12 @@ list_validation:
     message: "A trip that has been returned needs its closing odometer reading. Read it off the dash before you walk away from the car."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Vehicles are created
 # first and the trips reference them by demo key. Odometer readings run
 # CONTINUOUSLY per vehicle, oldest trip to newest, because odometer
 # continuity is the thing a fleet owner reads this register for and demo
-# data that does not have it teaches the wrong habit — with one deliberate
+# data that does not have it teaches the wrong habit, with one deliberate
 # exception, the van trip whose readings are transposed, which is what
 # drives the negative-kilometre row wash.
 demo_items:

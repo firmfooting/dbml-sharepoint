@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Log it as it is announced — the all-clear time is what turns this into a duration."
+          "txtContent": "Log it as it is announced. The all-clear time is what turns this into a duration."
         }
       ]
     }

@@ -1,12 +1,12 @@
 // ============================================================================
-// Research ethics register (single list) — every project this service refers
+// Research ethics register (single list): every project this service refers
 // to a partner HREC, on one row.
 // Render the ERD by pasting this file into https://dbdiagram.io
 //
 // WHY ONE LIST. The obvious shape for this domain is three: a project, its
 // amendments, its progress reports, joined by Lookups. That shape is refused
 // here for a measured reason. A SharePoint Lookup picker enumerates its whole
-// target list and there is NO way to restrict what it offers — the field has
+// target list and there is NO way to restrict what it offers: the field has
 // no filtering attribute, the calculated-column workaround is refused past
 // 5,000 items, and the target list's own default view filter is ignored by
 // the picker. All three were measured on a live tenant; see the "SharePoint
@@ -15,14 +15,14 @@
 // A project register is an ACCUMULATOR: it only grows. By year three the
 // picker on an amendment form offers every long-closed project alongside the
 // live one, and staff cannot find theirs. The list never approaches 5,000
-// items — 5 to 30 new projects a year — so this is not the item threshold.
+// items (5 to 30 new projects a year), so this is not the item threshold.
 // It is picker usability, and it has no fix inside a list schema.
 //
 // The insight the whole design turns on: FILTERING WORKS EVERYWHERE IN
 // SHAREPOINT EXCEPT A LOOKUP PICKER. Remove the child lists and the
-// accumulation problem becomes one SharePoint solves well — a default view
+// accumulation problem becomes one SharePoint solves well: a default view
 // filtered to live projects. That is what ProjectStage and the "Live
-// projects" view are for, and they are load-bearing rather than housekeeping.
+// projects" view are for, and they do real work rather than housekeeping.
 //
 // WHAT IT COSTS is stated rather than hidden, here and in README.md and
 // 50-govern/governance.md: there are no per-amendment and no per-report rows,
@@ -94,7 +94,7 @@ Enum participant_involvement {
   "Patient or client participants"
 }
 
-// GATE 1 — the partner committee's decision.
+// GATE 1: the partner committee's decision.
 //
 // "Response required" is the only member that says the ball is with US rather
 // than with the committee, which is why it exists rather than being folded
@@ -127,7 +127,7 @@ Enum conditions_status {
   "Met"
 }
 
-// GATE 2 — this service's own authorisation, on the research governance
+// GATE 2: this service's own authorisation, on the research governance
 // officer's site-specific assessment. Evidence of ethics approval is required
 // before the Chief Executive or delegate can authorise, which is the list
 // save rule in mapping.yaml.
@@ -146,7 +146,7 @@ Enum authorisation_status {
 
 // THE ACCUMULATION ANSWER. What the project itself is doing, independent of
 // either gate. The default view filters the two terminal members away, so a
-// register ten years deep still opens on this year's work — which is the
+// register ten years deep still opens on this year's work, which is the
 // whole reason a single list is workable here where a lookup picker is not.
 Enum project_stage {
   "Planning"

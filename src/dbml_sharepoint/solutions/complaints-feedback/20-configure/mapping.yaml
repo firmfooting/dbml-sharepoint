@@ -1,4 +1,4 @@
-# Complaints & feedback — physical mapping.
+# Complaints & feedback: physical mapping.
 prefix: "CF_"
 
 entities:
@@ -21,7 +21,7 @@ calculated_formulas:
     DaysToAcknowledge: '=IF(OR(ISBLANK([ReceivedDate]),ISBLANK([AcknowledgedDate])),"",DATEDIF([ReceivedDate],[AcknowledgedDate],"d"))'
     DaysToClose: '=IF(OR(ISBLANK([ReceivedDate]),ISBLANK([ClosedDate])),"",DATEDIF([ReceivedDate],[ClosedDate],"d"))'
 
-# Security — deliberately restrictive (complaints identify people):
+# Security, deliberately restrictive (complaints identify people):
 #   - ordinary site Members: NO grant at all;
 #   - CF Feedback Recorders (front-line staff): submit + read;
 #   - CF Feedback Handlers: Contribute;
@@ -91,11 +91,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -117,7 +117,7 @@ display_names:
 #
 # Severity uses the same good/warning/severe ladder as risk-register's
 # rating columns, so a Standard item is green for the same reason a Low
-# risk is — it is the mildest band, not a happy outcome.
+# risk is: it is the mildest band, not a happy outcome.
 #
 # Outcome is a pill rather than a second severity box: two full-height
 # severity treatments on one row compete, and the outcome is a finding
@@ -168,7 +168,7 @@ column_formatting:
         field: Severity
         map: { "Standard": good, "Serious": warning, "Critical": severe }
 
-# The identifying spine every working view opens with — four of the five
+# The identifying spine every working view opens with. Four of the five
 # views below use it, past §1.9's three-repetition threshold.
 field_sets:
   Feedback:
@@ -176,7 +176,7 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view, keyed on
-# INTERNAL names — the build rewrites them to display titles, and
+# INTERNAL names. The build rewrites them to display titles, and
 # ColumnWidth binds by display name.
 views:
   Feedback:
@@ -238,7 +238,7 @@ views:
     # and the title says so rather than implying a calendar boundary.
     #
     # Both clocks are averaged per feedback type, which is the number this
-    # report is read for — the acknowledgement clock especially, since it is
+    # report is read for, the acknowledgement clock especially, since it is
     # the one most organisations fail first. Means, not sums: adding up
     # day-counts across complaints answers nothing.
     - title: "Closed last 30 days"
@@ -287,7 +287,7 @@ views:
 # every one of them is off the New form; three of them appear on the Edit
 # form only once the status they belong to has been set.
 #
-# reconcile: exact makes this file authoritative for the whole list —
+# reconcile: exact makes this file authoritative for the whole list;
 # every other column's conditional formula is cleared on each deploy.
 form_visibility:
   Feedback:
@@ -309,7 +309,7 @@ form_visibility:
           - { field: Status, op: eq, value: "Closed" }
 
 # Form layout: a strapline header and five sections following the standard
-# arc. Per-field description hints render on the NEW form only —
+# arc. Per-field description hints render on the NEW form only.
 # SharePoint suppresses column descriptions on the Edit form. Section field
 # lists are authored with INTERNAL names; the build rewrites them.
 form_formatting:
@@ -319,7 +319,7 @@ form_formatting:
 
 # Per-column save rules, each with its own message. All three clocks run
 # from ReceivedDate, so a date typed with next year's year does not merely
-# look wrong — it produces a negative day-count and an item that never
+# look wrong; it produces a negative day-count and an item that never
 # appears in the report window.
 column_validation:
   Feedback:
@@ -340,7 +340,7 @@ column_validation:
 # Save-time enforcement, on the LIST so it may reference more than one
 # column. TWO rules, chained: a list has one ValidationFormula, the
 # top-level list is an AND, so they compose and share one message. Each is
-# written as an implication — `if A then B` is `any_of[not A, B]`.
+# written as an implication: `if A then B` is `any_of[not A, B]`.
 #
 # NOTE: `Learning` is rich text, which SharePoint validation formulas
 # cannot reference at all, so "fill in Learning at closure" stays a
@@ -366,7 +366,7 @@ list_validation:
     message: "This item cannot be saved yet. Check both: anything past Received needs an Acknowledged Date, and a Closed item needs an Outcome and a Closed Date."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Titles are neutral and
 # factual, and carry no names, exactly as the staff guide asks of real
 # ones. Dates are today-N so both clocks and the rolling report window

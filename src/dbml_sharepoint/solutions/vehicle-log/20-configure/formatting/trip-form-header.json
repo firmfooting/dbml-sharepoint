@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Read both odometers off the dash — the kilometres are the difference, not an estimate."
+          "txtContent": "Read both odometers off the dash. The kilometres are the difference, not an estimate."
         }
       ]
     }

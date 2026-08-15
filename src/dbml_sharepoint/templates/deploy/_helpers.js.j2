@@ -1,6 +1,6 @@
   // Bounded per-lane parallelism. SharePoint stores fields and views in the
   // list schema, and concurrent schema writes to the SAME list race into
-  // save conflicts — but different lists are fully independent. So the unit
+  // save conflicts, but different lists are fully independent. So the unit
   // of parallelism is the list: items are grouped into lanes by key, items
   // within a lane run strictly sequentially, lanes run concurrently up to
   // `limit`. Workers keep their own per-item try/catch, so error
@@ -66,7 +66,7 @@
 
   // Canonical JSON for declared-vs-readback comparison of formatter blobs
   // (CustomFormatter and friends): parse strings, sort object keys
-  // recursively, stringify — whitespace and key order differences are not
+  // recursively, stringify; whitespace and key order differences are not
   // drift. A non-JSON string compares as itself (fail closed via mismatch).
   const canonicalJson = (value) => {
     if (value == null || value === '') return null;

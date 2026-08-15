@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "One row per obligation in the signed agreement, loaded the week it is signed — the due date is the only thing that beats somebody's memory."
+          "txtContent": "One row per obligation in the signed agreement, loaded the week it is signed. The due date is the only thing that beats somebody's memory."
         }
       ]
     }

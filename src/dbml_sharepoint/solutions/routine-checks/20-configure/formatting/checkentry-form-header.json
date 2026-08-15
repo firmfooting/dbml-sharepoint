@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Record it at the checkpoint, at the time — a check reconstructed later is not a check."
+          "txtContent": "Record it at the checkpoint, at the time. A check reconstructed later is not a check."
         }
       ]
     }

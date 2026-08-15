@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Count something before you change it — there is no after without a before."
+          "txtContent": "Count something before you change it. There is no after without a before."
         }
       ]
     }

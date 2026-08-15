@@ -1,4 +1,4 @@
-# Contract register — physical mapping.
+# Contract register: physical mapping.
 prefix: "CT_"
 
 entities:
@@ -70,11 +70,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -91,14 +91,14 @@ display_names:
       DocumentUrl: "Document URL"
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template. Tokens map by the ROLE a member plays in the lifecycle, never
 # by its name.
 column_formatting:
   Contract:
     # "In renewal" moves from neutral to warning. Neutral is the intake
-    # band — a row nobody has looked at yet — and a contract in renewal
+    # band (a row nobody has looked at yet) and a contract in renewal
     # talks is the opposite of that: it is a decision someone is holding,
     # inside a notice window, which is the "needs attention" role.
     Status:
@@ -121,11 +121,11 @@ column_formatting:
         "Fixed term — no renewal": muted
     # The register's deadline. Guarded on Exited: a date that keeps
     # shouting after the contract has ended trains people to ignore the
-    # colour. Note the guard is NOT on Expiring — an expiring contract is
+    # colour. Note the guard is NOT on Expiring: an expiring contract is
     # exactly the row the escalation is for.
     EndDate: { style: overdue-date, guard: { field: Status, not: [Exited] } }
     # Calculated whole months, so `calculated: true` (the value arrives
-    # prefixed `number;#`). max 60 is five years — long enough that a
+    # prefixed `number;#`). max 60 is five years, long enough that a
     # normal services contract reads as a partial bar and a decade-long
     # lease pins full, which is the comparison the column is for.
     TermMonths: { style: data-bar, max: 60, calculated: true }
@@ -135,7 +135,7 @@ column_formatting:
     # values is a bar that reads as full or empty for everyone.
 
 # Every lens on this list shows the same five identifying columns before
-# its own payload, so the spine is declared once (§1.9 — a set earns its
+# its own payload, so the spine is declared once (§1.9: a set earns its
 # place at three or more repetitions; this one is used by all five views).
 field_sets:
   Contract:
@@ -145,7 +145,7 @@ field_sets:
 # views are never touched). "Live contracts" is the default working list;
 # the four lenses are the ones 30-deploy/deploy.md used to ask the adopter
 # to build by hand, now with filters, sorts and pixel widths. Widths are
-# keyed on INTERNAL names — the build rewrites them to display titles,
+# keyed on INTERNAL names. The build rewrites them to display titles,
 # because ColumnWidth binds by display name and an internal name silently
 # resets.
 views:
@@ -190,7 +190,7 @@ views:
     # The one view that exists to prevent a renewal nobody chose. The
     # notice period sits beside the end date on purpose: the last date a
     # decision can be made is EndDate minus NoticePeriodDays, and the
-    # register deliberately does not calculate it — the notice window is a
+    # register deliberately does not calculate it. The notice window is a
     # contract term that changes at renewal, so a derived column would be
     # silently wrong on every historic row.
     - title: "Auto-renewals"
@@ -242,7 +242,7 @@ views:
         AnnualValue: 140
 
 # Form layouts: a strapline header and a sectioned body. Per-field
-# description hints render on the NEW form only — the edit form suppresses
+# description hints render on the NEW form only. The edit form suppresses
 # column descriptions (platform limitation). Section field lists are
 # authored with INTERNAL names; the build rewrites them to display titles.
 form_formatting:
@@ -257,7 +257,7 @@ form_formatting:
 # when it can be mandatory.
 #
 # Deliberately NOT declared: any rule conditioned on TermMonths.
-# Conditional show/hide cannot read a calculated column — the formula stays
+# Conditional show/hide cannot read a calculated column. The formula stays
 # syntactically valid, so it saves, the readback compares equal and the
 # phase passes, but the form never reacts. The build refuses it.
 form_visibility:
@@ -268,7 +268,7 @@ form_visibility:
           - { field: RenewalType, op: neq, value: "Fixed term — no renewal" }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule has to share one message.
 column_validation:
   Contract:
@@ -289,21 +289,21 @@ column_validation:
 # NOT enforceable here, and therefore left to the governance cadence:
 # EndDate after StartDate. The condition grammar compares a column to a
 # LITERAL, never to another column, so "EndDate > StartDate" has no
-# spelling — see 50-govern/governance.md.
+# spelling. See 50-govern/governance.md.
 list_validation:
   Contract:
     when:
       # Written as an implication: `if A then B` is `any_of[not A, B]`.
       # An auto-renewing contract with no notice period is the exact
-      # failure this register exists to prevent — the renewal happens, and
+      # failure this register exists to prevent: the renewal happens, and
       # nobody knew when the last chance to stop it was.
       - any_of:
           - { field: RenewalType, op: neq, value: "Auto-renews" }
           - { field: NoticePeriodDays, op: is_not_null }
-    message: "An auto-renewing contract needs a Notice Period Days value — that number is the only thing standing between this contract and a renewal nobody chose."
+    message: "An auto-renewing contract needs a Notice Period Days value. That number is the only thing standing between this contract and a renewal nobody chose."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # expiry surfaces land on whatever day the demo runs; "@me" is the pasting
 # operator. Coverage: one row per Status member, an auto-renewer already

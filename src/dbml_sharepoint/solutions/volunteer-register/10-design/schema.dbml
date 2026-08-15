@@ -1,5 +1,5 @@
 // ============================================================================
-// Volunteer register — one list; checks with expiries are the point.
+// Volunteer register: one list; checks with expiries are the point.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -24,9 +24,9 @@ Table Volunteer {
   PoliceCheckExpiry date             [note: 'Expiry date of the police check. Leave blank if a check is not yet held']
   WWCCNumber        nvarchar         [note: 'Working with Children Check (or your jurisdiction equivalent) card number']
   // Which roles require a WWCC is defined in the governance matrix.
-  WWCCExpiry        date             [note: 'Expiry date of the WWCC. Leave blank if not held — some roles do not require one']
+  WWCCExpiry        date             [note: 'Expiry date of the WWCC. Leave blank if not held; some roles do not require one']
   InductionDate     date             [note: 'When their induction was completed']
-  EmergencyContact  nvarchar         [note: 'Name and phone only — the minimum needed on the day']
+  EmergencyContact  nvarchar         [note: 'Name and phone only, the minimum needed on the day']
   // Privacy rules (governance doc) limit what may be recorded about a volunteer.
   Notes             richtext         [note: 'Availability, relevant skills, role history. Record professional facts only']
 

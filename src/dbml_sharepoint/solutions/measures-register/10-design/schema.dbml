@@ -1,5 +1,5 @@
 // ============================================================================
-// Measures register — the KPI catalogue with definition discipline.
+// Measures register: the KPI catalogue with definition discipline.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -37,7 +37,7 @@ Table Measure {
   Target      nvarchar           [note: 'The target and its unit: "95%", "under 10 days", "between 85 and 100". Blank = monitored, not targeted']
   ReportedTo  nvarchar           [not null, note: 'The forum(s) that see it: team meeting, executive, board, regulator']
   Status      measure_status     [not null, default: 'Active']
-  ReviewDate  date               [note: 'Next definition/usefulness review — at least annual']
+  ReviewDate  date               [note: 'Next definition/usefulness review, at least annual']
   Notes       richtext           [note: 'Definition change history (dated), known data caveats']
 
   indexes {

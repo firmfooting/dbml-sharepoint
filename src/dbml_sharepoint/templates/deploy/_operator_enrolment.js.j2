@@ -1,13 +1,13 @@
   // === Operator self-enrolment (groups[].enroll_operator_during_deploy) ===
   // Some mappings route all list administration through an empty-by-default
-  // admin group (Owners hold only Contribute on the lists). Later phases —
-  // field reconciliation, indexes, ACL work — then need the operator to hold
+  // admin group (Owners hold only Contribute on the lists). Later phases
+  // (field reconciliation, indexes, ACL work) then need the operator to hold
   // that group's grants, so the script enrols the operator for the duration
   // of the run and removes them at the end. An operator who was ALREADY a
   // member is left untouched. Only principals who can already manage the
   // group (its Site-Owners owner) can benefit; this adds no new authority.
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   {

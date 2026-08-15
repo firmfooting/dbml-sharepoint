@@ -5,7 +5,7 @@
    when their immutable shape provably matches (fail closed). #}
   // === Phase {{ phase.number }}: lists + non-lookup columns + same-site lookups ===
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', `Starting Phase {{ phase.number }}: {{ phase.name }}. Release ${RELEASE_TAG}.`);
   invalidateFieldShapes();  // probes reflect phase-start state
@@ -15,7 +15,7 @@
     .filter(la => la.break_inheritance && la.reconcile_mode === 'exact')
     .map(la => la.list));
 
-  // Wave 1 — sequential, in dependency order: list existence, declared
+  // Wave 1 is sequential, in dependency order: list existence, declared
   // list shape, GUID capture, early ACL isolation. Sequential because
   // wave 2's same-site lookup fields need every target list's GUID.
   const fieldWork = [];
@@ -42,7 +42,7 @@
           BaseTemplate: list.base_template,
           // Creation is not where the Description is guaranteed. It carries
           // the provenance marker, and this POST only runs for a list that
-          // does not exist yet — reconcileListDescription (called from
+          // does not exist yet; reconcileListDescription (called from
           // reconcileListShape just below, on both paths) is what reads it
           // back and what repairs an adopted list whose description predates
           // markers or was edited by an owner.
@@ -123,7 +123,7 @@
     }
   }
 
-  // Wave 2 — field provisioning, one lane per list: every target GUID now
+  // Wave 2 is field provisioning, one lane per list: every target GUID now
   // exists, and concurrent schema writes to the SAME list race into save
   // conflicts while different lists are independent, so each list's fields
   // run sequentially inside a lane and the lanes run concurrently.

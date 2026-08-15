@@ -1,14 +1,14 @@
 /**
- * dbml-sharepoint PROBE — FORMATTER AND DISPLAY-NAME TEXT THROUGH XML
+ * dbml-sharepoint PROBE: FORMATTER AND DISPLAY-NAME TEXT THROUGH XML
  *
  * QUESTION: which characters survive a view CustomFormatter, a column
  * CustomFormatter, a form ClientFormCustomFormatter, a field Title, a view
- * Title, a ValidationMessage and a Description — and does the deployer's
+ * Title, a ValidationMessage and a Description, and does the deployer's
  * own drift comparison agree with what SharePoint actually stored?
  *
  * WHY: fixing the bare '&' that broke a live deployment (#178) exposed how
  * much of the surrounding behaviour is assumed rather than measured. #179
- * is the full brief; this probe is what it asks for — characterising the
+ * is the full brief; this probe is what it asks for, characterising the
  * whole surface rather than the one character that bit.
  *
  * SOURCE
@@ -19,31 +19,31 @@
  *   held. Also measured, same run: '<' is ALSO refused on a view
  *   CustomFormatter (XmlException, "Name cannot begin with ']'"); '&amp;',
  *   '>', '>=', '"' and "'" are all accepted and round-trip; the form
- *   ClientFormCustomFormatter accepts and returns everything literal — it is
+ *   ClientFormCustomFormatter accepts and returns everything literal. It is
  *   not XML-stored. Everything else below is still an assumption wearing
  *   the clothes of a measurement, per #179, and untested until this run.
  *
- * RUN 1 — WHAT WENT WRONG (fixed in this revision)
+ * RUN 1: WHAT WENT WRONG (fixed in this revision)
  *   1. The column-formatter probe field's creation POSTed
  *      `{ FieldTypeKind: 2, Title, MaxLength: 255 }` straight to `/fields`.
  *      MaxLength belongs to SP.FieldText, not the base SP.Field, and saying
- *      so under odata=verbose needs a `__metadata` type hint — which
+ *      so under odata=verbose needs a `__metadata` type hint, which
  *      odata=nometadata (what this harness sends, like every other probe)
  *      REJECTS outright. The result was one HTTP 400 that took ten
  *      questions down with it: all seven B_*, plus D_VALMSG, D_DESC and
  *      D_WIDTH, all of which depend on that field existing. Fixed by
  *      switching to `createfieldasxml`, the route every other probe in this
- *      directory already uses for exactly this reason — SchemaXml is CAML,
+ *      directory already uses for exactly this reason: SchemaXml is CAML,
  *      not a typed OData entity, so it never needs the metadata hint
  *      nometadata refuses.
  *   2. D_TITLE hit the same malformed-request bug creating its own field,
- *      and printed `REFUSED — A field Title containing a bare ampersand`
+ *      and printed `REFUSED. A field Title containing a bare ampersand`
  *      with that MaxLength 400 as its evidence. The ampersand had nothing
- *      to do with it — a reader scanning the results table saw a measured
+ *      to do with it. A reader scanning the results table saw a measured
  *      platform refusal that never happened. Fixed the same way, and every
  *      REFUSED verdict in this file now requires a signature that ties the
  *      failure to the character under test (an XmlException, or the raw
- *      character appearing in the error text) — see classifyWriteFailure.
+ *      character appearing in the error text). See classifyWriteFailure.
  *   3. The fixture list had no rows and no view carried any column but
  *      Title, so every eyes-on question was unanswerable: a row wash with
  *      no rows paints nothing, and a formatted column that is not on the
@@ -52,18 +52,18 @@
  *   4. A_AMPESC measured that an escaped '&amp;' round-trips; nothing asked
  *      whether an escaped '&lt;' does, even though '<' is refused raw the
  *      same way '&' is. Added LTESC alongside AMPESC so the pair is
- *      symmetric — this is the question that decides whether the deployer
+ *      symmetric. This is the question that decides whether the deployer
  *      can escape '<' on write too, or must keep refusing it.
  *   5. (Found in review, not by the operator, but the same class of defect
  *      as 1-2 above.) Every A/B/C row MERGEs the SAME property on the SAME
  *      view/field/content type, so the LAST token in the loop is the only
  *      one still there by the time an operator reaches the eyes-on
- *      checklist — every earlier ACCEPTED case had already been
+ *      checklist. Every earlier ACCEPTED case had already been
  *      overwritten. Fixed by adding one combined write per surface, after
  *      the per-token loop, holding every token that came back ACCEPTED at
  *      once; see runFormatterMatrix's combined-write step below. The
- *      per-token verdicts were never wrong — each already read back its own
- *      write before the next iteration overwrote it — only the state left
+ *      per-token verdicts were never wrong (each already read back its own
+ *      write before the next iteration overwrote it), only the state left
  *      behind for a human to look at was.
  *   6. (Also found in review.) D_WIDTH discarded the response from adding
  *      its field to the view, then wrote and reported the ColumnWidth XML
@@ -76,11 +76,11 @@
  *   A_*    view CustomFormatter containing &, &amp;, <, &lt;, >, >=, ", '.
  *          A_AMP IS THE CONTROL. It must FAIL and reproduce the SOURCE
  *          signature above. If it does not, every other row in this run
- *          is suspect — the probe says so loudly, at the point it happens
+ *          is suspect. The probe says so loudly, at the point it happens
  *          and again beside the results.
  *   B_*    the same eight characters in a COLUMN CustomFormatter, which
  *          the deployer compares WITHOUT decoding first
- *          (_field_reconcile.js.j2's canonicalJson, no xmlDecode) — unlike
+ *          (_field_reconcile.js.j2's canonicalJson, no xmlDecode), unlike
  *          the view comparison a few lines below it. If the readback here
  *          turns out to be entity-encoded, that comparison is wrong today.
  *   C_*    the same eight characters in a form's ClientFormCustomFormatter
@@ -89,27 +89,27 @@
  *   *_COMBINED   one combined write per surface (A/B/C), made AFTER that
  *          surface's per-token loop, holding every token that loop found
  *          ACCEPTED all at once. Exists only so the eyes-on checklist has
- *          something left to look at — see run 1 defect 5 above. Not a
+ *          something left to look at. See run 1 defect 5 above. Not a
  *          measurement in its own right; it reads back and confirms a
  *          marker count so a failed combine cannot masquerade as one.
  *   D_TITLE      a field Title containing a bare '&' (tiered-huddle ships
  *                four of these today, unconfirmed).
  *   D_WIDTH      that same ampersand-bearing display name reused as a view
  *                widths key, exercising _views.js.j2's xmlAttr escape path
- *                end to end — ColumnWidth FieldRefs bind by DISPLAY name.
+ *                end to end. ColumnWidth FieldRefs bind by DISPLAY name.
  *   D_VIEWTITLE  a view Title containing a bare '&'.
  *   D_VALMSG     a field ValidationMessage containing a bare '&', compared
- *                by plain string equality — same undecoded shape as B.
+ *                by plain string equality, same undecoded shape as B.
  *   D_DESC       a column Description containing a bare '&', same
  *                undecoded comparison.
  *
  * Every A/B/C row folds three observations into one outcome: did the write
  * succeed, what did the readback look like (a heuristic ENCODED/LITERAL
- * label — the full readback string is always quoted beside it so a reader
+ * label; the full readback string is always quoted beside it so a reader
  * can judge independently of the heuristic), and would the relevant
  * comparison function call it unchanged or drift. Those functions are
  * copied verbatim from the deploy templates, cited at each definition
- * below — this probe does not import them, because a pasted probe is a
+ * below. This probe does not import them, because a pasted probe is a
  * single self-contained file. If the real ones change, these copies need
  * re-syncing by hand; nothing here checks that automatically, the way
  * test_probes.py checks the threshold probe's JS and Python row generators
@@ -132,7 +132,7 @@
  *     names need changing.
  *
  * STORING IS NOT RENDERING. Every write below can save cleanly, read back
- * byte-identical, and paint nothing — that is the whole reason this
+ * byte-identical, and paint nothing. That is the whole reason this
  * project keeps probes at all. Nothing here is cleaned up until you have
  * LOOKED; the eyes-on checklist at the end says exactly where. Rows are
  * seeded and the probe field is added to the probe view during bootstrap
@@ -146,7 +146,7 @@
  *   4. Copy the whole RESULTS block back, THEN work through the EYES-ON
  *      CHECKLIST it prints and fill in every blank.
  *   5. When you are done looking, set CLEANUP = true (with the other two
- *      still true) and paste once more to recycle the probe list — or
+ *      still true) and paste once more to recycle the probe list, or
  *      delete 'dbmlsp Probe FormatterXML' by hand.
  *
  * STATUS: RUN 2026-08-11, control held. Every API question answered; the
@@ -183,7 +183,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -196,7 +196,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -222,11 +222,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -234,7 +234,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -243,7 +243,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -284,7 +284,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -296,7 +296,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -343,7 +343,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -354,9 +354,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -374,7 +374,7 @@
   // Printed FIRST, before any gate: see threshold-index-probe.js.j2 for why
   // (a stale clipboard and a fix that did not work produce identical
   // transcripts otherwise).
-  log('INFO', 'probe revision 76111098 — quote this when reporting results.');
+  log('INFO', 'probe revision 75a005ad. Quote this when reporting results.');
 
   const LIST = 'dbmlsp Probe FormatterXML';
   const FIELD_FMT = 'ProbeFmtField';
@@ -385,7 +385,7 @@
   const DESC_WITH_AMP = 'Tracks demand & capacity. Safe to delete.';
   const VALMSG_WITH_AMP = 'Value must be positive & non-empty.';
   // A row wash with no rows paints nothing, and there is no way to tell
-  // that apart from a formatter that stores cleanly and renders nothing —
+  // that apart from a formatter that stores cleanly and renders nothing,
   // which is the exact failure class this project keeps probes to catch.
   // Seeded before the matrix runs; see BOOTROWS below.
   const ROW_TITLES = ['dbmlsp probe row 1', 'dbmlsp probe row 2', 'dbmlsp probe row 3'];
@@ -422,7 +422,7 @@
   const questionFor = (prefix, id) => `${SURFACE_LABEL[prefix]} containing ${CHAR_DESC[id]}`;
 
   // A view/column formatter payload carrying the token as literal text
-  // inside a formatter JSON's txtContent — the same shape a real formatter
+  // inside a formatter JSON's txtContent, the same shape a real formatter
   // uses for a literal display string ("Demand & Capacity", "x >= 5").
   const formatterWithToken = (token) => JSON.stringify({
     elmType: 'div',
@@ -437,7 +437,7 @@
   // Combined marker payloads: ONE div/header holding every ACCEPTED token's
   // marker as its own child, written ONCE after the per-token loop below has
   // already recorded every verdict. A MERGE replaces the property outright,
-  // so writing each token as its own late payload — the run 1 shape — left
+  // so writing each token as its own late payload (the run 1 shape) left
   // only the LAST token behind for a human to look at; every earlier
   // ACCEPTED row was already gone by the time the eyes-on checklist got to
   // it. The per-token loop's own verdicts are unaffected by this: each one
@@ -507,7 +507,7 @@
     return JSON.stringify(canon);
   };
 
-  // Heuristic label only — depends on the characters actually present in
+  // Heuristic label only: depends on the characters actually present in
   // `token`, observes the readback text. The full readback is always
   // quoted beside it in the evidence string, so a reader never has to
   // trust this label on its own.
@@ -529,11 +529,11 @@
   // SharePoint's own CAML parser (the control's "EntityName", and '<'s
   // "Name cannot begin with ']'", both run 1, both 2026-08-11) or an error
   // that quotes the raw character back. A non-2xx status with NEITHER is a
-  // different layer — a malformed request, a missing dependency, anything
-  // isRefusal has not already carved out as identity or a throttle — and
+  // different layer (a malformed request, a missing dependency, anything
+  // isRefusal has not already carved out as identity or a throttle), and
   // reporting it as REFUSED claims a platform verdict that was never
   // measured. This is exactly how D_TITLE went wrong in run 1: a 400 for
-  // "MaxLength does not exist on type SP.Field" printed as "REFUSED — A
+  // "MaxLength does not exist on type SP.Field" printed as "REFUSED. A
   // field Title containing a bare ampersand," and the ampersand had nothing
   // to do with it. Applied everywhere a write can fail in this probe, not
   // only where it already bit once.
@@ -552,7 +552,7 @@
   // ---- Registration -------------------------------------------------------
   // Literal ids, not built from CHARS in a loop: test_probes.py's
   // reachability check greps the SOURCE TEXT for `expect('ID'` and
-  // `record('ID'` — a template-literal id built at runtime is invisible to
+  // `record('ID'`. A template-literal id built at runtime is invisible to
   // that regex. The actual record() calls below DO come out of a shared
   // loop (see runFormatterMatrix) because writing twenty-four near-identical
   // write/read/compare blocks by hand is its own source of drift; what
@@ -595,7 +595,7 @@
     log('INFO', `Would create list '${LIST}' with a text field and a view, seed`);
     log('INFO', `${ROW_TITLES.length} row(s), then write & / &amp; / < / &lt; / > / >= / " / '`);
     log('INFO', 'into a view CustomFormatter, a column CustomFormatter and a form');
-    log('INFO', 'ClientFormCustomFormatter — after which every character that came');
+    log('INFO', 'ClientFormCustomFormatter, after which every character that came');
     log('INFO', 'back ACCEPTED is written once more, combined, so it stays visible');
     log('INFO', 'for eyes-on review; create a field Title, a view Title, a');
     log('INFO', 'ValidationMessage and a Description each containing a bare');
@@ -622,7 +622,7 @@
   }
 
   // XML-attribute escaping for text spliced into a CAML string this probe
-  // builds by hand — _views.js.j2's own xmlAttr, copied here for the same
+  // builds by hand, _views.js.j2's own xmlAttr, copied here for the same
   // reason the comparison functions above are: a pasted probe is one
   // self-contained file.
   const xmlAttr = (value) => String(value)
@@ -633,7 +633,7 @@
   // this directory creates a text field this way, and run 1 found out why
   // the hard way. `POST /fields` with `{ FieldTypeKind: 2, MaxLength }`
   // needs a `__metadata` hint (type SP.FieldText) to say MaxLength belongs
-  // to the extended type rather than the base SP.Field — and
+  // to the extended type rather than the base SP.Field, and
   // odata=nometadata, which this harness sends like every other probe,
   // REJECTS that hint outright ("The property '__metadata' does not exist
   // on type ..."). SchemaXml sidesteps the question: it is CAML, not a
@@ -664,7 +664,7 @@
   // Row presence is a DEPENDENCY the eyes-on checklist is built on, not an
   // observation: verified with a fresh ItemCount read, and any shortfall is
   // recorded loudly here rather than discovered by an operator staring at
-  // an empty view later. Idempotent across reruns — it tops up, not
+  // an empty view later. Idempotent across reruns: it tops up, not
   // duplicates.
   const listInfo = await spGet(`${listPath}?$select=ItemCount`);
   let rowsPresent = (listInfo.ok && listInfo.body && listInfo.body.ItemCount) || 0;
@@ -706,8 +706,8 @@
   }
   const viewUrl = `${listPath}/views/getbytitle('${encodeURIComponent(VIEW)}')`;
 
-  // The eyes-on checklist sends the operator to this view for the B_* cells
-  // — put the column there during bootstrap instead of asking them to.
+  // The eyes-on checklist sends the operator to this view for the B_* cells.
+  // Put the column there during bootstrap instead of asking them to.
   // addviewfield is idempotent, so a rerun that finds it already present is
   // a harmless no-op.
   if (viewCreated && fieldReady) {
@@ -738,15 +738,15 @@
     controlHeld = false;
     log('FAIL', '='.repeat(70));
     log('FAIL', `CONTROL (A_AMP) DID NOT REPRODUCE the 2026-08-11 measurement${detail ? `: ${detail}` : '.'}`);
-    log('FAIL', 'Something has changed since that run — a platform fix, a tenant');
+    log('FAIL', 'Something has changed since that run: a platform fix, a tenant');
     log('FAIL', 'setting, or a bug in this probe. EVERY OTHER ROW BELOW IS SUSPECT.');
     log('FAIL', "Read A_AMP's evidence in the RESULTS block before trusting anything else.");
     log('FAIL', '='.repeat(70));
   };
 
   // ---- Shared A/B/C runner ------------------------------------------------
-  // depends on: targetUrl, propertyName, buildPayload, canonicalFn — fixed
-  // before each call. observes: HTTP status and the readback text. Only the
+  // depends on: targetUrl, propertyName, buildPayload, canonicalFn (fixed
+  // before each call). observes: HTTP status and the readback text. Only the
   // observed half decides ACCEPTED/REFUSED/drift; the control's expected
   // signature is the one place this probe asserts against a prediction, and
   // that prediction is a literal quote of a live measurement, not a guess.
@@ -765,7 +765,7 @@
           const signature = /XmlException/i.test(write.text) && /EntityName/i.test(write.text);
           controlHeld = write.status === 500 && signature;
           record(rowId, question,
-                 controlHeld ? 'REFUSED — CONTROL HELD' : 'REFUSED — SIGNATURE DIFFERS FROM 2026-08-11',
+                 controlHeld ? 'REFUSED: CONTROL HELD' : 'REFUSED: SIGNATURE DIFFERS FROM 2026-08-11',
                  `HTTP ${write.status}: ${write.text.slice(0, 400)}`);
           if (!controlHeld) loudControlFailure(`refused with a different signature (HTTP ${write.status})`);
           continue;
@@ -787,7 +787,7 @@
       }
       const readback = read.body[propertyName];
       const drift = canonicalFn(readback) !== canonicalFn(payload);
-      record(rowId, question, `ACCEPTED — ${drift ? 'DRIFT' : 'UNCHANGED'}`,
+      record(rowId, question, `ACCEPTED: ${drift ? 'DRIFT' : 'UNCHANGED'}`,
              `wrote ${JSON.stringify(payload)}; read back ${JSON.stringify(readback)}. `
              + describeEncoding(token, String(readback)));
       acceptedTokens.push(token);
@@ -824,7 +824,7 @@
     const combinedText = String(combinedRead.body[propertyName]);
     const markerCount = (combinedText.match(/marker/g) || []).length;
     record(combinedId, combinedQuestion,
-           markerCount === acceptedTokens.length ? 'ACCEPTED — ready for eyes-on' : 'ACCEPTED — MARKER COUNT MISMATCH',
+           markerCount === acceptedTokens.length ? 'ACCEPTED: ready for eyes-on' : 'ACCEPTED: MARKER COUNT MISMATCH',
            `wrote ${acceptedTokens.length} marker(s) for token(s) ${JSON.stringify(acceptedTokens)}; `
            + `read back ${JSON.stringify(combinedText)}`);
   }
@@ -885,7 +885,7 @@
              classifyWriteFailure(created.status, created.text, '&'),
              `HTTP ${created.status}: ${created.text.slice(0, 400)}`);
     } else {
-      // Fresh read, not the POST echo — the point of this row is what
+      // Fresh read, not the POST echo. The point of this row is what
       // SharePoint actually STORED, not what it handed back synchronously.
       const reread = await spGet(
         `${fieldsPath}/getbyinternalnameortitle('${TITLE_FIELD_INTERNAL_NAME}')?$select=Title,InternalName`);
@@ -896,7 +896,7 @@
         titleFieldInternalName = reread.body.InternalName;
         titleFieldActualTitle = reread.body.Title;
         record('D_TITLE', 'A field Title containing a bare ampersand',
-               titleFieldActualTitle === TITLE_WITH_AMP ? 'ACCEPTED — ROUND-TRIPPED' : 'ACCEPTED — CHANGED ON READBACK',
+               titleFieldActualTitle === TITLE_WITH_AMP ? 'ACCEPTED: ROUND-TRIPPED' : 'ACCEPTED: CHANGED ON READBACK',
                `declared ${JSON.stringify(TITLE_WITH_AMP)}; read back ${JSON.stringify(titleFieldActualTitle)}; `
                + `internal name ${JSON.stringify(titleFieldInternalName)}`);
       }
@@ -915,7 +915,7 @@
       digest = await getDigest();
       const addedField = await spPost(
         `${viewUrl}/viewfields/addviewfield('${encodeURIComponent(titleFieldInternalName)}')`, {}, digest);
-      // The write's own .ok is not proof of anything on its own — read
+      // The write's own .ok is not proof of anything on its own. Read
       // ViewFields back fresh and check the field is actually there before
       // trusting the prerequisite this row depends on.
       const viewFieldsBack = await spGet(`${viewUrl}/viewfields`);
@@ -927,7 +927,7 @@
                `prerequisite failed: addviewfield returned HTTP ${addedField.status}; ViewFields read-back `
                + `${readFailed(viewFieldsBack) ? `failed (HTTP ${viewFieldsBack.status})`
                                                  : (fieldOnView ? 'included it' : 'did NOT include it')}. `
-               + 'The ColumnWidth write was not attempted — it targets a column not confirmed on the view.');
+               + 'The ColumnWidth write was not attempted: it targets a column not confirmed on the view.');
       } else {
         // Same escape and splice as _views.js.j2 lines ~336-349: ColumnWidth
         // FieldRefs bind by DISPLAY name, so the width key is the Title just
@@ -960,7 +960,7 @@
               const nameAttr = block && block[0].match(/Name="([^"]*)"/);
               const decodedName = nameAttr ? xmlDecode(nameAttr[1]) : null;
               record('D_WIDTH', 'That ampersand-bearing display name reused as a view widths key',
-                     decodedName === titleFieldActualTitle ? 'ACCEPTED — ROUND-TRIPPED' : 'ACCEPTED — DID NOT ROUND-TRIP',
+                     decodedName === titleFieldActualTitle ? 'ACCEPTED: ROUND-TRIPPED' : 'ACCEPTED: DID NOT ROUND-TRIP',
                      `wrote Name=${JSON.stringify(xmlAttr(titleFieldActualTitle))}; readback block `
                      + `${JSON.stringify(block ? block[0] : null)}, decoded name ${JSON.stringify(decodedName)}`);
             }
@@ -987,7 +987,7 @@
       } else {
         const actual = reread.body.Title;
         record('D_VIEWTITLE', 'A view Title containing a bare ampersand',
-               actual === VIEW_TITLE_WITH_AMP ? 'ACCEPTED — ROUND-TRIPPED' : 'ACCEPTED — CHANGED ON READBACK',
+               actual === VIEW_TITLE_WITH_AMP ? 'ACCEPTED: ROUND-TRIPPED' : 'ACCEPTED: CHANGED ON READBACK',
                `declared ${JSON.stringify(VIEW_TITLE_WITH_AMP)}; read back ${JSON.stringify(actual)}`);
       }
     }
@@ -1012,11 +1012,11 @@
           record('D_VALMSG', 'A field ValidationMessage containing a bare ampersand', 'NOT ESTABLISHED',
                  `write returned HTTP ${setVal.status} but the read-back failed (HTTP ${read.status})`);
         } else {
-          // Plain string equality — no decode — the exact comparison
+          // Plain string equality (no decode), the exact comparison
           // _field_reconcile.js.j2 uses for ValidationMessage.
           const actual = read.body.ValidationMessage;
           record('D_VALMSG', 'A field ValidationMessage containing a bare ampersand',
-                 actual === VALMSG_WITH_AMP ? 'ACCEPTED — UNCHANGED (plain compare)' : 'ACCEPTED — DRIFT (plain compare)',
+                 actual === VALMSG_WITH_AMP ? 'ACCEPTED: UNCHANGED (plain compare)' : 'ACCEPTED: DRIFT (plain compare)',
                  `declared ${JSON.stringify(VALMSG_WITH_AMP)}; read back ${JSON.stringify(actual)}`);
         }
       }
@@ -1040,11 +1040,11 @@
           record('D_DESC', 'A column Description containing a bare ampersand', 'NOT ESTABLISHED',
                  `write returned HTTP ${setDesc.status} but the read-back failed (HTTP ${read.status})`);
         } else {
-          // Plain equality — normalizeDescription in _field_reconcile.js.j2
+          // Plain equality: normalizeDescription in _field_reconcile.js.j2
           // does not decode either.
           const actual = read.body.Description;
           record('D_DESC', 'A column Description containing a bare ampersand',
-                 actual === DESC_WITH_AMP ? 'ACCEPTED — UNCHANGED (plain compare)' : 'ACCEPTED — DRIFT (plain compare)',
+                 actual === DESC_WITH_AMP ? 'ACCEPTED: UNCHANGED (plain compare)' : 'ACCEPTED: DRIFT (plain compare)',
                  `declared ${JSON.stringify(DESC_WITH_AMP)}; read back ${JSON.stringify(actual)}`);
         }
       }
@@ -1055,16 +1055,16 @@
   if (controlHeld === false) {
     log('FAIL', '');
     log('FAIL', 'REMINDER: the control (A_AMP) did not hold. Every row above is');
-    log('FAIL', 'suspect until that is understood — do not treat this run as settling #179.');
+    log('FAIL', 'suspect until that is understood: do not treat this run as settling #179.');
   } else if (controlHeld === null) {
-    log('INFO', 'The control (A_AMP) was never reached — the probe view could not be');
+    log('INFO', 'The control (A_AMP) was never reached: the probe view could not be');
     log('INFO', 'created (see BOOTVIEW). Nothing below is evidence of anything.');
   }
   report();
 
-  console.log('\n============ EYES-ON CHECKLIST — REQUIRED ============');
+  console.log('\n============ EYES-ON CHECKLIST: REQUIRED ============');
   console.log('Every row above says only whether SharePoint KEPT the text. None of');
-  console.log('them say whether it RENDERS — a formatter can save cleanly, read back');
+  console.log('them say whether it RENDERS: a formatter can save cleanly, read back');
   console.log('byte-identical, and paint nothing. Open the list and look:\n');
   console.log(`  1. Open the view '${VIEW}' on '${LIST}', seeded with ${ROW_TITLES.length} row(s).`);
   console.log('     Its CustomFormatter now holds every A_* marker that came back');
@@ -1073,7 +1073,7 @@
   console.log('     or did some store cleanly and paint nothing?');
   console.log('     answer: ______________________________________');
   console.log(`  2. The column '${FIELD_FMT}' is already on that view (added during`);
-  console.log('     bootstrap). Look at its formatted cells — same question for the');
+  console.log('     bootstrap). Look at its formatted cells, same question for the');
   console.log('     B_* markers (see B_COMBINED for which tokens survived to look at).');
   console.log('     answer: ______________________________________');
   console.log(`  3. Open the New form for '${LIST}'. Its header now holds every C_*`);

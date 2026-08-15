@@ -1,5 +1,5 @@
 // ============================================================================
-// Meeting actions — meetings, decisions, actions; both children link back.
+// Meeting actions: meetings, decisions, actions; both children link back.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -22,7 +22,7 @@ Enum action_status {
 
 Table Meeting {
   Id          int           [pk, increment]
-  Title       nvarchar      [not null, note: 'Forum + date is the convention: "Ops team — 2026-08-04"']
+  Title       nvarchar      [not null, note: 'Forum + date is the convention: "Ops team, 2026-08-04"']
   MeetingType meeting_type  [not null, default: 'Team meeting']
   MeetingDate date          [not null]
   Chair       person
@@ -42,7 +42,7 @@ Table Decision {
   Title    nvarchar [not null, note: 'The decision, stated as a decision: "We will adopt X from 1 September"']
   // Lookup to Meeting.
   Meeting  int      [not null, ref: > Meeting.Id, note: 'The meeting where this was decided']
-  Detail   richtext [note: 'Context, options considered, who dissented — enough to not relitigate']
+  Detail   richtext [note: 'Context, options considered, who dissented; enough to not relitigate']
 
   indexes {
     Meeting

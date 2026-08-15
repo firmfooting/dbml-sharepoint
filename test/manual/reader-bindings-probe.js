@@ -1,5 +1,5 @@
 /**
- * dbml-sharepoint PROBE — WHAT `Read` MEANS HERE, AND WHAT A GROUP ALREADY HOLDS
+ * dbml-sharepoint PROBE: WHAT `Read` MEANS HERE, AND WHAT A GROUP ALREADY HOLDS
  *
  * READ-ONLY. It creates nothing, changes nothing and deletes nothing. There is
  * no ALLOW_WRITES path; CONFIRMED alone runs it. Every question is a GET.
@@ -7,7 +7,7 @@
  * TWO ISSUES, ONE SETUP. Both are blocked on the same two facts about a site,
  * and both stand between the enterprise-reader tier and a release.
  *
- * #199 — THE READER TRUSTS A LEVEL CALLED `Read` BY ITS NAME. The validator
+ * #199: THE READER TRUSTS A LEVEL CALLED `Read` BY ITS NAME. The validator
  * exempts an assignment to `Read` as "the safe built-in", and the ACL phase
  * resolves it with `$select=Id` and never looks at what it can do. On a site
  * where an administrator has customised the built-in, the permanently-enrolled
@@ -15,11 +15,11 @@
  * reports it read-only. R2 reads the bitmap this site's `Read` actually
  * carries; R3 says whether it matches a stock one.
  *
- * #198 — THE READER INHERITS WHATEVER ITS GROUP ALREADY HOLDS. The deploy adds
+ * #198: THE READER INHERITS WHATEVER ITS GROUP ALREADY HOLDS. The deploy adds
  * the account to a group found BY NAME and never inspects that group's
  * existing bindings. A group carrying Full Control at web scope, or an
  * elevated binding on a list outside the bundle, hands all of it to the
- * account — and neither the ACL phase nor anything else removes it, because
+ * account, and neither the ACL phase nor anything else removes it, because
  * both only reconcile lists this bundle declares. R4 and R5 census what EVERY
  * group on the site holds today.
  *
@@ -31,36 +31,36 @@
  *
  * SEPARATING WHAT IS DEPENDED ON FROM WHAT IS OBSERVED. R2, R4 and R5 REPORT
  * what they find. They do not assert a particular bitmap or an empty binding
- * list — a site legitimately has either. R3 is the only one that judges, and
+ * list. A site legitimately has either. R3 is the only one that judges, and
  * it judges against the value R2 read on this site, printed in full so the
  * comparison is auditable rather than hidden in a boolean.
  *
  * THE NEGATIVE CONTROL IS R1, and it is doing real work here. Every other
  * question reports "what came back". A caller who cannot read
  * `web/roledefinitions` at all would produce empty results that look exactly
- * like "nothing is granted" — the most dangerous possible false reassurance
+ * like "nothing is granted", the most dangerous possible false reassurance
  * for a question about excess privilege. R1 establishes the read works before
  * any absence is believed.
  *
  * NOTHING TO SET. It surveys EVERY group on the site. An earlier draft asked
  * about one named group and defaulted to a name that only exists after a
- * deploy — so on a fresh site it reported NOT ESTABLISHED and told the
+ * deploy, so on a fresh site it reported NOT ESTABLISHED and told the
  * operator to go and guess. The census costs the same number of requests.
  *
- * RUN 1 — 2026-08-14, revision f0927e57, one Microsoft 365 group-connected
+ * RUN 1, 2026-08-14, revision f0927e57, one Microsoft 365 group-connected
  * Team Site. Six questions, FOUR answered and two NOT ESTABLISHED, which is
  * the probe reporting its own failure rather than passing vacuously.
  *
- *     R1  PASS — 11 role definitions readable, so an empty result means empty.
- *     R2  PASS — this site's `Read` is
+ *     R1  PASS: 11 role definitions readable, so an empty result means empty.
+ *     R2  PASS: this site's `Read` is
  *                RoleTypeKind=2, High=176, Low=138612833,
  *                "Can view pages and list items and download documents."
  *                The FIRST measured bitmap this project holds for a Read.
  *                ONE site on ONE tenant: it is a reference point, not a
  *                constant to compare against, until a second site agrees.
- *     R3  PASS — RoleTypeKind=2, so SharePoint still regards it as the
+ *     R3  PASS: RoleTypeKind=2, so SharePoint still regards it as the
  *                built-in Reader. No custom level is wearing the name here.
- *     R4  NOT ESTABLISHED, R5 NOT ESTABLISHED — and the fault was the
+ *     R4  NOT ESTABLISHED, R5 NOT ESTABLISHED, and the fault was the
  *                probe's. It asked about ONE group, defaulting to a name
  *                that only exists AFTER a deploy of the branch that
  *                introduced it, so on a site that had never seen one there
@@ -69,7 +69,7 @@
  *                costs the same requests: the web assignments are one read
  *                either way, and each list's were already read once per list.
  *
- * RUN 2 — 2026-08-14, revision 79eeaec8, same site, after the census
+ * RUN 2, 2026-08-14, revision 79eeaec8, same site, after the census
  * rewrite. Six questions, SIX answered.
  *
  *     R4  Every tool-created group holds exactly `Limited Access` at web
@@ -104,7 +104,7 @@
  * #199 part 2 is ANSWERED FOR THIS SITE, and #198 with it.
  *
  * HOW TO RUN
- *   1. Open the target site as a SITE OWNER — reading role assignments needs
+ *   1. Open the target site as a SITE OWNER. Reading role assignments needs
  *      it, and R1 will tell you plainly if this account cannot.
  *   2. Open a browser console on any page of that site.
  *   3. Set CONFIRMED = true, then paste this file. It never writes.
@@ -119,7 +119,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -132,7 +132,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -158,11 +158,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -170,7 +170,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -179,7 +179,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -220,7 +220,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -232,7 +232,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -279,7 +279,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -290,9 +290,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -309,7 +309,7 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 9897a83b — quote this when reporting results.');
+  log('INFO', 'probe revision 1089ce18. Quote this when reporting results.');
 
 
   // Learn's stock `Read`, for R3 to compare against. From "Permission levels
@@ -332,7 +332,7 @@
   expect('R6', 'What groups does this site have, and what does each already hold?');
 
   if (!CONFIRMED) {
-    log('INFO', 'PLAN — nothing has been touched, and nothing would be.');
+    log('INFO', 'PLAN. Nothing has been touched, and nothing would be.');
     log('INFO', 'This probe only READS. It would report:');
     log('INFO', `  - the BasePermissions of this site's built-in 'Read'`);
     log('INFO', '  - every web-scope and list-scope binding held by EVERY site group');
@@ -346,7 +346,7 @@
   if (readFailed(defs) || !Array.isArray(defs.body && defs.body.value)) {
     record('R1', 'CONTROL: can this caller read web/roledefinitions at all?',
       `NOT ESTABLISHED (HTTP ${defs.status})`,
-      'without this read, an empty binding list below would be indistinguishable from no access — which is the most dangerous wrong answer this probe could give. Re-run as a site owner.');
+      'without this read, an empty binding list below would be indistinguishable from no access, which is the most dangerous wrong answer this probe could give. Re-run as a site owner.');
     report();
     return;
   }
@@ -359,7 +359,7 @@
   if (!read) {
     record('R2', 'What BasePermissions does THIS site\'s built-in Read carry?',
       'NOT ESTABLISHED (no level named Read)',
-      `this site's levels are: ${rows.map((r) => r.Name).join(', ')}. A site with no 'Read' is itself a finding for #199 — the validator exempts that name and the ACL phase resolves it by name.`);
+      `this site's levels are: ${rows.map((r) => r.Name).join(', ')}. A site with no 'Read' is itself a finding for #199. The validator exempts that name and the ACL phase resolves it by name.`);
   } else {
     record('R2', 'What BasePermissions does THIS site\'s built-in Read carry?',
       'PASS',

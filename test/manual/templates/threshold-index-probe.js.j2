@@ -1,29 +1,29 @@
 /**
- * dbml-sharepoint PROBE — LIST VIEW THRESHOLD FIXTURE
+ * dbml-sharepoint PROBE: LIST VIEW THRESHOLD FIXTURE
  *
  * TWO QUESTIONS, both recorded as unknown in analysis/checks/_views.py:
  *
  *   1. Can a null test be served past the list view threshold when the column
  *      IS indexed? Microsoft's threshold guidance is written for comparison
  *      filters and says nothing about presence tests. Four views in the
- *      shipped template library filter on nothing but is_null — the library's
- *      "blank means still open" idiom — so the answer decides whether they can
+ *      shipped template library filter on nothing but is_null (the library's
+ *      "blank means still open" idiom), so the answer decides whether they can
  *      be fixed at all or only accepted.
  *
  *   2. Do Created, Modified, Author and Editor behave as indexed? The check
  *      excludes all five system columns, and that exclusion rests on the DBML
- *      side, so it is correct either way — but the project cannot currently
+ *      side, so it is correct either way, but the project cannot currently
  *      say what SharePoint does.
  *
  * A third rides along: does indexing a PERSON column avert a breach? Microsoft
- * says no — the index article lists "Person or Group (single value) (Lookup)"
+ * says no. The index article lists "Person or Group (single value) (Lookup)"
  * and the Field element's `Indexed` note says an indexed Lookup column does not
- * prevent exceeding the threshold — and _LOOKUP_FIELD_TYPES already acts on
+ * prevent exceeding the threshold, and _LOOKUP_FIELD_TYPES already acts on
  * that, but on documentation alone.
  *
  * WHY A NEW FIXTURE: native-index-probe.js ran on 2026-07-30 and established
- * none of it. Its metadata half is void — SP.Field.Indexed read false for ID
- * itself — and its behavioural half never ran, because the site's largest
+ * none of it. Its metadata half is void (SP.Field.Indexed read false for ID
+ * itself), and its behavioural half never ran, because the site's largest
  * generic list held 21 items against a threshold of 5,000. The blocker was the
  * fixture, not the method.
  *
@@ -33,7 +33,7 @@
  *
  * MATCHED SELECTIVITY IS THE DESIGN. Five filters match exactly one row in a
  * hundred, on disjoint row sets, so each differs from the positive control in
- * exactly ONE respect — the index, the operator, or the field type. The four
+ * exactly ONE respect (the index, the operator, or the field type). The four
  * system-column filters are NOT matched and cannot be compared with them; each
  * says so in its own evidence, because a comment nobody copies out of the
  * console is not a safeguard.
@@ -41,7 +41,7 @@
  * WHAT IT ASKS
  *   RUNCNT  live ItemCount matches a declared checkpoint
  *   IDXSET  the four intended indexes really are set, and Shadow is not
- *           (SortBait is excluded — it is EXPECTED to turn over; see COLUMNS)
+ *           (SortBait is excluded because it is EXPECTED to turn over; see COLUMNS)
  *   FLAGS   Indexed/AutoIndexed for all six columns, every run
  *   CMPIDX  OData comparison, INDEXED Text        (positive control)
  *   CMPUNI  OData comparison, UNINDEXED twin      (negative control)
@@ -91,7 +91,7 @@
  * operator list for the REST service at all. Measuring only OData would leave
  * the recorded unknown untouched while the summary read "all answered".
  *
- * HOW TO RUN — the run plan, in order
+ * HOW TO RUN: the run plan, in order
  *   1. Open a SharePoint site you are willing to put a 6,000-row list on.
  *   2. Set CONFIRMED and ALLOW_WRITES true. Paste. This provisions everything
  *      and prints the two ids the row generator needs.
@@ -109,23 +109,23 @@
  * only measure.
  *
  * NOTE: the harness's CLEANUP flag does NOTHING here. This probe never calls
- * resetList(), on purpose — you do not want a 6,000-row fixture silently
+ * resetList(), on purpose. You do not want a 6,000-row fixture silently
  * emptied because a flag was left on. Teardown is CLEANUP_AT_END, at the
  * bottom, and it is a separate deliberate act.
  *
  * STATUS: run 2026-07-31 on one site, at 1,000 / 3,000 / 6,000 items.
  *
  *   CONTROLS VALID AT 6,000, which is what makes the rest readable. The
- *   positive control — an indexed Text comparison matching 60 of 6,000 — was
- *   SERVED. The negative control — the same comparison on Shadow, byte-
- *   identical data, no index — was REFUSED, HTTP 500
+ *   positive control (an indexed Text comparison matching 60 of 6,000) was
+ *   SERVED. The negative control (the same comparison on Shadow, byte-
+ *   identical data, no index) was REFUSED, HTTP 500
  *   SPQueryThrottledException. Shadow was never auto-indexed at any size.
  *
- *   ANSWERED — a CAML <IsNull> on an INDEXED column IS served past the
+ *   ANSWERED: a CAML <IsNull> on an INDEXED column IS served past the
  *   threshold: 60 rows, exact, HTTP 200. So is the OData `eq null` form, which
  *   Microsoft's operator list for the REST service does not document at all.
  *
- *   NOT the lookup rule, though it reads like it — filters on an INDEXED
+ *   NOT the lookup rule, though it reads like it: filters on an INDEXED
  *   Person and an INDEXED Lookup were served, 60 of 6,000 each, on OData and
  *   CAML and in both filter forms. Every one of those queries FILTERED on the
  *   lookup without PROJECTING it: `$select=Id`, and CAML with no <ViewFields>.
@@ -134,42 +134,42 @@
  *   `Parent` to an All Items view of this fixture does fail, with the 5,000-item
  *   threshold message. LOOPRJ and PERPRJ are the measurement that settles it.
  *
- *   ANSWERED — what sets AutoIndexed. Opening a modern view sorted on an
+ *   ANSWERED: what sets AutoIndexed. Opening a modern view sorted on an
  *   unindexed, high-cardinality Text column at 3,000 items made SharePoint
  *   create an index, flipping Indexed AND AutoIndexed false -> true together,
  *   on that column alone. Isolated by the before/after pair at the same row
  *   count. It persisted to 6,000 and did not revert. Two corollaries:
- *   AutoIndexed IS exposed over REST here, and the flags are not independent —
- *   an auto-created index sets both.
+ *   AutoIndexed IS exposed over REST here, and the flags are not independent
+ *   (an auto-created index sets both).
  *
- *   ANSWERED — an index is NECESSARY for a presence test, not merely
+ *   ANSWERED: an index is NECESSARY for a presence test, not merely
  *   sufficient, and the failure without one is SILENT. Matched pair, identical
  *   values on the same 60 of 6,000 rows, differing only in the index: the
- *   indexed column returned 60, the unindexed one returned 50 — HTTP 200, no
- *   error. SEEDCK confirmed all 60 rows really hold both values, so it is
+ *   indexed column returned 60, the unindexed one returned 50 (HTTP 200, no
+ *   error). SEEDCK confirmed all 60 rows really hold both values, so it is
  *   truncation, not missing data. Note it truncated to 50, not to the
  *   documented 1,250 fallback; that figure is a ceiling, not a prediction.
  *
- *   ANSWERED — CAML AND OData DISAGREE, and the difference is the whole shape
+ *   ANSWERED: CAML AND OData DISAGREE, and the difference is the whole shape
  *   of a threshold failure. On an unindexed or unindexable column past 5,000:
  *
- *     OData $filter  HTTP 500 SPQueryThrottledException — a loud refusal
+ *     OData $filter  HTTP 500 SPQueryThrottledException, a loud refusal
  *     CAML           HTTP 200 with a PARTIAL answer and no error at all
  *
  *   The CAML window is the first 5,000 rows in id order: NNIDX spans rows
  *   3..5903 and returns 60, NNUNI spans 3..4903 and returns 50, on identical
  *   data. So a CAML result can be complete, silently short, or accidentally
- *   correct because every match happens to sit inside the window — which is
+ *   correct because every match happens to sit inside the window, which is
  *   what CALCAM is: one match, at row 3, on a CALCULATED column that OData
  *   refuses by type ("cannot be used in the query filter expression") and CAML
  *   serves. A view renders CAML, so CAML is what governs _views.py.
  *
- *   ANSWERED — THERE IS NO NATIVE FILTERED LOOKUP. Every native lever is now
+ *   ANSWERED: THERE IS NO NATIVE FILTERED LOOKUP. Every native lever is now
  *   measured and all three are closed:
  *
  *     the Field element        no attribute restricts a Lookup's choices; it
  *                              carries List, ShowField, Mult and nothing else
- *     a conditional ShowField  PIKCAL / PIKCND, REFUSED past 5,000 — a
+ *     a conditional ShowField  PIKCAL / PIKCND, REFUSED past 5,000. A
  *                              Calculated column cannot be indexed, so the
  *                              picker's enumeration has to scan
  *     the target's default     PIKVW, IGNORED. With 'Active only' filtering
@@ -178,32 +178,32 @@
  *                              Active rows are 1..1000
  *
  *   The middle one is the workaround the community converged on, so its
- *   ceiling is worth stating plainly: it works on a small target and fails on
- *   the large one that motivates asking.
+ *   ceiling matters: it works on a small target and fails on the large one
+ *   that motivates asking.
  *
  *   What DOES work is PIKIDX: an INDEXED, indexable ShowField is served where
  *   both others are refused. So a Lookup into a list that may pass 5,000 needs
  *   its target's ShowField indexed and not Calculated, or the new-item form
  *   cannot be used at all. Restricting WHICH rows are offered needs something
- *   outside the list schema — an SPFx form control or a curated target list.
+ *   outside the list schema (an SPFx form control or a curated target list).
  *
- *   ANSWERED — the conditional-label scheme cannot work. A Lookup whose
+ *   ANSWERED: the conditional-label scheme cannot work. A Lookup whose
  *   ShowField is a Calculated column is ACCEPTED at provisioning, and then that
- *   column can be used in neither a sort nor a filter expression over OData —
+ *   column can be used in neither a sort nor a filter expression over OData,
  *   by TYPE, at any list size, with real values present in the status column
  *   driving it. What does work is TGTSTO: an INDEXED filter first, then order.
  *
- *   NOT ESTABLISHED — Created, Modified, Author and Editor. All four were
+ *   NOT ESTABLISHED: Created, Modified, Author and Editor. All four were
  *   refused at 6,000, which this fixture cannot read as evidence: the loader
  *   owns every row, so each matches the whole list and breaches on result-set
  *   size. Needs rows from several principals over several intervals.
  *
- *   ANSWERED — the lookup target's size does not change the view result. With
+ *   ANSWERED: the lookup target's size does not change the view result. With
  *   6,500 items in the TARGET and 6,000 in the source, the projecting query is
  *   still served, 60 of 60. The target size is printed in the question, so runs
  *   at different sizes are distinguishable in the RESULTS block itself.
  *
- *   OPEN — the lookup PICKER. Past 5,000 in the target, the new-item form
+ *   OPEN: the lookup PICKER. Past 5,000 in the target, the new-item form
  *   refuses: "This is a lookup column that displays data from another list that
  *   currently exceeds the List View Threshold defined by the administrator
  *   (5000)." A view reads the column; nobody can set it. TGTENU / TGTORD /
@@ -222,12 +222,12 @@
  *   NNIDX / NNUNI answer whether an index is NECESSARY for a presence test or
  *   only sufficient. Two DateTime columns, identical data on the same 60 rows,
  *   differing only in the index, tested with <IsNotNull>. The probe seeds them
- *   itself — 60 updates by id, which do not go through the threshold.
+ *   itself (60 updates by id, which do not go through the threshold).
  *
  *   Inverted deliberately: a column added to a list that already holds its rows
  *   is blank on ALL of them, so an IsNull over it matches everything and
- *   breaches on result-set size — the trap the SYS* rows sit in. Asking
- *   IsNotNull over a seeded 60 makes the small side the matched side.
+ *   breaches on result-set size, which is the problem the SYS* rows have.
+ *   Asking IsNotNull over a seeded 60 makes the small side the matched side.
  *
  *   NOTE: OWNER_ID resets to 0 on every re-render, and the four Person
  *   questions are not sent at all when it is 0. Set it before pasting.
@@ -242,8 +242,8 @@
   // ======================================================================
 
   // Names this run in every evidence row. The probe CANNOT tell one run from
-  // another — a fresh JavaScript context has no memory and nowhere to keep one
-  // — so two pastes at the same row count are told apart by this and nothing
+  // another (a fresh JavaScript context has no memory and nowhere to keep one),
+  // so two pastes at the same row count are told apart by this and nothing
   // else. Set it EVERY paste, and add a reason on any repeat.
   const RUN_LABEL = '';
 
@@ -289,8 +289,8 @@
   const BATCH_SIZE = 100;
 
   // --- Build the fixture from here, with no CSV and no flow -------------
-  // 0 loads nothing. 1..5 load the list up to CHECKPOINTS[TEST_PHASE - 1] —
-  // 1,000 / 3,000 / 4,900 / 5,100 / 6,000 — creating only the rows that are
+  // 0 loads nothing. 1..5 load the list up to CHECKPOINTS[TEST_PHASE - 1]
+  // (1,000 / 3,000 / 4,900 / 5,100 / 6,000), creating only the rows that are
   // missing, so raising the number continues rather than restarts.
   //
   // Phase 2 is the one that needs a human between pastes: take it, open the
@@ -298,7 +298,7 @@
   // count is the only thing that can say what AutoIndexed means.
   //
   // Rows come from _threshold_rows.js.j2, which composes exactly what
-  // make_threshold_rows.py writes — a node-executed test compares the two field
+  // make_threshold_rows.py writes. A node-executed test compares the two field
   // by field over all 6,000 rows, so the CSV path stays available and neither
   // can drift from the other unnoticed.
   const TEST_PHASE = 0;
@@ -312,7 +312,7 @@
   const JOIN_COLUMNS = 14;
 
   // ======================================================================
-  // ==  END OF THIS PROBE'S SETTINGS — the harness's three gates are     ==
+  // ==  END OF THIS PROBE'S SETTINGS, the harness's three gates are      ==
   // ==  immediately below, and that is the last of it.                    ==
   // ======================================================================
 
@@ -320,14 +320,14 @@
 
   // Printed FIRST, before any gate, so it appears even on a run that stops
   // immediately. A stale clipboard and a fix that did not work produce
-  // identical transcripts otherwise — this has already cost a round trip of
+  // identical transcripts otherwise. This has already cost a round trip of
   // diagnosis, where the only tell was a stack-trace line number. Injected by
   // render_probes.py from a hash of this template and every partial.
-  log('INFO', 'probe revision {{ revision }} — quote this when reporting results.');
+  log('INFO', 'probe revision {{ revision }}. Quote this when reporting results.');
 
   // Say it at RUN TIME, not only in the header. An operator set this flag,
   // reasonably believed it was resetting the fixture between runs, and read
-  // four accumulated parent rows as "a new list each time" — when in fact the
+  // four accumulated parent rows as "a new list each time", when in fact the
   // same two lists had persisted throughout. A flag that is on and silently
   // does nothing is worse than one that does not exist, and the header comment
   // saying so was not enough.
@@ -344,7 +344,7 @@
   const LIST_VIEW_THRESHOLD = 5000;
   const RARE_BUCKET = 'Z';
   // The generator's TOTAL and MATCHING_ROWS, and the ratio derived from them
-  // rather than written out separately — so a constant that drifts from the
+  // rather than written out separately, so a constant that drifts from the
   // generator changes the arithmetic instead of sitting in a comment being
   // wrong. test_probes.py pins both against make_threshold_rows.py.
   const FIXTURE_TOTAL = 6000;
@@ -409,14 +409,14 @@
   //
   // THREE VALUES, NOT TWO:
   //
-  //   true   must be indexed  — a filter column a measurement depends on
-  //   false  must NOT be      — the negative control, same
+  //   true   must be indexed  (a filter column a measurement depends on)
+  //   false  must NOT be      (the negative control, same)
   //   null   OBSERVED, never asserted
   //
   // AN AUTO-CREATED INDEX SPENDS A REAL SLOT. SortBait appears on the Indexed
   // Columns page as "SortBait (Automatically created)" and consumes one of the
   // twenty. So opening a sorted view on an unindexed column does not merely set
-  // a flag — it takes budget a deployer is separately trying to allocate, with
+  // a flag. It takes budget a deployer is separately trying to allocate, with
   // nothing in a build or a deploy able to see it happen.
   //
   // COMPOUND INDEXES ARE OUT OF REACH FROM HERE, and that is measured rather
@@ -437,7 +437,7 @@
   //
   // Two consequences for this probe. FLAGS reads a per-field boolean, so a
   // column that is half of a compound index is indistinguishable from one with
-  // an index of its own — IDXSET cannot see index SHAPE and does not claim to.
+  // an index of its own. IDXSET cannot see index SHAPE and does not claim to.
   // And the only place the true count lives, including auto-created ones, is
   // that page's own sentence: "You have created N of maximum 20 indices on this
   // list." Nothing reachable from script reports it.
@@ -448,7 +448,7 @@
   // here reads SortBait, so its index state cannot affect any measurement.
   //
   // Asserting over it would be a control that voids the whole table the moment
-  // the experiment starts working — an auto-index does not revert, so every
+  // the experiment starts working. An auto-index does not revert, so every
   // later paste is poisoned too. A control must cover the values a measurement
   // DEPENDS on, never the values it OBSERVES.
   const COLUMNS = [
@@ -462,7 +462,7 @@
     //
     // NOT-null rather than null, and that is the whole trick. A column added to
     // a list that already holds its rows is blank on ALL of them, so an IsNull
-    // over it matches every row and breaches on result-set size — saying
+    // over it matches every row and breaches on result-set size, saying
     // nothing about the index, exactly like the SYS* rows. Inverting the test
     // makes the small side the matched side: populate 60 and ask IsNotNull.
     // 60 item updates instead of a 5,940-row backfill.
@@ -548,7 +548,7 @@
   // __metadata, and odata=nometadata REJECTS the type hint rather than
   // ignoring it: "The property '__metadata' does not exist on type ...". The
   // first live run of this probe failed all four MERGEs with HTTP 400 for
-  // exactly that reason — the body was byte-identical to the deployer's proven
+  // exactly that reason. The body was byte-identical to the deployer's proven
   // patchField, but _http_write.js.j2 sends verbose and the probe harness
   // sends nometadata. calculated-choice-operand.js and datetime-sentinel-probe
   // .js both already carried the lesson in a comment; this is the fourth time
@@ -596,7 +596,7 @@
   // pastes this seven more times and "idempotent" has to mean it.
   //
   // The id is then MEASURED rather than assumed to be 1. A hardcoded 1 is a
-  // filter that silently matches nothing if item 1 is ever recycled — the
+  // filter that silently matches nothing if item 1 is ever recycled. The
   // match-count check would catch it, but as a mystery rather than a cause.
   const parentItems = await spGet(
     `web/lists/getbytitle('${odata(PARENT)}')/items?$select=Id&$top=1&$orderby=Id asc`);
@@ -617,8 +617,8 @@
 
   // ---- One batch writer, used by everything that writes in bulk --------
   // _api/$batch: multipart/mixed carrying one changeset of write operations.
-  // Three callers need this — creating fixture rows, growing the lookup target,
-  // stamping a status column — and three hand-rolled copies of a MIME envelope
+  // Three callers need this (creating fixture rows, growing the lookup target,
+  // stamping a status column), and three hand-rolled copies of a MIME envelope
   // is three chances to get a boundary or a verb wrong. It has already been
   // both: CRLF between parts is required by the boundary parser, and the verb
   // belongs in the part's own REQUEST LINE, not in an X-HTTP-Method header. A
@@ -662,8 +662,8 @@
     });
     const text = await res.text();
     // What the batch ACTUALLY did, read from the inner status lines. The
-    // envelope answers 200 whether or not the writes inside it worked —
-    // SharePoint's batch is explicitly non-transactional — and SP.List
+    // envelope answers 200 whether or not the writes inside it worked
+    // (SharePoint's batch is explicitly non-transactional), and SP.List
     // .ItemCount lags, so neither can be believed here.
     const codes = (text.match(/^HTTP\/1\.1 (\d{3})/gm) || [])
       .map((line) => Number(line.slice(9, 12)));
@@ -710,7 +710,7 @@
   // What did the batch ACTUALLY do? Read it out of the multipart response, one
   // status line per inner operation.
   //
-  // NOT from SP.List.ItemCount, and this cost a run: ItemCount LAGS — line ~420
+  // NOT from SP.List.ItemCount, and this cost a run: ItemCount LAGS. Line ~420
   // below already says so, from three earlier runs that each read 0 on a list
   // holding a row. A first batch of 500 was created correctly, every inner
   // operation answered 201, and an ItemCount read immediately afterwards still
@@ -719,9 +719,9 @@
   // Where to resume from, and it must NOT be ItemCount. Reading the highest id
   // asks the ITEMS, which is what line ~420 below already concluded for the
   // same reason: ItemCount lags, and a resume cursor taken from it restarts the
-  // load instead of continuing it. Harmless to the measurement — the target
+  // load instead of continuing it. Harmless to the measurement (the target
   // only has to be large, and the child rows all point at item 1 whatever else
-  // is in here — but a third pass would add another full target's worth.
+  // is in here), but a third pass would add another full target's worth.
   //
   // $orderby=Id desc is index-backed, so it is served past the threshold where
   // an unordered count would not be.
@@ -755,7 +755,7 @@
     // ItemCount is informational: it may still lag what was just written, which
     // is why `made` and not this decides whether the load succeeded. The
     // reported size takes the largest of the three, so the figure stamped into
-    // the lookup questions never UNDER-states the target — reading "into a
+    // the lookup questions never UNDER-states the target. Reading "into a
     // 1-item target" on a list holding thousands is how a measurement gets
     // filed against the wrong condition.
     const settled = await parentCount();
@@ -763,13 +763,13 @@
     log(startedAt + made >= PARENT_TARGET ? 'OK' : 'FAIL',
         `Lookup target '${PARENT}': created ${made} this run, ${startedAt + made} ` +
         `of ${PARENT_TARGET} by count of successful writes. ItemCount reads ` +
-        `${settled}${settled < startedAt + made ? ' — lagging, not a failure' : ''}.`);
+        `${settled}${settled < startedAt + made ? ' (lagging, not a failure)' : ''}.`);
   }
 
 {% include "_threshold_rows.js.j2" %}
 
   // Which user id the Person population gets. OWNER_ID when pinned, otherwise
-  // the account doing the pasting — safe here in a way it is NOT for the
+  // the account doing the pasting, safe here in a way it is NOT for the
   // measuring half, because this is CHOOSING the value to store rather than
   // guessing one to match. Whatever goes in, the discovery step later reads it
   // back off the rows.
@@ -801,7 +801,7 @@
     } else if (!ownerSeed || !parentItemId) {
       log('FAIL',
           `Phase ${TEST_PHASE}: need a site user id and a parent item id before ` +
-          'creating rows — the Person and Lookup populations would load blank ' +
+          'creating rows. The Person and Lookup populations would load blank ' +
           'and PERSID / LOOKID would be about an empty column.');
     } else {
       log('INFO', `Phase ${TEST_PHASE}: creating rows ${from}..${target} as ${ownerSeed}.`);
@@ -824,7 +824,7 @@
   // the same CAML programmatically. Three sources for one question, because
   // they are three code paths.
   //
-  // Paged: true — the RowLimit element's documentation is explicit that an
+  // Paged: true. The RowLimit element's documentation is explicit that an
   // unspecified Paged makes the limit ABSOLUTE with no "show more" link, which
   // is not the shape the template library ships. ViewFields is NOT passed in
   // the create body: the harness sends odata=nometadata, where the verbose
@@ -872,7 +872,7 @@
   log('INFO', `  (--parent-id ${parentItemId} is the measured first item of '${PARENT}')`);
   log('INFO', `  Then set OWNER_ID in this probe to the same value.`);
   log('INFO', `  ListItemEntityTypeFullName: ${main.ListItemEntityTypeFullName}`);
-  log('INFO', '  — some batch-create flows need that as the __metadata type.');
+  log('INFO', '  Some batch-create flows need that as the __metadata type.');
   log('INFO', '===========================================================');
 
   // ---- Snapshot -------------------------------------------------------
@@ -886,9 +886,9 @@
     log('INFO', 'nothing else distinguishes the two transcripts.');
   }
 
-  // SharePoint's batch API is explicitly non-transactional — "if any of the
-  // child operations fails, the others still complete and aren't rolled back"
-  // — so a half-loaded batch is SILENT, and every observation below would be
+  // SharePoint's batch API is explicitly non-transactional ("if any of the
+  // child operations fails, the others still complete and aren't rolled back"),
+  // so a half-loaded batch is SILENT, and every observation below would be
   // filed under a row count the list never actually reached.
   //
   // 0 gets its own outcome: the provisioning run legitimately has an empty
@@ -903,14 +903,14 @@
     `ItemCount=${count}; checkpoints are ${CHECKPOINTS.join(', ')}` + (
       (onCheckpoint || count <= 0) ? '' :
       '. A batch load may have partly failed, or a file was loaded twice. ' +
-      'EVERY ROW BELOW IS SUSPECT — reconcile the list first.'
+      'EVERY ROW BELOW IS SUSPECT. Reconcile the list first.'
     ),
   );
 
   // ---- Are the controls actually controls? ----------------------------
   // The whole experiment is an indexed-versus-unindexed comparison, so a MERGE
   // that returned 200 without taking effect would mislabel every row in the
-  // table. Read the flags back rather than trusting the status code — the
+  // table. Read the flags back rather than trusting the status code. The
   // deployer's own index step is documented as "verified by readback" for
   // exactly this reason.
   const flags = [];
@@ -935,7 +935,7 @@
   }
   record(
     'IDXSET', 'The intended indexes are set and the controls are not',
-    wrong.length ? 'MISLABELLED — TABLE VOID' : 'CONFIRMED',
+    wrong.length ? 'MISLABELLED, TABLE VOID' : 'CONFIRMED',
     wrong.length
       ? `[${stamp}] ${wrong.join('; ')}. Every indexed/unindexed row below is ` +
         'about a column whose index state is not what it claims.'
@@ -958,13 +958,13 @@
   // Classify from the error body, so a row is self-describing in a single
   // transcript. A malformed $filter and a threshold refusal both come back as
   // a 4xx/5xx that isRefusal() reads as REFUSED, and conclusions get drawn
-  // from the LAST transcript — where a filter that was broken at every
+  // from the LAST transcript, where a filter that was broken at every
   // checkpoint would read as a threshold refusal.
   const classify = (r) => {
     const body = r.body ? JSON.stringify(r.body) : '';
     // TRANSIENT FIRST, before the body is inspected. A 429 or 408 whose body
     // happens to mention the threshold would otherwise be recorded as a
-    // threshold REFUSAL — turning a throttle, which is about the moment, into
+    // threshold REFUSAL, turning a throttle, which is about the moment, into
     // an answered verdict about the platform. That is a wrong finding, not a
     // missing one, and it would be indistinguishable from a real refusal in
     // the transcript.
@@ -972,7 +972,7 @@
     if (/exceeds the list view threshold|SPQueryThrottledException/i.test(body)) {
       return 'REFUSED (threshold)';
     }
-    if (isRefusal(r.status)) return 'REFUSED (request rejected — check the body)';
+    if (isRefusal(r.status)) return 'REFUSED (request rejected; check the body)';
     return 'NOT ESTABLISHED';
   };
 
@@ -983,21 +983,21 @@
     const matched = (r.body && r.body.value) ? r.body.value.length : -1;
     if (expectedRows === null) return `SERVED (${matched} row(s))`;
     // A filter that matches NOTHING returns 200 and would otherwise read as a
-    // clean SERVED — which is how an empty column, or a Flow that dropped a
+    // clean SERVED, which is how an empty column, or a Flow that dropped a
     // field, becomes "an index on this type does avert the threshold".
     //
     // SHORT gets its own outcome, separate from a plain mismatch. HTTP 200
     // carrying FEWER rows than the data holds is the documented failure this
     // whole check exists to warn about: past the threshold, a query no index
-    // can serve falls back to returning up to the newest 1,250 items — or none
-    // — rather than reporting an error. Filing that as "NOT ESTABLISHED" reads
+    // can serve falls back to returning up to the newest 1,250 items (or none)
+    // rather than reporting an error. Filing that as "NOT ESTABLISHED" reads
     // as a question nobody asked, when it may be the answer.
     //
     // It is not self-certifying: a short count is ALSO what a fixture that
     // never held the rows looks like. SEEDCK separates the two by reading the
     // data back through a filter already known to be served.
     if (matched < expectedRows) {
-      return `SHORT (${matched} of ${expectedRows}, HTTP 200) — truncation or `
+      return `SHORT (${matched} of ${expectedRows}, HTTP 200), truncation or `
              + 'fixture fault; SEEDCK separates them';
     }
     if (matched !== expectedRows) {
@@ -1018,7 +1018,7 @@
     const suspect = count > 0 && count <= CHECKPOINTS[0] && !r.ok;
     record(
       id, question, judge(r, expectedRows),
-      `[${stamp}] $filter=${filter} — HTTP ${r.status}: ${body}` + (
+      `[${stamp}] $filter=${filter}, HTTP ${r.status}: ${body}` + (
         suspect
           ? '  <-- FAILED AT THE FIRST CHECKPOINT, so this is a broken filter, not evidence.'
           : ''
@@ -1032,7 +1032,7 @@
   // column that is the whole question. Filtering on a lookup reads the stored
   // id, which sits on the row; PROJECTING one joins to the target list across
   // the result set. Microsoft's rule about indexed lookup columns is about the
-  // second, so a probe that only ever filters cannot speak to it — and a CAML
+  // second, so a probe that only ever filters cannot speak to it, and a CAML
   // <View> with no <ViewFields> is a shape no real view has.
   //
   // Left empty for every question that is not about a lookup, so those stay
@@ -1055,7 +1055,7 @@
       outcome = 'NOT ESTABLISHED (no Row array in the response)';
     } else if (expectedRows !== null && rows < expectedRows) {
       // See judge() for why SHORT is not the same as NOT ESTABLISHED.
-      outcome = `SHORT (${rows} of ${expectedRows}, HTTP 200) — truncation or `
+      outcome = `SHORT (${rows} of ${expectedRows}, HTTP 200), truncation or `
                 + 'fixture fault; SEEDCK separates them';
     } else if (expectedRows !== null && rows !== expectedRows) {
       outcome = `NOT ESTABLISHED (matched ${rows}, expected ${expectedRows})`;
@@ -1067,7 +1067,7 @@
     // standard set of fields whatever is requested, and the evidence is sliced
     // at 300 characters, which stops inside that preamble. So a projecting
     // query whose ViewFields were quietly ignored looks EXACTLY like one that
-    // paid for the join and was served — and the second reading would retire a
+    // paid for the join and was served, and the second reading would retire a
     // Microsoft-documented rule on a query that never joined anything.
     //
     // Check the returned row for each requested field by key prefix, because a
@@ -1101,7 +1101,7 @@
         + 'for, so this row says nothing the non-projecting one did not.';
     }
     record(id, question, outcome,
-           `[${stamp}] CAML ${where} — HTTP ${r.status}:${span}${projected} ` +
+           `[${stamp}] CAML ${where}, HTTP ${r.status}:${span}${projected} ` +
            `${(r.text || '').slice(0, 300)}`);
   };
 
@@ -1111,7 +1111,7 @@
   // that displays data from another list that currently exceeds the List View
   // Threshold defined by the administrator (5000)." Nobody can set the column.
   //
-  // The picker has to ENUMERATE the target, and that is what breaches — so
+  // The picker has to ENUMERATE the target, and that is what breaches, so
   // changing which field it displays cannot help by itself. What might is an
   // index on the displayed column, making the enumeration index-served. These
   // ask the query shapes a picker needs, against the grown target, and the
@@ -1122,11 +1122,11 @@
     const r = await spGet(`${targetItems}?${query}`);
     const rows = (r.ok && r.body && r.body.value) ? r.body.value.length : -1;
     record(id, question, r.ok ? `SERVED (${rows} row(s))` : classify(r),
-           `[target holds ${parentSize}] ?${query} — HTTP ${r.status}: ` +
+           `[target holds ${parentSize}] ?${query}, HTTP ${r.status}: ` +
            `${r.body ? JSON.stringify(r.body).slice(0, 200) : '(no JSON body)'}`);
   };
 
-  // Is the ShowField indexed? Read it rather than assume — the answer decides
+  // Is the ShowField indexed? Read it rather than assume. The answer decides
   // how the three rows below read, exactly as IDXSET does for the main table.
   const showField = await spGet(
     `web/lists/getbytitle('${odata(PARENT)}')/fields/getbyinternalnameortitle('Title')`);
@@ -1151,7 +1151,7 @@
   //
   // The mechanism it needs is that "" rows cost nothing. They do not. The
   // threshold counts rows SCANNED, not rows displayed, so a calculated column
-  // evaluating to "" on 5,500 of 6,500 still has 6,500 rows to read — and it
+  // evaluating to "" on 5,500 of 6,500 still has 6,500 rows to read, and it
   // cannot carry an index to avoid that, because CALCIDX establishes that a
   // Calculated column is not indexable. Both halves are measured rather than
   // argued: whether the column can be a ShowField at all, and whether ordering
@@ -1160,7 +1160,7 @@
   // TGTSFO is the variant that can work, and it needs no new column: narrow
   // with an INDEXED filter first, then order. If the index makes the ordered
   // enumeration servable, the workaround is a target that is FILTERABLE to
-  // under the threshold by an indexed column — not one whose labels are blank.
+  // under the threshold by an indexed column, not one whose labels are blank.
   const targetFields = `web/lists/getbytitle('${odata(PARENT)}')/fields`;
   const pickLabel = await spGet(
     `${targetFields}/getbyinternalnameortitle('PickLabel')`);
@@ -1286,7 +1286,7 @@
   record('TGTSTA', "The INDEXED status filter on the lookup target",
          activeCount > 0 ? `SERVED (${activeCount} row(s), capped at ${PAGE})`
            : classify(activeNow),
-         `[target holds ${parentSize}] $filter=PickStatus eq 'Active' — HTTP ` +
+         `[target holds ${parentSize}] $filter=PickStatus eq 'Active', HTTP ` +
          `${activeNow.status}. ${activeCount > 0 ? '' : 'Set SEED_TARGET_STATUS ' +
          'and re-paste: with nothing Active, PickCond is "" on every row and ' +
          'TGTCND / TGTFLT are about an empty column.'}`);
@@ -1302,7 +1302,7 @@
   // Asked once per ShowField so the three cases separate: an INDEXED text
   // column, a CALCULATED one, and the status-driven conditional. If the indexed
   // column is served where the others are refused, indexing the ShowField is
-  // the whole fix for a large lookup target — which is what TGTORD and TGTPFX
+  // the whole fix for a large lookup target, which is what TGTORD and TGTPFX
   // already point at, on approximated queries rather than this one.
   //
   // pagingInfo is empty deliberately: that is what the form sends on first
@@ -1335,7 +1335,7 @@
            r.ok ? `SERVED (${got.n} choice(s))` : threshold ? 'REFUSED (threshold)'
              : `REFUSED (HTTP ${r.status})`,
            `[target holds ${parentSize}] GetLookupFieldChoices ` +
-           `targetFieldName='${field}' — HTTP ${r.status}` +
+           `targetFieldName='${field}', HTTP ${r.status}` +
            (r.ok ? `, highest LookupId ${got.max} (Active rows are 1..${TARGET_ACTIVE}` +
                    `, so anything above that is an UNFILTERED picker)` : '') +
            `: ${(r.text || '').slice(0, 220)}`);
@@ -1347,14 +1347,14 @@
   // ---- Can a FILTERED DEFAULT VIEW restrict what the picker offers? ----
   // The question behind this: a Lookup into a large operational list offers
   // every row, including the closed ones nobody should be picking. SharePoint
-  // has no filtering attribute on a Lookup field — the Field element carries
-  // List, ShowField, Mult and no way to restrict the choices — so the only
+  // has no filtering attribute on a Lookup field (the Field element carries
+  // List, ShowField, Mult and no way to restrict the choices), so the only
   // native lever left is whether the picker honours the TARGET's default view.
   //
   // WORTH KNOWING BEFORE READING ANY ADVICE ON THIS. The workaround the
   // community converged on is a calculated column in the SOURCE list that
   // returns a label only for the rows that should be offered and "" otherwise,
-  // used as the lookup's ShowField — because a Lookup will not offer a blank
+  // used as the lookup's ShowField, because a Lookup will not offer a blank
   // value. PIKCAL and PIKCND ARE that workaround, and past 5,000 rows in the
   // target both come back SPQueryThrottledException: a Calculated column cannot
   // be indexed (CALCIDX), so the picker's enumeration has to scan.
@@ -1393,15 +1393,15 @@
       });
     log(promoted.ok ? 'OK' : 'FAIL',
         `target default view -> '${activeView}' ${promoted.ok
-          ? 'requested — RE-PASTE to measure it'
+          ? 'requested. RE-PASTE to measure it'
           : `FAILED HTTP ${promoted.status} ${promoted.text.slice(0, 200)}`}`);
   }
   const defaulted = await spGet(
     `${parentViews}/getbytitle('${odata(activeView)}')?$select=DefaultView`);
   record('PIKVW', "Does the picker honour the target's DEFAULT VIEW filter?",
          readFailed(defaulted) ? 'NOT ESTABLISHED'
-           : defaulted.body.DefaultView ? 'MEASURED — read PIKIDX above'
-           : 'NOT MEASURED — the filtered view is not default yet',
+           : defaulted.body.DefaultView ? 'MEASURED (read PIKIDX above)'
+           : 'NOT MEASURED (the filtered view is not default yet)',
          `[target holds ${parentSize}] '${activeView}' filters PickStatus='Active' ` +
          `and DefaultView reads ${readFailed(defaulted) ? '(unreadable)' : defaulted.body.DefaultView}. ` +
          'With it default, PIKIDX above decides it: a highest LookupId inside ' +
@@ -1436,7 +1436,7 @@
       });
     log(flagged.ok ? 'OK' : 'FAIL',
         `Target ShowField 'Title': Indexed=true ${flagged.ok
-          ? 'requested — RE-PASTE to measure the indexed half'
+          ? 'requested. RE-PASTE to measure the indexed half'
           : `FAILED HTTP ${flagged.status} ${flagged.text.slice(0, 200)}`}`);
   }
 
@@ -1461,7 +1461,7 @@
            indexed ? 'INDEXABLE' : 'NOT INDEXABLE',
            `MERGE HTTP ${flagged.status}; Indexed reads ${indexed} on readback. ` +
            (flagged.ok && !indexed
-             ? 'The MERGE was ACCEPTED and the flag did not take — a status code '
+             ? 'The MERGE was ACCEPTED and the flag did not take. A status code '
                + 'alone would have reported this column as indexed.'
              : '') + ` ${(flagged.text || '').slice(0, 200)}`);
   };
@@ -1478,7 +1478,7 @@
   // filter returned HTTP 200 with zero rows, judge() saw r.ok, and the summary
   // read "13 answered, 1 NOT established" one screen below IDXSET reporting
   // TABLE VOID. A filter over a list that is empty, off-checkpoint, or whose
-  // index flags are not what they claim is not evidence about anything — so
+  // index flags are not what they claim is not evidence about anything, so
   // the queries are not sent and every row says why.
   const blocked =
     count <= 0 ? 'the list is empty; load a CSV first'
@@ -1526,14 +1526,14 @@
   // ---- Which user id do the rows actually carry? ----------------------
   // OWNER_ID is an operator constant, and it is reset to 0 every time the
   // template is re-rendered. Four Person questions have now been lost twice
-  // that way — the probe ran, everything else answered, and PERSID / PERCAM /
+  // that way. The probe ran, everything else answered, and PERSID / PERCAM /
   // PERCAV / PERPRJ came back "no filter was sent".
   //
   // So DISCOVER it instead, from the fixture. Reading it off a row is not the
   // thing the constant exists to prevent: the hazard was reading it from
   // web/currentuser, where a paste from a different account silently retargets
   // the filter at an id no row carries. A value taken from the DATA is the
-  // value the data carries, by definition — it cannot be the wrong one.
+  // value the data carries, by definition. It cannot be the wrong one.
   //
   // Owner is indexed and an indexed presence test is served past the threshold
   // (NULCAM / NNIDX), so this query works at 6,000. OWNER_ID still wins when
@@ -1555,7 +1555,7 @@
 
   const measureFilters = async () => {
   // One row in a hundred, so this is the expected match count at any
-  // checkpoint — every offset is below 100 and every checkpoint is a multiple
+  // checkpoint. Every offset is below 100 and every checkpoint is a multiple
   // of 100, so it is exact at all five, not only at 6,000.
   const matched = Math.floor(count / PER_HUNDRED);
 
@@ -1564,14 +1564,14 @@
   // two columns hold identical data and differ only in the index.
   //
   // WHICH rows: the ones `Bucket eq 'Z'` returns. That filter is indexed and is
-  // served past the threshold — established — so the set is both reachable at
+  // served past the threshold (established), so the set is both reachable at
   // 6,000 and exactly `matched` in size. Picking them any other way needs a
   // query that may itself be refused, and a seed set of unknown size makes
   // every count below unreadable. The correlation with Bucket is harmless: no
   // filter here combines the two columns.
   //
   // Both columns in ONE MERGE per row, so a partial failure cannot leave the
-  // pair unequal — which would be the one outcome that silently invalidates the
+  // pair unequal, which would be the one outcome that silently invalidates the
   // comparison rather than failing it.
   //
   // Updating BY ID does not go through the list view threshold, so this works
@@ -1597,7 +1597,7 @@
     }
     // One digest per pass. A form digest lives about thirty minutes and 60
     // rows take seconds, so refreshing per row would double the request count
-    // for nothing — and request count is what throttling counts.
+    // for nothing, and request count is what throttling counts.
     const digest = await getDigest();
     let written = 0;
     for (const row of rows) {
@@ -1635,7 +1635,7 @@
   //   the rows are NOT    -> the seed did not take on every row, and NNUNI is
   //                          a fixture fault reporting nothing about indexing.
   //
-  // Counting through the UNINDEXED column cannot tell them apart — that is the
+  // Counting through the UNINDEXED column cannot tell them apart. That is the
   // column under suspicion. So read the same rows through `Bucket eq 'Z'`,
   // which is indexed and established as served at this size, and select both
   // seeded columns. That count is about the DATA, not about any index.
@@ -1677,12 +1677,12 @@
   // `eq null` is NOT in Microsoft's documented operator list for the SharePoint
   // REST service, and the only Microsoft-hosted statement found says OData
   // there does not support filtering on null, with CAML as the workaround. So
-  // this row may well be a 400 at every checkpoint — which is why NULCAM
+  // this row may well be a 400 at every checkpoint, which is why NULCAM
   // exists, and why the first checkpoint annotates a broken filter as broken.
   await ask('NULIDX', 'OData null test, INDEXED DateTime',
             'ClosedAt eq null', matched);
   // Not asked at all when OWNER_ID is unset. `OwnerId eq 0` matches nothing,
-  // returns 200, and would be a SERVED — the exact false positive the constant
+  // returns 200, and would be a SERVED, the exact false positive the constant
   // exists to prevent, so the query does not get to run.
   if (ownerId) {
     await ask('PERSID', 'OData comparison, INDEXED Person',
@@ -1709,7 +1709,7 @@
   // view LOOKUP threshold is a property of the view's SHAPE, so it bites on a
   // list holding ten items and nothing a small deployment does avoids it.
   //
-  // THE NUMBER FOR SHAREPOINT ONLINE IS 12. Not 8 — that is the on-premises
+  // THE NUMBER FOR SHAREPOINT ONLINE IS 12. Not 8: that is the on-premises
   // pre-2013-CU default, and it comes from MaxQueryLookupFields, a farm
   // property that does not exist in SharePoint Online. This project profiles
   // SPO only, so a reader who "corrects" 12 back to 8 from a boundaries table
@@ -1718,8 +1718,8 @@
   // And the SPO citation is unusually thin, which is the reason to measure it
   // rather than take it: no first-party SharePoint Online limits page
   // enumerates this threshold. The strongest Microsoft statement of it is in
-  // the POWER QUERY connector documentation — the SharePoint Online list v2.0
-  // connector "is subject to a maximum of 12 join operations per query" —
+  // the POWER QUERY connector documentation (the SharePoint Online list v2.0
+  // connector "is subject to a maximum of 12 join operations per query"),
   // which then cross-references the on-premises boundaries table for the
   // definition. A number reached only by cross-reference is exactly the kind
   // this repository probes.
@@ -1728,8 +1728,8 @@
   // managed metadata are named, and Created By / Modified By are widely
   // reported but nowhere documented. JOINSYS and JOINPER settle those.
   //
-  // The filter stays at Bucket='Z' throughout — indexed, 60 rows, established
-  // as served — so the ONLY variable across these rows is how many joins the
+  // The filter stays at Bucket='Z' throughout (indexed, 60 rows, established
+  // as served), so the ONLY variable across these rows is how many joins the
   // view projects. A failure is then attributable to joins and nothing else.
   const joinWhere =
     `<Where><Eq><FieldRef Name='Bucket'/><Value Type='Text'>${RARE_BUCKET}</Value></Eq></Where>`;
@@ -1742,7 +1742,7 @@
       `web/lists/getbytitle('${odata(LIST)}')/RenderListDataAsStream`,
       { parameters: { ViewXml: viewXml } }, await getDigest());
     // Which of the requested fields actually came back. A view that renders is
-    // only evidence about join cost if the column under test was PROJECTED —
+    // only evidence about join cost if the column under test was PROJECTED.
     // ViewFields being silently dropped looks exactly like a join that was
     // free, and this fixture has already been caught by that once.
     const first = (r.ok && r.body && Array.isArray(r.body.Row) && r.body.Row[0])
@@ -1757,7 +1757,7 @@
 
   if (PROBE_JOINS) {
     // Lookup columns with no data. Whether an EMPTY lookup still costs a join
-    // is itself part of the question — the threshold is computed from the
+    // is itself part of the question. The threshold is computed from the
     // view's shape, so it should, and if it does not that is the finding.
     for (let n = 1; n <= JOIN_COLUMNS; n += 1) {
       const name = `Join${n}`;
@@ -1808,7 +1808,7 @@
              ? `NO CEILING FOUND (${worked} projected, all that exist)`
              : `CEILING ${worked}`,
            `[${stamp}] ${worked} lookup column(s) render; ${worked + 1} ` +
-           `${failure ? `does not — ${failure}` : 'was not reachable'}. Microsoft ` +
+           `${failure ? `does not, ${failure}` : 'was not reachable'}. Microsoft ` +
            'documents 12 for SharePoint Online; 8 is the on-premises ' +
            'pre-CU default and does not apply here. The filter is the same ' +
            '60-row indexed Bucket query throughout, so joins are the only ' +
@@ -1818,7 +1818,7 @@
     // test cannot discriminate: with a base of 11 against a ceiling of 12,
     // adding one column lands on 12 and renders whether or not that column is
     // a join, so a pass means nothing. Sitting at the ceiling makes the answer
-    // binary — the extra column either pushes it to 13 and fails, or does not
+    // binary: the extra column either pushes it to 13 and fails, or does not
     // count and it still renders.
     //
     // One suspect per row, not two. A base of 11 with Author AND Editor fails
@@ -1837,7 +1837,7 @@
       }
       const r = await tryProject(['Title', ...atCeiling, column]);
       record(id, question, r.ok ? 'NOT COUNTED' : 'COUNTED',
-             `[${stamp}] ${worked} lookup(s) at the ceiling + ${column} — HTTP ` +
+             `[${stamp}] ${worked} lookup(s) at the ceiling + ${column}, HTTP ` +
              `${r.status}. ${r.ok
                ? 'It renders, so this column adds no join.'
                : `It does not, so this column IS a join: ${r.text}`}`);
@@ -1885,10 +1885,10 @@
       record('JOINPRJ', "Does a lookup's additional-field projection cost its own join?",
              !withPrimary.ok ? 'NOT ESTABLISHED (the control did not render)'
                : !withBoth.ok ? 'ITS OWN JOIN'
-               : projected ? 'FREE — it rides on its primary'
+               : projected ? 'FREE (it rides on its primary)'
                : 'NOT ESTABLISHED (rendered, but the dependent was NOT returned)',
-             `[${stamp}] ${base.length} lookup(s) + Parent — HTTP ` +
-             `${withPrimary.status}; the same plus its dependent ParentStatus — ` +
+             `[${stamp}] ${base.length} lookup(s) + Parent, HTTP ` +
+             `${withPrimary.status}; the same plus its dependent ParentStatus, ` +
              `HTTP ${withBoth.status}, ParentStatus ` +
              `${withBoth.ok ? (projected ? 'PRESENT' : 'ABSENT') : 'n/a'} in the ` +
              `returned row (${withBoth.keys} key(s)). ` + (
@@ -1914,7 +1914,7 @@
   // selectivity and condition shape." Filter order is the testable third of it.
   //
   // Shadow carries byte-identical data to Bucket, so `Bucket='Z' AND
-  // Shadow='Z'` matches exactly the rows either matches alone — the same 60 as
+  // Shadow='Z'` matches exactly the rows either matches alone, the same 60 as
   // CMPIDX and CMPUNI. The AND restricts nothing. So this pair differs from
   // those two, and from each other, in ONE respect: which condition comes
   // first, and therefore which column SharePoint reaches for an index on.
@@ -1949,13 +1949,13 @@
   // view renders CAML, OData is a different code path, and this fixture has
   // already been wrong once by carrying an OData result over to a CAML
   // question. The SharePoint UI does offer calculated columns as view filters,
-  // so the two plausibly disagree — and if they do, it is the CAML answer that
+  // so the two plausibly disagree, and if they do, it is the CAML answer that
   // governs analysis/checks/_views.py.
   //
   // CalcBait is `=CONCATENATE("c-",Title)` and Titles are unique, so this
-  // matches exactly one row of 6,000 — selective, and past the threshold on a
+  // matches exactly one row of 6,000 (selective, and past the threshold on a
   // column that CANNOT carry an index, since CALCIDX establishes calculated
-  // columns are not indexable. A SERVED here is therefore also a second
+  // columns are not indexable). A SERVED here is therefore also a second
   // reading on whether selectivity alone can carry a query.
   await askCaml(
     'CALCAM', 'CAML Eq on a CALCULATED column (OData refuses this by type)',
@@ -1965,7 +1965,7 @@
   // ---- The lookup rule, on the path the check actually governs ---------
   // _views.py warns that an indexed Person or Lookup column does not avert the
   // threshold, on Microsoft's documentation. OData contradicted it. These ask
-  // the same question in CAML, which is what a VIEW renders — and in both
+  // the same question in CAML, which is what a VIEW renders, and in both
   // forms, because filtering a lookup by its stored id and filtering by its
   // projected value are different amounts of work and the documented rule may
   // only be about the second.
@@ -1974,7 +1974,7 @@
       'PERCAM', 'CAML Eq on INDEXED Person, LookupId form',
       `<Where><Eq><FieldRef Name='Owner' LookupId='TRUE'/>` +
       `<Value Type='Integer'>${ownerId}</Value></Eq></Where>`, matched);
-    // The display name for OWNER_ID, read rather than assumed — it is NOT
+    // The display name for OWNER_ID, read rather than assumed. It is NOT
     // necessarily the current user, and a wrong name here matches nothing,
     // returns cleanly and would read as a finding about the threshold.
     const owner = await spGet(`web/getuserbyid(${ownerId})?$select=Id,Title`);
@@ -2013,7 +2013,7 @@
   //
   // SERVED here contradicts the rule on the path _views.py governs. REFUSED
   // confirms it, and confirms that the join rather than the filter is what the
-  // threshold charges for — which is also the difference between these two
+  // threshold charges for, which is also the difference between these two
   // rows and LOOCAM/PERCAM above.
   await askCaml(
     'LOOPRJ',
@@ -2087,7 +2087,7 @@
     const r = await spGet(
       `${items}?$select=Id&$top=${PAGE}&$filter=${encodeURIComponent(filter)}`);
     record(id, question, judge(r, null),
-           `[${stamp}] $filter=${filter} — HTTP ${r.status}: ` +
+           `[${stamp}] $filter=${filter}, HTTP ${r.status}: ` +
            `${r.body ? JSON.stringify(r.body).slice(0, 200) : '(no JSON body)'}${SYS_CAVEAT}`);
   }
   };
@@ -2101,7 +2101,7 @@
   if (blocked) {
     log('FAIL', `*** Nothing above is evidence: ${blocked}.`);
   } else if (wrong.length) {
-    log('FAIL', '*** The index flags are not what they claim — see IDXSET.');
+    log('FAIL', '*** The index flags are not what they claim. See IDXSET.');
   }
 
   // ---- Cleanup --------------------------------------------------------
@@ -2126,7 +2126,7 @@
       if (!rows.length) break;
       // One digest per PAGE, not per item. A form digest lives about thirty
       // minutes, so refreshing it 6,000 times doubled the request count for
-      // nothing — and request count is the binding constraint here.
+      // nothing, and request count is the binding constraint here.
       const digest = await getDigest();
       let removedThisPage = 0;
       for (const row of rows) {
@@ -2150,7 +2150,7 @@
     const remaining = (left.ok && left.body) ? left.body.ItemCount : -1;
     log(remaining === 0 ? 'OK' : 'FAIL',
         `CLEANUP '${title}': recycled ${removed} item(s), ${remaining} REMAINING` +
-        (remaining === 0 ? '.' : ' — re-run with CLEANUP_AT_END until this reads 0.'));
+        (remaining === 0 ? '.' : '. Re-run with CLEANUP_AT_END until this reads 0.'));
     return remaining === 0;
   };
 

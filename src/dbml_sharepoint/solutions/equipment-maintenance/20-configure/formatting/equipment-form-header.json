@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Next Due Date is the schedule — move it forward every time you record an event."
+          "txtContent": "Next Due Date is the schedule. Move it forward every time you record an event."
         }
       ]
     }

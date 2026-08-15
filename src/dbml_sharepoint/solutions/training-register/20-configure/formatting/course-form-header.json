@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Validity months is what makes a completion expire — leave it blank only for training that genuinely never lapses."
+          "txtContent": "Validity months is what makes a completion expire. Leave it blank only for training that genuinely never lapses."
         }
       ]
     }

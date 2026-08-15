@@ -5,7 +5,7 @@ sidebar_position: 22
 
 # `dbml_sharepoint.bundle`
 
-*Packaging — the one emission sequence*
+*Packaging: the one emission sequence*
 
 Bundle-level packaging shared by the core and extension CLIs.
 

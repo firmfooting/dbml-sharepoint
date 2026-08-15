@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Leave a stream blank only if it did not report — blank means unreported, which is the signal this board exists to give."
+          "txtContent": "Leave a stream blank only if it did not report. Blank means unreported, which is the signal this board exists to give."
         }
       ]
     }

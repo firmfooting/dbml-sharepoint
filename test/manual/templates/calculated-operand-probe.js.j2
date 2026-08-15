@@ -1,13 +1,13 @@
 /**
- * dbml-sharepoint PROBE — CALCULATED COLUMN OPERAND MATRIX
+ * dbml-sharepoint PROBE: CALCULATED COLUMN OPERAND MATRIX
  *
  * QUESTION: which SharePoint column types may a calculated field reference?
  *
  * WHY: Microsoft documents Lookup fields as unsupported and lists the
  * supported scalar operand types, while this project had live evidence that
  * a Person operand is refused with HTTP 500. Long text, rich text and
- * hyperlink were ambiguous — absent from Microsoft's supported list, which is
- * not the same as documented against — so they were kept OUT of the
+ * hyperlink were ambiguous (absent from Microsoft's supported list, which is
+ * not the same as documented against), so they were kept OUT of the
  * validator's denylist until this probe ran. See STATUS.
  *
  * SOURCE
@@ -56,14 +56,14 @@
  * All five refused types are now in _FORBIDDEN_CALCULATED_OPERANDS in
  * analysis/checks/_structure.py, so the build refuses them before a script is
  * emitted. Note what the run also showed: the three ambiguous types were
- * refused, so the cautious guess would have been RIGHT — and that is not a
+ * refused, so the cautious guess would have been RIGHT, and that is not a
  * reason to guess next time. The same caution kept Yes/No out of the
  * denylist, where a guess would have been WRONG.
  *
  * Incidental, and worth knowing before reading a future run: a GET on
  * fields/getbyinternalnameortitle() for a field that does not exist answers
  * HTTP 400, not 404. fieldExists() treats any non-2xx as absent, so this is
- * already handled — but a reader scanning the console for 404s will not find
+ * already handled, but a reader scanning the console for 404s will not find
  * them.
  */
 (async () => {
@@ -93,7 +93,7 @@
   // Literal registrations are deliberate: test_probes statically proves that
   // every record('ID', ...) of a DECLARED QUESTION has a matching upfront
   // expect('ID', ...), so an aborted run cannot make unanswered questions
-  // disappear. BOOT-prefixed ids are exempt there by design — they report a
+  // disappear. BOOT-prefixed ids are exempt there by design. They report a
   // bootstrap failure rather than answering a question, so there is no
   // question for them to hide.
   expect('LOOK', 'Lookup operand in a calculated formula');
@@ -127,7 +127,7 @@
 
   let digest = await getDigest();
   // bootId is per LIST, not a shared 'BOOT'. record() overwrites by id, so one
-  // id for both lists means whichever fails second erases the first — and the
+  // id for both lists means whichever fails second erases the first, and the
   // surviving row names the wrong list in its own question text. Two lists
   // bootstrap here, so two ids.
   const ensureList = async (title, bootId) => {

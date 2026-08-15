@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Name the sponsor — they are the executive who answers for this report, and every recommendation from it hangs off this row."
+          "txtContent": "Name the sponsor. They are the executive who answers for this report, and every recommendation from it hangs off this row."
         }
       ]
     }

@@ -1,11 +1,11 @@
   // === Phase {{ phase.number }}: form formatting ===
   // Declared list-form layouts (header/body/footer JSON) live on the list's
-  // default item content type as ClientFormCustomFormatter — a JSON string
+  // default item content type as ClientFormCustomFormatter, a JSON string
   // whose *JSONFormatter keys hold part OBJECTS (the pane-native encoding;
   // the Format pane displays string-encoded parts escaped). Lists without
   // a declaration are never touched.
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   const canonicalFormFormatter = (value) => {

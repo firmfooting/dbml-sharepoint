@@ -1,4 +1,4 @@
-# Meeting actions — physical mapping.
+# Meeting actions: physical mapping.
 prefix: "MA_"
 
 entities:
@@ -18,7 +18,7 @@ versioning:
 enum_sources: {}
 watched_lists: []
 
-# Security: recording meetings is everyone's job — Members and Owners hold
+# Security: recording meetings is everyone's job. Members and Owners hold
 # Contribute; Full Control confined to the empty-by-default admin group.
 groups:
   - name: "dbml List Administrators"
@@ -58,11 +58,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -79,12 +79,12 @@ display_names:
       MinutesUrl: "Minutes URL"
 
 # Column formatting: the fleet style standard (dbml-sharepoint
-# website/docs/reference/style-guide.md) — status columns render as
+# website/docs/reference/style-guide.md). Status columns render as
 # SharePoint's own severity boxes with icons, consistent across every
 # template.
 #
 # Only ActionItem carries any, and the two omissions are deliberate.
-# MeetingDate is when a meeting HAPPENED, not a deadline — reddening every
+# MeetingDate is when a meeting HAPPENED, not a deadline; reddening every
 # past meeting would be the whole list. MeetingType is a taxonomy of
 # forums rather than a lifecycle, so giving it severity tokens would hand
 # the fleet's colour vocabulary a second, incompatible meaning (see the
@@ -96,20 +96,20 @@ column_formatting:
     DueDate: { style: overdue-date, guard: { field: Status, not: [Done, Dropped] } }
 
 # Every action view shows the same five identifying columns and then its
-# own payload, so the spine is declared once — five repetitions.
+# own payload, so the spine is declared once (five repetitions).
 field_sets:
   ActionItem:
     action: [Title, Meeting, AssignedTo, DueDate, Status]
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view and the
-# keys are INTERNAL names — the build rewrites them to display titles,
+# keys are INTERNAL names. The build rewrites them to display titles,
 # because ColumnWidth binds by display name and an internal name silently
 # resets.
 views:
   Meeting:
     # A ROLLING NINETY DAYS, not "this quarter". CAML has no calendar
-    # predicate — today±N is what exists — and the two differ on the first
+    # predicate (today±N is what exists) and the two differ on the first
     # day of a quarter, which is exactly when someone assembling a
     # committee pack will notice. The title says "Recent" rather than
     # naming a period, so it cannot lie about which.
@@ -142,7 +142,7 @@ views:
         MinutesUrl: 180
   Decision:
     # "Sorted newest first" is what the published table asked for, and
-    # Decision carries no date of its own — the date belongs to the
+    # Decision carries no date of its own; the date belongs to the
     # meeting, on the other list, which CAML cannot sort across. Created
     # is the honest proxy rather than a new column: decisions are entered
     # during or straight after the meeting (see 40-adopt/staff-guide.md),
@@ -216,12 +216,12 @@ views:
         DueDate: 160
         Status: 120
         Notes: 200
-    # THE PUBLISHED ROW WAS "This meeting — filter by Meeting, link it
+    # THE PUBLISHED ROW WAS "This meeting, filter by Meeting, link it
     # from the agenda". A static view cannot filter to one parent record.
     # This is one grouped view instead: open the previous meeting's group
     # as the first agenda item, which is the habit 50-govern/governance.md
     # calls the difference between a register and a graveyard. Unfiltered
-    # on purpose — "did anyone do them?" needs the Done and Dropped rows
+    # on purpose: "did anyone do them?" needs the Done and Dropped rows
     # in the answer.
     - title: "By meeting"
       fields: ["@action", CompletedDate]
@@ -252,12 +252,12 @@ views:
 
 # Form layouts: a strapline header and a sectioned body per list. Section
 # field lists are authored with INTERNAL names; the build rewrites them to
-# display titles. Per-field description hints render on the NEW form only —
+# display titles. Per-field description hints render on the NEW form only.
 # SharePoint suppresses column descriptions on the Edit form.
 #
 # These forms matter more than most in the library. This is the
-# fastest-payback template here — three lists filled in during or straight
-# after every meeting — so a form that asks one avoidable question costs
+# fastest-payback template here (three lists filled in during or straight
+# after every meeting), so a form that asks one avoidable question costs
 # that question at every meeting a team ever holds.
 form_formatting:
   Meeting:
@@ -276,8 +276,8 @@ form_formatting:
 # the field is on screen exactly when it is mandatory, rather than firing a
 # refusal about a field the author cannot see.
 #
-# Moving Status back off Done does NOT clear a date already entered —
-# SharePoint has no such mechanism — so the field hides while keeping its
+# Moving Status back off Done does NOT clear a date already entered
+# (SharePoint has no such mechanism), so the field hides while keeping its
 # value.
 form_visibility:
   ActionItem:
@@ -287,7 +287,7 @@ form_visibility:
           - { field: Status, op: eq, value: "Done" }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule shares one message.
 column_validation:
   ActionItem:
@@ -318,7 +318,7 @@ list_validation:
     message: "An action marked Done needs a completed date. If it is finished but you cannot say when, it is still In progress."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without its non-empty refusal. Dates are today±N so the
 # date-derived views land correctly on whatever day the demo runs, and
 # "@me" is the pasting operator.
@@ -326,12 +326,12 @@ list_validation:
 # MinutesUrl is left blank on every demo meeting. A SharePoint URL column
 # takes a structured SP.FieldUrlValue over REST rather than a bare string
 # (see the note at generators/reportgen.py, which handles the read side of
-# exactly that record) and the demo writer emits literals — seeding one
+# exactly that record) and the demo writer emits literals; seeding one
 # would be a write this repository has not read back from a live list.
 #
 # Coverage: four meetings across four forums including one older than the
 # Recent window, three decisions stated as decisions, and six actions
-# spanning every status — one of them overdue and still open, which is the
+# spanning every status, one of them overdue and still open, which is the
 # row the whole follow-up discipline is about.
 demo_items:
   Meeting:
@@ -360,7 +360,7 @@ demo_items:
         MeetingType: "Working group"
         MeetingDate: "today-200"
         Chair: "@me"
-        Notes: "Demo row. Older than the rolling ninety days, so it is absent from Recent and present in By forum — which is why By forum carries no filter."
+        Notes: "Demo row. Older than the rolling ninety days, so it is absent from Recent and present in By forum, which is why By forum carries no filter."
   Decision:
     - key: dec-huddle
       values:
@@ -408,7 +408,7 @@ demo_items:
         AssignedTo: "@me"
         DueDate: "today+30"
         Status: "Open"
-        Notes: "The review the decision promised — an action rather than a good intention, which is the only difference that matters."
+        Notes: "The review the decision promised, an action rather than a good intention, which is the only difference that matters."
     - key: act-brief
       values:
         Title: "[DEMO] Brief the reporting stakeholders on the phase-one cut"

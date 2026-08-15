@@ -1,5 +1,5 @@
 // ============================================================================
-// Change register — one intake list with a calculated decision-time metric.
+// Change register: one intake list with a calculated decision-time metric.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -47,9 +47,9 @@ Table ChangeRequest {
   Status         change_status  [not null, default: 'Submitted']
   Approver       person         [note: 'Who holds decision authority for this change (set at triage)']
   DecisionDate   date           [note: 'When Approved or Rejected was decided']
-  // Calculated column — formula in mapping.yaml.
+  // Calculated column: formula in mapping.yaml.
   DaysToDecision calculated_number [note: 'Calculated automatically: the number of days from the requested date to the decision date. Blank until the decision date is entered']
-  DecisionNotes  richtext       [note: 'The reasoning — conditions of approval, or why rejected']
+  DecisionNotes  richtext       [note: 'The reasoning: conditions of approval, or why rejected']
   ImplementedDate date          [note: 'When the change actually landed']
 
   indexes {

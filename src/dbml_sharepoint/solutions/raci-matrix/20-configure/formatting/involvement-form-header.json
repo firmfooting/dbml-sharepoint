@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Say what input this party gives — not just who they are."
+          "txtContent": "Say what input this party gives, not just who they are."
         }
       ]
     }

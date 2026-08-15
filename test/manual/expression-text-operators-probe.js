@@ -1,8 +1,8 @@
 /**
- * dbml-sharepoint PROBE — TEXT OPERATORS ON THE EXPRESSION TARGET
+ * dbml-sharepoint PROBE: TEXT OPERATORS ON THE EXPRESSION TARGET
  *
  * QUESTION: how should `contains`, `not_contains`, `begins_with` and
- * `not_begins_with` be rendered into a ClientValidationFormula — and does
+ * `not_begins_with` be rendered into a ClientValidationFormula, and does
  * the rendering actually WORK, rather than merely save?
  *
  * WHY: `analysis/conditions.py` disables all four on the expression target:
@@ -11,27 +11,27 @@
  *
  * and the build error tells the author to "confirm it with
  * test/manual/form-visibility-evidence-probe.js". That probe does not test
- * them — its questions are collision, canonical syntax, round-trip fidelity
+ * them. Its questions are collision, canonical syntax, round-trip fidelity
  * and length limit. So the tool points at a probe that cannot settle the
  * thing it is cited for. This probe is what that error should have named.
  *
- * The validation target already renders all four — `ISNUMBER(FIND(...))`
- * and `LEFT([Col],n)=...` — so this is only about the client-side
+ * The validation target already renders all four (`ISNUMBER(FIND(...))`
+ * and `LEFT([Col],n)=...`), so this is only about the client-side
  * expression language, which is a different language with different
  * functions.
  *
  * WHY STORAGE IS NOT THE ANSWER, and why this probe ends with an eyes-on
  * checklist you have to fill in: this project has already been caught by
  * `length()`, which is documented, saves cleanly, reads back byte-identical
- * and returns an ARRAY's item count — so `length([$Note]) > 3` is false for
+ * and returns an ARRAY's item count, so `length([$Note]) > 3` is false for
  * every possible value and hides the column unconditionally. A formula that
  * stores perfectly and silently evaluates false is the exact failure this
  * whole surface keeps producing, and no headless script can see it. The
  * console half of this probe narrows the candidates; only your eyes can
  * finish it.
  *
- * WHAT IT ASKS — console half
- *   X0   NEGATIVE CONTROL — is a formula calling a function that does not
+ * WHAT IT ASKS (console half)
+ *   X0   NEGATIVE CONTROL: is a formula calling a function that does not
  *        exist REFUSED? If SharePoint stores nonsense, then "accepted"
  *        below means nothing and only the eyes-on half is evidence.
  *   X1   indexOf(...) >= 0            candidate for `contains`
@@ -49,7 +49,7 @@
  *   first had settled X1-X5 over three typed values. Both were previously
  *   carried on arithmetic rather than observation: `!= 0` is the exact
  *   negation of the `== 0` watched at X3, and the empty-box behaviour that
- *   `none_of[not_contains]` depends on had never been typed. Result — all
+ *   `none_of[not_contains]` depends on had never been typed. Result: all
  *   TWENTY-FOUR cells of the six-candidate by four-row table matched the
  *   predicted truth table exactly:
  *
@@ -64,21 +64,21 @@
  *   operators visible for the empty box, which is the observation
  *   `analysis/conditions.py` needs to keep none_of[not_contains] from
  *   re-admitting the empty value. The open form, before anything was typed,
- *   independently showed the same two columns — the same answer seen twice.
+ *   independently showed the same two columns, the same answer seen twice.
  *
  *   X1-X5 are unchanged byte-for-byte across both passes, so the first run's
  *   recorded results still describe exactly the strings that produced them.
- *   X0 failed again in the second pass — the nonsense function was stored
- *   byte-identical a second time — so the eyes-on table remains the only
+ *   X0 failed again in the second pass (the nonsense function was stored
+ *   byte-identical a second time), so the eyes-on table remains the only
  *   evidence here, and all six candidates storing cleanly means nothing on
  *   its own.
  *
- * WHAT YOU ANSWER — the eyes-on half
+ * WHAT YOU ANSWER (the eyes-on half)
  *   The probe prints a four-row table. You open the New form, put each
- *   value into "ProbeText" — the last row is the box left EMPTY — and write
+ *   value into "ProbeText" (the last row is the box left EMPTY) and write
  *   down which of the six columns appear. A candidate that works shows for
  *   SOME values and not others. A candidate that is broken shows for NONE
- *   (or for ALL) — and those two are indistinguishable from a formula that
+ *   (or for ALL), and those two are indistinguishable from a formula that
  *   stored perfectly.
  *
  * HOW TO RUN
@@ -99,7 +99,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -112,7 +112,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -138,11 +138,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -150,7 +150,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -159,7 +159,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -200,7 +200,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -212,7 +212,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -259,7 +259,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -270,9 +270,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -322,7 +322,7 @@
   //   ""                       the empty box
   //
   // The empty row is not decoration. Both NEGATIVE operators are true for a
-  // blank — indexOf('', 'needle') is -1, which is `< 0` and also `!= 0` —
+  // blank (indexOf('', 'needle') is -1, which is `< 0` and also `!= 0`),
   // and `analysis/conditions.py` relies on exactly that to decide that
   // none_of[not_contains] must NOT re-admit the empty value. That was
   // reasoned from the arithmetic, never printed as a row. It is a row now.
@@ -416,7 +416,7 @@
   // Returns the request outcome ALONGSIDE the value. Collapsing a failed
   // GET to null would make a throttled read indistinguishable from a
   // successful read of an empty property, and the classifier below would
-  // then print 'ACCEPTED THEN DISCARDED' — a claim about SharePoint — on
+  // then print 'ACCEPTED THEN DISCARDED' (a claim about SharePoint) on
   // no observation.
   const readExpression = async (field) => {
     const r = await spGet(
@@ -440,7 +440,7 @@
          junk.ok ? 'FAIL' : isRefusal(junk.status) ? 'PASS' : 'NOT ESTABLISHED',
          junk.ok
            ? `a call to dbmlspNoSuchFunction was ACCEPTED and stored as `
-             + `${JSON.stringify(junkStored)} — SharePoint is not validating these `
+             + `${JSON.stringify(junkStored)}. SharePoint is not validating these `
              + 'formulas on write, so treat every candidate "ACCEPTED" as storage only '
              + 'and rely entirely on the eyes-on table'
            : isRefusal(junk.status)
@@ -494,13 +494,13 @@
   report();
 
   // ---- The half a console cannot answer -------------------------------
-  console.log('\n============ EYES-ON CHECKLIST — REQUIRED ============');
+  console.log('\n============ EYES-ON CHECKLIST (REQUIRED) ============');
   console.log('The rows above say only whether SharePoint KEPT each formula.');
   console.log('They cannot say whether it EVALUATES. Do this now:\n');
   console.log(`  1. Open ${WEB}/Lists/${encodeURIComponent(LIST)}/NewForm.aspx`);
   console.log(`     (or the list -> New). All ${CANDIDATES.length} Show* columns should be`);
-  console.log('     on the form; if a column is missing entirely, say so —');
-  console.log('     that is a different finding from it being hidden.');
+  console.log('     on the form; if a column is missing entirely, say so.');
+  console.log('     That is a different finding from it being hidden.');
   console.log(`  2. Put each value below into "${SUBJECT}" and write down`);
   console.log('     which Show* columns are VISIBLE. Do not save.\n');
   CASES.forEach(([value, meaning], i) => {

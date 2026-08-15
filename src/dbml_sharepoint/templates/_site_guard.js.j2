@@ -4,7 +4,7 @@
    line. #}
   // === Preflight: site match ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
-  // '/_api/web/...' targets the tenant root web — NOT the sub-site or site
+  // '/_api/web/...' targets the tenant root web, NOT the sub-site or site
   // collection you're viewing. Every API call is prefixed with the current
   // web's server-relative URL so calls hit the web the operator is on.
   const expectedOrigin = new URL(SITE_URL).origin;

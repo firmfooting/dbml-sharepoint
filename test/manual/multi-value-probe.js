@@ -8,7 +8,7 @@
  * and everything the documentation does not answer is asked here rather than
  * assumed.
  *
- * WHAT MICROSOFT ALREADY DOCUMENTS — none of it is re-asked:
+ * WHAT MICROSOFT ALREADY DOCUMENTS, none of it re-asked:
  *
  *   FieldType.MultiChoice = 15, and SP.FieldChoice DERIVES from
  *   SP.FieldMultiChoice (so `Choices` is a FieldMultiChoice property).
@@ -35,7 +35,7 @@
  *     https://learn.microsoft.com/sharepoint/dev/declarative-customization/formatting-syntax-reference
  *
  *   CAML `Includes` / `NotIncludes` are documented ONLY for "a Lookup field
- *   that allows multiple values" — MultiChoice is not mentioned. CAML
+ *   that allows multiple values", and MultiChoice is not mentioned. CAML
  *   `Contains` is documented only for "a column that holds Text or Note field
  *   type values". So on a MultiChoice column all three are UNDOCUMENTED, which
  *   is why C1..C7 below exist.
@@ -45,8 +45,8 @@
  *
  * WHAT IS NOT DOCUMENTED, AND IS WHAT THIS PROBE ASKS:
  *
- *   M1  whether the deployer's EXISTING create path — a plain POST of a field
- *       body to /fields — takes a MultiChoice, or whether it needs the
+ *   M1  whether the deployer's EXISTING create path (a plain POST of a field
+ *       body to /fields) takes a MultiChoice, or whether it needs the
  *       AddField/AddFieldAsXml treatment a Lookup needs (issue #31).
  *   M2  what the created field reads back as.
  *   M3  the item WRITE shape. Learn's list-item REST page documents no
@@ -54,7 +54,7 @@
  *       order and the probe records which one SharePoint took.
  *   M4  the item READ-BACK shape, under both odata=verbose and odata=nometadata.
  *   M5  whether a re-write of the same value round-trips, and whether member
- *       ORDER survives — the deployer's only array comparator is
+ *       ORDER survives, because the deployer's only array comparator is
  *       order-sensitive.
  *   I1  whether `Indexed: true` is ACCEPTED and what it then READS BACK.
  *   I2  the same for `EnforceUniqueValues`.
@@ -73,7 +73,7 @@
  * carries a CONTROL: the same write is made to a SINGLE-value Choice on the
  * same list, where indexing IS documented as supported. If the control also
  * fails to stick, the property is not reporting what this probe needs and BOTH
- * rows are void — the probe records that itself rather than trusting a reader
+ * rows are void. The probe records that itself rather than trusting a reader
  * to remember this paragraph.
  *
  * THE SEPARATION THIS FILE KEEPS. Values the measurement DEPENDS ON are
@@ -97,7 +97,7 @@
  *
  * HOW TO RUN
  *   1. Paste it once: it prints the web and stops. Set CONFIRMED = true.
- *   2. Open that site's classic settings page — /_layouts/15/settings.aspx —
+ *   2. Open that site's classic settings page (/_layouts/15/settings.aspx),
  *      signed in as a Site Owner. The site guard needs _spPageContextInfo.
  *   3. F12 -> Console -> type `allow pasting` if the browser objects ->
  *      paste this whole file -> Enter.
@@ -106,11 +106,11 @@
  *
  * THE MANUAL STEPS (X1 and C8 cannot be answered from script)
  *   Set CLEANUP_AT_END = false, run, then OPEN the two URLs the probe prints.
- *     X1 — does the multi-value column render as a coloured severity pill,
+ *     X1: does the multi-value column render as a coloured severity pill,
  *          and what text does the cell show? A property that round-trips and
  *          renders nothing is the failure class this repository exists to
  *          close.
- *     C8 — does the STORED view (as opposed to the ad-hoc CamlQuery the other
+ *     C8: does the STORED view (as opposed to the ad-hoc CamlQuery the other
  *          C rows use) list the rows C-whichever-won predicted? SharePoint
  *          rewrites ViewQuery XML on save, so a predicate proven only through
  *          GetItems is not yet proven where the deployer writes it. This is
@@ -126,7 +126,7 @@
  *
  *   run 1  answered fifteen of seventeen rows. M5 reported WRITE REFUSED
  *          because the readback selected no `Id`, so the re-write went to
- *          `items(undefined)` — a probe bug that reads in the transcript
+ *          `items(undefined)`, a probe bug that reads in the transcript
  *          exactly like SharePoint refusing the re-write. It also
  *          established that <NotIncludes> returned no rows and that <Eq>
  *          behaves as "includes" rather than whole-set equality, which left
@@ -178,7 +178,7 @@
     } else {
       results.push({ id, question, observed, detail: detail || '' });
     }
-    log('INFO', `${id}: ${observed}${detail ? ` — ${detail}` : ''}`);
+    log('INFO', `${id}: ${observed}${detail ? `: ${detail}` : ''}`);
   };
 
   expect('Q0', 'the fixture actually built: two fields, four rows, seeded sets as asked');
@@ -187,9 +187,9 @@
   expect('M3', 'which item WRITE shape SharePoint accepts');
   expect('M4', 'what an item value READS BACK as');
   expect('M5', 'a re-write round-trips, and member order survives');
-  expect('I1', 'Indexed:true on a MultiChoice — accepted? and what does it read back as?');
+  expect('I1', 'Indexed:true on a MultiChoice: accepted? and what does it read back as?');
   expect('I1C', 'CONTROL: Indexed:true on the SINGLE-value Choice, where Learn says it is supported');
-  expect('I2', 'EnforceUniqueValues:true on a MultiChoice — accepted? readback?');
+  expect('I2', 'EnforceUniqueValues:true on a MultiChoice: accepted? readback?');
   expect('C1', 'CAML <Eq> "View" returns which rows');
   expect('C2', 'CAML <Eq> "View;#Edit" returns which rows');
   expect('C3', 'CAML <Contains> "View" returns which rows');
@@ -206,7 +206,7 @@
 
   // === Preflight: confirm the site ===
   // SP REST '/_api/...' is routed by the path prefix BEFORE '_api'. A bare
-  // '/_api/web/...' targets the tenant root web — NOT the sub-site you are
+  // '/_api/web/...' targets the tenant root web, NOT the sub-site you are
   // viewing. Prefix every call with the current web's server-relative URL.
   if (typeof _spPageContextInfo === 'undefined') {
     log('ERROR', '_spPageContextInfo is not available on this page; cannot resolve the web context. Open /_layouts/15/settings.aspx and retry.');
@@ -282,7 +282,7 @@
     'X-RequestDigest': digest,
     ...extra,
   });
-  // Returns the parsed body on success too — M3 and M4 need to SEE what came
+  // Returns the parsed body on success too, because M3 and M4 need to SEE what came
   // back, not merely whether it was accepted.
   async function post(suffix, body, extraHeaders) {
     const digest = await getDigest();
@@ -382,7 +382,7 @@
 
     // === M1: the deployer's own create path, unchanged =====================
     // This is deliberately the SAME shape jsgen._field_body builds for a
-    // single-value Choice — POST the whole body to /fields — with only
+    // single-value Choice (POST the whole body to /fields), with only
     // FieldTypeKind and __metadata.type changed. If a MultiChoice needs the
     // AddField treatment a Lookup needs, this is where that shows up, and the
     // specification's "no new creation machinery" claim collapses.
@@ -398,8 +398,8 @@
       'a MultiChoice field is created by a plain POST to /fields',
       createdMulti.ok ? 'ACCEPTED' : 'REFUSED',
       createdMulti.ok
-        ? `HTTP ${createdMulti.status} — the existing create path needs no AddField treatment`
-        : `HTTP ${createdMulti.status} — ${createdMulti.error}`,
+        ? `HTTP ${createdMulti.status}: the existing create path needs no AddField treatment`
+        : `HTTP ${createdMulti.status}: ${createdMulti.error}`,
     );
     if (!createdMulti.ok) {
       record('Q0', 'the fixture actually built', 'ABORTED', 'the MultiChoice field could not be created, so nothing below can be asked');
@@ -453,11 +453,11 @@
         ? `TypeAsString=${show(shape.d.TypeAsString)} FieldTypeKind=${show(shape.d.FieldTypeKind)} `
           + `Choices=${show(shape.d.Choices)} Indexed=${show(shape.d.Indexed)} `
           + `EnforceUniqueValues=${show(shape.d.EnforceUniqueValues)}`
-        : `HTTP ${shape.status} — ${shape.error}`,
+        : `HTTP ${shape.status}: ${shape.error}`,
     );
 
     // === M3: which write shape does SharePoint take? =======================
-    // R2 is the seeding row for this question because it has two members —
+    // R2 is the seeding row for this question because it has two members, and
     // a one-member set cannot distinguish a collection from a scalar.
     const itemType = await entityTypeFor(PROBE_LIST);
     let winningShape = null;
@@ -483,7 +483,7 @@
       winningShape ? `ACCEPTED: ${winningShape.name}` : 'ALL FOUR REFUSED',
       winningShape
         ? `tried in order ${writeShapes.map((s) => s.name).join(', ')}; ${winningShape.name} won. `
-          + `Earlier refusals: ${winningError || '(none — the first shape worked)'}`
+          + `Earlier refusals: ${winningError || '(none, the first shape worked)'}`
         : winningError,
     );
     if (!winningShape) {
@@ -523,8 +523,8 @@
     // which happened; half an answer here is worse than none.
     const noMetaDetail = backNoMeta.ok
       ? `nometadata: ${show(noMetaRows.map((r) => ({ [r.Title]: r[MULTI] })))}`
-      : `nometadata: REQUEST FAILED HTTP ${backNoMeta.status} — ${backNoMeta.error} `
-        + '(not observed to be empty — not observed at all)';
+      : `nometadata: REQUEST FAILED HTTP ${backNoMeta.status}: ${backNoMeta.error} `
+        + '(not observed to be empty, not observed at all)';
     record(
       'M4',
       'what an item value READS BACK as',
@@ -533,14 +533,14 @@
         : (verboseRows.length ? 'READ (verbose only)' : 'UNREADABLE'),
       (backVerbose.ok
         ? `verbose: ${show(verboseRows.map((r) => ({ [r.Title]: r[MULTI] })))}`
-        : `verbose: REQUEST FAILED HTTP ${backVerbose.status} — ${backVerbose.error}`)
+        : `verbose: REQUEST FAILED HTTP ${backVerbose.status}: ${backVerbose.error}`)
       + ` || ${noMetaDetail}`,
     );
 
     // === Q0: the fixture control ===========================================
     // Asserted, because everything below DEPENDS on it. The seeded sets are
-    // compared to what was asked for, by member and ignoring order — order is
-    // M5's question, not this one.
+    // compared to what was asked for, by member and ignoring order, because
+    // order is M5's question, not this one.
     const sameMembers = (a, b) => {
       const norm = (v) => {
         if (v == null) return [];
@@ -613,10 +613,10 @@
           ? `wrote ${show(reversed)}; read back ${show(after.d?.[MULTI])}. `
             + 'If the readback is in the WRITTEN order, an exact comparison is safe; if it is normalised, '
             + 'the reconciler must compare as a SET or it will report drift on every redeploy.'
-          : `wrote ${show(reversed)}; the readback FAILED HTTP ${after.status} — ${after.error}. `
+          : `wrote ${show(reversed)}; the readback FAILED HTTP ${after.status}: ${after.error}. `
             + 'Whether the value round-trips and whether member order survives are both NOT established '
             + 'by this run.')
-        : `HTTP ${rewritten.status} — ${rewritten.error}`;
+        : `HTTP ${rewritten.status}: ${rewritten.error}`;
       // Put R2 back the way the C rows expect it, and PROVE it went back. The
       // readback above is M5's OBSERVATION and is never asserted; this one is
       // a CONTROL over the fixture the C rows inherit, so it is checked by
@@ -677,7 +677,7 @@
     );
     record(
       'I1',
-      'Indexed:true on a MultiChoice — accepted? and what does it read back as?',
+      'Indexed:true on a MultiChoice: accepted? and what does it read back as?',
       controlHeld
         ? (multiIndex.wrote.ok
           ? (multiIndex.back.ok
@@ -690,13 +690,13 @@
           + `readback Indexed=${indexReadback(multiIndex)}. `
           + (multiIndex.wrote.ok && !multiIndex.back.ok
             ? 'The write was taken but the readback never arrived, so whether it stuck is NOT established by '
-              + 'this run — this is not the same finding as a property that read back false. '
+              + 'this run, and this is not the same finding as a property that read back false. '
             : '')
           + 'REFUSED is the good outcome (loud). ACCEPTED BUT DID NOT STICK aborts a deploy part-way, which is '
           + 'survivable. ACCEPTED AND STUCK is the dangerous one: the property claims an index Learn says '
           + 'cannot exist, and nothing in a build or a deploy could ever see the difference.'
         : `the single-value control did not hold (${indexReadback(singleIndex)}), so this property is not `
-          + 'reporting what the question needs on this tenant and BOTH index rows are void — exactly the '
+          + 'reporting what the question needs on this tenant and BOTH index rows are void, exactly the '
           + 'outcome native-index-probe.js hit with its ID control on 2026-07-30. An UNREADABLE control voids '
           + 'them for a different reason than one that read back false; I1C says which.',
     );
@@ -707,7 +707,7 @@
     // validator's refusal is a convenience or a necessity.
     //
     // EnforceUniqueValues is asked ALONE first. Sending it together with
-    // Indexed:true — which I1 may already have found refused on this column —
+    // Indexed:true (which I1 may already have found refused on this column)
     // would let one refusal answer for the other, and the transcript could not
     // say which property SharePoint objected to. SharePoint does require an
     // index behind a uniqueness constraint, so if the lone write is refused
@@ -728,7 +728,7 @@
       : `alone: HTTP ${uniqueAlone.status} (no paired attempt needed). `;
     record(
       'I2',
-      'EnforceUniqueValues:true on a MultiChoice — accepted? readback?',
+      'EnforceUniqueValues:true on a MultiChoice: accepted? readback?',
       uniqueWrite.ok
         // An unreadable readback is not the same answer as a readback of
         // false, and reporting it as DID NOT STICK would state a fact this
@@ -741,7 +741,7 @@
         ? pairedNote + (uniqueBack.ok
           ? `readback EnforceUniqueValues=${show(uniqueBack.d?.EnforceUniqueValues)} `
             + `Indexed=${show(uniqueBack.d?.Indexed)}`
-          : `readback FAILED HTTP ${uniqueBack.status} — ${uniqueBack.error}; whether it stuck is `
+          : `readback FAILED HTTP ${uniqueBack.status}: ${uniqueBack.error}; whether it stuck is `
             + 'NOT established by this run')
         : pairedNote,
     );
@@ -749,7 +749,7 @@
     // do not write, so they survive a failed reset; V1's save test does, and a
     // uniqueness constraint left standing would refuse its items for a reason
     // that is not V1's question. So this is read back and the affected rows
-    // fail closed individually rather than the run being abandoned — the other
+    // fail closed individually rather than the run being abandoned, since the other
     // fifteen questions have already cost the operator a live paste.
     const resetWrite = await merge(fieldPath(MULTI), {
       __metadata: { type: 'SP.FieldMultiChoice' }, EnforceUniqueValues: false, Indexed: false,
@@ -770,7 +770,7 @@
     // the probe prints, beside them, the interpretation each possible answer
     // would carry. Writing the expected set into an assertion would make the
     // experiment fail the moment SharePoint answered something interesting,
-    // which is the trap AGENTS.md names.
+    // which is the failure AGENTS.md names.
     //
     // The fixture, for reading the results:
     //   R1 {View}  R2 {View,Edit}  R3 {Edit,Export}  R4 {}
@@ -844,7 +844,7 @@
 
     // === C8: does it survive being STORED? =================================
     // Every C row above used an ad-hoc CamlQuery. The deployer writes a VIEW's
-    // ViewQuery, and SharePoint rewrites that XML on save — datetime-sentinel-
+    // ViewQuery, and SharePoint rewrites that XML on save. datetime-sentinel-
     // probe.js found an element that worked in one position and silently
     // returned nothing in the other. So the predicate that matters is stored,
     // read back, and looked at.
@@ -860,7 +860,7 @@
       const stored = (views.d?.results || []).find((v) => v.Title === VIEW_TITLE);
       viewUrl = stored?.ServerRelativeUrl || null;
       // Addressed by TITLE, which is the form Learn's AddViewField page
-      // actually documents — `views/getbytitle('<view>')/ViewFields/
+      // actually documents: `views/getbytitle('<view>')/ViewFields/
       // AddViewField('<internal name>')`. A bare `views('<guid>')` indexer is
       // not documented anywhere, and the title is known exactly: this probe
       // just created the view under it. The result is checked, because C8 is
@@ -902,8 +902,8 @@
     // mapping.md already records that validation formulas refuse Lookup and
     // Person operands. Multi-value is not documented either way.
     //
-    // Accepting the MERGE is NOT the answer. An accepted-but-inert formula —
-    // one that saves, reads back byte-identical and never blocks anything —
+    // Accepting the MERGE is NOT the answer. An accepted-but-inert formula
+    // (one that saves, reads back byte-identical and never blocks anything)
     // is the exact failure class this directory exists to catch, so the row
     // that used to say "accepted" and caveat itself in prose now asks all
     // three questions: does SharePoint take it, does it keep it, does it FIRE.
@@ -919,7 +919,7 @@
     // Both sides, because only one of them is diagnostic on its own: a refused
     // violating save proves the rule fires, and an accepted compliant save
     // proves the refusal was the rule rather than the column. Neither is
-    // asserted — whatever happens is recorded and both rows are removed again.
+    // asserted. Whatever happens is recorded and both rows are removed again.
     let firing = 'not attempted';
     if (validation.ok && fieldStateKnown) {
       const violating = await post(`${listPath}/items`, {
@@ -930,11 +930,11 @@
         [MULTI]: winningShape.build([CHOICES[0]]),
       });
       firing = `violating save ${violating.ok
-        ? `ACCEPTED HTTP ${violating.status} — the stored rule did NOT fire`
+        ? `ACCEPTED HTTP ${violating.status}, so the stored rule did NOT fire`
         : `REFUSED HTTP ${violating.status} (${violating.error})`}; `
         + `compliant save ${compliant.ok
           ? `ACCEPTED HTTP ${compliant.status}`
-          : `REFUSED HTTP ${compliant.status} (${compliant.error}) — so a refusal above cannot be `
+          : `REFUSED HTTP ${compliant.status} (${compliant.error}), so a refusal above cannot be `
             + 'attributed to the rule'}`;
       for (const made of [violating, compliant]) {
         if (made.ok && made.d?.Id !== undefined) {
@@ -956,7 +956,7 @@
           + 'ACCEPTED with a rule that does not fire is the worst outcome here, not the best: nothing in a '
           + 'build or a deploy could ever see it, and the validator would be free to emit a rule that does '
           + 'nothing.'
-        : `HTTP ${validation.status} — ${validation.error}`,
+        : `HTTP ${validation.status}: ${validation.error}`,
     );
     if (validation.ok) {
       await merge(fieldPath(MULTI), {
@@ -997,17 +997,17 @@
             : `NOT READ (HTTP ${calcValues?.status} ${calcValues?.error})`}. `
           + 'The operand matrix in reference/dbml.md gains a row only if the formula survived AND every row '
           + 'evaluated to a value rather than an error.'
-        : `HTTP ${calc.status} — ${calc.error}`,
+        : `HTTP ${calc.status}: ${calc.error}`,
     );
 
     // === X1: the formatter this repository actually generates ==============
-    // Not an invented formatter — the exact shape analysis/styles.py::_severity
+    // Not an invented formatter, but the exact shape analysis/styles.py::_severity
     // emits, with the =if(@currentField == 'X', ...) chain its _condition()
     // builds. Learn documents @currentField on a MultiChoice as an ARRAY, so
     // every branch of an == comparison against a quoted string should be false
     // and the cell should render unstyled. That is precisely the failure
     // STYLE_ON_BOOLEAN_MATCHES_NOTHING already names for Yes/No columns. This
-    // asks whether the array case behaves the same way — and it can only be
+    // asks whether the array case behaves the same way, and it can only be
     // answered by looking.
     const severityFormatter = {
       $schema: 'https://developer.microsoft.com/json-schemas/sp/v2/column-formatting.schema.json',
@@ -1072,7 +1072,7 @@
         ? 'MANUAL'
         : (formatted.ok ? 'NOT ESTABLISHED' : 'WRITE REFUSED'),
       !formatted.ok
-        ? `HTTP ${formatted.status} — ${formatted.error}`
+        ? `HTTP ${formatted.status}: ${formatted.error}`
         : !formatterHeld
           ? `the MERGE was accepted (HTTP ${formatted.status}) but the formatter this row is about is NOT the `
             + `one now on the column: readback ${formatterBack?.ok
@@ -1091,11 +1091,11 @@
               + 'the column.'
             : `OPEN ${window.location.origin}${listDefaultUrl || `${WEB}/Lists/${encodeURIComponent(PROBE_LIST)}`} `
           + `and look at the ${MULTI} column. Report FOUR things: (a) does R1 {View} get a GREEN pill; `
-          + '(b) does R2 {View,Edit} get any pill at all; (c) what TEXT does each cell show — both members, '
+          + '(b) does R2 {View,Edit} get any pill at all; (c) what TEXT does each cell show, whether both members, '
           + 'one member, or something like "View,Edit" run together; and (d) is the cell background PLAIN, '
           + 'or filled a flat grey. (d) separates the two ways this can fail and they need different '
           + 'answers: a plain cell means the formatter matched nothing and rendered nothing, while a grey '
-          + 'fill means it matched a neutral default and rendered a wrong answer confidently — worse, '
+          + 'fill means it matched a neutral default and rendered a wrong answer confidently, which is worse '
           + 'because it looks like a verdict. Anything other than a green pill on R1 means the existing '
           + 'severity machinery cannot serve a multi-value column, and the specification needs a refusal '
           + 'rather than array-aware behaviour.',
@@ -1129,7 +1129,7 @@
       + 'stored_view=<fill in after looking> formatter=<fill in after looking>',
     );
     if (!camlFixtureUsable) {
-      log('ERROR', 'fixture=FAILED — the C rows assume four rows with known sets on a MultiChoice column, and R2 restored after M5, so their answers mean nothing from this run. Fix the fixture and re-run before reporting.');
+      log('ERROR', 'fixture=FAILED. The C rows assume four rows with known sets on a MultiChoice column, and R2 restored after M5, so their answers mean nothing from this run. Fix the fixture and re-run before reporting.');
     } else if (!fixtureOk) {
       log('ERROR', `fixture=FAILED on the single-value CONTROL field only. The C, M, V, F and X rows do not depend on it and stand; I1 and I1C are VOID. Fix '${SINGLE}' and re-run if the index question matters.`);
     }

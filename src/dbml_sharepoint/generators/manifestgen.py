@@ -234,9 +234,9 @@ def generate_manifest(
             "list": bundle.mapping.prefix + entity,
             "column": column,
             "display": bundle.mapping.display_name_for(entity, column),
-            "retired": spec.retired or "—",
-            "superseded_by": spec.superseded_by or "—",
-            "reason": spec.reason or "—",
+            "retired": spec.retired or "-",
+            "superseded_by": spec.superseded_by or "-",
+            "reason": spec.reason or "-",
         }
         for entity, cols in bundle.mapping.retired_columns.items()
         if _deployed(entity)

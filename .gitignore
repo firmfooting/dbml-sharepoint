@@ -50,7 +50,7 @@ test/manual/captures/
 Thumbs.db
 
 # Local process artifacts: specs and plans from the superpowers workflow.
-# Deliberately untracked — they are working notes, not part of the shipped
+# Deliberately untracked: they are working notes, not part of the shipped
 # repository, and they dominated PR diffs (9,062 lines across 8 files).
 # Kept on disk so the reasoning survives; `git clean -x` WOULD delete them.
 docs/superpowers/

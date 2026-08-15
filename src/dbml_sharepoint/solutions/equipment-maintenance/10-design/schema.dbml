@@ -1,5 +1,5 @@
 // ============================================================================
-// Equipment maintenance — maintained items + the event history with evidence.
+// Equipment maintenance: maintained items + the event history with evidence.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -37,14 +37,14 @@ Enum event_result {
 Table Equipment {
   Id              int              [pk, increment]
   Title           nvarchar         [not null, note: 'The item, plainly: "Infusion pump - ward 2 north"']
-  // unique — enforced by the column constraint.
-  EquipmentTag    nvarchar         [not null, unique, note: 'Asset/serial tag physically on the item — no two items share a tag']
+  // unique, enforced by the column constraint.
+  EquipmentTag    nvarchar         [not null, unique, note: 'Asset/serial tag physically on the item; no two items share a tag']
   EquipmentType   equipment_type   [not null]
   EquipLocation   nvarchar         [not null, note: 'Where it lives']
   ServiceProvider nvarchar         [note: 'Who maintains it: internal team or contractor']
   // Interval class defaults live in governance.
   FrequencyMonths number           [not null, note: 'Maintenance interval in months']
-  // THE column the schedule runs on — record-then-reschedule: updated every time an event is recorded.
+  // THE column the schedule runs on, record-then-reschedule: updated every time an event is recorded.
   NextDueDate     date             [not null, note: 'When the next maintenance is due. Set a new due date each time a maintenance event is recorded.']
   Status          equipment_status [not null, default: 'In service']
   Notes           richtext

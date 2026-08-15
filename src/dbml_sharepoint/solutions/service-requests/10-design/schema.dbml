@@ -1,5 +1,5 @@
 // ============================================================================
-// Service requests — one intake list, per-team queues by category.
+// Service requests: one intake list, per-team queues by category.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -36,11 +36,11 @@ Table Request {
   RequestLocation nvarchar        [note: 'Where: building / room / asset tag if known']
   RequestedBy    person           [note: 'Who is asking (defaults to you)']
   RequestedDate  date             [not null]
-  Detail         richtext         [note: 'What is needed and why; photos help — attach them to the item']
+  Detail         richtext         [note: 'What is needed and why; photos help, so attach them to the item']
   AssignedTo     person           [note: 'Set when a team member picks it up']
   Status         request_status   [not null, default: 'Submitted']
   CompletedDate  date
-  // Calculated column — formula in mapping.yaml (RequestedDate -> CompletedDate).
+  // Calculated column: formula in mapping.yaml (RequestedDate -> CompletedDate).
   DaysToComplete calculated_number [note: 'How many days the request took, from requested to completed. Calculated automatically. Blank until both dates are set.']
   Resolution     nvarchar         [note: 'What was done, or why declined']
 

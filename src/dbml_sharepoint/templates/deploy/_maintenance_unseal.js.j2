@@ -4,7 +4,7 @@
   // the run's write phases work unchanged; Phase 4.1 re-seals and
   // verifies after every field write is done.
 {% if phase.first_in_group %}
-  log('INFO', 'Group {{ phase.group_number }} — {{ phase.group_name }}');
+  log('INFO', 'Group {{ phase.group_number }}: {{ phase.group_name }}');
 {% endif %}
   log('INFO', 'Starting Phase {{ phase.number }}: {{ phase.name }}.');
   invalidateFieldShapes();  // probes reflect phase-start state
@@ -19,7 +19,7 @@
       if (lookup.field.seal) sealDeclared.push([lookup.list, lookup.field.title]);
     }
     // The built-in Title is not a declared column, so it was never in this
-    // set — and Phase 1 writes list.title_patch to it. A Title sealed by
+    // set, and Phase 1 writes list.title_patch to it. A Title sealed by
     // anything other than this tool therefore made the run un-completable
     // and un-repairable: the write failed, and the only maintenance path
     // that can unseal walked declared columns only. Probed unconditionally

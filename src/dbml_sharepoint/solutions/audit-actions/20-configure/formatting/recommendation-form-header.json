@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Word it as the report worded it — the agreed action below is a promise your organisation made to an auditor, and closing it needs evidence."
+          "txtContent": "Word it as the report worded it. The agreed action below is a promise your organisation made to an auditor, and closing it needs evidence."
         }
       ]
     }

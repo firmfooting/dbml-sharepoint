@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Business-contact facts only — write every note as if the contact will read it, because under privacy law they may."
+          "txtContent": "Business-contact facts only. Write every note as if the contact will read it, because under privacy law they may."
         }
       ]
     }

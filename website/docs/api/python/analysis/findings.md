@@ -5,7 +5,7 @@ sidebar_position: 6
 
 # `dbml_sharepoint.analysis.findings`
 
-*what a finding is — code, severity, section, location*
+*what a finding is: code, severity, section, location*
 
 What a finding IS, separate from what produces one.
 

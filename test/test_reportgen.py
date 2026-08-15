@@ -1082,10 +1082,10 @@ def test_undeclared_columns_read_as_dashes_not_blanks() -> None:
 
     # Columns 8 and 9 are Populated when / Save rule (6 and 7 are the
     # retirement pair, which this mapping declares for nothing).
-    assert cells("Status")[8] == "—"
-    assert cells("Status")[9] == "—"
-    assert cells("Resolution")[8] != "—"
-    assert cells("Resolution")[9] != "—"
+    assert cells("Status")[8] == "-"
+    assert cells("Status")[9] == "-"
+    assert cells("Resolution")[8] != "-"
+    assert cells("Resolution")[9] != "-"
 
 
 def _retired() -> tuple[Schema, MappingBundle]:

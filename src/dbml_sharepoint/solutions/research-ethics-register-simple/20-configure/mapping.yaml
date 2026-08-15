@@ -1,4 +1,4 @@
-# Research ethics register (single list) — physical mapping.
+# Research ethics register (single list): physical mapping.
 # THE TWO GATES AND THE COLLAPSED RECURRING FACTS LIVE HERE.
 prefix: "RG_"
 
@@ -11,7 +11,7 @@ cross_site_reference_columns: []
 # history IS the amendment and reporting history this design gives up: when
 # somebody overwrites Latest Amendment Reference with the next amendment, the
 # previous one survives only in Governance Notes and in the version a
-# redeploy must not have discarded. Deep history is load-bearing here in a
+# redeploy must not have discarded. Deep history matters here in a
 # way it is not on a register that keeps child rows.
 versioning:
   default:
@@ -26,11 +26,11 @@ watched_lists: []
 # SiteReadiness is the register's headline answer, and it costs NO join:
 # both gates are Choice columns on this one list, which a SharePoint
 # calculated column may read. In the three-list shape the same answer would
-# have needed a Lookup — and a Lookup is precisely what this template exists
+# have needed a Lookup, and a Lookup is precisely what this template exists
 # to avoid.
 #
 # WHAT IT CANNOT DO, stated rather than hidden: a calculated column may not
-# reference [Today] — SharePoint's own rule, enforced at build time — so
+# reference [Today] (SharePoint's own rule, enforced at build time), so
 # SiteReadiness does NOT know that an approval expired yesterday. It goes
 # stale until somebody moves EthicsStatus to Expired. The live half is the
 # overdue-date formatting on the two deadline columns (compared against @now
@@ -50,7 +50,7 @@ watched_lists: []
 #
 # "Not proceeding" deliberately merges a refusal and a withdrawal. They are
 # different facts and they give the SAME answer to this column's one question
-# — can this start here — and Ethics Status sits beside it saying which. A
+# (can this start here) and Ethics Status sits beside it saying which. A
 # seventh value that no view filters and no reader acts on differently is
 # vocabulary for its own sake.
 #
@@ -61,7 +61,7 @@ calculated_formulas:
     SiteReadiness: '=IF([EthicsStatus]="Withdrawn","Not proceeding",IF([SiteAuthorisationStatus]="Suspended","Suspended at this site",IF(OR([EthicsStatus]="Not approved",[SiteAuthorisationStatus]="Not authorised"),"Not proceeding",IF(OR([EthicsStatus]="Approved",[EthicsStatus]="Ethics review not required"),IF([SiteAuthorisationStatus]="Authorised","Ready to start here","Ethics cleared - site authorisation outstanding"),IF([SiteAuthorisationStatus]="Authorised","Site authorised - ethics not cleared","Neither gate cleared")))))'
 
 # Security: the research governance function maintains; all site members
-# read. Read-wide is deliberate and operational — "is this approved, and may
+# read. Read-wide is deliberate and operational: "is this approved, and may
 # it start here" is a question a ward manager, a department head and a
 # student supervisor all have to answer, and a register only the governance
 # office can see is a register nobody consults.
@@ -117,11 +117,11 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
@@ -129,8 +129,8 @@ prevent_list_deletion: true
 # Backend internal names stay exactly as authored in the DBML (the indexes,
 # the views and the readiness formula all key on them); the deployer renames
 # the display Title after create. Auto splitting handles the acronyms here on
-# its own — SSASubmittedDate becomes "SSA Submitted Date" and ReviewingHREC
-# becomes "Reviewing HREC" — so no overrides are needed.
+# its own: SSASubmittedDate becomes "SSA Submitted Date" and ReviewingHREC
+# becomes "Reviewing HREC", so no overrides are needed.
 display_names:
   mode: auto
 
@@ -138,14 +138,14 @@ display_names:
 # website/docs/reference/style-guide.md). Tokens map by the ROLE a value
 # plays in its lifecycle, never by what it is called.
 #
-# SiteReadiness carries `calculated: true` — a calculated text value arrives
+# SiteReadiness carries `calculated: true`; a calculated text value arrives
 # prefixed `string;#`, and without the flag the map never matches. The same
 # flag in a VIEW formatter would be wrong, which is why the row wash in
 # formatting/row-underway-unauthorised.json does not carry it.
 #
 # Two of the six readiness values are doing this register's work:
 #   "Ethics cleared - site authorisation outstanding" is WARNING. It is the
-#   ordinary in-between state — the SSA is with the governance office — and
+#   ordinary in-between state (the SSA is with the governance office) and
 #   it should be visible without being alarming.
 #   "Site authorised - ethics not cleared" is BLOCKED. The site's own
 #   paperwork says yes and the committee's does not, which includes an
@@ -233,7 +233,7 @@ column_formatting:
       guard: { field: ProjectStage, not: [Completed, Discontinued] }
 
 # Every lens on this list shows the same identifying columns and the same
-# gate trio before its own payload, so both are declared once (§1.9 — a set
+# gate trio before its own payload, so both are declared once (§1.9: a set
 # earns its place at three or more repetitions; `identity` is used by all six
 # views and `gates` by five).
 field_sets:
@@ -245,19 +245,19 @@ field_sets:
 
 # Declared views (deployed and reconciled by the views phase; undeclared
 # views are never touched). Widths are pixel ColumnWidth per view and the
-# keys are INTERNAL names — the build rewrites them to display titles,
+# keys are INTERNAL names. The build rewrites them to display titles,
 # because ColumnWidth binds by display name and an internal name silently
 # resets.
 #
 # Six views, which is the library's existing ceiling rather than a new one.
 # Every filtered column is indexed, so this template adds nothing to the
-# threshold-exposure register in test/test_template_standard.py — a
+# threshold-exposure register in test/test_template_standard.py; a
 # single-list template has no excuse for an unindexed filter.
 views:
   Project:
     # THE ACCUMULATION ANSWER, and the reason one list works here at all.
     # A register five or ten years deep opens on this year's work because
-    # the two terminal stages are filtered away — the same job the three-list
+    # the two terminal stages are filtered away, the same job the three-list
     # shape tried to do with a Lookup picker and could not, because a picker
     # has no filter. Everything SharePoint can filter, it filters well.
     - title: "Live projects"
@@ -274,7 +274,7 @@ views:
       #
       # BOTH started stages count. "Closed to recruitment" is reached only by
       # having been Underway, so recruitment has already happened without
-      # authorisation, and the project is still live — this view shows it, and
+      # authorisation, and the project is still live; this view shows it, and
       # the two deadline guards above already treat it as live. Reading the
       # wash off "Underway" alone would have retired the escalation at a stage
       # change that fixes nothing, which is the worst moment to go quiet.
@@ -283,10 +283,10 @@ views:
       #
       # Written against the two CHOICE columns rather than against
       # SiteReadiness, even though a view formatter does read a calculated
-      # column cleanly (confirmed live — see the note in risk-register's
+      # column cleanly (confirmed live; see the note in risk-register's
       # mapping and in style-guide.md). The condition wanted here is narrower
-      # than any single readiness value — RUNNING without authorisation, not
-      # merely unauthorised — and "Suspended at this site" would have to be
+      # than any single readiness value (RUNNING without authorisation, not
+      # merely unauthorised) and "Suspended at this site" would have to be
       # ORed in as well, on top of the two stages, to say the same thing.
       #
       # Both columns must stay in this view's fields: a view formatter can
@@ -306,7 +306,7 @@ views:
         EthicsApprovalExpiry: 180
         NextReportDue: 170
         SiteInvestigator: 160
-    # "May this start here, today?" — the question a ward manager, a
+    # "May this start here, today?", the question a ward manager, a
     # department head and a student supervisor all ask, answered without
     # anybody having to know what a site-specific assessment is.
     - title: "Ready to start here"
@@ -339,7 +339,7 @@ views:
     #
     # The terminal stages are excluded like every other operational view. A
     # project that was discontinued during governance review satisfies both
-    # gate predicates forever, and this view sorts OLDEST FIRST — so without
+    # gate predicates forever, and this view sorts OLDEST FIRST, so without
     # the exclusion, closed work would collect at exactly the end of the queue
     # a reader trusts most.
     - title: "Ethics cleared, not authorised"
@@ -366,7 +366,7 @@ views:
         SiteInvestigator: 160
     # THE BALL IS IN OUR COURT. Both gates have a member that means somebody
     # here owes an answer, and neither is visible in a queue sorted by
-    # anything else — a project waiting on us looks exactly like a project
+    # anything else: a project waiting on us looks exactly like a project
     # waiting on the committee until you read the status word.
     #
     # An OR, and it is served past the list view threshold because EVERY
@@ -403,7 +403,7 @@ views:
     # WHAT IS OWED NOW. The window is 60 days and it lives once, here; the
     # title is deliberately silent about the number so changing it does not
     # leave a title lying. It is a ROLLING sixty days rather than "this
-    # quarter" — CAML has no calendar-period predicate.
+    # quarter"; CAML has no calendar-period predicate.
     #
     # Last Report Submitted rides along because it is what makes an overdue
     # date diagnosable: a due date in the past with a LATER submission behind
@@ -429,8 +429,8 @@ views:
         ProjectStage: 160
         SiteInvestigator: 160
     # The other half of the accumulation answer. Closed work is never
-    # deleted — the register's whole value is that it can still say what was
-    # approved here, by whom and when, years later — it simply stops being in
+    # deleted: the register's whole value is that it can still say what was
+    # approved here, by whom and when, years later. It simply stops being in
     # the way.
     - title: "Archive"
       fields: ["@identity", EthicsStatus, ProjectStage, CompletedDate,
@@ -451,7 +451,7 @@ views:
         AmendmentCount: 160
 
 # Form layout: a strapline header and a sectioned body. Per-field description
-# hints render on the NEW form only — SharePoint suppresses column
+# hints render on the NEW form only. SharePoint suppresses column
 # descriptions on the Edit form. Section field lists are authored with
 # INTERNAL names; the build rewrites them to display titles.
 #
@@ -459,12 +459,12 @@ views:
 # and this register depends on: "Ethics decision" and "Site authorisation" are
 # two headings, two reference numbers and two sets of dates. Merging them into
 # one "Approvals" block would be the collapse the whole template exists to
-# prevent — the form itself has to say these are two different things before
+# prevent; the form itself has to say these are two different things before
 # anybody reads a word.
 #
 # NO GUIDE LINK in the header. The document this register defers to is your
 # service's research governance procedure and your partner committee's terms
-# of reference — a class of document, not one this template can name — so the
+# of reference (a class of document, not one this template can name), so the
 # only shippable link would be a REPLACE-WITH placeholder, which is the live
 # hazard the family standard removed from risk-register. Adding a real one is
 # two lines; 30-deploy/deploy.md spells it out, absolute-https rule included.
@@ -478,12 +478,12 @@ form_formatting:
 #
 # Deliberately NOT conditioned on SiteReadiness: conditional visibility cannot
 # read a calculated column. The formula stays syntactically valid, so it
-# saves, the read-back compares equal and the phase passes — and the form
+# saves, the read-back compares equal and the phase passes, and the form
 # simply never reacts. The build refuses it; risk-register's mapping records
 # the same trap.
 #
 # The three Latest Amendment columns are deliberately NOT conditioned on
-# Amendment Count. The obvious rule — show them once the count is above zero —
+# Amendment Count. The obvious rule (show them once the count is above zero)
 # inverts the order somebody actually works in: you learn the amendment's
 # reference and status first and bump the counter last, so the rule would hide
 # exactly the fields being filled in.
@@ -503,11 +503,11 @@ form_visibility:
           - { field: ProjectStage, op: in, value: ["Completed", "Discontinued"] }
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has one
+# message, and they all run, unlike list_validation, where a list has one
 # ValidationFormula and every cross-column rule shares one message.
 #
 # Three of the four are the same shape and the same failure: a date typed with
-# next year's year. On this register that is not cosmetic — a forward-dated
+# next year's year. On this register that is not cosmetic: a forward-dated
 # authorisation says the site cleared a project it has not.
 #
 # All three of those dates are OPTIONAL, and a register's normal starting
@@ -515,7 +515,7 @@ form_visibility:
 # blank arm explicitly: the rule to enforce is "if there is a date, it is not
 # in the future", not "there is a date". project-pipeline's DecisionDate,
 # improvement-register's AdoptedDate and measures-register's ReviewDate are
-# written the same way, and its ProposedDate is the contrast — that one is
+# written the same way, and its ProposedDate is the contrast: that one is
 # `not null`, so a bare comparison is the whole rule.
 column_validation:
   Project:
@@ -550,20 +550,20 @@ column_validation:
 # it starts with the case the rule does not apply to.
 #
 # THE DOMAIN RULE. A site cannot authorise a project it has no ethics
-# clearance for — evidence of ethics approval is what the Chief Executive or
+# clearance for; evidence of ethics approval is what the Chief Executive or
 # delegate authorises against. The second member keeps the rule honest for a
 # quality activity that correctly never went to a committee: "Ethics review
 # not required" IS its ethics clearance, and refusing to let such a project be
 # authorised would push adopters into recording a fake approval.
 #
 # NOT enforceable, and therefore governance checks in 50-govern: that Summary,
-# ApprovalConditions and GovernanceNotes say anything — SharePoint validation
-# formulas cannot reference a multi-line column at all — and anything about
+# ApprovalConditions and GovernanceNotes say anything (SharePoint validation
+# formulas cannot reference a multi-line column at all), and anything about
 # SiteInvestigator, because they cannot reference a person column either.
 #
 # "Expired" is in the permitted set, and it is the one member of it that never
 # meant "cleared". It is there because a SharePoint list validation formula is
-# STATELESS — it sees the row being saved and not the row it replaces — so it
+# STATELESS (it sees the row being saved and not the row it replaces), so it
 # cannot tell a project being authorised against a lapsed approval from an
 # approval lapsing under an authorisation that was already given. Only one of
 # those can be prevented here, and the other is a state this register exists
@@ -575,8 +575,8 @@ column_validation:
 # two gates exist to prevent.
 #
 # The line the rule still holds is the one that matters: the members it
-# refuses — Not yet submitted, Submitted, Under review, Response required,
-# Not approved, Withdrawn — are the ones where clearance NEVER existed.
+# refuses (Not yet submitted, Submitted, Under review, Response required,
+# Not approved, Withdrawn) are the ones where clearance NEVER existed.
 list_validation:
   Project:
     when:
@@ -587,7 +587,7 @@ list_validation:
     message: "This project cannot be recorded as site-authorised. A site authorisation is given against evidence of ethics clearance, so Ethics Status must be Approved - or Ethics review not required, for a quality activity that correctly did not go to a committee. An approval that has since expired stays recordable, because a live authorisation over a lapsed approval is the state this register has to show rather than hide."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every Title
-# starts "[DEMO] " — the marker rollback.js trusts to delete demo-only lists
+# starts "[DEMO] ", the marker rollback.js trusts to delete demo-only lists
 # without its non-empty refusal. Dates are today±N so the rolling views land
 # correctly on whatever day the demo runs, and "@me" is whoever pastes the
 # script.
@@ -597,7 +597,7 @@ list_validation:
 #
 # ONE OF THEM IS DELIBERATELY WRONG: the falls-prevention evaluation is
 # Underway with its site-specific assessment still under governance review. It
-# is the row that drives the wash, and its note says so — the same teaching
+# is the row that drives the wash, and its note says so, the same teaching
 # device as credentialing-register's expired credential sitting inside a
 # practitioner's own file.
 #
@@ -747,7 +747,7 @@ demo_items:
         ProjectStage: "Planning"
         AmendmentCount: 0
         GovernanceNotes: "Demo row, newest first. today-9 Governance office asked which wards are in scope and who holds the data (RG). today-200 Assessed against the service quality assurance procedure as a quality activity needing no ethics review; decision recorded by the research governance officer."
-    # Closed, and out of the way. Fills "Archive" — and is the row that shows
+    # Closed, and out of the way. Fills "Archive", and is the row that shows
     # what the default view is doing for you: on a register ten years old
     # there are hundreds of these and you never see one unless you ask.
     - key: proj-closed

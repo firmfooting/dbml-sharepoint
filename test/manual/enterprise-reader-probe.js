@@ -1,18 +1,18 @@
 /**
- * dbml-sharepoint PROBE — THE ENTERPRISE READER TIER
+ * dbml-sharepoint PROBE: THE ENTERPRISE READER TIER
  *
- * STATUS: RUN TWICE, on ONE live site — 2026-08-11 and 2026-08-12. The
+ * STATUS: RUN TWICE, on ONE live site (2026-08-11 and 2026-08-12). The
  * second run was pasted BY THE REPORTING SERVICE ACCOUNT ITSELF with the
  * write flag ON, so GROUP B IS ANSWERED. A2, A4 and C2-C3 are still open,
- * and the A2/A3 CONTRADICTION recorded below is UNEXPLAINED — read that
+ * and the A2/A3 CONTRADICTION recorded below is UNEXPLAINED. Read that
  * note before quoting anything from run 2's group A.
  *
  *   RUN 1:    2026-08-11, probe revision 0e565ebc, pasted into ONE
- *             Microsoft 365 group-connected Team Site — NOT a publishing
- *             site — by an OPERATOR who owns it. Read-only: ALLOW_WRITES
+ *             Microsoft 365 group-connected Team Site (NOT a publishing
+ *             site) by an OPERATOR who owns it. Read-only: ALLOW_WRITES
  *             was off, so group B did not run.
  *   RUN 2:    2026-08-12, the same site, pasted BY THE REPORTING SERVICE
- *             ACCOUNT — the reader itself, not an operator — with
+ *             ACCOUNT (the reader itself, not an operator) with
  *             ALLOW_WRITES ON, so group B did run.
  *   FINDINGS: run 1 answered A1-A5 in full and C1; its C2 and C3 WERE AN
  *             INVALID EXPERIMENT and have been rewritten since (see GROUP
@@ -27,7 +27,7 @@
  *       existing users, to a claims LoginName. Prerequisite met, so A3 and
  *       A4 are about that account.
  *   A2  THE CONTROL HELD. getusereffectivepermissions answered for the
- *       account pasting the probe and decoded to a full permission set —
+ *       account pasting the probe and decoded to a full permission set,
  *       so a narrow A3 is a fact about the READER, not about an endpoint
  *       the caller cannot use.
  *   A3  THE HEADLINE. At WEB scope the reader account held EXACTLY:
@@ -42,8 +42,8 @@
  *           ViewPages, CreateSSCSite, BrowseUserInfo,
  *           UseClientIntegration, UseRemoteAPIs, CreateAlerts
  *       That is the built-in `Read`. So the declared grant DOES reach
- *       through broken inheritance — which is the mechanism the entire
- *       tier depends on — measured, on one site.
+ *       through broken inheritance (which is the mechanism the entire
+ *       tier depends on), measured, on one site.
  *   A5  The ViewFormPagesLockDown feature GUID was ABSENT from the 15 site
  *       collection features that came back. Consistent with A3. The REST
  *       spelling used to read them is undocumented, so this CORROBORATES
@@ -59,8 +59,8 @@
  * site, not a rule about SharePoint.
  *
  *   B1+B2  THE IMPORTANT ONE, and it corrects a comment that shipped.
- *          `web/ensureuser` for BOTH display names — "Everyone" AND
- *          "Everyone except external users" — resolved to ONE AND THE SAME
+ *          `web/ensureuser` for BOTH display names ("Everyone" AND
+ *          "Everyone except external users") resolved to ONE AND THE SAME
  *          principal: a `c:0-.f|rolemanager|spo-grid-all-users/<tenantid>`
  *          LoginName, Title "Everyone except external users",
  *          PRINCIPALTYPE 4 (SecurityGroup), Email empty. Two of the three
@@ -74,8 +74,8 @@
  *          tenant is one data point, another tenant may type these
  *          differently, and the needles stay as defence in depth.
  *   B3+B4  "All Authenticated Users" and "All Forms Users" were BOTH
- *          REFUSED — HTTP 400, SPException, "The specified user … could
- *          not be found" — under odata=nometadata and odata=verbose
+ *          REFUSED (HTTP 400, SPException, "The specified user … could
+ *          not be found") under odata=nometadata and odata=verbose
  *          alike. They are not resolvable BY DISPLAY NAME on this tenant.
  *          That NARROWS the KNOWN LIMIT at step 3 of the deploy template;
  *          it does not close it. A display-name refusal is not proof that
@@ -84,7 +84,7 @@
  *   A3     Decoded to EXACTLY the five permissions run 1 recorded:
  *          ViewFormPages, Open, BrowseUserInfo, UseClientIntegration,
  *          UseRemoteAPIs. Measured from a SECOND IDENTITY, which makes it
- *          CORROBORATION AND NOTHING MORE — A2 was open on this run, so
+ *          CORROBORATION AND NOTHING MORE. A2 was open on this run, so
  *          run 1's claim is NOT upgraded by it. See the next section.
  *   A5     The ViewFormPagesLockDown feature GUID was again ABSENT from
  *          the 15 site collection features that came back.
@@ -104,7 +104,7 @@
  *
  * NOTHING ESTABLISHED HERE EXPLAINS THAT. The most parsimonious
  * HYPOTHESIS is that the first permissions call of a run can fail
- * transiently — some auth or context warm-up — and A2 simply goes first.
+ * transiently (some auth or context warm-up) and A2 simply goes first.
  * THAT IS A HYPOTHESIS, NOT A FINDING: its only support is the ordering.
  * A RE-RUN IS WHAT WOULD SETTLE IT. If A2 holds next time with nothing
  * else changed, the ordering story gains weight; if A2 fails again while
@@ -114,7 +114,7 @@
  * NO RETRY HAS BEEN ADDED, deliberately. A retry would turn this into a
  * green run and destroy the only evidence that it happens; showing it is
  * the probe's job. What HAS changed is that A3 and A4 now INHERIT A2's
- * outcome — while the control is open they record NOT ESTABLISHED
+ * outcome. While the control is open they record NOT ESTABLISHED
  * (control open) and carry their decoded bits as supporting detail only.
  * In run 2 A3 recorded OBSERVED while its own control was refused, and a
  * row that contradicts its own control must not read as a finding. That
@@ -123,7 +123,7 @@
  * ---- THE SCOPE LIMIT, AND IT IS NOT A FORMALITY ------------------------
  * ONE SITE, and it is a Microsoft 365 GROUP-CONNECTED TEAM SITE. Lockdown
  * mode is ON BY DEFAULT FOR PUBLISHING SITES, so A3 DOES NOT CLEAR THAT
- * CASE — the configuration most likely to break this feature is the one
+ * CASE. The configuration most likely to break this feature is the one
  * configuration this run did not sample. One site is one data point. State
  * both of those every time this run is cited.
  *
@@ -133,8 +133,8 @@
  *     answer, because every reader row depends on it.
  *   - WHETHER THE POWER BI CONNECTOR ITSELF WORKS. At web scope the
  *     account holds no ViewPages and no ViewListItems (see A3), so
- *     enumerating `_api/web/lists` — which the SharePoint Online List
- *     connector does once you hand it a site URL — is UNPROVEN either way.
+ *     enumerating `_api/web/lists` (which the SharePoint Online List
+ *     connector does once you hand it a site URL) is UNPROVEN either way.
  *     Run 1 said only signing in AS the service account could answer this
  *     and that no revision of this file could; RUN 2 WAS THE SERVICE
  *     ACCOUNT, so that is no longer true. What is still missing is the
@@ -144,11 +144,11 @@
  *   - A4 at list scope from the reader's own session: refused HTTP 403 in
  *     run 2 and only ever answered in run 1's operator session.
  *   - The two tenant-wide claim encodings Learn does not publish. B3 and
- *     B4 have narrowed this — both display names were refused HTTP 400 on
- *     this tenant — but a refusal by display name is not proof that no
+ *     B4 have narrowed this (both display names were refused HTTP 400 on
+ *     this tenant), but a refusal by display name is not proof that no
  *     encoding exists.
  *   - Server-driven paging on a site group's members: see GROUP C. Run 2
- *     could not reach it at all. C2 IS NOT BEING ASKED FOR AGAIN — it
+ *     could not reach it at all. C2 IS NOT BEING ASKED FOR AGAIN. It
  *     needs a site group with more members than the server page size, and
  *     adding one to a site's permissions would expose many real people to
  *     development work. That objection is accepted and settled. The
@@ -171,7 +171,7 @@
  * "Server-driven Paging in ASP.NET Core OData 8": if `$top` is below the
  * page size, the server returns that many items "with no next link." So an
  * absent `__next` at `$top=1` says NOTHING about whether a collection
- * larger than the server page size returns one — the experiment could not
+ * larger than the server page size returns one. The experiment could not
  * have produced a `__next` even if the endpoint pages perfectly.
  *
  * What the run DID establish about paging is C1, and that stands: both
@@ -179,7 +179,7 @@
  * both deploy templates assume.
  *
  * A VALID experiment needs a group with MORE MEMBERS THAN THE SERVER PAGE
- * SIZE, read WITHOUT a `$top` below that — the deploy sends `$top=5000`.
+ * SIZE, read WITHOUT a `$top` below that (the deploy sends `$top=5000`).
  * That is what C2 and C3 do now. SharePoint does not document the server
  * page size for this collection, so C2 assumes no number: it reads with no
  * `$top` at all and compares the row count against C1's, which lets it
@@ -202,7 +202,7 @@
  * below are the RIGHT questions:
  *
  *   - `_api/web/getusereffectivepermissions(@user)?@user='<claims login>'`
- *     returns an SP.BasePermissions — a High/Low bitfield. The same method
+ *     returns an SP.BasePermissions, a High/Low bitfield. The same method
  *     exists on a list. (SharePoint .NET Server, CSOM, JSOM and REST API
  *     index; Web/List.GetUserEffectivePermissions.)
  *   - Built-in `Read` carries `Use Remote Interfaces`. `Restricted Read`
@@ -220,7 +220,7 @@
  *
  * ---- WHAT IT ASKS -----------------------------------------------------
  *
- * GROUP A — the decisive one. Read-only; runs with the write flag OFF.
+ * GROUP A, the decisive one. Read-only; runs with the write flag OFF.
  *   A1  Does the nominated account resolve READ-ONLY in this site's User
  *       Information List, and to what claims LoginName? A prerequisite for
  *       A2/A3, recorded as its own row so an unresolvable account reads as
@@ -229,7 +229,7 @@
  *       account pasting this, at web scope? Without it, a blank A3 is
  *       indistinguishable from an endpoint the caller cannot use. It
  *       OBSERVES the decode; it asserts nothing about which bits come back.
- *       ITS OUTCOME IS THREADED INTO A3 AND A4 — while this row is open
+ *       ITS OUTCOME IS THREADED INTO A3 AND A4. While this row is open
  *       those two record NOT ESTABLISHED (control open) whatever they read.
  *   A3  The reader's effective permissions at WEB scope, decoded into
  *       named permissions. HEADLINE OBSERVATION: is UseRemoteAPIs present?
@@ -238,11 +238,11 @@
  *       list, decoded. HEADLINE OBSERVATION: is ViewListItems present?
  *       A finding only if A2 held; otherwise supporting detail.
  *   A5  Is the 'Limited-access user permission lockdown mode' site
- *       collection feature active? See the LOCKDOWN MODE note below — the
+ *       collection feature active? See the LOCKDOWN MODE note below. The
  *       feature GUID is documented, the REST spelling for reading it is
  *       not, so this row is best-effort and says so in its own evidence.
  *
- * GROUP B — the two claim encodings this branch deliberately did not guess.
+ * GROUP B, the two claim encodings this branch deliberately did not guess.
  *   WRITE-GATED. Default OFF.
  *   `_reader_enrolment.js.j2` step 3 refuses tenant-wide claims by matching
  *   three login-name needles, which cover two of the four claims Learn
@@ -255,19 +255,19 @@
  *   RECORD the LoginName, Title and PrincipalType that come back, or the
  *   exact failure if it refuses. Each row also reports whether the three
  *   needles the deploy template ships today would have matched what came
- *   back — an observation about the existing guard, not a requirement.
+ *   back, an observation about the existing guard, not a requirement.
  *
  *   NOTHING HERE IS A PREDICTION. If a claim resolves, that is the answer.
  *   If it refuses, that is equally the answer, and the status and body are
  *   printed verbatim either way.
  *
- *   ANSWERED 2026-08-12, on one tenant — see the run-2 section above. B1
+ *   ANSWERED 2026-08-12, on one tenant (see the run-2 section above). B1
  *   and B2 collapsed to a single PrincipalType 4 principal that two
  *   needles matched; B3 and B4 were refused HTTP 400. Re-run these on any
  *   other tenant you can get at: that is the only thing that turns one
  *   data point into a pattern.
  *
- * GROUP C — a paging assumption this branch inherited but never measured.
+ * GROUP C, a paging assumption this branch inherited but never measured.
  *   Read-only.
  *   `_security_principals.js.j2` and `_reader_enrolment.js.j2` both page a
  *   site group's members with `web/sitegroups(<id>)/users?$top=5000` and
@@ -281,7 +281,7 @@
  *
  *   C2 CAN ONLY ANSWER ON A GROUP BIGGER THAN THE SERVER PAGE SIZE, which
  *   SharePoint does not document. On a small group it records NOT
- *   ESTABLISHED and says so — see the C2/C3 note in STATUS above for the
+ *   ESTABLISHED and says so. See the C2/C3 note in STATUS above for the
  *   invalid version of this experiment and why an absent `__next` under a
  *   small `$top` proves nothing.
  *
@@ -290,7 +290,7 @@
  *   development work. Run C against whatever groups already exist, accept
  *   NOT ESTABLISHED when they are small, and read S11/S12 in
  *   search-discovery-probe.js.j2 for the part of the question that CAN be
- *   measured — server-driven paging on a list-items collection, against a
+ *   measured, server-driven paging on a list-items collection, against a
  *   fixture that already exists.
  *
  * ---- WHAT THE WRITE FLAG GUARDS ---------------------------------------
@@ -300,7 +300,7 @@
  * `web/ensureuser` IS A WRITE. It materialises the principal in this
  * site's User Information List (hidden list 'User Information List'), which
  * is why the deploy template takes a form digest for it. IT GRANTS
- * NOTHING — it does not add anybody to a group, does not create a role
+ * NOTHING. It does not add anybody to a group, does not create a role
  * assignment, and does not change any permission. The side effect is that
  * up to four claim principals may afterwards appear in this site's people
  * picker and in `web/siteusers`. On a disposable probe site that is
@@ -318,7 +318,7 @@
  * spelling for reading that feature collection. A5 therefore TRIES the
  * OData mapping of Site.Features and reports exactly what came back,
  * including a non-2xx status and its body. A failed read is recorded as
- * NOT ESTABLISHED, never as "lockdown is off" — absence of evidence here
+ * NOT ESTABLISHED, never as "lockdown is off". Absence of evidence here
  * is not evidence of absence, and getting that backwards would report the
  * dangerous configuration as the safe one. If A5 comes back NOT
  * ESTABLISHED, read lockdown mode by eye instead: Site settings > Site
@@ -337,7 +337,7 @@
  *   4. ONLY on a disposable site, and only if you want group B answered:
  *      set ALLOW_WRITES = true as well and paste once more.
  *   5. Copy the whole RESULTS block back verbatim, including the raw
- *      payload lines. The transcript stays OUT of this repository — quote
+ *      payload lines. The transcript stays OUT of this repository. Quote
  *      findings into the STATUS block at the top of this file instead.
  */
 (async () => {
@@ -349,7 +349,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -362,7 +362,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -388,11 +388,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -400,7 +400,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -409,7 +409,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -450,7 +450,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -462,7 +462,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -509,7 +509,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -520,9 +520,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -539,14 +539,14 @@
 
   // Printed FIRST, before any gate: a stale clipboard and a fix that did
   // not work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 8677483e — quote this when reporting results.');
+  log('INFO', 'probe revision ea230d5f. Quote this when reporting results.');
 
   // ---- CONFIGURATION ---------------------------------------------------
   // All three are obvious placeholders. Each group refuses to run against
   // an unedited one and says which constant to set, so an unedited paste
   // never produces a row that looks like a measurement.
   //
-  // NO SITE URL, deliberately — see the harness.
+  // NO SITE URL, deliberately. See the harness.
 
   // The service account the customer would point Power BI at. A UPN.
   const READER_UPN = 'reporting-service-account@contoso.com';
@@ -556,15 +556,15 @@
   // it read-only from the site's existing users instead.
   const READER_LOGIN_NAME = '';
 
-  // A list this bundle provisioned — one that BROKE INHERITANCE and carries
+  // A list this bundle provisioned, one that BROKE INHERITANCE and carries
   // the Enterprise Readers group's Read grant. That is the whole point of
   // A4: web scope and list scope are expected to differ.
   const LIST_TITLE = 'CHANGE ME - a list this bundle provisioned';
 
   // The site group to measure paging against, for group C. It does NOT have
-  // to be the readers group. Use a group THAT ALREADY EXISTS — C2 can only
+  // to be the readers group. Use a group THAT ALREADY EXISTS. C2 can only
   // answer on a group with MORE members than SharePoint's undocumented
-  // server page size, and it records NOT ESTABLISHED — not a finding — when
+  // server page size, and it records NOT ESTABLISHED (not a finding) when
   // the whole membership arrives in one page.
   //
   // DO NOT ADD PEOPLE OR A LARGE GROUP TO A SITE TO MAKE C2 ANSWERABLE.
@@ -576,8 +576,8 @@
   // ---- Registration ----------------------------------------------------
   expect('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?');
   expect('A2', 'CONTROL: does getusereffectivepermissions work at all for the account running this?');
-  expect('A3', 'The reader\'s effective permissions at WEB scope — is UseRemoteAPIs present?');
-  expect('A4', 'The reader\'s effective permissions at LIST scope — is ViewListItems present?');
+  expect('A3', 'The reader\'s effective permissions at WEB scope: is UseRemoteAPIs present?');
+  expect('A4', 'The reader\'s effective permissions at LIST scope: is ViewListItems present?');
   expect('A5', 'Is the limited-access user permission lockdown mode site collection feature active?');
   expect('B1', 'What does web/ensureuser return for the display name "Everyone"?');
   expect('B2', 'What does web/ensureuser return for "Everyone except external users"?');
@@ -591,12 +591,12 @@
     log('INFO', 'Would READ, writing nothing: the nominated account\'s effective');
     log('INFO', 'permissions at web scope and at list scope, decoded into named');
     log('INFO', 'permissions; the lockdown-mode site collection feature; and one');
-    log('INFO', 'site group\'s membership twice — once the way the deploy reads it,');
-    log('INFO', 'once with no $top at all — to see whether the SERVER pages it.');
+    log('INFO', 'site group\'s membership twice, once the way the deploy reads it,');
+    log('INFO', 'once with no $top at all, to see whether the SERVER pages it.');
     log('INFO', 'Would ADDITIONALLY, only with ALLOW_WRITES = true, call');
     log('INFO', 'web/ensureuser for four tenant-wide claim display names. That is a');
-    log('INFO', 'WRITE — it materialises each principal in this site\'s User');
-    log('INFO', 'Information List — but it GRANTS NOTHING: no group membership, no');
+    log('INFO', 'WRITE (it materialises each principal in this site\'s User');
+    log('INFO', 'Information List), but it GRANTS NOTHING: no group membership, no');
     log('INFO', 'role assignment, no permission change. Use a disposable site.');
     log('INFO', 'Nothing has been read or written. Set CONFIRMED = true.');
     return;
@@ -608,7 +608,7 @@
   // MIRRORED, NOT INVENTED. Every value below is copied character for
   // character from src/dbml_sharepoint/analysis/permissions.py's
   // BASE_PERMISSIONS, which the deployer already uses to EMIT permission
-  // levels — so the probe reads permissions with the same bit positions the
+  // levels, so the probe reads permissions with the same bit positions the
   // tool writes them with, and a divergence would be a bug in one file
   // rather than two independent guesses. Kept in the same order as the
   // Python dict so the two can be diffed by eye.
@@ -704,7 +704,7 @@
   };
 
   // OData string literal: double the single quotes, then percent-encode.
-  // encodeURIComponent leaves "'" alone, so the doubling survives — and it
+  // encodeURIComponent leaves "'" alone, so the doubling survives, and it
   // DOES encode '#' and '|', which every claims login name contains and
   // which would otherwise truncate the URL at the fragment.
   const odataLiteral = (value) => encodeURIComponent(String(value).replace(/'/g, "''"));
@@ -718,10 +718,10 @@
   const httpDetail = (r) => `HTTP ${r.status}: ${String(r.text == null ? JSON.stringify(r.body) : r.text).slice(0, 500)}`;
   const failureOutcome = (r) => (isRefusal(r.status) ? `REFUSED (HTTP ${r.status})` : `NOT ESTABLISHED (HTTP ${r.status})`);
 
-  // ================= GROUP A — read-only ================================
+  // ================= GROUP A: read-only ================================
 
   // ---- A1: resolve the account WITHOUT writing --------------------------
-  // `ensureuser` would resolve anything, but it is a write — and group A
+  // `ensureuser` would resolve anything, but it is a write, and group A
   // has to be answerable with the write flag off. So this reads the users
   // the site already knows about. If the account has never touched the
   // site it will not be there, and that is a PREREQUISITE NOT MET, not a
@@ -731,7 +731,7 @@
   {
     if (readerLogin) {
       record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
-             'OBSERVED — supplied by the operator',
+             'OBSERVED: supplied by the operator',
              `READER_LOGIN_NAME was set, so no lookup was needed: ${JSON.stringify(readerLogin)}`);
     } else if (PLACEHOLDER.test(READER_UPN)) {
       record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
@@ -739,7 +739,7 @@
              'READER_UPN is still the placeholder. Set it to the service account UPN and paste again.');
     } else {
       // Two reads, cheapest first. Both are recorded so a reader can see
-      // WHICH one answered — the $filter form is the one worth reusing in
+      // WHICH one answered. The $filter form is the one worth reusing in
       // the deployer if it works, and its working is an observation.
       const wanted = READER_UPN.toLowerCase();
       const filtered = await spGet(
@@ -752,7 +752,7 @@
       let enumerated = null;
       if (!match) {
         // Fall back to the whole collection and match the same two ways
-        // _reader_enrolment.js.j2 step 4 does — the mailbox Email, and the
+        // _reader_enrolment.js.j2 step 4 does: the mailbox Email, and the
         // UPN the claims LoginName ends in. They are routinely different
         // for the same account.
         via = 'enumerating web/siteusers';
@@ -769,7 +769,7 @@
       if (match && typeof match.LoginName === 'string' && match.LoginName !== '') {
         readerLogin = match.LoginName;
         record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
-               'OBSERVED — resolved',
+               'OBSERVED: resolved',
                `via ${via}: LoginName ${JSON.stringify(match.LoginName)}, Title `
                + `${JSON.stringify(match.Title)}, PrincipalType ${JSON.stringify(match.PrincipalType)}`);
       } else {
@@ -779,7 +779,7 @@
           : `$filter read ${readFailed(filtered) ? httpDetail(filtered) : 'succeeded but matched nobody'}`;
         record('A1', 'Does the nominated account resolve read-only, and to what claims LoginName?',
                'NOT ESTABLISHED (prerequisite)',
-               `${detail}. The account may simply never have been added to this site — that is not a `
+               `${detail}. The account may simply never have been added to this site. That is not a `
                + 'permission finding. Add it (or run the deploy with --enterprise-reader), or paste its '
                + 'claims login into READER_LOGIN_NAME, and run again.');
       }
@@ -789,7 +789,7 @@
   // ---- Shared effective-permissions reader ------------------------------
   // depends on: the scope path and the login name, both fixed by the
   // caller. observes: the HTTP status, the response SHAPE, and the bits.
-  // Nothing here compares an observed bit against an expectation — the
+  // Nothing here compares an observed bit against an expectation. The
   // outcome string names what was seen and the decode is printed in full.
   const readEffectivePermissions = async (scopePath, login) => {
     const path = `${scopePath}/getusereffectivepermissions(@user)?@user='${odataLiteral(login)}'`;
@@ -811,15 +811,15 @@
   // ---- A2: the control --------------------------------------------------
   // Answered for whoever is pasting, not for the reader. Its job is to
   // separate "the endpoint does not work for this caller" from "the reader
-  // holds nothing" — two states that produce identical-looking empty rows.
+  // holds nothing", two states that produce identical-looking empty rows.
   // It reports WHAT it decoded and does not require any particular bit:
   // asserting over an observed value is how a control kills its own
   // experiment the moment it starts working.
   //
   // ITS OUTCOME IS THREADED INTO A3 AND A4, and that is not tidiness.
-  // 2026-08-12: A2 came back HTTP 403 and A3 — the same endpoint, the same
+  // 2026-08-12: A2 came back HTTP 403 and A3 (the same endpoint, the same
   // web scope, the same login, because the service account was running its
-  // own probe — came back HTTP 200 and RECORDED ITSELF AS OBSERVED. A2's
+  // own probe) came back HTTP 200 and RECORDED ITSELF AS OBSERVED. A2's
   // evidence said in words that A3 could not be read as a finding while
   // the control was open, and the row above it did exactly that anyway. A
   // caveat in prose beside a row that reads OBSERVED loses to the row. So
@@ -845,19 +845,19 @@
                mine.unknownShape ? 'NOT ESTABLISHED (unrecognised response shape)' : failureOutcome(mine.res),
                `${mine.unknownShape ? 'HTTP 200 but no High/Low found in ' + JSON.stringify(mine.res.body).slice(0, 400)
                                     : httpDetail(mine.res)}. `
-               + 'A3 and A4 below cannot be read as findings about the reader while this row is open — the '
+               + 'A3 and A4 below cannot be read as findings about the reader while this row is open. The '
                + 'endpoint has not been shown to work for the caller at all. They will say so themselves.');
       } else {
         controlHeld = true;
         record('A2', 'CONTROL: does getusereffectivepermissions work at all for the account running this?',
-               'OBSERVED — the endpoint answered',
+               'OBSERVED: the endpoint answered',
                `for the CALLER ${JSON.stringify(me.body.Title)}: ${describePerms(mine)}`);
       }
     }
   }
 
   // What a reader row says when the control did not hold. The bits are
-  // still printed — throwing away a successful read would be worse — but
+  // still printed (throwing away a successful read would be worse), but
   // they are labelled as supporting detail for a re-run to compare
   // against, never as an answer.
   //
@@ -865,11 +865,11 @@
   // that happened and it is the strongest form of the contradiction: two
   // calls differing in nothing but their order, answering differently.
   // See THE A2/A3 CONTRADICTION in the docblock. It is not retried here on
-  // purpose — a retry would hide the very thing worth seeing.
+  // purpose. A retry would hide the very thing worth seeing.
   const sameLoginAsControl = (login) =>
     typeof callerLogin === 'string' && String(login).toLowerCase() === callerLogin.toLowerCase();
   const controlOpenEvidence = (login, headline, detail) =>
-    `NOT a finding about the reader: the control (A2) has not been shown to work for this caller — `
+    `NOT a finding about the reader: the control (A2) has not been shown to work for this caller. `
     + `${controlWhy}. Supporting detail only: ${headline}; ${detail}.`
     + (sameLoginAsControl(login)
       ? ' NOTE THE CONTRADICTION: this row used THE SAME LOGIN and THE SAME endpoint as the control, so'
@@ -879,7 +879,7 @@
 
   // ---- A3: WEB scope ----------------------------------------------------
   {
-    const question = 'The reader\'s effective permissions at WEB scope — is UseRemoteAPIs present?';
+    const question = 'The reader\'s effective permissions at WEB scope: is UseRemoteAPIs present?';
     if (!readerLogin) {
       record('A3', question, 'NOT ESTABLISHED (prerequisite)', 'the account did not resolve; see A1');
     } else {
@@ -897,7 +897,7 @@
           record('A3', question, 'NOT ESTABLISHED (control open)',
                  controlOpenEvidence(readerLogin, headline, describePerms(r)));
         } else {
-          record('A3', question, `OBSERVED — ${headline}`, describePerms(r));
+          record('A3', question, `OBSERVED: ${headline}`, describePerms(r));
         }
       }
     }
@@ -905,7 +905,7 @@
 
   // ---- A4: LIST scope ---------------------------------------------------
   {
-    const question = 'The reader\'s effective permissions at LIST scope — is ViewListItems present?';
+    const question = 'The reader\'s effective permissions at LIST scope: is ViewListItems present?';
     if (PLACEHOLDER.test(LIST_TITLE)) {
       record('A4', question, 'NOT ESTABLISHED (prerequisite)',
              'LIST_TITLE is still the placeholder. Set it to a list this bundle provisioned.');
@@ -923,7 +923,7 @@
       } else {
         // Recorded, not required: whether the list actually broke
         // inheritance is the thing that makes list scope differ from web
-        // scope, so it belongs in the evidence — but a list that inherits
+        // scope, so it belongs in the evidence, but a list that inherits
         // is still a real answer about a real list.
         const unique = listRes.body.HasUniqueRoleAssignments;
         const r = await readEffectivePermissions(
@@ -943,7 +943,7 @@
             record('A4', question, 'NOT ESTABLISHED (control open)',
                    controlOpenEvidence(readerLogin, headline, detail));
           } else {
-            record('A4', question, `OBSERVED — ${headline}`, detail);
+            record('A4', question, `OBSERVED: ${headline}`, detail);
           }
         }
       }
@@ -964,7 +964,7 @@
       record('A5', question, 'NOT ESTABLISHED',
              `${readFailed(res) ? httpDetail(res)
                                 : `HTTP ${res.status} but no feature array in ${JSON.stringify(res.body).slice(0, 300)}`}`
-             + '. This is NOT evidence that lockdown mode is off — the REST spelling used here is not '
+             + '. This is NOT evidence that lockdown mode is off. The REST spelling used here is not '
              + 'documented on Learn, and the caller may simply not be able to read site features. Check by '
              + 'eye instead: Site settings > Site collection features > "Limited-access user permission '
              + 'lockdown mode", and report Active or Not Active.');
@@ -974,16 +974,16 @@
         .filter((id) => id !== '');
       const active = ids.includes(LOCKDOWN_ID);
       record('A5', question,
-             `OBSERVED — lockdown mode ${active ? 'ACTIVE' : 'NOT LISTED AS ACTIVE'}`,
+             `OBSERVED: lockdown mode ${active ? 'ACTIVE' : 'NOT LISTED AS ACTIVE'}`,
              `read ${rows.length} site collection feature(s); looked for ${LOCKDOWN_ID} `
              + '(ViewFormPagesLockDown, per Learn\'s SPMT supported site features table). '
              + `${active ? 'It is present.' : 'It is absent from the list that came back.'} `
-             + 'Confirm by eye in Site settings > Site collection features before relying on this — the '
+             + 'Confirm by eye in Site settings > Site collection features before relying on this. The '
              + 'endpoint spelling is undocumented and the collection may be filtered for the caller.');
     }
   }
 
-  // ================= GROUP C — read-only ================================
+  // ================= GROUP C: read-only ================================
   // Placed before group B so that a run with ALLOW_WRITES off still ends
   // having answered everything it can.
   {
@@ -991,7 +991,7 @@
     const C2_Q = 'With NO $top, does web/sitegroups(id)/users return a short page and a d.__next?';
     const C3_Q = 'Does following d.__next return a further page of DIFFERENT members?';
     if (PLACEHOLDER.test(GROUP_NAME)) {
-      const why = 'GROUP_NAME is still the placeholder. Set it to a site group — and see C2: only a group '
+      const why = 'GROUP_NAME is still the placeholder. Set it to a site group, and see C2: only a group '
         + 'with MORE members than the server page size can answer C2 and C3.';
       record('C1', C1_Q, 'NOT ESTABLISHED (prerequisite)', why);
       record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
@@ -1005,7 +1005,7 @@
         record('C2', C2_Q, 'NOT ESTABLISHED (prerequisite)', why);
         record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
       } else {
-        // C1 — read exactly the way the deploy templates read it. Its row
+        // C1: read exactly the way the deploy templates read it. Its row
         // count is the YARDSTICK C2 needs: without it, C2 cannot tell a
         // page the server truncated from the whole membership arriving at
         // once, and those two look identical in the response.
@@ -1029,12 +1029,12 @@
           record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)', why);
         } else {
           const allNext = allRes.body.d.__next;
-          record('C1', C1_Q, `OBSERVED — ${all.length} member(s)`,
+          record('C1', C1_Q, `OBSERVED: ${all.length} member(s)`,
                  `${all.length} member(s) came back at $top=5000, in the d.results shape both deploy `
                  + `templates assume; d.__next on that read: ${JSON.stringify(
                    typeof allNext === 'string' && allNext !== '')}. This is the count C2 compares against.`);
 
-          // C2 — THE SAME REQUEST WITH NO $top AT ALL, which is the only
+          // C2: THE SAME REQUEST WITH NO $top AT ALL, which is the only
           // form that can answer the question. $top is CLIENT-driven
           // paging: Learn ("PageSize, Top and MaxTop") says there is no
           // nextLink returned for it, and ("Server-driven Paging in
@@ -1055,7 +1055,7 @@
           } else if (firstPage.length >= all.length) {
             // The whole membership fitted in one server page, so the
             // server never had to page and an absent __next is expected.
-            // THIS IS NOT A FINDING ABOUT THE ENDPOINT — recording it as
+            // THIS IS NOT A FINDING ABOUT THE ENDPOINT. Recording it as
             // one is exactly the mistake the 2026-08-11 run made.
             const why = `the no-$top read returned ${firstPage.length} row(s), which is every member C1 `
               + `counted (${all.length}). The server never had to page, so whether d.__next came back `
@@ -1073,7 +1073,7 @@
             const next = firstRes.body.d.__next;
             // The site host is stripped before printing. __next is an
             // absolute URL, so quoting it raw would put the tenant into the
-            // transcript — this repository has leaked one twice. Whether it
+            // transcript. This repository has leaked one twice. Whether it
             // WAS absolute is still recorded, because that is the part the
             // deploy's `membersUrl = json.d.__next` depends on.
             // Case-INSENSITIVE, and deliberately not a RegExp: SharePoint may
@@ -1100,7 +1100,7 @@
             // $top asked for. So this run CAN discriminate, and both
             // outcomes are real answers about the endpoint.
             record('C2', C2_Q,
-                   `OBSERVED — server paged at ${firstPage.length} of ${all.length}; d.__next `
+                   `OBSERVED: server paged at ${firstPage.length} of ${all.length}; d.__next `
                    + `${present ? 'PRESENT' : 'ABSENT'}`,
                    `no $top was sent; ${firstPage.length} row(s) came back against the ${all.length} C1 `
                    + `counted, so the SERVER ended the page. typeof d.__next = ${typeof next}; absolute `
@@ -1110,7 +1110,7 @@
                        + 'deploy templates: both stop when __next is absent, so they would silently read '
                        + 'a PARTIAL membership of a group this size.'}`);
 
-            // C3 — follow it. The deploy passes d.__next straight back to
+            // C3: follow it. The deploy passes d.__next straight back to
             // fetch, so this does too, rather than rebuilding a URL.
             if (!present) {
               record('C3', C3_Q, 'NOT ESTABLISHED (prerequisite)',
@@ -1132,7 +1132,7 @@
                 const seen = new Set(firstPage.map((u) => u.Id));
                 const fresh = page2.filter((u) => !seen.has(u.Id)).length;
                 record('C3', C3_Q,
-                       `OBSERVED — page 2 held ${page2.length} row(s), ${fresh} of them NOT on page 1`,
+                       `OBSERVED: page 2 held ${page2.length} row(s), ${fresh} of them NOT on page 1`,
                        `page 1 held ${firstPage.length} row(s); page 2 held ${page2.length}, of which `
                        + `${fresh} carried an Id page 1 did not; page 2 __next present: `
                        + `${JSON.stringify(typeof body2.d.__next === 'string' && body2.d.__next !== '')}; `
@@ -1145,7 +1145,7 @@
     }
   }
 
-  // ================= GROUP B — WRITE-GATED ==============================
+  // ================= GROUP B: WRITE-GATED ==============================
   const CLAIM_NAMES = [
     ['B1', 'Everyone'],
     ['B2', 'Everyone except external users'],
@@ -1158,7 +1158,7 @@
     for (const [id, display] of CLAIM_NAMES) {
       record(id, claimQuestion(display), 'NOT ESTABLISHED (write flag off)',
              'ensureuser materialises the principal in this site\'s User Information List, so it is a '
-             + 'write and is gated. It GRANTS NOTHING — no group membership, no role assignment, no '
+             + 'write and is gated. It GRANTS NOTHING: no group membership, no role assignment, no '
              + 'permission change. Set ALLOW_WRITES = true on a DISPOSABLE site to answer this.');
     }
   } else {
@@ -1170,7 +1170,7 @@
     // The three needles _reader_enrolment.js.j2 step 3 ships TODAY. Copied
     // verbatim so each row can report whether the guard as it stands would
     // have caught what came back. That is an OBSERVATION about the guard,
-    // not a requirement on the answer — a claim that no needle matches is
+    // not a requirement on the answer. A claim that no needle matches is
     // exactly the finding this probe exists to produce.
     const SHIPPED_NEEDLES = ['spo-grid-all-users', 'c:0(.s|true', 'c:0-.f|rolemanager'];
 
@@ -1204,13 +1204,13 @@
           ? ` The odata=verbose retry also failed: ${httpDetail(out.fallback)}.`
           : '';
         record(id, question, failureOutcome(out.res),
-               `${httpDetail(out.res)}.${extra} Reported as the status it actually returned — this row `
+               `${httpDetail(out.res)}.${extra} Reported as the status it actually returned. This row `
                + 'says what the platform did, not whether the claim "should" exist.');
         continue;
       }
       const login = String(out.node.LoginName == null ? '' : out.node.LoginName);
       const matched = SHIPPED_NEEDLES.filter((n) => login.toLowerCase().includes(n));
-      record(id, question, 'OBSERVED — resolved',
+      record(id, question, 'OBSERVED: resolved',
              `via ${out.attempt}: LoginName ${JSON.stringify(out.node.LoginName)}, Title `
              + `${JSON.stringify(out.node.Title)}, PrincipalType ${JSON.stringify(out.node.PrincipalType)}, `
              + `Email ${JSON.stringify(out.node.Email)}, Id ${JSON.stringify(out.node.Id)}. `
@@ -1235,19 +1235,19 @@
   // from this repository twice.
   console.log('\n============ WHAT TO SEND BACK ============');
   console.log('1. The whole RESULTS block above, verbatim, including the evidence');
-  console.log('   lines — the decoded permission names are the finding, not the');
+  console.log('   lines, the decoded permission names are the finding, not the');
   console.log('   PRESENT/ABSENT word beside them.');
   console.log('2. Whether the site you pasted this into is a PUBLISHING site.');
   console.log('   Lockdown mode is on by default for those, and that is exactly');
   console.log('   what would strip UseRemoteAPIs from Limited Access.');
   console.log('   answer: ______________________________________');
   console.log('3. If A5 came back NOT ESTABLISHED: Site settings > Site collection');
-  console.log('   features > "Limited-access user permission lockdown mode" —');
+  console.log('   features > "Limited-access user permission lockdown mode":');
   console.log('   Active or Not Active?');
   console.log('   answer: ______________________________________');
   console.log('4. Whether ALLOW_WRITES was on for this run (group B is blank if not).');
   console.log('   answer: ______________________________________');
-  console.log('5. WHICH ACCOUNT you pasted this as — an operator/site owner, or the');
+  console.log('5. WHICH ACCOUNT you pasted this as: an operator/site owner, or the');
   console.log('   reporting service account itself. It changes what group A means,');
   console.log('   and on 2026-08-12 it was the reader, which is how A2 and A3 came');
   console.log('   to disagree about one endpoint. Say which.');

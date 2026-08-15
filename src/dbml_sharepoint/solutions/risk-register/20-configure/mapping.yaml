@@ -1,4 +1,4 @@
-# Risk register — physical mapping. THE MATRIX LIVES HERE.
+# Risk register: physical mapping. THE MATRIX LIVES HERE.
 prefix: "RR_"
 
 entities:
@@ -29,13 +29,13 @@ watched_lists: []
 # RiskScore is the matrix score 1-25 for sorting. Both are guarded on
 # MatrixVersion: a row stamped to an older matrix shows blank rather than
 # being silently re-rated. LevelsAboveTarget and NextReviewDue read
-# ResidualRiskRating, itself calculated — SharePoint permits calc-on-calc
+# ResidualRiskRating, itself calculated; SharePoint permits calc-on-calc
 # and jsgen provisions them in dependency order, so declaration order
 # here does not matter (see _order_calculated_after_references in jsgen).
 #
 # KNOWN, ACCEPTED: NextReviewDue adds months with
 # DATE(YEAR(d), MONTH(d)+N, DAY(d)), which OVERFLOWS at month end rather
-# than clamping — a review completed 31 January falls due 1 May rather
+# than clamping: a review completed 31 January falls due 1 May rather
 # than 30 April, and 31 August + 6 months lands 3 March. The slip is one
 # to three days on a cadence of three months or more, against a column
 # whose own description says to review sooner on contextual change, so it
@@ -44,14 +44,14 @@ watched_lists: []
 # that is counted in days.
 #
 # CHANGE CONTROL: SharePoint recalculates every existing row when a formula
-# changes — read 50-govern/governance.md before editing these cells.
+# changes; read 50-govern/governance.md before editing these cells.
 #
 # These formulas are keyed to EXACTLY the five Likelihood and five
 # Consequence members below, in this order: the nested IFs map the first
 # four by name and treat everything else as the fifth, so an added,
 # renamed or reordered member silently rates as the worst case rather
 # than failing. The matrix is 5x5, so changing the enums means rewriting
-# the 25 cells anyway — a fallback would not save you, and the coupling is
+# the 25 cells anyway; a fallback would not save you, and the coupling is
 # recorded here because that is where someone editing an enum will look.
 # Unreachable by data entry today: every Choice column deploys with
 # FillInChoice false, so a value outside the enum cannot be typed.
@@ -110,25 +110,25 @@ list_permissions:
 # UI hardening (tamper-resilience): site owners/admins bypass every ACL,
 # so the realistic threat is well-meaning UI tampering. Sealed columns
 # block schema edits and deletion of every deployed column through the
-# UI even for site admins (display-name renames stay possible — drift,
+# UI even for site admins (display-name renames stay possible: drift,
 # reverted on re-paste; the deployer unseals for its own runs and
 # re-seals in Phase 4.1); prevent_list_deletion blocks UI deletion of the
 # list objects (rollback.js clears it per list after you confirm that
-# list's deletion). Friction + tamper-evidence, not enforcement — see
+# list's deletion). Friction + tamper-evidence, not enforcement. See
 # "The shared security model" in templates/README.md.
 seal_columns: true
 prevent_list_deletion: true
 
 # Backend internal names stay exactly as authored in the DBML (probes,
 # views, indexes and formulas all key on them); the deployer renames the
-# display Title after create — "ResidualRiskRating" shows as "Residual Risk
+# display Title after create: "ResidualRiskRating" shows as "Residual Risk
 # Rating". Auto PascalCase splitting handles every column here correctly,
 # so there are no overrides.
 display_names:
   mode: auto
 
 # Column formatting: the fleet style standard (website/docs/reference/
-# style-guide.md) — SharePoint's own severity boxes and icons, tokens
+# style-guide.md), SharePoint's own severity boxes and icons, tokens
 # resolved by the style library. levels-above-target stays a bespoke file
 # (numeric severity ranges); it draws only on standard classes.
 column_formatting:
@@ -139,7 +139,7 @@ column_formatting:
     TargetRiskRating: { style: severity,
                         map: { Low: good, Medium: warning, High: severe, Extreme: blocked } }
     # Data-bar with the fill translated from the rating column via the
-    # severity tokens (style standard `color_by`) — the same map the rating
+    # severity tokens (style standard `color_by`), the same map the rating
     # columns declare, so bar and rating cell can never disagree.
     RiskScore: { style: data-bar, max: 25, calculated: true,
                  color_by: { field: ResidualRiskRating, calculated: true,
@@ -164,7 +164,7 @@ column_formatting:
 # sitting above appetite or nearing a tolerance deadline; "Closed" is the
 # closed-out history. Widths are pixel
 # ColumnWidth per view, keys are INTERNAL names (the build
-# rewrites them to display titles — ColumnWidth binds by display name, and
+# rewrites them to display titles; ColumnWidth binds by display name, and
 # internal names silently reset). Rating pills ~160, dates ~140-180, people
 # ~160, status chips ~100-110, Title widest on sparser views.
 views:
@@ -182,14 +182,14 @@ views:
       # cell's own escalation and read as noise on High rows.
       #
       # The wash reads ResidualRiskRating, so it must stay in this view's
-      # `fields:` list — view formatting can only read columns the view
+      # `fields:` list; view formatting can only read columns the view
       # displays. Drop it from fields and the wash stops firing with a
       # clean build.
       #
       # It compares with `==` even though the column is calculated. That is
       # correct HERE and would be wrong in column_formatting: the `string;#`
       # prefix that makes `calculated: true` necessary there does not reach
-      # a view formatter's [$Field] reference. Confirmed on a live list —
+      # a view formatter's [$Field] reference. Confirmed on a live list;
       # see the note in website/docs/reference/style-guide.md.
       formatting: formatting/row-extreme.json
       widths:
@@ -263,7 +263,7 @@ views:
         Status: 100
     # LevelsAboveTarget is here for audit, not decoration. "Above target"
     # filters Status neq Closed, so a risk closed while still above target
-    # vanishes from it — and SharePoint cannot enforce residual-at-or-below-
+    # vanishes from it, and SharePoint cannot enforce residual-at-or-below-
     # target at save, because LevelsAboveTarget is calculated and validation
     # formulas cannot read those. This column, sortable, is where a closure
     # review sees it: anything greater than 0 here was closed above appetite.
@@ -286,7 +286,7 @@ views:
         LastReviewedDate: 180
 
 # The auto-stamped matrix version leaves the NEW form only; it stays on the
-# Edit and Display forms (existing: true, the default — `existing:` cannot
+# Edit and Display forms (existing: true, the default; `existing:` cannot
 # separate the two, see website/docs/reference/mapping.md). It must remain
 # editable: the matrix-revision procedure in 50-govern/governance.md has a
 # risk owner re-stamp MatrixVersion on their own row by hand once a
@@ -294,7 +294,7 @@ views:
 # on a form they can save.
 #
 # Deliberately NOT declared: any rule conditioned on ResidualRiskRating.
-# Conditional show/hide cannot read a calculated column — the formula stays
+# Conditional show/hide cannot read a calculated column. The formula stays
 # syntactically valid, so it saves, the readback compares equal and the
 # phase passes, but the form never reacts. The build refuses it; see the
 # note in analysis/conditions.py, which names this register's most natural
@@ -311,7 +311,7 @@ form_visibility:
       # author cannot see.
       #
       # Changing the response back does NOT clear an end date already
-      # entered — SharePoint has no such mechanism — so the field hides
+      # entered (SharePoint has no such mechanism), so the field hides
       # while keeping its value. That stale date is why the "Tolerance
       # expiring" view filters on RiskResponse as well as the date.
       ToleranceEndDate:
@@ -330,7 +330,7 @@ form_visibility:
       LastReviewedDate: { new: false }
 
 # Form layouts: a strapline header and a sectioned body. SharePoint renders
-# per-field description hints inside sectioned forms on the NEW form only —
+# per-field description hints inside sectioned forms on the NEW form only;
 # the edit form suppresses column descriptions (platform limitation).
 # Section field lists are authored with INTERNAL names; the build rewrites
 # them to display titles.
@@ -340,7 +340,7 @@ form_formatting:
     body: formatting/risk-form-body.json
 
 # Per-column save rules. Each column carries its own formula and its own
-# message, and they all run — unlike list_validation, where a list has a
+# message, and they all run, unlike list_validation, where a list has a
 # single ValidationFormula and every cross-column rule has to share one
 # message. So anything expressible on one column belongs here, where the
 # person who broke it is told which rule they broke.
@@ -354,7 +354,7 @@ column_validation:
       # NextReviewDue is computed from it, "Review due" filters on that,
       # and the overdue formatting keys off it. A date typed with next
       # year's year pushes the next review out by a year and drops the
-      # risk off the review queue silently — no error, no empty cell, just
+      # risk off the review queue silently: no error, no empty cell, just
       # a risk nobody is asked to look at again. That is worth a save rule.
       # The field is required as well as defaulted. Allowing it to be
       # cleared blanks NextReviewDue and silently removes an open risk from
@@ -367,12 +367,12 @@ column_validation:
 # Save-time enforcement, stored on the LIST so it may reference any column.
 # A Tolerate response is always for a set period, so it needs its end date.
 # NOTE: ClosureStatement is rich text, which SP validation formulas cannot
-# reference — the closure-statement requirement stays a governance check
+# reference, so the closure-statement requirement stays a governance check
 # (see 50-govern/governance.md).
 list_validation:
   Risk:
     # THREE rules, chained. A list has ONE ValidationFormula, so every
-    # cross-column rule shares this slot — the top-level list is an AND, so
+    # cross-column rule shares this slot: the top-level list is an AND, so
     # they compose, and each is written as an implication: `if A then B` is
     # `any_of[not A, B]`, which is why every branch below starts with the
     # case the rule does not apply to.
@@ -391,7 +391,7 @@ list_validation:
       # A risk past Provisional must actually be assessed. Without both
       # inputs there is no rating and no score, so the row cannot be ranked
       # in the default view, cannot appear in "Above target", and has no
-      # NextReviewDue — it is a risk the register can no longer manage.
+      # NextReviewDue: it is a risk the register can no longer manage.
       - any_of:
           - { field: Status, op: eq, value: "Provisional" }
           - all_of:
@@ -409,14 +409,14 @@ list_validation:
               # blank. LevelsAboveTarget returns "" when TargetRiskRating
               # is empty, so a risk closed with no target shows nothing in
               # the "Closed" column that exists to reveal an
-              # above-appetite closure — the compensating control for the
+              # above-appetite closure, the compensating control for the
               # one closure criterion SharePoint cannot check would be
               # silently empty exactly where it is needed.
               - { field: TargetRiskRating, op: is_not_null }
     message: "This risk cannot be saved yet. Check all three: a Tolerate response needs a Tolerance End Date; a risk past Provisional needs both Likelihood and Consequence; and a Closed risk needs a Target Risk Rating and controls rated 'All reasonable controls in place' or better."
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
-# Title starts "[DEMO] " — the marker rollback.js trusts to delete
+# Title starts "[DEMO] ", the marker rollback.js trusts to delete
 # demo-only lists without the non-empty refusal. Dates are today±N so the
 # cadence-derived surfaces land on whatever day the demo runs; "@me" is the
 # pasting operator. Coverage: one risk per rating band (the Extreme one

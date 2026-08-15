@@ -1,5 +1,5 @@
 // ============================================================================
-// Stakeholder contacts — organisations, their people, and the interaction log.
+// Stakeholder contacts: organisations, their people, and the interaction log.
 // Render the ERD by pasting this file into https://dbdiagram.io
 // ============================================================================
 
@@ -47,8 +47,8 @@ Table Contact {
   Role         nvarchar [note: 'Their position']
   Email        nvarchar
   Phone        nvarchar
-  IsActive     boolean  [default: true, note: 'Uncheck when they move on — do not delete (see governance)']
-  Notes        nvarchar [note: 'Preferences worth knowing (e.g. "prefers phone"). Professional facts only — see privacy rules']
+  IsActive     boolean  [default: true, note: 'Uncheck when they move on; do not delete (see governance)']
+  Notes        nvarchar [note: 'Preferences worth knowing (e.g. "prefers phone"). Professional facts only; see privacy rules']
 
   indexes {
     Organisation
@@ -60,13 +60,13 @@ Table Contact {
 
 Table Interaction {
   Id              int              [pk, increment]
-  Title           nvarchar         [not null, note: 'One line: "Quarterly review — funding timeline discussed"']
+  Title           nvarchar         [not null, note: 'One line: "Quarterly review, funding timeline discussed"']
   // Lookup to Contact.
   Contact         int              [not null, ref: > Contact.Id, note: 'The person this interaction was with']
   InteractionDate date             [not null]
   InteractionType interaction_type [not null, default: 'Meeting']
   RecordedBy      person           [note: 'Who from our side (defaults to you)']
-  Summary         richtext         [note: 'What was discussed, agreed or promised — enough for a colleague to pick up the thread']
+  Summary         richtext         [note: 'What was discussed, agreed or promised, enough for a colleague to pick up the thread']
 
   indexes {
     Contact

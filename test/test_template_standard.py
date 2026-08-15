@@ -1282,23 +1282,23 @@ def test_the_documented_exception_is_still_an_exception() -> None:
 #              collide. See the template-family-standard work.
 ACCEPTED_THRESHOLD_EXPOSURE: dict[tuple[str, str], str] = {
     ("service-requests", "views[Request].My requests"):
-        "DEFERRED — RequestedBy is a Person column and carries NO index. An "
+        "DEFERRED: RequestedBy is a Person column and carries NO index. An "
         "indexed Person is served past the threshold, so this wants an index "
         "rather than acceptance.",
     ("switchboard-log", "views[CodeEvent].Still running"):
-        "NULL-TEST — AllClearAt is_null means the code event has not stood down.",
+        "NULL-TEST: AllClearAt is_null means the code event has not stood down.",
     ("training-register", "views[Course].Never expires"):
-        "NULL-TEST — ValidityMonths is_null means the completion never expires.",
+        "NULL-TEST: ValidityMonths is_null means the completion never expires.",
     ("vehicle-log", "views[Trip].Out now"):
-        "NULL-TEST — ReturnedAt is_null means the vehicle is still out.",
+        "NULL-TEST: ReturnedAt is_null means the vehicle is still out.",
     ("visitor-log", "views[Visit].On site now"):
-        "NULL-TEST — SignedOutAt is_null means the visitor is still on site.",
+        "NULL-TEST: SignedOutAt is_null means the visitor is still on site.",
     ("tiered-huddle", "views[Escalation].Escalated up"):
-        "DEFERRED — Direction is a three-value Choice and can carry an index.",
+        "DEFERRED: Direction is a three-value Choice and can carry an index.",
     ("tiered-huddle", "views[Escalation].Delegated down"):
-        "DEFERRED — same Direction column as 'Escalated up'; one index clears both.",
+        "DEFERRED: same Direction column as 'Escalated up'; one index clears both.",
     ("training-register", "views[Course].Mandatory catalogue"):
-        "DEFERRED — Mandatory is Yes/No; indexable, but a course catalogue is "
+        "DEFERRED: Mandatory is Yes/No; indexable, but a course catalogue is "
         "small enough that an index would spend one of twenty slots for nothing.",
 }
 

@@ -92,7 +92,7 @@ class _SeedExtension(BaseExtension):
     def manifest_extras(self, bundle: Any, schema: Any) -> ManifestExtras:
         return ManifestExtras(
             sections={"Organisation identity": "Seeded from the organisation register."},
-            warnings=["No register match for site https://x — TBD placeholders used."],
+            warnings=["No register match for site https://x; TBD placeholders used."],
         )
 
 
@@ -201,7 +201,7 @@ def test_manifest_describes_operator_self_enrolment(tmp_path: Path) -> None:
         generated_at="2026-05-04T00:00:00Z",
     )
     assert "Enrolled by this deploy" in md
-    assert "you (the operator) — removed automatically at the end of the run" in md
+    assert "you (the operator), removed automatically at the end of the run" in md
 
 
 def _reader_manifest(enterprise_reader: str | None) -> str:

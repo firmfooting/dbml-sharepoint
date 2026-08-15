@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "One function owns this task and one date carries it — close it Done or Not applicable, never leave it Open to rot."
+          "txtContent": "One function owns this task and one date carries it. Close it Done or Not applicable, never leave it Open to rot."
         }
       ]
     }

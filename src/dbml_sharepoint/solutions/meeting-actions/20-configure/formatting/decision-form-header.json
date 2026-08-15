@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "State it as a decision — \"We will X from Y\" — with enough detail that nobody has to relitigate it in six months."
+          "txtContent": "State it as a decision (\"We will X from Y\") with enough detail that nobody has to relitigate it in six months."
         }
       ]
     }

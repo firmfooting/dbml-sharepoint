@@ -1,15 +1,15 @@
 /**
- * dbml-sharepoint PROBE — WHAT A SITE GROUP'S SETTINGS DO ON THE WAY BACK
+ * dbml-sharepoint PROBE: WHAT A SITE GROUP'S SETTINGS DO ON THE WAY BACK
  *
  * WHY THIS EXISTS. `templates/deploy/_security_principals.js.j2` writes five
- * fields onto every site group it creates or adopts — `Description` and four
- * membership flags — and NEVER READS ONE OF THEM BACK. The create path POSTs
+ * fields onto every site group it creates or adopts (`Description` and four
+ * membership flags) and NEVER READS ONE OF THEM BACK. The create path POSTs
  * and logs "created". The reconcile path checks `mergeResp.ok` and logs
  * "declared membership controls reconciled". An HTTP 200 says the request was
  * accepted; it does not say the tenant stored what was sent.
  *
  * That is the one thing AGENTS.md refuses outright: anything that writes must
- * read back and verify. Lists already do — a list Description is composed,
+ * read back and verify. Lists already do. A list Description is composed,
  * written, read back and byte-compared, and the characters that did not
  * survive that comparison are refused at build time. Groups got none of it,
  * because nobody had measured the surface.
@@ -29,8 +29,8 @@
  *     created from one that was already on the site.
  *   - Issue #209, the Critical that #211 would unblock. The deploy adopts any
  *     existing group it finds BY NAME and grants it Full Control, with no
- *     membership gate. The gate everyone reaches for — "adopt silently if we
- *     made it, fail closed if we did not" — cannot be written until a group
+ *     membership gate. The gate everyone reaches for ("adopt silently if we
+ *     made it, fail closed if we did not") cannot be written until a group
  *     can carry a mark that survives being written and read.
  *
  * SEPARATING WHAT IS DEPENDED ON FROM WHAT IS OBSERVED. G6 writes a long
@@ -48,17 +48,17 @@
  *
  * WHAT THIS TOUCHES. One site group, created and deleted by this probe under
  * a RUN-UNIQUE name it prints before doing anything. It touches no list, no
- * item, and no group it did not create — and if the name is somehow already
+ * item, and no group it did not create, and if the name is somehow already
  * taken it stops without writing or deleting. It needs ManagePermissions, so
  * a site owner.
  *
- * RUN 1 — 2026-08-13, one Microsoft 365 group-connected Team Site. Ten
+ * RUN 1 (2026-08-13), one Microsoft 365 group-connected Team Site. Ten
  * questions, ten answered.
  *
  *   ANSWERED AND SETTLED:
  *     G1, G2  a group Description round-trips BYTE-IDENTICAL, through both
  *             the create path and the MERGE path.
- *     G3      MERGE is PARTIAL — a field left out of the request is
+ *     G3      MERGE is PARTIAL: a field left out of the request is
  *             preserved. Confirmed non-vacuously: the flag the request did
  *             carry flipped in the same call.
  *     G4, G5  an ampersand and a run of two spaces BOTH survive. The
@@ -74,12 +74,12 @@
  *   AMBIGUOUS AFTER RUN 1, AND THE PROBE'S FAULT: G9 reported
  *   AutoAcceptRequestToJoinLeave sent true, read false, with the other
  *   three taking. It sent AllowRequestToJoinLeave FALSE in the same
- *   request — a contradictory pair, since a group cannot auto-accept join
- *   requests it does not accept — so it could not distinguish a lost write
+ *   request (a contradictory pair, since a group cannot auto-accept join
+ *   requests it does not accept), so it could not distinguish a lost write
  *   from a coerced dependent setting. G10 and G11 were added to settle
  *   that and the empty-description question.
  *
- * RUN 2 — 2026-08-14, same site. Twelve questions, twelve answered. Every
+ * RUN 2 (2026-08-14), same site. Twelve questions, twelve answered. Every
  * run-1 result reproduced identically, and both open questions closed:
  *
  *     G10     with AllowRequestToJoinLeave TRUE, AutoAccept TOOK. So run 1
@@ -88,12 +88,12 @@
  *             contradictory pair with HTTP 200 and then stores auto-accept
  *             as false. That silent correction is now refused at build
  *             time by `group_auto_accept_without_requests`, and G9 no
- *             longer compares that flag — it would report FAIL for correct
+ *             longer compares that flag. It would report FAIL for correct
  *             behaviour on every future run.
  *     G11     an EMPTY description is accepted and reads back "". The
  *             server's "cannot be null" does not extend to the empty
- *             string, so a mapping that omits `description:` — which the
- *             loader turns into "" — is known-good rather than unproven.
+ *             string, so a mapping that omits `description:` (which the
+ *             loader turns into "") is known-good rather than unproven.
  *
  * NOTHING IS OPEN. The file still runs end to end; re-confirming the
  * settled questions costs nothing and would catch a tenant-specific
@@ -119,7 +119,7 @@
 
   // CLEANUP deletes the probe's own list BEFORE the run, so every question
   // is answered by actually creating something rather than reporting
-  // "already present" from a previous run — which is much weaker evidence.
+  // "already present" from a previous run, which is much weaker evidence.
   //
   // It is destructive and needs CONFIRMED and ALLOW_WRITES as well. It only
   // ever touches the explicitly named probe-owned list or lists; it never
@@ -132,7 +132,7 @@
   // the field was the vector both times.
   const pageCtx = window._spPageContextInfo;
   if (!pageCtx) {
-    console.error('[FATAL] No _spPageContextInfo — paste this into a SharePoint page.');
+    console.error('[FATAL] No _spPageContextInfo. Paste this into a SharePoint page.');
     return;
   }
   const WEB = pageCtx.webAbsoluteUrl;
@@ -158,11 +158,11 @@
   // NOTE the contract, because getting it wrong has produced false verdicts
   // here twice: `body` is the PARSED payload whether or not the request
   // succeeded. SharePoint answers a 403 or a 429 with a JSON error object,
-  // so `body !== null` says the response was JSON — never that the call
+  // so `body !== null` says the response was JSON, never that the call
   // worked. Anything asking "did I actually read this?" must test `ok`.
   const readFailed = (r) => !r.ok || r.body === null;
 
-  // Was this request REFUSED — the server saying no to what was sent — or
+  // Was this request REFUSED (the server saying no to what was sent) or
   // did it merely fail? A negative control that cannot tell the difference
   // certifies the surface as observable on the strength of a throttle, and
   // every row it guards is then read as evidence.
@@ -170,7 +170,7 @@
   // Defined by what it EXCLUDES, because the tempting definition is wrong
   // here. "400 means bad request" is the HTTP convention and it is not what
   // this tenant does: every SharePoint refusal this project has recorded
-  // came back 500 —
+  // came back 500:
   //
   //   "To add an item to a document library, use SPFileCollection.Add()"
   //   "One or more column references are not allowed, because the columns
@@ -179,7 +179,7 @@
   //   "This field type does not support..."
   //
   // (analysis/checks/_structure.py, analysis/conditions.py, generators/
-  // jsgen.py — each dated and cited to a live run). A 400-only test would
+  // jsgen.py, each dated and cited to a live run). A 400-only test would
   // therefore have reported NOT ESTABLISHED for every negative control on a
   // tenant behaving exactly as recorded, which is the opposite failure and a
   // worse one: it would quietly retire the controls the stack's own evidence
@@ -220,7 +220,7 @@
   const resetList = async (title) => {
     if (!CLEANUP) return false;
     if (!ALLOW_WRITES) {
-      log('INFO', `CLEANUP is on but ALLOW_WRITES is false — not deleting '${title}'.`);
+      log('INFO', `CLEANUP is on but ALLOW_WRITES is false, so '${title}' is not deleted.`);
       return false;
     }
     const found = await spGet(`web/lists/getbytitle('${title}')`);
@@ -232,7 +232,7 @@
 
     // Items first. Recycling the list takes them with it, but doing this
     // explicitly still clears the data if the list itself cannot be
-    // removed — a locked or no-delete list would otherwise leave rows from
+    // removed. A locked or no-delete list would otherwise leave rows from
     // a previous run answering this run's questions.
     let digest = await getDigest();
     const items = await spGet(
@@ -279,7 +279,7 @@
       RESULTS.push({ id, question, outcome, evidence });
     }
     const level = outcome === 'PASS' ? 'OK' : outcome === 'FAIL' ? 'FAIL' : 'INFO';
-    log(level, `${id}: ${outcome} — ${question}`);
+    log(level, `${id}: ${outcome}. ${question}`);
     if (evidence) console.log(`      evidence: ${evidence}`);
   };
 
@@ -290,9 +290,9 @@
       if (r.evidence) console.log(`       ${r.evidence}`);
     }
     console.log('=================================================');
-    // PREFIX match, not equality. Outcomes carry their reason —
+    // PREFIX match, not equality. Outcomes carry their reason:
     // 'NOT ESTABLISHED (throttled)', 'NOT ESTABLISHED (matched 50, expected
-    // 60)', 'SHORT (50 of 60, HTTP 200)' — and an equality test counts every
+    // 60)', 'SHORT (50 of 60, HTTP 200)'. An equality test counts every
     // one of those as ANSWERED. A results block would then read "47 answered,
     // 0 NOT established" with unresolved rows visible one screen above it,
     // which is the summary lying by omission: the exact failure expect() was
@@ -309,14 +309,14 @@
 
   // Printed before any gate: a stale clipboard and a fix that did not
   // work produce identical transcripts otherwise.
-  log('INFO', 'probe revision 5a11e2a4 — quote this when reporting results.');
+  log('INFO', 'probe revision b1574d28. Quote this when reporting results.');
 
   // RUN-UNIQUE, and that is a safety property rather than tidiness.
   //
   // An earlier draft used a fixed name and deleted it before starting, to
   // guarantee the negative control had nothing to find. On a site where that
-  // name already existed — an interrupted run, or an administrator who
-  // happened to choose it — the probe would have destroyed a real group and
+  // name already existed (an interrupted run, or an administrator who
+  // happened to choose it), the probe would have destroyed a real group and
   // its grants before looking at it, while its own preamble promised it
   // touches no group it did not create. Review caught it; this is the fix.
   //
@@ -350,7 +350,7 @@
   expect('G11', 'Is an EMPTY description accepted?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
-    log('INFO', 'PLAN — nothing has been touched.');
+    log('INFO', 'PLAN: nothing has been touched.');
     log('INFO', `This probe would create the site group '${GROUP}', write and`);
     log('INFO', 'read back its Description several ways, then delete it.');
     log('INFO', 'Set CONFIRMED = true and ALLOW_WRITES = true to run it.');
@@ -389,7 +389,7 @@
     return;
   }
   // PASS on 404 ONLY. 401/403 are about WHO is asking and 408/429 about the
-  // moment — the harness's own isRefusal contract says so — and any of them
+  // moment (the harness's own isRefusal contract says so), and any of them
   // would otherwise certify the prerequisite that gives every comparison
   // below its meaning. A throttled request must not stand in for absence.
   if (absent.status !== 404) {
@@ -482,7 +482,7 @@
     { Description: MERGED }, MERGED);
 
   // ---- G3: is MERGE partial, or does omitting a field clear it? ---------
-  // Load-bearing for the shared-group design in #210: two families reconcile
+  // The shared-group design in #210 depends on this: two families reconcile
   // the same object, so whether an omitted field is preserved or wiped
   // decides what a second deploy does to the first one's settings.
   // The omitted-field MERGE must CHANGE something, or this question passes
@@ -516,7 +516,7 @@
           ? 'AllowRequestToJoinLeave did not flip, so this request did not take effect and "preserved" would prove nothing'
           : (got === MERGED
             ? 'the flag flipped AND the omitted Description survived, so MERGE is partial'
-            : `the flag flipped but the omitted Description became ${JSON.stringify(got)} — an omitted field is NOT preserved`));
+            : `the flag flipped but the omitted Description became ${JSON.stringify(got)}, so an omitted field is NOT preserved`));
     }
   }
 
@@ -586,7 +586,7 @@
       record('G9', 'Do the three independent membership flags read back as written by MERGE?',
         wrong9.length === 0 ? 'PASS' : 'FAIL',
         wrong9.length === 0
-          ? `all three took, so the reconcile path persists flags${coerced ? '; AutoAccept read false as G10 predicts, its prerequisite being off' : '; NOTE AutoAccept did NOT coerce this time, which contradicts G10 — report it'}`
+          ? `all three took, so the reconcile path persists flags${coerced ? '; AutoAccept read false as G10 predicts, its prerequisite being off' : '; NOTE AutoAccept did NOT coerce this time, which contradicts G10. Report it'}`
           : `did NOT take: ${wrong9.map((k) => `${k} sent ${independent[k]}, read ${back9.body[k]}`).join('; ')}`);
     }
   }
@@ -633,7 +633,7 @@
         took ? 'PASS' : 'FAIL',
         took
           ? 'with AllowRequestToJoinLeave TRUE the flag took, so G9 saw a dependent setting being coerced, not a lost write'
-          : 'the flag did not take even with its prerequisite on, so the reconcile path really does lose it — the deploy cannot trust a flag it writes');
+          : 'the flag did not take even with its prerequisite on, so the reconcile path really does lose it. The deploy cannot trust a flag it writes');
     }
   }
 
@@ -669,7 +669,7 @@
   log(removed.ok ? 'OK' : 'FAIL',
     removed.ok
       ? `Deleted '${GROUP}'.`
-      : `Could not delete '${GROUP}' (HTTP ${removed.status}) — remove it by hand.`);
+      : `Could not delete '${GROUP}' (HTTP ${removed.status}). Remove it by hand.`);
 
   report();
   console.log('');
@@ -677,7 +677,7 @@
   console.log('G1/G2 decide whether the deploy can gain a byte-compare read-back');
   console.log('of a group Description (AGENTS.md requires one; it has none today).');
   console.log('G3 decides what a second family deploying to the same site does to');
-  console.log("the first one's group settings — see #210.");
+  console.log("the first one's group settings (see #210).");
   console.log('G4/G5 say whether the list-note restrictions apply to groups too.');
   console.log('G8 decides whether #211, and the #209 adoption gate that depends');
   console.log('on it, are possible at all.');

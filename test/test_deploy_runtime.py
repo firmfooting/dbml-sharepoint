@@ -510,7 +510,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
         return { d: state };
       }
       // The single list ENUMERATION. This mock's fiction is "any list probe
-      // succeeds", which an enumeration cannot express — it would have to
+      // succeeds", which an enumeration cannot express, since it would have to
       // know the declared names. Refusing it exercises the documented
       // fallback in ensureKnownListTitles: enumeration unavailable, probe
       // per list. The fast path itself is NOT covered here.
@@ -562,7 +562,7 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       // field or view write under the same list. `[^/]*` rather than `[^']+`
       // for the title: odataName DOUBLES an apostrophe, so `[^']+` would miss
       // every list whose name has one and this mock would silently drop the
-      // write while answering 200 — see _LIST_WRITE_URL for the full note.
+      // write while answering 200; see _LIST_WRITE_URL for the full note.
       // IGNORE_DESCRIPTION_WRITES drops it on purpose instead: a write
       // SharePoint reports as 200 and discards, which is the only state in
       // which the read-back can be watched failing.
@@ -1638,7 +1638,7 @@ def _reader_harness(
             return respond({ d: null });
           }
           // The flagged group's own membership, keyed off the BY-ID form of
-          // the path so the 1.2 empty-group gate — which asks by name —
+          // the path so the 1.2 empty-group gate (which asks by name)
           // still reaches the adopted mock underneath and still sees empty.
           if (/sitegroups\(\d+\)\/users/.test(u)) {
             if (method === 'POST') {

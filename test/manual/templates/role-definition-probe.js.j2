@@ -1,6 +1,6 @@
 {# test/manual/templates/role-definition-probe.js.j2 #}
 /**
- * dbml-sharepoint PROBE — WHAT A CUSTOM PERMISSION LEVEL DOES ON THE WAY BACK
+ * dbml-sharepoint PROBE: WHAT A CUSTOM PERMISSION LEVEL DOES ON THE WAY BACK
  *
  * WHY THIS EXISTS. `templates/deploy/_security_principals.js.j2:12-74` probes
  * for a role definition by name, and when one already exists it MERGEs the
@@ -240,7 +240,7 @@
   expect('R9', 'Can the role assignments referencing a level be enumerated?');
 
   if (!CONFIRMED || !ALLOW_WRITES) {
-    log('INFO', 'PLAN — nothing has been touched.');
+    log('INFO', 'PLAN. Nothing has been touched.');
     log('INFO', `This probe would create the permission level '${LEVEL}', write and`);
     log('INFO', 'read back its Description several ways, read its bitmap back, read');
     log('INFO', "the web's existing role assignments, then delete the level.");

@@ -38,7 +38,7 @@
         {
           "elmType": "div",
           "attributes": { "class": "ms-fontColor-neutralSecondary ms-fontSize-12" },
-          "txtContent": "Record what was promised, by either side — promises are the thing people forget and stakeholders don't."
+          "txtContent": "Record what was promised, by either side. Promises are the thing people forget and stakeholders don't."
         }
       ]
     }
