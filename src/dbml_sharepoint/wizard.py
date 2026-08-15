@@ -785,14 +785,46 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
     return changed, applied
 
 
+def _is_setting_line(line: str, key: str) -> bool:
+    """Whether `line` assigns `key`, under `read_env_file`'s own rules."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return False
+    return stripped.partition("=")[0].strip() == key
+
+
+def _env_text_for_answer(text: str, reader: str | None) -> str:
+    """`text` with its reader line set to the answer actually given.
+
+    None means the question was never asked, so the file passes through
+    unchanged and the build's own guard still decides. Blank means the
+    operator was asked and said nobody, so the line is dropped rather than
+    left to enrol somebody on the next build.
+    """
+    if reader is None:
+        return text
+    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
+    kept = [line for line in text.splitlines() if not _is_setting_line(line, key)]
+    if reader:
+        kept.append(f"{key}={reader}")
+    return "\n".join(kept) + "\n" if kept else ""
+
+
 def _preserve_env_file(answers: Answers) -> None:
-    """Copy the consulted `dbml-sharepoint.env` into the new project.
+    """Copy the consulted `dbml-sharepoint.env` into the new project, with
+    the reader line rewritten to the answer actually given.
 
     The wizard reads it from the CURRENT directory, but every documented
-    rebuild changes into the project first, so without this a rebuild
-    silently drops the reader the first build enrolled and emits a
-    different bundle. Never overwrites: a template that ships its own
-    defaults keeps them.
+    rebuild changes into the project first, so without a copy the rebuild
+    drops the reader the first build enrolled.
+
+    Copying it UNCHANGED is worse than not copying at all. An operator who
+    declined the file's suggestion, or replaced it, would get a rebuild
+    that read the original and PERMANENTLY enrolled the account the Review
+    panel had just told them was not being used. Enrolment survives a
+    rollback, so that is not recoverable from the bundle.
+
+    Never overwrites: a template that ships its own defaults keeps them.
     """
     if answers.env_file is None:
         return
@@ -800,7 +832,9 @@ def _preserve_env_file(answers: Answers) -> None:
     destination = answers.destination / ENV_FILENAME
     if destination.exists() or not source.is_file():
         return
-    write_artifact(destination, source.read_text(encoding="utf-8"))
+    text = _env_text_for_answer(source.read_text(encoding="utf-8"), answers.reader)
+    if text:
+        write_artifact(destination, text)
 
 
 @dataclass(frozen=True)

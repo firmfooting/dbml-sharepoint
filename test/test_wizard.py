@@ -2712,3 +2712,60 @@ def test_the_wizard_copies_the_env_file_into_the_new_project(
     copied = destination / ENV_FILENAME
     assert copied.is_file()
     assert "svc-reporting@example.org" in copied.read_text(encoding="utf-8")
+
+
+def test_a_declined_reader_is_not_preserved_for_the_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pressing Enter declines the file's suggestion, and the copy must
+    agree with that answer.
+
+    Copying the source unchanged left the suggestion in the project, so a
+    later rebuild enrolled an account the Review panel had just reported
+    as nobody. Enrolment is PERMANENT and survives a rollback, so the
+    wizard must not leave that behind.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader=""), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+    copied = destination / ENV_FILENAME
+    if copied.exists():
+        assert "svc-reporting@example.org" not in copied.read_text(encoding="utf-8")
+
+
+def test_a_replaced_reader_is_preserved_instead_of_the_suggestion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Typing a different UPN overrides the file, and the copy must carry
+    the typed value so a rebuild enrols the same account as the first build.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-suggested@example.org")
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination, build="y", seed="n", reader="svc-chosen@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    text = (destination / ENV_FILENAME).read_text(encoding="utf-8")
+    assert "svc-chosen@example.org" in text
+    assert "svc-suggested@example.org" not in text
+
+
+def test_preserving_the_env_file_keeps_lines_it_does_not_own() -> None:
+    """Only the reader assignment is rewritten; comments and blank lines
+    survive, so a file that later carries a second key is not truncated."""
+    source = "# defaults\n\nDBMLSP_ENTERPRISE_READER=svc-old@example.org\n"
+    rewritten = wizard._env_text_for_answer(source, "svc-new@example.org")
+    assert "# defaults" in rewritten
+    assert "svc-old@example.org" not in rewritten
+    assert "DBMLSP_ENTERPRISE_READER=svc-new@example.org" in rewritten
