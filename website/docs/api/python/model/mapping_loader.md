@@ -13,7 +13,7 @@ Generic core loader. Resolves relative config paths
 (enum_sources values, retention_policies_source) relative to the mapping
 YAML's own directory, so the deployer can be invoked from any working
 directory. Project-specific config lives under `extensions: {<name>: {...}}`
-and is passed through untyped as `MappingBundle.extension_configs` — this
+and is passed through untyped as `MappingBundle.extension_configs`. This
 module knows nothing about what any particular extension's block means, and
 selection by name is deferred to `MappingBundle.extension_config_for` so it
 honors the RESOLVED extension (a CLI `--extension` override may differ from

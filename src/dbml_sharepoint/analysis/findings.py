@@ -439,7 +439,7 @@ class FindingCode(StrEnum):
     # and `explain multi_value_...` should list them together with the six
     # refusals that already exist.
     #
-    # They come in a set of three because the trap has three faces, and all
+    # They come in a set of three because the defect has three faces, and all
     # three are the same trap: one authored word meaning two things depending
     # on a column's arity or a value's spelling.
     MULTI_VALUE_CONDITION_OPERATOR_UNSUPPORTED = (

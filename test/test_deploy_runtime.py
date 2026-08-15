@@ -2,9 +2,9 @@
 """Execute the generated deploy.js against a mock SharePoint.
 
 The golden-file test proves deploy.js does not CHANGE; it cannot prove it
-RUNS. A whole class of defect lives in that gap — a caller that omits a
+RUNS. A whole class of defect lives in that gap (a caller that omits a
 key another function requires, a comparison against `undefined`, a
-sentinel that reads as a real value. One such bug shipped in the golden
+sentinel that reads as a real value). One such bug shipped in the golden
 fixture and was asserted as correct: the synthetic Title patch carried
 none of the declared-formula keys, so every field reconcile treated it as
 managed and aborted the phase on every list, on every run.
@@ -96,7 +96,7 @@ _HARNESS = textwrap.dedent("""
 def test_deploy_js_runs_without_throwing() -> None:
     """The generated script must reach a summary against a healthy site.
 
-    It need not succeed at provisioning — the mock is too thin for that —
+    It need not succeed at provisioning (the mock is too thin for that),
     but a thrown exception or an abort carrying schema errors means the
     script is broken for every operator on every site.
     """
@@ -124,7 +124,7 @@ def test_deploy_js_runs_without_throwing() -> None:
 def test_the_builtin_title_column_is_never_sent_a_formula() -> None:
     """Title is not a declared field, so the tool does not own its
     formulas. The shipped bug MERGEd an empty ClientValidationMessage onto
-    it before aborting — an unrequested write to a built-in column."""
+    it before aborting, an unrequested write to a built-in column."""
     script = _HARNESS + "\n" + _deploy_js().replace(
         "})();", "}))().then(() => console.log('__CALLS__' + JSON.stringify(globalThis.__calls)))",
         ).replace("(async () => {", "((async () => {", 1)
@@ -146,7 +146,7 @@ def test_the_builtin_title_column_is_never_sent_a_formula() -> None:
 
 # An ADOPTED site: the lists already exist and the built-in Title is
 # SEALED. The harness above answers every field probe as absent, so the
-# adoption path — the one where declared shapes are actually compared —
+# adoption path (the one where declared shapes are actually compared)
 # has never executed in a test. That is the gap the synthetic-Title bug
 # shipped through.
 _ADOPTED_HARNESS = textwrap.dedent(r"""
@@ -665,7 +665,7 @@ def _run_deploy(harness: str, tail: str) -> str:
 def test_a_sealed_builtin_title_does_not_abort_every_list() -> None:
     """`assertFieldImmutableShape` throws when a field is sealed and
     `field.seal` is falsy. Both synthetic Title objects omitted the key, so
-    against a site whose Title is sealed EVERY list failed preflight — and
+    against a site whose Title is sealed EVERY list failed preflight, and
     the tool could not self-heal, because the maintenance unseal walks
     declared columns only and Title is not one. A site that ever sealed
     Title was permanently un-deployable."""
@@ -717,7 +717,7 @@ def test_the_adopted_run_reaches_the_write_phases() -> None:
     probe as malformed, so the run aborted in the read-only preflight: no
     phase past 1.1 had ever executed in a test, which is how a bug in the
     Phase 2.1 field reconcile shipped in a green suite. If a future change
-    quietly shortens this run, the coverage disappears silently — so the
+    quietly shortens this run, the coverage disappears silently, so the
     reach is asserted rather than assumed."""
     output = _run_deploy(
         _ADOPTED_HARNESS,
@@ -770,7 +770,7 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
 # `web/lists/getbytitle('X')/fields/getbyinternalnameortitle('Y')` and
 # routinely carries a Description of its own (every column with a note has
 # one), so a filter that only asks for `web/lists` in the URL counts column
-# descriptions as list writes — and then no run can ever be observed NOT
+# descriptions as list writes, and then no run can ever be observed NOT
 # writing a list description, which is half of what these tests measure.
 #
 # The title is matched as `[^/]*`, NOT `[^']+` and NOT `.*`, and both of the
@@ -779,7 +779,7 @@ def test_protection_restores_only_the_titles_prepare_unsealed(tmp_path: Path) ->
 #   [^']+  cannot match an OData-escaped apostrophe. `odataName`
 #          (`_site_guard.js.j2`) DOUBLES `'` and encodeURIComponent leaves it
 #          alone, so a list called `O'Brien Register` arrives as
-#          getbytitle('O''Brien%20Register') — no match, so the idempotence
+#          getbytitle('O''Brien%20Register'), no match, so the idempotence
 #          test observes zero writes for the happiest of reasons and passes.
 #   .*     matches too much: greedy backtracking lets it swallow
 #          `X')/fields/getbyinternalnameortitle('Y` and call a FIELD write a
@@ -836,13 +836,13 @@ def _run_adopted_deploy(
     already aborts on `phase-1-schema-errors` (the mock is too thin for its
     renamed and indexed columns). On that base `summary['aborted']` is truthy
     no matter what the description does, and the read-back test could not
-    fail — which is worse than not having it.
+    fail, which is worse than not having it.
 
     `list_description` is what the site HOLDS before the run: one string for
     every list, or a per-title mapping. `ignore_description_writes` makes the
-    mock accept the MERGE with a 200 and keep serving the old value — a
+    mock accept the MERGE with a 200 and keep serving the old value (a
     silently discarded write, which is the only state in which the read-back
-    can be watched failing.
+    can be watched failing).
 
     `prefix` reaches the mapping's list-title prefix, which is how a caller
     deploys to a list whose title needs OData escaping.
@@ -971,7 +971,7 @@ def test_the_list_write_matcher_survives_an_apostrophe() -> None:
     `odataName` doubles an apostrophe and encodeURIComponent leaves it alone,
     so a title like `O'Brien Register` reaches the wire as
     getbytitle('O''Brien%20Register'). A `[^']+` title pattern stops at the
-    first quote and matches nothing — which does not look like a broken
+    first quote and matches nothing, which does not look like a broken
     matcher, it looks like a run that correctly wrote nothing, and the
     idempotence test passes for that reason forever.
 
@@ -1006,7 +1006,7 @@ def test_a_description_is_reconciled_on_a_list_whose_title_needs_escaping(
     script builds the URL, the mock recognises it as a list write and applies
     it, the read-back sees it, and the harness's own `listOf` keys the state
     by the right list. Any one of those regressing to a `[^']+` title pattern
-    turns this red — where reasoning about it would just leave the other
+    turns this red, where reasoning about it would just leave the other
     tests quietly passing on a name no fixture happens to use.
     """
     declared = _declared_list_descriptions(tmp_path, _APOSTROPHE_PREFIX)
@@ -1025,7 +1025,7 @@ def test_a_description_is_reconciled_on_a_list_whose_title_needs_escaping(
 
 
 # The adopted site again, but every field CREATION is refused. STRUCTURE
-# then records an error per column and takes its early return — the
+# then records an error per column and takes its early return, the
 # designed abort that skips ACL work on a broken schema. It also skips
 # PROTECTION, which is where a Title unsealed at 1.4 used to be handed
 # back. Only creation is refused: the 1.4 MERGE that unseals Title is a
@@ -1085,7 +1085,7 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
 
     PREPARE unseals an already-sealed built-in Title so the write phases
     can patch it, and PROTECTION hands it back. Every abort between the
-    two — schema errors, lookup errors, enrolment errors — returns before
+    two (schema errors, lookup errors, enrolment errors) returns before
     PROTECTION, so the run ended with a column someone had deliberately
     sealed left open. Restoration must therefore be on the exit path, not
     on the success path."""
@@ -1099,7 +1099,7 @@ def test_a_run_that_aborts_after_unsealing_a_title_reseals_it() -> None:
     )
     assert result_line is not None, f"deploy.js did not return a summary:\n{output[-3000:]}"
     summary = json.loads(result_line.removeprefix("__RESULT__"))
-    # Without this the test could pass by never aborting at all — and a
+    # Without this the test could pass by never aborting at all, and a
     # run that reaches PROTECTION re-seals for the ordinary reason.
     assert summary.get("aborted"), (
         f"the run did not abort, so it never tested the abort path: {summary}"
@@ -1165,7 +1165,7 @@ def test_a_declared_run_completes_every_phase_cleanly(tmp_path: Path) -> None:
     """The end-to-end guard, and the one that gives the others their value.
 
     The original mock aborted in the read-only preflight, so no phase past
-    1.1 had ever executed in a test — which is how a bug in the Phase 2.1
+    1.1 had ever executed in a test, which is how a bug in the Phase 2.1
     field reconcile shipped in a green suite. This run adopts an existing
     site, unseals, creates, reconciles declared formulas, seals and seeds,
     and must finish with no errors and no abort. If a future change
@@ -1201,8 +1201,8 @@ def test_generated_deploy_js_carries_no_control_characters() -> None:
     """deploy.js is pasted into a browser console by hand.
 
     A stray control character survives templating, the golden file and
-    every text-mode diff — git reports the file as binary and shows
-    nothing. Writing this fix, a literal NUL reached a template's
+    every text-mode diff (git reports the file as binary and shows
+    nothing). Writing this fix, a literal NUL reached a template's
     executable code from an editing tool and rode into the generated
     script; the suite was green. Cheap to assert, invisible otherwise.
     """
@@ -1225,7 +1225,7 @@ def _declared_pack(
     declared-against-live would then be comparing two different fixtures.
 
     `prefix` is the only knob that puts an arbitrary character into a LIST
-    TITLE — the rest of the title is the DBML table name, which the parser
+    TITLE. The rest of the title is the DBML table name, which the parser
     constrains. It is what lets a test deploy to a list whose title needs
     OData escaping.
     """
@@ -1250,8 +1250,8 @@ def _declared_deploy_js(
     `section` is whatever extra mapping the test needs. It is dedented, so a
     caller may pass a triple-quoted block indented to match its surrounding
     code. `blocks()` rather than `with_tail()` because every caller opens a
-    TOP-LEVEL section here — nothing nests under the entity, so no
-    indentation is load-bearing and the two agree.
+    TOP-LEVEL section here. Nothing nests under the entity, so no
+    indentation matters and the two agree.
     """
     from dbml_sharepoint.generators.jsgen import generate_deploy_js
     from dbml_sharepoint.model.release import load_release
@@ -1274,7 +1274,7 @@ def test_overwriting_a_declared_formula_logs_the_prior_value(tmp_path: Path) -> 
     """`before` was read, compared and discarded; on success nothing was
     logged, so a deploy that removed or rewrote an existing formula left no
     record of what had been there. Under `reconcile: exact` an undeclared
-    column's formula is cleared outright — exactly the case where the prior
+    column's formula is cleared outright, exactly the case where the prior
     value is the only thing anyone would want back."""
     harness = _ADOPTED_HARNESS.replace(
         "ClientValidationFormula: f.__cvf == null ? null : f.__cvf,",
@@ -1349,7 +1349,7 @@ def test_formula_reconcile_fails_when_client_message_is_not_cleared(tmp_path: Pa
 
 def test_the_aggregations_comparison_survives_sharepoints_readback_spacing() -> None:
     """SharePoint returns `<FieldRef Name="X" Type="Sum" />` for the
-    `...Type="Sum"/>` it was sent — verified against a live tenant on
+    `...Type="Sum"/>` it was sent, verified against a live tenant on
     2026-07-29 (test/manual/view-aggregations-probe.js).
 
     Compared raw, a perfectly correct totals view drifts on EVERY redeploy:
@@ -1400,7 +1400,7 @@ def test_no_aggregations_comparison_is_made_raw() -> None:
     script = _deploy_js()
     raw = re.findall(r"(?<!normalizeViewQuery\()\b\w+\.Aggregations\s*[!=]==", script)
     assert not raw, f"Aggregations compared without the normaliser: {raw}"
-    # AggregationsStatus is a plain enum ('On'/'Off') and IS compared raw —
+    # AggregationsStatus is a plain enum ('On'/'Off') and IS compared raw,
     # asserted so the regex above cannot be "fixed" by wrapping it too.
     assert "AggregationsStatus !== 'On'" in script
 
@@ -1410,18 +1410,18 @@ def test_a_first_deploy_probes_no_absent_group_or_field_by_name() -> None:
     """A clean run must leave a clean console.
 
     The browser logs a failed request itself, before the script sees the
-    response, and nothing in JavaScript can suppress that — so a handled
+    response, and nothing in JavaScript can suppress that, so a handled
     404 still paints red and an operator reads it as a failure. The only
     fix is not to make the request: enumerate once, answer absence
     locally. Lists and views already did; site groups and the field probe
     did not, and a live first deploy showed four red lines because of it.
 
     The harness answers every enumeration as EMPTY, which is the state of
-    a brand-new site — so any by-name probe here is one an operator would
+    a brand-new site, so any by-name probe here is one an operator would
     have seen painted red.
 
-    Covers the two surfaces this harness reaches. The third — a list's
-    role assignments by principal id — is asserted structurally instead,
+    Covers the two surfaces this harness reaches. The third (a list's
+    role assignments by principal id) is asserted structurally instead,
     because the mock's principal resolution never returns an Id and so the
     run never reaches the ACL phase's role-assignment calls. A clause for
     it here would pass while testing nothing.
@@ -1521,14 +1521,14 @@ def test_a_refused_clear_still_retries_the_client_properties() -> None:
 # === Enterprise reader enrolment (the reader_enrolment phase) ===
 #
 # This phase grants Read on a customer's register to a named account, and
-# the membership is PERMANENT — unlike the operator's, which the run
+# the membership is PERMANENT, unlike the operator's, which the run
 # removes on the way out. Two resolutions must never be enrolled: a
 # security GROUP (everyone in it gets Read) and one of SharePoint's
 # everyone-claims (every user in the tenant gets Read). Neither is visible
 # afterwards, because the deploy reads back byte-identical either way.
 #
 # So every test below RUNS the emitted script and asserts on what the run
-# DOES — did it abort, and above all was a membership POST ever issued.
+# DOES (did it abort, and above all was a membership POST ever issued).
 # `assert "PrincipalType !== 1" in js` would pass with the guard sitting in
 # a comment; "no POST to sitegroups(N)/users happened" cannot.
 
@@ -1536,7 +1536,7 @@ _READER_ADDRESS = "svc-reporting@example.org"
 
 # A well-formed resolution of _READER_ADDRESS. Every refusal test below
 # starts from this and varies exactly ONE attribute, so the guard under
-# test is the only one that can fire — otherwise deleting it would leave
+# test is the only one that can fire. Otherwise deleting it would leave
 # the test green for a neighbouring reason and prove nothing.
 _RESOLVED_USER: dict[str, Any] = {
     "Id": 42,
@@ -1579,7 +1579,7 @@ def _reader_harness(
 ) -> str:
     """`_ADOPTED_HARNESS` plus the two surfaces the reader phase touches.
 
-    `ensureuser` answers `ensure_user` verbatim — that is the whole point of
+    `ensureuser` answers `ensure_user` verbatim. That is the whole point of
     the harness, since what a tenant resolves an address to is exactly what
     the guards have to judge. The flagged group's membership is real state:
     the POST appends to it and the verification re-read sees the result, so
@@ -1597,7 +1597,7 @@ def _reader_harness(
     `member_pages` serves the membership across SEVERAL OData pages, each
     but the last carrying a `__next`. A group whose membership arrives in
     one page cannot distinguish a gate that reads every page from one that
-    reads the first and stops — and the second is a gate that a large
+    reads the first and stops, and the second is a gate that a large
     group defeats simply by being large. `members=[...]` is the one-page
     case, and is exactly `member_pages=[[...]]`.
     """
@@ -1741,7 +1741,7 @@ def _reader_errors(summary: dict[str, Any]) -> list[Any]:
 @pytest.mark.skipif(NODE is None, reason="node is not installed")
 def test_a_security_group_is_refused_as_an_enterprise_reader() -> None:
     """Microsoft Learn: PrincipalType is None 0, User 1, DistributionList 2,
-    SecurityGroup 4, SharePointGroup 8, and it carries [Flags] — so the
+    SecurityGroup 4, SharePointGroup 8, and it carries [Flags], so the
     check is strict equality to 1, never a bitwise AND.
 
     `ensureuser` resolves a security group happily. Enrolling one would hand
@@ -1771,7 +1771,7 @@ def test_the_everyone_claim_is_refused_even_though_it_types_as_a_user() -> None:
 
     On the one tenant this has been measured on (2026-08-12, group B of
     `test/manual/enterprise-reader-probe.js`) it came back typed 4, which
-    the strict type check refuses by itself — so the needle is belt and
+    the strict type check refuses by itself, so the needle is belt and
     braces behind that check, not the thing holding the door. This test
     hands it PrincipalType 1 anyway, because ONE TENANT IS ONE DATA POINT
     and the needle exists for the tenant that types it differently. That is
@@ -1779,7 +1779,7 @@ def test_the_everyone_claim_is_refused_even_though_it_types_as_a_user() -> None:
     failing.
 
     The payload keeps the matching Email deliberately, so neither the type
-    check nor the identity check can be what refuses it — the claims check
+    check nor the identity check can be what refuses it. The claims check
     is on its own here, which is the only way removing it can be watched
     failing.
     """
@@ -1799,7 +1799,7 @@ def test_a_mismatched_identity_is_refused() -> None:
     """`ensureuser` resolving something other than what was asked for is the
     quiet failure: the deploy succeeds and the wrong account holds Read.
 
-    A real user, correctly typed, with a real login — only the address
+    A real user, correctly typed, with a real login. Only the address
     differs from the one the build asked for.
     """
     summary, calls, _ = _run_reader_deploy({
@@ -1843,8 +1843,8 @@ def test_an_alias_mailbox_still_matches_the_requested_upn() -> None:
 
     An account whose mailbox address differs from its UPN is ordinary, and
     refusing it would send an operator looking for a fault that is not
-    there. The account here is the right one — its claims login ends in the
-    requested UPN — so it must be enrolled, not refused.
+    there. The account here is the right one (its claims login ends in the
+    requested UPN), so it must be enrolled, not refused.
     """
     summary, calls, _ = _run_reader_deploy({
         **_RESOLVED_USER, "Email": "svc.reporting.alias@example.org",
@@ -1859,7 +1859,7 @@ def test_an_alias_mailbox_still_matches_the_requested_upn() -> None:
 def test_a_membership_that_does_not_read_back_aborts() -> None:
     """The house rule: anything that writes reads back and verifies.
 
-    SharePoint answering 200 is not evidence the membership exists — the
+    SharePoint answering 200 is not evidence the membership exists. The
     harness accepts the POST and drops it, which is what a silently refused
     write looks like from the script's side. Reporting that as success is
     worse than failing, because the operator stops looking.
@@ -1891,13 +1891,13 @@ def test_an_unexpected_member_aborts_the_run_and_is_never_removed() -> None:
     This replaced an INFO line that let the run continue, and the case that
     forced the change is mundane: enrol a mistyped-but-valid address, notice,
     redeploy with the right one, and BOTH accounts hold Read on every list
-    this bundle provisions — permanently, since nothing here removes anyone.
+    this bundle provisions, permanently, since nothing here removes anyone.
     The only trace was one INFO line in a run that reported success.
 
     Three things are asserted, and the ORDER matters. The damage is the
     grant, so "nothing was POSTed" comes first: deleting the gate must fail
     on a second reader having been enrolled, not on a summary key. Then the
-    abort. Then, still, that nobody was removed — that half of the old
+    abort. Then, still, that nobody was removed. That half of the old
     behaviour is unchanged and this is the test pinning it. A gate that
     "fixed" the problem by evicting the stranger would pass the first two
     assertions and be a far worse tool.
@@ -1931,7 +1931,7 @@ def test_an_unexpected_member_on_a_later_page_still_aborts() -> None:
 
     SharePoint pages `sitegroups(N)/users` and hands back a `__next`. A gate
     that stopped at page one would be defeated by the group simply being
-    big — and it would look like it worked, because the small groups every
+    big, and it would look like it worked, because the small groups every
     test uses fit in one page. Page one here is EMPTY and the stranger is
     alone on page two, so a first-page-only read sees a group with no
     members at all and enrols straight past them.
@@ -1951,7 +1951,7 @@ def test_an_unexpected_member_on_a_later_page_still_aborts() -> None:
 def test_the_named_reader_plus_a_stranger_still_aborts() -> None:
     """The named account already being a member does not excuse the other one.
 
-    Ordering guard: the idempotence check ("already a member — skip") must
+    Ordering guard: the idempotence check ("already a member, skip") must
     not run before the gate, or the very redeploy that follows a mistyped
     address would sail through, which is the exact sequence this feature
     exists to catch.
@@ -3065,13 +3065,13 @@ def test_no_reader_no_enrolment_code() -> None:
     """Opt-in: the code path must not exist unless asked for.
 
     Absence, asserted on the emitted text, is the one thing a text
-    assertion states exactly — a guard that is present but unreachable is
+    assertion states exactly. A guard that is present but unreachable is
     the failure mode this file avoids elsewhere; a call site that is not
     emitted at all cannot run.
     """
     js = _deploy_js()
     assert "ensureuser" not in js
     assert f"Starting Phase {pn('reader_enrolment')}" not in js
-    # And the same mapping, WITH a reader, does emit it — otherwise the two
+    # And the same mapping, WITH a reader, does emit it. Otherwise the two
     # assertions above would also hold for a template that never works.
     assert "ensureuser" in _reader_deploy_js()

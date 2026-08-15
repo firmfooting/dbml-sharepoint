@@ -23,8 +23,8 @@ from dbml_sharepoint.model.parser import EnumDef, Schema, Table
 class ValidationContext:
     """Schema, mapping, and the indexes over them that checks share.
 
-    Construct with :meth:`build` rather than by hand — the indexes must
-    agree with each other.
+    Construct with :meth:`build` rather than by hand, because the indexes
+    must agree with each other.
     """
 
     schema: Schema
@@ -41,7 +41,7 @@ class ValidationContext:
     cross_site_pairs: set[tuple[str, str]] = field(default_factory=set)
     # {entity: calculated column names}. Derived once here rather than in
     # each check, so no two of them can disagree about what "calculated"
-    # means — which is the whole point of this object.
+    # means, which is the whole point of this object.
     calculated_by_entity: dict[str, set[str]] = field(default_factory=dict)
     # Effective SharePoint indexes declared by the schema: bare DBML
     # indexes plus the implicit index SharePoint creates for a supported
@@ -101,7 +101,7 @@ class ValidationContext:
         }
         # A lookup's picker enumerates its target list, and past the 5,000-item
         # threshold that enumeration is refused unless the displayed column is
-        # indexed — so this index is not optional and it spends a real slot.
+        # indexed, so this index is not optional and it spends a real slot.
         # Folded in HERE rather than checked separately so the existing
         # 20-index ceiling counts it: a schema declaring twenty and needing a
         # twenty-first fails at validate time, before anything is deployed.

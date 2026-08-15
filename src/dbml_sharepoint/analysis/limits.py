@@ -9,7 +9,7 @@ dozen places and hoping.
 
 That shape fails in the direction this project cares about most. A message
 saying "SharePoint's limit is 1024" beside a check that now tests 2048 is not a
-crash — it is a build that passes, a deploy that verifies, and an operator told
+crash. It is a build that passes, a deploy that verifies, and an operator told
 a number that is not the one being enforced. Nothing downstream can see it.
 
 So: the number lives here, and every enforcement site and every sentence that
@@ -47,7 +47,7 @@ one-way dependency rule in AGENTS.md.
 MAX_DISPLAY_TITLE = 255
 
 #: SharePoint's bound on a field's INTERNAL name. A different surface from
-#: `MAX_DISPLAY_TITLE` — internal names are what formulas and `[$Field]`
+#: `MAX_DISPLAY_TITLE`. Internal names are what formulas and `[$Field]`
 #: references resolve against, and they are immutable after creation.
 MAX_INTERNAL_NAME = 32
 
@@ -55,7 +55,7 @@ MAX_INTERNAL_NAME = 32
 #: before it becomes the SharePoint field Description.
 #:
 #: A THIRD 255, and not the display-title one: this is the Description
-#: property, not the Title. Truncation rather than refusal is deliberate — a
+#: property, not the Title. Truncation rather than refusal is deliberate. A
 #: note is documentation, so losing its tail is better than failing a build.
 MAX_FIELD_DESCRIPTION = 255
 
@@ -79,8 +79,8 @@ MAX_FIELD_DESCRIPTION = 255
 #: here; SP.Group.Description is a different surface and was measured
 #: separately.
 #:
-#: An EMPTY description IS accepted, and reads back `""` — MEASURED
-#: 2026-08-14. The server's "cannot be null" does not extend to the empty
+#: An EMPTY description IS accepted, and reads back `""` (MEASURED
+#: 2026-08-14). The server's "cannot be null" does not extend to the empty
 #: string, so a mapping that omits `description:`, which `mapping_loader`
 #: turns into `""`, is known-good rather than merely untested.
 #:
@@ -125,7 +125,7 @@ MAX_TEXT_FIELD_LENGTH = 255
 #: The practical calculated-column formula ceiling.
 #:
 #: Widely reported as the limit of the Lists UI formula box, but NOT documented
-#: by Microsoft for SharePoint — the documented 1000-character formula limit
+#: by Microsoft for SharePoint. The documented 1000-character formula limit
 #: belongs to Dataverse, which is a different product with different rules (the
 #: same confusion once had this project believing SharePoint forbade
 #: calc-on-calc chains, which it permits). Conservative, so it cannot pass a
@@ -139,11 +139,11 @@ MAX_CALCULATED_FORMULA = 1024
 #: 1023, NOT the 1024 beside it, and the odd one out for a documented reason.
 #: MICROSOFT'S OWN TWO PAGES FOR THE SAME LIST PROPERTY DISAGREE BY ONE:
 #:
-#:   `List.ValidationFormula` (CSOM) — "Its length must be equal to or less
+#:   `List.ValidationFormula` (CSOM), "Its length must be equal to or less
 #:   than 1023."
 #:   https://learn.microsoft.com/previous-versions/office/sharepoint-csom/ee541013(v=office.15)
 #:
-#:   `SPList.ValidationFormula` (server OM) — ArgumentException, "The string
+#:   `SPList.ValidationFormula` (server OM), ArgumentException, "The string
 #:   is too long. The maximum length of a validation formula string is 1024."
 #:   https://learn.microsoft.com/previous-versions/office/sharepoint-server/ee571123(v=office.15)
 #:
@@ -154,7 +154,7 @@ MAX_CALCULATED_FORMULA = 1024
 #: being wrong in the other is a paste that fails against a live site.
 #:
 #: This project enforced 1024 for every validation surface until the number
-#: was collected here and could be looked up at all — so a 1024-character
+#: was collected here and could be looked up at all, so a 1024-character
 #: formula built clean and would have been refused when the deploy wrote the
 #: list. Every check reads `> MAX_VALIDATION_FORMULA`, so 1023 is the last
 #: accepted length and 1024 is refused; both directions are pinned by
@@ -162,7 +162,7 @@ MAX_CALCULATED_FORMULA = 1024
 #: its one-over twin.
 #:
 #: THE COLUMN-LEVEL FORMULA IS NOT DOCUMENTED AT ALL. Neither
-#: `Field.ValidationFormula` page states a length — the CSOM one documents
+#: `Field.ValidationFormula` page states a length. The CSOM one documents
 #: only an SPException for an unsupported `FieldTypeKind`. It BORROWS this
 #: bound, deliberately and on the same reasoning as `MAX_CALCULATED_FORMULA`:
 #: an undocumented ceiling fails closed at the tightest number anything
@@ -171,16 +171,16 @@ MAX_CALCULATED_FORMULA = 1024
 #: list-level page.
 MAX_VALIDATION_FORMULA = 1_023
 
-#: The ceiling on a `ValidationMessage` — the text an author writes to explain
+#: The ceiling on a `ValidationMessage`, the text an author writes to explain
 #: a refused save. A separate property from the formula, which SharePoint
 #: stores and renders on its own, and DOCUMENTED at 1024 on both surfaces this
 #: tool writes:
 #:
-#:   `Field.ValidationMessage` (CSOM) — "Its length must be equal to or less
+#:   `Field.ValidationMessage` (CSOM), "Its length must be equal to or less
 #:   than 1024."
 #:   https://learn.microsoft.com/previous-versions/office/sharepoint-csom/ee536718(v=office.15)
 #:
-#:   `SPList.ValidationMessage` (server OM) — ArgumentException, "The maximum
+#:   `SPList.ValidationMessage` (server OM), ArgumentException, "The maximum
 #:   length of a validation message string is 1024."
 #:   https://learn.microsoft.com/previous-versions/office/sharepoint-server/ee556408(v=office.15)
 #:
@@ -202,7 +202,7 @@ MAX_LIST_INDEXES = 20
 #: The count this tool can see is a FLOOR, not a total. SharePoint creates
 #: indexes on its own: opening a modern view sorted on an unindexed column
 #: produces one marked "(Automatically created)" that consumes a real slot, and
-#: nothing reachable from script reports the true number — the only place it
+#: nothing reachable from script reports the true number. The only place it
 #: exists is the "You have created N of maximum 20 indices on this list" line
 #: on IndexedColumns.aspx. So a schema that validates at exactly
 #: `MAX_LIST_INDEXES` can still hit 21 in production, and the headroom below is
@@ -227,7 +227,7 @@ MAX_VIEW_ROW_LIMIT = 5000
 
 #: SharePoint Online's list view threshold. Microsoft states it CANNOT be
 #: changed for SharePoint, and that the effective number "is not always 5,000"
-#: because it varies with the site and database activity — so this is the
+#: because it varies with the site and database activity, so this is the
 #: documented figure, not a precise cutoff.
 #:
 #: The consequence is worse than an error, which is why it is worth warning

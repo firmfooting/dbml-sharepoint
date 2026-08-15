@@ -567,8 +567,8 @@ def _manifest_for(**sections: Unpack[MappingSections]) -> str:
 def test_manifest_reports_a_declaration_on_a_deferred_lookup() -> None:
     """The sections iterated fields_phase1 only, while jsgen puts the same
     keys on phase2_lookups and deploy.js.txt writes them. So a declaration on a
-    self-referencing lookup deployed and the review artefact denied it —
-    the inverse of the silent-drop bug, and just as misleading."""
+    self-referencing lookup deployed and the review artefact denied it, the
+    inverse of the silent-drop bug, and just as misleading."""
     md = _manifest_for(form_visibility={
         "Escalation": EntitySection(
             reconcile="declared",
@@ -614,7 +614,7 @@ def test_manifest_covers_only_the_lists_this_role_deploys(tmp_path: Path) -> Non
     script, so it must describe THIS build and no other.
 
     `schema_json` is already filtered to the target `site_role`, but several
-    inventories iterated `bundle.mapping` directly instead — so a build for
+    inventories iterated `bundle.mapping` directly instead, so a build for
     role `default` announced validation rules, retirements, reconcile modes
     and polymorphic columns on lists that appear nowhere in its own
     `deploy.js.txt`. Not a deploy defect; the manifest-disagrees-with-behaviour
@@ -704,7 +704,7 @@ def test_manifest_retention_table_covers_only_this_role() -> None:
     """The retention table is the same leak, one section further down, and
     its keys are the awkward case: `list_defaults` is authored loosely, so
     some name the entity and some the prefixed list title. Both forms must
-    resolve — and a key naming no declared entity at all must SURVIVE the
+    resolve, and a key naming no declared entity at all must SURVIVE the
     filter, because that is a typo the operator needs to see rather than a
     role leak to hide."""
     schema = make_schema(
@@ -748,7 +748,7 @@ def test_manifest_retention_table_covers_only_this_role() -> None:
 
 def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
     """The operator must be able to see, from the manifest alone, which
-    columns are retired and why — retirement is a silent mutation of the
+    columns are retired and why. Retirement is a silent mutation of the
     author's own declarations.
 
     Stays on the filesystem: the " (retired)" display title asserted below is
@@ -799,7 +799,7 @@ def test_manifest_lists_retired_columns(tmp_path: Path) -> None:
 
 
 def test_manifest_omits_retired_section_when_nothing_is_retired() -> None:
-    """Absent entirely, not an empty table — the manifest is read by
+    """Absent entirely, not an empty table. The manifest is read by
     operators, not diffed by machines."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -819,7 +819,7 @@ def test_manifest_omits_retired_section_when_nothing_is_retired() -> None:
 
 def test_manifest_prints_resolved_view_fields_with_set_footnote(tmp_path: Path) -> None:
     """A view declared with "@setname" must still show its RESOLVED columns
-    in the manifest, plus which sets produced them — the operator reviews the
+    in the manifest, plus which sets produced them. The operator reviews the
     manifest, not the mapping, and nothing may hide behind an indirection.
 
     Stays on the filesystem: "@setname" is resolved by the LOADER into a flat

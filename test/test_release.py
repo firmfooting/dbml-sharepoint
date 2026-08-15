@@ -28,7 +28,7 @@ def test_snapshot_hashes_returns_sha256_for_each_path() -> None:
 def test_release_unknown_keys_are_rejected(tmp_path: Path) -> None:
     """release.yaml was read key-by-key and everything else ignored, so
     `schema_verison:` shipped a snapshot stamped with the wrong schema
-    version and no error — and the version stamp is what a later run
+    version and no error, and the version stamp is what a later run
     compares against."""
     write_mapping(
         tmp_path,

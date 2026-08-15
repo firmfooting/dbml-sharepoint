@@ -21,8 +21,8 @@ def check(vc: ValidationContext) -> list[Finding]:
     enum_by_name = vc.enum_by_name
     cross_site_by_entity = vc.cross_site_by_entity
     findings: list[Finding] = []
-    # Demo rows (--seed): everything checkable at build time IS checked —
-    # a demo paste failing live in front of an audience is exactly the
+    # Demo rows (--seed): everything checkable at build time IS checked.
+    # A demo paste failing live in front of an audience is exactly the
     # failure class this tool exists to prevent.
     demo_keys: dict[str, str] = {}
     for entity_name, demo_rows in bundle.mapping.demo_items.items():
@@ -33,7 +33,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         # A document library's items ARE files. demo-data.js POSTs to
-        # /items, and SharePoint refuses that on a library outright —
+        # /items, and SharePoint refuses that on a library outright:
         # HTTP 500, "To add an item to a document library, use
         # SPFileCollection.Add()" (probed 2026-07-29,
         # test/manual/document-library-probe.js, L2).
@@ -109,7 +109,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # Hyperlinks are checked FIRST, and in BOTH authored shapes:
                 # a URL column takes a bare address or a {url, description}
                 # record. Gating this on `isinstance(value, dict)` left the
-                # scalar form unchecked — and the generator DOES refuse a
+                # scalar form unchecked, and the generator DOES refuse a
                 # non-string there, so an invalid mapping surfaced as a build
                 # traceback rather than a finding. A validator must refuse
                 # everything its generator refuses, and refuse it first.

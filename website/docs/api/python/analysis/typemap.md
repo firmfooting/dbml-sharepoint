@@ -10,7 +10,7 @@ sidebar_position: 10
 Map DBML column types to SharePoint field descriptors.
 
 The output (SPField) is what the deploy.js template renders. The kind-token to
-SP REST `FieldTypeKind` pairing is `FIELD_TYPE_KIND_BY_KIND` below — the one
+SP REST `FieldTypeKind` pairing is `FIELD_TYPE_KIND_BY_KIND` below, the one
 place the numbers are written, rather than a list in this docstring that
 nothing could check and that had already lost Calculated and MultiChoice.
 
@@ -240,7 +240,7 @@ Map a DBML column to its SharePoint field descriptor.
 The uniqueness gate runs after the type resolves, not before: an
 unrecognised type is the more useful complaint, and checking `[unique]`
 first answered `blob [unique]` with "unique is not supported for 'blob'
-columns" — true, but it buries the actual mistake. Resolving first also
+columns" (true, but it buries the actual mistake). Resolving first also
 keeps the supported-type vocabulary in one place, the match statement
 below, rather than in a second hand-maintained set beside it.
 

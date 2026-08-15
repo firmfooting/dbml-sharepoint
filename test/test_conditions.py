@@ -115,7 +115,7 @@ def test_structural_errors(raw: object, match: str) -> None:
 
 
 def test_unknown_leaf_key_is_rejected() -> None:
-    """A typo in a leaf key must not be silently ignored — the loader's
+    """A typo in a leaf key must not be silently ignored. The loader's
     fail-open handling of unknown keys is a known defect elsewhere and is
     not repeated here."""
     with pytest.raises(ValueError, match="unknown key"):
@@ -136,8 +136,8 @@ def test_every_operator_has_an_exact_negation() -> None:
 def test_none_of_admits_the_empty_case() -> None:
     """SharePoint comparisons are three-valued: CAML's Neq does not match an
     empty column, so a bare flip would make "none of the items where A is 1"
-    exclude items with no A at all — the opposite of the plain reading, and
-    a disagreement with the expression target, where a blank coerces in."""
+    exclude items with no A at all. That is the opposite of the plain reading,
+    and a disagreement with the expression target, where a blank coerces in."""
     condition = parse_condition({"none_of": [{"field": "A", "op": "eq", "value": 1}]}, "ctx")
     assert normalise(condition) == Group("all_of", (Leaf("A", "neq", 1),))
 
@@ -218,7 +218,7 @@ def _kinds(node: Condition) -> list[str]:
 
 def test_normalise_leaves_no_none_of() -> None:
     """The renderers' contract: they never meet a negated group, which is
-    why CAML — which cannot express one — is a viable target."""
+    why CAML (which cannot express one) is a viable target."""
     condition = parse_condition(
         {
             "any_of": [
@@ -304,7 +304,7 @@ def test_expression_renders_null_as_empty_string_comparison() -> None:
 
 
 def test_validation_uses_double_quotes_and_functions() -> None:
-    """Verified live: validation literals are DOUBLE-quoted — single quotes
+    """Verified live: validation literals are DOUBLE-quoted. Single quotes
     are rejected outright, the exact reverse of the expression target."""
     condition = parse_condition(
         {
@@ -404,7 +404,7 @@ def test_now_renders_now_in_a_validation_formula() -> None:
 
 
 def test_now_renders_the_instant_in_caml_without_using_now() -> None:
-    """CAML gets `<Today/>` with IncludeTimeValue="TRUE" — NOT the `<Now/>`
+    """CAML gets `<Today/>` with IncludeTimeValue="TRUE", NOT the `<Now/>`
     element Learn documents beside it.
 
     The decisive evidence was an A/B rather than an absence. Two views over
@@ -416,8 +416,8 @@ def test_now_renders_the_instant_in_caml_without_using_now() -> None:
 
     And it was verified where it SHIPS. The first observations came from an
     ad-hoc CamlQuery; the deploy writes a view's stored ViewQuery, which
-    SharePoint rewrites on save. So the probe read the stored query back —
-    the attribute survived — and re-ran that XML for the same two rows.
+    SharePoint rewrites on save. So the probe read the stored query back
+    (the attribute survived) and re-ran that XML for the same two rows.
     """
     condition = parse_condition(
         [{"field": "OccurredAt", "op": "leq", "value": "now"}], "ctx",
@@ -429,7 +429,7 @@ def test_now_renders_the_instant_in_caml_without_using_now() -> None:
 
 
 def test_now_is_refused_on_the_expression_target() -> None:
-    """@now stores and reads back intact, so it is not obviously absent —
+    """@now stores and reads back intact, so it is not obviously absent,
     but whether a show/hide rule built on it FIRES is a rendering behaviour
     no probe has seen, and this target already produced one formula
     (`length()`) that stored perfectly and evaluated false for every value.
@@ -444,7 +444,7 @@ def test_now_is_refused_on_the_expression_target() -> None:
 def test_now_on_a_date_column_is_refused_and_names_today() -> None:
     """A DATE column has no time of day, so `now` on one is `today` written
     confusingly. Without this it would render as the literal string "now"
-    inside a DateTime value — which SharePoint accepts and answers with the
+    inside a DateTime value, which SharePoint accepts and answers with the
     wrong rows, the failure shape this whole module exists to prevent."""
     condition = parse_condition([{"field": "Due", "op": "leq", "value": "now"}], "ctx")
     for render in (to_caml, to_validation):
@@ -509,7 +509,7 @@ def test_the_probe_behind_the_now_sentinel_still_asks_its_questions() -> None:
 
     Not a style check: if the probe were trimmed of the rows that
     established this, the comments in conditions.py would be citing a run
-    nobody could reproduce — the same failure as a build error naming a
+    nobody could reproduce, the same failure as a build error naming a
     probe that does not ask the question.
     """
     probe = MANUAL / "datetime-sentinel-probe.js"
@@ -553,8 +553,8 @@ def test_an_unparseable_date_literal_is_refused_on_every_target() -> None:
 
 def test_real_date_literals_still_pass() -> None:
     """The mirror. A guard this strict earns its place only if it lets
-    through everything the templates actually write — ISO dates, ISO
-    datetimes, and the trailing-Z form the demo planner emits."""
+    through everything the templates actually write (ISO dates, ISO
+    datetimes, and the trailing-Z form the demo planner emits)."""
     for value in ("2026-07-29", "2026-07-29T14:30:00", "2026-07-29T14:30:00Z"):
         condition = parse_condition(
             [{"field": "OccurredAt", "op": "leq", "value": value}], "ctx",
@@ -575,8 +575,8 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
     as a character count, so the comparison is over the word rather than
     the date. That is decidable from the emitted string alone.
 
-    What SharePoint would DO with either formula is unknown — no probe has
-    sent one — and refusing is the answer that needs no such knowledge.
+    What SharePoint would DO with either formula is unknown (no probe has
+    sent one), and refusing is the answer that needs no such knowledge.
     """
     for value in ("now", "today", "today+7"):
         for op in ("contains", "not_contains", "begins_with", "not_begins_with"):
@@ -595,7 +595,7 @@ def test_a_date_sentinel_refuses_a_text_operator() -> None:
                 to_validation(condition, TYPES)
         # CAML renders only the positive two directly, and it did render
         # them, as
-        # `<Contains><Value Type="DateTime"><Today/></Value></Contains>` —
+        # `<Contains><Value Type="DateTime"><Today/></Value></Contains>`,
         # a substring operator wrapped round a date element, which is not a
         # shape this project has ever sent to a tenant.
         for op in ("contains", "begins_with"):
@@ -646,7 +646,7 @@ def test_an_unquoted_yaml_date_is_a_date_object_and_still_passes() -> None:
 
 def test_an_unquoted_yaml_datetime_is_refused_and_says_to_quote_it() -> None:
     """`value: 2026-07-29T14:30:00` unquoted resolves to a `datetime`, and
-    `str()` on one spells the separator as a SPACE — a form no probe has
+    `str()` on one spells the separator as a SPACE, a form no probe has
     run. Quoting it gives the `T` spelling that is verified, so the refusal
     names that rather than claiming the value is not a date."""
     # Naive on purpose, hence the noqa: an unquoted YAML datetime with no
@@ -671,7 +671,7 @@ def test_a_null_test_on_a_date_column_needs_no_date() -> None:
 def test_a_date_shape_with_no_verified_rendering_is_refused() -> None:
     """`fromisoformat` takes ANY single character as the date/time separator,
     plus basic format and ISO week dates, and the literal is emitted
-    unchanged — so a one-character typo would otherwise reach the wire
+    unchanged, so a one-character typo would otherwise reach the wire
     wearing the guard's approval. Unverified is treated as unknown, the same
     rule `now±N` follows."""
     for bad in ("2026-07-29x14:30:00", "20260729", "2026-W01-1", "2026-07-29 14:30:00"):
@@ -736,8 +736,8 @@ def test_text_operators_render_through_indexof_on_the_expression_target() -> Non
     All four renderings were watched in a form on 2026-07-29
     (test/manual/expression-text-operators-probe.js), across four values
     including the empty one, with no deviation from the expected truth
-    table. Storage proves nothing on this target — SharePoint accepts a
-    call to a function that does not exist, and did so again on that run —
+    table. Storage proves nothing on this target (SharePoint accepts a
+    call to a function that does not exist, and did so again on that run),
     so nothing but that eyes-on pass could have established it.
 
     `!= 0` took two passes. It was not among the candidates the first
@@ -775,12 +775,12 @@ def test_a_view_filter_says_why_it_cannot_negate_a_substring_match() -> None:
 
     It is a SharePoint limit and a permanent one: the `<Where>` element's
     documented child set has no `<Not>` and no `<NotContains>`, and
-    `<NotIncludes>` negates `<Includes>` — a multi-value membership test,
+    `<NotIncludes>` negates `<Includes>`, a multi-value membership test,
     not a substring match. The message says so, says where the condition
     DOES render, and names BOTH authored spellings it can have come from.
 
     Both, because it named only `none_of[contains]` until 2026-08-10 and was
-    therefore backwards for the author who literally typed `not_contains` —
+    therefore backwards for the author who literally typed `not_contains`,
     in the commit whose whole purpose was the diagnostic (#20).
     """
     for authored in (
@@ -857,7 +857,7 @@ def test_a_text_operator_refuses_an_empty_needle() -> None:
     four operators however it renders.
 
     It also broke `none_of`. `indexOf('', '')` is 0, so `contains` is TRUE
-    for a blank field and its negation must be FALSE — but the null arm
+    for a blank field and its negation must be FALSE, but the null arm
     `_push` adds for the positive operators ORs the blank back in:
 
         none_of[contains(Note, '')]
@@ -898,7 +898,7 @@ def test_nothing_is_pending_a_probe_without_one_named() -> None:
     """DISABLED_PENDING_PROBE is empty: every operator rendered onto the
     expression target has been watched working in a form.
 
-    If an entry is added, its error must name a probe that exists — a
+    If an entry is added, its error must name a probe that exists. A
     signpost pointing at a probe that does not ask the question reads as
     though somebody already checked.
     """
@@ -925,7 +925,7 @@ def test_one_authored_operator_renders_on_every_target_it_claims() -> None:
 
 def test_negation_table_covers_every_renderable_operator() -> None:
     """The original form of this test asserted only that NEGATION is
-    self-inverse — a property of the dict restated. It did not assert
+    self-inverse, a property of the dict restated. It did not assert
     COVERAGE, so an operator added to a capability set without a negation
     passed the suite and crashed at render time with a bare KeyError."""
     renderable = set().union(*CAPABILITIES.values())
@@ -944,7 +944,7 @@ def test_unknown_operator_under_none_of_is_a_named_error() -> None:
 
 def test_length_measure_is_refused_by_the_expression_target() -> None:
     """list formatting's length() counts ARRAY items and returns 1/0 for
-    anything else — it does not measure a string. Rendering it would give a
+    anything else. It does not measure a string. Rendering it would give a
     formula that is false for every value, hiding the column
     unconditionally, and saving cleanly."""
     condition = parse_condition(
@@ -958,7 +958,7 @@ def test_length_measure_is_refused_by_the_expression_target() -> None:
 
 def test_property_is_refused_rather_than_silently_dropped_by_caml() -> None:
     """Rendering the accessor away compares a person's display name to an
-    email address — a view that returns the wrong rows with a clean build."""
+    email address, a view that returns the wrong rows with a clean build."""
     condition = parse_condition(
         [{"field": "Owner", "property": "email", "op": "eq", "value": "a@b.com"}], "c",
     )
@@ -984,7 +984,7 @@ def test_today_on_a_text_column_is_the_literal_word() -> None:
 
 def test_numeric_column_ignores_yaml_quoting() -> None:
     """The declared type is authoritative. Quoted '5' rendered as a string
-    made '10' > '5' false — and quoting a number is the cautious thing to
+    made '10' > '5' false, and quoting a number is the cautious thing to
     do, so it punished the careful author."""
     condition = parse_condition([{"field": "Count", "op": "gt", "value": "5"}], "c")
     assert to_expression(condition, TYPES) == "[$Count] > 5"
@@ -1056,7 +1056,7 @@ def test_negation_agrees_across_targets_about_blanks() -> None:
 
 def test_negated_measure_needs_no_null_arm() -> None:
     """LEN(blank) is 0, so the flipped comparison already matches an empty
-    column — a null arm would be noise that consumes the leaf bound."""
+    column. A null arm would be noise that consumes the leaf bound."""
     condition = parse_condition(
         {"none_of": [{"field": "Note", "measure": "length", "op": "gt", "value": 3}]}, "c",
     )
@@ -1149,7 +1149,7 @@ def test_system_columns_have_declared_types() -> None:
 
 def test_unknown_operator_under_none_of_reports_rather_than_raises() -> None:
     """A typo in a view's operator must stay a Finding. normalise() needs a
-    negation for every operator, so running it over an unknown one raised —
+    negation for every operator, so running it over an unknown one raised,
     turning a shipped, working surface into a traceback."""
     condition = parse_condition(
         {"none_of": [{"field": "Status", "op": "equals", "value": "x"}]}, "w",
@@ -1188,7 +1188,7 @@ def test_describe_keeps_the_negation_of_a_single_child_group() -> None:
 def test_calculated_columns_are_refused_as_expression_operands() -> None:
     """Microsoft documents calculated columns as unsupported in conditional
     show/hide formulas. The formula is syntactically valid, so it saves and
-    the read-back passes — a green deploy and a form that never reacts. The
+    the read-back passes (a green deploy and a form that never reacts). The
     most natural rule in the shipped risk register ("show Treatment only
     when the calculated RiskRating is High") was exactly this."""
     types = {**TYPES, "Score": "calculated_number", "Band": "calculated_text",
@@ -1211,7 +1211,7 @@ def test_a_negation_that_normalisation_breaks_is_a_finding_not_a_crash() -> None
     """Regression: the capability check ran only over the leaves the author
     wrote. De Morgan normalisation rewrites none_of[contains] to
     not_contains, which CAML cannot render, so the rule passed validation
-    and then raised ValueError out of build_schema_json — a traceback where
+    and then raised ValueError out of build_schema_json, a traceback where
     the author needed a sentence."""
     condition = parse_condition(
         {"none_of": [{"field": "Status", "op": "contains", "value": "x"}]}, "w",
@@ -1604,8 +1604,8 @@ def test_negating_negative_operators_does_not_admit_nulls() -> None:
 
 
 def test_negating_a_negative_text_operator_does_not_admit_nulls_either() -> None:
-    """`not_contains` and `not_begins_with` are TRUE for a blank — indexOf on
-    an empty string is -1, which is both `< 0` and `!= 0` — so their negation
+    """`not_contains` and `not_begins_with` are TRUE for a blank (indexOf on
+    an empty string is -1, which is both `< 0` and `!= 0`), so their negation
     must be FALSE there. The null arm `_push` adds for relational operators
     ORs the blank back in, which made an authored rule and its own negation
     both true for a blank value. They belong with neq/not_in, whose renderers
@@ -1634,7 +1634,7 @@ def test_negating_a_negative_text_operator_does_not_admit_nulls_either() -> None
 def test_negating_a_positive_text_operator_still_admits_nulls() -> None:
     """The mirror, and the reason the exemption names two operators rather
     than reusing the four-member text set. `contains` is FALSE for a blank,
-    so `none_of` must be TRUE there — which the null arm already delivers.
+    so `none_of` must be TRUE there, which the null arm already delivers.
     Removing it would change output for a shape that exists on main."""
     condition = parse_condition(
         {"none_of": [{"field": "Note", "op": "begins_with", "value": "x"}]}, "w",
@@ -1649,7 +1649,7 @@ def test_negating_a_positive_text_operator_still_admits_nulls() -> None:
 # A person column could not appear in a view filter at all before this: the
 # operand rules require an accessor (no defensible default between a name,
 # an email and an id) and CAML refuses every accessor. `me` resolves the
-# deadlock rather than working around it — <UserID/> compares the person
+# deadlock rather than working around it. <UserID/> compares the person
 # field's user id natively, which IS the missing accessor, supplied by the
 # sentinel instead of declared.
 
@@ -1683,8 +1683,8 @@ def test_me_on_a_text_column_is_the_literal_word() -> None:
 def test_me_is_refused_for_conditional_visibility() -> None:
     """A show/hide formula is evaluated against the item's field values and
     has no verified current-user equivalent. It would save, read back equal,
-    pass the phase and never fire — the failure this whole grammar exists to
-    make impossible."""
+    pass the phase and never fire (the failure this whole grammar exists to
+    make impossible)."""
     condition = parse_condition([{"field": "Owner", "op": "eq", "value": "me"}], "c")
     with pytest.raises(ValueError, match="'me'"):
         to_expression(condition, TYPES)
@@ -1731,11 +1731,11 @@ def test_a_hyperlink_operand_is_fine_in_a_view_filter() -> None:
 
 def test_a_person_column_may_be_null_tested_without_an_accessor() -> None:
     """Emptiness is a property of the FIELD, not of a name, an email or an
-    id — all three are absent together, so there is nothing for an accessor
+    id. All three are absent together, so there is nothing for an accessor
     to choose between. CAML's IsNull takes a bare FieldRef and no Value.
 
-    Without this, "organisations with no owner" — which
-    stakeholder-contacts' governance document asks for by name — was
+    Without this, "organisations with no owner" (which
+    stakeholder-contacts' governance document asks for by name) was
     inexpressible: the accessor rules demanded a property and CAML refuses
     every property.
     """
@@ -1745,7 +1745,7 @@ def test_a_person_column_may_be_null_tested_without_an_accessor() -> None:
 
 
 def test_a_lookup_column_may_be_null_tested_without_an_accessor() -> None:
-    """Same argument, same mechanism — an absent lookup has neither a value
+    """Same argument, same mechanism. An absent lookup has neither a value
     nor an id."""
     assert _problems([{"field": "Parent", "op": "is_not_null"}], CAML) == []
 
@@ -2058,7 +2058,7 @@ def test_a_delimited_value_is_refused_rather_than_testing_the_whole_set() -> Non
 
     So one operator answers two different questions, and the only thing
     separating them is whether the VALUE happens to contain `;#`. A reader of
-    the mapping cannot see which was meant, which is the trap this grammar
+    the mapping cannot see which was meant, which is the defect this grammar
     exists to close. The form is not offered under a name of its own either:
     only `<Eq>` was measured, its negation never was, and the delimited
     comparison is order-sensitive, so the same set declared in another order

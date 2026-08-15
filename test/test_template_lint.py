@@ -4,20 +4,20 @@
 The templates are code and get a linter like code. Five rules, applied
 to EVERY .j2 file (not just the ones generator tests happen to render):
 
-1. Parses under the production Jinja environment (script_env) — a syntax
+1. Parses under the production Jinja environment (script_env). A syntax
    error in a rarely-exercised template must fail here, not on an
    operator's build.
 2. Every literal {% include %} target exists; dynamic includes are
    allowed only in deploy.js.j2's phase loop.
 3. Every template declared by the phases manifest exists.
-4. Every template opens with a non-empty contract comment — verified via
+4. Every template opens with a non-empty contract comment, verified via
    the SAME extraction the API docs use, so the template reference can
    never silently regress to "(No contract comment.)".
 5. Every Jinja variable a template references is a context key the
    generators actually pass (or a name deploy.js.j2's phase loop
    provides). A typo like {{ relase.tag }} fails the allowlist; a REAL
-   new context key is a deliberate one-line addition to KNOWN_CONTEXT —
-   the same reviewed-decision pattern as the deploy.js golden.
+   new context key is a deliberate one-line addition to KNOWN_CONTEXT, the
+   same reviewed-decision pattern as the deploy.js golden.
 """
 
 import importlib.util
@@ -40,8 +40,8 @@ ALL_TEMPLATES = sorted(
     p.relative_to(TEMPLATES_DIR).as_posix() for p in TEMPLATES_DIR.rglob("*.j2")
 )
 
-# Context keys the generators pass to render() — union across jsgen,
-# rollbackgen, assessgen, demogen and manifestgen — plus the three names
+# Context keys the generators pass to render() (union across jsgen,
+# rollbackgen, assessgen, demogen and manifestgen) plus the three names
 # deploy.js.j2's phase loop provides to included phase bodies.
 KNOWN_CONTEXT = {
     # every generator (provenance + identity)
@@ -105,7 +105,7 @@ def test_every_literal_include_target_exists(env: Environment) -> None:
                     failures.append(f"{rel}: include target {target.value!r} does not exist")
             elif rel != "deploy.js.j2":
                 failures.append(
-                    f"{rel}: dynamic include — only deploy.js.j2's phase loop may do that",
+                    f"{rel}: dynamic include. Only deploy.js.j2's phase loop may do that",
                 )
     assert not failures, "\n".join(failures)
 
@@ -119,7 +119,7 @@ def test_phase_manifest_templates_exist() -> None:
 
 
 def _load_generate_api() -> ModuleType:
-    """Import the API-docs generator so rule 4 uses ITS extraction —
+    """Import the API-docs generator so rule 4 uses ITS extraction,
     one source of truth for what counts as a contract comment."""
     path = REPO_ROOT / "website" / "scripts" / "generate_api.py"
     spec = importlib.util.spec_from_file_location("generate_api", path)
@@ -167,7 +167,7 @@ def test_template_variables_are_known_context(env: Environment) -> None:
 
 def test_no_orphan_templates(env: Environment) -> None:
     """Every template is an entry point (named in a generator), included
-    by another template, or declared by the phases manifest — anything
+    by another template, or declared by the phases manifest. Anything
     else is dead code that generator tests would never catch rotting."""
     referenced: set[str] = set()
     for py in sorted(SRC_DIR.rglob("*.py")):
@@ -190,8 +190,8 @@ def test_generated_api_docs_are_current(tmp_path: Path) -> None:
     differs from a fresh run means someone changed the code and did not
     regenerate.
 
-    Without this the promise in generate_api.py's own docstring — "docs
-    drift shows up as a git diff" — is unenforced: forgetting to run it is
+    Without this the promise in generate_api.py's own docstring ("docs
+    drift shows up as a git diff") is unenforced: forgetting to run it is
     completely silent, which is how a reference page starts describing code
     that no longer exists.
     """
@@ -209,7 +209,7 @@ def test_generated_api_docs_are_current(tmp_path: Path) -> None:
     fresh = pages(tmp_path)
     have = pages(committed)
     assert have == fresh, (
-        "generated API docs are stale — regenerate with:\n"
+        "generated API docs are stale. Regenerate with:\n"
         "  uv run python website/scripts/generate_api.py"
     )
 
@@ -251,7 +251,7 @@ def _family(suffix: str, consts: dict[str, str], where: str) -> str:
         assert resolved is not None, (
             f"{where}: apiUrl() opens with ${{{var.group(1)}}}, which this test "
             f"cannot resolve to a path. Declare it as `const {var.group(1)} = "
-            f"`web/...`` like the others, or teach _path_consts about it — an "
+            f"`web/...`` like the others, or teach _path_consts about it. An "
             f"unresolvable call site is an undocumented endpoint."
         )
         suffix = _LEADING_VAR.sub(resolved, suffix)
@@ -289,9 +289,9 @@ def test_one_helper_builds_every_api_url() -> None:
 
 def test_every_endpoint_family_is_in_the_security_model() -> None:
     """The security model's endpoint table is what a tenant reviewer reads
-    instead of the scripts. A hand-maintained inventory drifts — this repo has
+    instead of the scripts. A hand-maintained inventory drifts. This repo has
     already shipped one stale entry (a GetSiteScriptFromWeb extraction that no
-    longer existed) — so the table is checked against the templates.
+    longer existed), so the table is checked against the templates.
     """
     documented = SECURITY_MODEL.read_text(encoding="utf-8")
     undocumented = sorted(
@@ -322,6 +322,6 @@ def test_the_security_model_documents_no_unused_endpoint_family() -> None:
             stale.append(documented)
     assert not stale, (
         f"the security model documents /_api/ families nothing reaches: "
-        f"{sorted(set(stale))}. Remove the row — an endpoint table that "
+        f"{sorted(set(stale))}. Remove the row. An endpoint table that "
         f"overstates the surface is as misleading as one that understates it."
     )

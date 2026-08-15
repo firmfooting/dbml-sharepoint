@@ -9,7 +9,7 @@ sidebar_position: 11
 
 The deploy-phase manifest: THE single source of phase truth.
 
-Group/step numbers derive from position here — add or move a step and
+Group/step numbers derive from position here. Add or move a step and
 every consumer renumbers automatically: deploy.js banners/Starting
 lines/[Phase X.Y] prefixes/error tags (templates receive
 phases_context()), the manifest's phase references (phase_numbers()),
@@ -48,7 +48,7 @@ Render-ready structure for deploy.js.j2 (numbers derived).
 def phase_numbers() -> dict[str, str]
 ```
 
-{step key: dotted number} — the manifest template's lookup.
+{step key: dotted number}, the manifest template's lookup.
 
 ### `phase_number`
 

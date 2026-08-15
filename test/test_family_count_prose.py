@@ -199,7 +199,7 @@ def test_a_count_that_wraps_across_lines_is_still_caught() -> None:
     assert _line_of(match.start(), starts) == 1
 
     # And the line-by-line scan this replaced would have missed it, which is
-    # what makes the flattening load-bearing rather than decorative.
+    # what makes the flattening necessary rather than decorative.
     assert not any(FAMILY_COUNT.search(line) for line in wrapped)
 
 

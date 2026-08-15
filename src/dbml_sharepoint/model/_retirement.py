@@ -91,7 +91,7 @@ def _strip_retired_from_view(
     `widths` and `totals`, recording each removal in `strips`.
 
     Retirement must never break a build, so an explicit reference is
-    stripped and reported as a warning rather than failing — and stripping
+    stripped and reported as a warning rather than failing, and stripping
     the width and the total too keeps the validator's "must name one of
     this view's fields" checks honest, which would otherwise turn
     retirement into an ERROR. Anything else keyed on a column name must be
@@ -143,14 +143,14 @@ def _strip_retired_from_form(
     Retirement's contract is that the column leaves the entry experience. A
     section that still lists a retired field would rely on SharePoint
     honouring the hiding formula over an explicit section placement, which
-    is untested against live SharePoint — and the fold already strips views
+    is untested against live SharePoint, and the fold already strips views
     and widths, so leaving form bodies alone would be an inconsistency
     resting on an assumption.
 
     ONLY `sections[].fields` is touched: it is the single shape in an
     otherwise arbitrary formatter JSON with a known meaning, and the one the
     validator already walks. Every other key is left exactly as authored. A
-    section left with an empty `fields` list is KEPT — an empty section is
+    section left with an empty `fields` list is KEPT, because an empty section is
     the author's layout decision to clean up, and dropping it would be a
     second-order mutation of their JSON.
     """
@@ -202,14 +202,14 @@ def _apply_retirement(mapping: Mapping) -> None:
     structures, in place.
 
     Retirement introduces NO new deploy-time capability: it resolves here
-    into mechanisms deploy.js already implements — `form_visibility`,
+    into mechanisms deploy.js already implements, namely `form_visibility`,
     `display_name_overrides` and each view's field list. The parsed
     `retired_columns` dict stays on the Mapping as the authoritative record
     for the manifest, the data dictionary and the validator; folding rather
     than dispersing accessors keeps the single emission sequence intact.
 
-    Form behaviour resolves to `new: false` — nobody enters new data into a
-    retired column — and `existing: true` unless `hide_existing` is
+    Form behaviour resolves to `new: false` (nobody enters new data into a
+    retired column) and `existing: true` unless `hide_existing` is
     declared, so the history the column exists to preserve stays readable
     on the Display form. The Edit and Display forms cannot be separated on
     a modern list, so hiding from one hides from the other; that is why the
@@ -226,7 +226,7 @@ def _apply_retirement(mapping: Mapping) -> None:
     validator errors on one declared there, so folding blindly would make
     retiring a calculated column an unfixable build error. The loader has
     not seen the DBML, so calculated columns are identified by their
-    `calculated_formulas` entry — which the validator requires for every
+    `calculated_formulas` entry, which the validator requires for every
     calculated column, in both directions.
 
     INVARIANT: this carve-out is correct only while `calculated_formulas`

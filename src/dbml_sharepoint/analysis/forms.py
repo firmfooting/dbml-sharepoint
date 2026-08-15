@@ -8,8 +8,8 @@ the reason this feature is declarative at all: an author states both and
 never learns they share a slot.
 
 The gate exploits `[$ID]`, which is empty on the New form and populated
-afterwards — the only per-form discriminator available in a formula that
-the form designer preserves. SchemaXml's ShowIn*Form attributes look like
+afterwards (the only per-form discriminator available in a formula that
+the form designer preserves). SchemaXml's ShowIn*Form attributes look like
 the obvious mechanism and are not: saving the designer migrates them into
 `FieldLink.Hidden`, which hides a column from *every* form and cannot be
 undone over REST. See the form_visibility spec.
@@ -86,7 +86,7 @@ def validate_form_visibility(
     Five distinct rules live here, and each has its own code. The severity
     is carried structurally rather than described in the prose: every
     message used to be returned as a bare string and wrapped by the caller
-    as an error, including the one case the spec makes a WARNING — a
+    as an error, including the one case the spec makes a WARNING, a
     required column that a `when` predicate *may* hide at creation. Its
     text said "(warning: …)" while it failed the build, so the one
     genuinely conditional declaration the feature exists to express could
@@ -94,7 +94,7 @@ def validate_form_visibility(
 
     Returning Findings rather than (severity, message) pairs is what keeps
     those five apart. The caller cannot supply the code, because it does
-    not know which rule fired — one code at the call site would collapse
+    not know which rule fired. One code at the call site would collapse
     all five into one.
 
     `at` locates the DECLARATION, which is `retired_columns[E]` when the

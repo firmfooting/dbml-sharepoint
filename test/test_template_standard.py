@@ -16,8 +16,8 @@ and this repository has already had to fix one that did (in the CI template
 sweep). `test_the_roster_names_only_real_templates` is the check that keeps
 the one hardcoded list honest.
 
-Templates are loaded through the REAL loader and the REAL DBML parser — the
-same entry points `dbml_sharepoint.cli` uses — so the sweep sees the objects
+Templates are loaded through the REAL loader and the REAL DBML parser (the
+same entry points `dbml_sharepoint.cli` uses), so the sweep sees the objects
 the build sees rather than a second, hand-rolled reading of the same YAML.
 
 Spec: `docs/superpowers/specs/2026-07-28-template-family-standard-design.md`,
@@ -74,8 +74,8 @@ pytestmark = pytest.mark.conformance
 #
 # It stays as a mechanism rather than being deleted. An entry here is a
 # reviewable, deliberate act with a reason recorded beside it, and the
-# alternative — weakening an assertion so an awkward template slips under
-# it — degrades the standard for all of them at once.
+# alternative (weakening an assertion so an awkward template slips under
+# it) degrades the standard for all of them at once.
 NOT_YET_UPLIFTED: frozenset[str] = frozenset()
 
 # §1.2. Order never changes; a small list may collapse the middle beats but
@@ -89,7 +89,7 @@ MAX_BODY_SECTIONS = 8
 # §1.2 again: sections are named in each template's own domain language, so
 # no literal string match is possible. The mapping from a template's section
 # names to the arc's beats is DECLARED, per (template, entity). Adding a
-# template's entry here is part of that template's uplift — an undeclared
+# template's entry here is part of that template's uplift. An undeclared
 # section name is a failure, not a pass, because that is the only thing
 # standing between five beats and 102 section vocabularies.
 SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
@@ -130,7 +130,7 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Decide and hand off": "Govern",
         "System": "System",
     },
-    # The audit row is a header record — a report and who answers for it —
+    # The audit row is a header record (a report and who answers for it),
     # so it collapses to Identify -> Govern. The recommendation carries the
     # whole arc except Assess: the rating comes FROM the report rather than
     # from anything done here.
@@ -146,7 +146,7 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     },
     # Two standalone registers with no link between them, and the same
     # shape either way: the person declares, somebody else decides. The
-    # beat boundary is the permission boundary — everything after the
+    # beat boundary is the permission boundary. Everything after the
     # first section is off the New form.
     ("declarations-register", "Interest"): {
         "The interest": "Identify",
@@ -161,7 +161,7 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # Both halves of the grant lifecycle run Identify -> Act -> Govern.
     # There is no Assess beat on either: the bid/no-bid assessment happens
     # before a row exists (50-govern's ten-minute test), and an obligation
-    # is not assessed at all — it is either filed or it is not.
+    # is not assessed at all. It is either filed or it is not.
     ("grants-register", "Submission"): {
         "The bid": "Identify",
         "Submission and outcome": "Act",
@@ -173,8 +173,8 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
         "Escalation notes": "Govern",
     },
     # Three beats. There is no Act on a register that transcribes rather
-    # than decides — the doctrine is that authority is created in the
-    # instrument and only mirrored here — and nothing is auto-stamped, so
+    # than decides (the doctrine is that authority is created in the
+    # instrument and only mirrored here), and nothing is auto-stamped, so
     # no System either.
     ("delegations-register", "Delegation"): {
         "The authority": "Identify",
@@ -198,9 +198,9 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     # prevent.
     #
     # "Oversight and what is owed" is the Govern beat and it carries the
-    # recurring facts this single-list design collapses onto the project row —
-    # the next report, the last one filed, the latest amendment and the
-    # history note that is all the earlier ones leave behind.
+    # recurring facts this single-list design collapses onto the project row
+    # (the next report, the last one filed, the latest amendment and the
+    # history note that is all the earlier ones leave behind).
     ("research-ethics-register-simple", "Project"): {
         "The project": "Identify",
         "Review pathway": "Assess",
@@ -299,8 +299,8 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
     },
     # "Registration" and "Issue and expiry" are the Assess beat: on this
     # register the assessment IS the documentary evidence, and the Act beat
-    # is what the organisation then does with it — grant a scope, or link
-    # the sighted proof.
+    # is what the organisation then does with it (grant a scope, or link
+    # the sighted proof).
     ("credentialing-register", "Practitioner"): {
         "The practitioner": "Identify",
         "Registration": "Assess",
@@ -519,19 +519,19 @@ SECTION_BEATS: dict[tuple[str, str], dict[str, str]] = {
 WIDTH_SCALE: frozenset[int] = frozenset(range(100, 321, 10))
 
 # ONE fixed reference date for every `today±N` resolution, on both sides of
-# every comparison — a demo row's "today-30" and a view's "today+30" are
+# every comparison. A demo row's "today-30" and a view's "today+30" are
 # resolved against the same day, so the demo-coverage tests give the same
 # answer on every run and in every timezone.
 REFERENCE_DATE = dt.date(2026, 7, 1)
 
 # The operators the demo-coverage evaluator implements. Anything else makes
-# the view UNEVALUABLE and is reported as a skip naming the view — never
+# the view UNEVALUABLE and is reported as a skip naming the view, never
 # silently treated as satisfied.
 SUPPORTED_OPS: frozenset[str] = frozenset({
     "eq", "neq", "lt", "leq", "gt", "geq", "in", "not_in", "is_null", "is_not_null",
 })
 
-# §3.1, the lifecycle/severity assertion — the NARROW, defensible reading.
+# §3.1, the lifecycle/severity assertion (the NARROW, defensible reading).
 #
 # CATCHES: a Choice (DBML enum) or calculated_text column whose name ends in
 # one of these words, and a date column whose name names a deadline.
@@ -543,9 +543,9 @@ SUPPORTED_OPS: frozenset[str] = frozenset({
 # fires on correct work gets weakened, and then it catches nothing.
 #
 # Deliberately NOT treating "any date column a view filters on" as a
-# deadline. That fires on tiered-huddle's `BoardDate` — the day a huddle
+# deadline. That fires on tiered-huddle's `BoardDate` (the day a huddle
 # board covers, filtered by a rolling-fortnight view and emphatically not a
-# deadline — so the view-filter clause is dropped and the rule is name-based
+# deadline), so the view-filter clause is dropped and the rule is name-based
 # only.
 LIFECYCLE_SUFFIXES: tuple[str, ...] = ("Status", "State", "Rating", "Severity", "Priority")
 DEADLINE_NAME = re.compile(r"(Due|Expiry|Expires|Expiration|Deadline|Renewal)", re.IGNORECASE)
@@ -558,7 +558,7 @@ _TODAY = re.compile(r"^today(?:([+-])(\d+))?$")
 
 
 def _all_templates() -> list[str]:
-    """Discovered, never listed — a hardcoded roster fails open."""
+    """Discovered, never listed. A hardcoded roster fails open."""
     return sorted(p.parent.parent.name for p in SOLUTION_TEMPLATES.glob("*/10-design/schema.dbml"))
 
 
@@ -616,21 +616,21 @@ def test_at_least_the_exemplars_are_uplifted() -> None:
 
 
 # The roster's floor, pinned. Every template on NOT_YET_UPLIFTED needs a
-# reason recorded here beside it — not "we ran out of time" and not "this
+# reason recorded here beside it, not "we ran out of time" and not "this
 # one is awkward". Empty, and adding to it is a reviewable act.
 ROSTER_EXCEPTIONS: frozenset[str] = frozenset()
 
 
 def test_the_roster_holds_only_its_documented_exception() -> None:
     """The spec said this set must reach empty when the last theme branch
-    landed. It reached one — `policy-library`, whose `PolicyDocuments` half
+    landed. It reached one (`policy-library`, whose `PolicyDocuments` half
     was a document library that three parts of the standard did not
-    describe — and then reached zero, when that template was removed and
+    describe) and then reached zero, when that template was removed and
     `kind: DocumentLibrary` was refused outright.
 
     So the aspiration is a check rather than a hope. Adding a template here
     fails unless it is also added to ROSTER_EXCEPTIONS, which is a
-    deliberate, reviewable act — and the empty set stays the goal rather
+    deliberate, reviewable act, and the empty set stays the goal rather
     than becoming a place to put anything inconvenient.
     """
     undocumented = NOT_YET_UPLIFTED - ROSTER_EXCEPTIONS
@@ -647,8 +647,8 @@ def test_the_roster_exceptions_are_still_needed() -> None:
     assertion in this file."""
     stale = ROSTER_EXCEPTIONS - NOT_YET_UPLIFTED
     assert not stale, (
-        f"{sorted(stale)} are documented exceptions but no longer on the roster — "
-        f"delete them from ROSTER_EXCEPTIONS."
+        f"{sorted(stale)} are documented exceptions but no longer on the roster. "
+        f"Delete them from ROSTER_EXCEPTIONS."
     )
 
 
@@ -705,7 +705,7 @@ def test_display_names_are_declared(template: str) -> None:
     """Without it, every column title reads as its run-together internal name."""
     loaded = _load(template)
     assert loaded.mapping.display_name_mode is not None, (
-        f"{template}: no display_names section — column titles would deploy as "
+        f"{template}: no display_names section. Column titles would deploy as "
         f"their internal names"
     )
 
@@ -724,7 +724,7 @@ def test_every_list_has_demo_items(template: str) -> None:
 @pytest.mark.parametrize("template", _uplifted())
 def test_lifecycle_and_deadline_columns_carry_column_formatting(template: str) -> None:
     """The single-`Status` habit. See LIFECYCLE_SUFFIXES for exactly what
-    this catches and — just as importantly — what it deliberately does not."""
+    this catches and (just as importantly) what it deliberately does not."""
     loaded = _load(template)
     enums = loaded.enum_names
     problems: list[str] = []
@@ -759,7 +759,7 @@ def test_every_declared_width_is_on_the_scale(template: str) -> None:
             if off_scale:
                 problems.append(f"{entity}/{view.title}: {off_scale}")
     assert not problems, (
-        f"{template}: widths off the §1.3 scale {sorted(WIDTH_SCALE)} — "
+        f"{template}: widths off the §1.3 scale {sorted(WIDTH_SCALE)} -- "
         + "; ".join(problems)
     )
 
@@ -769,8 +769,8 @@ def test_every_header_has_an_icon_a_title_line_and_a_strapline(template: str) ->
     """§1.1's anatomy, in order: a Fluent icon at ms-fontSize-42, a live
     title line at ms-fontSize-16 referencing [$Title], and a one-sentence
     strapline at ms-fontSize-12. Classes are matched as a SET of tokens, not
-    as a string — risk-register writes them in a different order and is
-    correct."""
+    as a string (risk-register writes them in a different order and is
+    correct)."""
     loaded = _load(template)
     problems: list[str] = []
     for entity in sorted(loaded.mapping.entities):
@@ -807,7 +807,7 @@ def test_every_header_icon_is_in_the_fleet_vocabulary(template: str) -> None:
             if isinstance(icon, str) and icon and icon not in FLEET_ICONS:
                 problems.append(f"{entity}: iconName {icon!r}")
     assert not problems, (
-        f"{template}: not in FLEET_ICONS — " + "; ".join(problems)
+        f"{template}: not in FLEET_ICONS -- " + "; ".join(problems)
     )
 
 
@@ -840,7 +840,7 @@ def test_every_body_section_name_comes_from_the_arc(template: str) -> None:
         table = SECTION_BEATS.get((template, entity))
         if table is None:
             problems.append(
-                f"{entity}: no SECTION_BEATS entry — declare each section's arc beat "
+                f"{entity}: no SECTION_BEATS entry. Declare each section's arc beat "
                 f"(sections are {names})",
             )
             continue
@@ -863,7 +863,7 @@ def test_every_declared_view_is_satisfied_by_a_demo_row(template: str) -> None:
     CALCULATED columns are handled by evaluating only the conjuncts that can
     be evaluated: a leaf on a calculated column returns UNKNOWN (SharePoint
     computes the value, so demo `values` cannot carry it), and the three-
-    valued walk lets UNKNOWN propagate — a row that satisfies every knowable
+    valued walk lets UNKNOWN propagate. A row that satisfies every knowable
     conjunct counts as satisfying the view. That is deliberately the weaker
     of the two options the spec allows: it still catches the failure that
     matters (a view whose knowable filter matches nothing) and it can never
@@ -890,10 +890,10 @@ def test_every_declared_view_is_satisfied_by_a_demo_row(template: str) -> None:
                 continue
             if not satisfied:
                 empty.append(where)
-    assert not empty, f"{template}: views no demo row satisfies — " + "; ".join(empty)
+    assert not empty, f"{template}: views no demo row satisfies -- " + "; ".join(empty)
     if unevaluable:
         pytest.skip(
-            f"{template}: {len(unevaluable)} view(s) NOT checked (unsupported operator) — "
+            f"{template}: {len(unevaluable)} view(s) NOT checked (unsupported operator) -- "
             + "; ".join(unevaluable),
         )
 
@@ -909,12 +909,12 @@ def test_every_formatted_column_is_exercised_by_a_demo_row(
     It does NOT demand every individual token be exercised. That was the
     first version of this bar and it is the wrong one:
 
-    - it asks for data nobody would write — no sensible demo row sets a
+    - it asks for data nobody would write (no sensible demo row sets a
       risk's TARGET rating to Extreme, and tiered-huddle maps "Not
-      applicable" on all 27 stream columns;
+      applicable" on all 27 stream columns);
     - the bug it aimed at is already caught statically and better. A map key
-      that is not a member of the column's enum — the stale key a rename
-      leaves behind, which is how these maps actually break — is a build
+      that is not a member of the column's enum (the stale key a rename
+      leaves behind, which is how these maps actually break) is a build
       error today (analysis/checks/_formatting.py:103, and :120 for nested
       color_by maps).
 
@@ -922,12 +922,12 @@ def test_every_formatted_column_is_exercised_by_a_demo_row(
     decision not to fail on it.
 
     Reads the RAW style specs (`column_style_specs`), which still carry the
-    authored `map:` — the expanded formatter JSON has already turned it into
+    authored `map:`. The expanded formatter JSON has already turned it into
     an =if chain. Nested `color_by:` maps are attributed to the column they
     read, not to the column they colour. A map on a CALCULATED column is
     skipped: SharePoint computes the value, so no demo `values` dict can
     carry it. Retired columns are skipped for the same reason they are
-    exempt elsewhere — retirement takes them off the forms and views.
+    exempt elsewhere. Retirement takes them off the forms and views.
     """
     loaded = _load(template)
     unexercised: set[str] = set()
@@ -961,16 +961,16 @@ def test_every_formatted_column_is_exercised_by_a_demo_row(
         with capsys.disabled():
             # T201 is suppressed deliberately: the rule exists to keep stray
             # debug prints out of the suite, and this is the report §1.7 asks
-            # for — unexercised tokens are worth surfacing even though the
+            # for. Unexercised tokens are worth surfacing even though the
             # spec decided not to fail on them.
             print(  # noqa: T201
                 f"\n[{template}] tokens no demo row exercises "
-                f"({len(unexercised)}) — reported, not asserted:\n  "
+                f"({len(unexercised)}) -- reported, not asserted:\n  "
                 + "\n  ".join(sorted(unexercised)),
             )
     assert not unrendered, (
         f"{template}: formatted columns no demo row ever gives a mapped value, so "
-        f"the formatter is never seen to render — " + "; ".join(sorted(unrendered))
+        f"the formatter is never seen to render -- " + "; ".join(sorted(unrendered))
     )
 
 
@@ -1037,7 +1037,7 @@ def _is_ordered_subsequence(beats: list[str]) -> bool:
     §1.2 forbids REORDERING the arc, not spending two consecutive sections
     on one beat. A long list may split its assessment into "triage" and a
     deeper pass that only some rows need, and that is still Assess followed
-    by Assess — the reader meets the beats in order either way. What stays
+    by Assess. The reader meets the beats in order either way. What stays
     refused is a beat recurring AFTER a later one, which is the reordering
     the rule exists to stop.
     """
@@ -1070,11 +1070,11 @@ def _token_maps(column: str, spec: dict[str, Any]) -> list[tuple[str, dict[str, 
 
 class _UnevaluableError(Exception):
     """This evaluator cannot decide the condition. Reported as a visible skip
-    naming the view — never silently treated as satisfied."""
+    naming the view, never silently treated as satisfied."""
 
 
 def _evaluate(node: Condition, row: dict[str, Any], types: dict[str, str]) -> bool | None:
-    """Three-valued walk. None means UNKNOWN — a leaf this evaluator cannot
+    """Three-valued walk. None means UNKNOWN, a leaf this evaluator cannot
     decide from demo `values` (a calculated column, or the `me` sentinel).
     UNKNOWN propagates the way SQL's does, so it can only ever make the
     answer less certain, never falsely negative."""
@@ -1219,7 +1219,7 @@ def _entities_missing_standard_parts() -> tuple[tuple[str, str, str], ...]:
 
 def test_only_the_documented_entity_is_outside_the_standard() -> None:
     """`templates/README.md` tells an adopter that whichever template they
-    deploy, they get views, a form header and demo data — with exactly one
+    deploy, they get views, a form header and demo data, with exactly one
     exception, named there.
 
     A second exception would make that page quietly false for a template
@@ -1233,7 +1233,7 @@ def test_only_the_documented_entity_is_outside_the_standard() -> None:
         f"{sorted(unexpected)} declare none of views/header/demo rows but are not "
         f"named as exceptions. Either finish them, or add them to "
         f"STANDARD_EXEMPT_ENTITIES *and* to the exception paragraph in "
-        f"templates/README.md — the page promises there is only one."
+        f"templates/README.md. The page promises there is only one."
     )
 
 
@@ -1258,24 +1258,24 @@ def test_the_documented_exception_is_still_an_exception() -> None:
 # The validator reports these as WARNINGS, so every build stays green and
 # nothing in CI notices them. That is precisely why the register exists: an
 # unpinned warning grows. A new one fails this sweep until somebody either
-# fixes the view or writes down why it is acceptable — the same
+# fixes the view or writes down why it is acceptable, the same
 # reviewable-act pattern as NOT_YET_UPLIFTED above, applied to a finding
 # class instead of a template.
 #
 # Three kinds of entry appear here, and only the third is a deferral:
 #
 #              (There is no PERSON category. An indexed Person column is a
-#              useful index — measured at 6,000 items with the person projected
-#              and the join verified, the query is served — so a view filtered
+#              useful index (measured at 6,000 items with the person projected
+#              and the join verified, the query is served), so a view filtered
 #              on one raises nothing to accept. See
 #              _views.py::_LOOKUP_FIELD_TYPES.)
-#   NULL-TEST  The filter is a bare is_null / is_not_null — the library's
+#   NULL-TEST  The filter is a bare is_null / is_not_null, the library's
 #              "blank means still open" idiom. An INDEXED column's presence
 #              test is served past the threshold; an unindexed one comes back
 #              HTTP 200 holding fewer rows than the data, with no error. Each
 #              of these wants an index. They are registered rather than fixed
 #              because the schemas are uplifted on the theme branches and
-#              editing one from here would collide — same reason as DEFERRED.
+#              editing one from here would collide, same reason as DEFERRED.
 #   DEFERRED   An index IS the documented remedy and the column type supports
 #              one. Not applied here: template schemas are being uplifted in
 #              parallel theme branches, and editing one from this branch would
@@ -1352,7 +1352,7 @@ def test_the_threshold_register_is_still_needed() -> None:
     stale = set(ACCEPTED_THRESHOLD_EXPOSURE) - live
     assert not stale, (
         f"{sorted(stale)} are registered as accepted threshold exposure but no "
-        f"longer warn. Delete them from ACCEPTED_THRESHOLD_EXPOSURE — or, if "
+        f"longer warn. Delete them from ACCEPTED_THRESHOLD_EXPOSURE, or, if "
         f"nothing at all warns any more, check that the warning still says "
         f"{_THRESHOLD_MARKER!r}."
     )
@@ -1386,8 +1386,8 @@ def test_no_template_performs_too_many_joins(template: str) -> None:
     assert not found, (
         f"{template}: {found}. This check exists to catch a template that grows "
         f"a sixth join column, not to fail one that ships. If this fires on a "
-        f"shipped template the COUNT is wrong — most likely Created/Modified or "
-        f"a cross-site ref being counted — not the template."
+        f"shipped template the COUNT is wrong (most likely Created/Modified or "
+        f"a cross-site ref being counted), not the template."
     )
 
 
@@ -1397,8 +1397,8 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     only fires at 9, so a template could climb from 6 to 8 unnoticed and the
     warning band would be one column away with nothing having said so.
 
-    Calls `all_items_joining_fields` — the same derivation `_views.py`'s
-    entity loop calls — rather than re-typing the formula here. A copy would
+    Calls `all_items_joining_fields` (the same derivation `_views.py`'s
+    entity loop calls) rather than re-typing the formula here. A copy would
     let this test and the validator drift: `assert worst == 6` could keep
     passing against its OWN arithmetic even if the validator's copy silently
     dropped `SYSTEM_COLUMNS` or the `hide_from_all_items` subtraction.
@@ -1411,7 +1411,7 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     RE-MEASURED 2026-08-10 across 31 templates / 54 entities, when
     research-ethics-register-simple joined the roster: 2 -> 7, 3 -> 28,
     4 -> 18, 5 -> 1. The whole delta is the one new entity, which lands at 3
-    (SiteInvestigator plus Author and Editor) — a single-list template carries
+    (SiteInvestigator plus Author and Editor). A single-list template carries
     no Lookup at all, so it cannot move the ceiling. The worst is unchanged
     and is still the same opportunities-register entity, re-derived rather
     than assumed.
@@ -1424,8 +1424,8 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     RE-MEASURED 2026-08-12 across 32 templates / 56 entities, when
     raci-matrix's Activity register joined the roster: 2 -> 7, 3 -> 29,
     4 -> 18, 5 -> 1, 6 -> 1. The new worst is raci-matrix/Activity at 6
-    (Accountable, AccountableForum, Author, ConfirmedBy, Editor, Responsible)
-    — a register whose subject IS people carries more person columns than
+    (Accountable, AccountableForum, Author, ConfirmedBy, Editor, Responsible).
+    A register whose subject IS people carries more person columns than
     most. Still three clear of the nine-column warning band.
 
     RE-MEASURED 2026-08-12 across 32 templates / 57 entities, when
@@ -1438,7 +1438,7 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     assert len(templates) == 32, (
         f"{len(templates)} templates discovered, not the 32 this survey was "
         f"measured against. A template appeared or disappeared from the "
-        f"roster — re-measure the distribution and the worst count below "
+        f"roster. Re-measure the distribution and the worst count below "
         f"before trusting either."
     )
     worst = 0
@@ -1459,10 +1459,10 @@ def test_the_worst_generated_all_items_is_six_of_twelve() -> None:
     assert worst == 6, (
         f"worst generated 'All Items' is now {worst} of 12, not the pinned 6. "
         f"If this ROSE, a template grew a join-bearing column on its worst "
-        f"entity — update the number here DELIBERATELY, and check the spec's "
+        f"entity. Update the number here DELIBERATELY, and check the spec's "
         f"survey paragraph with it. If it FELL, a formula term (SYSTEM_COLUMNS "
         f"or hide_from_all_items) may have been dropped from "
-        f"all_items_joining_fields — check that before assuming the templates "
+        f"all_items_joining_fields. Check that before assuming the templates "
         f"improved."
     )
 

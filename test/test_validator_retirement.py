@@ -77,7 +77,7 @@ def _board(*columns: str) -> str:
 def test_calculated_formula_pairing_guards_the_retirement_carve_out() -> None:
     """GUARD. `_apply_retirement` (model/mapping_loader.py) skips the
     form_visibility fold for calculated columns, and identifies them by
-    their `calculated_formulas` keys — the loader has never seen the DBML
+    their `calculated_formulas` keys. The loader has never seen the DBML
     and cannot read column types. That is correct ONLY while those keys are
     exactly the set of `calculated_*` columns.
 
@@ -122,7 +122,7 @@ def test_calculated_formula_pairing_guards_the_retirement_carve_out() -> None:
 
 def test_retired_columns_errors(tmp_path: Path) -> None:
     """Fail closed where a retirement mistake would break the list. The
-    not-null-with-no-default case is the load-bearing one: retirement hides
+    not-null-with-no-default case is the one that matters: retirement hides
     the column from the New form, so every subsequent save would fail."""
     schema, bundle = pack(
         tmp_path,
@@ -172,8 +172,8 @@ def test_retired_columns_errors(tmp_path: Path) -> None:
         """The one error with `code` reported AT `location`.
 
         Two of these codes are reachable from more than one place in this
-        single fixture — `unknown_entity` fires for both the retirement and
-        the form_visibility section it folds into — so the location is what
+        single fixture (`unknown_entity` fires for both the retirement and
+        the form_visibility section it folds into), so the location is what
         picks out the report this line is about.
         """
         return only([f for f in errors if f.location == location], code)
@@ -189,8 +189,8 @@ def test_retired_columns_errors(tmp_path: Path) -> None:
         Location(Section.RETIRED_COLUMNS, entity="Board", column="MustFill"),
         FindingCode.SUPERSEDED_BY_NOT_RENDERED,
     ).message
-    # not null with no declared default — the escalation, reported against
-    # retirement rather than against a form_visibility section nobody wrote.
+    # not null with no declared default (the escalation, reported against
+    # retirement rather than against a form_visibility section nobody wrote).
     assert "'MustFill'" in at(
         board, FindingCode.REQUIRED_COLUMN_HIDDEN_FROM_THE_NEW_FORM,
     ).message
@@ -239,7 +239,7 @@ def test_retired_supersession_may_not_name_another_retirement(tmp_path: Path) ->
 
 def test_retiring_an_undeployable_column_is_rejected(tmp_path: Path) -> None:
     """Retirement resolves into a per-column declaration, and the built-in
-    Title never receives one — it is provisioned through its own patch. A
+    Title never receives one. It is provisioned through its own patch. A
     retirement that cannot be carried out must say so rather than validate
     clean and deploy nothing."""
     schema, bundle = pack(
@@ -291,7 +291,7 @@ def test_retired_calculated_column_without_a_formula_reports_only_root_cause(
     give. The author declared a calculated column and forgot its formula,
     so `_apply_retirement` cannot tell it is calculated and folds it into
     form_visibility. The build must report the missing formula and NOTHING
-    else — blaming the author for a form_visibility entry they never wrote
+    else. Blaming the author for a form_visibility entry they never wrote
     buries the error they can actually act on."""
     schema, bundle = pack(
         tmp_path,
@@ -307,14 +307,14 @@ def test_retired_calculated_column_without_a_formula_reports_only_root_cause(
     errors = by_severity(validate_against_mapping(schema, bundle), "error")
     assert len(errors) == 1, [f.message for f in errors]
     f = only(errors, FindingCode.CALCULATED_COLUMN_HAS_NO_FORMULA)
-    # The mapping key the author has to add — the one thing they can act on.
+    # The mapping key the author has to add, the one thing they can act on.
     assert "calculated_formulas.Board.Route" in f.message
 
 def test_retired_columns_warnings(tmp_path: Path) -> None:
     """Warn where a retirement mistake only wastes something. Retirement
     must never break a build: a stale view or width reference is stripped
     and reported, not rejected. A column_formatting entry on a retired
-    column is KEPT deliberately — historical values still render with their
+    column is KEPT deliberately. Historical values still render with their
     severity colours wherever the column is still shown."""
     schema, bundle = pack(
         tmp_path,
@@ -360,8 +360,8 @@ def test_retired_columns_warnings(tmp_path: Path) -> None:
     # A dead index is dead weight against a finite per-list budget.
     indexed = only(findings, FindingCode.RETIRED_COLUMN_STILL_INDEXED)
     assert "'OperationsStatus'" in indexed.message
-    # Stripped view field, width and form-section references — reported,
-    # never rejected. One generic loop over retirement_strips covers all
+    # Stripped view field, width and form-section references (reported,
+    # never rejected). One generic loop over retirement_strips covers all
     # three under ONE code, so the declaration each one names is the only
     # thing that tells them apart and stays a message assertion.
     stripped = messages(findings, FindingCode.RETIREMENT_STRIPPED_A_DECLARATION)

@@ -84,14 +84,14 @@ def test_probes_carry_no_tenant_url() -> None:
 
 # A probe's OUTPUT is as sensitive as its source. test_probes_carry_no_tenant_url
 # globs *.js and templates/*.js.j2, so a transcript committed beside them is
-# invisible to it — and a transcript carries the tenant host, the operator's UPN
+# invisible to it, and a transcript carries the tenant host, the operator's UPN
 # and real item ids. A tenant URL has leaked out of this repo twice.
 #
 # .gitignore covers the filenames; this catches a force-add, a rename, or console
 # output pasted into any other tracked file in that directory.
 #
 # TRACKED files, not files on disk: a transcript sitting locally is the normal
-# and intended state — the operator has to keep it to quote findings from. Only
+# and intended state. The operator has to keep it to quote findings from. Only
 # committing one is the failure. Scoped to test/manual/ because that is where
 # probes run and where their output lands; it is not a repo-wide secret scan.
 EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -115,7 +115,7 @@ def _tracked_manual_files() -> list[Path]:
 
 def test_no_tracked_file_under_manual_names_a_tenant() -> None:
     """No committed file in test/manual may carry a real tenant host or a
-    real address — which is what a probe transcript is made of."""
+    real address, which is what a probe transcript is made of."""
     offenders = []
     for path in _tracked_manual_files():
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -131,7 +131,7 @@ def test_no_tracked_file_under_manual_names_a_tenant() -> None:
         ]
     assert not offenders, (
         f"Tenant host or address in tracked probe file(s): {offenders}. Probe "
-        f"transcripts must stay untracked — quote findings into code comments "
+        f"transcripts must stay untracked. Quote findings into code comments "
         f"instead of committing the raw console output."
     )
 
@@ -139,8 +139,8 @@ def test_no_tracked_file_under_manual_names_a_tenant() -> None:
 WRITE_CALL = re.compile(r"""method:\s*['"](POST|MERGE|DELETE|PUT)['"]""")
 
 # Flags that must ship off. CLEANUP is here because it is the most
-# destructive of the three — it recycles the probe's list and its items
-# before the run — and a probe committed with it on would do that to
+# destructive of the three (it recycles the probe's list and its items
+# before the run), and a probe committed with it on would do that to
 # whoever pasted the file. CLEANUP_AT_END is the legacy probe's separate,
 # opposite-timing flag; it is guarded for the same reason.
 GUARD_FLAGS = ("CONFIRMED", "ALLOW_WRITES", "CLEANUP", "CLEANUP_AT_END")
@@ -171,7 +171,7 @@ def test_a_probe_that_writes_defaults_to_read_only() -> None:
             f"{path.name} performs writes but declares no guard. It needs at "
             f"least one of {', '.join(sorted(GUARD_FLAGS))}."
         )
-        # How many guards a probe needs is its own business — one flag
+        # How many guards a probe needs is its own business. One flag
         # gating everything is fine for a probe whose whole purpose is to
         # write. What is not negotiable is that each one ships off.
         for flag, value in declared.items():
@@ -191,7 +191,7 @@ def test_every_recorded_question_is_registered_up_front() -> None:
     """A probe's summary must not be able to lie by omission.
 
     If questions are appended as they are answered, a probe that aborts
-    early reports only what it reached — and prints "0 not established"
+    early reports only what it reached, and prints "0 not established"
     while most of its questions were never asked. Registering every
     question with expect() up front makes an abort report the truth.
     """
@@ -294,7 +294,7 @@ def test_the_probe_and_the_generator_agree_on_the_fixture_size() -> None:
 def test_every_selectivity_matched_population_divides_every_checkpoint() -> None:
     """The probe's expected match count is ItemCount / (TOTAL / MATCHING_ROWS),
     floored. That is only EXACT at every checkpoint while each checkpoint is a
-    whole multiple of that ratio — otherwise the count is off by one at some
+    whole multiple of that ratio. Otherwise the count is off by one at some
     checkpoints and every matched filter there reads NOT ESTABLISHED for
     arithmetic reasons rather than SharePoint ones."""
     rows = _threshold_rows()
@@ -317,7 +317,7 @@ def test_the_js_and_python_row_generators_agree() -> None:
 
     The probe can now build its own fixture in the browser, so the rows exist
     in JavaScript as well as in make_threshold_rows.py. Every expected match
-    count in the probe is computed from these offsets — so a divergence does
+    count in the probe is computed from these offsets, so a divergence does
     not fail loudly, it reports NOT ESTABLISHED across the whole table and
     reads like a SharePoint finding.
 
@@ -329,7 +329,7 @@ def test_the_js_and_python_row_generators_agree() -> None:
     rows = _threshold_rows()
     partial = (TEMPLATES / "_threshold_rows.js.j2").read_text(encoding="utf-8")
     # Render it alone, wrapped in a driver. The partial is written to be valid
-    # on its own for exactly this — a fragment buried in the probe's async IIFE
+    # on its own for exactly this. A fragment buried in the probe's async IIFE
     # could not be executed without the whole tenant-facing script around it.
     driver = (
         f"{render._env().from_string(partial).render()}\n"
@@ -368,22 +368,22 @@ def test_a_probe_sending_metadata_uses_verbose_odata() -> None:
 
     Not hypothetical: the threshold probe's first live run failed all four of
     its index MERGEs exactly this way. Its body was byte-identical to the
-    deployer's proven patchField — same URL, same IF-MATCH, same
-    X-HTTP-Method, same __metadata — and the only difference was that
+    deployer's proven patchField (same URL, same IF-MATCH, same
+    X-HTTP-Method, same __metadata), and the only difference was that
     _http_write.js.j2 sends odata=verbose and _probe_harness.js.j2 sends
     odata=nometadata.
 
     Asserts on CONTENT-TYPE specifically, not on the string "odata=verbose".
     The first version of this test looked for the latter and passed on a probe
     with the bug, because the harness's getDigest sets an `Accept` of
-    `application/json;odata=verbose` — so that string is in every probe here
+    `application/json;odata=verbose`, so that string is in every probe here
     whether or not any write uses it. What decides how SharePoint parses a
     request BODY is Content-Type.
     """
     verbose_content_type = "'Content-Type': 'application/json;odata=verbose'"
     # The object-literal form, not the bare word. Two probes explain in prose
     # why they do NOT send __metadata, and "__metadata: the harness sends..."
-    # matched a looser pattern — flagging the files that got this right.
+    # matched a looser pattern, flagging the files that got this right.
     sends_metadata = re.compile(r"__metadata\s*:\s*\{")
     for path in _probe_scripts():
         text = path.read_text(encoding="utf-8")
@@ -391,7 +391,7 @@ def test_a_probe_sending_metadata_uses_verbose_odata() -> None:
             continue
         assert verbose_content_type in text, (
             f"{path.name} sends __metadata but never sets a verbose "
-            f"Content-Type. SharePoint answers 400 — __metadata is meaningless "
+            f"Content-Type. SharePoint answers 400, __metadata is meaningless "
             f"to a nometadata endpoint. Override Content-Type in that call's "
             f"spPost extraHeaders, as _http_write.js.j2 does."
         )

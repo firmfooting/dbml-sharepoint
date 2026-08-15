@@ -2,7 +2,7 @@
 """Render each probe template to the pasteable .js an operator uses.
 
 Probes are generated for the same reason deploy.js is: the harness they
-share — site guard, digest handling, REST helpers, result table — was
+share (site guard, digest handling, REST helpers, result table) was
 copied into four scripts and had already drifted between them.
 
 Run me after editing anything under templates/:
@@ -23,7 +23,7 @@ def _env() -> Environment:
     return Environment(
         loader=FileSystemLoader(TEMPLATES),
         undefined=StrictUndefined,
-        autoescape=False,  # noqa: S701 — emits JavaScript, not HTML
+        autoescape=False,  # noqa: S701 (emits JavaScript, not HTML)
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,
@@ -34,7 +34,7 @@ def revision_of(template_path: Path) -> str:
     """A short content hash of one probe's sources, for it to print at run time.
 
     A pasted probe has no identity. An operator re-pasting a stale clipboard
-    produces a transcript indistinguishable from one where a fix did not work —
+    produces a transcript indistinguishable from one where a fix did not work,
     which has already cost a full round trip of diagnosis, the tell being the
     line numbers in a stack trace. A probe that names its own revision makes
     that a one-line check instead.
@@ -48,7 +48,7 @@ def revision_of(template_path: Path) -> str:
     hashing raw bytes gives a DIFFERENT revision for byte-identical sources
     depending on the machine that rendered them. Two consequences, both real:
     the rendered .js committed from Windows is "stale" to CI on Linux, which is
-    how this was found; and worse, the revision stops being an identity — the
+    how this was found; and worse, the revision stops being an identity, the
     one thing it exists to be. An operator reporting `f663165e` and a reviewer
     re-rendering to `7d6b7a5b` would be looking at the same source and
     disagreeing about it, which is precisely the round trip of diagnosis the

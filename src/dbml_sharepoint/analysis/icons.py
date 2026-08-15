@@ -3,8 +3,8 @@
 One home, for the same reason the calculated type vocabulary has one: a
 name spread across a hundred formatter files drifts, and this particular
 drift is invisible. SharePoint renders an unknown ``iconName`` as nothing
-— no error in the build, no error in the deploy, nothing in the browser
-console. The only witness is a person looking at the form.
+(no error in the build, no error in the deploy, nothing in the browser
+console). The only witness is a person looking at the form.
 
 Names that read as obviously real and do not exist include ``Calendar``,
 ``Key``, ``Flow``, ``Scales``, ``AddFriend``, ``Handshake`` and
@@ -18,7 +18,7 @@ MDL2 icon source, which is what SharePoint's ``iconName`` resolves against:
 https://github.com/microsoft/fluentui/tree/master/packages/font-icons-mdl2/src
 
 **Adding a name means checking it there first.** The test beside this
-module asserts shape, not existence — an offline suite cannot check a
+module asserts shape, not existence. An offline suite cannot check a
 catalogue, which is precisely why this set is small, central and reviewed.
 """
 

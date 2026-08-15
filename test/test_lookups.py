@@ -36,7 +36,7 @@ def _schema() -> Schema:
 
     A function rather than a module constant: `Schema`, `Table` and `Column`
     are mutable dataclasses, so one shared instance would be the same object
-    in every test in the file — the rule `_model` states in its own docstring.
+    in every test in the file (the rule `_model` states in its own docstring).
     """
     return make_schema(
         make_table("Event", make_column("EventRef")),
@@ -49,7 +49,7 @@ def _plain(event: EntityMapping | None = None) -> dict[str, EntityMapping]:
     """The three-entity declaration these tests vary.
 
     `event` is the Event declaration: pass `_entity("Event", "EventRef")` to
-    give it a display column. Built rather than patched — the previous form
+    give it a display column. Built rather than patched. The previous form
     was a YAML constant each test string-replaced a whole line out of, which
     meant the needles had to match it byte for byte, including their two-space
     indent. `str.replace` returns the input unchanged when the needle drifts,
@@ -89,7 +89,7 @@ def test_a_declared_display_column_wins() -> None:
 
 
 def test_a_calculated_display_column_is_excluded() -> None:
-    """It cannot carry an index — CALCIDX sets Indexed=true, the MERGE is
+    """It cannot carry an index. CALCIDX sets Indexed=true, the MERGE is
     accepted and the flag reads back false. Including it would make the caller
     count an index that cannot exist."""
     declared = _plain(_entity("Event", "EventRef"))
@@ -124,7 +124,7 @@ def _cross_site_schema(*extra: Table) -> Schema:
 
 def test_a_cross_site_only_target_is_not_a_lookup_target() -> None:
     """A cross-site ref is expanded into a Choice + URL pair on the SOURCE list.
-    Nothing enumerates the far list, so there is no picker to protect — and
+    Nothing enumerates the far list, so there is no picker to protect, and
     indexing its display column would be a real Indexed=true MERGE on a customer
     tenant buying nothing."""
     schema = _cross_site_schema()

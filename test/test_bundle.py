@@ -283,7 +283,7 @@ def test_the_package_has_exactly_one_writer() -> None:
     change hides among a hundred phantom ones. AGENTS.md records this; both
     committed-output generators and the bundle artifacts were fixed for it.
 
-    The trap is PER-CALL-SITE, which is what makes it worth a test rather than
+    The defect is PER-CALL-SITE, which is what makes it worth a test rather than
     a note: the fix does not generalise, so the next writer someone adds
     reintroduces it, and nothing in ruff, mypy or the suite would say so.
 

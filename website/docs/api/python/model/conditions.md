@@ -9,9 +9,9 @@ sidebar_position: 5
 
 The shared condition grammar's types and structural parser.
 
-One grammar serves every conditional surface in the mapping —
-`views[].where`, `form_visibility.when`, `column_validation.when` and
-`list_validation.when` — because every SharePoint syntax difference the
+One grammar serves every conditional surface in the mapping
+(`views[].where`, `form_visibility.when`, `column_validation.when` and
+`list_validation.when`), because every SharePoint syntax difference the
 alternative exposes is a rendering concern the author should never meet.
 Those differences are not hypothetical: validation formulas reject single
 quotes and require double, conditional-visibility expressions require
@@ -22,7 +22,7 @@ silently, because a malformed formula still saves and simply evaluates to
 the wrong answer.
 
 Structural checks only: shape, required keys, group arity. Anything needing
-the schema — does this column exist, can this target render this operator —
+the schema (does this column exist, can this target render this operator)
 lives in `analysis.conditions`, matching the parser/validator split used
 everywhere else in this package.
 
@@ -63,8 +63,8 @@ class Group:
 
 A boolean combination of conditions.
 
-`none_of` is accepted from authors but never survives normalisation —
-see `analysis.conditions.normalise`.
+`none_of` is accepted from authors but never survives normalisation.
+See `analysis.conditions.normalise`.
 
 ### `parse_condition`
 

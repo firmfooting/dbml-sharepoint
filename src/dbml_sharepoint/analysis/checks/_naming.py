@@ -16,7 +16,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     # Display names: overrides must target rendered columns, and the resolved
     # display titles (auto + overrides) must be non-empty, within SharePoint's
-    # MAX_DISPLAY_TITLE Title bound, and unique per entity — a duplicate
+    # MAX_DISPLAY_TITLE Title bound, and unique per entity. A duplicate
     # display title makes two columns indistinguishable on every form and view.
     #
     # The bound is DOCUMENTED, not assumed, and it is stated once in
@@ -120,14 +120,14 @@ def check(vc: ValidationContext) -> list[Finding]:
             target_table = tables_by_name.get(col.ref.target_table)
             if target_table is None:
                 continue  # missing-ref target already errored by validate()
-            # These three messages open `Table.Column:` — the DBML column, with
-            # no mapping section in front of it — so `location.path`
+            # These three messages open `Table.Column:` (the DBML column, with
+            # no mapping section in front of it), so `location.path`
             # ("schema[Table].Column") is not their prefix. The subject really
             # is the schema column, so the location is right and the prefix is
             # what predates it.
             #
-            # The stated reason for leaving it — "294 assertions still match on
-            # prose" — no longer holds. #99 reworded all sixteen of
+            # The stated reason for leaving it ("294 assertions still match on
+            # prose") no longer holds. #99 reworded all sixteen of
             # `validator.py`'s schema findings to render their prefix from
             # `Location.path` and the whole suite stayed green: the 294 prose
             # assertions had already been replaced by code-and-value ones. So
@@ -142,7 +142,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             # A SharePoint lookup cannot span webs. If the source and target
             # map to different site_roles and the column is not declared
             # cross-site, deploy.js would emit a lookup whose target list is
-            # never created in this site — failing only at deploy time
+            # never created in this site, failing only at deploy time
             # ('Lookup target ... not yet created'). Fail the build instead.
             if (
                 source_entity is not None

@@ -25,8 +25,8 @@ def only(findings: Iterable[Finding], code: FindingCode) -> Finding:
     """The one finding carrying `code`, asserting there is exactly one.
 
     The failure message names what WAS found. `assert len(found) == 1` tells
-    you a count and nothing else, and the count is never the interesting part
-    — the interesting part is which rule fired instead.
+    you a count and nothing else, and the count is never the interesting part.
+    The interesting part is which rule fired instead.
     """
     items = list(findings)
     found = [f for f in items if f.code == code]
@@ -51,7 +51,7 @@ def none_of(findings: Iterable[Finding], code: FindingCode) -> None:
 def messages(findings: Iterable[Finding], code: FindingCode) -> list[str]:
     """The messages of every finding carrying `code`.
 
-    For the tests that legitimately care about a value in the prose — a column
+    For the tests that legitimately care about a value in the prose: a column
     name the reader needs, a limit the message quotes. Reach for `only` first.
     """
     return [f.message for f in findings if f.code == code]

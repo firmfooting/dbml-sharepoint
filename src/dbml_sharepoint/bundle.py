@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/bundle.py
 """Bundle-level packaging shared by the core and extension CLIs.
 
-A successful build emits a fixed artifact set — the deployment bundle.
+A successful build emits a fixed artifact set, the deployment bundle.
 This module owns the cross-cutting concerns: the canonical artifact name
 list, stale-artifact clearing, platform-stable content hashing, and the
 index.md / checksums.txt writers.
@@ -9,12 +9,12 @@ index.md / checksums.txt writers.
 The clearing guarantee is about staleness and starts once a build has
 accepted its inputs: from that point no failure leaves a pasteable script
 from an older build. It deliberately does NOT extend to a refusal that
-happens first — a malformed ``--site-url``, an unreadable file — because
+happens first (a malformed ``--site-url``, an unreadable file), because
 such a run has read nothing and made nothing stale, and ``--out`` is
 routinely the directory holding the bundle the operator is part-way
 through pasting. See ``clear_generated``.
 
-**Every artifact is written UTF-8 with LF, on every platform** — through
+**Every artifact is written UTF-8 with LF, on every platform**, through
 ``write_artifact``, which is the only writer the emission path may use.
 
 ``Path.write_text`` defaults to text mode, so it emits CRLF on Windows and
@@ -33,7 +33,7 @@ compensating for it: normalised content IS the content on disk, so the
 digests stay platform-stable AND every standard tool validates the bundle.
 
 ``sha256_lf`` is deliberately kept. It is a no-op for anything written
-through ``write_artifact``, and that is the point — it is the guard for a
+through ``write_artifact``, and that is the point. It is the guard for a
 writer that bypasses it, which is exactly how the CRLF got in.
 """
 
@@ -59,7 +59,7 @@ class SeedRequiresDemoItemsError(ValueError):
 # These files exist to be OPENED and COPIED, never executed from disk. On
 # Windows a `.js` file is associated with Windows Script Host, so
 # double-clicking the deliverable runs it outside the browser instead of
-# opening it — the one thing an operator must not do with a provisioning
+# opening it, the one thing an operator must not do with a provisioning
 # script. `.js.txt` opens in the default text editor everywhere, and the
 # inner `.js` keeps the artifact self-describing.
 #
@@ -100,7 +100,7 @@ GENERATED_FILES: tuple[str, ...] = (
 # fresh bundle, which is exactly the "stale artifact an operator could
 # read, or paste" failure `clear_generated` exists to prevent.
 #
-# Cheap to keep and additive by nature — a rename adds a row here rather
+# Cheap to keep and additive by nature. A rename adds a row here rather
 # than replacing one, because someone may be rebuilding over a bundle from
 # any earlier version, not only the immediately preceding one.
 _LEGACY_ARTIFACTS: tuple[str, ...] = (
@@ -114,7 +114,7 @@ _LEGACY_ARTIFACTS: tuple[str, ...] = (
 )
 
 # INDEX rows: what each artifact IS. The manifest stays authoritative for
-# HOW to run the bundle — INDEX carries one pointer line, no step
+# HOW to run the bundle. INDEX carries one pointer line, no step
 # duplication, so the run sequence cannot drift between the two.
 _INDEX_ROWS: tuple[tuple[str, str], ...] = (
     ("deploy-manifest.md",
@@ -152,14 +152,14 @@ def clear_generated(out: Path, *, reporting: bool = False) -> None:
     """Remove every artifact a previous build may have left in ``out``.
 
     The guarantee is about *staleness*, not about position: once a build has
-    accepted its inputs, every later failure — validation errors, a seed
-    refusal, a generator raise — leaves at most a fresh manifest describing
+    accepted its inputs, every later failure (validation errors, a seed
+    refusal, a generator raise) leaves at most a fresh manifest describing
     the findings, never a stale script an operator could paste beside it.
 
     A ``--dry-run`` is not a failure and is grouped here only because it too
     withholds the scripts: it succeeds, writes a fresh ``deploy-manifest.md``
     carrying the deployment plan, and clears the previous scripts for the
-    same reason — the manifest would otherwise describe one build while the
+    same reason. The manifest would otherwise describe one build while the
     scripts beside it came from another.
 
     So ``build`` calls this at the point it commits to writing, not as its
@@ -192,7 +192,7 @@ def write_artifact(path: Path, text: str) -> None:
     ``newline="\\n"`` only stops Python turning ``\\n`` into ``\\r\\n`` on the
     way out; a ``\\r`` already inside the string passes straight through. A
     template checked out with CRLF, or a mapping value carrying one, would
-    put CR bytes in the artifact while ``sha256_lf`` hashed them away —
+    put CR bytes in the artifact while ``sha256_lf`` hashed them away,
     which is the exact divergence between the digest and the bytes on disk
     that this whole path exists to close. Normalising here means the
     guarantee holds for any input, not just for inputs that were already
@@ -215,8 +215,8 @@ def sha256_lf(text: str) -> str:
 def write_checksums(out: Path, relpaths: list[str]) -> None:
     """Write ``checksums.txt``: one ``<sha256>  <relpath>`` line per artifact.
 
-    Plain sha256sum format — no header lines (keeps ``sha256sum -c``
-    clean) — sorted by relpath, POSIX separators.
+    Plain sha256sum format, no header lines (keeps ``sha256sum -c``
+    clean), sorted by relpath, POSIX separators.
 
     That claim is now true on every platform, which it was not before:
     ``checksums.txt`` itself gained a CR per line on Windows, and sha256sum
@@ -314,9 +314,9 @@ def emit_bundle(
 ) -> str:
     """Emit the full post-validation bundle; returns the success message.
 
-    The one emission sequence — the deploy, rollback and assess scripts and
+    The one emission sequence (the deploy, rollback and assess scripts and
     the assess manifest, the seed-gated demo script, reporting, index.md and
-    checksums.txt — shared by the core CLI and every extension CLI. Raises
+    checksums.txt) shared by the core CLI and every extension CLI. Raises
     :class:`SeedRequiresDemoItemsError` before writing anything when
     ``seed`` is set but the mapping declares no demo rows.
 

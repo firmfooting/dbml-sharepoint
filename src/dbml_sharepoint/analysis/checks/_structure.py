@@ -55,7 +55,7 @@ from dbml_sharepoint.model.parser import Table
 #
 # The same run ACCEPTED Yes/No, Choice, Date-only, Date-and-time, Number,
 # single line of text, and a calculated column feeding another calculated
-# column — which is where _SUPPORTED_CALCULATED_OPERANDS below comes from.
+# column, which is where _SUPPORTED_CALCULATED_OPERANDS below comes from.
 #
 # longtext, richtext and hyperlink were deliberately left OUT of this denylist
 # until that run existed, on the grounds that Microsoft's silence about a type
@@ -271,7 +271,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     # Shared with `lookup_display_columns`, which decides which lists get the
     # picker's index. A second copy of this comprehension is how the warning
     # below comes to fire for a list the deployer never indexes, or stay silent
-    # for one it does — and it did: a list reached only by a CROSS-SITE ref has
+    # for one it does, and it did: a list reached only by a CROSS-SITE ref has
     # no picker at all, so it was told its picker would stop working.
     lookup_targets = lookup_target_entities(schema, vc.cross_site_pairs)
 
@@ -292,8 +292,8 @@ def check(vc: ValidationContext) -> list[Finding]:
     # has no upload step to offer instead. Each of those was observed on a
     # tenant on 2026-07-29 (test/manual/document-library-probe.js).
     #
-    # Half-support — a library that provisions but can carry no view naming
-    # its files, no usable header and no demo rows — reads as a bug in every
+    # Half-support (a library that provisions but can carry no view naming
+    # its files, no usable header and no demo rows) reads as a bug in every
     # direction. Refusing is the honest state until the work in issue #14 is
     # done: a file-upload step in the deploy, a file-identity column
     # vocabulary, and a header anatomy that does not rest on [$Title].
@@ -374,7 +374,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         elif entity.accept_unindexable_display_column:
             # Reaching here means NOT (target AND calculated), which is three
             # combinations, not one. The message used to assert "the display
-            # column is not calculated" in all three — false for a calculated
+            # column is not calculated" in all three, false for a calculated
             # display column on an entity nothing looks up, which is precisely
             # the case an author is most likely to have set the key for. State
             # only what is true of the branch actually taken.
@@ -397,7 +397,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         #
         # An unindexable type here is a DEPLOY ABORT, not a cosmetic miss:
         # templates/deploy/_field_reconcile.js.j2 sets desired.indexed = true,
-        # MERGEs it, reads the flag back and THROWS when it did not stick —
+        # MERGEs it, reads the flag back and THROWS when it did not stick,
         # part-way through a run, after earlier phases have written to the site.
         # Errors, not warnings: no acceptance can make a Note column indexable,
         # which is what separates these from the calculated case above.
@@ -573,8 +573,8 @@ def check(vc: ValidationContext) -> list[Finding]:
         if len(effective_indexes) > MAX_LIST_INDEXES:
             # Name the implicit contributors. The old message said only
             # "(including unique columns)", which on the case this rule exists
-            # for — twenty declared indexes on a lookup target, no unique
-            # columns anywhere — is both unhelpful and false: the author counts
+            # for (twenty declared indexes on a lookup target, no unique
+            # columns anywhere) is both unhelpful and false: the author counts
             # twenty and is told the twenty-first comes from something that is
             # not there.
             declared = vc.explicit_indexes_by_entity.get(entity_name, set())
@@ -603,8 +603,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 + ".",
             ))
         elif len(effective_indexes) >= INDEX_WARN_AT:
-            # Why the warning band exists at all — the count this build can see
-            # is a floor, not a total — is recorded once, beside INDEX_WARN_AT
+            # Why the warning band exists at all (the count this build can see
+            # is a floor, not a total) is recorded once, beside INDEX_WARN_AT
             # in analysis/limits.py, along with the 2026-07-31 measurement.
             findings.append(Finding(
                 FindingCode.INDEX_LIMIT_APPROACHING,
@@ -669,7 +669,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     # watched_lists, polymorphic_patterns and versioning.overrides were the
     # three entity-keyed sections nothing validated at all. Every other
     # section names its unknown entities; these three silently dropped a
-    # typo — the versioning one in the fail-open direction, leaving a list
+    # typo, the versioning one in the fail-open direction, leaving a list
     # with versioning ON when the author declared it off.
     for i, watched in enumerate(bundle.mapping.watched_lists):
         watched_table = tables_by_name.get(watched.entity)
@@ -720,8 +720,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 location=Location(Section.VERSIONING, sub="overrides"),
             ))
 
-    # Lookups the deploy plan defers to Phase 2 — self-references and one
-    # side of every cycle. They exist by the end of the run but not when
+    # Lookups the deploy plan defers to Phase 2 (self-references and one
+    # side of every cycle). They exist by the end of the run but not when
     # Phase 1 fields are created.
     deferred_by_entity: dict[str, set[str]] = {}
     for entity_name, col_name in compute_phases(schema).phase2_lookups:
@@ -741,7 +741,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # Checked against the RENDERED columns, not the declared ones.
         # `Id int [pk, increment]` is skipped at render time and a cross-site
         # column is expanded into <col>Abbreviation and <col>SiteUrl, so both
-        # are names the deploy never creates while sitting in table.columns —
+        # are names the deploy never creates while sitting in table.columns,
         # and a formula naming either passed this very check before dying at
         # paste time.
         xcols = vc.cross_site_columns(table.name)
@@ -777,7 +777,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             # SharePoint resolves [Column] references when the field is
             # CREATED and rejects the POST (HTTP 500, "The formula refers to
-            # a column that does not exist") on any miss — fail at build, not
+            # a column that does not exist") on any miss. Fail at build, not
             # at paste.
             refs = formula_column_refs(formula)
             if col.name in refs:
@@ -796,13 +796,13 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
             for ref in sorted(refs & declared):
                 operand = columns_by_name.get(ref)
-                # No Column object means a generated cross-site companion —
-                # <ref>Abbreviation or <ref>SiteUrl, both plain Text/Hyperlink
-                # fields and both fine in a formula. The LOGICAL ref they
+                # No Column object means a generated cross-site companion
+                # (<ref>Abbreviation or <ref>SiteUrl, both plain Text/Hyperlink
+                # fields and both fine in a formula). The LOGICAL ref they
                 # replace cannot reach here at all: `declared` comes from
                 # _rendered_columns, which drops it, so it is already reported
                 # above as not a rendered column. Do not add an `in xcols`
-                # test here expecting it to fire — it cannot.
+                # test here expecting it to fire. It cannot.
                 if operand is None:
                     continue
                 if is_multi_value(operand.type):
@@ -856,8 +856,8 @@ def check(vc: ValidationContext) -> list[Finding]:
             # formula is posted in Phase 1 against a column Phase 2 has not
             # added yet. Rejected rather than deferred: moving the calculated
             # field into Phase 2 would mean a second creation path for
-            # calculated columns, and the declaration has a cheap rewrite —
-            # compute from the column the lookup mirrors, or drop it.
+            # calculated columns, and the declaration has a cheap rewrite
+            # (compute from the column the lookup mirrors, or drop it).
             for ref in sorted(refs & deferred_by_entity.get(table.name, set())):
                 findings.append(Finding(
                     FindingCode.CALCULATED_FORMULA_DEFERRED_LOOKUP,

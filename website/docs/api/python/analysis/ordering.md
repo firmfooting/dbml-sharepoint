@@ -12,8 +12,8 @@ Two-pass dependency resolution.
 Phase 2.1: create lists in topological order, with non-lookup columns and as
 many lookup columns as can be resolved (target already created).
 
-Phase 2.2: add the remaining lookup columns — self-references and any side
-of a strongly connected component.
+Phase 2.2: add the remaining lookup columns (self-references and any side
+of a strongly connected component).
 
 ### `DeployPlan`
 
@@ -47,7 +47,7 @@ second raises `KeyError` on the first.
 
 `site_tables_in_order` below applies it in dependency order for the
 generators that DEPLOY. `generators.reportgen` applies it in declaration
-order, because a report has no creation sequence to respect — the
+order, because a report has no creation sequence to respect. The
 ordering legitimately differs and the membership question does not, which
 is why the predicate is factored out and the ordering is not.
 

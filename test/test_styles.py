@@ -216,8 +216,8 @@ def test_theme_rejects_unknown_tokens() -> None:
 ])
 def test_style_spec_unknown_keys_are_rejected(spec: dict[str, Any], typo: str) -> None:
     """A style spec silently ignored everything it did not recognise. A
-    typo'd `guard:` renders closed rows as overdue — a red flag on work
-    that is finished — and `calculated: true` is documented as required for
+    typo'd `guard:` renders closed rows as overdue (a red flag on work
+    that is finished) and `calculated: true` is documented as required for
     calculated columns while a misspelling of it changed nothing."""
     with pytest.raises(ValueError) as err:
         expand_style(spec, "column_formatting.T.C")

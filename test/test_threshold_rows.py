@@ -7,8 +7,8 @@ returned fewer rows than expected" from a finding into a mystery.
 
 Note what several of these assert: properties of the BYTES ON DISK across all
 five files, not of `build_rows()`. A review of an earlier version broke
-`write_csvs` so that 1900 rows were duplicated and 1900 omitted — same file
-names, same per-file counts, same 6000 total — and every assertion in this file
+`write_csvs` so that 1900 rows were duplicated and 1900 omitted (same file
+names, same per-file counts, same 6000 total), and every assertion in this file
 passed, because nothing read the union.
 """
 
@@ -55,8 +55,8 @@ def _union(out_dir: Path) -> list[dict[str, str]]:
 
 def test_every_filtered_population_is_the_same_size() -> None:
     """Matched selectivity is the design. Each of these filters differs from
-    `Bucket eq 'Z'` in exactly ONE respect — the index, the operator, or the
-    field type — which is only true while the row counts agree."""
+    `Bucket eq 'Z'` in exactly ONE respect (the index, the operator, or the
+    field type), which is only true while the row counts agree."""
     m = _load()
     rows = m.build_rows(owner_id="7", parent_id="1")
     assert len(rows) == 6000
@@ -70,7 +70,7 @@ def test_every_filtered_population_is_the_same_size() -> None:
 
 def test_the_filtered_populations_are_pairwise_disjoint() -> None:
     """No row may be both a `Z` and a blank `ClosedAt`. Overlap would let one
-    result be read as a consequence of another — and in the first draft every
+    result be read as a consequence of another, and in the first draft every
     single `Z` row was also blank and also owned, because all three offsets
     were multiples of 100."""
     m = _load()
@@ -88,7 +88,7 @@ def test_the_filtered_populations_are_pairwise_disjoint() -> None:
 
 
 def test_shadow_is_byte_identical_to_bucket() -> None:
-    """The load-bearing control. The two columns must differ ONLY in whether
+    """The control that matters. The two columns must differ ONLY in whether
     an index exists, so a divergence cannot be blamed on data shape."""
     m = _load()
     assert all(r["Shadow"] == r["Bucket"] for r in m.build_rows())
@@ -106,7 +106,7 @@ def test_closed_at_is_iso_8601_utc_with_a_z() -> None:
 def test_sort_bait_is_pinned_to_literals_that_survive_a_new_process() -> None:
     """`len(set(...)) == 6000` cannot fail while the `-{row}` suffix exists, so
     it proves nothing about the hash. And an in-process determinism check
-    passes for `hash()`, which is salted per interpreter — regenerating
+    passes for `hash()`, which is salted per interpreter. Regenerating
     mid-run would then leave the list holding a mixture and void the sort
     observation. Literals are what actually survives a process boundary.
     """
@@ -185,7 +185,7 @@ def test_file_names_encode_the_resulting_list_total() -> None:
 def test_the_written_files_hold_every_row_exactly_once(tmp_path: Path) -> None:
     """The assertion an earlier draft was missing. Per-file counts and the
     grand total can all be right while rows are duplicated and omitted in
-    equal measure — only the union catches it, and the probe's RUNCNT guard
+    equal measure. Only the union catches it, and the probe's RUNCNT guard
     would read the resulting list as ON CHECKPOINT and trust the whole run."""
     m = _load()
     m.write_csvs(m.build_rows(owner_id="7", parent_id="1"), tmp_path)
@@ -230,7 +230,7 @@ def test_a_row_count_that_does_not_match_the_run_plan_is_refused(tmp_path: Path)
 
 def test_writing_clears_a_previous_run_plans_files(tmp_path: Path) -> None:
     """A shortened plan would otherwise leave the old tail sitting beside the
-    new files, loadable and indistinguishable — and the file names are what
+    new files, loadable and indistinguishable, and the file names are what
     the operator reads the run plan off."""
     m = _load()
     stale = tmp_path / m.file_name(9, 99999)
@@ -250,7 +250,7 @@ def test_written_files_use_lf_only_line_endings(tmp_path: Path) -> None:
     """Power Automate split on LF and got a bare CR as the last column's value.
 
     csv.writer defaults to lineterminator='\r\n'. `newline=""` stops the OS
-    translating on top of that, which is why the file was not CRLF-doubled —
+    translating on top of that, which is why the file was not CRLF-doubled,
     but the csv module still wrote CR itself, and a parser that splits on LF
     leaves it on whichever column happens to be last. Here that was ParentId,
     a Lookup id, so SharePoint received "\r" and refused the item.
@@ -282,7 +282,7 @@ def test_nullable_columns_is_exactly_the_set_that_is_ever_blank() -> None:
 
     A hand-written list of the columns needing empty-to-null conversion named
     OwnerId and ParentId and omitted ClosedAt. Ten rows of a thousand were
-    rejected — exactly the ClosedAt population — and batch creation being
+    rejected (exactly the ClosedAt population), and batch creation being
     non-transactional, the flow reported success.
 
     Checked in BOTH directions. A newly-blank column missing from
@@ -322,7 +322,7 @@ def test_json_rows_carry_real_nulls_and_real_integers(tmp_path: Path) -> None:
     assert len(blank_dates) == 10
     assert len(owned) == 10
     assert len(parented) == 10
-    # Ids are NUMBERS, not quoted digit strings — a Person id must not be "11".
+    # Ids are NUMBERS, not quoted digit strings. A Person id must not be "11".
     assert owned[0]["OwnerId"] == 11
     assert parented[0]["ParentId"] == 1
     # And a present date is still a string.

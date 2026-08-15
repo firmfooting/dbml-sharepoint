@@ -15,7 +15,7 @@ The transformation is mechanical, terminating and depth-preserving:
     !(any_of[X, Y])   ->  all_of[!X, !Y]
 
 Implications need no operator of their own. A validation rule is usually
-"if A then B", which is `any_of[none_of[A], B]` — expressible in the
+"if A then B", which is `any_of[none_of[A], B]`, expressible in the
 grammar as authored and normalised by the rules above.
 """
 
@@ -38,7 +38,7 @@ from dbml_sharepoint.model.conditions import Condition, Group, Leaf
 
 #: Where a refusal raised by a renderer says it is. The renderers are public
 #: and take no context, so this constant is the root every internal path
-#: hangs off — and `_render_problems` rewrites it to the caller's own path
+#: hangs off. `_render_problems` rewrites it to the caller's own path
 #: when a refusal is reported as a finding rather than raised.
 _CONDITIONS_ROOT = Location(Section.CONDITIONS)
 
@@ -49,7 +49,7 @@ class _RefusalError(ValueError):
     `_render_problems` reuses the renderers as the capability oracle, so a
     rejection makes the round trip back out as an exception. A bare
     `ValueError` would arrive carrying prose and nothing else, and the code
-    is the identity — so it travels on the exception.
+    is the identity, so it travels on the exception.
 
     Still a `ValueError`: the renderers are public and `to_caml` has always
     raised one, so every existing caller and every `pytest.raises(ValueError)`
@@ -132,14 +132,14 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             )
         flipped = Leaf(node.field, NEGATION[node.op], node.value, node.property, node.measure)
         if node.op in _NULL_TESTS or node.measure:
-            # A null test is its own inverse, and a measure is never null —
+            # A null test is its own inverse, and a measure is never null.
             # LEN(blank) is 0, so the flipped comparison already matches.
             return flipped
         if node.op in ("not_contains", "not_begins_with"):
             # A negative text predicate is ALREADY true for a blank: indexOf
             # on an empty string is -1, which satisfies both `< 0` and
             # `!= 0`. Its negation must therefore be false there, and the
-            # null arm below would OR the blank back in — making an authored
+            # null arm below would OR the blank back in, making an authored
             # rule and its own negation both true for a blank value.
             #
             # That -1 was arithmetic until 2026-07-29, when it was watched:
@@ -152,8 +152,8 @@ def _push(node: Condition, *, negate: bool) -> Condition:
             # Same reasoning as neq/not_in, and it must stay a separate test:
             # `_TEXT_OPS` holds all four, and the `flipped.op` half of the
             # condition below would catch the POSITIVE two by their flips.
-            # For those the null arm is right — `contains` is false for a
-            # blank, so none_of must be true — and dropping it would change
+            # For those the null arm is right (`contains` is false for a
+            # blank, so none_of must be true) and dropping it would change
             # output for a shape that already exists on main.
             return flipped
         if node.op in _NULL_INCLUSIVE_NEGATIVES or flipped.op in _NULL_INCLUSIVE_NEGATIVES:
@@ -165,7 +165,7 @@ def _push(node: Condition, *, negate: bool) -> Condition:
         # SharePoint comparisons are three-valued: CAML's bare Leq does NOT
         # match rows where the column is empty, so a bare operator flip would
         # make "none of the items where Count > 5" exclude items with no
-        # Count at all — which is the opposite of what the words say, and
+        # Count at all, which is the opposite of what the words say, and
         # disagrees with the expression target, where a blank coerces and is
         # included. Relational negation therefore admits the empty case
         # explicitly; neq/not_in do so in their own renderings above.
@@ -258,16 +258,16 @@ _VALIDATION_OPS: dict[str, str] = {
 _TEXT_OPS = frozenset({"contains", "not_contains", "begins_with", "not_begins_with"})
 
 # Operators each target can render. A miss is a build error naming the
-# target — never a formula emitted in hope.
+# target, never a formula emitted in hope.
 CAPABILITIES: dict[str, frozenset[str]] = {
     # CAML has Contains/BeginsWith and no negation of either, and this is a
-    # PLATFORM limit rather than a gap here — so it is cited rather than
+    # PLATFORM limit rather than a gap here, so it is cited rather than
     # probed. Microsoft's Where element documents its complete child set:
     # And, BeginsWith, Contains, DateRangesOverlap, Eq, Geq, Gt, In,
     # Includes, IsNotNull, IsNull, Leq, Lt, Membership, Neq, NotIncludes,
     # Or. There is no <Not>, no <NotContains> and no <NotBeginsWith>, and
-    # <NotIncludes> negates <Includes> — a MULTI-VALUE membership test, not
-    # a substring match. So "does not contain" has no CAML spelling at all,
+    # <NotIncludes> negates <Includes> (a MULTI-VALUE membership test, not
+    # a substring match). So "does not contain" has no CAML spelling at all,
     # by any arrangement of the elements that exist.
     # https://learn.microsoft.com/sharepoint/dev/schema/where-element-query
     CAML: frozenset(_CAML_OP_TAGS) | {"in", "not_in"},
@@ -277,7 +277,7 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 
 # Operators plausible from the documented syntax but never observed in a
 # formula on a live tenant. Unverified is treated as unknown, and the probe
-# that settles one is named in the error — a signpost pointing at a probe
+# that settles one is named in the error. A signpost pointing at a probe
 # that does not ask reads as though somebody already checked.
 #
 # EMPTY, and what the emptiness means is narrower than it looks: nothing is
@@ -289,21 +289,21 @@ CAPABILITIES: dict[str, frozenset[str]] = {
 # What was watched, on 2026-07-29 and by eye
 # (test/manual/expression-text-operators-probe.js): the four TEXT operators.
 # X6 was the last one carried on reasoning rather than sight, and the second
-# pass added it and found it DISCRIMINATING rather than merely stored —
+# pass added it and found it DISCRIMINATING rather than merely stored,
 # hidden for a value beginning with the needle, visible for the three that
 # do not, with all twenty-four cells of the table matching prediction.
 #
-# The other ten — eq, neq, lt, leq, gt, geq, is_null, is_not_null, in,
-# not_in — predate this list and rest on the form_visibility spec's
+# The other ten (eq, neq, lt, leq, gt, geq, is_null, is_not_null, in,
+# not_in) predate this list and rest on the form_visibility spec's
 # harvested formulas rather than on a probe of their own. That is a weaker
 # footing than the text four, and it is recorded here rather than smoothed
 # over, because a list whose whole worth is honesty cannot round its own
 # coverage up.
 #
 # It stays here because storage cannot establish anything on this target.
-# SharePoint does not validate ClientValidationFormula on write — a call to
+# SharePoint does not validate ClientValidationFormula on write. A call to
 # a function that does not exist is accepted and read back byte-identical
-# (test/manual/expression-text-operators-probe.js, X0) — so the only proof
+# (test/manual/expression-text-operators-probe.js, X0), so the only proof
 # a rendering works is a person watching a column appear and disappear.
 # Anything added to CAPABILITIES[EXPRESSION] without that belongs here
 # first.
@@ -313,7 +313,7 @@ DISABLED_PENDING_PROBE: dict[str, frozenset[str]] = {}
 #
 # `measure: length` on the expression target is the important one, and it is
 # not an omission: list formatting's `length` returns an ARRAY's item count,
-# and 1 or 0 for anything else — it does not measure a string. Rendering
+# and 1 or 0 for anything else. It does not measure a string. Rendering
 # `length([$Note]) > 3` would therefore be false for every possible value,
 # hiding the column unconditionally, with a formula that saves cleanly. The
 # documented idiom is a sentinel trick (`indexOf([$Note] + '^', '^')`), which
@@ -327,8 +327,8 @@ _UNSUPPORTED_MEASURE: dict[str, str] = {
     ),
 }
 # CAML reaches a lookup's id via FieldRef LookupId, and a person's email not
-# at all. Rendering the accessor away — comparing a display name to an email
-# address — is a view that silently returns the wrong rows, so it is refused.
+# at all. Rendering the accessor away (comparing a display name to an email
+# address) is a view that silently returns the wrong rows, so it is refused.
 _UNSUPPORTED_PROPERTY: dict[str, str] = {
     CAML: "CAML cannot reach person or lookup sub-properties",
     VALIDATION: "person and lookup operands are unsupported in validation formulas",
@@ -336,14 +336,14 @@ _UNSUPPORTED_PROPERTY: dict[str, str] = {
 
 # Operand types a target refuses outright. SharePoint validation formulas
 # cannot read a person, a multi-line column or a calculated column, and
-# reject the rule at save — so the build refuses first.
+# reject the rule at save, so the build refuses first.
 #
 # Conditional show/hide is worse, and that is why it is listed here too:
 # Microsoft documents calculated columns as unsupported, but the formula
 # stays SYNTACTICALLY valid, so it saves, the read-back compares equal and
 # the phase passes. The failure is invisible from the deploy side
-# entirely — a green build, a green manifest, and a form that never
-# reacts. The most natural rule in the shipped risk register ("show
+# entirely (a green build, a green manifest, and a form that never
+# reacts). The most natural rule in the shipped risk register ("show
 # Treatment only when the calculated RiskRating is High or Extreme") is
 # exactly this shape.
 #
@@ -351,7 +351,7 @@ _UNSUPPORTED_PROPERTY: dict[str, str] = {
 # multi-select Person/Choice/Lookup variants as unsupported. Currency,
 # Location and Managed Metadata still have no DBML type in this tool, so
 # there is still nothing here to reject for them. The multi-select variants
-# DO now — `enum_name[]` — and they are refused just below, by arity rather
+# DO now (`enum_name[]`), and they are refused just below, by arity rather
 # than by a type name this dict could hold. Time-of-day comparisons on Date
 # and Time are likewise unreachable: `today` is already refused for this
 # target (the client-side equivalent is @now, with datetime rather than
@@ -365,9 +365,9 @@ _FORBIDDEN_OPERAND_TYPES: dict[str, dict[str, str]] = {
         "longtext": "a multi-line column",
         # Settled by probe on 2026-07-29, having first shipped here as
         # merely UNVERIFIED. SharePoint refuses the ValidationFormula
-        # outright — HTTP 500, "One or more column references are not
+        # outright (HTTP 500, "One or more column references are not
         # allowed, because the columns are defined as a data type that is
-        # not supported in formulas" — so this is a closed question, not an
+        # not supported in formulas"), so this is a closed question, not an
         # open one, and it belongs with the other cannots.
         #
         # Worth recording that this is a LOUD failure, not the silent one
@@ -556,12 +556,12 @@ _ISO_DATE_LITERAL = re.compile(
 #       C2-C5 used an ad-hoc CamlQuery; the deploy writes a view's stored
 #       ViewQuery, and SharePoint rewrites that XML on save. So C6 read the
 #       stored query back (the attribute survived) and C7 re-ran THAT XML
-#       and got the same two rows — confirmed a third time by eye, in the
+#       and got the same two rows, confirmed a third time by eye, in the
 #       view itself.
 #
 #       CORROBORATED BY SHAREPOINT'S OWN UI, from a direction the probe
 #       cannot reach. Opening the <Now/> view's filter panel shows an EMPTY
-#       value — the UI cannot represent that element, and a date comparison
+#       value. The UI cannot represent that element, and a date comparison
 #       against nothing matches nothing, which is the zero-row result.
 #       Typing the UI's own token spelling, [Now], into that panel is
 #       refused outright: "Filter value is not in a supported date format."
@@ -579,21 +579,21 @@ _ISO_DATE_LITERAL = re.compile(
 # before this: the operand rules demand an accessor because there is no
 # defensible default between a name, an email and an id, and CAML refuses
 # every accessor it might be given. `me` resolves that deadlock rather than
-# side-stepping it — CAML's <UserID/> compares the person field's user id
+# side-stepping it. CAML's <UserID/> compares the person field's user id
 # natively, so the sentinel SUPPLIES the missing accessor instead of
 # declaring one, which is why it takes no `property` and refuses one.
 _ME = "me"
 _PERSON_TYPES = frozenset({"person"})
 
 # Column types a substring test cannot mean anything on. A DENYLIST, not a
-# whitelist, because a Choice column's declared type IS its enum name — a
+# whitelist, because a Choice column's declared type IS its enum name. A
 # whitelist would have to know every enum in every schema, and would refuse
 # `contains` on a choice, which is the one non-text case that does make
 # sense.
 #
 # What it stops: the renderers type the needle by the COLUMN, so
-# `contains` on a boolean emitted `indexOf([$Flag], true)` — a substring
-# search for an unquoted boolean — and on a number `indexOf([$Count], 5)`.
+# `contains` on a boolean emitted `indexOf([$Flag], true)` (a substring
+# search for an unquoted boolean) and on a number `indexOf([$Count], 5)`.
 # Neither is a shape any probe has sent: the text-operator probe built its
 # subject as `<Field Type="Text"/>` and every one of its six candidates
 # used a quoted string needle.
@@ -728,7 +728,7 @@ def _check(leaf: Leaf, target: str, at: Location) -> None:
         # authored rule wants this.
         #
         # It also broke `none_of`. indexOf('', '') is 0, so `contains` is
-        # TRUE for a blank field and its negation must be FALSE — but the
+        # TRUE for a blank field and its negation must be FALSE, but the
         # null arm `_push` adds for the positive text operators ORs the
         # blank back in, and the rule and its negation both came out true.
         # Refusing costs nothing and needs no claim about how SharePoint
@@ -783,27 +783,27 @@ def _is_now(value: object, column_type: str) -> bool:
 
 
 def _looks_like_a_date(value: object) -> bool:
-    """`YYYY-MM-DD`, optionally with a `T` time and an offset — the grammar
-    the renderers emit, and the only literal form a date column may carry
-    once the sentinels have had their turn.
+    """`YYYY-MM-DD`, optionally with a `T` time and an offset. This is the
+    grammar the renderers emit, and the only literal form a date column may
+    carry once the sentinels have had their turn.
 
     Deliberately strict, and strict in the direction of emitting less. What
     SharePoint does with an unparseable DateTime operand has not been probed
-    — it might refuse the view, or take it and filter on something nobody
-    intended — and a filter that quietly matches the wrong rows is invisible
+    (it might refuse the view, or take it and filter on something nobody
+    intended), and a filter that quietly matches the wrong rows is invisible
     from the build and from the deploy alike. Refusing here needs no answer
     to that question.
 
     A bare `datetime.date` passes: PyYAML resolves an unquoted `2026-07-29`
     to one before this module sees it, and `str()` on a date is the ISO
-    literal exactly. A `datetime.datetime` does NOT — `str()` spells the
-    separator as a space, which no probe has run — and it is rejected by
+    literal exactly. A `datetime.datetime` does NOT (`str()` spells the
+    separator as a space, which no probe has run), and it is rejected by
     `_check_date_literal` with its own message rather than here.
 
     Surrounding whitespace is NOT tolerated, and the absence of a `.strip()`
     here is the point. Every renderer emits `str(value)` unchanged, so a
     value this function trimmed in order to parse would validate as one
-    string and reach SharePoint as another — approving a spelling no probe
+    string and reach SharePoint as another, approving a spelling no probe
     has run, which is the exact hole the guard exists to close. The
     sentinels have always been strict this way; matching them leaves one
     whitespace policy rather than two.
@@ -902,7 +902,7 @@ def _check_date_literal(
 ) -> None:
     """A date column's literal, once `today` and `now` have had their turn,
     must be a real date. Nothing downstream checks it, and no probe has
-    asked what SharePoint does with an unparseable one — so the failure is
+    asked what SharePoint does with an unparseable one, so the failure is
     UNBOUNDED rather than known: it may refuse the view, or accept it and
     filter on something nobody intended. The build is the only place that
     can be settled without a tenant, so it is settled here.
@@ -982,7 +982,7 @@ def _check_date_literal(
 
 def _is_me(value: object, column_type: str) -> bool:
     """A `me` sentinel only means the current user on a PERSON column. On a
-    text column it is the literal word — the same rule `today` follows, and
+    text column it is the literal word, the same rule `today` follows, and
     for the same reason: one authored condition must not mean three
     different things across the three targets."""
     return column_type in _PERSON_TYPES and value == _ME
@@ -1075,7 +1075,7 @@ def _combine(parts: list[str], *, conjunction: bool, target: str) -> str:
 def _column_type(field: str, types: dict[str, str], target: str, at: Location) -> str:
     """The declared type drives literal rendering, so an unknown column is
     an error rather than a silent 'nvarchar'. A date column defaulting to
-    text renders `<Value Type="Text">today-30</Value>` — the sentinel as a
+    text renders `<Value Type="Text">today-30</Value>`, the sentinel as a
     literal string, which is not the comparison anybody wrote, whatever
     SharePoint then does with it."""
     if field not in types:
@@ -1163,7 +1163,7 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
     _check(leaf, target, where)
     # Gate on the REAL column type first. Substituting "number" for a
     # measure ahead of this check lets LEN([MultiLine]) past a rule that
-    # is_not_null on the same column hits — the tool contradicting itself,
+    # is_not_null on the same column hits, the tool contradicting itself,
     # and routing the author to whichever spelling the guard misses.
     declared_type = _column_type(leaf.field, types, target, where)
     # Ahead of the type guard below, and deliberately: both refuse a substring
@@ -1203,13 +1203,13 @@ def _leaf(leaf: Leaf, types: dict[str, str], target: str, at: Location) -> str:
             f"{leaf.field!r} is {forbidden[declared_type]}",
             where,
         )
-    # Only then: a measure changes what is compared — LEN(x) is a number
-    # whatever x is — so the operand must not be quoted as the column would be.
+    # Only then: a measure changes what is compared (LEN(x) is a number
+    # whatever x is), so the operand must not be quoted as the column would be.
     column_type = "number" if leaf.measure == "length" else declared_type
     # An accessor changes it too, and for the same reason: the literal is
     # compared against the SUB-PROPERTY, not the column. A lookup is
     # int-typed in DBML, so without this `property: lookupValue` typed its
-    # operand numerically and rejected every real title as "not a number" —
+    # operand numerically and rejected every real title as "not a number",
     # leaving lookupId the only usable accessor.
     if leaf.property and leaf.measure != "length":
         column_type = _ACCESSOR_TYPES.get(leaf.property, column_type)
@@ -1353,7 +1353,7 @@ def _caml_value(column_type: str, value: object, where: Location) -> str:
     if column_type in _DATE_TYPES:
         if _is_now(value, column_type):
             # NOT <Now/>. Learn documents that element, and the probe found
-            # it returns nothing — the same signature an invented element
+            # it returns nothing, the same signature an invented element
             # produces, because SharePoint does not validate this position.
             # IncludeTimeValue on <Today/> is the mechanism that works, and
             # it compares against the instant rather than midnight.
@@ -1396,7 +1396,7 @@ def _validation_literal(column_type: str, value: object, where: Location) -> str
     # Verified live: validation literals are DOUBLE-quoted; single quotes are
     # rejected outright by SharePoint, the reverse of the expression target.
     # The doubling escape for an embedded double quote is the Excel
-    # convention but was NOT among the harvested formulas — see the spec's
+    # convention but was NOT among the harvested formulas. See the spec's
     # open items.
     return '"' + str(value).replace('"', '""') + '"'
 
@@ -1404,7 +1404,7 @@ def _validation_literal(column_type: str, value: object, where: Location) -> str
 # === Semantic validation ====================================================
 # Types for the columns SharePoint provides but DBML never declares. Views
 # may reference these, and without them a date comparison on Created would
-# render as Type="Text" — which SharePoint accepts and answers with the
+# render as Type="Text", which SharePoint accepts and answers with the
 # wrong rows.
 SYSTEM_COLUMN_TYPES: dict[str, str] = {
     "ID": "int",
@@ -1456,8 +1456,8 @@ def leaves(node: Condition) -> list[Leaf]:
 
 
 #: One problem before it becomes a `Finding`: its code, its prose, and the
-#: leaf field it is about — `None` for the two whole-tree bounds, which are
-#: not about any one leaf.
+#: leaf field it is about (`None` for the two whole-tree bounds, which are
+#: not about any one leaf).
 type _Problem = tuple[FindingCode, str, str | None]
 
 
@@ -1618,7 +1618,7 @@ def _condition_problems(
             operand.append(lookup_problem)
         if operand:
             # Rendering a leaf whose operands are already wrong would report
-            # the same fault twice in different words — but only THAT leaf is
+            # the same fault twice in different words, but only THAT leaf is
             # suppressed, so one bad operand cannot mask any other fault.
             problems.extend((code, message, leaf.field) for code, message in operand)
             suppressed.add(id(leaf))
@@ -1654,8 +1654,8 @@ def _condition_problems(
         reported.setdefault(id(leaf), set()).update(code for code, _ in rendering)
 
     # Second pass, over the tree the RENDERER will actually see. De Morgan
-    # normalisation rewrites operators — none_of[contains] becomes
-    # not_contains — so a rule can pass every check above and still be
+    # normalisation rewrites operators (none_of[contains] becomes
+    # not_contains), so a rule can pass every check above and still be
     # unrenderable. Without this it surfaced as a ValueError out of
     # build_schema_json instead of a finding: a traceback where the author
     # needed a sentence.
@@ -1713,7 +1713,7 @@ def _condition_problems(
                         problems.append((code, problem, leaf.field))
                     continue
                 # Its own code, not the inner one: the author never wrote the
-                # operator being named, and the remedy is different — rewrite
+                # operator being named, and the remedy is different. Rewrite
                 # the rule positively rather than fix the operator they chose.
                 problems.append((
                     FindingCode.CONDITION_NEGATION_UNRENDERABLE,
@@ -1782,7 +1782,7 @@ def _operand_problems(
     # The `me` sentinel carries its own accessor semantics: <UserID/>
     # compares the person field's user id, so an accessor is neither needed
     # nor meaningful beside it. Handled before the accessor rules rather
-    # than inside them, because the exemption is the whole point — without
+    # than inside them, because the exemption is the whole point. Without
     # it a person column cannot be filtered in CAML at all.
     if _is_me(leaf.value, column_type):
         if leaf.property:
@@ -1800,10 +1800,10 @@ def _operand_problems(
         return problems
     # A null test needs no accessor either, and for the same reason `me`
     # needs none: emptiness is a property of the FIELD, not of a name, an
-    # email or an id — all three are absent together. CAML's IsNull takes a
+    # email or an id. All three are absent together. CAML's IsNull takes a
     # bare FieldRef and no Value, so there is nothing for an accessor to
-    # change. Without this, "organisations with no owner" — a view
-    # stakeholder-contacts' governance doc asks for by name — was
+    # change. Without this, "organisations with no owner" (a view
+    # stakeholder-contacts' governance doc asks for by name) was
     # inexpressible: the accessor rules demanded a property and CAML
     # refuses every property.
     if kind in PROPERTY_ACCESSORS and leaf.op in _VALUELESS_OPS and not leaf.property:
@@ -1858,8 +1858,8 @@ def _render_problems(
     """Reuse the renderer as the capability oracle, one leaf at a time, so a
     second copy of the capability rules cannot drift from the first.
 
-    The renderers take no context — they hang everything off
-    `_CONDITIONS_ROOT` — so the prefix is rewritten to the caller's here. The
+    The renderers take no context (they hang everything off
+    `_CONDITIONS_ROOT`), so the prefix is rewritten to the caller's here. The
     literal below is that root's rendered path, spelled out because it is a
     `str.replace` needle rather than a path being built.
 
