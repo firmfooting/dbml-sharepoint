@@ -247,3 +247,31 @@ def test_describe_env_provenance_names_both_used_and_overridden_keys() -> None:
     line = describe_env_provenance(provenance)
     assert "Used: DBMLSP_USED." in line
     assert "Overridden: DBMLSP_OVERRIDDEN (using c)." in line
+
+
+def test_inline_comment_after_an_unquoted_value_is_refused(tmp_path: Path) -> None:
+    """The documented grammar starts a comment at the beginning of a line
+    only. Keeping ` # ...` inside the value would leave a key whose consumer
+    does not validate silently holding the comment text.
+    """
+    path = _write(
+        tmp_path,
+        "DBMLSP_ENTERPRISE_READER=svc@example.org # reporting account\n",
+    )
+    with pytest.raises(EnvFileSyntaxError, match="comment must start its own line"):
+        read_env_file(path)
+
+
+def test_a_quoted_value_may_contain_a_literal_hash(tmp_path: Path) -> None:
+    """Quoting is the documented escape hatch for a value that needs ` #`."""
+    path = _write(tmp_path, "DBMLSP_ENTERPRISE_READER='svc #1@example.org'\n")
+    settings, _ = read_env_file(path)
+    assert settings == {"DBMLSP_ENTERPRISE_READER": "svc #1@example.org"}
+
+
+def test_a_hash_without_leading_space_stays_in_the_value(tmp_path: Path) -> None:
+    """Only ` #` reads as an attempted comment, so an address containing a
+    bare `#` is not refused."""
+    path = _write(tmp_path, "DBMLSP_ENTERPRISE_READER=svc#1@example.org\n")
+    settings, _ = read_env_file(path)
+    assert settings == {"DBMLSP_ENTERPRISE_READER": "svc#1@example.org"}

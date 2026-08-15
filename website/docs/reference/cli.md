@@ -79,12 +79,15 @@ file, then nobody.
 directory. `--env-file PATH` names a different one, and a path that does
 not exist is an error rather than a silent fallback to "no file".
 
-**Format.** One `KEY=value` per line; `#` starts a comment; blank lines
-are ignored. No interpolation of other keys or of environment variables,
-no `export`, no key repeated within the file, no key without the
-`DBMLSP_` prefix. Quoting is optional: a value wrapped in matching `'` or
-`"` is unwrapped, but a quote that is opened and never closed is refused
-rather than passed through with the stray character intact.
+**Format.** One `KEY=value` per line; a line whose first non-blank
+character is `#` is a comment; blank lines are ignored. A comment cannot
+trail a value: an unquoted value containing a space followed by `#` is
+refused, so quote the value to keep a literal one. No interpolation of
+other keys or of environment variables, no `export`, no key repeated
+within the file, no key without the `DBMLSP_` prefix. Quoting is
+optional: a value wrapped in matching `'` or `"` is unwrapped, but a
+quote that is opened and never closed is refused rather than passed
+through with the stray character intact.
 
 **This is not a secret store.** A value the file supplies reaches
 `deploy.js.txt` in plain text, the same as a value passed on the command

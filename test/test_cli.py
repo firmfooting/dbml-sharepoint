@@ -2371,3 +2371,28 @@ def test_a_wrong_section_shape_is_a_message_not_a_traceback(tmp_path: Path) -> N
     # Names the section, so the operator knows which line to look at.
     assert "views" in output
     assert len([ln for ln in output.splitlines() if ln.strip()]) <= 2, output
+
+
+def test_a_directory_at_the_default_env_path_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`is_file()` is false for a directory, which used to make one named
+    `dbml-sharepoint.env` indistinguishable from no file at all.
+
+    The build then succeeded while printing "No dbml-sharepoint.env file was
+    read.", and `read_env_file` never got the chance to raise the
+    `EnvFileReadError` it defines for exactly this. Fail closed instead.
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ENV_FILENAME).mkdir()
+    out = tmp_path / "build"
+    result = runner.invoke(app, [
+        "build",
+        "--schema", str(FIXTURES / "simple.dbml"),
+        "--mapping", str(FIXTURES / "sharepoint-mapping.yaml"),
+        "--release", str(FIXTURES / "release.yaml"),
+        "--site-url", "https://example.sharepoint.com/sites/test",
+        "--out", str(out),
+    ])
+    assert result.exit_code != 0
+    assert "is not a file" in _normalise_rendered_output(result.output)

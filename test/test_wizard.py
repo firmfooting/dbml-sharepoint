@@ -2100,11 +2100,12 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
     assertion would then be pinning nothing, which is the whole reason
     `_answers` grew a `None`.
 
-    `answers.reader` stays "" whether the question was never asked (this
-    case) or asked and left blank (`test_an_empty_reader_answer_means_no_
-    flag`); both reach `execute_build` as `ENTERPRISE_READER_DECLINED`, and
-    that is correct -- with no group to enrol into, "unset" and "declined"
-    behave identically either way.
+    Never asked reaches `execute_build` as None, NOT as
+    `ENTERPRISE_READER_DECLINED`. The two stopped being interchangeable when
+    `dbml-sharepoint.env` gained the power to supply a reader: the declined
+    sentinel is explicit and outranks the file, so sending it here would hide
+    a configured account from the armed guard. Asked and left blank still
+    sends the sentinel (`test_an_empty_reader_answer_means_no_flag`).
     """
     solution = _fake_family(tmp_path / "fake")
     _offer_only(monkeypatch, solution)
@@ -2119,7 +2120,7 @@ def test_the_reader_question_is_not_asked_without_a_declared_group(
     shown = _collapsed(console).lower()
     assert "enrol" not in shown
     assert code == 0
-    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+    assert captured["enterprise_reader"] is None
 
 
 def _write_env_file(path: Path, address: str) -> None:
@@ -2613,3 +2614,48 @@ def test_a_seeded_run_names_the_guide_before_the_demo_script(
     assert shown.index("deploy.md", shown.index("Next")) < shown.index(
         "demo-data.js.txt", shown.index("Next"),
     )
+
+
+def test_the_env_file_is_read_even_without_a_declared_reader_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reader prompt is skipped where the mapping declares no group, but
+    the file must still be consulted and threaded through.
+
+    Gating the read on `facts.reader_group` let the wizard succeed while
+    ignoring a configured account, where `build` refuses the same file. The
+    resolved value must reach `execute_build` as None rather than as
+    `ENTERPRISE_READER_DECLINED`, because the sentinel is explicit and would
+    outrank the file, leaving the armed guard nothing to refuse.
+    """
+    solution = _fake_family(tmp_path / "fake")
+    _offer_only(monkeypatch, solution)
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    captured = _capture_build(monkeypatch)
+
+    console = ScriptedConsole(
+        _answers(
+            tmp_path / "proj", template="fake-template", build="y", reader=None,
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["env_file"] == Path(ENV_FILENAME)
+    assert captured["enterprise_reader"] is None
+
+
+def test_the_wizard_refuses_a_directory_at_the_env_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A directory named `dbml-sharepoint.env` used to read as "no file",
+    so the build claimed none was consulted instead of failing closed.
+    """
+    (tmp_path / ENV_FILENAME).mkdir()
+    _capture_build(monkeypatch)
+    console = ScriptedConsole(
+        _answers(tmp_path / "proj", build="y", seed="n", reader=None), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 1
+    assert "is not a file" in _collapsed(console)

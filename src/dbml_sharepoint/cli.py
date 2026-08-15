@@ -272,18 +272,24 @@ def _env_file_help() -> str:
 def _resolve_env_file(env_file: Path | None) -> Path | None:
     """The env file `build` should read, or None when there is nothing to.
 
-    Same rule `_project_input` applies to the other three inputs: an
-    explicit --env-file always wins, and must exist -- a typo here must not
-    silently build without the settings the operator asked for. The default
-    location is different: no file there is the ordinary case (most
-    projects have none), so its absence is not an error.
+    An explicit --env-file must exist, so a typo cannot silently build
+    without the settings the operator asked for. At the default location an
+    absent file is ordinary and not an error, but something present that is
+    not a readable file is refused rather than treated as absent.
     """
     if env_file is not None:
         if not env_file.is_file():
             raise typer.BadParameter(f"--env-file {env_file} does not exist.")
         return env_file
     default = Path(ENV_FILENAME)
-    return default if default.is_file() else None
+    if not default.exists():
+        return None
+    if not default.is_file():
+        raise typer.BadParameter(
+            f"{ENV_FILENAME} exists but is not a file. Remove it, or pass "
+            "--env-file with the path to a real one.",
+        )
+    return default
 
 
 def _require_known_site_role(bundle: MappingBundle, site_role: str) -> None:
@@ -312,10 +318,8 @@ def _require_known_site_role(bundle: MappingBundle, site_role: str) -> None:
 
 def _config_error(what: str, path: Path | None, exc: Exception) -> NoReturn:
     detail = f"missing required key {exc}" if isinstance(exc, KeyError) else str(exc)
-    # `path=None` skips the ": {path}" segment entirely, for a caller whose
-    # `exc` already names the path itself -- `EnvFileError` messages all do
-    # (see `_refuse` in `model/env_file.py`), and prepending it again here
-    # printed the same path twice: "[ERROR] env file X: X: line 3: ...".
+    # `path=None` when `exc` already names the path, as every `EnvFileError`
+    # does; prepending it again printed "[ERROR] env file X: X: line 3: ...".
     where = f" {path}" if path is not None else ""
     typer.echo(f"[ERROR] {what}{where}: {detail}", err=True)
     # 1, not 2. The documented contract reserves 2 for the usage errors
@@ -615,14 +619,8 @@ def _resolve_env_settings(
         file_value = file_settings.get(setting.key)
         if file_value is None:
             continue
-        # Mapped explicitly rather than by generic dict-splat: a second
-        # entry in ENV_SETTINGS must not silently start landing on the
-        # wrong keyword parameter here. Refuses loudly rather than
-        # `continue`-ing past it: a `continue` here discarded a value the
-        # file WAS asked to set, with no artefact ever recording that it
-        # happened -- the exact silent-no-op failure class `AGENTS.md`
-        # opens with. The registry's premise ("adding a key is one entry")
-        # is only true once whoever adds the entry also wires it in here.
+        # Refuses rather than `continue`s: skipping an unwired key discarded
+        # a value the file was asked to set, with no artefact recording it.
         if setting.parameter != "enterprise_reader":
             raise UnwiredEnvSettingError(
                 f"{setting.key} sets execute_build's {setting.parameter!r} "
@@ -729,10 +727,8 @@ def execute_build(
     enterprise_reader, env_provenance = _resolve_env_settings(env_file, enterprise_reader)
     _echo_env_provenance(env_provenance)
 
-    # `isinstance`, not `is not None`: `EnterpriseReaderDeclined` is also not
-    # `None`, and must skip validation and the group check exactly as `None`
-    # does -- both mean nobody is enrolled. Narrowing here also gives mypy a
-    # `str` inside the block for the `validate_enterprise_reader` call below.
+    # `isinstance`, not `is not None`: the declined sentinel means nobody is
+    # enrolled and must skip validation and the group check just as `None` does.
     if isinstance(enterprise_reader, str):
         validate_enterprise_reader(enterprise_reader)
         perms = bundle.mapping.permissions
@@ -799,12 +795,8 @@ def execute_build(
         schema.stat().st_mtime, dt.UTC,
     ).isoformat(timespec="seconds")
 
-    # `generate_manifest` and `emit_bundle` know only `str | None`; teaching
-    # them the third state is a later change. Narrowed here, right before
-    # their first use, rather than by reassigning the `enterprise_reader`
-    # parameter above -- reassigning it would erase the distinction this
-    # function exists to preserve, before anything downstream gets a chance
-    # to consume it.
+    # Narrowed here rather than by reassigning the parameter above, which
+    # would erase the unset/declined distinction before anything consumes it.
     resolved_enterprise_reader = (
         enterprise_reader if isinstance(enterprise_reader, str) else None
     )

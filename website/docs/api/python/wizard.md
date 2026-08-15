@@ -112,7 +112,7 @@ class Answers:
     site_role: str
     templates: tuple[dbml_sharepoint.wizard.TemplateChoice, ...]
     build: bool
-    reader: str
+    reader: str | None
     seed: bool
     env_file: pathlib.Path | None = None
 ```

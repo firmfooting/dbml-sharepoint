@@ -174,12 +174,15 @@ class Answers:
     site_role: str
     templates: tuple[TemplateChoice, ...]
     build: bool
-    reader: str
+    #: None when the reader question was never asked, because the mapping
+    #: declares no group to enrol into. Blank means it was asked and answered
+    #: "nobody". The two must stay distinct: only the second one outranks a
+    #: value `dbml-sharepoint.env` supplies.
+    reader: str | None
     seed: bool
-    #: The `dbml-sharepoint.env` `_ask_enterprise_reader` consulted, if any --
-    #: threaded into `execute_build` so its artefacts report the same file
-    #: this prompt read from. None when the question was never asked (no
-    #: reader group to enrol into) or no file was there to consult.
+    #: The `dbml-sharepoint.env` the wizard consulted, if any, threaded into
+    #: `execute_build` so its artefacts report the same file. None only when
+    #: no file was there to consult.
     env_file: Path | None = None
 
 
@@ -461,58 +464,39 @@ def _ask_site_role(console: Console, roles: list[str]) -> str:
 
 
 def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
-    """The `dbml-sharepoint.env` file consulted for a suggested UPN, and
-    what it suggested: `(path, upn)`, `upn` is None when the file has
-    nothing usable to offer. Returns None only when there was no file to
-    thread through to the build at all -- never when one was read.
+    """The `dbml-sharepoint.env` consulted for a suggested UPN, and what it
+    suggested: `(path, upn)`, with `upn` None when it offered nothing usable.
+    None only when there was no file at all.
 
-    Read from a file relative to the CURRENT directory -- the same location
-    `build` defaults to -- not the destination the wizard is about to write.
-    `_ask_destination` refuses a destination that already exists and is
-    non-empty, and `_scaffold` only copies the template in afterwards, so a
-    scaffolded project cannot contain the file at prompt time; the CWD is
-    the one place it could already be.
+    Read relative to the CURRENT directory, the location `build` defaults
+    to, not the destination about to be written: `_ask_destination` refuses a
+    non-empty destination and `_scaffold` copies the template in afterwards,
+    so only the CWD can already hold the file.
 
-    The path is returned even when there is no reader suggestion (an absent
-    key) or the suggestion is invalid, so the caller can still pass it on to
-    `execute_build`: the file WAS read, and every artefact reporting
-    provenance must say so, whether or not this particular key mattered.
-    `execute_build`'s own precedence rules -- an explicit wizard answer
-    always wins over the file -- take it from there.
+    The path comes back even when the key is absent or its value invalid,
+    because the file was read and every provenance artefact must say so.
 
-    A missing file is the ordinary case and stays silent (LBYL, not a caught
-    `FileNotFoundError`), and returns None: there is genuinely nothing to
-    thread through.
+    A file that fails to PARSE is fatal and raises `WizardError`, carrying
+    `EnvFileError`'s message, which already names the path, line and text.
+    `_run` catches it before anything is written. Warning and proceeding
+    would let the manifest and index.md claim no file was ever there.
 
-    A file that fails to PARSE is FATAL: this raises `WizardError`, carrying
-    `EnvFileError`'s own message, which already names the path, the line and
-    the offending text (`_refuse` in `model/env_file.py`). `build` refuses
-    the same file the same way, over the same message; a file the operator
-    wrote on purpose and got wrong must not be answered with a warning that
-    lets the wizard proceed as though no file were there -- that is what
-    `_run`'s manifest and index.md would then go on to claim. `_run` catches
-    `WizardError` here before anything is written, the same way it already
-    does around `_read_facts`.
-
-    An invalid VALUE inside a file that DOES parse is a different failure and
-    stays as it was: reported here as one message, treated as no suggestion,
-    with the path still threaded through. This is not an inconsistency with
-    `build`: `build` only ever validates a file's reader value because that
-    value becomes the one `execute_build` uses, when no flag overrides it.
-    Here the file's value is never more than a suggestion the operator must
-    retype to accept -- `_ask_enterprise_reader` never passes it as
-    `default=` -- so an invalid suggestion is simply withdrawn, and whatever
-    the operator goes on to answer (blank, or a real UPN) is validated at the
-    prompt exactly as if the file had said nothing at all. Making this fatal
-    too would refuse a run over a value nothing downstream was ever going to
-    use unvalidated.
+    An invalid VALUE in a file that parses is not fatal: it is reported, the
+    suggestion is withdrawn, and the path still threads through. Unlike
+    `build`, the value here is only ever a suggestion the operator must
+    retype, so whatever they answer is validated at the prompt regardless.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
 
     path = Path(ENV_FILENAME)
-    if not path.is_file():
+    if not path.exists():
         return None
+    if not path.is_file():
+        raise WizardError(
+            f"{ENV_FILENAME} exists but is not a file. Remove it, or build "
+            "with --env-file pointing at a real one.",
+        )
     try:
         file_settings, _digest = read_env_file(path)
     except EnvFileError as exc:
@@ -532,51 +516,33 @@ def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
     return path, reader
 
 
-def _ask_enterprise_reader(console: Console) -> tuple[str, Path | None]:
+def _ask_enterprise_reader(
+    console: Console,
+    consulted: tuple[Path, str | None] | None,
+) -> str:
     """Prompt until the answer is blank or passes the CLI's own validator.
-    Returns the answer alongside the `dbml-sharepoint.env` path this prompt
-    consulted, if any -- the caller threads it into `execute_build` so the
-    build's own artefacts report the same file this prompt just read from,
-    rather than denying one was ever consulted.
 
-    The same re-ask loop as `_ask_site_url`, for a sharper reason. This
-    answer used to travel unchecked all the way into `execute_build`, and
-    `validate_enterprise_reader` raises `typer.BadParameter` -- which is a
-    `click.UsageError`, NOT a `typer.Exit`. The wizard's one `except
-    typer.Exit` around the build therefore could not catch it, so a
-    mistyped UPN (`svc.reporting`, no `@`) left `run_wizard` as an
-    unhandled exception and printed a raw traceback -- on top of a project
-    directory the wizard had already written. Validating at the prompt
-    keeps the refusal where the answer was given, and keeps it recoverable.
+    `consulted` is `_reader_from_env_file`'s result, read by the caller so
+    the file is still consulted where this prompt is never offered.
 
-    Blank is deliberately NOT validated. It is the default and it means
-    "enrol nobody"; `validate_enterprise_reader` refuses an empty string,
-    so passing it through would make the safest answer the question offers
-    the one answer that cannot be given.
+    Validating at the prompt keeps a refusal recoverable. The answer used to
+    travel unchecked into `execute_build`, where `validate_enterprise_reader`
+    raises `typer.BadParameter`; that is a `click.UsageError`, not a
+    `typer.Exit`, so the wizard's one `except typer.Exit` could not catch it
+    and a mistyped UPN printed a raw traceback over an already-written
+    project directory.
 
-    The prompt is a bold noun phrase and the guidance sits on a dim line
-    ABOVE it, the shape `_ask_seed` uses. It read "Reporting service account
-    to enrol read-only (UPN), or blank for none", which is a sentence, a
-    definition and an escape hatch in one unbolded line -- the widest prompt
-    in the wizard, and the only one whose label did not survive being read at
-    a glance.
+    Blank is deliberately NOT validated. It is the default and means "enrol
+    nobody", and `validate_enterprise_reader` refuses an empty string, so
+    checking it would make the safest answer the one answer nobody can give.
 
-    A `dbml-sharepoint.env` present but unparseable is not answered here at
-    all: `_reader_from_env_file` raises `WizardError` straight through this
-    function, and `_run` catches it before anything is written -- see that
-    function's own docstring for why the two failures inside the same file
-    (cannot parse, versus parses but the value is invalid) are not the same.
-
-    A `dbml-sharepoint.env` suggestion, when `_reader_from_env_file` finds
-    one, is named in the PROMPT TEXT and NEVER passed as `default=`. rich's
-    `PromptBase.__call__` returns the default before this function's own
-    code runs at all, so a non-blank default here would make a blank answer
-    resolve to the file's value instead of "enrol nobody" -- unreachable,
-    the same way `_ask_prefix`'s docstring records a single-prompt default
-    making its own "no prefix" answer unreachable. WRITE THE REASON AT THIS
-    LINE if you are tempted to simplify this into a `default=`; it will
-    reopen exactly that defect. Accepting the suggestion means typing it;
-    Enter always means nobody.
+    A file suggestion is named in the PROMPT TEXT and NEVER passed as
+    `default=`. rich's `PromptBase.__call__` returns the default before this
+    function's own code runs, so a non-blank default would make a blank
+    answer resolve to the file's value instead of "enrol nobody", exactly
+    the defect `_ask_prefix`'s docstring records. WRITE THE REASON AT THIS
+    LINE if you are tempted to simplify this into a `default=`. Accepting
+    the suggestion means typing it; Enter always means nobody.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
@@ -586,8 +552,6 @@ def _ask_enterprise_reader(console: Console) -> tuple[str, Path | None]:
         "A service account enrolled read-only across every list this "
         "template creates, so it can report on them. Blank for none.",
     )
-    consulted = _reader_from_env_file(console)
-    env_file = consulted[0] if consulted is not None else None
     suggestion = consulted[1] if consulted is not None else None
     label = "[bold]Reporting account (UPN)[/bold]"
     if suggestion is not None:
@@ -599,13 +563,13 @@ def _ask_enterprise_reader(console: Console) -> tuple[str, Path | None]:
         # NOT `default=suggestion` -- see the docstring above.
         reader = Prompt.ask(label, default="", console=console).strip()
         if not reader:
-            return "", env_file
+            return ""
         try:
             validate_enterprise_reader(reader)
         except typer.BadParameter as exc:
             console.print(f"[red]{exc.message}[/red]")
             continue
-        return reader, env_file
+        return reader
 
 
 def _ask_seed(console: Console) -> bool:
@@ -1105,22 +1069,20 @@ def _run(console: Console) -> int:
     build = Confirm.ask(
         "Build the deploy scripts now?", default=True, console=console,
     )
-    reader = ""
+    reader: str | None = None
     env_file = None
     seed = False
     if build:
-        # Offered only where the mapping declares a group
-        # `--enterprise-reader` could enrol into. Blank stays the default and
-        # must map to `ENTERPRISE_READER_DECLINED` below, never "": an empty
-        # string would reach `validate_enterprise_reader` and abort a run
-        # where the operator simply pressed Enter, which is the safe answer
-        # the question exists to allow. Anything NON-blank is validated at
-        # the prompt and re-asked on refusal -- the `except typer.Exit` below
-        # cannot catch what `validate_enterprise_reader` raises, because
-        # `typer.BadParameter` is a `click.UsageError`.
+        # Consulted even where the prompt is not offered, so a mapping with
+        # no reader group still reaches the armed guard.
         try:
+            consulted = _reader_from_env_file(console)
+            env_file = consulted[0] if consulted is not None else None
+            # The prompt is offered only where a group exists to enrol into.
+            # Blank is its default and means nobody, so it must never reach
+            # `validate_enterprise_reader`, which refuses an empty string.
             if facts.reader_group:
-                reader, env_file = _ask_enterprise_reader(console)
+                reader = _ask_enterprise_reader(console, consulted)
             if facts.demo_items:
                 seed = _ask_seed(console)
         except WizardError as exc:
@@ -1199,16 +1161,16 @@ def _run(console: Console) -> int:
                 site_role=answers.site_role,
                 out=root / "build",
                 seed=answers.seed,
-                # `None`, plain, would mean "no flag and no wizard answer" --
-                # unset, the state a future `dbml-sharepoint.env` may fill.
-                # `answers.reader` blank means the operator was asked and
-                # said nobody, which must stay distinguishable from that.
-                enterprise_reader=answers.reader or ENTERPRISE_READER_DECLINED,
-                # The file `_ask_enterprise_reader` already consulted, so the
-                # build's own artefacts (manifest, index.md, transcript) name
-                # it too -- an explicit `answers.reader` always outranks it
-                # inside `execute_build`, so threading it through here never
-                # changes which UPN gets enrolled, only what gets reported.
+                # None (never asked) leaves the file free to supply a value
+                # for the guard to refuse; blank (asked, said nobody)
+                # outranks the file. The two must not collapse.
+                enterprise_reader=(
+                    None
+                    if answers.reader is None
+                    else answers.reader or ENTERPRISE_READER_DECLINED
+                ),
+                # Named by the build's own artefacts, so they report the same
+                # file the wizard read.
                 env_file=answers.env_file,
             )
         except typer.Exit as exc:

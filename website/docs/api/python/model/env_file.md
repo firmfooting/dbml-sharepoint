@@ -9,20 +9,15 @@ sidebar_position: 4
 
 Parser for dbml-sharepoint.env, a KEY=value file of build defaults.
 
-A consumer can put build parameters beside their solution instead of
-retyping flags on every invocation, starting with the enterprise-reader UPN.
-The registry (`ENV_SETTINGS`) names every key this build understands; the
-parser (`read_env_file`) is deliberately strict about everything else.
+A consumer can keep build parameters beside their solution instead of
+retyping flags. `ENV_SETTINGS` names every key this build understands, and
+`read_env_file` refuses everything else.
 
-The failure class this project exists to close, per `AGENTS.md`, is a change
-that saves, reads back clean, and does nothing on the far side. A permissive
-parser that silently skipped a misspelled key or a stray `export` would build
-clean and enrol nobody, and nothing downstream could ever see the difference.
-Refusing outright is the only way a mistake here is not silent. The strict
-rules are fair specifically because the filename is ours: this is not a
-`.env` a consumer already has conventions for, so refusing the ones this file
-does not need (`export`, interpolation, shell quoting edge cases) costs
-nothing a consumer was relying on.
+Refusing is the point. A permissive parser that skipped a misspelled key or
+a stray `export` would build clean, enrol nobody, and leave nothing
+downstream able to see the difference. The strictness costs a consumer
+nothing, because the filename is ours and no existing `.env` conventions
+apply to it.
 
 ### `ENV_FILENAME`
 
@@ -93,19 +88,13 @@ NO_ENV_FILE = EnvProvenance(path=None, digest=None, values=())
 def describe_env_provenance(provenance: dbml_sharepoint.model.env_file.EnvProvenance) -> str
 ```
 
-One line describing what dbml-sharepoint.env a build read, for an
-artefact that is not the terminal the build ran in: the manifest,
-index.md and the deploy transcript's `log()` line.
+One line naming the env file a build read, for the manifest, index.md
+and the deploy transcript.
 
-An absent line is indistinguishable from a feature that did not run, so
-the no-file case is its own explicit sentence rather than nothing.
-
-Reports overridden keys as well as used ones -- naming only the key and
-the value that won, never the file's own value, so a losing candidate
-(a flag beat it, or the wizard's declined sentinel did) never appears in
-a written artefact. Without this, a build where a flag beat the file
-left the manifest indistinguishable from one where the file was never
-consulted at all.
+The no-file case gets its own sentence, because an absent line reads the
+same as a feature that never ran. Overridden keys are named alongside
+used ones, reporting only the value that won, so a losing candidate never
+reaches a written artefact.
 
 ### `EnvFileError`
 
@@ -123,13 +112,9 @@ A DBMLSP_-prefixed key that is not in ENV_SETTINGS.
 
 The file could not be read or decoded.
 
-Covers `path.read_bytes()` raising `OSError` (a permission error, or a
-directory sitting at that name) and the bytes it does return not being
-valid UTF-8. Both are caught here rather than left to propagate, because
-every catch site downstream only handles `EnvFileError` -- an unguarded
-`UnicodeDecodeError` or `OSError` would reach a caller with no handler
-for it and print a raw traceback instead of the one clean message this
-module exists to guarantee.
+Covers `OSError` from `read_bytes` and bytes that are not valid UTF-8.
+Both are wrapped here because every catch site downstream handles only
+`EnvFileError`, and an unwrapped one would print a raw traceback.
 
 ### `read_env_file`
 
@@ -139,10 +124,7 @@ def read_env_file(path: pathlib.Path) -> tuple[dict[str, str], str]
 
 Parsed settings and the digest, from ONE read of the bytes.
 
-The digest is sha256 of the raw bytes, not of the parsed content, so a
-whitespace-only edit still moves it -- and it is computed from the same
-bytes the parser reads, because a caller comparing a recorded digest
-against the file it was told was parsed needs that to be true. Hence one
-function returning both, rather than a digest helper a caller might call
-against a file that changed between the two reads.
+The digest is sha256 of the raw bytes, so a whitespace-only edit moves
+it. One function returns both, rather than a separate digest helper a
+caller could run against a file that changed between the two reads.
 
