@@ -55,6 +55,19 @@ def _cwd_has_no_env_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
+def _normalise_rendered_output(text: str) -> str:
+    """Reduce rich's rendered output to the words it actually contains.
+
+    Strips ANSI escapes, strips the panel-border character, and collapses
+    whitespace. Rich decides wrap width from the environment, so a raw
+    string can land on one line at a wide width and get split across two,
+    border included, at a narrow one; normalising removes that dependency
+    instead of pinning the width. A test using this does not care, and
+    should not need to know, how many columns rich rendered at.
+    """
+    return " ".join(_ANSI.sub("", text).replace("│", " ").split())
+
+
 def test_help_lists_build_command() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
@@ -702,18 +715,17 @@ def _write_env_file(path: Path, address: str = "svc-reporting@example.org") -> P
     return path
 
 
-def test_env_file_missing_at_an_explicit_path_is_an_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_env_file_missing_at_an_explicit_path_is_an_error(tmp_path: Path) -> None:
     """`--env-file` names a specific file; a typo there must not silently
-    build without the settings the operator asked for."""
-    # COLUMNS, and only COLUMNS. Measured against a CI-like run rather than
-    # copied: NO_COLOR changes nothing here, and TERMINAL_WIDTH, which is
-    # typer's own knob, is read once at import in `rich_utils` and so cannot
-    # be set per test at all. Rich reads COLUMNS when it builds the console,
-    # which is late enough to work.
-    monkeypatch.setenv("COLUMNS", "200")
+    build without the settings the operator asked for.
 
+    Asserts on `_normalise_rendered_output(result.output)` rather than
+    pinning the terminal width: rich wraps its error panel to whatever
+    width the environment gives it, and at a narrow width the path can land
+    split across two lines with the panel border in between. Normalising
+    removes the coupling between this content assertion and rich's width
+    choice, rather than choosing a width wide enough to avoid the wrap.
+    """
     missing = tmp_path / "nowhere.env"
     result = runner.invoke(app, [
         "build",
@@ -725,7 +737,7 @@ def test_env_file_missing_at_an_explicit_path_is_an_error(
         "--env-file", str(missing),
     ])
     assert result.exit_code == 2
-    assert "nowhere.env" in result.output
+    assert "nowhere.env" in _normalise_rendered_output(result.output)
 
 
 def test_an_unparsable_env_file_is_refused_with_a_clean_message(tmp_path: Path) -> None:
@@ -1058,9 +1070,7 @@ def test_a_cross_drive_env_path_falls_back_to_the_path_as_given(tmp_path: Path) 
     assert _relative_env_path(env_file) == env_file.as_posix()
 
 
-def test_build_help_lists_every_env_setting_and_its_help_line(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_build_help_lists_every_env_setting_and_its_help_line() -> None:
     """`EnvSetting.help` is otherwise dead weight: nothing else reads it.
 
     A key not rendered here is a key an operator can only discover by
@@ -1070,20 +1080,17 @@ def test_build_help_lists_every_env_setting_and_its_help_line(
 
     Rich wraps the panel to the terminal width, so a multi-word help line
     can land across several output lines, each carrying its own panel-border
-    "|" and re-wrapped whitespace. Both are stripped before matching, the
-    same way `test_help_still_renders_as_rich_panels` treats layout as
-    incidental and content as what is asserted.
-
-    Stripping is not enough on its own, because at CI's width the help line
-    itself wraps and the panel border lands inside the string being matched.
-    Widening the terminal is what fixes it; the colour is irrelevant and this
-    test passes with the escapes still present.
+    character and its own re-wrapped whitespace, the same way
+    `test_help_still_renders_as_rich_panels` treats layout as incidental and
+    content as what is asserted. `_normalise_rendered_output` strips the
+    ANSI escapes, the border, and the whitespace, which is what makes this
+    test indifferent to the width rich chose. Pinning the width to avoid the
+    wrap would have worked too, but it couples a content assertion to a
+    presentation decision that has nothing to do with what is being tested.
     """
-    monkeypatch.setenv("COLUMNS", "200")
-
     result = runner.invoke(app, ["build", "--help"])
     assert result.exit_code == 0
-    collapsed = " ".join(result.stdout.replace("│", " ").split())
+    collapsed = _normalise_rendered_output(result.stdout)
     for setting in ENV_SETTINGS:
         assert setting.key in collapsed, f"{setting.key} missing from build --help"
         help_collapsed = " ".join(setting.help.split())
