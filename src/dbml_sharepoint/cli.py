@@ -562,6 +562,20 @@ def _relative_env_path(env_file: Path) -> str:
         return env_file.as_posix()
 
 
+class UnwiredEnvSettingError(RuntimeError):
+    """An `ENV_SETTINGS` entry whose `parameter` `_resolve_env_settings`
+    does not know how to apply.
+
+    Not a build-time failure a consumer's file can cause -- this fires only
+    when a contributor adds a registry entry without also teaching
+    `_resolve_env_settings` how to use it, so it is a programming error, not
+    an `EnvFileError`. It is still raised rather than logged and swallowed:
+    a contributor who adds the second entry gets a loud failure the moment a
+    build actually exercises the key, rather than a build that succeeds
+    while quietly discarding what the file asked for.
+    """
+
+
 def _resolve_env_settings(
     env_file: Path | None,
     enterprise_reader: str | EnterpriseReaderDeclined | None,
@@ -594,9 +608,18 @@ def _resolve_env_settings(
             continue
         # Mapped explicitly rather than by generic dict-splat: a second
         # entry in ENV_SETTINGS must not silently start landing on the
-        # wrong keyword parameter here.
+        # wrong keyword parameter here. Refuses loudly rather than
+        # `continue`-ing past it: a `continue` here discarded a value the
+        # file WAS asked to set, with no artefact ever recording that it
+        # happened -- the exact silent-no-op failure class `AGENTS.md`
+        # opens with. The registry's premise ("adding a key is one entry")
+        # is only true once whoever adds the entry also wires it in here.
         if setting.parameter != "enterprise_reader":
-            continue
+            raise UnwiredEnvSettingError(
+                f"{setting.key} sets execute_build's {setting.parameter!r} "
+                "parameter, which _resolve_env_settings does not know how "
+                "to apply. Wire it in here before adding it to ENV_SETTINGS.",
+            )
         if enterprise_reader is None:
             resolved = file_value
             values.append(EnvValue(setting=setting, value=file_value, used=True, override=None))

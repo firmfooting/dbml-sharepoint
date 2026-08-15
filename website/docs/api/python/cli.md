@@ -120,6 +120,19 @@ CLIs compose. Those callers know exactly which files they mean, and a
 path that silently came from the working directory would be a surprise
 in a library call.
 
+### `UnwiredEnvSettingError`
+
+An `ENV_SETTINGS` entry whose `parameter` `_resolve_env_settings`
+does not know how to apply.
+
+Not a build-time failure a consumer's file can cause -- this fires only
+when a contributor adds a registry entry without also teaching
+`_resolve_env_settings` how to use it, so it is a programming error, not
+an `EnvFileError`. It is still raised rather than logged and swallowed:
+a contributor who adds the second entry gets a loud failure the moment a
+build actually exercises the key, rather than a build that succeeds
+while quietly discarding what the file asked for.
+
 ### `execute_build`
 
 ```python

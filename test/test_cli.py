@@ -900,6 +900,48 @@ def test_env_file_reader_arms_the_no_group_guard(tmp_path: Path) -> None:
     assert not (out_with / "deploy.js.txt").exists()
 
 
+def test_an_unwired_env_setting_refuses_instead_of_discarding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`_resolve_env_settings` used to `continue` past any `ENV_SETTINGS`
+    entry whose `parameter` was not `"enterprise_reader"`, discarding the
+    value silently: a file could ask for a second setting, `build --help`
+    could advertise the key, and the build would still succeed as though the
+    file had said nothing. The registry's whole premise -- "adding a key
+    later is one entry" -- is false unless a second entry that is not wired
+    in fails loudly the moment a file actually sets it. Registers a fake
+    entry rather than a real second parameter, so this test does not need
+    one to exist: `test_env_settings_has_exactly_the_registered_fields`
+    already pins the registry's current shape and is not a substitute for
+    this, because it asserts a count, not that an unwired parameter is
+    refused.
+    """
+    from dbml_sharepoint import cli
+    from dbml_sharepoint.model import env_file as env_file_module
+    from dbml_sharepoint.model.env_file import EnvSetting
+
+    fake_setting = EnvSetting(
+        key="DBMLSP_FAKE_SETTING", parameter="fake_parameter", help="test only.",
+    )
+    fake_settings = (*env_file_module.ENV_SETTINGS, fake_setting)
+    monkeypatch.setattr(env_file_module, "ENV_SETTINGS", fake_settings)
+    monkeypatch.setattr(cli, "ENV_SETTINGS", fake_settings)
+
+    env_path = tmp_path / "custom.env"
+    env_path.write_text("DBMLSP_FAKE_SETTING=whatever\n", encoding="utf-8", newline="\n")
+
+    with pytest.raises(cli.UnwiredEnvSettingError, match="DBMLSP_FAKE_SETTING"):
+        cli.execute_build(
+            schema=FIXTURES / "simple.dbml",
+            mapping=FIXTURES / "sharepoint-mapping.yaml",
+            release=FIXTURES / "release.yaml",
+            site_url="https://example.sharepoint.com/sites/test",
+            site_role="default",
+            out=tmp_path / "build",
+            env_file=env_path,
+        )
+
+
 def test_the_manifest_and_index_both_say_so_when_no_env_file_was_read(
     tmp_path: Path,
 ) -> None:
