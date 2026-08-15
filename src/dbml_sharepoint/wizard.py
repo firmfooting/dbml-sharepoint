@@ -66,6 +66,12 @@ from dbml_sharepoint.catalogue import (
     Solution,
     available_solutions,
 )
+from dbml_sharepoint.model.env_file import (
+    ENV_FILENAME,
+    ENV_SETTINGS,
+    EnvFileError,
+    read_env_file,
+)
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 #: Copied templates must not carry a previous build. These names are
@@ -449,6 +455,53 @@ def _ask_site_role(console: Console, roles: list[str]) -> str:
     return Prompt.ask("[bold]Site role[/bold]", choices=roles, console=console)
 
 
+def _reader_from_env_file(console: Console) -> str | None:
+    """The UPN `dbml-sharepoint.env` suggests for enrolment, or None.
+
+    Read from a file relative to the CURRENT directory -- the same location
+    `build` defaults to -- not the destination the wizard is about to write.
+    `_ask_destination` refuses a destination that already exists and is
+    non-empty, and `_scaffold` only copies the template in afterwards, so a
+    scaffolded project cannot contain the file at prompt time; the CWD is
+    the one place it could already be.
+
+    A missing file is the ordinary case and stays silent (LBYL, not a caught
+    `FileNotFoundError`). A file that fails to parse, or a value in it that
+    `validate_enterprise_reader` refuses, is reported here as one clean
+    message and treated as no suggestion -- never raised. Both
+    `EnvFileError` and `typer.BadParameter` are exceptions this function's
+    caller has no handler for, and `typer.BadParameter` is a
+    `click.UsageError` the wizard's `except typer.Exit` around the build
+    does not catch either -- the same defect `_ask_enterprise_reader`'s own
+    docstring already records fixing once, for the value an operator types
+    rather than one the file supplies.
+    """
+    # Deferred for the same cycle as `validate_site_url` above -- #171.
+    from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
+
+    path = Path(ENV_FILENAME)
+    if not path.is_file():
+        return None
+    try:
+        file_settings, _digest = read_env_file(path)
+    except EnvFileError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        return None
+    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
+    reader = file_settings.get(key)
+    if reader is None:
+        return None
+    try:
+        validate_enterprise_reader(reader)
+    except typer.BadParameter as exc:
+        console.print(
+            f"[red]{ENV_FILENAME} suggests a reader that is not valid: "
+            f"{exc.message}[/red]",
+        )
+        return None
+    return reader
+
+
 def _ask_enterprise_reader(console: Console) -> str:
     """Prompt until the answer is blank or passes the CLI's own validator.
 
@@ -473,6 +526,17 @@ def _ask_enterprise_reader(console: Console) -> str:
     definition and an escape hatch in one unbolded line -- the widest prompt
     in the wizard, and the only one whose label did not survive being read at
     a glance.
+
+    A `dbml-sharepoint.env` suggestion, when `_reader_from_env_file` finds
+    one, is named in the PROMPT TEXT and NEVER passed as `default=`. rich's
+    `PromptBase.__call__` returns the default before this function's own
+    code runs at all, so a non-blank default here would make a blank answer
+    resolve to the file's value instead of "enrol nobody" -- unreachable,
+    the same way `_ask_prefix`'s docstring records a single-prompt default
+    making its own "no prefix" answer unreachable. WRITE THE REASON AT THIS
+    LINE if you are tempted to simplify this into a `default=`; it will
+    reopen exactly that defect. Accepting the suggestion means typing it;
+    Enter always means nobody.
     """
     # Deferred for the same cycle as `validate_site_url` above -- #171.
     from dbml_sharepoint.cli import validate_enterprise_reader  # noqa: PLC0415
@@ -482,12 +546,16 @@ def _ask_enterprise_reader(console: Console) -> str:
         "A service account enrolled read-only across every list this "
         "template creates, so it can report on them. Blank for none.",
     )
+    suggestion = _reader_from_env_file(console)
+    label = "[bold]Reporting account (UPN)[/bold]"
+    if suggestion is not None:
+        label += (
+            f" ({ENV_FILENAME} suggests {escape(suggestion)}; type it to "
+            "accept, or leave blank for none)"
+        )
     while True:
-        reader = Prompt.ask(
-            "[bold]Reporting account (UPN)[/bold]",
-            default="",
-            console=console,
-        ).strip()
+        # NOT `default=suggestion` -- see the docstring above.
+        reader = Prompt.ask(label, default="", console=console).strip()
         if not reader:
             return ""
         try:
