@@ -707,12 +707,12 @@ def test_env_file_missing_at_an_explicit_path_is_an_error(
 ) -> None:
     """`--env-file` names a specific file; a typo there must not silently
     build without the settings the operator asked for."""
-    # Fix the width and drop the colour, for the reason the panel test below
-    # already records: rich wraps the refusal into a box at the terminal's
-    # width, so a path asserted raw is green on a developer machine and red
-    # on both CI runners for reasons unrelated to the behaviour under test.
+    # COLUMNS, and only COLUMNS. Measured against a CI-like run rather than
+    # copied: NO_COLOR changes nothing here, and TERMINAL_WIDTH, which is
+    # typer's own knob, is read once at import in `rich_utils` and so cannot
+    # be set per test at all. Rich reads COLUMNS when it builds the console,
+    # which is late enough to work.
     monkeypatch.setenv("COLUMNS", "200")
-    monkeypatch.setenv("NO_COLOR", "1")
 
     missing = tmp_path / "nowhere.env"
     result = runner.invoke(app, [
@@ -1074,14 +1074,12 @@ def test_build_help_lists_every_env_setting_and_its_help_line(
     same way `test_help_still_renders_as_rich_panels` treats layout as
     incidental and content as what is asserted.
 
-    Stripping is not enough on its own. At a narrow width rich also
-    interleaves colour escapes with the border characters, and this test was
-    green on a developer machine and red on both CI runners until the width
-    was fixed and the colour dropped, which is the same failure the panel
-    test further down already records.
+    Stripping is not enough on its own, because at CI's width the help line
+    itself wraps and the panel border lands inside the string being matched.
+    Widening the terminal is what fixes it; the colour is irrelevant and this
+    test passes with the escapes still present.
     """
     monkeypatch.setenv("COLUMNS", "200")
-    monkeypatch.setenv("NO_COLOR", "1")
 
     result = runner.invoke(app, ["build", "--help"])
     assert result.exit_code == 0
