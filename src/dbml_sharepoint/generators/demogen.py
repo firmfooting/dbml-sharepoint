@@ -1,11 +1,11 @@
 # src/dbml_sharepoint/generators/demogen.py
-"""Render demo-data.js — declared demo/sample rows, emitted with --seed.
+"""Render demo-data.js (declared demo/sample rows, emitted with --seed).
 
 The plan is generation-time typed: each field carries a `kind` so the
 script knows whether to write a literal, resolve the deploying operator
 (person columns take `<Name>Id`), resolve a demo_ref to a created item's
 Id (lookups also take `<Name>Id`), or compute a run-time date from a
-`today±N` offset — cadence-derived demo surfaces (Review due, overdue
+`today±N` offset. Cadence-derived demo surfaces (Review due, overdue
 formatting, Tolerance due) must land on whatever day the demo runs.
 The '[DEMO] ' Title marker (validated mandatory) is the in-record notice
 and the teardown contract.
@@ -30,7 +30,7 @@ _TODAY_OFFSET = TODAY_SENTINEL
 # The Title marker is the in-record demo notice: visible in every view and
 # form header, and the marker rollback.js trusts. (Per-row list-item
 # comments were tried and withdrawn: the modern Comments() endpoint is
-# undocumented surface and rejected the write live — 2026-07-24 — while
+# undocumented surface and rejected the write live, 2026-07-24, while
 # adding nothing the marker doesn't already show.)
 DEMO_TITLE_PREFIX = "[DEMO] "
 
@@ -47,7 +47,7 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any]:
         return {"name": name, "kind": "me", "value": None}
     if is_hyperlink(col_type):
         # A SharePoint URL column is a RECORD over REST (SP.FieldUrlValue,
-        # Url + Description), not a scalar — writing a bare string is
+        # Url + Description), not a scalar. Writing a bare string is
         # rejected at create time. Without this kind, a hyperlink column
         # simply could not be seeded, which is why four templates in the
         # people theme shipped their EvidenceUrl and MinutesUrl blank.
@@ -62,7 +62,7 @@ def _field_plan(col_type: str | None, name: str, value: Any) -> dict[str, Any]:
         # Never str() a value that might be None: it yields "None", which is
         # a perfectly valid-looking string and becomes a link to nowhere.
         # The validator refuses this shape, so reaching here with a non-string
-        # means the two readers have drifted — fail rather than emit.
+        # means the two readers have drifted. Fail rather than emit.
         if not isinstance(raw_url, str) or not raw_url.strip():
             raise ValueError(
                 f"{name}: a hyperlink demo value needs a non-empty url, got {raw_url!r}",

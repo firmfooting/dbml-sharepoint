@@ -63,7 +63,7 @@ def test_summing_a_choice_column_is_refused_and_points_at_count() -> None:
 
 def test_counting_a_choice_column_is_allowed() -> None:
     """count counts ROWS, not values, so it is legal on any displayed
-    column — which is why it is excluded from the numeric-only set rather
+    column, which is why it is excluded from the numeric-only set rather
     than sharing the numeric rule."""
     errors = _project_errors(views=_totals_view(["Title", "Status"], {"Status": "count"}))
     _no_totals_refusal(errors)
@@ -123,7 +123,7 @@ def test_a_hyperlink_demo_value_may_be_a_bare_url() -> None:
 
 def test_a_hyperlink_demo_value_may_carry_a_description() -> None:
     """The object form the demo planner accepts. The validator must accept
-    it too — it reads every dict, and a lookup reference is not the only
+    it too. It reads every dict, and a lookup reference is not the only
     thing that is one."""
     assert not _hyperlink_demo(
         {"url": "https://example.invalid/a.pdf", "description": "The file"},
@@ -143,7 +143,7 @@ def test_a_hyperlink_demo_object_refuses_unknown_keys() -> None:
     assert "'label'" in f.message
 
 def test_a_null_hyperlink_url_is_refused() -> None:
-    """`str(None)` is "None" — non-empty, and a perfectly valid-looking
+    """`str(None)` is "None", non-empty, and a perfectly valid-looking
     string. A coerced emptiness test passes it through to become a link
     pointing at the word None, so the check is on the STRING, not on its
     stringification."""
@@ -160,7 +160,7 @@ def test_an_empty_hyperlink_url_is_refused() -> None:
 
 def test_a_scalar_hyperlink_demo_value_is_validated_too() -> None:
     """A URL column takes a bare address as well as a record. Checking only
-    the record shape left `Link: null` and `Link: 123` unvalidated — and the
+    the record shape left `Link: null` and `Link: 123` unvalidated, and the
     generator refuses both, so the build surfaced a traceback instead of a
     finding. A validator must refuse everything its generator refuses."""
     for bad in (None, 123, ""):
@@ -171,7 +171,7 @@ def test_a_scalar_hyperlink_demo_value_is_validated_too() -> None:
 
 def _named_group(name: str) -> SiteGroup:
     """One site group. The four membership booleans are the loader's own
-    defaults for a declaration that omits them — see `_optional_bool`."""
+    defaults for a declaration that omits them (see `_optional_bool`)."""
     return SiteGroup(
         name=name,
         description="d",
@@ -264,7 +264,7 @@ def _cross_site_only_target(*, calculated: bool) -> tuple[Schema, MappingBundle]
 
 def test_a_cross_site_only_target_spends_no_index() -> None:
     """A cross-site ref becomes a Choice + URL pair on the SOURCE list. Nothing
-    enumerates FlowRunLog, so it has no picker — charging it an index would spend
+    enumerates FlowRunLog, so it has no picker. Charging it an index would spend
     one of its twenty on a query that never happens."""
     from dbml_sharepoint.analysis.checks._context import ValidationContext
 
@@ -302,7 +302,7 @@ def test_a_target_of_both_ref_kinds_keeps_its_index() -> None:
 
 def test_a_calculated_display_column_does_not_count_as_an_index() -> None:
     """It cannot be indexed, so counting it would push a schema over the ceiling
-    for an index that cannot exist — the failure mode in the other direction."""
+    for an index that cannot exist, the failure mode in the other direction."""
     schema = make_schema(
         make_table("Event", column("Ref"), column("Label", "calculated_text")),
         make_table("FollowUp", column("Event", "int", ref="Event.Id")),
@@ -358,7 +358,7 @@ def _shape_warnings(where: Condition) -> list[str]:
 def test_an_or_needs_every_branch_indexed() -> None:
     """An OR cannot narrow to one index. A row matching only the unindexed
     branch is still a row SharePoint has to find, so an indexed branch beside
-    an unindexed one buys nothing — and scoring it safe because SOME filtered
+    an unindexed one buys nothing, and scoring it safe because SOME filtered
     column is indexed is how a scanning view passes validation."""
     where = Group("any_of", (
         Leaf(field="Status", op="eq", value="Open"),
@@ -376,7 +376,7 @@ def test_an_or_with_every_branch_indexed_is_quiet() -> None:
 
 def test_an_and_needs_only_one_branch_indexed() -> None:
     """Measured at 6,000 items: an unindexed comparison refused on its own is
-    served when ANDed with an indexed one, in either order — SharePoint picks
+    served when ANDed with an indexed one, in either order. SharePoint picks
     the index rather than taking the first column and stopping. So an AND is
     covered by one indexed condition wherever it sits, and this test is what
     stops the OR rule above being applied to both.

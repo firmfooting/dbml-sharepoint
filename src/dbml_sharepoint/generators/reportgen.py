@@ -4,7 +4,7 @@
 The same DBML + mapping that provisions the lists also describes how to
 report on them. This module emits:
 
-- one Power Query (M) query per list — ``OData.Feed`` against the list's
+- one Power Query (M) query per list, ``OData.Feed`` against the list's
   REST endpoint, with lookup and person columns expanded to a join key plus
   display column, and column types applied from the deployer's own typemap.
   ``build`` knows the site (``--site-url``) and bakes it into every query,
@@ -67,7 +67,7 @@ class _ListPlan:
     #
     # The type is carried here rather than looked up in `m_types` because the
     # expand is emitted GUARDED (see `_render_m`): when the source record
-    # column is absent — which is what an EMPTY list gives you — the output
+    # column is absent (which is what an EMPTY list gives you), the output
     # column is added as nulls instead, and that fallback has to ascribe a
     # type at the point it is written.
     record_expands: list[tuple[str, str, str, str]] = field(default_factory=list)
@@ -82,14 +82,14 @@ class _ListPlan:
     # (fk column, target list title, target display column)
     joins: list[tuple[str, str, str]] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
-    # Site-relative path of the item display form, ending in "?ID=" — the
+    # Site-relative path of the item display form, ending in "?ID=". The
     # ItemURL helper column is SiteUrl + this + the item id.
     item_url_path: str = ""
-    # (internal/out column, model-facing display name) — populated only when
+    # (internal/out column, model-facing display name), populated only when
     # the mapping declares display_names; the rename is the LAST query step
     # so internal names remain the wire/OData contract.
     renames: list[tuple[str, str]] = field(default_factory=list)
-    # Declared internal field names (no cross-site, no Id) — the expected
+    # Declared internal field names (no cross-site, no Id), the expected
     # set for the user-added-column audit; cross-site names ride
     # ``skipped``.
     field_internal_names: list[str] = field(default_factory=list)
@@ -101,8 +101,8 @@ def _tables_for_role(schema: Schema, bundle: MappingBundle, site_role: str) -> l
     The MEMBERSHIP question is `ordering.is_deployed_here`, shared with the
     generators that deploy: an entity absent from the mapping or belonging to
     another role is not provisioned at this site, so it must not be reported
-    there either. Only the ORDER differs — declaration order here, dependency
-    order there — and a report has no creation sequence to respect.
+    there either. Only the ORDER differs (declaration order here, dependency
+    order there), and a report has no creation sequence to respect.
 
     This used to re-implement the predicate and say "same filter as jsgen" in
     its docstring, which is a claim nothing checked.
@@ -153,7 +153,7 @@ def _refuse_ambiguous_members(column: str, members: list[str]) -> None:
 
 
 def _display_column(bundle: MappingBundle, target_entity: str) -> str:
-    """What a lookup into `target_entity` shows — the same column jsgen sets
+    """What a lookup into `target_entity` shows, the same column jsgen sets
     as the field's `LookupField`. One home: `analysis.lookups`."""
     return display_column_for(bundle.mapping.entities.get(target_entity))
 
@@ -260,7 +260,7 @@ def _build_plans(
                 case "MultiChoice":
                     # MEASURED 2026-08-10 on a live tenant: the item value
                     # reads back as a bare JSON array under `odata=nometadata`
-                    # — the dialect the Power Query layer speaks — and as
+                    # (the dialect the Power Query layer speaks) and as
                     # {"__metadata":…,"results":[…]} under `odata=verbose`,
                     # the deploy layer's. The two need not agree, and only the
                     # first one matters here: THE CELL HOLDS A LIST.
@@ -268,7 +268,7 @@ def _build_plans(
                     # Which is why this cannot ride the scalar Choice arm.
                     # `type text` over a list does not mistype the column, it
                     # puts an Error value in every populated cell while the
-                    # query still loads — a report that renders and is wrong.
+                    # query still loads (a report that renders and is wrong).
                     # The join therefore happens in its own step, before
                     # anything types anything, and that step ascribes the type.
                     #
@@ -276,8 +276,8 @@ def _build_plans(
                     # because a joined set has no bound worth guessing and a
                     # CAST that overflows truncates in silence. A joined string
                     # rather than a junction table because there is no
-                    # junction-table machinery anywhere in this generator — no
-                    # CROSS APPLY, no STRING_SPLIT, no OPENJSON — and none is
+                    # junction-table machinery anywhere in this generator (no
+                    # CROSS APPLY, no STRING_SPLIT, no OPENJSON) and none is
                     # being added here. One text cell is the only shape both
                     # targets can carry today.
                     #
@@ -307,7 +307,7 @@ def _build_plans(
                     #
                     # `field_internal_names` is appended above, BEFORE this
                     # match, so an unhandled kind is recorded as a column the
-                    # list is expected to have — while contributing no
+                    # list is expected to have, while contributing no
                     # `$select`, no Power Query type and no SQL column.
                     # `_UserAddedColumns.pq` is built from that expected list,
                     # so the M audit sees a clean list; the SQL audit is built
@@ -376,14 +376,14 @@ def _row_key_m(list_title: str, id_expression: str) -> str:
     THE ONE definition of the key format, used for both a table's own
     ``<Entity> Key`` and the ``<Target> Key`` every lookup carries. Those two
     are what a Power BI relationship joins, so a format written twice is a
-    relationship that matches nothing — and matching nothing renders as
+    relationship that matches nothing, and matching nothing renders as
     empty visuals rather than as an error.
 
     MEASURED implicitly on a live tenant, 2026-08-11: the key was site + id
     with nothing naming the list. Every SharePoint list numbers its items
     from 1, so two lists on ONE site produce colliding keys the moment their
-    queries are appended — the multi-site, multi-list model this pack's own
-    guide tells the operator to build. Wrong row counts and wrong
+    queries are appended (the multi-site, multi-list model this pack's own
+    guide tells the operator to build). Wrong row counts and wrong
     relationships, and nothing anywhere raises.
 
     The list TITLE, not its GUID, and deliberately: a GUID would survive a
@@ -408,7 +408,7 @@ def _site_url_binding_m(site_url: str | None) -> list[str]:
     ``build`` is given the site (``--site-url``), so a bundle it produces
     can bind the URL here and the operator has nothing to set up. The
     standalone ``report`` command knows no site; it emits no binding, and
-    the query reads the ``SiteUrl`` text parameter instead — the same name,
+    the query reads the ``SiteUrl`` text parameter instead (the same name),
     so everything below is identical either way.
 
     The URL goes through :func:`_m_string` rather than being interpolated:
@@ -615,7 +615,7 @@ def _render_m(plan: _ListPlan, *, site_url: str | None = None) -> str:
         "    WithSiteName = Table.AddColumn(",
         f'        WithSiteUrl, "{REPORT_FIXED_COLUMNS[1]}", each SiteName, type text',
         "    ),",
-        # Which LIST the row came from — the other half of the same problem
+        # Which LIST the row came from, the other half of the same problem
         # the two columns above solve. A model that appends several lists
         # needs to slice by list as well as by site, and the key below is
         # opaque.
@@ -701,8 +701,8 @@ def generate_powerquery(
     every copy.
 
     ``site_url``, when given, is bound as the first step of each query so
-    the pack works with nothing to configure. Omitted — the standalone
-    ``report`` command has no site to name — the queries read a ``SiteUrl``
+    the pack works with nothing to configure. Omitted (the standalone
+    ``report`` command has no site to name), the queries read a ``SiteUrl``
     text parameter instead, and are otherwise identical.
     """
     return {
@@ -723,7 +723,7 @@ def _sql_header(site_url: str | None) -> str:
     Same rule as the M queries: ``build`` was given ``--site-url`` and bakes
     it in, ``report`` was not and leaves the placeholder to be edited. The
     trailing slash is dropped because ItemURL concatenates a path that
-    already starts with one — ``$(SiteUrl)`` is a raw prefix here, with no
+    already starts with one. ``$(SiteUrl)`` is a raw prefix here, with no
     normalisation step of the kind the M queries have to absorb it later.
     """
     setvar = (
@@ -1035,7 +1035,7 @@ def _sp_type_cell(
 ) -> str:
     """Human-readable SharePoint type description for one column.
 
-    Plain text — each renderer (markdown / M / SQL) applies its own
+    Plain text. Each renderer (markdown / M / SQL) applies its own
     escaping so the same rows can feed the document and the report-loadable
     dictionary tables.
     """
@@ -1060,7 +1060,7 @@ def _sp_type_cell(
             )
         case "MultiChoice":
             # `MultiChoice` is this codebase's token for FieldTypeKind 15, and
-            # the raw token is what a fall-through printed here — into the one
+            # the raw token is what a fall-through printed here, into the one
             # column a report author reads to find out what a column IS.
             #
             # Same declaration-order ordinals as Choice, and then how the
@@ -1129,8 +1129,8 @@ def _form_behaviour_cells(
     """(populated when, save rule) for one column, in prose.
 
     Described through `describe()`, never in a target's syntax. This is the
-    artefact a report author reads, and `[$ID] != ''` tells them nothing —
-    it is a SharePoint list-formatting expression they would first have to
+    artefact a report author reads, and `[$ID] != ''` tells them nothing.
+    It is a SharePoint list-formatting expression they would first have to
     identify as one. The declaration is theirs to understand; the mechanism
     carrying it is not.
     """
@@ -1220,7 +1220,7 @@ def _metadata_rows(
     source_schema: str,
     source_mapping: str,
 ) -> list[tuple[str, str]]:
-    """Deployment/schema model metadata as plain (field, value) rows —
+    """Deployment/schema model metadata as plain (field, value) rows,
     shared by the data-dictionary.md header and the _ModelInfo report table."""
     mapping = bundle.mapping
     rows = [
@@ -1330,7 +1330,7 @@ def generate_data_dictionary(
         # The declared indexes PLUS the one a lookup target gets for free. A
         # list that anything looks up is indexed on its display column so the
         # picker keeps working past 5,000 items, and that index spends one of
-        # the twenty — so a dictionary listing only the declared ones
+        # the twenty, so a dictionary listing only the declared ones
         # understates a budget an author is reading this page to manage.
         # Derived from the same lookup_display_columns the deployer emits from,
         # so the report cannot disagree with what is deployed.
@@ -1536,7 +1536,7 @@ def generate_dictionary_powerquery(
     """The data dictionary as report-loadable M queries, so any report can
     surface it as a page: _DataDictionary (one row per column), _ModelInfo
     (deployment/schema metadata as field/value rows) and _UserAddedColumns
-    (live drift audit — undeclared columns on the deployed lists).
+    (live drift audit, undeclared columns on the deployed lists).
 
     ``site_url`` reaches only _UserAddedColumns, the one query here that
     talks to the site; it takes the same binding as the list queries, so a

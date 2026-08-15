@@ -2,7 +2,7 @@
 
 These tests assert SHAPE, not existence. Whether a name is a real Fluent
 icon is a question only the catalogue can answer, and the suite runs
-offline — which is the whole argument for keeping the vocabulary small,
+offline, which is the whole argument for keeping the vocabulary small,
 central and reviewed rather than letting each template name its own.
 """
 
@@ -18,7 +18,7 @@ def test_the_vocabulary_is_a_frozenset_of_non_empty_names() -> None:
 
 
 def test_names_are_pascal_case_fluent_identifiers() -> None:
-    """Fluent MDL2 names are PascalCase letters only — no spaces, hyphens
+    """Fluent MDL2 names are PascalCase letters only, with no spaces, hyphens
     or separators. A name failing this is certainly wrong; one passing it
     may still be wrong, which is why admission requires a catalogue check.
     """

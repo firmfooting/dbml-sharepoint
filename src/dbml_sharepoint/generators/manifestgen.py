@@ -74,7 +74,7 @@ def generate_manifest(
     # schema_json is already filtered to that role; bundle.mapping is not.
     # Every inventory driven straight off the mapping therefore announced
     # rules, retirements, reconcile modes and polymorphic columns on lists
-    # that appear nowhere in this build's own deploy.js — the manifest and
+    # that appear nowhere in this build's own deploy.js, the manifest and
     # the script disagreeing, in the artefact an operator reads to decide
     # whether to paste the script. Anything below that starts from
     # bundle.mapping passes through here first.
@@ -107,7 +107,7 @@ def generate_manifest(
     # fields_phase1 alone made the manifest blind to deferred lookups:
     # jsgen puts the identical keys on phase2_lookups and deploy.js writes
     # them, so a declaration on a self-referencing or circular lookup
-    # deployed while the review artefact reported "(none declared)" — the
+    # deployed while the review artefact reported "(none declared)", the
     # inverse of a silent drop, and just as misleading to the person
     # signing off the run.
     def _written_fields(lst: dict[str, Any]) -> list[dict[str, Any]]:
@@ -144,7 +144,7 @@ def generate_manifest(
         for f in _written_fields(lst)
         if f.get("validation_formula", UNMANAGED) != UNMANAGED
     ]
-    # Both sections reconcile, and both default to `exact` — which CLEARS
+    # Both sections reconcile, and both default to `exact`, which CLEARS
     # every undeclared column of that list. Reporting the mode for
     # form_visibility only meant a column_validation block silently running
     # exact wiped rules with no mode shown anywhere in the artefact.
@@ -255,7 +255,7 @@ def generate_manifest(
     ]
     # Retention keys are authored in config/retention-policies.yaml and are
     # loose about form: some name the entity, some the prefixed list title.
-    # Resolve both. A key matching no declared entity at all is KEPT — that
+    # Resolve both. A key matching no declared entity at all is KEPT. That
     # is a typo the operator needs to see, not a role leak to hide, and
     # dropping it would trade one silent disagreement for another.
     retention = {

@@ -73,7 +73,7 @@ worth recording why so nobody spends an afternoon on it:
 - Complainants who remain dissatisfied: record the referral to your
   external body (ombudsman/commissioner) in the row.
 
-## Privacy (load-bearing)
+## Privacy (not optional)
 
 1. Site membership = recorders + handlers + owners only; **ordinary
    members have no access by design.** Widening it is a governance

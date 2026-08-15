@@ -2,15 +2,15 @@
 
 There are three, they partition the rules, and until now nothing tested the
 partition. That matters because 132 test call sites use
-`validate_against_mapping` directly and about eleven of them assert emptiness
-— and emptiness through a partial entry point is a weaker claim than it reads
+`validate_against_mapping` directly and about eleven of them assert emptiness,
+and emptiness through a partial entry point is a weaker claim than it reads
 as.
 
 Concretely: a schema whose column type is misspelled produces ONE error from
 `validate` and ZERO from `validate_against_mapping`. An `== []` against the
 latter passes on a schema the build rejects.
 
-The partition itself is deliberate and correct — `validate` needs no mapping,
+The partition itself is deliberate and correct. `validate` needs no mapping,
 so it can run on a schema alone. These tests exist so that moving a rule
 between the two is a decision somebody makes on purpose rather than a quiet
 change in what a hundred tests cover.
@@ -67,7 +67,7 @@ def test_validate_owns_the_schema_only_rules(broken_schema: tuple[Schema, Mappin
 def test_validate_against_mapping_does_not_repeat_them(
     broken_schema: tuple[Schema, MappingBundle],
 ) -> None:
-    """Not a defect — the rule needs no mapping, so it does not live here.
+    """Not a defect. The rule needs no mapping, so it does not live here.
 
     Pinned so that a well-meaning change that duplicates the rule into the
     mapping checks has to be deliberate: two copies of one rule is how they

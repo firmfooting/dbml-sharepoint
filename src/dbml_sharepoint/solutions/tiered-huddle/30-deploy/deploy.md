@@ -182,7 +182,7 @@ warning is telling you the file no longer describes the form.
 
 ### Do NOT delete the retired columns from `schema.dbml`
 
-This is the trap, and it is worth stating plainly. Deleting the declaration
+This is the failure mode. Deleting the declaration
 does not delete anything on the site. It leaves a live, visible, deletable
 column that the schema no longer declares, and the generated
 `_UserAddedColumns.pq` drift audit then reports it as a user-added column on

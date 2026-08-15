@@ -24,7 +24,7 @@ def test_todays_numbering_is_pinned() -> None:
 
 
 def test_reader_enrolment_follows_operator_enrolment() -> None:
-    """Order is load-bearing, not cosmetic.
+    """Order matters and is not cosmetic.
 
     `require_empty_at_deploy` is proved in `security` (1.2). The reader must
     be added AFTER that gate has run in this same deploy, never before, or

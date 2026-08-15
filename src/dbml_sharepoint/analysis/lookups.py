@@ -8,17 +8,17 @@ about an index nothing deploys, or a deployed index the ceiling never counted.
 
 WHY THE INDEX MATTERS. A Lookup's picker enumerates the target list. Past the
 5,000-item list view threshold that enumeration is refused and the NEW-ITEM FORM
-stops working, while views that merely display the column carry on — so the
+stops working, while views that merely display the column carry on, so the
 failure surfaces late, on the busiest list, looking like a form bug.
 
 MEASURED 2026-07-31, test/manual/templates/threshold-index-probe.js.j2: at 6,500
-items in the target, against `GetLookupFieldChoices` — the call the form makes:
+items in the target, against `GetLookupFieldChoices` (the call the form makes):
 
     Title, INDEXED           SERVED, 2,000 choices
     PickLabel, Calculated    REFUSED, SPQueryThrottledException
     PickCond,  Calculated    REFUSED, SPQueryThrottledException
 
-`Title` is not indexed by default — the same run read `Indexed=false` on it and
+`Title` is not indexed by default. The same run read `Indexed=false` on it and
 indexing it flipped two other target queries from refused to served.
 
 A CROSS-SITE reference is not a Lookup and gets none of this: it is expanded
@@ -43,15 +43,15 @@ def display_column_for(entity: EntityMapping | None) -> str:
     wrote `return "Title"` when choosing what to `$expand`, and this module
     wrote `entity.display_column or DEFAULT_DISPLAY_COLUMN`. Three spellings
     of one rule, and the bare literal in two of them meant a change to the
-    default would have moved the deploy without moving the reports —
-    a Power Query that expands a column the list does not surface.
+    default would have moved the deploy without moving the reports
+    (a Power Query that expands a column the list does not surface).
 
     Takes `None` deliberately: the callers all reach this through
     `entities.get(...)`, and a ref at a table with no mapping entry is
     reported by other checks. Answering with the built-in Title keeps those
     callers from each inventing their own None branch.
 
-    NOT the same question as "which display column can be indexed" —
+    NOT the same question as "which display column can be indexed".
     `lookup_display_columns` below answers that one, and excludes calculated
     columns because they cannot carry an index. A calculated display column
     is still what SharePoint DISPLAYS, so folding that exclusion in here
@@ -70,7 +70,7 @@ def lookup_target_entities(
 
     The one derivation of "is this list looked up?". `lookup_display_columns`
     below and `analysis.checks._structure`'s calculated-display-column warning
-    both read it, so they cannot disagree about which lists are targets — the
+    both read it, so they cannot disagree about which lists are targets, the
     same guarantee this module already gives for *which column* is displayed.
 
     A column named in `cross_site_reference_columns` is NOT a Lookup. It is
@@ -102,16 +102,16 @@ def lookup_display_columns(
 ) -> dict[str, str]:
     """`{entity: display column to INDEX}` for every lookup target.
 
-    The INDEXABLE subset, not the answer to "what does a lookup display" —
-    that is `display_column_for` above, and this reads it so the two cannot
+    The INDEXABLE subset, not the answer to "what does a lookup display".
+    That is `display_column_for` above, and this reads it so the two cannot
     disagree about the default.
 
     Excludes an entity whose display column is calculated: such a column cannot
     carry an index, so returning it would have callers count or deploy one that
-    cannot exist. `analysis.checks._structure` warns about those separately —
-    silence here is not silence overall.
+    cannot exist. `analysis.checks._structure` warns about those separately.
+    Silence here is not silence overall.
 
-    Also excludes an entity reached only by a cross-site reference — see
+    Also excludes an entity reached only by a cross-site reference. See
     `lookup_target_entities`.
     """
     displayed: dict[str, str] = {}

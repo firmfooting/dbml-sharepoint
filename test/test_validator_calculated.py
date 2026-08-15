@@ -37,7 +37,7 @@ def _entity(
 ) -> EntityMapping:
     """One entity declaration, with the defaults every test here shares.
 
-    The three physical-mapping fields are noise in every fixture below — no
+    The three physical-mapping fields are noise in every fixture below. No
     test is about the kind, the base template or the site role. What varies
     is the display column and the acceptance flag, so those are the only two
     a call site spells out. Named rather than `**kwargs`, so a misspelled
@@ -324,7 +324,7 @@ def test_calculated_formula_multi_value_operand_is_error() -> None:
 @pytest.mark.parametrize("operand_type", ["nvarchar", "number", "boolean", "datetime"])
 def test_probe_accepted_calculated_operand_types_stay_allowed(operand_type: str) -> None:
     """The other half of the same live run, and the reason the denylist is a
-    denylist. Yes/No in particular was never refused — a probe-free guess that
+    denylist. Yes/No in particular was never refused. A probe-free guess that
     "SharePoint only does text and numbers in formulas" would have banned it.
     """
     schema, bundle = _operand_inputs(operand_type)
@@ -392,7 +392,7 @@ def _calculated_display_inputs(*, accepted: bool) -> tuple[Schema, MappingBundle
 
 def test_a_calculated_display_column_warns_about_the_form() -> None:
     """A warning, not an error: a target that stays under 5,000 has no problem.
-    But the message must say the FORM breaks — "cannot be indexed" does not tell
+    But the message must say the FORM breaks. "cannot be indexed" does not tell
     an author what their users will see."""
     schema, bundle = _calculated_display_inputs(accepted=False)
     f = only(
@@ -421,7 +421,7 @@ def _display_type_inputs(
 ) -> tuple[Schema, MappingBundle]:
     """`Event.Notes` as the display column, with or without a list pointing at it.
 
-    `Title` is deliberately NULLABLE here — the DBML this replaced declared a
+    `Title` is deliberately NULLABLE here. The DBML this replaced declared a
     bare `Title nvarchar`, and the required-Title rules are not what these
     two tests are about.
     """
@@ -452,8 +452,8 @@ def test_an_unindexable_display_column_type_is_an_error(
     """The display column's index is appended by jsgen AFTER validation, so it
     never met the type guard every declared `indexes { }` entry passes. It is a
     deploy abort: _field_reconcile.js.j2 MERGEs Indexed=true, reads it back and
-    throws part-way through a run. An ERROR, not a warning — no acceptance can
-    make a Note column indexable."""
+    throws part-way through a run. An ERROR, not a warning (no acceptance can
+    make a Note column indexable)."""
     schema, bundle = _display_type_inputs(column_type, looked_up=True)
     f = only(
         validate_against_mapping(schema, bundle),
@@ -476,7 +476,7 @@ def test_an_unindexable_display_column_is_fine_when_nothing_looks_it_up() -> Non
 def test_a_display_column_that_is_never_rendered_is_an_error() -> None:
     """A cross-site logical column is declared in the DBML but replaced at deploy
     time by generated Abbreviation and SiteUrl fields, so it never exists on the
-    list. _naming.py cannot see this — the name IS a declared column — and the
+    list. _naming.py cannot see this (the name IS a declared column), and the
     implicit index would be created on a field that is not there."""
     schema = make_schema(
         make_table("Region", make_column("Title")),

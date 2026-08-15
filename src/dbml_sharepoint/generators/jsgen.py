@@ -170,10 +170,10 @@ UNMANAGED = "__dbmlsp_unmanaged__"
 # validation formulas": Note (3) and URL (11). Lookup (7), User (20) and
 # Calculated (17) are refused as validation operands for the same platform
 # limitation. MultiChoice (15) joined them on 2026-08-10, refused with that
-# same sentence — see test/manual/multi-value-probe.js.
+# same sentence (see test/manual/multi-value-probe.js).
 #
 # This set is a hand-kept list of platform facts, so treat it as incomplete
-# by default — Boolean (8) is the one this tool emits whose behaviour is not
+# by default. Boolean (8) is the one this tool emits whose behaviour is not
 # established either way. The deploy does NOT rely on it being complete: a
 # clear that SharePoint refuses for this reason is treated there as the
 # no-op it is, because a formula the field cannot hold is already absent.
@@ -190,14 +190,14 @@ def _section_target[T](
     """What a per-column section wants done to one column.
 
     Returns (declaration, clear):
-      (None, False)  — not managed here; the live value is never touched
-      (None, True)   — `reconcile: exact` with no entry, so CLEAR it
-      (decl, False)  — render the declaration
+      (None, False)  -- not managed here; the live value is never touched
+      (None, True)   -- `reconcile: exact` with no entry, so CLEAR it
+      (decl, False)  -- render the declaration
 
     Shared by both sections deliberately, so the calculated-column exclusion
     cannot apply to one and not the other. Clearing a calculated column is a
-    no-op write — it never reaches an entry form, which is why declaring one
-    is a build error — but the manifest would report a clear that never
+    no-op write (it never reaches an entry form, which is why declaring one
+    is a build error), but the manifest would report a clear that never
     happened, and two siblings disagreeing about one rule is how the wrong
     one gets "fixed" later.
     """
@@ -255,7 +255,7 @@ def _view_aggregations(view: ViewDef) -> str:
     """A declared view's SP.View `Aggregations` property: one FieldRef per
     totalled column, carrying SharePoint's own token for the function.
 
-    INTERNAL names, NOT display titles — the opposite of the widths rewrite
+    INTERNAL names, NOT display titles, the opposite of the widths rewrite
     a few functions below, which converts to display titles because
     ColumnWidth binds by those and silently resets when given internal
     ones. Both behaviours are observed on a live tenant; neither can be
@@ -279,7 +279,7 @@ def _view_caml_query(view: ViewDef, column_types: dict[str, str]) -> str:
     parts: list[str] = []
     if view.group_by is not None:
         collapse = "TRUE" if view.group_by.collapsed else "FALSE"
-        # One or two FieldRefs in one GroupBy — SharePoint's own two-level
+        # One or two FieldRefs in one GroupBy. SharePoint's own two-level
         # ceiling is enforced at load, so anything reaching here is valid.
         refs = "".join(f'<FieldRef Name="{name}"/>' for name in view.group_by.fields)
         parts.append(f'<GroupBy Collapse="{collapse}">{refs}</GroupBy>')
@@ -585,12 +585,12 @@ def build_schema_json(
         declared_form = bundle.mapping.form_formatting.get(table_name)
         if declared_form is not None:
             # Pane-native encoding: the CT property is ONE JSON string whose
-            # *JSONFormatter keys hold part OBJECTS — the Format pane
+            # *JSONFormatter keys hold part OBJECTS. The Format pane
             # displays this cleanly; string-encoded parts render but display
             # escaped (Phase 3.2 compares encoding-agnostically for sites
             # deployed under the old nested-string encoding). Body section
-            # field lists are the one place SP matches by DISPLAY name —
-            # rewrite them through the display map.
+            # field lists are the one place SP matches by DISPLAY name.
+            # Rewrite them through the display map.
             parts: dict[str, Any] = {}
             if declared_form.header is not None:
                 parts["headerJSONFormatter"] = declared_form.header
@@ -628,13 +628,13 @@ def build_schema_json(
             system_fields = list(SYSTEM_COLUMN_TYPES)
             # The list view LOOKUP threshold. All Items renders every column,
             # which past 12 join-bearing ones is a view SharePoint returns
-            # blank at ANY list size — so an entity may name the columns it
+            # blank at ANY list size, so an entity may name the columns it
             # cannot afford. Author and Editor are appended here without being
             # asked for and are the usual answer.
             #
             # The validator counts this same view, but from its OWN derivation
-            # — analysis/joins.py::all_items_joining_fields, called from the
-            # entity loop at analysis/checks/_views.py:815 — NOT this code.
+            # (analysis/joins.py::all_items_joining_fields, called from the
+            # entity loop at analysis/checks/_views.py:815), NOT this code.
             # join_bearing_columns, joining_fields, SYSTEM_JOIN_COLUMNS and
             # hide_from_all_items are all genuinely shared via
             # analysis/joins.py; the actual FIELD LIST this block builds is
@@ -689,7 +689,7 @@ def build_schema_json(
                 # ColumnWidth binds by DISPLAY title (live finding: internal
                 # names are accepted but silently reset the widths), so keys
                 # are rewritten at generation time like calculated-formula
-                # and form-body references — the deployer asserts the same
+                # and form-body references. The deployer asserts the same
                 # display titles, so bundle and live Titles cannot drift.
                 "widths": (
                     {
@@ -899,7 +899,7 @@ def _field_body(
         case "Lookup":
             # Display the target list's primary field. Defaults to the built-in
             # "Title", but a target whose mapping declares display_column (e.g.
-            # Membership → DisplayName) renders that instead — a bare "Title"
+            # Membership → DisplayName) renders that instead. A bare "Title"
             # shows blank on lists that never populate Title.
             #
             # `display_column_for` rather than the rule spelled out again:

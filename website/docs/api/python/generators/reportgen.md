@@ -12,7 +12,7 @@ Report-query generator: Power Query (M) and T-SQL views from the schema.
 The same DBML + mapping that provisions the lists also describes how to
 report on them. This module emits:
 
-- one Power Query (M) query per list — ``OData.Feed`` against the list's
+- one Power Query (M) query per list, ``OData.Feed`` against the list's
   REST endpoint, with lookup and person columns expanded to a join key plus
   display column, and column types applied from the deployer's own typemap.
   ``build`` knows the site (``--site-url``) and bakes it into every query,
@@ -46,8 +46,8 @@ lookup query would bind to one URL and stamp that site's name onto
 every copy.
 
 ``site_url``, when given, is bound as the first step of each query so
-the pack works with nothing to configure. Omitted — the standalone
-``report`` command has no site to name — the queries read a ``SiteUrl``
+the pack works with nothing to configure. Omitted (the standalone
+``report`` command has no site to name), the queries read a ``SiteUrl``
 text parameter instead, and are otherwise identical.
 
 ### `generate_sql_views`
@@ -93,7 +93,7 @@ def generate_dictionary_powerquery(schema: dbml_sharepoint.model.parser.Schema, 
 The data dictionary as report-loadable M queries, so any report can
 surface it as a page: _DataDictionary (one row per column), _ModelInfo
 (deployment/schema metadata as field/value rows) and _UserAddedColumns
-(live drift audit — undeclared columns on the deployed lists).
+(live drift audit, undeclared columns on the deployed lists).
 
 ``site_url`` reaches only _UserAddedColumns, the one query here that
 talks to the site; it takes the same binding as the list queries, so a

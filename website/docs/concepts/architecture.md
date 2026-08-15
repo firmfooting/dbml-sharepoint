@@ -19,7 +19,7 @@ release.yaml ─▶ model/release ────────┘   ordering, typema
         demogen · manifestgen · reportgen   (one artifact family each)
                      │
                      ▼
-        bundle.emit_bundle()  — the ONE emission sequence:
+        bundle.emit_bundle()  - the ONE emission sequence:
         stale clearing, index.md, checksums.txt, provenance
 ```
 

@@ -104,7 +104,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         perms = bundle.mapping.permissions
 
         # list_permissions.default.site_role, when declared, must be a known
-        # site role — a typo would silently scope the default to nothing. The
+        # site role. A typo would silently scope the default to nothing. The
         # valid roles are data-driven: those declared on the mapping's
         # entities, plus "default" (no hardcoded any labels you choose.
         scope = perms.default_policy_site_role
@@ -119,7 +119,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ),
             ))
 
-        # permission_levels[*].name must be unique — CASE-INSENSITIVELY,
+        # permission_levels[*].name must be unique, CASE-INSENSITIVELY,
         # because that is how SharePoint resolves and de-duplicates them.
         # Two declarations differing only in case are one object on the
         # site: the second create fails on a name collision, mid-deploy,
@@ -208,7 +208,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=_LEVELS,
                 ))
 
-        # groups[*].name must be unique — case-insensitively, for the same
+        # groups[*].name must be unique, case-insensitively, for the same
         # reason as the levels above.
         seen_group_names: dict[str, str] = {}
         custom_group_names = {g.name for g in perms.groups}

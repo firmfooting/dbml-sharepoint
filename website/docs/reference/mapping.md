@@ -854,7 +854,7 @@ Which columns appear on which forms, and under what conditions.
 ```yaml
 form_visibility:
   Risk:
-    reconcile: exact            # the default — read Reconciliation below
+    reconcile: exact            # the default, read Reconciliation below
     columns:
       SortOrder:     hidden     # never on any form
       InternalScore: hidden
@@ -968,7 +968,7 @@ always true on a new item.
 `column_validation` and `column_formatting` alike:
 
 ```text
-form_visibility[Risk]: 'Title' cannot carry a per-column declaration — the
+form_visibility[Risk]: 'Title' cannot carry a per-column declaration -- the
 built-in Title column is provisioned through its own patch, so it never
 receives these properties. Declaring it here would validate clean and
 deploy nothing.
@@ -999,12 +999,12 @@ actually wants shown.
 ```yaml
 column_validation:
   Risk:
-    reconcile: exact            # the default — read Reconciliation below
+    reconcile: exact            # the default, read Reconciliation below
     columns:
       Mitigation:
         when:
           - { field: Mitigation, measure: length, op: gt, value: 10 }
-        message: "Give at least a sentence — one word is not a mitigation."
+        message: "Give at least a sentence. One word is not a mitigation."
       Priority:
         when:
           - { field: Priority, op: neq, value: "Unset" }

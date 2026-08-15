@@ -12,8 +12,8 @@ from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
 # authors import it from here; the names have to keep resolving at this path.
 # They are DEFINED in `findings.py` so that `checks/*` can name a finding
 # without importing this orchestrator. The `__all__` below is what makes the
-# re-export explicit — mypy --strict does not re-export an imported name
-# otherwise — and is the same idiom `model/mapping_loader.py` uses.
+# re-export explicit (mypy --strict does not re-export an imported name
+# otherwise) and is the same idiom `model/mapping_loader.py` uses.
 from dbml_sharepoint.analysis.findings import (
     Finding,
     FindingCode,
@@ -51,15 +51,15 @@ RESERVED_NAMES = frozenset({
 # references and view/form field lists may name them; they are never
 # DBML-declared. Deployer-managed sets (views, form_visibility,
 # display_names) stay strict, as do list-validation formulas (SP support
-# for system columns there is not relied on — fail closed).
+# for system columns there is not relied on, so fail closed).
 SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
 
 # Columns that never reach the per-field deploy loop, so a per-field
 # declaration on one is validated, reported and never written.
 #
-# The built-in Title is provisioned through its own patch object — jsgen
+# The built-in Title is provisioned through its own patch object (jsgen
 # routes it there and continues BEFORE the formula and formatter keys are
-# attached — and the system columns are not DBML columns, so they are
+# attached), and the system columns are not DBML columns, so they are
 # never in the field list at all. A declaration on any of them validated
 # clean, the manifest reported "(none declared)", and the deploy wrote
 # nothing: an asserted, validated, silently unenforced guarantee, which is
@@ -96,7 +96,7 @@ KNOWN_SCALARS = typemap.KNOWN_SCALARS
 # SP.FieldCalculated column types, re-exported from the one place that
 # enumerates them (a calculated type without an OutputType cannot deploy,
 # so typemap's map is where the vocabulary is forced to be complete). The
-# formula is NOT in DBML — it lives in the mapping's `calculated_formulas:
+# formula is NOT in DBML. It lives in the mapping's `calculated_formulas:
 # {entity: {column: formula}}` section; validate_against_mapping enforces
 # the pairing and SP's formula constraints.
 CALCULATED_TYPES = typemap.CALCULATED_TYPES
@@ -111,8 +111,8 @@ _FORMATTER_FIELD_REF = re.compile(r"\[\$([A-Za-z0-9_]+)")
 
 
 def formatter_field_refs(node: object) -> frozenset[str]:
-    """Every `[$Field]` reference in a formatter JSON structure — walks
-    nested dicts/lists and scans every string value."""
+    """Every `[$Field]` reference in a formatter JSON structure, walking
+    nested dicts/lists and scanning every string value."""
     refs: set[str] = set()
 
     def _walk(value: object) -> None:
@@ -154,7 +154,7 @@ def _rendered_columns(table: "Table", cross_site_cols: set[str]) -> set[str]:
         if col.name == "Id" and col.is_pk and col.is_auto_increment:
             # Skipped because SharePoint provides the identity column itself,
             # so the deploy must not create one. This used to add "SP indexes
-            # Id natively" — dropped, because nothing here has measured that
+            # Id natively" and was dropped, because nothing here has measured that
             # and Microsoft documents it nowhere; the 2026-07-30 native-index
             # probe found SP.Field.Indexed FALSE for ID on every list it read.
             # Nothing branches on the claim, which is why it was easy to leave
@@ -214,7 +214,7 @@ def validate(schema: Schema) -> list[Finding]:
     """Core schema rules, judged without reference to any mapping.
 
     Unknown column types, duplicate tables, enum members a column does not
-    have — everything decidable from the DBML alone.
+    have (everything decidable from the DBML alone).
 
     This is one of three entry points and they partition the rules; none is a
     superset of another except `validate_all`, which is the union and is what
@@ -222,7 +222,7 @@ def validate(schema: Schema) -> list[Finding]:
 
     **A test asserting "no findings" through only one of them is asserting
     less than it looks.** `validate_against_mapping` reports nothing at all
-    for a schema whose column type is misspelled — that rule lives here — so
+    for a schema whose column type is misspelled (that rule lives here), so
     an `== []` against it passes on a schema the build would reject.
     """
     findings: list[Finding] = []
@@ -295,7 +295,7 @@ def _check_column(
 
     # The identity column must be called Id. typemap skips ANY
     # `int [pk, increment]` column, while jsgen and _rendered_columns
-    # special-case the NAME — so a differently named one was validated as a
+    # special-case the NAME, so a differently named one was validated as a
     # real column and never created. Every consequence then validated
     # clean: per-column declarations deployed nothing, DBML indexes and
     # views.fields emitted calls that fail live, and demo_items wrote to a
@@ -304,8 +304,8 @@ def _check_column(
     # Rejected rather than taught to the four consumers deliberately. A
     # SharePoint list has exactly one auto-increment column and it is
     # called ID; accepting another name would let the DBML claim a column
-    # the site does not have, and every downstream reader — the data
-    # dictionary, the Power Query bundle, any flow — would still have to
+    # the site does not have, and every downstream reader (the data
+    # dictionary, the Power Query bundle, any flow) would still have to
     # say ID. That is a rename with no deployed counterpart, which is the
     # same silent-drop class this rejection exists to close.
     if col.is_pk and col.is_auto_increment and not is_pk_id:
@@ -506,7 +506,7 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
 
     Each family of rules lives in its own module under analysis.checks;
     this walks them in declared order and concatenates what they report.
-    Order is part of the contract — see that package's docstring.
+    Order is part of the contract. See that package's docstring.
     """
     # Deferred for a genuine cycle, not a preference: checks/__init__.py
     # imports Finding from this module, so this cannot move to the top until

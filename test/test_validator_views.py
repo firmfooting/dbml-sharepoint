@@ -183,7 +183,7 @@ def test_unindexed_view_filter_warns_with_threshold_and_fields() -> None:
     # author cannot act on without.
     assert "DueDate" in finding.message and "Status" in finding.message
     assert "5,000" in finding.message
-    # One indexed condition suffices and its position is irrelevant — measured
+    # One indexed condition suffices and its position is irrelevant. Measured
     # at 6,000 items, both orderings of a degenerate AND served. Selectivity is
     # the caveat that survives, so the message must still carry one.
     assert "position in the filter does not matter" in finding.message
@@ -418,15 +418,15 @@ def test_view_filtered_on_lookup_targets_display_column_does_not_warn(
 ) -> None:
     """Locks in what Task 2 exists to produce: a lookup target's display
     column carries an implicit index (a picker past the 5,000-item threshold
-    needs it — see analysis/lookups.py), so THIS check — which only ever
-    reads `vc.effective_indexes` — must score a view on the TARGET entity
+    needs it, see analysis/lookups.py), so THIS check (which only ever
+    reads `vc.effective_indexes`) must score a view on the TARGET entity
     that filters on that column as safe, even with no explicit `indexes {}`
     entry naming it. Parameterised over the default display column (Title,
     when the mapping declares nothing) and an explicit `display_column`,
     because Task 2 folds both in the same way.
 
     Filtering on a different, non-display, unindexed column on the same
-    entity must still warn — proving the check still fires at all, so a bug
+    entity must still warn, proving the check still fires at all, so a bug
     that silenced it completely could not pass the first half vacuously.
     """
     filtered_column = display_column or "Title"
@@ -488,7 +488,7 @@ def test_indexed_person_filter_does_not_warn() -> None:
     Microsoft classifies Person or Group (single value) as a lookup field and
     documents that indexing one does not avert the threshold. Measured at 6,000
     items with the person projected into the view and the join verified, the
-    query was served — see _LOOKUP_FIELD_TYPES for the full evidence and the
+    query was served. See _LOOKUP_FIELD_TYPES for the full evidence and the
     one-line revert.
     """
     schema = make_schema(
@@ -514,7 +514,7 @@ def test_indexed_person_filter_does_not_warn() -> None:
         },
     )
     # An indexed Person column is a useful index. Measured at 6,000 items with
-    # the person projected into the view and the join verified — see
+    # the person projected into the view and the join verified. See
     # _LOOKUP_FIELD_TYPES. This is the personal-work-queue idiom the template
     # library ships, and it needs no remedy.
     none_of(
@@ -524,7 +524,7 @@ def test_indexed_person_filter_does_not_warn() -> None:
 
 def test_system_column_filter_is_not_warned_about(tmp_path: Path) -> None:
     """A warning must name a remedy the author can carry out. `Created` is
-    filterable but not declarable, so there is no index to add — pydbml
+    filterable but not declarable, so there is no index to add. pydbml
     refuses the declaration outright, which the second half asserts so the
     reason for the silence cannot quietly stop being true.
 
@@ -585,7 +585,7 @@ def test_null_only_filter_recommends_an_index() -> None:
         Section.VIEWS, entity="Project", view="Still open", sub="where",
     )
     assert "add a bare dbml index" in finding.message.lower()
-    # The null-test remedy, not the comparison one — they differ, and a
+    # The null-test remedy, not the comparison one. They differ, and a
     # null-only filter reaching the comparison branch would recommend indexing
     # "a selective filter column" when the only filter column IS the null test.
     assert "50 of 6,000" not in finding.message  # the pair is 50 of 60, not of 6,000
@@ -597,7 +597,7 @@ def test_null_only_filter_recommends_an_index() -> None:
 
 def test_view_widths_keys_must_be_view_fields() -> None:
     # SortOrder IS a rendered column, but a width on a column the view does
-    # not show is dead config — error, not silence.
+    # not show is dead config (error, not silence).
     errors = _project_errors(
         views={
             "Project": [
@@ -609,7 +609,7 @@ def test_view_widths_keys_must_be_view_fields() -> None:
             ],
         },
     )
-    # One finding, so the width on Title — a column the view DOES show — did
+    # One finding, so the width on Title (a column the view DOES show) did
     # not produce one.
     finding = only(errors, FindingCode.WIDTH_COLUMN_NOT_DISPLAYED)
     assert finding.location == Location(Section.VIEWS, entity="Project", view="V")
@@ -682,7 +682,7 @@ def test_demo_items_valid_set_passes() -> None:
     ] == []
 
 def test_view_url_slug_collision_is_error() -> None:
-    # "A+B" and "A B" both slug to ABApsx — two views cannot share one URL.
+    # "A+B" and "A B" both slug to ABApsx. Two views cannot share one URL.
     errors = _project_errors(
         views={
             "Project": [

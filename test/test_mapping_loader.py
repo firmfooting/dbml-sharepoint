@@ -19,7 +19,7 @@ from dbml_sharepoint.model.mapping_loader import (
 
 def test_unknown_entity_kind_is_a_load_error(tmp_path: Path) -> None:
     """kind is a Literal-typed closed vocabulary; the loader is its one
-    admission gate. A typo'd kind must fail the build here — before this
+    admission gate. A typo'd kind must fail the build here. Before this
     gate existed it flowed into schema_json and silently missed
     downstream comparisons like kind == "DocumentLibrary"."""
     write_mapping(tmp_path, """
@@ -283,7 +283,7 @@ def test_default_policy_without_site_role_applies_to_all() -> None:
 def test_minimal_mapping_loads_with_empty_extras(tmp_path: Path) -> None:
     """A mapping with only prefix + entities (no config files, no extension
     declared) must load cleanly with every optional section defaulting to
-    empty — the generic core has no required config beyond the mapping
+    empty. The generic core has no required config beyond the mapping
     itself."""
     write_mapping(
         tmp_path, entities("Project"), prefix='prefix: "MIN_"', name="mapping.yaml",
@@ -374,8 +374,8 @@ def test_enum_sources_fragmentless_value_defaults_to_choices_key(tmp_path: Path)
 
 
 def test_extension_config_for_selects_block_by_name(tmp_path: Path) -> None:
-    """extension_config_for(name) returns exactly the named extension's block —
-    another extension's block must not leak into it."""
+    """extension_config_for(name) returns exactly the named extension's block.
+    Another extension's block must not leak into it."""
     write_mapping(tmp_path, "units: []", prefix=None, name="reg.yaml")
     write_mapping(tmp_path, blocks(entities("Project"), """
         extension: my_org
@@ -481,8 +481,8 @@ def test_calculated_formulas_default_empty_when_absent() -> None:
 
 def test_enroll_operator_during_deploy_defaults_false_and_parses_true(tmp_path: Path) -> None:
     # The old form prepended "\n" to the appended block, with a comment saying
-    # it was load-bearing against however the fixture ends. The fixture does end
-    # with a newline, so it only produced a blank line — and `blocks` gives the
+    # it mattered against however the fixture ends. The fixture does end
+    # with a newline, so it only produced a blank line, and `blocks` gives the
     # same guarantee unconditionally, since `_body` normalises every part to
     # exactly one trailing newline. So this is both shorter and more robust than
     # the defence it replaces. `prefix=None`: the fixture carries its own.
@@ -567,14 +567,14 @@ def test_views_section_parsed(tmp_path: Path) -> None:
 def test_row_limit_refuses_a_yaml_boolean(tmp_path: Path) -> None:
     """`row_limit: yes` is a one-row view, built green, on a live site.
 
-    YAML 1.1 reads `yes` as True, and `int(True)` is 1 — which then passes
+    YAML 1.1 reads `yes` as True, and `int(True)` is 1, which then passes
     the validator's `1 <= row_limit <= 5000` range check, because 1 is a
     perfectly ordinary row limit. Reproduced end to end before this guard:
     the emitted deploy.js.txt carried `"row_limit": 1`, the build exited 0,
     and the view showed one item forever.
 
-    Exactly the failure AGENTS.md opens with — saves, reads back, passes
-    every phase, and is wrong on the rendered page. `widths`, the adjacent
+    Exactly the failure AGENTS.md opens with (saves, reads back, passes
+    every phase, and is wrong on the rendered page). `widths`, the adjacent
     field of this same dataclass, has always rejected `isinstance(px, bool)`
     for precisely this reason; `row_limit` was simply missed.
     """
@@ -591,7 +591,7 @@ def test_row_limit_refuses_a_yaml_boolean(tmp_path: Path) -> None:
 
 def test_row_limit_refuses_a_non_integer(tmp_path: Path) -> None:
     """`int("100")` would succeed and `int("many")` would raise ValueError
-    with no context at all — no view title, no entity, no key name."""
+    with no context at all (no view title, no entity, no key name)."""
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
@@ -607,7 +607,7 @@ def test_base_template_refuses_a_yaml_boolean(tmp_path: Path) -> None:
     """`int(True)` is 1, and 1 is not 100.
 
     Contained today only because a downstream check errors on anything but
-    100 — so the refusal an author sees names the wrong thing entirely.
+    100, so the refusal an author sees names the wrong thing entirely.
     """
     write_mapping(tmp_path, """
         entities:
@@ -1002,11 +1002,11 @@ def test_list_validation_parsed(tmp_path: Path) -> None:
 
 
 def test_entity_sub_keys_are_checked(tmp_path: Path) -> None:
-    """`display_colum` — one character — silently fell back to
+    """`display_colum` (one character) silently fell back to
     LookupField: "Title", so every lookup into that list renders blank. The
     validator has a dedicated guard for exactly that, and it never fired
     because the key was never seen."""
-    # `display_colum` is the typo under test — one logical YAML line, built
+    # `display_colum` is the typo under test, one logical YAML line, built
     # through `entity()` because spelled out it exceeds the line limit.
     write_mapping(
         tmp_path, "entities:\n" + entity("Membership", display_colum="DisplayName") + "\n",
@@ -1017,7 +1017,7 @@ def test_entity_sub_keys_are_checked(tmp_path: Path) -> None:
 
 
 def test_versioning_sub_keys_are_checked(tmp_path: Path) -> None:
-    """A typo'd `enable_versioning: false` deploys versioning ON — the
+    """A typo'd `enable_versioning: false` deploys versioning ON, the
     opposite of the declaration, on a list the author meant to keep flat."""
     write_mapping(tmp_path, _views_yaml("""
         versioning:
@@ -1184,7 +1184,7 @@ def test_view_sub_keys_are_checked(tmp_path: Path) -> None:
 
 def test_group_sub_keys_are_checked(tmp_path: Path) -> None:
     """A misspelled `require_empty_at_deploy` disables the clean-provision
-    gate — the check that proves a reconciled group has no members before
+    gate, the check that proves a reconciled group has no members before
     list creation."""
     write_mapping(tmp_path, _views_yaml("""
         groups:
@@ -1197,8 +1197,8 @@ def test_group_sub_keys_are_checked(tmp_path: Path) -> None:
 
 
 def test_permission_level_sub_keys_are_checked(tmp_path: Path) -> None:
-    """A misspelled `base_permissions` yields a custom level with NO bits —
-    created, granted, and permitting nothing."""
+    """A misspelled `base_permissions` yields a custom level with NO bits
+    (created, granted, and permitting nothing)."""
     write_mapping(tmp_path, _views_yaml("""
         permission_levels:
           - name: Contribute No Delete
@@ -1210,7 +1210,7 @@ def test_permission_level_sub_keys_are_checked(tmp_path: Path) -> None:
 
 def test_list_permissions_sub_keys_are_checked(tmp_path: Path) -> None:
     """A typo in a policy degrades the list to inherited permissions with
-    an empty allowlist — the fail-open direction on the security surface."""
+    an empty allowlist, the fail-open direction on the security surface."""
     write_mapping(tmp_path, _views_yaml("""
         list_permissions:
           default:
@@ -1323,7 +1323,7 @@ def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) ->
     """`permissions:` was allow-listed and never read. A build of the
     documented block was byte-identical to a mapping with no permissions at
     all: no group, no level, no broken inheritance, no allowlist
-    reconciliation — and a green build. The reader lives at the top level,
+    reconciliation, and a green build. The reader lives at the top level,
     under permission_levels / groups / list_permissions."""
     write_mapping(tmp_path, _views_yaml("""
         permissions:
@@ -1343,7 +1343,7 @@ def test_documented_permissions_block_is_rejected_not_ignored(tmp_path: Path) ->
 
 
 def test_documented_retention_policies_block_is_rejected_not_ignored(tmp_path: Path) -> None:
-    """Same shape as `permissions:` — allow-listed, never read. Policies are
+    """Same shape as `permissions:`, allow-listed, never read. Policies are
     loaded from the file named by `retention_policies_source`."""
     write_mapping(tmp_path, _views_yaml("""
         retention_policies:
@@ -1396,7 +1396,7 @@ def _sections_read_by_the_loader() -> set[str]:
                 and isinstance(node.args[0].value, str)
             ):
                 keys.add(node.args[0].value)
-            # helper(raw, "key", ...) — _optional_bool and friends
+            # helper(raw, "key", ...), _optional_bool and friends
             if (
                 len(node.args) >= 2
                 and isinstance(node.args[0], ast.Name)
@@ -1418,7 +1418,7 @@ def test_every_allow_listed_section_has_a_reader() -> None:
     assert {"prefix", "entities", "form_visibility", "list_permissions"} <= read
     orphans = mapping_loader.KNOWN_SECTIONS - read
     assert not orphans, (
-        f"allow-listed with no reader: {sorted(orphans)} — either wire a reader "
+        f"allow-listed with no reader: {sorted(orphans)}, either wire a reader "
         f"or drop the entry; an allow-listed key that nothing reads deploys nothing"
     )
 
@@ -1441,8 +1441,8 @@ def test_hardening_flags_parsed(tmp_path: Path) -> None:
 # --- Quoted booleans --------------------------------------------------------
 #
 # `bool("false")` is True. Every site below read the value with bool()
-# BEFORE the guard that tests it, so the cautious spelling — a quoted YAML
-# boolean — silently meant its opposite and the guard never fired.
+# BEFORE the guard that tests it, so the cautious spelling (a quoted YAML
+# boolean) silently meant its opposite and the guard never fired.
 
 
 def test_quoted_break_inheritance_is_rejected_not_inverted(tmp_path: Path) -> None:
@@ -1480,7 +1480,7 @@ def test_quoted_group_flags_are_rejected(tmp_path: Path) -> None:
 
 
 def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
-    """A quoted "false" deploys versioning ON — and the override path
+    """A quoted "false" deploys versioning ON, and the override path
     reaches jsgen as a raw dict, so nothing checked it at all."""
     write_mapping(tmp_path, _views_yaml("""
         versioning:
@@ -1511,7 +1511,7 @@ def test_quoted_versioning_flags_are_rejected(tmp_path: Path) -> None:
 
 def test_quoted_view_default_is_rejected(tmp_path: Path) -> None:
     """`default: "false"` coerced to True and stole the list's default
-    view — the one every link into the list lands on."""
+    view, the one every link into the list lands on."""
     write_mapping(tmp_path, _views_yaml("""
         views:
           Project:
@@ -1555,7 +1555,7 @@ def test_formula_sections_reject_non_mapping_columns(tmp_path: Path, section: st
 
 @pytest.mark.parametrize("empty_filter", ["[]", "{}"])
 def test_views_reject_explicit_empty_filters(tmp_path: Path, empty_filter: str) -> None:
-    # `empty_filter` is "[]" or "{}" — substituted at runtime, so the braces
+    # `empty_filter` is "[]" or "{}", substituted at runtime, so the braces
     # never reach the f-string literal and need no escaping.
     write_mapping(tmp_path, _views_yaml(f"""
         views:
@@ -1623,8 +1623,8 @@ def test_list_validation_formula_message_offers_an_example_that_loads(
 
 
 def test_site_role_on_a_permission_override_is_rejected(tmp_path: Path) -> None:
-    """`site_role` scopes the DEFAULT policy — which entities it applies to
-    — and is read only there. On an override it was parsed and silently
+    """`site_role` scopes the DEFAULT policy (which entities it applies to)
+    and is read only there. On an override it was parsed and silently
     discarded, so an author who had seen it work on the default reasonably
     expected it to narrow an override too, and got a list that was not
     scoped at all. On the security surface, believing a policy is scoped
@@ -1704,7 +1704,7 @@ def test_retired_columns_parse_both_declaration_forms(tmp_path: Path) -> None:
 
 def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
     """Structural mistakes fail at load with a message naming the exact
-    declaration — the same fail-closed contract as every other section."""
+    declaration, the same fail-closed contract as every other section."""
     write_mapping(tmp_path, _board_yaml("""
         retired_columns:
           Board:
@@ -1745,7 +1745,7 @@ def test_retired_columns_reject_malformed_declarations(tmp_path: Path) -> None:
 def test_apply_retirement_folds_into_every_target_structure(tmp_path: Path) -> None:
     """Retirement adds no deploy-time capability: it resolves into the
     structures deploy.js already implements. The calculated column (Route)
-    is the carve-out — it must NEVER reach form_visibility, which the
+    is the carve-out. It must NEVER reach form_visibility, which the
     validator rejects for calculated columns."""
     write_mapping(tmp_path, _board_yaml("""
         display_names:
@@ -1775,13 +1775,13 @@ def test_apply_retirement_folds_into_every_target_structure(tmp_path: Path) -> N
 
     mapping = load_mapping(tmp_path / "m.yaml").mapping
 
-    # 1. form_visibility — hidden from the New form, but never the
+    # 1. form_visibility, hidden from the New form, but never the
     #    calculated column, and `declared` so retiring one column does not
     #    start clearing formulas on every other column of the list.
     section = mapping.form_visibility["Board"]
     assert section.reconcile == "declared"
     assert section.columns["OperationsStatus"] == FormVisibility(new=False, existing=True)
-    # 2. hide_existing additionally hides it from Edit — and so from Display.
+    # 2. hide_existing additionally hides it from Edit, and so from Display.
     assert section.columns["OperationsNote"] == FormVisibility(new=False, existing=False)
     assert "Route" not in section.columns
     # 3. The suffix composes with the auto name AND with an explicit override.
@@ -1811,7 +1811,7 @@ def test_apply_retirement_replaces_a_declared_form_visibility_entry(
     tmp_path: Path,
 ) -> None:
     """Retirement owns a retired column's form behaviour outright. A
-    hand-written declaration is replaced rather than merged — a `when`
+    hand-written declaration is replaced rather than merged. A `when`
     predicate on a column nobody may enter is unreachable, and merging
     would leave the author's `existing: true` fighting hide_existing. The
     replacement is recorded so the validator can say so.
@@ -1852,13 +1852,13 @@ def test_apply_retirement_strips_retired_fields_from_form_sections(
     """Retirement's contract is that the column leaves the entry
     experience. A body section that still lists a retired field would rely
     on SharePoint honouring a hiding formula over an explicit section
-    placement — an interaction untested against live SharePoint, and an
-    inconsistency next to the view and widths strips.
+    placement (an interaction untested against live SharePoint, and an
+    inconsistency next to the view and widths strips).
 
     Only sections[].fields is touched: it is the one shape in the formatter
     JSON with a known meaning and the one the validator already walks.
     Every other key is left exactly as authored, and a section left with an
-    empty fields list is KEPT — an empty section is the author's layout to
+    empty fields list is KEPT. An empty section is the author's layout to
     clean up, and dropping it would be a second-order rewrite of their JSON.
     """
     write_mapping(tmp_path, _board_yaml("""
@@ -1888,7 +1888,7 @@ def test_apply_retirement_strips_retired_fields_from_form_sections(
     assert body["sections"][1] == {"displayname": "Streams", "fields": []}
     # Nothing else in the formatter JSON is rewritten.
     assert body["unrelatedKey"] == {"nested": "left exactly as authored"}
-    # Recorded once — a column listed under two sections is one retirement.
+    # Recorded once. A column listed under two sections is one retirement.
     assert [
         (s.column, s.context) for s in mapping.retirement_strips
         if "form_formatting" in s.context
@@ -2146,7 +2146,7 @@ def test_totals_parse(tmp_path: Path) -> None:
 
 def test_totals_default_to_empty(tmp_path: Path) -> None:
     """Empty means the live Aggregations property is never touched, so the
-    default has to be an empty mapping rather than None — the deploy reads
+    default has to be an empty mapping rather than None. The deploy reads
     it as "nothing declared", not as "declare nothing"."""
     write_mapping(tmp_path, _views_yaml("""
         views:
@@ -2271,7 +2271,7 @@ def test_reconcile_rejects_a_value_that_is_neither_mode(tmp_path: Path) -> None:
     """`reconcile:` has exactly two modes and the default DELETES.
 
     A typo silently falling back to `exact` would delete every declaration the
-    mapping did not list — the behaviour the `reconcile:` docs open with a
+    mapping did not list, the behaviour the `reconcile:` docs open with a
     danger admonition about. So an unrecognised value has to be refused, not
     coerced.
 

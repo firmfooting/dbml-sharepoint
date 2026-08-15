@@ -156,7 +156,7 @@ class _CrossSiteExpansion(BaseExtension):
 
 def test_a_cross_site_ref_does_not_index_the_far_list(tmp_path: Path) -> None:
     """A cross_site_reference_columns entry is expanded into a Choice + URL pair
-    on the source list, not a Lookup — nothing enumerates the far list, so it has
+    on the source list, not a Lookup. Nothing enumerates the far list, so it has
     no picker. Emitting an index for it is a real Indexed=true MERGE on a
     customer tenant that buys nothing."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
@@ -237,7 +237,7 @@ def test_choice_and_lookup_unique_constraints_are_deployed(tmp_path: Path) -> No
     # creation. A lookup cannot be: SharePoint only accepts it through
     # AddField, whose SP.FieldCreationInformation carries neither property.
     # Both therefore arrive by the MERGE reconcileDeclaredField issues right
-    # after creation — assert the split so a future change that drops that
+    # after creation, so assert the split so a future change that drops that
     # reconcile call cannot leave a [unique] lookup silently non-unique.
     creation = fields["Project"]["lookup_creation_parameters"]
     assert "EnforceUniqueValues" not in creation
@@ -258,7 +258,7 @@ def test_simple_deploy_js_matches_golden() -> None:
     five of `_FIXED_ARGS` inline, which meant changing either left the
     documented fix quietly generating something the test would still reject.
 
-    Review the resulting diff like code — it is. Regeneration is deliberately a
+    Review the resulting diff like code. It is. Regeneration is deliberately a
     separate, explicit act rather than a `--snapshot-update` flag on the test
     run; the friction is the point.
     """
@@ -335,7 +335,7 @@ def test_boolean_default_only_emitted_when_declared() -> None:
     assert no_default is not None
     assert "DefaultValue" not in no_default["body"]
 
-    # NB: keep as a list — a dict would collapse False/0 and True/1 into one
+    # NB: keep as a list, because a dict would collapse False/0 and True/1 into one
     # key each (Python treats them as equal), hiding the int cases.
     cases: list[tuple[str | int | bool, str]] = [
         (False, "0"),
@@ -1087,8 +1087,8 @@ def test_required_empty_group_is_paginated_and_fails_before_phase_1() -> None:
     assert js.index("phase-0-security-errors") < js.index(f"Starting Phase {pn('lists')}")
     # The gate itself observes without mutating: no member removal between
     # the gate's guard and its success log. (Member removal DOES exist
-    # elsewhere in the script — the run-scoped operator self-enrolment
-    # cleanup — which never touches pre-existing members.)
+    # elsewhere in the script, the run-scoped operator self-enrolment
+    # cleanup, which never touches pre-existing members.)
     gate_block = js[
         js.index("if (grp.require_empty_at_deploy)"):js.index("is empty as required for deployment")
     ]
@@ -1225,7 +1225,7 @@ def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
 def test_seed_items_empty_with_null_extension() -> None:
     """With no extension (NullExtension default), the schema
     view exposes an empty ``seed_items`` list and carries NO organisation-specific
-    keys — seeding belongs to extensions."""
+    keys. Seeding belongs to extensions."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
@@ -1467,7 +1467,7 @@ def test_calculated_fields_are_created_after_referenced_columns(
 def test_calculated_field_shape_gate_expects_intrinsic_read_only() -> None:
     """SP.FieldCalculated is intrinsically ReadOnlyField=true (users never
     write it), so a blanket writability assertion rejects every calculated
-    field the deployer itself created a moment earlier — the rerun/resume
+    field the deployer itself created a moment earlier. The rerun/resume
     path fails in preflight with 'read-only or sealed; expected a writable
     declared field'. The shape gate must expect read-only exactly for
     declared calculated fields, still reject read-only for every other
@@ -1494,7 +1494,7 @@ def test_formula_comparison_decodes_xml_character_entities() -> None:
     and returns it with XML character entities intact (a formula containing
     `<>` reads back as `&lt;&gt;`), so a byte-for-byte comparison never
     converges: reconciliation MERGEs the identical formula and the readback
-    'drift' persists — 'did not retain declared mutable setting(s): Formula'
+    'drift' persists ('did not retain declared mutable setting(s): Formula')
     on every rerun. Formula comparison must canonicalise both sides by
     decoding XML entities (amp last, so double-encoded text stays distinct)."""
     schema = parse_dbml(FIXTURES / "calculated.dbml")
@@ -1521,8 +1521,8 @@ def test_formula_comparison_strips_removable_reference_brackets() -> None:
     brackets around names that do not need delimiting are stripped
     (`[Likelihood]` is stored and read back as `Likelihood`), so a
     byte-for-byte comparison of declared vs readback never converges even
-    after XML entity decoding — the same trap the PnP provisioning engine
-    documents. The comparison must canonicalise both sides by removing
+    after XML entity decoding (the same trap the PnP provisioning engine
+    documents). The comparison must canonicalise both sides by removing
     removable brackets OUTSIDE string literals only: bracket text inside a
     quoted constant is data, not a reference."""
     js = _generate_simple_js()
@@ -1582,7 +1582,7 @@ def test_permission_level_probe_uses_filter_not_getbyname() -> None:
 def test_field_probe_treats_missing_column_400_as_absent() -> None:
     """SP's fields/getbyinternalnameortitle returns HTTP 400
     (System.ArgumentException, locale-invariant code -2147024809, "Column 'X'
-    does not exist") for a missing field — not 404 like the list/group
+    does not exist") for a missing field, not 404 like the list/group
     getters. Treating only 404 as absent aborted every clean first provision
     in Phase 2.1: each just-created list's declared fields all failed their
     shape probe before they could be created. The probe must map exactly that
@@ -1671,7 +1671,7 @@ def test_view_caml_condition_sort_and_group() -> None:
 
 
 def test_view_caml_renders_two_group_levels_in_one_groupby() -> None:
-    """SharePoint takes both FieldRefs inside ONE GroupBy — two GroupBy
+    """SharePoint takes both FieldRefs inside ONE GroupBy. Two GroupBy
     elements would be malformed CAML, not a deeper grouping."""
     from dbml_sharepoint.model.mapping_loader import ViewGroupBy
 
@@ -1815,8 +1815,8 @@ def test_schema_json_carries_declared_views(tmp_path: Path) -> None:
 def test_view_widths_emitted_by_display_name(tmp_path: Path) -> None:
     """ColumnWidth FieldRefs bind by DISPLAY title (live finding: internal
     names are accepted but silently reset widths), so the generator rewrites
-    widths keys with display_name_for — the same generation-time rewrite
-    calculated formulas and form bodies use."""
+    widths keys with display_name_for (the same generation-time rewrite
+    calculated formulas and form bodies use)."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = pack(
@@ -1903,7 +1903,7 @@ def test_view_probe_treats_missing_view_400_as_absent(tmp_path: Path) -> None:
     """views/getbytitle signals a missing view the same way
     fields/getbyinternalnameortitle signals a missing field: HTTP 400
     System.ArgumentException ("The specified view is invalid."), code
-    -2147024809 — NOT 404. Treating only 404 as absent made Phase 3.1 fail
+    -2147024809, NOT 404. Treating only 404 as absent made Phase 3.1 fail
     its probe on every view it was about to create (seen live on a register
     deployment). Both probes must share one absent-detection helper so the
     next by-name getter cannot reintroduce this bug."""
@@ -1920,7 +1920,7 @@ def test_view_query_comparison_tolerates_space_before_self_close(
     """SharePoint's ViewQuery readback writes self-closing tags with a space
     (`<FieldRef Name="X" />` for a declared `<FieldRef Name="X"/>`), so the
     normalized comparison must collapse whitespace before `/>` as well as
-    between tags — otherwise every created view immediately fails its own
+    between tags. Otherwise every created view immediately fails its own
     verification (seen live on a register deployment)."""
     js = _generate_views_js(tmp_path)
     normalizer = js.split("const normalizeViewQuery")[1].split("\n")[0]
@@ -1933,7 +1933,7 @@ def test_deploy_js_phase_3c_provisions_and_reconciles_views(tmp_path: Path) -> N
     generated All Items recovery view and authored views are part of the
     physical shape: Phase 3.1 creates missing views, reconciles
     ViewQuery/RowLimit/field order/default flag on existing ones (public
-    views only — a same-name personal view fails closed), verifies by
+    views only; a same-name personal view fails closed), verifies by
     readback, and never touches other views (user content, unlike exact
     ACLs)."""
     js = _generate_views_js(tmp_path)
@@ -2039,7 +2039,7 @@ def test_formula_references_rewritten_to_display_names(tmp_path: Path) -> None:
     """SharePoint resolves formula [refs] against DISPLAY names at write
     time, so once MatrixVersion displays as "Matrix Version" a formula
     saying [MatrixVersion] fails to create. Authors keep internal names;
-    the build rewrites refs to display names — outside string literals only
+    the build rewrites refs to display names, outside string literals only
     (bracket text inside a quoted constant is data)."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
@@ -2192,7 +2192,7 @@ def test_view_rows_carry_formatting_and_template_reconciles_it(tmp_path: Path) -
     assert "view.formatting != null" in js
     assert "CustomFormatter: view.formatting" in js
     # The view CustomFormatter lives in the view schema XML like ViewQuery,
-    # so readback is XML-entity-encoded ('>=' returns as '&gt;=' — seen
+    # so readback is XML-entity-encoded ('>=' returns as '&gt;=', seen
     # live): compare via xmlDecode before canonical JSON, both sides.
     assert "const canonicalViewFormatter" in js
     assert (
@@ -2351,7 +2351,7 @@ def test_exact_column_validation_skips_a_multi_value_column(tmp_path: Path) -> N
 
 def test_form_formatting_composed_with_display_rewrite(tmp_path: Path) -> None:
     """ClientFormCustomFormatter is a JSON string whose *JSONFormatter keys
-    hold part JSON OBJECTS — the pane-native encoding (the Format pane
+    hold part JSON OBJECTS, the pane-native encoding (the Format pane
     displays string-encoded parts escaped; objects display clean, and the
     renderer accepts both). Body section field lists are the one place SP
     matches by DISPLAY name, so they are rewritten through the display
@@ -2452,7 +2452,7 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
         if lst["title"] == "APP_Risk"
     )
     # The implication "if closed then a closure note" as the grammar spells
-    # it — any_of[none_of[antecedent], consequent]. The neq renderer itself
+    # it (any_of[none_of[antecedent], consequent]). The neq renderer itself
     # admits blanks, and internal names are rewritten to display names,
     # which is what SP resolves against.
     assert risk["validation_formula"] == (
@@ -2475,7 +2475,7 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
     ) in js
     # Validation reconciles AFTER the list's fields exist: the formula
     # references columns (by display name) that the same run creates and
-    # renames — merging it with the pre-field list settings fails with
+    # renames. Merging it with the pre-field list settings fails with
     # "The formula refers to a column that does not exist" (seen live).
     assert "async function reconcileListValidation" in js
     assert "list.validation_formula == null" in js
@@ -2491,7 +2491,7 @@ def test_list_validation_flows_to_schema_and_template(tmp_path: Path) -> None:
 
 def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
     """List ACLs can LOOK correct while the signed-in operator still deletes
-    happily — site collection admins and Full Control holders bypass list
+    happily. Site collection admins and Full Control holders bypass list
     ACLs entirely (seen live: the deploying owner could delete despite a
     no-delete working level). After self-enrolment cleanup the script probes
     the operator's EffectiveBasePermissions per ACL'd list and logs
@@ -2503,11 +2503,11 @@ def test_operator_effective_rights_diagnostic_after_cleanup() -> None:
     assert "bypass list ACLs" in js
     assert "ordinary member account" in js
     # Group-connected sites make every group owner a site collection admin
-    # — invisible in Check Permissions, bypasses every list ACL. Say so.
+    # (invisible in Check Permissions, bypasses every list ACL). Say so.
     assert "_spPageContextInfo.isSiteAdmin" in js
     assert "site collection admin = " in js
     assert "owners of a group-connected site are site collection admins" in js
-    # After cleanup, before DONE — enrolment would otherwise inflate rights.
+    # After cleanup, before DONE, since enrolment would otherwise inflate rights.
     diagnostic = js.index("Operator effective rights on")
     assert js.rfind("await removeSelfEnrollments()", 0, diagnostic) >= 0
     assert diagnostic < js.index("Deployment complete.")
@@ -2540,7 +2540,7 @@ def test_hardening_flags_flow_to_schema(tmp_path: Path) -> None:
 
 
 def test_template_brackets_writes_with_unseal_and_seal_phases(tmp_path: Path) -> None:
-    """Sealed columns block UI schema edits even for site admins — the
+    """Sealed columns block UI schema edits even for site admins, the
     strongest defense available when team owners are unavoidably site
     collection admins (group-connected sites). Design: a maintenance unseal
     after Phase 1.2 leaves every existing write path untouched, and Phase 4.1
@@ -2597,7 +2597,7 @@ def test_exit_restores_every_field_the_run_unsealed(tmp_path: Path) -> None:
 
 def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:
     """AllowDeletion=false makes the LIST object undeletable through the UI
-    even for admins — friction, not enforcement, honestly labeled. Isolated
+    even for admins (friction, not enforcement, honestly labeled). Isolated
     probe/MERGE so an unsupported tenant surface fails only this step."""
     schema, bundle = _hardening_inputs(tmp_path)
     js = generate_deploy_js(
@@ -2617,7 +2617,7 @@ def test_template_blocks_list_deletion_when_declared(tmp_path: Path) -> None:
 
 
 def test_view_existence_check_enumerates_per_list(tmp_path: Path) -> None:
-    """views/getbytitle on an absent view answers HTTP 400 — handled by
+    """views/getbytitle on an absent view answers HTTP 400, handled by
     isAbsent400, but the browser paints the failed request red and
     operators read it as a deployment error (seen live). The existence
     check must come from ONE views?$select enumeration per list (always
@@ -2675,7 +2675,7 @@ def test_view_verify_rides_one_fresh_readback(tmp_path: Path) -> None:
     """Steady-state views paid three decision GETs per view (formatting
     current, preFlag, viewfields readback) on top of the fail-closed verify.
     Decision reads now reuse the phase-start enumeration shape; the verify
-    stays fresh and carries ViewFields via $expand — one GET, same gate."""
+    stays fresh and carries ViewFields via $expand (one GET, same gate)."""
     js = _generate_views_js(tmp_path)
     assert "const current = existing || await readViewShape(viewUrl);" in js
     assert "const preFlag = existing || await readViewShape(viewUrl);" in js
@@ -2873,7 +2873,7 @@ def test_no_aggregation_token_is_an_english_word_sharepoint_does_not_know() -> N
     present = invented & set(TOTAL_FUNCTIONS.values())
     assert not present, (
         f"{sorted(present)} are not SharePoint aggregation tokens. The enumeration is "
-        f"AVG, COUNT, MAX, MIN, SUM, STDEV, VAR — a non-member is stored, round-tripped, "
+        f"AVG, COUNT, MAX, MIN, SUM, STDEV, VAR, and a non-member is stored, round-tripped, "
         f"and then breaks the view's rendering entirely."
     )
 
@@ -2896,7 +2896,7 @@ def test_a_view_without_totals_renders_no_aggregations() -> None:
 
 def test_a_grouped_column_need_not_be_displayed() -> None:
     """SharePoint renders the grouped value in the group HEADER, from the
-    GroupBy FieldRef, independently of ViewFields — which is why grouping
+    GroupBy FieldRef, independently of ViewFields, which is why grouping
     by a column you do not also list is a normal way to avoid repeating the
     same value in every row. Nothing may refuse it."""
     from dbml_sharepoint.model.mapping_loader import ViewGroupBy
@@ -2915,7 +2915,7 @@ def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None
     the field-reconcile phase.
 
     Under `column_validation: reconcile: exact` the deployer clears the
-    formula on every column NOT declared — so one undeclared hyperlink
+    formula on every column NOT declared, so one undeclared hyperlink
     column stops a deploy that has nothing else wrong with it. The
     generator must mark those columns unmanaged rather than emit a clear.
     """
@@ -2951,14 +2951,14 @@ def test_a_url_column_is_never_sent_a_validation_formula(tmp_path: Path) -> None
         "ValidationFormula that SharePoint refuses outright"
     )
     # The declared one still deploys, and an undeclared TEXT column is
-    # still cleared — the guard must not become "skip everything".
+    # still cleared. The guard must not become "skip everything".
     assert fields["Note"]["validation_formula"] != UNMANAGED
     assert fields["Comment"]["validation_formula"] == ""
 
 
 def test_role_assignments_are_enumerated_before_any_principal_probe() -> None:
     """A list's roleassignments/getbyprincipalid answers 404 for a principal
-    with no assignment yet — every declared principal, on a first deploy —
+    with no assignment yet (every declared principal, on a first deploy),
     and the browser paints that red whatever the script does with it.
 
     Asserted on the generated source rather than by running it: the mock in
@@ -2984,7 +2984,7 @@ def test_a_casing_only_view_rename_does_not_deadlock() -> None:
     """`title: Open` with `renamed_from: [open]` matches ONE live view under
     case-insensitive comparison. Counting it as both the current view and a
     competing previous-title view makes the conflict check refuse to choose
-    between a view and itself — on every run, so the rename never lands."""
+    between a view and itself, on every run, so the rename never lands."""
     js = _generate_simple_js()
     block = js[js.index("const previousMatches = listedViews.filter("):]
     block = block[: block.index("if (previousMatches.length > 1)")]
@@ -2996,7 +2996,7 @@ def test_a_casing_only_view_rename_does_not_deadlock() -> None:
 def test_field_shapes_keep_internal_names_and_titles_apart() -> None:
     """getbyinternalnameortitle resolves an internal name first. Folding both
     into one keyspace lets one field's display Title shadow another field's
-    InternalName when they match case-insensitively — and the shadowed field
+    InternalName when they match case-insensitively, and the shadowed field
     is then read as an impostor, aborting preflight over a column SharePoint
     resolves perfectly well."""
     js = _generate_simple_js()
@@ -3012,7 +3012,7 @@ def _hide_fixture(tmp_path: Path, hide_line: str) -> Path:
 
     `hide_line` is spliced INSIDE the Task entity block, so its four-space
     indent is what says where it goes: pass `"    hide_from_all_items: [...]\\n"`
-    or `""`. `with_tail` appends it verbatim for exactly that reason —
+    or `""`. `with_tail` appends it verbatim for exactly that reason.
     `blocks()` would dedent the lone indented line flat and reparent it to the
     top level of the mapping, silently (see `_packs.with_tail`).
     """
@@ -3054,7 +3054,7 @@ def _all_items_fields(tmp_path: Path) -> list[str]:
 
 def test_all_items_renders_everything_without_the_key(tmp_path: Path) -> None:
     """The control. If this list ever changes for an unrelated reason, fix the
-    expectation in BOTH tests — the pair is what proves the omission."""
+    expectation in BOTH tests. The pair is what proves the omission."""
     _hide_fixture(tmp_path, "")
     assert _all_items_fields(tmp_path) == [
         "ID", "Title", "Owner", "Reviewer", "Created", "Modified", "Author", "Editor",
@@ -3086,7 +3086,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     """The guard on the shared-module claim in this plan's Architecture section.
 
     If this test is deleted or weakened, the validator and the generator CAN
-    drift about which fields `All Items` renders — and the drift shows up as a
+    drift about which fields `All Items` renders, and the drift shows up as a
     build that passes a view the deploy then creates over the ceiling, or one
     refused that was never going to exist. Nothing else in the suite catches it.
 
@@ -3094,33 +3094,33 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
 
     - `Assignee`, a real `ref` resolved in PHASE 1 (Person precedes Task in
       creation order, so nothing defers it).
-    - `Parent`, a self-ref on Task — `ordering.py` always defers a self-ref,
+    - `Parent`, a self-ref on Task. `ordering.py` always defers a self-ref,
       so this one is a genuine phase-2 Lookup on Task's OWN list.
-    - `Manager`, a self-ref on Person — a phase-2 Lookup belonging to a
-      DIFFERENT list, so `jsgen.py`'s `lookup["list"] == list_title` filter
+    - `Manager`, a self-ref on Person (a phase-2 Lookup belonging to a
+      DIFFERENT list), so `jsgen.py`'s `lookup["list"] == list_title` filter
       has to actually discriminate rather than pass every phase-2 entry
       through unfiltered.
     - `Elsewhere`, a CROSS-SITE ref, which exists only as
       <col>Abbreviation / <col>SiteUrl and never under its own name.
-    - `Owner`, a `person` column, also named in `hide_from_all_items` — so
-      the hidden-set subtraction is load-bearing on both sides, not just
-      exercised by the generator's own tests above.
+    - `Owner`, a `person` column, also named in `hide_from_all_items`, so
+      the hidden-set subtraction does real work on both sides, and is not
+      just exercised by the generator's own tests above.
     - `Notes`, a plain `nvarchar`.
     - The auto-increment `Id`, which the validator drops at
       validator.py:136-144 while SharePoint supplies `ID`.
 
     TWO assertions, not one, because a single hand-recomputed expectation
-    re-types the validator's arithmetic instead of calling it — the exact
+    re-types the validator's arithmetic instead of calling it, the exact
     anti-pattern `analysis/joins.py`'s own docstring warns about for the
     survey test. The first assertion pins the FIELD LIST jsgen renders
     against an expression written by hand in this test; deleting a term
     from `all_items_joining_fields`'s own composition in `joins.py` would
     NOT turn it red, because it does not call that function. The second
-    assertion does call it — `all_items_joining_fields`, the validator's
-    actual shared derivation — so THAT one goes red if `| SYSTEM_COLUMNS`,
+    assertion does call it (`all_items_joining_fields`, the validator's
+    actual shared derivation), so THAT one goes red if `| SYSTEM_COLUMNS`,
     `| {"Title"}`, or the `hide_from_all_items` subtraction is ever dropped
     from `joins.py`. Dropping each term by hand, one at a time, left the
-    first assertion green and turned only the second red — confirming the
+    first assertion green and turned only the second red, confirming the
     two assertions catch different failures, not the same one twice.
     """
     from dbml_sharepoint.analysis.joins import (
@@ -3182,7 +3182,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
 
     # Calls the validator's REAL function rather than re-typing its formula.
     # This is what actually goes red if `joins.py`'s composition drifts from
-    # what jsgen renders — see the docstring above.
+    # what jsgen renders. See the docstring above.
     assert (
         joining_fields(generated, join_bearing_columns(task, xcols))
         == all_items_joining_fields(task, task_entity, xcols)

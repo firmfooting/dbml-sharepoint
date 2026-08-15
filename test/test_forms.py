@@ -55,7 +55,7 @@ def test_condition_only() -> None:
 
 
 def test_gate_and_condition_compose_rather_than_replace() -> None:
-    """One slot holds both, so they must combine at build time — declaring
+    """One slot holds both, so they must combine at build time. Declaring
     one would otherwise silently destroy the other."""
     assert _compose(new=False, when=WHEN) == (
         "=if([$ID] != '' && ([$Status] == 'Resolved'), 'true', 'false')"
@@ -101,7 +101,7 @@ def _findings(
 ) -> list[Finding]:
     """One column's declaration, defaulted to the harmless case.
 
-    Spelled out rather than `**kwargs: object` so mypy checks the call — the
+    Spelled out rather than `**kwargs: object` so mypy checks the call. The
     old helper needed a `type: ignore[arg-type]` to hand a `dict[str, object]`
     to a keyword-only signature, which is exactly the untyped boundary the
     surrounding work exists to close.
@@ -148,7 +148,7 @@ def test_calculated_columns_cannot_declare_visibility() -> None:
 def test_conditionally_hidden_required_column_is_a_warning_not_an_error() -> None:
     """The spec makes this a warning precisely because it cannot be decided
     statically. Every message came back as an "error", with the word
-    "warning" buried in the prose — so the one genuinely conditional case
+    "warning" buried in the prose, so the one genuinely conditional case
     the feature exists to express failed the build."""
     findings = _findings(when=WHEN, required=True)
     assert [f.severity for f in findings] == ["warning"]
@@ -170,7 +170,7 @@ def test_statically_provable_cases_stay_errors() -> None:
 def test_each_rule_here_has_its_own_code() -> None:
     """The reason this function returns Findings rather than
     (severity, message) pairs. The caller cannot know which of the five
-    rules fired, so one code assigned there would collapse all of them —
+    rules fired, so one code assigned there would collapse all of them,
     and a rule with no code of its own can never be asserted on, or
     suppressed, or looked up in the catalogue.
     """
@@ -359,7 +359,7 @@ def test_shorthand_strings_parse(tmp_path: object) -> None:
 
 def test_reconcile_defaults_to_exact(tmp_path: object) -> None:
     """Deployed state should be a function of the declaration, not of
-    declaration history — deleting an entry must revert the column."""
+    declaration history. Deleting an entry must revert the column."""
     mapping = _load(tmp_path, """
         form_visibility:
           Escalation:
@@ -483,7 +483,7 @@ def _field(schema: dict[str, object], name: str) -> dict[str, object]:
 
 
 def test_undeclared_section_leaves_every_column_unmanaged() -> None:
-    """No declaration must mean 'do not touch', never 'clear it' — a deploy
+    """No declaration must mean 'do not touch', never 'clear it'. A deploy
     that blanked formulas nobody declared would erase configuration it does
     not own."""
     from dbml_sharepoint.generators.jsgen import UNMANAGED
@@ -614,7 +614,7 @@ def test_title_form_visibility_is_rejected_not_silently_dropped() -> None:
     formula keys are attached, so a declaration on it validated clean, the
     manifest reported "(none declared)", and nothing deployed. An asserted,
     validated, silently unenforced data-quality guarantee is the worst
-    shape available — fail closed instead."""
+    shape available. Fail closed instead."""
     messages = _errors(form_visibility=_visibility({"Title": HIDDEN}))
     assert any("Title" in m for m in messages), messages
 
@@ -644,7 +644,7 @@ def test_title_column_formatting_is_rejected() -> None:
 
 def test_system_column_formatting_is_rejected() -> None:
     """System columns are not DBML columns, so they never reach
-    fields_phase1 either — the validator allow-listed them and the
+    fields_phase1 either. The validator allow-listed them and the
     generator dropped them."""
     messages = _errors(
         column_formatting={"Escalation": {"Created": {"elmType": "div"}}},
@@ -682,7 +682,7 @@ def _calculated_schema_json(**sections: Unpack[MappingSections]) -> dict[str, ob
 
 
 def test_exact_reconcile_never_touches_a_calculated_column() -> None:
-    """Both sections exclude calculated columns — they never reach an entry
+    """Both sections exclude calculated columns. They never reach an entry
     form, and declaring one is a build error. form_visibility carried the
     exclusion and column_validation did not, so `reconcile: exact` cleared
     a calculated column's rule. The write is a no-op, but the asymmetry is

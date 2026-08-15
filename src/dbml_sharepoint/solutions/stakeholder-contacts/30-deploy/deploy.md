@@ -44,7 +44,7 @@ moved on) and five interactions (one older than the *Recent activity*
 window).
 
 **The demo does not invent people, and that is deliberate.** This
-register's privacy rules are load-bearing rather than boilerplate. Every
+register's privacy rules do real work rather than boilerplate. Every
 demo Title names a **role at an organisation** rather than a person, every
 person column resolves to the operator, and the only contact details are
 RFC 2606 reserved `example.com` / `example.org` addresses and an

@@ -32,7 +32,7 @@ A SharePoint list never replaces a mandated system:
 
 - **incident-management** here = *corporate/non-clinical* incidents
   (security, IT, facilities, process failures). Clinical incidents go to
-  the statutory system, full stop.
+  the statutory system, and nowhere else.
 - **complaints-feedback** here works well as the consumer-feedback
   register for services not mandated onto a specific platform, but check
   your health-complaints scheme's requirements first, and record

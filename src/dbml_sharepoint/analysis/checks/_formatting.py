@@ -33,7 +33,7 @@ def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
     # Column formatting: declared targets must be rendered columns, the
     # formatter must be an SP formatter object (elmType root), and every
-    # [$Field] reference must name a rendered column — deploy-time render
+    # [$Field] reference must name a rendered column. Deploy-time render
     # failures are silent (the column just shows raw), so catch at build.
     for entity_name, fmt_cols in bundle.mapping.column_formatting.items():
         fmt_table = tables_by_name.get(entity_name)
@@ -168,8 +168,8 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # Both styles compare @currentField against QUOTED strings.
                 # A SharePoint Yes/No column is a boolean, so every branch
                 # of the generated =if chain is false and the cell renders
-                # unstyled — no error in the build, the deploy or the
-                # console. Found by the stakeholder-contacts uplift, which
+                # unstyled (no error in the build, the deploy or the
+                # console). Found by the stakeholder-contacts uplift, which
                 # wanted a chip on IsActive and got nothing.
                 findings.append(Finding(
                     FindingCode.STYLE_ON_BOOLEAN_MATCHES_NOTHING,
@@ -258,7 +258,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     location=at,
                 ))
             # A calculated column reads as an empty string in a header or
-            # footer — established on a live tenant against a saved item
+            # footer, established on a live tenant against a saved item
             # that had a value. Nothing errors there: the part renders and
             # that one value is blank, and the deploy cannot see it because
             # the formatter saves and reads back byte-identical. The build
@@ -300,12 +300,12 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # referenced in the last section".
                 #
                 # That fact decides both rules below, and it refuted a third
-                # this check originally carried — that an unreferenced column
+                # this check originally carried, that an unreferenced column
                 # is left off the form entirely. It is not. It moves.
                 # The columns that will exist on the provisioned list, which
                 # is NOT every DBML column: the auto-increment Id is skipped
                 # at render time and SharePoint supplies its own. Reusing
-                # `rendered` would be wrong the other way — it folds in
+                # `rendered` would be wrong the other way. It folds in
                 # Created/Modified/Author, which no author places on a form.
                 declared = _rendered_columns(form_table, xcols) | {"Title"}
                 placed: set[str] = set()
@@ -327,7 +327,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     # A section whose every column is off every form renders
                     # as a heading with nothing under it. Not asserted of the
                     # LAST section: unreferenced columns land there, so it is
-                    # empty only when every column is placed elsewhere —
+                    # empty only when every column is placed elsewhere,
                     # which is exactly risk-register's System section, whose
                     # deploy.md already documents the bare heading on the New
                     # form as cosmetic and expected.
@@ -345,7 +345,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                             location=body_at,
                         ))
                 # Unreferenced columns are not lost, they are appended to the
-                # last section — so this is drift, not breakage, and it warns.
+                # last section, so this is drift, not breakage, and it warns.
                 # It still matters: the arrangement a template declares stops
                 # being the arrangement it deploys as soon as a column is
                 # added, and the last section quietly becomes a junk drawer.

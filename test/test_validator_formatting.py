@@ -131,7 +131,7 @@ def test_list_validation_rules_validated() -> None:
 
 def test_list_validation_rejects_unsupported_column_types() -> None:
     """SP list validation formulas cannot reference calculated, person,
-    lookup or multi-line columns — reject at build, not at paste."""
+    lookup or multi-line columns. Reject at build, not at paste."""
     schema = make_schema(make_table(
         "Risk",
         make_column("Title", required=True),
@@ -157,8 +157,8 @@ def test_list_validation_rejects_unsupported_column_types() -> None:
     assert any("Owner" in m and "person" in m.lower() for m in reasons), reasons
 
 def test_today_offset_valid_on_calculated_date() -> None:
-    """A calculated_date column stores DateTime values — 'today' offset view
-    filters must accept it (the NextReviewDue 'Reviews due' case).
+    """A calculated_date column stores DateTime values, so 'today' offset
+    view filters must accept it (the NextReviewDue 'Reviews due' case).
 
     This test used to assert that no message contained "offsets apply only".
     That sentence is written NOWHERE in `src`, so the assertion could not
@@ -212,7 +212,7 @@ def test_polymorphic_pattern_columns_must_exist() -> None:
     ]
     findings = validate_against_mapping(schema, bundle)
     named = messages(findings, FindingCode.POLYMORPHIC_COLUMN_NOT_RENDERED)
-    # Both roles are reported, and by name — the field and the discriminator
+    # Both roles are reported, and by name. The field and the discriminator
     # are two different mistakes an author can make independently.
     assert any("NoSuchField" in m for m in named), named
     assert any("NoSuchType" in m for m in named), named
@@ -245,7 +245,7 @@ def test_polymorphic_pattern_entity_must_exist() -> None:
 
 def test_versioning_override_entity_must_exist() -> None:
     """A misspelled entity under `versioning.overrides` leaves the real
-    list on the defaults — versioning ON when the author turned it off —
+    list on the defaults (versioning ON when the author turned it off),
     and nothing reads the orphan block, so nothing reported it."""
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -293,7 +293,7 @@ def test_column_named_id_that_is_not_the_identity_is_rejected() -> None:
 def test_calculated_formula_referencing_id_is_rejected() -> None:
     """The reference check compared against the raw DBML column set rather
     than the RENDERED one. `Id int [pk, increment]` is skipped at render
-    time — typemap returns Skip and jsgen continues — so a formula naming
+    time (typemap returns Skip and jsgen continues), so a formula naming
     [Id] passed validation and was posted against a column the deploy never
     creates. SharePoint answers HTTP 500 mid-paste, which is exactly what
     this check's own comment says it exists to prevent."""
@@ -312,7 +312,7 @@ def test_calculated_formula_referencing_id_is_rejected() -> None:
 def test_calculated_formula_referencing_a_phase_two_lookup_is_rejected() -> None:
     """jsgen orders calculated fields only within fields_phase1 and ignores
     phase2_lookups, so a formula naming a DEFERRED lookup was emitted in
-    Phase 1 — before the column it references exists. A self-referencing
+    Phase 1, before the column it references exists. A self-referencing
     lookup is always deferred, so this is reachable from any hierarchy."""
     schema = make_schema(make_table(
         "Risk",

@@ -51,7 +51,7 @@ def check(vc: ValidationContext) -> list[Finding]:
 
     # For every configured enum_sources entry, cross-check its choices
     # against the matching DBML enum. A configured enum name with no
-    # matching DBML enum is only a warning — the schema simply hasn't
+    # matching DBML enum is only a warning. The schema simply hasn't
     # defined that enum yet, which isn't by itself wrong. A DBML enum whose
     # members differ from the configured choices IS an error: SP would
     # render different choices from what the loader feeds to other enum

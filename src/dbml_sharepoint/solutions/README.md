@@ -140,19 +140,19 @@ deploy, demonstrate, delete.
 <template>/
   README.md            Why this exists, the value case, what to customise
   10-design/           The data model
-      schema.dbml        — tables/columns/enums/indexes (render on dbdiagram.io)
+      schema.dbml        - tables/columns/enums/indexes (render on dbdiagram.io)
   20-configure/        The physical and release configuration
-      mapping.yaml       — prefix, versioning, formulas, views, security model
-      release.yaml       — the version stamped into every deployed artefact
-      formatting/        — one <list>-form-header.json and one
+      mapping.yaml       - prefix, versioning, formulas, views, security model
+      release.yaml       - the version stamped into every deployed artefact
+      formatting/        - one <list>-form-header.json and one
                            <list>-form-body.json per list, plus any bespoke
                            row formatter; referenced from mapping.yaml
   30-deploy/           Administrator guidance
-      deploy.md          — build, paste, verify; template-specific checks
+      deploy.md          - build, paste, verify; template-specific checks
   40-adopt/            Staff education
-      staff-guide.md     — day-to-day usage in plain language
+      staff-guide.md     - day-to-day usage in plain language
   50-govern/           Governance resources
-      governance.md      — ownership, review cadence, data quality, lifecycle
+      governance.md      - ownership, review cadence, data quality, lifecycle
 ```
 
 Work the folders in order: **design** what you're deploying (rename columns,
