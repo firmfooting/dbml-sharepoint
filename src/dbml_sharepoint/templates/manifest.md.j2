@@ -166,7 +166,11 @@ Power Automate flows must validate these at write time.
    contain a line break since the round trip was measured, and an unindented
    continuation would end the list and orphan the bullets below it. #}
    - Description: {{ l.description | indent(5, false, true) }}
-   - Versioning: {% if l.enable_versioning %}enabled, {{ l.major_version_limit }} major versions{% else %}disabled{% endif %}
+   {# Resolved above rather than inline: trim_blocks eats the newline after a
+      block tag, so an `{% endif %}` ending this line joined the next bullet
+      onto it. #}
+{% set versioning = "enabled, " ~ l.major_version_limit ~ " major versions" if l.enable_versioning else "disabled" %}
+   - Versioning: {{ versioning }}
    - Phase {{ phase_num['lists'] }} fields: {{ l.fields_phase1 | length }}
 
 {% endfor %}
