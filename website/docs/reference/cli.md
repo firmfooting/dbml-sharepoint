@@ -45,6 +45,70 @@ file path fails loudly on the next line; a wrong target produces a bundle
 armed for somebody else's tenant, with only the script's wrong-site guard
 between that and a mispaste.
 
+### Defaults from dbml-sharepoint.env
+
+`build` can also read `dbml-sharepoint.env`, a `KEY=value` file of
+defaults for flags an operator would otherwise retype on every
+invocation. There is one key today:
+
+| Key | Flag it supplies | Meaning |
+| --- | --- | --- |
+| `DBMLSP_ENTERPRISE_READER` | `--enterprise-reader` | UPN of the enterprise-reader service account to enrol |
+
+Every key carries the `DBMLSP_` prefix; a key without it, or one this
+table does not list, is refused rather than silently skipped.
+`dbml-sharepoint build --help` lists the same set next to `--env-file`,
+generated from the same registry as this table, so the two cannot drift
+apart.
+
+**Why this filename, and not `.env`.** The parser refuses any line it
+cannot understand: a stray `export FOO=bar`, an unknown key, a repeated
+key, a value that opens a quote it never closes. A permissive parser that
+silently skipped such a line would build clean and enrol nobody, which is
+exactly the failure class this project exists to close. That strictness
+is only fair because the file is ours. A shared `.env` commonly carries
+shell syntax and interpolation this parser does not attempt, and
+`dbml-sharepoint.env` carries none of a `.env`'s conventions to break.
+
+**Precedence, in one sentence:** an explicit `--enterprise-reader` flag
+wins, then the wizard's declined answer (a deliberate blank, which beats
+the file because the operator was asked directly and said no), then the
+file, then nobody.
+
+**Location.** `build` looks for `dbml-sharepoint.env` in the current
+directory. `--env-file PATH` names a different one, and a path that does
+not exist is an error rather than a silent fallback to "no file".
+
+**Format.** One `KEY=value` per line; `#` starts a comment; blank lines
+are ignored. No interpolation of other keys or of environment variables,
+no `export`, no key repeated within the file, no key without the
+`DBMLSP_` prefix. Quoting is optional: a value wrapped in matching `'` or
+`"` is unwrapped, but a quote that is opened and never closed is refused
+rather than passed through with the stray character intact.
+
+**This is not a secret store.** A value the file supplies reaches
+`deploy.js.txt` in plain text, the same as a value passed on the command
+line, and the file's path, its sha256 digest, and the keys it supplied
+are echoed in four places by design: the `build` command's own output,
+`deploy-manifest.md`, `index.md`, and a log line inside the emitted
+`deploy.js.txt` itself. Do not put anything in this file that should not
+appear in any of those four.
+
+**The process environment is not read.** Only the file on disk is
+consulted; setting `DBMLSP_ENTERPRISE_READER` as a shell environment
+variable has no effect. A build is reproducible from the files it was
+given, not from whatever happened to be exported in the shell that ran
+it.
+
+**The armed guard.** `build` already refuses `--enterprise-reader` when
+the mapping declares no `enroll_enterprise_reader` group. That check runs
+on the resolved value regardless of where it came from, so once
+`dbml-sharepoint.env` supplies a reader, a build that previously
+succeeded against such a mapping now refuses. That refusal is the guard
+doing its job, not a regression, but it is still a change an adopter
+meets the first time they add the file to a project whose mapping
+declares no reader group.
+
 Behaviour worth knowing:
 
 - Validation errors refuse the build: the manifest lists every finding.
