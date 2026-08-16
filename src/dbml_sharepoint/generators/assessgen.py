@@ -32,8 +32,11 @@ def assess_targets(
 ) -> dict[str, Any]:
     """The data-driven inputs the assess.js probes loop over.
 
-    `list_markers` maps each declared list title to the exact provenance
-    marker its Description must carry. It is IMPORTED from
+    `list_markers` pairs each declared list title with the exact provenance
+    marker its Description must carry. Pairs rather than a mapping, because
+    the template emits this as a JavaScript object literal and a list titled
+    `__proto__` would then set the prototype instead of becoming a key. It is
+    IMPORTED from
     `analysis.list_description`, never re-spelled here or in the template: a
     second spelling would let assess.js quietly disagree with deploy.js about
     the same list, reporting drift on a description the deploy considers
@@ -46,13 +49,16 @@ def assess_targets(
     # One family per schema, so it is resolved once rather than per list --
     # same as jsgen, which composes the descriptions this checks for.
     family = family_for(schema)
-    markers: dict[str, str] = {}
+    # Pairs, not a mapping: emitted as a JS object literal, a title of
+    # `__proto__` sets the prototype instead of creating an own property,
+    # and the marker check then finds nothing and stays silent.
+    markers: list[tuple[str, str]] = []
     for table_name in site_tables_in_order(schema, bundle.mapping.entities, site_role):
         entity = bundle.mapping.entities[table_name]
         titles.append(prefix + table_name)
         templates.add(int(entity.base_template))
         table_names.append(table_name)
-        markers[prefix + table_name] = marker_for(family, table_name)
+        markers.append((prefix + table_name, marker_for(family, table_name)))
     m = bundle.mapping
     perms = m.permissions
     # Does any list THIS RUN provisions end up with versioning on? Asked
@@ -106,7 +112,7 @@ def derive_requirements(
             f"List '{title}' is absent or a redeploy target (not a foreign list)",
             "BLOCKED",
         ))
-    for title in t["list_markers"]:
+    for title, _marker in t["list_markers"]:
         # WARN, never BLOCKED. A list whose Description an owner rewrote is
         # still a perfectly good list and deploying over it is safe -- the
         # deploy is what repairs it. What is broken is REPORTING: fleet
