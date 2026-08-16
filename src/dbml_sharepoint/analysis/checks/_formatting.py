@@ -102,14 +102,25 @@ def check(vc: ValidationContext) -> list[Finding]:
                 "overdue-date": "calculated_date",
             }.get(style_name)
             target_type = types_by_col.get(col_name)
-            if target_type == calculated_type_for_style and spec.get("calculated") is not True:
+            # Both sides are None for a style with no calculated form (pill,
+            # trend) on a column absent from the DBML, and two Nones matching
+            # is not a match.
+            if (
+                calculated_type_for_style is not None
+                and target_type == calculated_type_for_style
+                and spec.get("calculated") is not True
+            ):
                 findings.append(Finding(
                     FindingCode.STYLE_REQUIRES_CALCULATED,
                     f"{ctx}: {style} on {target_type} requires calculated: true "
                     "to decode SharePoint's typed formatter value.",
                     location=at,
                 ))
-            elif spec.get("calculated") is True and target_type != calculated_type_for_style:
+            elif (
+                spec.get("calculated") is True
+                and calculated_type_for_style is not None
+                and target_type != calculated_type_for_style
+            ):
                 findings.append(Finding(
                     FindingCode.STYLE_CALCULATED_TYPE_MISMATCH,
                     f"{ctx}: calculated: true on {style} expects "
