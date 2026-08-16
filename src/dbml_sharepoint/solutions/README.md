@@ -22,7 +22,7 @@ ones, measure what matters, and close the loop.
 | [improvement-register](improvement-register/) | Continuous improvement log | Idea -> test -> adopt/abandon stages; before/after measures; fed by complaints, incidents and audits |
 | [measures-register](measures-register/) | KPI / measures catalogue | Definitions with numerator/denominator discipline, making "improved" provable |
 | [opportunities-register](opportunities-register/) | Project-discovered business problems | Safety-first, one-minute capture -> existing-system routing -> selective assessment and hand-off |
-| [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefitxfeasibility priority score; gate + graveyard discipline |
+| [project-pipeline](project-pipeline/) | Project ideas to decisions | Calculated benefit x feasibility priority score; gate + graveyard discipline |
 | [change-register](change-register/) | Change requests & approvals | Submit-only intake, decision authority trail, days-to-decision |
 
 **The digitisation journey, using this theme:** inventory processes and

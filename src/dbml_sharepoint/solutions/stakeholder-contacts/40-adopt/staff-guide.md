@@ -30,7 +30,7 @@ one is everything.
   is where the quarterly check finds it; do not let yours be the one that
   sits there.
 - New person: **SC_Contact**: name, organisation, role, work email/phone.
-  **Professional facts only** in Notes ("prefers phone", "works Tuesdays-
+  **Professional facts only** in Notes ("prefers phone", "works Tuesdays to
   Thursdays"), never opinions or personal details; they'd be visible to
   the whole team and possibly to the contact themselves under privacy law.
   The form header says exactly that, every time it opens, because that is

@@ -12,7 +12,7 @@ told an auditor it would do. The register is where that promise is visible.
 - **Progress**: send a dated update to an Audit Coordinator whenever
   something moves (they append it to Notes; single-handed upkeep keeps the
   trail clean). Monthly at minimum for High/Critical items.
-- **Done != closed.** Closure needs evidence: the policy as published, the
+- **Done is not closed.** Closure needs evidence: the policy as published, the
   reconfigured setting's screenshot, the training records, whatever proves
   the action happened. Send the evidence link with your "done".
 - **Can't make the date?** Ask for a formal extension *before* it passes

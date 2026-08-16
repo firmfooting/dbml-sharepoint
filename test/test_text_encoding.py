@@ -12,14 +12,16 @@ operator's screen looking like the tool wrote it that way. The same is true of
 every other non-ASCII character, which is why the second gate covers the whole
 shipped surface rather than one codepoint.
 
-MEASURED 2026-08-16: the sweep this gate accompanies removed 60 of them from
-20 files across 8 solution families, and 60 was the repository-wide total, so
-none remain anywhere tracked. The gate is what holds that at zero.
+Each gate records its own sweep. MEASURED 2026-08-16: the em-dash sweep
+removed 60 from 20 files across 8 solution families, which was the
+repository-wide total; the ASCII sweep removed 537 from 128 shipped files,
+which was the whole of what the wheel carried. Both gates hold their surface
+at zero.
 
 The en dash is not banned and is not scanned for. MEASURED 2026-08-16, after
-the ASCII sweep: 7 remain across 663 tracked files, all of them under
-`website/`, which the wheel does not ship. Six are numeric ranges and the
-seventh separates the three steps of a workflow name.
+the ASCII sweep: 7 remain across 663 tracked files, all under `website/`,
+which the wheel does not ship. Five are numeric ranges; the other two are both
+in one workflow name, because separating three steps takes two dashes.
 """
 
 import subprocess
@@ -86,11 +88,12 @@ def _roots_in(config: dict[str, Any]) -> tuple[str, ...]:
         if not isinstance(node, dict) or key not in node:
             pytest.fail(
                 f"pyproject.toml has no {WHEEL_PACKAGES}, so this gate cannot "
-                f"tell what the wheel ships. Point it at the new key rather "
-                f"than hard-coding a path."
+                "tell what the wheel ships. Point it at the new key rather "
+                "than hard-coding a path."
             )
         node = node[key]
-    readme = config.get("project", {}).get("readme")
+    project = config.get("project")
+    readme = project.get("readme") if isinstance(project, dict) else None
     if not isinstance(node, list) or not all(isinstance(p, str) for p in node):
         pytest.fail(f"{WHEEL_PACKAGES} is {node!r}, expected a list of paths")
     if not isinstance(readme, str):
@@ -107,8 +110,8 @@ def _shipped_roots() -> tuple[str, ...]:
 def _shipped_files(roots: tuple[str, ...]) -> list[Path]:
     """Every tracked file under a shipped root, not a suffix subset of them.
 
-    `SCANNED` exists to skip binaries the em-dash gate cannot decode. Reusing
-    it here would silently drop whatever extension ships next.
+    `SCANNED` lists the suffixes the em-dash gate reads. Reusing it here would
+    silently drop whatever extension ships next.
     """
     result = subprocess.run(
         ["git", "ls-files", "-z", "--", *roots],
@@ -127,11 +130,15 @@ def _offending_lines(
     One helper so each proof below runs the scan the gate runs. A proof that
     reimplements it passes while the real scan is broken.
     """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        # Decoding with errors="replace" turned a cp1252 em dash into U+FFFD,
+        # which the em-dash gate then did not recognise and reported clean.
+        return [f"{relative}: not UTF-8, {exc.reason} at byte {exc.start}"]
     return [
         f"{relative}:{number}: {label}: {line.strip()[:80]!r}"
-        for number, line in enumerate(
-            path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1,
-        )
+        for number, line in enumerate(text.splitlines(), start=1)
         if (label := offends(line))
     ]
 
@@ -206,7 +213,7 @@ def test_shipped_text_is_ascii() -> None:
     ]
     assert not offenders, (
         "Shipped text contains non-ASCII characters. Replace each with its "
-        "ASCII equivalent; see the design note for the table:\n"
+        "ASCII spelling; `catalogue._TERMINAL_SPELLINGS` is the table:\n"
         + "\n".join(offenders)
     )
 
@@ -239,3 +246,14 @@ def test_the_scan_reports_a_seeded_non_ascii_character(tmp_path: Path) -> None:
     assert found == [
         "guide.md:2: U+2192 RIGHTWARDS ARROW: 'Draft \u2192 Active'",
     ]
+
+
+def test_the_report_names_a_path_from_the_repository_root() -> None:
+    """Only ever read inside a failure message, so the gates cannot pin it.
+
+    Replacing `_relative` with `path.name` leaves every test above green and
+    turns the failure report into an ambiguous list of basenames.
+    """
+    assert _relative(REPO_ROOT / "src" / "dbml_sharepoint" / "cli.py") == (
+        "src/dbml_sharepoint/cli.py"
+    )

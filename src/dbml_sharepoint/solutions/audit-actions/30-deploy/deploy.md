@@ -142,7 +142,7 @@ treats a list whose rows are *all* demo-marked as demo-only content.
       guards against negative ranges by returning 0, so a recommendation
       closed "next month" would report as closed **on time**, silently, on
       the exact number the audit committee reads.
-- [ ] Hidden != inaccessible. Confirm a hidden column still holds its value:
+- [ ] Hidden is not inaccessible. Confirm a hidden column still holds its value:
       the reporting bundle's data dictionary lists all three, and a view
       can show them. `form_visibility` governs forms only.
 - [ ] DaysLate spot-checks: Due `2026-07-01` + Closed `2026-07-10` -> **9**;

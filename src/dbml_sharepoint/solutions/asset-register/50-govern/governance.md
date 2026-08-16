@@ -32,7 +32,7 @@
 | `Purchase Cost` | Cannot be negative |
 | The list | An asset with a Warranty Expiry must also have a Purchase Date |
 
-Data-quality rule 2 below (*AssignedTo blank => Status must not be
+Data-quality rule 2 below (*AssignedTo blank means Status must not be
 Assigned, and vice versa*) reads like the obvious save rule and **cannot
 be one**. SharePoint validation formulas cannot reference person columns
 at all, in either direction: not as an operand, not as a null test. What
@@ -49,7 +49,7 @@ Uniqueness is enforced; honesty is not.
 
 1. `AssetTag` is the identity. It mirrors the physical tag exactly, no
    "spare"/"old" suffixes.
-2. `AssignedTo` blank => Status must not be `Assigned` (and vice versa).
+2. `AssignedTo` blank means Status must not be `Assigned` (and vice versa).
    **Not enforceable, see above.**
 3. `Disposed` rows keep their history and their Notes say how and when
    disposed.

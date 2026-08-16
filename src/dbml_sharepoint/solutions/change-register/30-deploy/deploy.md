@@ -16,7 +16,7 @@ against the checklist below. Template-specific notes follow.
       something.
 - [ ] The SLA numbers in that table match the **21-day** full bar on
       `DaysToDecision` in `mapping.yaml`. It is set from the slowest
-      authority level (15 business days ~ three calendar weeks); if your
+      authority level (15 business days, about three calendar weeks); if your
       slowest SLA is different, change `max:` before first deploy or the
       bar reads against a line nobody agreed.
 - [ ] The header shows `Change: <title>` on a saved row and `New change`
