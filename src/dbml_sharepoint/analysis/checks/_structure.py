@@ -9,6 +9,7 @@ from dbml_sharepoint.analysis.limits import (
     INDEX_WARN_AT,
     LIST_VIEW_THRESHOLD,
     MAX_CALCULATED_FORMULA,
+    MAX_INTERNAL_NAME,
     MAX_LIST_INDEXES,
 )
 from dbml_sharepoint.analysis.list_description import (
@@ -499,17 +500,16 @@ def check(vc: ValidationContext) -> list[Finding]:
                     "constraint would not be deployed.",
                 ))
             # Cross-site columns expand to <name>Abbreviation + <name>SiteUrl
-            # at deploy time. The longer of the two ("Abbreviation", 12 chars)
-            # plus the column name must fit within SP's 32-char internal-name
-            # limit.
+            # at deploy time. The longer of the two ("Abbreviation") plus the
+            # column name must fit within MAX_INTERNAL_NAME.
             for suffix in ("Abbreviation", "SiteUrl"):
                 generated = xref.column + suffix
-                if len(generated) > 32:
+                if len(generated) > MAX_INTERNAL_NAME:
                     findings.append(Finding(
                         FindingCode.CROSS_SITE_GENERATED_NAME_TOO_LONG,
                         f"cross_site {xref.entity}.{xref.column}: generated "
                         f"name '{generated}' is {len(generated)} chars; "
-                        f"SP internal-name limit is 32.",
+                        f"SP internal-name limit is {MAX_INTERNAL_NAME}.",
                     ))
                 if any(col.name == generated and col.name != xref.column for col in table.columns):
                     findings.append(Finding(

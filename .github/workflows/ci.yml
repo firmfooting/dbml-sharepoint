@@ -23,7 +23,7 @@ jobs:
       - name: Sync dependencies
         run: uv sync
       - name: Lint
-        run: uv run ruff check src test website/scripts
+        run: uv run ruff check src test website/scripts scripts
       - name: Jinja lint (j2lint; indentation/single-line rules are house-style exceptions)
         run: uv run j2lint --ignore jinja-statements-indentation single-statement-per-line -- src/dbml_sharepoint/templates
       - name: Type-check
@@ -135,6 +135,34 @@ jobs:
           # is the same open failure a hardcoded roster gives you, spelled
           # as a number instead of a list.
           test "$found" -eq "$expected"
+
+  mutate-limits:
+    # A ceiling nothing enforces moves without any test noticing, which is what
+    # the #259 sweep measured over the whole module. This runs the same
+    # experiment on whichever ceilings the branch touches, so it costs nothing
+    # on a pull request that leaves limits.py alone.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    # Two full suites per ceiling, so a pull request touching all fourteen
+    # declarations runs twenty-eight of them. Bounded rather than left on the
+    # six-hour default, since a hung suite would otherwise hold a runner.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The script diffs against the merge base, which does not exist in a
+          # shallow clone.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Sync dependencies
+        run: uv sync
+      - name: Mutate every ceiling this pull request changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: uv run python scripts/mutate_limits.py --base-ref "$BASE_SHA"
 
   markdown:
     # Style of the hand-written markdown -- the whole tree, not just
