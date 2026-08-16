@@ -305,13 +305,13 @@ def test_assess_targets_carry_the_marker_from_the_shared_speller() -> None:
     """
     schema, bundle = _simple()
     family = family_for(schema)
-    assert assess_targets(schema, bundle, "default")["list_markers"] == {
-        "APP_Project": marker_for(family, "Project"),
-        "APP_Task": marker_for(family, "Task"),
+    assert assess_targets(schema, bundle, "default")["list_markers"] == [
+        ("APP_Project", marker_for(family, "Project")),
+        ("APP_Task", marker_for(family, "Task")),
         # The settings list the mapping adds. Every list this pack provisions
         # needs a marker, not only the ones the DBML declares.
-        "APP_AppSettings": marker_for(family, "AppSettings"),
-    }
+        ("APP_AppSettings", marker_for(family, "AppSettings")),
+    ]
 
 
 def test_every_provisioned_list_has_a_degrading_marker_requirement() -> None:
@@ -532,3 +532,53 @@ def test_assess_is_quiet_when_every_marker_is_present() -> None:
         assert any(title in f["detail"] for f in passed), (
             f"the marker check never ran for '{title}': {summary['findings']}"
         )
+
+
+@pytest.mark.skipif(NODE is None, reason="node is not installed")
+def test_a_list_named_proto_still_gets_its_marker_checked() -> None:
+    """A title of `__proto__` used to make the marker check return silently.
+
+    `list_markers` was emitted as a JS object literal. `{"__proto__": "..."}`
+    invokes the prototype setter instead of creating an own property, so the
+    guard's `hasOwnProperty` was false, `markerFinding` returned before
+    emitting PASS or WARN, and a list with no provenance marker still
+    assessed as compatible. The check added to catch a missing marker was the
+    one that stayed quiet.
+
+    The prefix is empty because #190 made it optional, which is what lets a
+    declared title be exactly `__proto__`.
+
+    Run under Node against the emitted bytes: the defect is in how
+    JavaScript reads the literal, so nothing asserted in Python can see it.
+    """
+    import _model
+
+    from dbml_sharepoint.generators.assessgen import generate_assess_js
+    from dbml_sharepoint.model.release import load_release
+
+    schema = _model.schema(_model.table("__proto__", "Title"))
+    bundle = _model.bundle(entities=["__proto__"], prefix="")
+    js = generate_assess_js(
+        schema=schema, bundle=bundle,
+        release=load_release(FIXTURES / "release.yaml"),
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default", source_dbml="simple.dbml",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    match = re.search(r"const TARGETS = (\{.*?\n  \});", js, re.DOTALL)
+    assert match, "could not find the emitted TARGETS declaration"
+    probe = (
+        f"const TARGETS = {match.group(1)};\n"
+        "const LIST_MARKERS = new Map(TARGETS.list_markers);\n"
+        "console.log('HAS:' + LIST_MARKERS.has('__proto__'));\n"
+        "console.log('GOT:' + typeof LIST_MARKERS.get('__proto__'));\n"
+    )
+    output = run_node(probe)
+
+    assert "HAS:true" in output, (
+        f"no marker survived emission for a list named __proto__:\n{output}"
+    )
+    assert "GOT:string" in output, (
+        f"the lookup returned something off Object.prototype:\n{output}"
+    )

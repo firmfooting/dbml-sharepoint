@@ -181,13 +181,12 @@
   // The expected text arrives in TARGETS from `analysis.list_description`
   // and is never re-spelled here (see assess_targets' docstring).
   //
-  // Looked up with hasOwnProperty, not with a bare index: a list titled
-  // `constructor` or `toString` would otherwise resolve to something off
-  // Object.prototype, and this check would report drift on a list whose
-  // marker is perfectly intact.
+  // A Map, because an object literal drops a `__proto__` key and this check
+  // then returned silently on a list whose marker was missing.
+  const LIST_MARKERS = new Map(TARGETS.list_markers);
   const markerFinding = (title, description) => {
-    if (!Object.prototype.hasOwnProperty.call(TARGETS.list_markers, title)) return;
-    const expected = TARGETS.list_markers[title];
+    if (!LIST_MARKERS.has(title)) return;
+    const expected = LIST_MARKERS.get(title);
     if (!expected) return;
     const key = `provenance_marker:${title}`;
     const held = description == null ? '' : String(description);

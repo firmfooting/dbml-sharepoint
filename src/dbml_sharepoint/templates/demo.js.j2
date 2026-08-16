@@ -27,16 +27,19 @@
 
 {% include "_digest_cached.js.j2" %}
 
-  const entityTypes = {};
+  // A Map, because a list titled `__proto__` is `in` an empty object and
+  // reads back as Object.prototype, so the fetch below would be skipped
+  // and the caller would send that object as the item type.
+  const entityTypes = new Map();
   async function entityTypeFor(listTitle) {
-    if (!(listTitle in entityTypes)) {
+    if (!entityTypes.has(listTitle)) {
       const r = await fetchWithRetry(apiUrl(`web/lists/getbytitle('${odataName(listTitle)}')?$select=ListItemEntityTypeFullName`), {
         headers: { 'Accept': 'application/json;odata=verbose' },
       });
       if (!r.ok) throw new Error(`cannot resolve ListItemEntityTypeFullName for '${listTitle}' (HTTP ${r.status})`);
-      entityTypes[listTitle] = (await r.json()).d.ListItemEntityTypeFullName;
+      entityTypes.set(listTitle, (await r.json()).d.ListItemEntityTypeFullName);
     }
-    return entityTypes[listTitle];
+    return entityTypes.get(listTitle);
   }
 
   async function findByTitle(listTitle, title) {
@@ -49,14 +52,16 @@
     return rows.length > 0 ? rows[0].Id : null;
   }
 
-  const createdIds = {};
+  // A Map for the same reason as `entityTypes` above: a demo key of
+  // `__proto__` would not survive assignment into an object.
+  const createdIds = new Map();
   for (const item of DEMO_PLAN) {
     try {
       const digest = await getDigest();
       const titleField = item.fields.find((f) => f.name === 'Title');
       const existingId = await findByTitle(item.list, titleField.value);
       if (existingId != null) {
-        createdIds[item.key] = existingId;  // later demo_refs still resolve
+        createdIds.set(item.key, existingId);  // later demo_refs still resolve
         summary.skipped.push({ list: item.list, key: item.key, id: existingId });
         log('INFO', `'${item.list}': demo row '${item.key}' already exists (Id ${existingId}); skipped.`);
         continue;
@@ -77,7 +82,7 @@
             Description: f.value.description,
           };
         } else if (f.kind === 'ref') {
-          const refId = createdIds[f.value];
+          const refId = createdIds.get(f.value);
           if (refId == null) throw new Error(`demo_ref '${f.value}' has no created item`);
           body[`${f.name}Id`] = refId;
         } else if (f.kind === 'date_offset') {
@@ -93,7 +98,7 @@
         throw new Error(spError(await createResp.text()) || `item create failed (HTTP ${createResp.status})`);
       }
       const createdId = (await createResp.json()).d.Id;
-      createdIds[item.key] = createdId;
+      createdIds.set(item.key, createdId);
       summary.created.push({ list: item.list, key: item.key, id: createdId });
       log('INFO', `'${item.list}': created demo row '${item.key}' (Id ${createdId}).`);
     } catch (err) {
