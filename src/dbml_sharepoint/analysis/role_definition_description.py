@@ -66,10 +66,11 @@ from dbml_sharepoint.analysis.limits import MAX_ROLE_DEFINITION_DESCRIPTION
 #: not a reuse of it, for the reason that constant's own comment gives:
 #: sharing one reserve would tie a future change to one marker to re-editing
 #: descriptions that belong to the other surface.
-#: 11 of the original 32 were spent when the marker gained the
-#: object's own name, so it could stop matching a description copied
-#: from another object (#241). The total held back is unchanged, so no
-#: note already written became invalid.
+#: 11 of the original 32 were spent when the marker gained the object's
+#: own name (#241). The budget still shrinks by the level name's own
+#: length, because the marker genuinely grew by that much; the reserve
+#: covers only the fixed part. MEASURED: every shipped description
+#: still fits, which `test_template_standard.py` holds.
 LEVEL_MARKER_GROWTH_RESERVE = 21
 
 

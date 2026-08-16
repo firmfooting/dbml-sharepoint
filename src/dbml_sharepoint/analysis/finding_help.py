@@ -857,6 +857,14 @@ FINDING_HELP: dict[FindingCode, str] = {
         "different surface from a group's description and was measured "
         "separately, even though the two ceilings agree today."
     ),
+    FindingCode.MARKER_LONGER_THAN_THE_FIELD: (
+        "The provenance marker alone is longer than the Description field "
+        "it has to fit in, before any declared text is added. The budget "
+        "check clamps to zero and an empty description then passes it, so "
+        "without this the deploy would emit the overlong marker and "
+        "SharePoint would refuse it part-way through provisioning. Shorten "
+        "the `Project` name, or the group or level name."
+    ),
     FindingCode.MARKER_FIELD_HAS_TERMINATOR: (
         "A name the provenance marker interpolates contains `.`, the "
         "character that terminates the marker. That makes one "

@@ -139,6 +139,12 @@ def _marker_findings(
     )
 
 
+def _marker_codes(findings: list[Finding]) -> set[FindingCode]:
+    """Only the marker codes, so an unrelated fixture finding cannot mask
+    which of these rules fired."""
+    return {f.code for f in findings if f.code.value.startswith("marker_")}
+
+
 def test_a_project_name_holding_the_terminator_is_refused() -> None:
     """`from risk.` sat inside `from risk.v2.`, so family `risk` adopted a
     populated group belonging to family `risk.v2`."""
@@ -165,3 +171,35 @@ def test_an_ordinary_project_name_fires_neither() -> None:
     findings = _marker_findings("routine_checks")
     none_of(findings, FindingCode.MARKER_FIELD_HAS_TERMINATOR)
     none_of(findings, FindingCode.MARKER_FAMILY_MISSING)
+
+
+def test_a_name_embedding_the_marker_prefix_is_refused() -> None:
+    """Refusing only the terminator was not enough.
+
+    A family name holding the whole prefix produces a marker carrying
+    another family's complete marker as a suffix, with no `.` anywhere, so
+    that family's gate adopts the object.
+    """
+    only(
+        _marker_findings("x Provisioned by dbml-sharepoint from risk"),
+        FindingCode.MARKER_FIELD_HAS_TERMINATOR,
+    )
+
+
+def test_a_marker_longer_than_its_field_is_refused() -> None:
+    """The budget clamps to zero, so an empty description passed and
+    generation emitted a marker SharePoint refuses part-way through.
+
+    A family this long trips the list and the level ceiling at once, so the
+    assertion is that every finding is this code rather than that there is
+    exactly one.
+    """
+    marker_codes = _marker_codes(_marker_findings("f" * 480, level_name="Level"))
+    assert marker_codes == {FindingCode.MARKER_LONGER_THAN_THE_FIELD}
+
+
+def test_a_list_marker_longer_than_its_field_is_refused() -> None:
+    """The same zero-clamp gap as the level case, found by looking for it
+    rather than by being told: note_budget clamps too."""
+    marker_codes = _marker_codes(_marker_findings("f" * 230))
+    assert marker_codes == {FindingCode.MARKER_LONGER_THAN_THE_FIELD}
