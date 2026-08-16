@@ -143,6 +143,10 @@ jobs:
     # on a pull request that leaves limits.py alone.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Two full suites per ceiling, so a pull request touching all fourteen
+    # declarations runs twenty-eight of them. Bounded rather than left on the
+    # six-hour default, since a hung suite would otherwise hold a runner.
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:
