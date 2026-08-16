@@ -7,7 +7,7 @@ import pytest
 from _packs import blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES
 
-from dbml_sharepoint.model import _mapping_types, mapping_loader
+from dbml_sharepoint.model import mapping_loader, mapping_types
 from dbml_sharepoint.model.mapping_loader import (
     FormVisibility,
     ListPermissionPolicy,
@@ -1369,7 +1369,7 @@ def _sections_read_by_the_loader() -> set[str]:
     a reader.
     """
     tree = ast.parse(inspect.getsource(mapping_loader))
-    keys: set[str] = set(_mapping_types._REMOVED_SECTIONS)
+    keys: set[str] = set(mapping_types._REMOVED_SECTIONS)
     for func in ast.walk(tree):
         if not isinstance(func, ast.FunctionDef) or func.name not in _TOP_LEVEL_READERS:
             continue

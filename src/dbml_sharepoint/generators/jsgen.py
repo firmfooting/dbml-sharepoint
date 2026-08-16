@@ -372,7 +372,7 @@ def build_schema_json(
         for table in schema.tables
     }
     # The picker's index. Deployed here so it actually exists; counted against
-    # the 20-index ceiling in analysis.checks._context, from this same
+    # the 20-index ceiling in analysis.checks.context, from this same
     # derivation, so the validator and the deployer cannot disagree about it.
     # cross_site_keys goes in because those columns are Choice + URL pairs, not
     # Lookups: nothing enumerates the far list, so an Indexed=true MERGE on it

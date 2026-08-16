@@ -20,7 +20,7 @@ from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.list_description import marker_for
 from dbml_sharepoint.analysis.role_definition_description import marker_for_level
 from dbml_sharepoint.analysis.validator import Finding, validate_against_mapping
-from dbml_sharepoint.model._mapping_types import (
+from dbml_sharepoint.model.mapping_types import (
     CustomPermissionLevel,
     PermissionsConfig,
 )

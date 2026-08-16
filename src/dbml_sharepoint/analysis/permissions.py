@@ -4,7 +4,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from dbml_sharepoint.model._mapping_types import Mapping
+from dbml_sharepoint.model.mapping_types import Mapping
 
 # Per Microsoft.SharePoint.SPBasePermissions (64-bit unsigned). All bit
 # positions below 32 land in Low; positions 32..62 land in High. Values

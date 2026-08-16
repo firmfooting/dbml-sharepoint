@@ -10,7 +10,7 @@ prefix-free. Without it, `from risk.` matches inside `from risk.v2.`.
 from collections.abc import Iterator
 
 from dbml_sharepoint.analysis import provenance
-from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.group_description import marker_for_group
 from dbml_sharepoint.analysis.limits import (

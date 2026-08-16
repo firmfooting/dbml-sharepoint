@@ -3,7 +3,7 @@
 
 import datetime as dt
 
-from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.typemap import is_hyperlink, is_person
 from dbml_sharepoint.analysis.validator import (

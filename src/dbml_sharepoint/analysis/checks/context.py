@@ -1,4 +1,4 @@
-# src/dbml_sharepoint/analysis/checks/_context.py
+# src/dbml_sharepoint/analysis/checks/context.py
 """Derived lookups shared by every mapping check.
 
 Each check family needs the same handful of indexes over the schema and the

@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/analysis/checks/_permissions.py
 """Permission levels, groups, and per-list policies."""
 
-from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
 from dbml_sharepoint.analysis.group_description import description_budget, marker_for_group
 from dbml_sharepoint.analysis.limits import (

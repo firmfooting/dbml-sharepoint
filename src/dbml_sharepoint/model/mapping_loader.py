@@ -22,7 +22,9 @@ import yaml
 from dbml_sharepoint.analysis import styles
 from dbml_sharepoint.analysis.typemap import TOTAL_FUNCTIONS
 from dbml_sharepoint.model._keys import _reject_unknown_keys, _require_mapping
-from dbml_sharepoint.model._mapping_types import (
+from dbml_sharepoint.model._retirement import _apply_retirement, _parse_retired_columns
+from dbml_sharepoint.model.conditions import parse_condition
+from dbml_sharepoint.model.mapping_types import (
     _REMOVED_SECTIONS,
     ENTITY_KINDS,
     PRINCIPAL_KIND_LIST,
@@ -60,8 +62,6 @@ from dbml_sharepoint.model._mapping_types import (
     auto_display_name,
     view_url_slug,
 )
-from dbml_sharepoint.model._retirement import _apply_retirement, _parse_retired_columns
-from dbml_sharepoint.model.conditions import parse_condition
 
 __all__ = [
     "ENTITY_KINDS",

@@ -56,7 +56,7 @@ ASSIGNABLE_BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit
 ### `requires_manage_permissions`
 
 ```python
-def requires_manage_permissions(mapping: dbml_sharepoint.model._mapping_types.Mapping, table_names: collections.abc.Iterable[str]) -> bool
+def requires_manage_permissions(mapping: dbml_sharepoint.model.mapping_types.Mapping, table_names: collections.abc.Iterable[str]) -> bool
 ```
 
 True when deploying `table_names` performs ANY ACL work, and so needs
@@ -83,7 +83,7 @@ not deploy must not demand a right the build never exercises.
 ### `lists_granting_group`
 
 ```python
-def lists_granting_group(mapping: dbml_sharepoint.model._mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str]) -> tuple[list[str], list[str]]
+def lists_granting_group(mapping: dbml_sharepoint.model.mapping_types.Mapping, group_name: str, table_names: collections.abc.Iterable[str]) -> tuple[list[str], list[str]]
 ```
 
 Split `table_names` into those `group_name` is granted on, and those not.

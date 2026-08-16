@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/analysis/checks/_views.py
 """Field sets and declared views."""
 
-from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,

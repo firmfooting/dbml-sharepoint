@@ -1,4 +1,4 @@
-# src/dbml_sharepoint/model/_mapping_types.py
+# src/dbml_sharepoint/model/mapping_types.py
 """The shapes a mapping.yaml parses into.
 
 Declarations only: every dataclass the loader produces, the closed

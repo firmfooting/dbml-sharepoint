@@ -4,7 +4,7 @@
 import datetime as dt
 from dataclasses import replace
 
-from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
     condition_findings,

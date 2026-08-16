@@ -83,7 +83,7 @@ an `== []` against it passes on a schema the build would reject.
 ### `validate_against_mapping`
 
 ```python
-def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle) -> list[dbml_sharepoint.analysis.findings.Finding]
+def validate_against_mapping(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 Cross-check the mapping against the schema.
@@ -95,7 +95,7 @@ Order is part of the contract. See that package's docstring.
 ### `validate_all`
 
 ```python
-def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model._mapping_types.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.findings.Finding]
+def validate_all(schema: dbml_sharepoint.model.parser.Schema, bundle: dbml_sharepoint.model.mapping_types.MappingBundle, extension: dbml_sharepoint.extension.DeploymentExtension) -> list[dbml_sharepoint.analysis.findings.Finding]
 ```
 
 Run every validation stage: core schema rules, mapping cross-checks,

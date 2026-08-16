@@ -1,7 +1,7 @@
 # src/dbml_sharepoint/analysis/checks/_formatting.py
 """Column formatting, style specs, and form formatting."""
 
-from dbml_sharepoint.analysis.checks._context import ValidationContext
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
     effective_column_types,

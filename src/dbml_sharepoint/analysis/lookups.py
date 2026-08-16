@@ -1,7 +1,7 @@
 """Which entities a lookup points at, and what such a lookup displays.
 
 Derived in one place because two consumers read it and they must not disagree:
-`analysis.checks._context` folds the answer into `effective_indexes` so the
+`analysis.checks.context` folds the answer into `effective_indexes` so the
 per-list ceiling counts it, and `generators.jsgen` emits it so the deployer
 creates it. Computed separately, a drift between them is a validator warning
 about an index nothing deploys, or a deployed index the ceiling never counted.

@@ -49,7 +49,7 @@ that silently dropped the field would have rendered too, which is how the earlie
 LOOPRJ question misled. So a lookup showing five of its target's fields costs
 ONE, not six. NOTHING IN THIS MODULE EXCLUDES THEM, because this tool cannot
 declare such a projection at all: there is no `projected_fields` or equivalent
-key in `_mapping_types.py` or `mapping_loader.py`. That is also why the fact is
+key in `mapping_types.py` or `mapping_loader.py`. That is also why the fact is
 recorded HERE rather than in a test, since there is no way to write one. If
 projections ever become declarable, this paragraph is what a test hangs off.
 
