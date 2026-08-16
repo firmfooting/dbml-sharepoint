@@ -35,12 +35,17 @@ class EnvSetting:
     help: str
 
 
+# Named rather than repeated as literals: three call sites re-derived the key
+# by scanning ENV_SETTINGS for this parameter.
+ENTERPRISE_READER_KEY: Final = "DBMLSP_ENTERPRISE_READER"
+ENTERPRISE_READER_PARAMETER: Final = "enterprise_reader"
+
 # No `validate` field: `execute_build` already validates what it consumes, and
 # importing `cli.py`'s validators here would cycle and drag typer into `model/`.
 ENV_SETTINGS: Final[tuple[EnvSetting, ...]] = (
     EnvSetting(
-        key="DBMLSP_ENTERPRISE_READER",
-        parameter="enterprise_reader",
+        key=ENTERPRISE_READER_KEY,
+        parameter=ENTERPRISE_READER_PARAMETER,
         help="UPN of the enterprise-reader service account to enrol.",
     ),
 )
