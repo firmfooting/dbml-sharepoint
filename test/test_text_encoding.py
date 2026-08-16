@@ -79,9 +79,12 @@ def _relative(path: Path) -> str:
 
 
 def _roots_in(config: dict[str, Any]) -> tuple[str, ...]:
-    """The wheel's source paths named by a parsed pyproject.
+    """Every path the wheel is built from, named by a parsed pyproject.
 
-    Split from the file read so the proof below can feed it an invented config.
+    Split from the file read so the proof below can feed it an invented
+    config. Covers more than the package: `dist-info/METADATA` is synthesised
+    from `pyproject.toml` and `license-files` is copied in beside it, so a
+    gate reading only `packages` would miss both.
     """
     node: object = config
     for key in WHEEL_PACKAGES.split("."):
@@ -92,13 +95,20 @@ def _roots_in(config: dict[str, Any]) -> tuple[str, ...]:
                 "than hard-coding a path."
             )
         node = node[key]
-    project = config.get("project")
-    readme = project.get("readme") if isinstance(project, dict) else None
+    raw_project = config.get("project")
+    project: dict[str, Any] = raw_project if isinstance(raw_project, dict) else {}
+    readme = project.get("readme")
+    licenses = project.get("license-files")
     if not isinstance(node, list) or not all(isinstance(p, str) for p in node):
         pytest.fail(f"{WHEEL_PACKAGES} is {node!r}, expected a list of paths")
     if not isinstance(readme, str):
         pytest.fail(f"project.readme is {readme!r}, expected a path")
-    return (*node, readme)
+    if not isinstance(licenses, list) or not all(isinstance(p, str) for p in licenses):
+        pytest.fail(f"project.license-files is {licenses!r}, expected a list")
+    # pyproject.toml itself, because hatchling synthesises dist-info/METADATA
+    # from `description`, `authors` and `keywords`, none of which live in a
+    # file the package roots cover.
+    return (*node, readme, *licenses, "pyproject.toml")
 
 
 def _shipped_roots() -> tuple[str, ...]:
@@ -138,7 +148,10 @@ def _offending_lines(
         return [f"{relative}: not UTF-8, {exc.reason} at byte {exc.start}"]
     return [
         f"{relative}:{number}: {label}: {line.strip()[:80]!r}"
-        for number, line in enumerate(text.splitlines(), start=1)
+        # Split on newline only. splitlines() also breaks on U+0085, U+2028
+        # and U+2029 and drops them, so the scan never saw the very
+        # characters it exists to refuse.
+        for number, line in enumerate(text.split("\n"), start=1)
         if (label := offends(line))
     ]
 
@@ -225,15 +238,19 @@ def test_the_shipped_roots_come_from_packaging() -> None:
     passes just as well against a hard-coded pair.
     """
     invented = _roots_in({
-        "project": {"readme": "DESCRIPTION.rst"},
+        "project": {"readme": "DESCRIPTION.rst", "license-files": ["COPYING"]},
         "tool": {"hatch": {"build": {"targets": {"wheel": {
             "packages": ["src/one", "src/two"],
         }}}}},
     })
-    assert invented == ("src/one", "src/two", "DESCRIPTION.rst")
-    # And what the real file says today, so moving either key fails here
-    # instead of silently narrowing what the gate scans.
-    assert _shipped_roots() == ("src/dbml_sharepoint", "README.md")
+    assert invented == (
+        "src/one", "src/two", "DESCRIPTION.rst", "COPYING", "pyproject.toml",
+    )
+    # And what the real file says today, so moving any key fails here instead
+    # of silently narrowing what the gate scans.
+    assert _shipped_roots() == (
+        "src/dbml_sharepoint", "README.md", "LICENSE", "pyproject.toml",
+    )
 
 
 def test_the_scan_reports_a_seeded_non_ascii_character(tmp_path: Path) -> None:
@@ -258,3 +275,25 @@ def test_the_report_names_a_path_from_the_repository_root() -> None:
     assert _relative(REPO_ROOT / "src" / "dbml_sharepoint" / "cli.py") == (
         "src/dbml_sharepoint/cli.py"
     )
+
+
+@pytest.mark.parametrize(
+    "codepoint",
+    [0x0085, 0x2028, 0x2029],
+    ids=["next-line", "line-separator", "paragraph-separator"],
+)
+def test_the_scan_reports_a_unicode_line_separator(
+    codepoint: int, tmp_path: Path,
+) -> None:
+    """These three are non-ASCII AND line breaks, so a scan can eat its input.
+
+    `str.splitlines()` treats each as a boundary and discards it, leaving
+    `_non_ascii` only the ASCII either side. MEASURED before the fix: a file
+    holding U+2028 was reported clean.
+    """
+    seeded = tmp_path / "guide.md"
+    seeded.write_text(f"before{chr(codepoint)}after", encoding="utf-8", newline="")
+
+    found = _offending_lines(seeded, "guide.md", _non_ascii)
+    assert found, f"U+{codepoint:04X} was consumed as a line break, not reported"
+    assert f"U+{codepoint:04X}" in found[0]
