@@ -1,30 +1,30 @@
 # src/dbml_sharepoint/analysis/checks/_provenance.py
-"""Names the provenance marker interpolates must keep it unambiguous.
+"""Names the marker interpolates, and the terminator they may not hold.
 
-The marker ends with `provenance.MARKER_TERMINATOR` and the deploy tests for
-it with a substring search. That test is only sound while no marker can sit
-inside another, and that holds only while no interpolated name contains the
-terminator. Refusing it here is what makes the grammar prefix-free; without
-it, `from risk.` matches inside `from risk.v2.`.
+The deploy tests for the marker with a substring search, which is sound only
+while no marker can sit inside another. That holds only while no interpolated
+name contains the terminator, so refusing one here is what makes the grammar
+prefix-free. Without it, `from risk.` matches inside `from risk.v2.`.
 """
+
+from collections.abc import Iterator
 
 from dbml_sharepoint.analysis import provenance
 from dbml_sharepoint.analysis.checks._context import ValidationContext
 from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.list_description import family_for
 from dbml_sharepoint.analysis.validator import Finding
 
 _SCHEMA = Location(Section.SCHEMA)
+_ENTITIES = Location(Section.ENTITIES)
 _LEVELS = Location(Section.PERMISSION_LEVELS)
 _GROUPS = Location(Section.GROUPS)
 
 
 def check(vc: ValidationContext) -> list[Finding]:
     findings: list[Finding] = []
-    # The RAW name, because `family_for` substitutes `UNNAMED_FAMILY` for an
-    # absent one and the substitute is what every such schema then collides on.
+    # The name as DECLARED. `family_for` folds it, and reporting the folded
+    # spelling back names something the author did not write.
     declared = vc.schema.project_name
-    family = family_for(vc.schema)
 
     if not declared.strip():
         findings.append(Finding(
@@ -36,30 +36,32 @@ def check(vc: ValidationContext) -> list[Finding]:
             "`Project my_thing { }`.",
             location=_SCHEMA,
         ))
-    elif provenance.MARKER_TERMINATOR in family:
-        findings.append(_terminator_finding(
-            f"the DBML `Project` name {family!r}", _SCHEMA,
-        ))
+
+    findings.extend(
+        _terminator_finding(subject, location)
+        for subject, name, location in _interpolated_names(vc)
+        if provenance.MARKER_TERMINATOR in name
+    )
+    return findings
+
+
+def _interpolated_names(
+    vc: ValidationContext,
+) -> Iterator[tuple[str, str, Location]]:
+    """Every name the marker grammar interpolates, with where it came from."""
+    declared = vc.schema.project_name
+    yield f"the DBML `Project` name {declared!r}", declared, _SCHEMA
 
     for entity_name in vc.bundle.mapping.entities:
-        if provenance.MARKER_TERMINATOR in entity_name:
-            findings.append(_terminator_finding(
-                f"entity {entity_name!r}", _SCHEMA,
-            ))
+        yield f"entity {entity_name!r}", entity_name, _ENTITIES
 
     perms = vc.bundle.mapping.permissions
-    if perms is not None:
-        for lvl in perms.levels:
-            if provenance.MARKER_TERMINATOR in lvl.name:
-                findings.append(_terminator_finding(
-                    f"permission level {lvl.name!r}", _LEVELS,
-                ))
-        for grp in perms.groups:
-            if provenance.MARKER_TERMINATOR in grp.name:
-                findings.append(_terminator_finding(
-                    f"site group {grp.name!r}", _GROUPS,
-                ))
-    return findings
+    if perms is None:
+        return
+    for lvl in perms.levels:
+        yield f"permission level {lvl.name!r}", lvl.name, _LEVELS
+    for grp in perms.groups:
+        yield f"site group {grp.name!r}", grp.name, _GROUPS
 
 
 def _terminator_finding(subject: str, location: Location) -> Finding:

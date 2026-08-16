@@ -858,13 +858,13 @@ FINDING_HELP: dict[FindingCode, str] = {
         "separately, even though the two ceilings agree today."
     ),
     FindingCode.MARKER_FIELD_HAS_TERMINATOR: (
-        "A name the provenance marker interpolates contains a full stop, "
-        "which is the character that terminates the marker. That makes one "
+        "A name the provenance marker interpolates contains `.`, the "
+        "character that terminates the marker. That makes one "
         "marker able to sit inside another: `from risk.` is a substring of "
         "`from risk.v2.`, so family `risk` would adopt a group belonging to "
         "family `risk.v2`, taking over whatever access that family declares. "
         "Rename the family, group, permission level or entity so it holds no "
-        "full stop."
+        "`.`."
     ),
     FindingCode.MARKER_FAMILY_MISSING: (
         "The schema declares no `Project` name, so there is nothing to "
