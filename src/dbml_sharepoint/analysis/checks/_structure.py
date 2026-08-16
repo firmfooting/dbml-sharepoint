@@ -4,7 +4,8 @@
 import re
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.column_refs import formula_column_refs
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
     INDEX_WARN_AT,
     LIST_VIEW_THRESHOLD,
@@ -25,18 +26,14 @@ from dbml_sharepoint.analysis.lookups import (
     lookup_target_entities,
 )
 from dbml_sharepoint.analysis.ordering import compute_phases
+from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.typemap import (
     CALCULATED_TYPE_LIST,
+    CALCULATED_TYPES,
     MULTI_VALUE_SP_TYPE_NAME,
     element_type,
     is_multi_value,
     unsupported_index_reason,
-)
-from dbml_sharepoint.analysis.validator import (
-    CALCULATED_TYPES,
-    Finding,
-    _rendered_columns,
-    formula_column_refs,
 )
 from dbml_sharepoint.model.parser import Table
 
@@ -410,7 +407,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         ):
             display_xcols = cross_site_by_entity.get(entity_name, set())
             declared_names = {col.name: col for col in display_table.columns}
-            rendered_names = _rendered_columns(display_table, display_xcols)
+            rendered_names = rendered_columns(display_table, display_xcols)
             if display in declared_names and display not in rendered_names:
                 # A name that is not declared AT ALL is already reported by
                 # analysis.checks._naming, which sees every lookup into this
@@ -528,7 +525,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         if indexed_table is None:
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(indexed_table, xcols)
+        rendered = rendered_columns(indexed_table, xcols)
         indexed: list[str] = []
         for position, index in enumerate(indexed_table.indexes):
             ctx = f"{entity_name}.indexes[{position}]"
@@ -680,7 +677,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 location=Location(Section.WATCHED_LISTS),
             ))
             continue
-        watched_cols = _rendered_columns(
+        watched_cols = rendered_columns(
             watched_table, cross_site_by_entity.get(watched.entity, set()),
         )
         if watched.column not in watched_cols:
@@ -699,7 +696,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 location=Location(Section.POLYMORPHIC_PATTERNS),
             ))
             continue
-        pattern_cols = _rendered_columns(
+        pattern_cols = rendered_columns(
             pattern_table, cross_site_by_entity.get(pattern.list, set()),
         )
         for role, col_name in (("field", pattern.field), ("discriminator", pattern.discriminator)):
@@ -745,7 +742,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # and a formula naming either passed this very check before dying at
         # paste time.
         xcols = vc.cross_site_columns(table.name)
-        declared = _rendered_columns(table, xcols)
+        declared = rendered_columns(table, xcols)
         columns_by_name = {candidate.name: candidate for candidate in table.columns}
         for col in table.columns:
             if col.type not in CALCULATED_TYPES:
@@ -800,7 +797,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # (<ref>Abbreviation or <ref>SiteUrl, both plain Text/Hyperlink
                 # fields and both fine in a formula). The LOGICAL ref they
                 # replace cannot reach here at all: `declared` comes from
-                # _rendered_columns, which drops it, so it is already reported
+                # rendered_columns, which drops it, so it is already reported
                 # above as not a rendered column. Do not add an `in xcols`
                 # test here expecting it to fire. It cannot.
                 if operand is None:

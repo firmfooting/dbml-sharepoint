@@ -18,7 +18,8 @@ from dbml_sharepoint.generators.assessgen import (
     derive_requirements,
 )
 from dbml_sharepoint.generators.jsgen import build_schema_json
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import (
     ListPermissionPolicy,
     MappingBundle,
     PermissionsConfig,
@@ -26,7 +27,6 @@ from dbml_sharepoint.model.mapping_loader import (
     RoleAssignment,
     SiteGroup,
     Versioning,
-    load_mapping,
 )
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 

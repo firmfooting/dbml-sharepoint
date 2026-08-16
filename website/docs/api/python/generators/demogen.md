@@ -1,6 +1,6 @@
 ---
 title: demogen
-sidebar_position: 19
+sidebar_position: 21
 ---
 
 # `dbml_sharepoint.generators.demogen`

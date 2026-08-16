@@ -6,13 +6,10 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _validator_helpers import _project_errors
 
-from dbml_sharepoint.analysis.findings import FindingCode
-from dbml_sharepoint.analysis.validator import (
-    Finding,
-    validate_against_mapping,
-)
+from dbml_sharepoint.analysis.findings import Finding, FindingCode
+from dbml_sharepoint.analysis.validator import validate_against_mapping
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     CustomPermissionLevel,
     DemoItem,

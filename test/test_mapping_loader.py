@@ -8,12 +8,12 @@ from _packs import blocks, entities, entity, with_tail, write_mapping
 from _paths import FIXTURES
 
 from dbml_sharepoint.model import mapping_loader, mapping_types
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import (
     FormVisibility,
     ListPermissionPolicy,
     RetiredColumn,
     Versioning,
-    load_mapping,
 )
 
 
@@ -242,7 +242,7 @@ def test_default_policy_not_applied_to_other_site_role() -> None:
     """Regression: a role-scoped default policy must NOT fall back onto
     hub entities. Previously permissions_for_entity ignored site_role, so a
     build for another role would re-ACL its lists with the wrong groups/levels."""
-    from dbml_sharepoint.model.mapping_loader import EntityMapping
+    from dbml_sharepoint.model.mapping_types import EntityMapping
 
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     perms = bundle.mapping.permissions
@@ -264,7 +264,7 @@ def test_default_policy_not_applied_to_other_site_role() -> None:
 def test_default_policy_without_site_role_applies_to_all() -> None:
     """When no site_role scope is declared the default applies to every
     entity, preserving pre-scope behaviour."""
-    from dbml_sharepoint.model.mapping_loader import EntityMapping
+    from dbml_sharepoint.model.mapping_types import EntityMapping
 
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
     perms = bundle.mapping.permissions
@@ -453,7 +453,7 @@ def test_polymorphic_patterns_parsed(tmp_path: Path) -> None:
     """`polymorphic_patterns` is a list of
     {list, field, discriminator} triples, parsed into PolymorphicPattern
     objects (replaces manifestgen's hardcoded gov-hub list)."""
-    from dbml_sharepoint.model.mapping_loader import PolymorphicPattern
+    from dbml_sharepoint.model.mapping_types import PolymorphicPattern
 
     write_mapping(tmp_path, blocks(entities("Project"), """
         polymorphic_patterns:
@@ -534,7 +534,7 @@ def _views_yaml(views_block: str) -> str:
 
 def test_views_section_parsed(tmp_path: Path) -> None:
     from dbml_sharepoint.model.conditions import Group, Leaf
-    from dbml_sharepoint.model.mapping_loader import ViewGroupBy, ViewSort
+    from dbml_sharepoint.model.mapping_types import ViewGroupBy, ViewSort
 
     write_mapping(tmp_path, _views_yaml("""
         views:
@@ -790,7 +790,7 @@ def test_view_url_slug_derivation() -> None:
     """A view's .aspx name is fixed at creation, so views are created with a
     URL-safe slug title and renamed to the declared title afterwards (same
     trick as field internal/display names)."""
-    from dbml_sharepoint.model.mapping_loader import view_url_slug
+    from dbml_sharepoint.model.mapping_types import view_url_slug
 
     assert view_url_slug("Open by score") == "OpenByScore"
     assert view_url_slug("Resolved or closed") == "ResolvedOrClosed"
@@ -836,7 +836,7 @@ def test_display_names_unknown_mode_rejected(tmp_path: Path) -> None:
 
 
 def test_auto_display_name_splits_pascal_case() -> None:
-    from dbml_sharepoint.model.mapping_loader import auto_display_name
+    from dbml_sharepoint.model.mapping_types import auto_display_name
 
     cases = {
         "ResidualRiskRating": "Residual Risk Rating",
@@ -2075,7 +2075,7 @@ def test_group_by_accepts_two_levels(tmp_path: Path) -> None:
     """compliance-obligations publishes "group by SourceType then
     SourceInstrument" as its accreditation-pack view. SharePoint has always
     taken two FieldRefs inside one GroupBy; the mapping could say one."""
-    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+    from dbml_sharepoint.model.mapping_types import ViewGroupBy
 
     write_mapping(tmp_path, _views_yaml("""
         views:

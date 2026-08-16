@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from dbml_sharepoint.analysis.column_refs import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.analysis.conditions import (
     SYSTEM_COLUMN_TYPES,
     effective_column_types,
@@ -36,11 +37,10 @@ from dbml_sharepoint.analysis.typemap import (
     format_description,
     map_column,
 )
-from dbml_sharepoint.analysis.validator import FORMULA_COLUMN_REF, formula_column_refs
 from dbml_sharepoint.extension import DeploymentExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators._indexes import deployable_index_columns
 from dbml_sharepoint.model.env_file import NO_ENV_FILE, EnvProvenance, describe_env_provenance
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntityMapping,
     EntitySection,

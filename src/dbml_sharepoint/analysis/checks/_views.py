@@ -2,6 +2,7 @@
 """Field sets and declared views."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.conditions import (
     CAML,
     SYSTEM_COLUMN_TYPES,
@@ -11,7 +12,7 @@ from dbml_sharepoint.analysis.conditions import (
     leaves,
     normalise,
 )
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.joins import (
     JOIN_LIMIT,
     JOIN_WARN_AT,
@@ -25,20 +26,15 @@ from dbml_sharepoint.analysis.limits import (
     LIST_VIEW_THRESHOLD_FALLBACK_ROWS,
     MAX_VIEW_ROW_LIMIT,
 )
+from dbml_sharepoint.analysis.rendered_columns import SYSTEM_COLUMNS, rendered_columns
 from dbml_sharepoint.analysis.typemap import (
     NUMBER_TYPES,
     NUMERIC_ONLY_TOTALS,
     is_multi_value,
     unsupported_index_reason,
 )
-from dbml_sharepoint.analysis.validator import (
-    SYSTEM_COLUMNS,
-    Finding,
-    _rendered_columns,
-    formatter_field_refs,
-)
 from dbml_sharepoint.model.conditions import Condition, Leaf
-from dbml_sharepoint.model.mapping_loader import view_url_slug
+from dbml_sharepoint.model.mapping_types import view_url_slug
 
 # What SharePoint can add up. A calculated_number is included deliberately:
 # three of the five columns declared totals exist for in this library are
@@ -145,7 +141,7 @@ _LOOKUP_FIELD_TYPES: frozenset[str] = frozenset()
 # Which is fortunate, because what SharePoint does internally is NOT
 # established for any of the five, INCLUDING ID. "SharePoint indexes ID
 # natively" is repeated widely and by this repository (see the comment in
-# validator._rendered_columns), and Microsoft documents it nowhere: not in the
+# `analysis/rendered_columns.py`), and Microsoft documents it nowhere: not in the
 # index article, not in the large-list article, and the protocol spec defines
 # tp_Id as a column without enumerating the table's indexes.
 #
@@ -394,7 +390,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         set_rendered = (
-            _rendered_columns(set_table, cross_site_by_entity.get(entity_name, set()))
+            rendered_columns(set_table, cross_site_by_entity.get(entity_name, set()))
             | {"Title"} | SYSTEM_COLUMNS
         )
         # A set is "referenced" if some view on this entity actually
@@ -473,7 +469,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # This is the DECLARED view's rendered set, not `joins.all_items_rendered`
         # (the generated All Items one), same shape, different subject, kept
         # separate on purpose; do not fold this into that helper.
-        view_rendered = _rendered_columns(view_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        view_rendered = rendered_columns(view_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         # The type map must cover everything view_rendered admits, or a
         # column that IS filterable reports "no declared type" and aborts the
         # build. Two are rendered without being DBML columns: the built-in
@@ -977,7 +973,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         # post-suppression result `shown_joins` carries. Both are genuine
         # calls into analysis/joins.py, not re-typed copies of its formulas.
         # `rendered` used to be its own
-        # `_rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS` written out a
+        # `rendered_columns(...) | {"Title"} | SYSTEM_COLUMNS` written out a
         # second time in this file, textually identical to the one inside
         # `all_items_joining_fields`, but a separate expression the escape-hatch
         # checks below actually read. Dropping a term from either copy alone

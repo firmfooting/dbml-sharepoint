@@ -47,7 +47,8 @@ from dbml_sharepoint.analysis.role_definition_description import level_descripti
 from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES
 from dbml_sharepoint.catalogue import PLACEHOLDER_SITE_URL, available_solutions
 from dbml_sharepoint.model.conditions import Condition, Group, Leaf
-from dbml_sharepoint.model.mapping_loader import Mapping, SiteGroup, load_mapping
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import Mapping, SiteGroup
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 
 # This module is the family-standard conformance sweep, and it dominates the

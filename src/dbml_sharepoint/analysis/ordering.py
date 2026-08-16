@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from dbml_sharepoint.model.parser import Schema
 
 if TYPE_CHECKING:
-    from dbml_sharepoint.model.mapping_loader import EntityMapping
+    from dbml_sharepoint.model.mapping_types import EntityMapping
 
 
 @dataclass

@@ -5,6 +5,7 @@ import datetime as dt
 from dataclasses import replace
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.column_refs import formula_column_refs
 from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
     condition_findings,
@@ -12,18 +13,16 @@ from dbml_sharepoint.analysis.conditions import (
     leaves,
     to_validation,
 )
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.forms import validate_form_visibility
 from dbml_sharepoint.analysis.limits import (
     MAX_VALIDATION_FORMULA,
     MAX_VALIDATION_MESSAGE,
 )
-from dbml_sharepoint.analysis.validator import (
-    _UNDEPLOYABLE_DECLARATION_COLUMNS,
-    Finding,
-    _rendered_columns,
-    _undeployable,
-    formula_column_refs,
+from dbml_sharepoint.analysis.rendered_columns import (
+    UNDEPLOYABLE_DECLARATION_COLUMNS,
+    rendered_columns,
+    undeployable,
 )
 
 
@@ -53,7 +52,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             continue
         ctx = f"retired_columns[{entity_name}]"
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(retired_table, xcols)
+        rendered = rendered_columns(retired_table, xcols)
         cols_by_name = {c.name: c for c in retired_table.columns}
         for col_name, retired_spec in retired_cols.items():
             col_at = replace(at, column=col_name)
@@ -229,7 +228,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(fv_entity, set())
-        rendered = _rendered_columns(section_table, xcols) | {"Title"}
+        rendered = rendered_columns(section_table, xcols) | {"Title"}
         types = effective_column_types(
             {c.name: c.type for c in section_table.columns}, xcols,
         )
@@ -247,10 +246,10 @@ def check(vc: ValidationContext) -> list[Finding]:
             retired = column in retired_here
             col_ctx = f"retired_columns[{fv_entity}]" if retired else ctx
             col_at = retired_at if retired else fv_at
-            if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
+            if column in UNDEPLOYABLE_DECLARATION_COLUMNS:
                 findings.append(Finding(
                     FindingCode.UNDEPLOYABLE_DECLARATION_COLUMN,
-                    _undeployable(col_ctx, column),
+                    undeployable(col_ctx, column),
                     location=col_at,
                 ))
                 continue
@@ -294,7 +293,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(cv_entity, set())
-        rendered = _rendered_columns(section_table, xcols) | {"Title"}
+        rendered = rendered_columns(section_table, xcols) | {"Title"}
         types = effective_column_types(
             {c.name: c.type for c in section_table.columns}, xcols,
         )
@@ -302,10 +301,10 @@ def check(vc: ValidationContext) -> list[Finding]:
         ctx = f"column_validation[{cv_entity}]"
         for column, cv_rule in cv_section.columns.items():
             col_at = replace(cv_at, column=column)
-            if column in _UNDEPLOYABLE_DECLARATION_COLUMNS:
+            if column in UNDEPLOYABLE_DECLARATION_COLUMNS:
                 findings.append(Finding(
                     FindingCode.UNDEPLOYABLE_DECLARATION_COLUMN,
-                    _undeployable(ctx, column),
+                    undeployable(ctx, column),
                     location=cv_at,
                 ))
                 continue

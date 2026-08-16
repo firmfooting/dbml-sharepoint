@@ -130,6 +130,24 @@ DERIVED_BUILT_IN_LEVELS: frozenset[str] = frozenset({
 #: What a `list_permissions` assignment may name without declaring it.
 ASSIGNABLE_BUILT_IN_LEVELS: frozenset[str] = BUILT_IN_LEVELS - DERIVED_BUILT_IN_LEVELS
 
+# Built-in SP groups a declared group's owner_group may reference.
+BUILTIN_SP_GROUPS = frozenset({
+    "Site Owners", "Site Members", "Site Visitors",
+    "Owners", "Members", "Visitors",
+})
+
+# Built-in associated-group ALIASES (casefolded) mapped to the principal kind
+# that resolves them correctly at deploy time. `kind: group` principals are
+# resolved via sitegroups/getbyname(name), which fails for these aliases on
+# real sites (the actual groups are named '<SiteTitle> Owners' etc.). Note the
+# aliases remain valid for groups[*].owner_group, where the template resolves
+# them through the AssociatedOwnerGroup/... endpoints.
+ASSOCIATED_GROUP_ALIASES = {
+    "site owners": "associated_owner_group",
+    "site members": "associated_member_group",
+    "site visitors": "associated_visitor_group",
+}
+
 
 def requires_manage_permissions(mapping: Mapping, table_names: Iterable[str]) -> bool:
     """True when deploying `table_names` performs ANY ACL work, and so needs

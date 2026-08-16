@@ -15,51 +15,6 @@ Validation rules for the parsed schema.
 RESERVED_NAMES = frozenset({'Attachments', 'Author', 'Created', 'Editor', 'ID', 'Id', 'Modified', '_UIVersion'})
 ```
 
-### `SYSTEM_COLUMNS`
-
-```python
-SYSTEM_COLUMNS = frozenset({'Author', 'Created', 'Editor', 'ID', 'Modified'})
-```
-
-### `KNOWN_SCALARS`
-
-```python
-KNOWN_SCALARS = frozenset({'boolean', 'date', 'datetime', 'hyperlink', 'int', 'longtext', 'number', 'nvarchar', 'person', 'richtext'})
-```
-
-### `CALCULATED_TYPES`
-
-```python
-CALCULATED_TYPES = frozenset({'calculated_date', 'calculated_number', 'calculated_text'})
-```
-
-### `FORMULA_COLUMN_REF`
-
-```python
-FORMULA_COLUMN_REF = re.compile('\\[([^\\[\\]]+)\\]')
-```
-
-### `formatter_field_refs`
-
-```python
-def formatter_field_refs(node: object) -> frozenset[str]
-```
-
-Every `[$Field]` reference in a formatter JSON structure, walking
-nested dicts/lists and scanning every string value.
-
-### `formula_column_refs`
-
-```python
-def formula_column_refs(formula: str) -> frozenset[str]
-```
-
-Column names referenced as ``[Name]`` in a calculated formula.
-
-String literals are stripped first so bracket text inside a quoted
-constant is not misread as a reference. Shared with jsgen, which orders
-Phase-1 field creation by these references.
-
 ### `validate`
 
 ```python

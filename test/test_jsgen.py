@@ -19,7 +19,8 @@ from dbml_sharepoint.analysis.phases import phase_number as pn
 from dbml_sharepoint.analysis.validator import validate_all
 from dbml_sharepoint.extension import BaseExtension, NullExtension, SiteContext
 from dbml_sharepoint.generators.jsgen import UNMANAGED, generate_deploy_js
-from dbml_sharepoint.model.mapping_loader import CrossSiteRef, MappingBundle, load_mapping
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import CrossSiteRef, MappingBundle
 from dbml_sharepoint.model.parser import (
     Column,
     EnumDef,
@@ -305,7 +306,7 @@ def test_schema_declares_content_type_setting_for_shape_reconciliation() -> None
 def test_document_library_template_101_reaches_shape_gate() -> None:
     """Libraries must be distinguished from same-title generic lists."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
-    from dbml_sharepoint.model.mapping_loader import EntityMapping
+    from dbml_sharepoint.model.mapping_types import EntityMapping
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -460,7 +461,7 @@ def test_lookup_uses_target_display_column() -> None:
     that field in both the desired field shape and AddField parameters, not the
     (possibly empty) built-in Title."""
     from dbml_sharepoint.generators.jsgen import _field_body
-    from dbml_sharepoint.model.mapping_loader import EntityMapping
+    from dbml_sharepoint.model.mapping_types import EntityMapping
 
     col = Column(name="Chair", type="int", ref=Reference("Membership", "Id"))
     entities = {
@@ -1205,7 +1206,7 @@ def test_other_role_build_does_not_apply_scoped_default_policy() -> None:
     must emit NO list_assignments for that role's lists (previously the default fell
     back onto every entity, re-ACLing them with the other role's groups)."""
     from dbml_sharepoint.generators.jsgen import build_schema_json
-    from dbml_sharepoint.model.mapping_loader import EntityMapping
+    from dbml_sharepoint.model.mapping_types import EntityMapping
 
     schema = parse_dbml(FIXTURES / "simple.dbml")
     bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
@@ -1644,7 +1645,7 @@ def test_group_management_automation_rendered(tmp_path: Path) -> None:
 
 def _caml(view_kwargs: dict[str, Any], column_types: dict[str, str] | None = None) -> str:
     from dbml_sharepoint.generators.jsgen import _view_caml_query
-    from dbml_sharepoint.model.mapping_loader import ViewDef
+    from dbml_sharepoint.model.mapping_types import ViewDef
 
     return _view_caml_query(
         ViewDef(title="V", fields=["Title"], **view_kwargs),
@@ -1654,7 +1655,7 @@ def _caml(view_kwargs: dict[str, Any], column_types: dict[str, str] | None = Non
 
 def test_view_caml_condition_sort_and_group() -> None:
     from dbml_sharepoint.model.conditions import parse_condition
-    from dbml_sharepoint.model.mapping_loader import ViewGroupBy, ViewSort
+    from dbml_sharepoint.model.mapping_types import ViewGroupBy, ViewSort
 
     caml = _caml(
         dict(
@@ -1676,7 +1677,7 @@ def test_view_caml_condition_sort_and_group() -> None:
 def test_view_caml_renders_two_group_levels_in_one_groupby() -> None:
     """SharePoint takes both FieldRefs inside ONE GroupBy. Two GroupBy
     elements would be malformed CAML, not a deeper grouping."""
-    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+    from dbml_sharepoint.model.mapping_types import ViewGroupBy
 
     caml = _caml(
         dict(group_by=ViewGroupBy(fields=["SourceType", "SourceInstrument"], collapsed=False)),
@@ -1715,7 +1716,7 @@ def test_view_caml_ands_multiple_conditions() -> None:
 
 def test_view_caml_today_offsets_and_ascending_sort() -> None:
     from dbml_sharepoint.model.conditions import parse_condition
-    from dbml_sharepoint.model.mapping_loader import ViewSort
+    from dbml_sharepoint.model.mapping_types import ViewSort
 
     caml = _caml(
         dict(
@@ -2829,7 +2830,7 @@ def test_view_fields_reach_jsgen_flat_and_resolved(tmp_path: Path) -> None:
 
 def _aggregations(totals: dict[str, str]) -> str:
     from dbml_sharepoint.generators.jsgen import _view_aggregations
-    from dbml_sharepoint.model.mapping_loader import ViewDef
+    from dbml_sharepoint.model.mapping_types import ViewDef
 
     return _view_aggregations(ViewDef(title="V", fields=["Title"], totals=totals))
 
@@ -2902,7 +2903,7 @@ def test_a_grouped_column_need_not_be_displayed() -> None:
     GroupBy FieldRef, independently of ViewFields, which is why grouping
     by a column you do not also list is a normal way to avoid repeating the
     same value in every row. Nothing may refuse it."""
-    from dbml_sharepoint.model.mapping_loader import ViewGroupBy
+    from dbml_sharepoint.model.mapping_types import ViewGroupBy
 
     caml = _caml(
         dict(group_by=ViewGroupBy(fields=["Area"], collapsed=True)),
@@ -3132,7 +3133,10 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
         join_bearing_columns,
         joining_fields,
     )
-    from dbml_sharepoint.analysis.validator import SYSTEM_COLUMNS, _rendered_columns
+    from dbml_sharepoint.analysis.rendered_columns import (
+        SYSTEM_COLUMNS,
+        rendered_columns,
+    )
     from dbml_sharepoint.generators.jsgen import build_schema_json
 
     schema, bundle = pack(
@@ -3179,7 +3183,7 @@ def test_the_validator_and_the_generator_agree_on_what_all_items_renders(
     xcols = {"Elsewhere"}
 
     derived = (
-        _rendered_columns(task, xcols) | {"Title"} | SYSTEM_COLUMNS
+        rendered_columns(task, xcols) | {"Title"} | SYSTEM_COLUMNS
     ) - all_items_hidden(task_entity)
     assert set(generated) == derived
 

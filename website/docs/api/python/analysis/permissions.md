@@ -1,6 +1,6 @@
 ---
 title: permissions
-sidebar_position: 12
+sidebar_position: 14
 ---
 
 # `dbml_sharepoint.analysis.permissions`
@@ -51,6 +51,18 @@ DERIVED_BUILT_IN_LEVELS = frozenset({'Limited Access', 'Web-Only Limited Access'
 
 ```python
 ASSIGNABLE_BUILT_IN_LEVELS = frozenset({'Approve', 'Contribute', 'Design', 'Edit', 'Full Control', 'Manage Hierarchy', 'Read', 'Restricted Read', 'View Only'})
+```
+
+### `BUILTIN_SP_GROUPS`
+
+```python
+BUILTIN_SP_GROUPS = frozenset({'Members', 'Owners', 'Site Members', 'Site Owners', 'Site Visitors', 'Visitors'})
+```
+
+### `ASSOCIATED_GROUP_ALIASES`
+
+```python
+ASSOCIATED_GROUP_ALIASES = {'site owners': 'associated_owner_group', 'site members': 'associated_member_group', 'site visitors': 'associated_visitor_group'}
 ```
 
 ### `requires_manage_permissions`

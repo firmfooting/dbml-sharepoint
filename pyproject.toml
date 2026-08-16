@@ -133,8 +133,10 @@ max-complexity = 72
 [tool.ruff.lint.per-file-ignores]
 # S101: pytest asserts. PLC0415: 159 function-level imports in the test tree,
 # 67 of them in test_jsgen.py -- a mechanical cleanup tracked in #172, not a
-# gate. PLC0415 IS enforced in src/, where the eight remaining sites are
-# documented cycle-breakers carrying a `noqa` and a reason.
+# gate. PLC0415 IS enforced in src/, where the nine remaining sites each carry
+# a `noqa` and a reason: four in `wizard.py` break a genuine cycle with `cli.py`
+# (#171), and five in `bundle.py` keep that module importable for its packaging
+# helpers without pulling in the whole generation stack.
 "test/**" = ["S101", "PLC0415"]
 "website/scripts/**" = ["T20", "PLC0415"] # generator scripts report via print
 "test/manual/render_probes.py" = ["T20"]     # generator script, reports via print

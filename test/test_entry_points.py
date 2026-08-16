@@ -21,14 +21,10 @@ from pathlib import Path
 import pytest
 from _packs import pack
 
-from dbml_sharepoint.analysis.validator import (
-    Finding,
-    validate,
-    validate_against_mapping,
-    validate_all,
-)
+from dbml_sharepoint.analysis.findings import Finding
+from dbml_sharepoint.analysis.validator import validate, validate_against_mapping, validate_all
 from dbml_sharepoint.extension import BaseExtension
-from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema
 
 

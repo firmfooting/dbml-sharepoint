@@ -8,12 +8,9 @@ from _model import schema as make_schema
 from _model import table as make_table
 from _packs import blocks, entities, pack, with_tail
 
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.validator import (
-    Finding,
-    validate_against_mapping,
-)
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
+from dbml_sharepoint.analysis.validator import validate_against_mapping
+from dbml_sharepoint.model.mapping_types import (
     CrossSiteRef,
     EntityKind,
     EntityMapping,
@@ -493,7 +490,7 @@ def test_hiding_title_is_refused_as_not_join_bearing_not_as_a_typo() -> None:
 
     NOTE on what this test can and cannot pin, recorded here because it is
     not obvious from the assertions alone. `_join_inputs` declares `Title`
-    as a real DBML column on `Project`, so `_rendered_columns` alone already
+    as a real DBML column on `Project`, so `rendered_columns` alone already
     puts 'Title' in `rendered`. The explicit `| {"Title"}` union inside
     `analysis/joins.py::all_items_rendered` is redundant for THIS fixture
     and this test cannot observe it being dropped. That is by design, not
@@ -514,7 +511,7 @@ def test_hiding_an_undeclared_title_still_takes_the_not_join_bearing_branch() ->
     SharePoint's base-template `Title` exists on every provisioned list
     regardless of whether the schema names it. So 'Title' reaches
     `all_items_rendered`'s result ONLY through its `| {"Title"}` union.
-    `_rendered_columns` alone has nothing to contribute for a column that
+    `rendered_columns` alone has nothing to contribute for a column that
     is not in `table.columns`. `hide_from_all_items: [Title]` must still be
     refused for costing no join, not reported as an unrecognised column."""
     schema = make_schema(make_table("Project", column("Notes")))

@@ -57,7 +57,8 @@ from dbml_sharepoint.model.env_file import (
     EnvValue,
     read_env_file,
 )
-from dbml_sharepoint.model.mapping_loader import MappingBundle, load_mapping
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, parse_dbml
 from dbml_sharepoint.model.release import Release, load_release
 from dbml_sharepoint.wizard import run_wizard, stdin_is_interactive

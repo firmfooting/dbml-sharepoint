@@ -40,8 +40,7 @@ from dbml_sharepoint.analysis.report_columns import (
     REPORT_FIXED_COLUMNS,
     REPORT_KEY_SUFFIX,
 )
-from dbml_sharepoint.analysis.typemap import SPField, map_column
-from dbml_sharepoint.analysis.validator import CALCULATED_TYPES
+from dbml_sharepoint.analysis.typemap import CALCULATED_TYPES, SPField, map_column
 from dbml_sharepoint.bundle import (
     REPORT_DICTIONARY,
     REPORT_DIR,
@@ -50,7 +49,7 @@ from dbml_sharepoint.bundle import (
     write_artifact,
 )
 from dbml_sharepoint.generators._indexes import deployable_index_columns
-from dbml_sharepoint.model.mapping_loader import MappingBundle
+from dbml_sharepoint.model.mapping_types import MappingBundle
 from dbml_sharepoint.model.parser import Schema, Table
 from dbml_sharepoint.model.release import Release
 

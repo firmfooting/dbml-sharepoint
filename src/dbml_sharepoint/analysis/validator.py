@@ -1,40 +1,17 @@
 # src/dbml_sharepoint/analysis/validator.py
 """Validation rules for the parsed schema."""
 
-import re
 from dataclasses import replace
 
 from dbml_sharepoint.analysis import typemap
+from dbml_sharepoint.analysis.checks import CHECK_FAMILIES
+from dbml_sharepoint.analysis.checks.context import ValidationContext
 from dbml_sharepoint.analysis.exports import MULTI_VALUE_JOIN, ambiguous_members
-
-# Re-exported, not merely used. `extension.py` documents `Finding` as the
-# reporting type and `generators/manifestgen.py` consumes it, so extension
-# authors import it from here; the names have to keep resolving at this path.
-# They are DEFINED in `findings.py` so that `checks/*` can name a finding
-# without importing this orchestrator. The `__all__` below is what makes the
-# re-export explicit (mypy --strict does not re-export an imported name
-# otherwise) and is the same idiom `model/mapping_loader.py` uses.
-from dbml_sharepoint.analysis.findings import (
-    Finding,
-    FindingCode,
-    Location,
-    Section,
-    Severity,
-)
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_INTERNAL_NAME
 from dbml_sharepoint.extension import DeploymentExtension
-from dbml_sharepoint.model.mapping_loader import MappingBundle
-from dbml_sharepoint.model.parser import Column, Schema, Table
-
-#: The finding vocabulary, re-exported for extension authors. Names DEFINED
-#: in this module are exported regardless; only these five need declaring.
-__all__ = [
-    "Finding",
-    "FindingCode",
-    "Location",
-    "Section",
-    "Severity",
-]
+from dbml_sharepoint.model.mapping_types import MappingBundle
+from dbml_sharepoint.model.parser import Column, Schema
 
 # Hard-error reserved names. Note: 'Title' is special-cased (PATCH existing
 # system column); 'Id' annotated pk+increment is special-cased (skip).
@@ -47,148 +24,11 @@ RESERVED_NAMES = frozenset({
     "Id", "ID",
 })
 
-# SharePoint system columns that exist on every list. Formatter [$Field]
-# references and view/form field lists may name them; they are never
-# DBML-declared. Deployer-managed sets (views, form_visibility,
-# display_names) stay strict, as do list-validation formulas (SP support
-# for system columns there is not relied on, so fail closed).
-SYSTEM_COLUMNS = frozenset({"ID", "Created", "Modified", "Author", "Editor"})
-
-# Columns that never reach the per-field deploy loop, so a per-field
-# declaration on one is validated, reported and never written.
-#
-# The built-in Title is provisioned through its own patch object (jsgen
-# routes it there and continues BEFORE the formula and formatter keys are
-# attached), and the system columns are not DBML columns, so they are
-# never in the field list at all. A declaration on any of them validated
-# clean, the manifest reported "(none declared)", and the deploy wrote
-# nothing: an asserted, validated, silently unenforced guarantee, which is
-# the worst shape a data-quality rule can take.
-#
-# Supporting Title properly means threading the formulas through the patch
-# path, a larger change than these sections warrant. Fail closed instead,
-# and say why.
-_UNDEPLOYABLE_DECLARATION_COLUMNS = frozenset({"Title"}) | SYSTEM_COLUMNS
-
-
-def _undeployable(context: str, column: str) -> str:
-    """The message for a declaration on a column the deploy never writes."""
-    reason = (
-        "the built-in Title column is provisioned through its own patch"
-        if column == "Title"
-        else f"{column} is a SharePoint system column, not a deployed field"
-    )
-    return (
-        f"{context}: {column!r} cannot carry a per-column declaration -- "
-        f"{reason}, so it never receives these properties. Declaring it here "
-        f"would validate clean and deploy nothing."
-    )
-
-# DBML scalar types that we recognise. Anything else must be an enum.
-#
-# Re-exported from typemap for the same reason CALCULATED_TYPES below is:
-# `map_column` is what actually has to recognise a type, so that module is
-# where a new scalar cannot be forgotten. Declaring it here as well gave the
-# check and the mapper separate ideas of what is supported, with nothing
-# comparing them.
-KNOWN_SCALARS = typemap.KNOWN_SCALARS
-
-# SP.FieldCalculated column types, re-exported from the one place that
-# enumerates them (a calculated type without an OutputType cannot deploy,
-# so typemap's map is where the vocabulary is forced to be complete). The
-# formula is NOT in DBML. It lives in the mapping's `calculated_formulas:
-# {entity: {column: formula}}` section; validate_against_mapping enforces
-# the pairing and SP's formula constraints.
-CALCULATED_TYPES = typemap.CALCULATED_TYPES
-
-_FORMULA_STRING_LITERAL = re.compile(r'"[^"]*"')
-FORMULA_COLUMN_REF = re.compile(r"\[([^\[\]]+)\]")
-
-
-# Formatter JSON `[$Field]` references (column/view/form formatting). SP
-# resolves these against INTERNAL names at runtime.
-_FORMATTER_FIELD_REF = re.compile(r"\[\$([A-Za-z0-9_]+)")
-
-
-def formatter_field_refs(node: object) -> frozenset[str]:
-    """Every `[$Field]` reference in a formatter JSON structure, walking
-    nested dicts/lists and scanning every string value."""
-    refs: set[str] = set()
-
-    def _walk(value: object) -> None:
-        if isinstance(value, str):
-            refs.update(_FORMATTER_FIELD_REF.findall(value))
-        elif isinstance(value, dict):
-            for child in value.values():
-                _walk(child)
-        elif isinstance(value, list):
-            for child in value:
-                _walk(child)
-
-    _walk(node)
-    return frozenset(refs)
-
-
-# Built-in SP groups a declared group's owner_group may reference.
-_BUILTIN_SP_GROUPS = frozenset({
-    "Site Owners", "Site Members", "Site Visitors",
-    "Owners", "Members", "Visitors",
-})
-
 # The operand denylist and the declared-view operator set used to be spelled
 # here as well as in `conditions.py`. Both copies were dead, and both had
 # already drifted from the live answer -- see the deletion commit. The
 # operator vocabulary is `conditions.NEGATION`; the forbidden operand types
 # are `conditions._FORBIDDEN_OPERAND_TYPES`. Do not restate either here.
-_TODAY_SENTINEL = typemap.TODAY_SENTINEL      # one home: analysis/typemap.py
-_DEMO_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-_DATE_TYPES = typemap.DATE_TYPES              # same home, same reason
-
-
-def _rendered_columns(table: "Table", cross_site_cols: set[str]) -> set[str]:
-    """Column names that will actually exist on the provisioned SP list:
-    auto-increment Id is skipped at render time, cross-site logical columns
-    expand to <col>Abbreviation / <col>SiteUrl and never exist themselves."""
-    rendered: set[str] = set()
-    for col in table.columns:
-        if col.name == "Id" and col.is_pk and col.is_auto_increment:
-            # Skipped because SharePoint provides the identity column itself,
-            # so the deploy must not create one. This used to add "SP indexes
-            # Id natively" and was dropped, because nothing here has measured that
-            # and Microsoft documents it nowhere; the 2026-07-30 native-index
-            # probe found SP.Field.Indexed FALSE for ID on every list it read.
-            # Nothing branches on the claim, which is why it was easy to leave
-            # standing unexamined. See analysis/checks/_views.py.
-            continue
-        if col.name in cross_site_cols:
-            rendered.add(col.name + "Abbreviation")
-            rendered.add(col.name + "SiteUrl")
-        else:
-            rendered.add(col.name)
-    return rendered
-
-
-def formula_column_refs(formula: str) -> frozenset[str]:
-    """Column names referenced as ``[Name]`` in a calculated formula.
-
-    String literals are stripped first so bracket text inside a quoted
-    constant is not misread as a reference. Shared with jsgen, which orders
-    Phase-1 field creation by these references."""
-    return frozenset(
-        FORMULA_COLUMN_REF.findall(_FORMULA_STRING_LITERAL.sub("", formula)),
-    )
-
-# Built-in associated-group ALIASES (casefolded) mapped to the principal kind
-# that resolves them correctly at deploy time. `kind: group` principals are
-# resolved via sitegroups/getbyname(name), which fails for these aliases on
-# real sites (the actual groups are named '<SiteTitle> Owners' etc.). Note the
-# aliases remain valid for groups[*].owner_group, where the template resolves
-# them through the AssociatedOwnerGroup/... endpoints.
-_ASSOCIATED_GROUP_ALIASES = {
-    "site owners": "associated_owner_group",
-    "site members": "associated_member_group",
-    "site visitors": "associated_visitor_group",
-}
 
 
 def _report(code: FindingCode, at: Location, reason: str) -> Finding:
@@ -294,7 +134,7 @@ def _check_column(
         ))
 
     # The identity column must be called Id. typemap skips ANY
-    # `int [pk, increment]` column, while jsgen and _rendered_columns
+    # `int [pk, increment]` column, while jsgen and `rendered_columns`
     # special-case the NAME, so a differently named one was validated as a
     # real column and never created. Every consequence then validated
     # clean: per-column declarations deployed nothing, DBML indexes and
@@ -337,8 +177,8 @@ def _check_column(
             "legacy 'choice' type -- migrate to a named DBML enum.",
         ))
     elif (
-        col.type not in KNOWN_SCALARS
-        and col.type not in CALCULATED_TYPES
+        col.type not in typemap.KNOWN_SCALARS
+        and col.type not in typemap.CALCULATED_TYPES
         and col.type not in enums
         # `audit_event[]` is a multi-value Choice over the enum's members.
         # Asked through the ELEMENT type rather than by adding the array form
@@ -508,11 +348,6 @@ def validate_against_mapping(schema: Schema, bundle: MappingBundle) -> list[Find
     this walks them in declared order and concatenates what they report.
     Order is part of the contract. See that package's docstring.
     """
-    # Deferred for a genuine cycle, not a preference: checks/__init__.py
-    # imports Finding from this module, so this cannot move to the top until
-    # that re-export is deleted -- #168.
-    from dbml_sharepoint.analysis.checks import CHECK_FAMILIES, ValidationContext  # noqa: PLC0415
-
     vc = ValidationContext.build(schema, bundle)
     findings: list[Finding] = []
     for check in CHECK_FAMILIES:

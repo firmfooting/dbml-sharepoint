@@ -6,8 +6,6 @@ vocabularies they are constrained to, and the few pure helpers that derive
 one field from another. No parsing and no file access live here, so a
 reader answering "what does this section become?" does not have to read the
 parser to find out.
-
-Re-exported by ``mapping_loader``. Import these from there.
 """
 
 import re

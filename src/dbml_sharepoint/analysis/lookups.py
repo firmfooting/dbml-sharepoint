@@ -27,7 +27,7 @@ into a Choice + URL pair, so no far-side list is ever enumerated.
 
 from collections.abc import Set as AbstractSet
 
-from dbml_sharepoint.model.mapping_loader import EntityMapping
+from dbml_sharepoint.model.mapping_types import EntityMapping
 from dbml_sharepoint.model.parser import Schema
 
 # A SharePoint list's built-in primary field, and the LookupField a lookup

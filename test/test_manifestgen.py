@@ -17,7 +17,8 @@ from dbml_sharepoint.extension import BaseExtension, ManifestExtras, SiteContext
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.model.conditions import Group, Leaf
-from dbml_sharepoint.model.mapping_loader import (
+from dbml_sharepoint.model.mapping_loader import load_mapping
+from dbml_sharepoint.model.mapping_types import (
     ColumnValidation,
     EntityMapping,
     EntitySection,
@@ -26,7 +27,6 @@ from dbml_sharepoint.model.mapping_loader import (
     ListValidation,
     ViewDef,
     ViewSort,
-    load_mapping,
 )
 from dbml_sharepoint.model.parser import parse_dbml
 from dbml_sharepoint.model.release import load_release

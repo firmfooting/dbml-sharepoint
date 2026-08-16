@@ -2,10 +2,10 @@
 """Display-name overrides and the lookup display-column guard."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import MAX_DISPLAY_TITLE
+from dbml_sharepoint.analysis.rendered_columns import rendered_columns
 from dbml_sharepoint.analysis.report_columns import report_columns_for
-from dbml_sharepoint.analysis.validator import Finding, _rendered_columns
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -41,7 +41,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 ))
                 continue
             xcols = cross_site_by_entity.get(entity_name, set())
-            rendered = _rendered_columns(override_table, xcols)
+            rendered = rendered_columns(override_table, xcols)
             for col_name, display_title in cols.items():
                 if col_name not in rendered:
                     findings.append(Finding(
@@ -69,7 +69,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 continue
             xcols = cross_site_by_entity.get(table.name, set())
             resolved: dict[str, list[str]] = {}
-            for col_name in sorted(_rendered_columns(table, xcols)):
+            for col_name in sorted(rendered_columns(table, xcols)):
                 resolved.setdefault(
                     bundle.mapping.display_name_for(table.name, col_name), [],
                 ).append(col_name)

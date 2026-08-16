@@ -2,8 +2,7 @@
 """Retention policies and enum sources."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
-from dbml_sharepoint.analysis.validator import Finding
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 
 
 def check(vc: ValidationContext) -> list[Finding]:

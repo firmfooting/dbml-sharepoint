@@ -2,26 +2,25 @@
 """Column formatting, style specs, and form formatting."""
 
 from dbml_sharepoint.analysis.checks.context import ValidationContext
+from dbml_sharepoint.analysis.column_refs import formatter_field_refs
 from dbml_sharepoint.analysis.conditions import (
     VALIDATION,
     effective_column_types,
     to_validation,
     validate_condition,
 )
-from dbml_sharepoint.analysis.findings import FindingCode, Location, Section
+from dbml_sharepoint.analysis.findings import Finding, FindingCode, Location, Section
 from dbml_sharepoint.analysis.limits import (
     MAX_VALIDATION_FORMULA,
     MAX_VALIDATION_MESSAGE,
 )
-from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
-from dbml_sharepoint.analysis.validator import (
-    _UNDEPLOYABLE_DECLARATION_COLUMNS,
+from dbml_sharepoint.analysis.rendered_columns import (
     SYSTEM_COLUMNS,
-    Finding,
-    _rendered_columns,
-    _undeployable,
-    formatter_field_refs,
+    UNDEPLOYABLE_DECLARATION_COLUMNS,
+    rendered_columns,
+    undeployable,
 )
+from dbml_sharepoint.analysis.typemap import is_boolean, is_multi_value
 
 
 def check(vc: ValidationContext) -> list[Finding]:
@@ -44,16 +43,16 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(fmt_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        rendered = rendered_columns(fmt_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         for col_name, formatter in fmt_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
             at = Location(
                 Section.COLUMN_FORMATTING, entity=entity_name, column=col_name,
             )
-            if col_name in _UNDEPLOYABLE_DECLARATION_COLUMNS:
+            if col_name in UNDEPLOYABLE_DECLARATION_COLUMNS:
                 findings.append(Finding(
                     FindingCode.UNDEPLOYABLE_COLUMN_DECLARATION,
-                    _undeployable(ctx, col_name),
+                    undeployable(ctx, col_name),
                     location=at,
                 ))
                 continue
@@ -87,7 +86,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         if spec_table is None:
             continue  # unknown entity already reported above
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(spec_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        rendered = rendered_columns(spec_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         types_by_col = {col.name: col.type for col in spec_table.columns}
         for col_name, spec in spec_cols.items():
             ctx = f"column_formatting[{entity_name}].{col_name}"
@@ -250,7 +249,7 @@ def check(vc: ValidationContext) -> list[Finding]:
             ))
             continue
         xcols = cross_site_by_entity.get(entity_name, set())
-        rendered = _rendered_columns(form_table, xcols) | {"Title"} | SYSTEM_COLUMNS
+        rendered = rendered_columns(form_table, xcols) | {"Title"} | SYSTEM_COLUMNS
         for part_name, part_json in (
             ("header", form.header), ("body", form.body), ("footer", form.footer),
         ):
@@ -318,7 +317,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                 # at render time and SharePoint supplies its own. Reusing
                 # `rendered` would be wrong the other way. It folds in
                 # Created/Modified/Author, which no author places on a form.
-                declared = _rendered_columns(form_table, xcols) | {"Title"}
+                declared = rendered_columns(form_table, xcols) | {"Title"}
                 placed: set[str] = set()
                 for index, section in enumerate(sections):
                     if not isinstance(section, dict):
@@ -405,7 +404,7 @@ def check(vc: ValidationContext) -> list[Finding]:
         problems = validate_condition(
             rule.when,
             target=VALIDATION,
-            rendered=_rendered_columns(rule_table, xcols) | {"Title"},
+            rendered=rendered_columns(rule_table, xcols) | {"Title"},
             types=types,
             lookups={c.name for c in rule_table.columns if c.ref is not None},
             context=f"{ctx}.when",

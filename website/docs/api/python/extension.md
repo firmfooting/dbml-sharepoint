@@ -1,6 +1,6 @@
 ---
 title: extension
-sidebar_position: 24
+sidebar_position: 26
 ---
 
 # `dbml_sharepoint.extension`
