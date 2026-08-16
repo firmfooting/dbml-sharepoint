@@ -27,19 +27,37 @@ Nothing in this module imports anything, so it can be read by `model/`,
 `analysis/`, `analysis/checks/` and `generators/` alike without touching the
 one-way dependency rule in AGENTS.md.
 
-**MEASURED 2026-08-16: every ceiling here is enforced in both directions.** A
-mutation sweep set each of the fourteen constants to its value plus one and
-minus one, twenty-eight mutants, each followed by a full suite run with
-`--deselect test/test_deploy_runtime.py`. All twenty-eight failed at least one
-test. Deselecting those runtime tests makes a mutant HARDER to kill, so the
-result holds without them.
+**MEASURED 2026-08-16: 8 of 28 mutants survive. Five ceilings are not fully
+enforced.** A sweep set each constant to its value plus one and minus one,
+twenty-eight mutants, each followed by a full suite run. Survivors, tracked in
+issue #260:
 
-That is the property this module exists for, and it is not implied by the
-citations above: a constant can be correctly documented, correctly named, read
-by four call sites, and still be enforced by nothing. Seven of the fourteen are
-named by no test at all and were killed anyway, by tests that exercise the
-boundary behaviourally. Re-run the sweep after adding a ceiling, because a new
-constant with no consumer is exactly what it catches.
+    MAX_FIELD_DESCRIPTION              both directions
+    MAX_TEXT_FIELD_LENGTH              both directions
+    LIST_VIEW_THRESHOLD_FALLBACK_ROWS  both directions
+    MAX_INTERNAL_NAME                  raising it only
+    MAX_ROLE_DEFINITION_DESCRIPTION    lowering it only
+
+A survivor does not mean the constant is unused. `MAX_FIELD_DESCRIPTION` is
+read by `typemap.py:571` and truncates a description; nothing exercises the
+boundary, so the number can move without any test noticing.
+
+**Run the sweep with two deselects, and the second one is the point.**
+
+    uv run pytest -q -x \
+      --deselect test/test_deploy_runtime.py \
+      --deselect test/test_template_lint.py::test_generated_api_docs_are_current
+
+`website/docs/api/python/analysis/limits.md` contains these values verbatim, so
+the currency test regenerates that page from the mutated source and fails on
+EVERY mutant whether or not a behavioural consumer exists. The first run of
+this sweep left it in, reported 28 kills, and established nothing. That is the
+AGENTS.md corollary about separating the values a measurement depends on from
+the values it observes, and it is easy to walk into here because a uniform
+result reads as a strong one.
+
+Deselecting the runtime tests is different and is only about their 180-second
+timeout: it makes a mutant harder to kill, so it cannot manufacture a kill.
 """
 
 # ---------------------------------------------------------------- names
