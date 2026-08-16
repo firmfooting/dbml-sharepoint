@@ -718,12 +718,14 @@ def build_schema_json(
                 # The marker is composed HERE, not in the template, so the
                 # emitted JavaScript never has to know which marker shape a
                 # level should carry.
-                "description": level_description(lvl.description, family=family),
+                "description": level_description(
+                    lvl.description, family=family, level_name=lvl.name,
+                ),
                 # The exact marker this declaration expects the level to
                 # carry. The deploy-side gate compares against this, so a
                 # level another family stamped cannot satisfy this family's
                 # adoption test.
-                "expected_marker": marker_for_level(family),
+                "expected_marker": marker_for_level(family, lvl.name),
                 "base_permissions": {"high": hl.high, "low": hl.low},
             })
 

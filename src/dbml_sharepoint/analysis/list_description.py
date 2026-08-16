@@ -59,7 +59,9 @@ DESCRIPTION_LIMIT = 255
 # probe: set a distinctive Description, wait for a crawl, then compare a
 # free-text query, a `Description:"..."` restriction, and a
 # `contentclass:STS_List` retrieval.
-MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family}/{entity}."
+#: Kept for the budget arithmetic below; the marker itself is built by
+#: `provenance.marker_for_object`, which is the single authority.
+MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family} for list {entity}."
 
 # Characters held back from every note's budget, on top of the marker itself.
 #
@@ -95,7 +97,11 @@ MARKER_TEMPLATE = provenance.MARKER_PREFIX + " from {family}/{entity}."
 #
 # `test_template_standard.py` pins the invariant over the whole catalogue: no
 # shipped note may eat into this reserve.
-MARKER_GROWTH_RESERVE = 32
+#: 9 of the original 32 were spent when the marker gained the
+#: object's own name, so it could stop matching a description copied
+#: from another object (#241). The total held back is unchanged, so no
+#: note already written became invalid.
+MARKER_GROWTH_RESERVE = 23
 
 # The family recorded for a schema that declares no DBML `Project`. A
 # hand-written schema is a perfectly ordinary input -- `dbml-sharepoint build`
@@ -120,7 +126,7 @@ UNNAMED_FAMILY = "custom"
 # the note" is not advice an author can act on once the budget is zero.
 NAME_BUDGET = (
     DESCRIPTION_LIMIT
-    - len(MARKER_TEMPLATE.format(family="", entity=""))
+    - provenance.empty_marker_length(kind=provenance.LIST_KIND, family="")
     - 1
     - MARKER_GROWTH_RESERVE
 )
@@ -163,8 +169,10 @@ def family_for(schema: Schema) -> str:
 
 
 def marker_for(family: str, entity: str) -> str:
-    """The exact marker text for one entity. The single spelling authority."""
-    return MARKER_TEMPLATE.format(family=family, entity=entity)
+    """The exact marker text for one entity."""
+    return provenance.marker_for_object(
+        kind=provenance.LIST_KIND, name=entity, family=family,
+    )
 
 
 def note_budget(family: str, entity: str) -> int:

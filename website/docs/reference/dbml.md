@@ -71,14 +71,23 @@ The emitted Description is the note, a space, then a marker naming the
 template the list came from:
 
 ```text
-Provisioned by dbml-sharepoint from routine-checks/CheckPoint.
+Provisioned by dbml-sharepoint from routine-checks for list CheckPoint.
 ```
 
 You do not write the marker and cannot suppress it. The family is the
 DBML `Project` name with underscores and `/` folded to hyphens
-(`Project routine_checks` → `routine-checks`), or `custom` for a schema
-that declares no `Project`. What the marker is for, and what has and has
-not been established about finding lists by it, is in the [reporting
+(`Project routine_checks` → `routine-checks`). A schema declaring no
+`Project` is refused: the marker is how a later deploy tells its own
+objects from another family's, and how rollback decides what it may
+delete, so there has to be a family to attribute them to.
+
+The marker names the object it belongs to, and ends with a full point.
+Neither the `Project` name nor an entity, group or level name may contain
+`.` or the text `Provisioned by dbml-sharepoint`, because both are what
+keep one marker from sitting inside another. Either is an error.
+
+What the marker is for, and what has and has not been established about
+finding lists by it, is in the [reporting
 pack](../artifacts/reporting.md#the-provenance-marker).
 
 ### The budget, and why a long note is refused rather than truncated

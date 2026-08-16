@@ -1893,7 +1893,7 @@ def test_no_shipped_level_description_exceeds_the_role_definition_ceiling() -> N
             families_with_levels += 1
         for lvl in levels:
             levels_checked += 1
-            budget = level_description_budget(family)
+            budget = level_description_budget(family, lvl.name)
             if len(lvl.description) > budget:
                 offenders.append(
                     f"{template}/{lvl.name}: {len(lvl.description)} > {budget}",

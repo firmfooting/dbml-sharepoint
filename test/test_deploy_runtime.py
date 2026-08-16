@@ -269,7 +269,8 @@ _ADOPTED_HARNESS = textwrap.dedent(r"""
       'Schema Manager': {
         Id: 1,
         Description: ROLE_DEF_DESCRIPTION_OVERRIDE == null
-          ? 'Test permission level. Provisioned by dbml-sharepoint from simple-test.'
+          ? 'Test permission level. '
+            + 'Provisioned by dbml-sharepoint from simple-test for level Schema Manager.'
           : ROLE_DEF_DESCRIPTION_OVERRIDE,
         BasePermissions: { High: '0', Low: '2049' },
       },
@@ -2323,7 +2324,8 @@ def test_a_marked_group_with_members_is_adopted_silently() -> None:
     'Enterprise Reader' regardless of --enterprise-reader."""
     summary, calls, _ = _group_gate_deploy(
         _reader_deploy_js(enterprise_reader=None), "Enterprise Reader",
-        description="Read-only accounts. Provisioned by dbml-sharepoint from simple-test.",
+        description="Read-only accounts. "
+            "Provisioned by dbml-sharepoint from simple-test for group Enterprise Reader.",
         member_pages=[[{"Id": 501}]],
     )
     assert not _security_errors(summary), summary
@@ -2340,7 +2342,8 @@ def test_a_group_marked_by_another_family_with_members_is_refused() -> None:
     ACL phase then granted those members whatever THIS family declares."""
     summary, calls, _ = _group_gate_deploy(
         _reader_deploy_js(enterprise_reader=None), "Enterprise Reader",
-        description="Read-only accounts. Provisioned by dbml-sharepoint from other-family.",
+        description="Read-only accounts. "
+            "Provisioned by dbml-sharepoint from other-family for group Enterprise Reader.",
         member_pages=[[{"Id": 501}]],
     )
     assert not _group_settings_writes(calls, "Enterprise Reader"), (
@@ -2447,7 +2450,10 @@ def test_a_reconciled_group_setting_the_tenant_did_not_store_fails_closed() -> N
     reconcile read-back.
     """
     group_name = "List Maintainer"
-    stale_description = "Stale note. Provisioned by dbml-sharepoint from simple-test."
+    stale_description = (
+        "Stale note. "
+        "Provisioned by dbml-sharepoint from simple-test for group List Maintainer."
+    )
     harness = _ADOPTED_HARNESS.replace(
         "const GROUP_DESCRIPTIONS = {};",
         f"const GROUP_DESCRIPTIONS = {json.dumps({group_name: stale_description})};",
@@ -2673,7 +2679,8 @@ def test_a_permission_level_created_fresh_is_stamped() -> None:
     assert not _security_errors(summary), summary
     writes = _role_def_create_writes(calls)
     assert writes, "a fresh permission level was never created"
-    assert "Provisioned by dbml-sharepoint from simple-test." in writes[0]["body"]
+    marker = "Provisioned by dbml-sharepoint from simple-test for level Schema Manager."
+    assert marker in writes[0]["body"]
 
 
 # Task 5 (#224): `mergeResp.ok` and the create POST's `ok` only say the
@@ -2692,7 +2699,10 @@ def test_a_permission_level_description_the_tenant_did_not_store_fails_closed() 
     takes the adopt-and-reconcile branch rather than the refusal gate; only
     the read-back after the MERGE can catch the drop.
     """
-    stale_description = "Stale note. Provisioned by dbml-sharepoint from simple-test."
+    stale_description = (
+        "Stale note. "
+        "Provisioned by dbml-sharepoint from simple-test for level Schema Manager."
+    )
     harness = _ADOPTED_HARNESS.replace(
         "const ROLE_DEF_DESCRIPTION_OVERRIDE = null;",
         f"const ROLE_DEF_DESCRIPTION_OVERRIDE = {json.dumps(stale_description)};",

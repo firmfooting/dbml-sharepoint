@@ -519,10 +519,10 @@
       "allow_members_edit_membership": false,
       "allow_request_to_join_leave": false,
       "auto_accept_request_to_join_leave": false,
-      "description": "Test group. Provisioned by dbml-sharepoint from simple-test.",
+      "description": "Test group. Provisioned by dbml-sharepoint from simple-test for group List Maintainer.",
       "enroll_enterprise_reader": false,
       "enroll_operator_during_deploy": false,
-      "expected_marker": "Provisioned by dbml-sharepoint from simple-test.",
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test for group List Maintainer.",
       "name": "List Maintainer",
       "only_allow_members_view_membership": false,
       "owner_group": "Site Owners",
@@ -623,7 +623,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "Parser-fixture projects, each with a status and a sort order. Provisioned by dbml-sharepoint from simple-test/Project.",
+      "description": "Parser-fixture projects, each with a status and a sort order. Provisioned by dbml-sharepoint from simple-test for list Project.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [
@@ -688,7 +688,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "Parser-fixture tasks, each belonging to one project and optionally due on a date. Provisioned by dbml-sharepoint from simple-test/Task.",
+      "description": "Parser-fixture tasks, each belonging to one project and optionally due on a date. Provisioned by dbml-sharepoint from simple-test for list Task.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [
@@ -756,7 +756,7 @@
     {
       "base_template": 100,
       "content_types_enabled": false,
-      "description": "Parser-fixture singleton settings list, one row holding the fixture configuration. Provisioned by dbml-sharepoint from simple-test/AppSettings.",
+      "description": "Parser-fixture singleton settings list, one row holding the fixture configuration. Provisioned by dbml-sharepoint from simple-test for list AppSettings.",
       "enable_minor_versions": false,
       "enable_versioning": true,
       "fields_phase1": [],
@@ -781,8 +781,8 @@
         "high": "0",
         "low": "2049"
       },
-      "description": "Test permission level. Provisioned by dbml-sharepoint from simple-test.",
-      "expected_marker": "Provisioned by dbml-sharepoint from simple-test.",
+      "description": "Test permission level. Provisioned by dbml-sharepoint from simple-test for level Schema Manager.",
+      "expected_marker": "Provisioned by dbml-sharepoint from simple-test for level Schema Manager.",
       "name": "Schema Manager"
     }
   ],

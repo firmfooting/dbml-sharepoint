@@ -353,6 +353,12 @@ class FindingCode(StrEnum):
     GROUP_DESCRIPTION_TOO_LONG = "group_description_too_long", "error"
     GROUP_DESCRIPTION_TOO_LONG_FOR_MARKER = (
         "group_description_too_long_for_marker", "error")
+    MARKER_LONGER_THAN_THE_FIELD = (
+        "marker_longer_than_the_field", "error")
+    MARKER_FIELD_HAS_RESERVED_TEXT = (
+        "marker_field_has_reserved_text", "error")
+    MARKER_FAMILY_MISSING = (
+        "marker_family_missing", "error")
     MULTIPLE_ENTERPRISE_READER_GROUPS = (
         "multiple_enterprise_reader_groups", "error")
     PERMISSION_LEVEL_DESCRIPTION_TOO_LONG = (

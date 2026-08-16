@@ -857,6 +857,33 @@ FINDING_HELP: dict[FindingCode, str] = {
         "different surface from a group's description and was measured "
         "separately, even though the two ceilings agree today."
     ),
+    FindingCode.MARKER_LONGER_THAN_THE_FIELD: (
+        "The provenance marker alone is longer than the Description field "
+        "it has to fit in, before any declared text is added. The budget "
+        "check clamps to zero and an empty description then passes it, so "
+        "without this the deploy would emit the overlong marker and "
+        "SharePoint would refuse it part-way through provisioning. Shorten "
+        "the `Project` name, or the group or level name."
+    ),
+    FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT: (
+        "A name the provenance marker interpolates contains text the marker "
+        "reserves: either `.`, which terminates it, or "
+        "`Provisioned by dbml-sharepoint`, which opens it. Both are what "
+        "keep one marker from sitting inside another. A name holding `.` "
+        "makes `from risk.` a substring of `from risk.v2.`; a name holding "
+        "the opening text makes the marker carry another family's complete "
+        "marker as a suffix. Either way a different family's adoption gate "
+        "matches this object and takes whatever access that family declares. "
+        "Rename the family, entity, group or permission level without the "
+        "reserved text the finding names."
+    ),
+    FindingCode.MARKER_FAMILY_MISSING: (
+        "The schema declares no `Project` name, so there is nothing to "
+        "attribute the objects this build provisions to. The marker is how a "
+        "later deploy tells its own objects from somebody else's, and how "
+        "rollback decides what it may delete. Declare `Project my_thing { }` "
+        "in the DBML."
+    ),
     FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER: (
         "A `permission_levels:` entry's description leaves no room for the "
         "provenance marker appended to it. The deploy stamps every level it "
