@@ -35,32 +35,44 @@ Nothing in this module imports anything, so it can be read by `model/`,
 `analysis/`, `analysis/checks/` and `generators/` alike without touching the
 one-way dependency rule in AGENTS.md.
 
-**MEASURED 2026-08-16: 8 of 28 mutants survive. Five ceilings are not fully
+**MEASURED 2026-08-16: 13 of 28 mutants survive. Eight ceilings are not fully
 enforced.** A sweep set each constant to its value plus one and minus one,
 twenty-eight mutants, each followed by a full suite run. Survivors, tracked in
 issue #260:
 
     MAX_FIELD_DESCRIPTION              both directions
     MAX_TEXT_FIELD_LENGTH              both directions
+    MAX_VALIDATION_MESSAGE             both directions
+    MAX_VIEW_ROW_LIMIT                 both directions
     LIST_VIEW_THRESHOLD_FALLBACK_ROWS  both directions
     MAX_INTERNAL_NAME                  raising it only
     MAX_ROLE_DEFINITION_DESCRIPTION    lowering it only
+    MAX_VALIDATION_FORMULA             lowering it only
 
 A survivor does not mean the constant is unused. `MAX_FIELD_DESCRIPTION` is
 read by `typemap.py:571` and truncates a description; nothing exercises the
 boundary, so the number can move without any test noticing.
 
-**Run the sweep with two deselects, and the second one is the point.**
+**Run the sweep with three deselects.** `scripts/mutate_limits.py` carries them
+and is the supported way to run it.
 
-    uv run pytest -q -x       --deselect test/test_deploy_runtime.py       --deselect test/test_template_lint.py::test_generated_api_docs_are_current
+    --deselect test/test_deploy_runtime.py
+    --deselect test/test_template_lint.py::test_generated_api_docs_are_current
+    --deselect test/test_finding_help.py::test_generated_findings_page_is_current
 
-`website/docs/api/python/analysis/limits.md` contains these values verbatim, so
-the currency test regenerates that page from the mutated source and fails on
-EVERY mutant whether or not a behavioural consumer exists. The first run of
-this sweep left it in, reported 28 kills, and established nothing. That is the
-AGENTS.md corollary about separating the values a measurement depends on from
-the values it observes, and it is easy to walk into here because a uniform
-result reads as a strong one.
+The rule behind the last two: a test that regenerates a DESCRIPTION of the
+source and compares it cannot be evidence about behaviour, because it fails on
+every mutant whether or not a consumer reads the constant. The API reference
+and the findings page both quote these values verbatim. A test that compares
+EMITTED PRODUCT is different and stays in: `test_jsgen`'s golden kills
+`LIST_VIEW_THRESHOLD` because that constant reaches deploy.js, and the same
+5000 written as `MAX_VIEW_ROW_LIMIT` survives because it does not.
+
+This took three runs to get right. The first left both currency tests in and
+reported 28 kills. The second removed one and reported 8 survivors. Both were
+wrong, and both looked like clean results. That is the AGENTS.md corollary
+about separating the values a measurement depends on from the values it
+observes, and a uniform result is the tell.
 
 Deselecting the runtime tests is different and is only about their 180-second
 timeout: it makes a mutant harder to kill, so it cannot manufacture a kill.
