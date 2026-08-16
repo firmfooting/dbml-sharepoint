@@ -114,9 +114,9 @@ class Solution:
 #: fails on the two OEM pages but not on cp1252, which is why the rule is
 #: ASCII rather than any one code page.
 #:
-#: MEASURED 2026-08-16: no shipped README carries one any more, because
-#: `test_shipped_text_is_ascii` refuses them at source. This table is the
-#: second line, for a README that lands before that gate runs.
+#: MEASURED 2026-08-16: no shipped README carries a non-ASCII character any
+#: more, because `test_shipped_text_is_ascii` refuses them at source. This
+#: table is the fallback for a README added before that gate runs.
 #:
 #: Folded here rather than in the READMEs, because `_clean` already exists to
 #: turn README prose into something a terminal can show -- stripping `**` and

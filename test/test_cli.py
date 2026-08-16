@@ -263,9 +263,9 @@ def test_messages_bound_for_a_console_are_ascii() -> None:
     exactly the wrong moment.
 
     Comments and docstrings are excluded here because they are read in an
-    editor and never encoded to a console. They are not unchecked: the
-    em-dash and shipped-text gates read whole files, and MEASURED 2026-08-16
-    `src/` holds none of either.
+    editor and never encoded to a console. The em-dash and shipped-text gates
+    read whole files, and MEASURED 2026-08-16 `src/` holds neither an em dash
+    nor any other non-ASCII character.
     """
     import ast
 
