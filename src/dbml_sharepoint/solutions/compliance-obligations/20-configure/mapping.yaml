@@ -116,7 +116,7 @@ column_formatting:
     # an overdue-date treatment on it would colour every mature row red.
 
 # Every lens shows the same five identifying columns before its own
-# payload, so the spine is declared once (§1.9).
+# payload, so the spine is declared once (section 1.9).
 field_sets:
   Obligation:
     identity: [Title, SourceType, SourceInstrument, Owner, ComplianceStatus]
@@ -129,7 +129,7 @@ field_sets:
 # name and an internal name silently resets.
 #
 # "By owner" is the DEFAULT rather than an unfiltered register view. The
-# alternative was a sixth, filterless view, and §1.4 allows a default plus
+# alternative was a sixth, filterless view, and section 1.4 allows a default plus
 # four lenses; more to the point, this register has no row that stops
 # mattering, so an unfiltered list and a grouped-by-owner list contain
 # exactly the same rows. Grouping is what makes the daily question ("which
@@ -292,7 +292,7 @@ list_validation:
       - any_of:
           - { field: ComplianceStatus, op: eq, value: "Not assessed" }
           - { field: LastAssessedDate, op: is_not_null }
-      # …and the other half of the same rule: evidence. "Not applicable" is
+      # ...and the other half of the same rule: evidence. "Not applicable" is
       # excluded because its reasoning belongs in Notes, which validation
       # cannot read; requiring EvidenceNotes there would ask for evidence
       # of a duty that does not apply.
@@ -304,7 +304,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # review surfaces land on whatever day the demo runs; "@me" is the pasting
 # operator.
 #

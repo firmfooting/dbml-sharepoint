@@ -100,11 +100,11 @@ display_names:
 # colour in this fleet marks the role a value plays in one. A frequency
 # ladder rendered in reds would be reading urgency into a schedule.
 #
-# Deliberately NOT declared: a row-level wash (§1.6). The worst state here
+# Deliberately NOT declared: a row-level wash (section 1.6). The worst state here
 # is an escalated out-of-range entry, and the Result cell already renders
 # it in the `blocked` treatment inside a view that already filters to
 # out-of-range entries. A wash on top would be the third signal for one
-# fact, which is exactly the noise §1.6 exists to prevent.
+# fact, which is exactly the noise section 1.6 exists to prevent.
 column_formatting:
   CheckEntry:
     Result:
@@ -221,7 +221,7 @@ views:
     # one checkpoint, described as the history an auditor reads. A static
     # view cannot filter to one parent: building it meant hard-coding a
     # checkpoint into a filter that rots the moment the catalogue changes,
-    # or one view per fridge. Per §2.4 of the family standard this ships as
+    # or one view per fridge. Per section 2.4 of the family standard this ships as
     # ONE view grouped on the CheckPoint lookup, collapsed, the real
     # SharePoint idiom, which gives an auditor the same per-checkpoint
     # history and absorbs a new checkpoint with no work.

@@ -527,7 +527,7 @@ views:
         - { field: Status, op: not_in, value: [Resolved, Unresolved, Closed] }
       sort:
         - { field: FirstObserved, direction: asc }
-      # The template's ONE row-level signal (§1.4). Materiality rather than
+      # The template's ONE row-level signal (section 1.4). Materiality rather than
       # Status = Unresolved, because Unresolved is a concluded state and the
       # wash would have landed on a history view where nobody is working.
       # Same shape as risk-register's Extreme and incident-management's

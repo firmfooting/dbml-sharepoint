@@ -109,7 +109,7 @@ column_formatting:
     WarrantyMonths: { style: data-bar, max: 60, calculated: true }
 
 # The identifying spine every Asset view opens with. Four of the five use
-# it, past §1.9's three-repetition threshold.
+# it, past section 1.9's three-repetition threshold.
 field_sets:
   Asset:
     identity: [Title, AssetTag, Category, Location, AssignedTo, Status]

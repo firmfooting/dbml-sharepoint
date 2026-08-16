@@ -99,7 +99,7 @@ display_names:
 #
 # The truthiness test is Microsoft's own documented idiom for a Yes/No
 # column ("it checks for the value true which maps to Yes for users",
-# list-form-conditional-show-hide; `=if([$Promoted], …)` is listed as
+# list-form-conditional-show-hide; `=if([$Promoted], ...)` is listed as
 # valid). Documented rather than read back off a live list, so
 # 30-deploy/deploy.md carries a checklist line asking the first adopter to
 # confirm it renders, the same treatment tiered-huddle's Route formula
@@ -190,7 +190,7 @@ views:
     # A ROLLING NINETY DAYS. The published row was "sorted by
     # InteractionDate, newest first" with no filter, which on a register
     # anyone has actually used is every interaction ever. CAML has no
-    # calendar predicate (today±N is what exists), so this is a rolling
+    # calendar predicate (today+/-N is what exists), so this is a rolling
     # window rather than "this quarter", and the title says "Recent"
     # rather than naming a period so it cannot lie about which. Nothing is
     # lost: "By contact" below carries no filter at all.
@@ -269,7 +269,7 @@ column_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today±N so the
+# demo-only lists without its non-empty refusal. Dates are today+/-N so the
 # window-derived views land correctly on whatever day the demo runs.
 #
 # PRIVACY POSTURE, seriously applied. 50-govern/governance.md calls this

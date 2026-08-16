@@ -105,7 +105,7 @@ column_formatting:
     # a historical fact with no late state.
 
 # Every lens shows the same four identifying columns before its own
-# payload, so the spine is declared once (§1.9).
+# payload, so the spine is declared once (section 1.9).
 field_sets:
   Delegation:
     identity: [Title, DelegationArea, RoleHolder, Status]
@@ -256,7 +256,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # review surfaces land on whatever day the demo runs.
 #
 # Coverage: four current authorities across four areas and four roles, so

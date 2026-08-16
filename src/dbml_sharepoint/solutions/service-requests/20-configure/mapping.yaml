@@ -137,14 +137,14 @@ column_formatting:
         map: { "Low": neutral, "Normal": low, "Urgent": severe }
 
 # The identifying spine every queue view shows. Five of the six views
-# below open with it, which is well past §1.9's three-repetition
+# below open with it, which is well past section 1.9's three-repetition
 # threshold; adding a column to the queue is one edit here.
 field_sets:
   Request:
     queue: [Title, Category, Priority, RequestLocation, RequestedBy,
             RequestedDate, AssignedTo, Status]
 
-# Declared views. SIX rather than the usual five, because §2.5 of the
+# Declared views. SIX rather than the usual five, because section 2.5 of the
 # family standard resolves this template's literal `*(one per category)*`
 # table row into a grouped queue view PLUS the two per-team queues the
 # template actually names: three queue lenses where other lists have one.

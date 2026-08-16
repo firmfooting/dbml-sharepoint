@@ -129,7 +129,7 @@ column_formatting:
         map: { Low: neutral, Medium: low, High: good }
 
 # The identifying spine every lens repeats. Five views share it, above
-# §1.9's three-repetition threshold.
+# section 1.9's three-repetition threshold.
 field_sets:
   Proposal:
     identity: [Title, Stage, ProposedBy]
@@ -151,7 +151,7 @@ field_sets:
 # the view carries.
 views:
   Proposal:
-    # The published table said "Stage ≠ Delivered/Declined". Parked is
+    # The published table said "Stage != Delivered/Declined". Parked is
     # excluded too, because the Graveyard below holds Declined AND Parked,
     # and a proposal counted in both the live funnel and the graveyard makes
     # the funnel counts the pipeline owner reports monthly wrong.
@@ -365,7 +365,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without the non-empty refusal. Dates are today±N so the
+# demo-only lists without the non-empty refusal. Dates are today+/-N so the
 # funnel lands on whatever day the demo runs; "@me" is the pasting operator.
 # Coverage: every declared view returns rows, every benefit, feasibility
 # and cost band renders, and one row is deliberately left at Idea with

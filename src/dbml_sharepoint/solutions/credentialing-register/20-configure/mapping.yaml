@@ -162,7 +162,7 @@ views:
         Status: 120
         RegistrationNumber: 180
         RegistrationExpiry: 180
-    # Published as "ScopeReviewDate ≤ today+60" with no status filter,
+    # Published as "ScopeReviewDate <= today+60" with no status filter,
     # which drags every ceased practitioner's stale review date into the
     # committee's list forever. Ceased is excluded; Lapsed and Under
     # review are not, because those are exactly the people a review is
@@ -403,7 +403,7 @@ list_validation:
 
 # Demo rows (emitted as demo-data.js ONLY when built with --seed). Every
 # Title starts "[DEMO] ", the marker rollback.js trusts to delete
-# demo-only lists without its non-empty refusal. Dates are today±N so the
+# demo-only lists without its non-empty refusal. Dates are today+/-N so the
 # sweep-derived views land correctly on whatever day the demo runs.
 #
 # The practitioner titles describe a ROLE rather than naming a person.
