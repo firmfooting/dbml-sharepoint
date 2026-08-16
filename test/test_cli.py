@@ -234,10 +234,11 @@ def test_help_text_is_ascii() -> None:
 #: written; `cli`, `wizard` and `catalogue` are the terminal surface itself.
 #:
 #: Deliberately EXCLUDES the generators and `bundle`. Those write artifacts
-#: through `write_artifact`, which is UTF-8 by contract -- `reportgen` alone
-#: holds 49 non-ASCII literals, and they are correct. The rule is about bytes
-#: that go to a console, not about prose in general; comments and docstrings
-#: are excluded below for the same reason.
+#: through `write_artifact`, which is UTF-8 by contract, so a non-ASCII
+#: literal there would be correct; none happen to remain now that the
+#: package is ASCII-only throughout. The rule is about bytes that go to a
+#: console, not about prose in general; comments and docstrings are
+#: excluded below for the same reason.
 _CONSOLE_BOUND = ("analysis", "model", "cli.py", "wizard.py", "catalogue.py")
 
 

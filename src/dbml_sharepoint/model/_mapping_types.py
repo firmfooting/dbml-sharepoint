@@ -87,7 +87,7 @@ class EntityMapping:
     singleton: bool = False
     # The column a lookup INTO this entity should display (SP LookupField). A SP
     # list has one primary display field; declare it here when it is not the
-    # built-in "Title" (e.g. Membership uses DisplayName). Absent → "Title".
+    # built-in "Title" (e.g. Membership uses DisplayName). Absent -> "Title".
     display_column: str | None = None
     # The author's deliberate acceptance that this entity's display column is
     # calculated, and therefore cannot be indexed, so a lookup into this list

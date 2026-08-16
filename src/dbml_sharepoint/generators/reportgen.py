@@ -261,7 +261,7 @@ def _build_plans(
                     # MEASURED 2026-08-10 on a live tenant: the item value
                     # reads back as a bare JSON array under `odata=nometadata`
                     # (the dialect the Power Query layer speaks) and as
-                    # {"__metadata":…,"results":[…]} under `odata=verbose`,
+                    # {"__metadata":...,"results":[...]} under `odata=verbose`,
                     # the deploy layer's. The two need not agree, and only the
                     # first one matters here: THE CELL HOLDS A LIST.
                     #
@@ -825,7 +825,7 @@ def generate_reporting_md(
     """
     plans = _build_plans(schema, bundle, site_role)
     setup_step = (
-        ("1. **Manage Parameters → New parameter**: a *Text* parameter named "
+        ("1. **Manage Parameters -> New parameter**: a *Text* parameter named "
          "`SiteUrl` holding the **site** URL, e.g. "
          "`https://tenant.sharepoint.com/sites/YourSite` (no trailing slash). "
          "That is the site, not a list or a page. Note the address bar shows the "
@@ -840,14 +840,14 @@ def generate_reporting_md(
     combine_steps = (
         [("1. Add one text parameter per site: `SiteUrl_North`, "
           "`SiteUrl_South`, and so on."),
-         ("2. Duplicate each list query once per site (*right-click → "
+         ("2. Duplicate each list query once per site (*right-click -> "
           "Duplicate*) and change `SiteUrl` in the duplicate to that site's "
           "parameter. Nothing else needs editing: the rows, the item links, "
           "the site name and the keys all follow that one reference.")]
         if site_url is None else
-        [("1. Duplicate each list query once per site (*right-click → "
+        [("1. Duplicate each list query once per site (*right-click -> "
           "Duplicate*)."),
-         ("2. In each duplicate, change the one `SiteUrl = \"…\"` line to "
+         ("2. In each duplicate, change the one `SiteUrl = \"...\"` line to "
           "that site's URL, or replace it with a text parameter per site "
           "if you would rather manage them in one place. Nothing else needs "
           "editing: the rows, the item links, the site name and the keys "
@@ -865,14 +865,14 @@ def generate_reporting_md(
         "## Power Query (M): Power BI Desktop / Excel",
         "",
         setup_step,
-        ("2. For each `.pq` file: **Get Data → Blank Query → Advanced "
+        ("2. For each `.pq` file: **Get Data -> Blank Query -> Advanced "
          "Editor**, paste the file contents, and rename the query to the "
          "list name (the first line of the file)."),
         ("3. When prompted to authenticate, choose **Organizational account** "
          "and sign in with an account that can read the lists."),
         "",
         ("Each query returns a typed table with lookup and person columns "
-         "already expanded to a join key (`…Id`) plus a display column."),
+         "already expanded to a join key (`...Id`) plus a display column."),
         "",
         "## Reporting on several sites at once",
         "",
@@ -895,7 +895,7 @@ def generate_reporting_md(
         "To combine deployments:",
         "",
         *combine_steps,
-        ("3. **Append** the copies of a list into one table (*Home → Append "
+        ("3. **Append** the copies of a list into one table (*Home -> Append "
          "Queries as New*)."),
         ("4. Build the relationships below on the **Key** columns, not on "
          "`Id`."),
@@ -907,7 +907,7 @@ def generate_reporting_md(
          "on `Id` cannot then be many-to-one; Power BI degrades it to "
          "many-to-many and joins each child to the same-numbered parent "
          "everywhere. The report still renders. The numbers are just "
-         "wrong. The `… Key` columns are `Site Url`, the **list title** and "
+         "wrong. The `... Key` columns are `Site Url`, the **list title** and "
          "the id together, which is unique across any number of sites and "
          "lists, and they are why the relationships below are safe to "
          "append."),
@@ -932,8 +932,8 @@ def generate_reporting_md(
             )
     lines += [
         "",
-        ("Person columns carry the site-user id (`…Id`) and display name "
-         "(`…Title`) but no relationship target. The site user list is not "
+        ("Person columns carry the site-user id (`...Id`) and display name "
+         "(`...Title`) but no relationship target. The site user list is not "
          "part of this schema."),
         "",
         "## SQL views: warehouse landing zone",
@@ -942,7 +942,7 @@ def generate_reporting_md(
          "process: Azure Data Factory, Power Automate, Dataflows) as a "
          "table named after the list, columns named after the SharePoint "
          "internal names, in the `$(LandingSchema)` schema. Lookup columns "
-         "land as `…Id` integers; person columns land as display-name text. "
+         "land as `...Id` integers; person columns land as display-name text. "
          "Run the script in SQLCMD mode after adjusting `:setvar "
          "LandingSchema` / `:setvar ReportSchema`."),
         "",
@@ -1097,7 +1097,7 @@ def _sp_type_cell(
         case "User":
             return "Person"
         case "Lookup":
-            return f"Lookup → {prefix}{sp.target_list}"
+            return f"Lookup -> {prefix}{sp.target_list}"
         case "Calculated":
             output = {9: "Number", 4: "Date"}.get(sp.output_type or 0, "Text")
             if formula:
@@ -1366,7 +1366,7 @@ def generate_data_dictionary(
         "|---|---|---|",
         ("| ItemURL | SiteUrl + list form path + item id | Direct link from "
          "any report row back to the SharePoint item (display form) |"),
-        ("| …Id / …Title (lookups, person) | `$select`/`$expand` of the "
+        ("| ...Id / ...Title (lookups, person) | `$select`/`$expand` of the "
          "lookup | Join key plus display column without a second query |"),
         "",
     ]
@@ -1579,7 +1579,7 @@ def generate_dictionary_powerquery(
 
 
 def _sql_string(text: str) -> str:
-    """An N'…' T-SQL literal: single quotes are escaped by doubling."""
+    """An N'...' T-SQL literal: single quotes are escaped by doubling."""
     return "N'" + text.replace("'", "''") + "'"
 
 

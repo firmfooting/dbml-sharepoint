@@ -907,7 +907,7 @@ def _check_date_literal(
     filter on something nobody intended. The build is the only place that
     can be settled without a tenant, so it is settled here.
 
-    `now+1` is the case that matters most. `today±N` works, which makes the
+    `now+1` is the case that matters most. `today+/-N` works, which makes the
     offset form the obvious thing to reach for, and without this it is an
     unparseable literal in a filter that silently matches nothing.
 

@@ -48,7 +48,7 @@ is carried structurally rather than described in the prose: every
 message used to be returned as a bare string and wrapped by the caller
 as an error, including the one case the spec makes a WARNING, a
 required column that a `when` predicate *may* hide at creation. Its
-text said "(warning: …)" while it failed the build, so the one
+text said "(warning: ...)" while it failed the build, so the one
 genuinely conditional declaration the feature exists to express could
 not be deployed at all.
 

@@ -110,9 +110,10 @@ class Solution:
 #: The READMEs are documentation read in a browser and they use real
 #: punctuation; that is house style and should stay. But the wizard renders
 #: the title and summary into a TERMINAL, where the encoding is the console's
-#: choice -- and a good many shipped families carry one of these. `→`
-#: cannot be encoded by cp1252, cp850 OR cp437, so picking a template on a
-#: legacy Windows console could raise `UnicodeEncodeError` from inside rich.
+#: choice -- and a good many shipped families carry one of these; an em dash
+#: or an arrow cannot be encoded by cp1252, cp850 OR cp437, so picking a
+#: template on a legacy Windows console could raise `UnicodeEncodeError` from
+#: inside rich.
 #:
 #: Folded here rather than in the READMEs, because `_clean` already exists to
 #: turn README prose into something a terminal can show -- stripping `**` and
