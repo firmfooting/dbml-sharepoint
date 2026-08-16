@@ -37,6 +37,12 @@ Interactively copy a solution template into a new project.
 The same wizard a bare `dbml-sharepoint` runs, named so it can be asked
 for explicitly and so it appears in `--help`.
 
+### `NO_SAFE_DEFAULT`
+
+```python
+NO_SAFE_DEFAULT = frozenset({'site_url'})
+```
+
 ### `validate_site_url`
 
 ```python

@@ -409,6 +409,17 @@ def _ask_site_url(console: Console) -> str:
 
     Calls `validate_site_url` rather than restating its rule, so the wizard
     cannot come to disagree with `--site-url` about what is acceptable.
+
+    NO `default=`. `cli.NO_SAFE_DEFAULT` names this input, and the reason is
+    in `_project_input`'s docstring: a defaulted target arms a real bundle,
+    manifest and reporting pack against somebody else's tenant, with only
+    the wrong-site guard between that and a mispaste. The shipped default
+    `https://contoso.sharepoint.com/sites/example` PASSED `validate_site_url`,
+    so Enter was a silently accepted answer rather than a refused one. rich
+    returns a default from `PromptBase.__call__` before this function sees
+    it, exactly as `_ask_site_role` and `_ask_enterprise_reader` record, so
+    removing it is the only fix. `test_no_wizard_default_for_a_named_input`
+    holds this.
     """
     # Deferred for a cycle: cli.py imports this module at its top, so this
     # direction stays lazy until `validate_site_url` leaves the CLI -- #171.
@@ -417,10 +428,14 @@ def _ask_site_url(console: Console) -> str:
         validate_site_url,
     )
 
+    # Shown rather than offered: the shape was the only thing the removed
+    # default gave the operator, and a printed example cannot be pressed.
+    console.print(f"[dim]  For example: {PLACEHOLDER_SITE_URL}[/dim]")
     while True:
+        # An empty answer reaches `validate_site_url`, which refuses it, so
+        # this loop re-asks rather than falling through. See the docstring.
         site_url = Prompt.ask(
             "[bold]SharePoint site URL[/bold]",
-            default="https://contoso.sharepoint.com/sites/example",
             console=console,
         ).strip()
         try:

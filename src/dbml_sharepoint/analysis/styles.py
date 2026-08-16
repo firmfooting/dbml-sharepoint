@@ -12,6 +12,7 @@ https://learn.microsoft.com/en-us/sharepoint/dev/declarative-customization/colum
 examples; the emitted structures mirror those samples).
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -91,6 +92,23 @@ def _calculated_scalar(constructor: str) -> str:
 
 def _fail(context: str, message: str) -> ValueError:
     return ValueError(f"{context}: {message}")
+
+
+# SP resolves `[$Name]` against a column's INTERNAL name; anything else
+# resolves to no column and renders as nothing. Same character class
+# `validator._FORMATTER_FIELD_REF` extracts, copied rather than imported
+# because validator -> mapping_loader -> styles would be a cycle. Measured not
+# stronger than what we ship: all 634 declared column names match it.
+#: Matched with `fullmatch`. Anchored with `$`, a name ending in a newline
+#: was accepted and emitted a reference the validator then read as valid.
+_INTERNAL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _internal_name(value: object, context: str, message: str) -> str:
+    """Read a spec value that becomes a `[$Name]` column reference."""
+    if not isinstance(value, str) or not _INTERNAL_NAME.fullmatch(value):
+        raise _fail(context, message)
+    return value
 
 
 def _bool(spec: dict[str, Any], key: str, context: str, *, default: bool) -> bool:
@@ -232,9 +250,11 @@ def _data_bar(
         # dropped. Its fixed theme fill would fight the conditional one.
         if not isinstance(color_by, dict):
             raise _fail(context, "color_by must be a mapping with 'field' and 'map'")
-        field_name = color_by.get("field")
-        if not isinstance(field_name, str) or not field_name:
-            raise _fail(context, "color_by requires 'field' (a column internal name)")
+        field_name = _internal_name(
+            color_by.get("field"),
+            context,
+            "color_by requires 'field' (a column internal name)",
+        )
         _reject_unknown_keys(
             color_by, {"field", "map", "calculated"}, f"{context}.color_by",
         )
@@ -277,9 +297,15 @@ def _data_bar(
 def _trend(spec: dict[str, Any], context: str) -> dict[str, Any]:
     _reject_unknown_keys(spec, {"style", "against"}, context)
     against = spec.get("against")
-    if against is None:
-        raise _fail(context, "trend requires 'against' (a column name or a number)")
-    ref = f"[${against}]" if isinstance(against, str) else str(against)
+    wanted = "trend requires 'against' (a column internal name or a number)"
+    # A column name becomes a reference; a number stays a bare literal. Anything
+    # else used to be str()'d into the expression, which compares against junk.
+    if isinstance(against, str):
+        ref = f"[${_internal_name(against, context, wanted)}]"
+    elif isinstance(against, int | float) and not isinstance(against, bool):
+        ref = str(against)
+    else:
+        raise _fail(context, wanted)
     return {
         "$schema": _SCHEMA,
         "elmType": "div",
@@ -311,11 +337,19 @@ def _overdue_date(
     guard = spec.get("guard")
     guard_terms = ""
     if guard is not None:
-        if not isinstance(guard, dict) or not guard.get("field"):
-            raise _fail(context, "overdue-date guard requires 'field'")
+        if not isinstance(guard, dict):
+            raise _fail(context, "overdue-date guard must be a mapping")
         _reject_unknown_keys(guard, {"field", "not"}, f"{context}.guard")
-        field_name = guard["field"]
-        excluded = guard.get("not") or []
+        field_name = _internal_name(
+            guard.get("field"),
+            context,
+            "overdue-date guard requires 'field' (a column internal name)",
+        )
+        # A string is iterable, so `or []` sent "Done" through as four
+        # single-character comparisons.
+        excluded = guard.get("not", [])
+        if not isinstance(excluded, list):
+            raise _fail(context, "overdue-date guard 'not' must be a list of values")
         guard_terms = "".join(
             f" && [${field_name}] != '{str(v).replace(chr(39), chr(39) * 2)}'"
             for v in excluded
