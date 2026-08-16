@@ -914,3 +914,38 @@ def test_manifest_reports_the_env_file_that_was_read() -> None:
     assert "**Env file:** Read dbml-sharepoint.env (sha256 abc123def456)." in md
     assert "DBMLSP_ENTERPRISE_READER" in md
     assert "Field lists are shown RESOLVED" in md
+
+
+def test_the_versioning_and_field_count_bullets_stay_on_separate_lines() -> None:
+    """The two bullets used to render as one line, because trim_blocks eats
+    the newline after the block tag that closed the Versioning branch.
+
+    Nothing asserted they were separate, which is why it shipped in the
+    document an operator is told to read before pasting a script.
+    """
+    schema = parse_dbml(FIXTURES / "simple.dbml")
+    bundle = load_mapping(FIXTURES / "sharepoint-mapping.yaml")
+    release = load_release(FIXTURES / "release.yaml")
+    schema_json = build_schema_json(schema, bundle, "default")
+
+    md = generate_manifest(
+        schema_json=schema_json,
+        findings=[],
+        bundle=bundle,
+        release=release,
+        site_url="https://example.sharepoint.com/sites/test",
+        site_role="default",
+        source_dbml="simple.dbml",
+        source_mtime="2026-05-04T00:00:00Z",
+        generated_at="2026-05-04T00:00:00Z",
+    )
+
+    versioning = [line for line in md.splitlines() if "- Versioning:" in line]
+    assert versioning, "no Versioning bullet rendered, so this pins nothing"
+    for line in versioning:
+        assert f"Phase {pn('lists')} fields" not in line, (
+            f"Versioning bullet swallowed the next one: {line!r}"
+        )
+    assert any(
+        f"- Phase {pn('lists')} fields:" in line for line in md.splitlines()
+    ), "the field-count bullet must still render on its own line"
