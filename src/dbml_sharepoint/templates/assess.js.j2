@@ -181,10 +181,8 @@
   // The expected text arrives in TARGETS from `analysis.list_description`
   // and is never re-spelled here (see assess_targets' docstring).
   //
-  // A Map built from pairs, not an object keyed by title. An object literal
-  // resolves `constructor` and `toString` off Object.prototype, and drops a
-  // `__proto__` key entirely -- which made this check return silently and the
-  // assessment call a list compatible while its marker was missing.
+  // A Map, because an object literal drops a `__proto__` key and this check
+  // then returned silently on a list whose marker was missing.
   const LIST_MARKERS = new Map(TARGETS.list_markers);
   const markerFinding = (title, description) => {
     if (!LIST_MARKERS.has(title)) return;
