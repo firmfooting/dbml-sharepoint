@@ -142,11 +142,14 @@ max-complexity = 72
 "test/test_probes.py" = ["S603", "S607"]     # runs `node --check` on our own files
 "test/test_family_count_prose.py" = ["S603", "S607"]  # runs `git ls-files` on this repo
 "test/test_text_encoding.py" = ["S603", "S607"]       # runs `git ls-files` on this repo
+# Runs `git diff` and this project's own pytest; T20 because the printed
+# verdicts ARE the record the CI log keeps.
+"scripts/**" = ["S603", "S607", "T20"]
 
 [tool.mypy]
 python_version = "3.13"
 strict = true
-files = ["src", "test", "website/scripts"]
+files = ["src", "test", "website/scripts", "scripts"]
 
 [[tool.mypy.overrides]]
 module = "pydbml.*"
