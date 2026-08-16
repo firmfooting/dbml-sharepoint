@@ -31,7 +31,12 @@ from dbml_sharepoint.catalogue import (
     RELEASE_RELPATH,
     SCHEMA_RELPATH,
 )
-from dbml_sharepoint.extension import BaseExtension, SiteContext, resolve_extension
+from dbml_sharepoint.extension import (
+    BaseExtension,
+    SiteContext,
+    UnknownExtensionError,
+    resolve_extension,
+)
 from dbml_sharepoint.generators.jsgen import build_schema_json
 from dbml_sharepoint.generators.manifestgen import generate_manifest
 from dbml_sharepoint.generators.reportgen import (
@@ -379,7 +384,10 @@ def _resolve_extension(
     """
     try:
         return resolve_extension(extension or bundle.mapping.extension)
-    except _CONFIG_ERRORS as exc:
+    except UnknownExtensionError as exc:
+        # Only the unknown name. A broken plugin, whose entry-point load or
+        # constructor raises, keeps its traceback rather than being reported
+        # as a typo in the operator's own mapping.
         # No `--extension` means the name came from the mapping, so name that file.
         _config_error("extension", None if extension else mapping, exc)
 

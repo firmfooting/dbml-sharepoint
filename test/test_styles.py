@@ -405,3 +405,20 @@ def test_trend_still_accepts_a_number_to_compare_against() -> None:
     out = expand_style({"style": "trend", "against": 42}, "ctx")
     assert "@currentField > 42" in out["children"][0]["attributes"]["class"]
     assert _field_refs(out) == []
+
+
+def test_a_field_name_ending_in_a_newline_is_refused() -> None:
+    """Anchored with $, a name ending in a newline was accepted.
+
+    The emitted reference carried the newline, and the validator extractor
+    reads only the leading word out of it, so the malformed reference looked
+    valid to every check that inspects one. Built with chr(10) rather than an
+    escape so the fixture cannot be normalised away.
+    """
+    trailing = "Status" + chr(10)
+    with pytest.raises(ValueError, match="column internal name"):
+        expand_style(
+            {"style": "overdue-date",
+             "guard": {"field": trailing, "not": ["Done"]}},
+            "ctx",
+        )

@@ -99,12 +99,14 @@ def _fail(context: str, message: str) -> ValueError:
 # `validator._FORMATTER_FIELD_REF` extracts, copied rather than imported
 # because validator -> mapping_loader -> styles would be a cycle. Measured not
 # stronger than what we ship: all 634 declared column names match it.
-_INTERNAL_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+#: Matched with `fullmatch`. Anchored with `$`, a name ending in a newline
+#: was accepted and emitted a reference the validator then read as valid.
+_INTERNAL_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 def _internal_name(value: object, context: str, message: str) -> str:
     """Read a spec value that becomes a `[$Name]` column reference."""
-    if not isinstance(value, str) or not _INTERNAL_NAME.match(value):
+    if not isinstance(value, str) or not _INTERNAL_NAME.fullmatch(value):
         raise _fail(context, message)
     return value
 

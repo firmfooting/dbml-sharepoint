@@ -117,6 +117,14 @@ def seed_lists(self, bundle: Any, schema: Any, site_context: dbml_sharepoint.ext
 No-op defaults for the DeploymentExtension protocol; extensions
 override only what they need.
 
+### `UnknownExtensionError`
+
+The requested extension name is not installed.
+
+Named so the CLI can report a typo as configuration while a broken
+plugin, whose entry-point load or constructor raises, still reaches
+the operator as a traceback naming the plugin.
+
 ### `resolve_extension`
 
 ```python
