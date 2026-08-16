@@ -10,7 +10,8 @@ def test_the_prefix_has_one_owner() -> None:
 
 
 def test_the_group_marker_shapes_open_with_it() -> None:
-    assert group_description.SHARED_MARKER.startswith(provenance.MARKER_PREFIX)
+    shared = group_description.shared_marker_for("dbml Enterprise Readers")
+    assert shared.startswith(provenance.MARKER_PREFIX)
     assert group_description.FAMILY_MARKER_TEMPLATE.startswith(provenance.MARKER_PREFIX)
 
 

@@ -20,6 +20,7 @@ from dbml_sharepoint.analysis.checks import (
     _formatting,
     _naming,
     _permissions,
+    _provenance,
     _retirement,
     _sources,
     _structure,
@@ -37,6 +38,7 @@ CHECK_FAMILIES: tuple[Callable[[ValidationContext], list["Finding"]], ...] = (
     _naming.check,
     _sources.check,
     _permissions.check,
+    _provenance.check,
 )
 
 __all__ = ["CHECK_FAMILIES", "ValidationContext"]

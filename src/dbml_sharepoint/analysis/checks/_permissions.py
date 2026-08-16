@@ -186,8 +186,10 @@ def check(vc: ValidationContext) -> list[Finding]:
         # description it writes, so `elif` chains onto the budget check below:
         # a description over the raw ceiling reports one code, the same as the
         # group check.
-        level_budget = level_description_budget(family)
         for lvl in perms.levels:
+            # Per level, because the marker now carries the level's own name
+            # and so its length varies with it.
+            level_budget = level_description_budget(family, lvl.name)
             if len(lvl.description) > MAX_ROLE_DEFINITION_DESCRIPTION:
                 findings.append(Finding(
                     FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG,
@@ -203,7 +205,7 @@ def check(vc: ValidationContext) -> list[Finding]:
                     f"permission_levels[{lvl.name!r}]: description is "
                     f"{len(lvl.description)} characters, and the budget is "
                     f"{level_budget} once the provenance marker "
-                    f"{marker_for_level(family)!r} and its separating space "
+                    f"{marker_for_level(family, lvl.name)!r} and its separating space "
                     f"are appended. Shorten it.",
                     location=_LEVELS,
                 ))

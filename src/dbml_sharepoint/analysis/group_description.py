@@ -46,10 +46,17 @@ from dbml_sharepoint.analysis.limits import MAX_GROUP_DESCRIPTION
 MARKER_PREFIX = provenance.MARKER_PREFIX
 
 #: The marker for a group this tool names for itself.
-SHARED_MARKER = f"{MARKER_PREFIX}."
+#: Built per group, because the marker names the group it belongs to.
+#: `SHARED_MARKER` was one constant for every tool-owned group, which
+#: meant a description copied between them adopted unconditionally.
+def shared_marker_for(group_name: str) -> str:
+    """The marker for a group this tool owns rather than a family."""
+    return provenance.marker_for_object(
+        kind=provenance.GROUP_KIND, name=group_name, family=None,
+    )
 
 #: The marker for a group the deploying organisation owns.
-FAMILY_MARKER_TEMPLATE = MARKER_PREFIX + " from {family}."
+FAMILY_MARKER_TEMPLATE = MARKER_PREFIX + " from {family} for group {name}."
 
 #: Groups this tool names for ITSELF rather than for the organisation
 #: deploying it, and which therefore carry no family name.
@@ -84,14 +91,20 @@ TOOL_OWNED_GROUP_NAMES: frozenset[str] = frozenset({
 #: descriptions run against 512 and are far shorter. Sharing one constant
 #: would tie a future group-marker change to re-editing every table note,
 #: which is the coupling `analysis/limits.py` exists to prevent.
-GROUP_MARKER_GROWTH_RESERVE = 32
+#: 11 of the original 32 were spent when the marker gained the
+#: object's own name, so it could stop matching a description copied
+#: from another object (#241). The total held back is unchanged, so no
+#: note already written became invalid.
+GROUP_MARKER_GROWTH_RESERVE = 21
 
 
 def marker_for_group(group_name: str, family: str) -> str:
     """The exact marker for one group. The single spelling authority."""
     if group_name in TOOL_OWNED_GROUP_NAMES:
-        return SHARED_MARKER
-    return FAMILY_MARKER_TEMPLATE.format(family=family)
+        return shared_marker_for(group_name)
+    return provenance.marker_for_object(
+        kind=provenance.GROUP_KIND, name=group_name, family=family,
+    )
 
 
 def description_budget(group_name: str, family: str) -> int:

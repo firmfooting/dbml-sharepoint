@@ -857,6 +857,22 @@ FINDING_HELP: dict[FindingCode, str] = {
         "different surface from a group's description and was measured "
         "separately, even though the two ceilings agree today."
     ),
+    FindingCode.MARKER_FIELD_HAS_TERMINATOR: (
+        "A name the provenance marker interpolates contains a full stop, "
+        "which is the character that terminates the marker. That makes one "
+        "marker able to sit inside another: `from risk.` is a substring of "
+        "`from risk.v2.`, so family `risk` would adopt a group belonging to "
+        "family `risk.v2`, taking over whatever access that family declares. "
+        "Rename the family, group, permission level or entity so it holds no "
+        "full stop."
+    ),
+    FindingCode.MARKER_FAMILY_MISSING: (
+        "The schema declares no `Project` name, so there is nothing to "
+        "attribute the objects this build provisions to. The marker is how a "
+        "later deploy tells its own objects from somebody else's, and how "
+        "rollback decides what it may delete. Declare `Project my_thing { }` "
+        "in the DBML."
+    ),
     FindingCode.PERMISSION_LEVEL_DESCRIPTION_TOO_LONG_FOR_MARKER: (
         "A `permission_levels:` entry's description leaves no room for the "
         "provenance marker appended to it. The deploy stamps every level it "

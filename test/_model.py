@@ -164,7 +164,11 @@ def schema(
     *tables: Table,
     enums: list[EnumDef] | None = None,
     project_note: str = "",
-    project_name: str = "",
+    #: A schema declaring no `Project` is refused by `checks/_provenance.py`,
+    #: because nothing could attribute the objects it provisions. Tests that
+    #: are not about the family name get a valid one by default; pass ""
+    #: explicitly to exercise the refusal.
+    project_name: str = "test_family",
 ) -> Schema:
     return Schema(
         tables=list(tables),
