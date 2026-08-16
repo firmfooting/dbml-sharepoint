@@ -148,7 +148,7 @@ def _marker_codes(findings: list[Finding]) -> set[FindingCode]:
 def test_a_project_name_holding_the_terminator_is_refused() -> None:
     """`from risk.` sat inside `from risk.v2.`, so family `risk` adopted a
     populated group belonging to family `risk.v2`."""
-    only(_marker_findings("risk.v2"), FindingCode.MARKER_FIELD_HAS_TERMINATOR)
+    only(_marker_findings("risk.v2"), FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT)
 
 
 def test_a_level_name_holding_the_terminator_is_refused() -> None:
@@ -156,7 +156,7 @@ def test_a_level_name_holding_the_terminator_is_refused() -> None:
     same way the family name can."""
     only(
         _marker_findings("risk_register", level_name="XX.Level"),
-        FindingCode.MARKER_FIELD_HAS_TERMINATOR,
+        FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT,
     )
 
 
@@ -169,7 +169,7 @@ def test_a_schema_with_no_project_name_is_refused() -> None:
 def test_an_ordinary_project_name_fires_neither() -> None:
     """The complement, so the rules are not passing by refusing everything."""
     findings = _marker_findings("routine_checks")
-    none_of(findings, FindingCode.MARKER_FIELD_HAS_TERMINATOR)
+    none_of(findings, FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT)
     none_of(findings, FindingCode.MARKER_FAMILY_MISSING)
 
 
@@ -182,7 +182,7 @@ def test_a_name_embedding_the_marker_prefix_is_refused() -> None:
     """
     only(
         _marker_findings("x Provisioned by dbml-sharepoint from risk"),
-        FindingCode.MARKER_FIELD_HAS_TERMINATOR,
+        FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT,
     )
 
 

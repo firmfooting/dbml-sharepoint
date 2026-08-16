@@ -355,8 +355,8 @@ class FindingCode(StrEnum):
         "group_description_too_long_for_marker", "error")
     MARKER_LONGER_THAN_THE_FIELD = (
         "marker_longer_than_the_field", "error")
-    MARKER_FIELD_HAS_TERMINATOR = (
-        "marker_field_has_terminator", "error")
+    MARKER_FIELD_HAS_RESERVED_TEXT = (
+        "marker_field_has_reserved_text", "error")
     MARKER_FAMILY_MISSING = (
         "marker_family_missing", "error")
     MULTIPLE_ENTERPRISE_READER_GROUPS = (

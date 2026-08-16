@@ -139,7 +139,7 @@ def _reserved_text_finding(
     subject: str, reserved: str, location: Location,
 ) -> Finding:
     return Finding(
-        FindingCode.MARKER_FIELD_HAS_TERMINATOR,
+        FindingCode.MARKER_FIELD_HAS_RESERVED_TEXT,
         f"{subject} contains {reserved!r}, which the provenance marker "
         f"reserves. A name holding it lets one marker sit inside another, "
         f"so another family could adopt the object and take whatever access "
