@@ -41,6 +41,18 @@ One key this file is allowed to set.
 the `execute_build` keyword it supplies; `help` is one line, listed by
 `build --help` in a later task.
 
+### `ENTERPRISE_READER_KEY`
+
+```python
+ENTERPRISE_READER_KEY = 'DBMLSP_ENTERPRISE_READER'
+```
+
+### `ENTERPRISE_READER_PARAMETER`
+
+```python
+ENTERPRISE_READER_PARAMETER = 'enterprise_reader'
+```
+
 ### `ENV_SETTINGS`
 
 ```python

@@ -10,6 +10,7 @@ import hashlib
 import io
 import shutil
 import sys
+import tempfile
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -25,7 +26,7 @@ from dbml_sharepoint.catalogue import (
     load_solution,
 )
 from dbml_sharepoint.cli import ENTERPRISE_READER_DECLINED
-from dbml_sharepoint.model.env_file import ENV_FILENAME
+from dbml_sharepoint.model.env_file import ENV_FILENAME, read_env_file
 from dbml_sharepoint.model.mapping_loader import load_mapping
 
 
@@ -2712,3 +2713,96 @@ def test_the_wizard_copies_the_env_file_into_the_new_project(
     copied = destination / ENV_FILENAME
     assert copied.is_file()
     assert "svc-reporting@example.org" in copied.read_text(encoding="utf-8")
+
+
+def test_a_declined_reader_is_not_preserved_for_the_rebuild(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pressing Enter declines the file's suggestion, and the copy must
+    agree with that answer.
+
+    Copying the source unchanged left the suggestion in the project, so a
+    later rebuild enrolled an account the Review panel had just reported
+    as nobody. Enrolment survives a rollback, so the wizard must not leave
+    that behind.
+    """
+    # A comment as well as the reader, so the copy is written either way and
+    # the assertion below always runs. With only the reader line, declining
+    # leaves nothing to write and the check silently never fires.
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-reporting@example.org")
+    seeded = tmp_path / ENV_FILENAME
+    seeded.write_text(
+        "# team defaults\n" + seeded.read_text(encoding="utf-8"),
+        encoding="utf-8", newline="\n",
+    )
+    captured = _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(destination, build="y", seed="n", reader=""), width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    assert captured["enterprise_reader"] is ENTERPRISE_READER_DECLINED
+
+    copied = destination / ENV_FILENAME
+    assert copied.is_file(), "the copy was not written, so nothing was checked"
+    text = copied.read_text(encoding="utf-8")
+    assert "# team defaults" in text, "the copy lost a line it does not own"
+    assert "svc-reporting@example.org" not in text
+
+
+def test_a_replaced_reader_is_preserved_instead_of_the_suggestion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Typing a different UPN overrides the file, and the copy must carry
+    the typed value so a rebuild enrols the same account as the first build.
+    """
+    _write_env_file(tmp_path / ENV_FILENAME, "svc-suggested@example.org")
+    _capture_build(monkeypatch)
+    destination = tmp_path / "proj"
+    console = ScriptedConsole(
+        _answers(
+            destination, build="y", seed="n", reader="svc-chosen@example.org",
+        ),
+        width=400,
+    )
+
+    assert wizard.run_wizard(console) == 0
+    text = (destination / ENV_FILENAME).read_text(encoding="utf-8")
+    assert "svc-chosen@example.org" in text
+    assert "svc-suggested@example.org" not in text
+
+
+def test_preserving_the_env_file_keeps_lines_it_does_not_own() -> None:
+    """Only the reader assignment is rewritten; comments and blank lines
+    survive, so a file that later carries a second key is not truncated."""
+    source = "# defaults\n\nDBMLSP_ENTERPRISE_READER=svc-old@example.org\n"
+    rewritten = wizard._env_text_for_answer(source, "svc-new@example.org")
+    assert "# defaults" in rewritten
+    assert "svc-old@example.org" not in rewritten
+    assert "DBMLSP_ENTERPRISE_READER=svc-new@example.org" in rewritten
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [
+        "svc-reporting@example.org",
+        "'quoted@example.org",
+        '"quoted@example.org',
+        "'both'@example.org",
+    ],
+)
+def test_a_preserved_reader_round_trips_through_the_parser(reader: str) -> None:
+    """`validate_enterprise_reader` accepts a leading quote, which the
+    parser would read as an opening quote and refuse for never closing.
+
+    The initial build used the explicit answer and succeeded, so the
+    breakage only appeared later, when the documented rebuild tried to
+    parse the file the wizard had written.
+    """
+    text = wizard._env_text_for_answer("# defaults\n", reader)
+    path = Path(tempfile.mkdtemp()) / ENV_FILENAME
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+    settings, _digest = read_env_file(path)
+    assert settings["DBMLSP_ENTERPRISE_READER"] == reader

@@ -66,8 +66,8 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
 )
 from dbml_sharepoint.model.env_file import (
+    ENTERPRISE_READER_KEY,
     ENV_FILENAME,
-    ENV_SETTINGS,
     EnvFileError,
     read_env_file,
 )
@@ -500,8 +500,7 @@ def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
         file_settings, _digest = read_env_file(path)
     except EnvFileError as exc:
         raise WizardError(str(exc)) from exc
-    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
-    reader = file_settings.get(key)
+    reader = file_settings.get(ENTERPRISE_READER_KEY)
     if reader is None:
         return path, None
     try:
@@ -785,14 +784,52 @@ def _scaffold(answers: Answers) -> tuple[list[Path], list[_Substitution]]:
     return changed, applied
 
 
-def _preserve_env_file(answers: Answers) -> None:
-    """Copy the consulted `dbml-sharepoint.env` into the new project.
+def _is_setting_line(line: str, key: str) -> bool:
+    """Whether `line` assigns `key`, under `read_env_file`'s own rules."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        return False
+    return stripped.partition("=")[0].strip() == key
 
-    The wizard reads it from the CURRENT directory, but every documented
-    rebuild changes into the project first, so without this a rebuild
-    silently drops the reader the first build enrolled and emits a
-    different bundle. Never overwrites: a template that ships its own
-    defaults keeps them.
+
+def _env_text_for_answer(text: str, reader: str | None) -> str:
+    """`text` with its reader line set to the answer actually given.
+
+    None means the question was never asked, so the file passes through
+    unchanged and the build's own guard still decides. Blank means the
+    operator was asked and said nobody, so the line is dropped rather than
+    left to enrol somebody on the next build.
+    """
+    if reader is None:
+        return text
+    kept = [line for line in text.splitlines() if not _is_setting_line(line, ENTERPRISE_READER_KEY)]
+    if reader:
+        kept.append(f"{ENTERPRISE_READER_KEY}={_env_value_literal(reader)}")
+    return "\n".join(kept) + "\n" if kept else ""
+
+
+def _env_value_literal(value: str) -> str:
+    """`value` written so `read_env_file` reads it back unchanged.
+
+    `validate_enterprise_reader` accepts a leading quote, which the parser
+    would read as an opening quote and refuse for never closing. Wrapping in
+    the other quote round-trips, because `_unquote` strips one outer pair.
+    """
+    if value[:1] in ("'", '"'):
+        return f'"{value}"' if value[0] == "'" else f"'{value}'"
+    return value
+
+
+def _preserve_env_file(answers: Answers) -> None:
+    """Copy the consulted `dbml-sharepoint.env` into the project, with the
+    reader line rewritten to the answer given.
+
+    A documented rebuild runs from inside the project, so without a copy it
+    drops the reader the first build enrolled. Copying it verbatim is worse:
+    an operator who declined the suggestion would get a rebuild that
+    permanently enrolled it, and enrolment survives a rollback.
+
+    Never overwrites, so a template shipping its own defaults keeps them.
     """
     if answers.env_file is None:
         return
@@ -800,7 +837,31 @@ def _preserve_env_file(answers: Answers) -> None:
     destination = answers.destination / ENV_FILENAME
     if destination.exists() or not source.is_file():
         return
-    write_artifact(destination, source.read_text(encoding="utf-8"))
+    text = _env_text_for_answer(source.read_text(encoding="utf-8"), answers.reader)
+    if not text:
+        return
+    write_artifact(destination, text)
+    _verify_preserved_env_file(destination, answers.reader)
+
+
+def _verify_preserved_env_file(destination: Path, reader: str | None) -> None:
+    """Read the copy back and confirm it says what the operator answered.
+
+    `AGENTS.md` requires anything that writes to read back and verify, and
+    an unparseable file here would surface only as a failed rebuild, long
+    after the wizard reported success.
+    """
+    try:
+        settings, _digest = read_env_file(destination)
+    except EnvFileError as exc:
+        raise WizardError(
+            f"wrote {destination} but could not read it back: {exc}",
+        ) from exc
+    if reader is not None and settings.get(ENTERPRISE_READER_KEY, "") != reader:
+        raise WizardError(
+            f"{destination} reads back as {settings.get(ENTERPRISE_READER_KEY, '')!r}, "
+            f"not the {reader!r} that was answered.",
+        )
 
 
 @dataclass(frozen=True)
