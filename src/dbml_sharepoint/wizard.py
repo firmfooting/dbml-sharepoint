@@ -66,8 +66,8 @@ from dbml_sharepoint.catalogue import (
     available_solutions,
 )
 from dbml_sharepoint.model.env_file import (
+    ENTERPRISE_READER_KEY,
     ENV_FILENAME,
-    ENV_SETTINGS,
     EnvFileError,
     read_env_file,
 )
@@ -500,8 +500,7 @@ def _reader_from_env_file(console: Console) -> tuple[Path, str | None] | None:
         file_settings, _digest = read_env_file(path)
     except EnvFileError as exc:
         raise WizardError(str(exc)) from exc
-    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
-    reader = file_settings.get(key)
+    reader = file_settings.get(ENTERPRISE_READER_KEY)
     if reader is None:
         return path, None
     try:
@@ -803,10 +802,9 @@ def _env_text_for_answer(text: str, reader: str | None) -> str:
     """
     if reader is None:
         return text
-    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
-    kept = [line for line in text.splitlines() if not _is_setting_line(line, key)]
+    kept = [line for line in text.splitlines() if not _is_setting_line(line, ENTERPRISE_READER_KEY)]
     if reader:
-        kept.append(f"{key}={_env_value_literal(reader)}")
+        kept.append(f"{ENTERPRISE_READER_KEY}={_env_value_literal(reader)}")
     return "\n".join(kept) + "\n" if kept else ""
 
 
@@ -859,16 +857,15 @@ def _verify_preserved_env_file(destination: Path, reader: str | None) -> None:
     is only useful if `build` can parse it, and an unparseable one would
     surface as a failed rebuild long after the wizard reported success.
     """
-    key = next(s.key for s in ENV_SETTINGS if s.parameter == "enterprise_reader")
     try:
         settings, _digest = read_env_file(destination)
     except EnvFileError as exc:
         raise WizardError(
             f"wrote {destination} but could not read it back: {exc}",
         ) from exc
-    if reader is not None and settings.get(key, "") != reader:
+    if reader is not None and settings.get(ENTERPRISE_READER_KEY, "") != reader:
         raise WizardError(
-            f"{destination} reads back as {settings.get(key, '')!r}, "
+            f"{destination} reads back as {settings.get(ENTERPRISE_READER_KEY, '')!r}, "
             f"not the {reader!r} that was answered.",
         )
 

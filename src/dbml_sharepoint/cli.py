@@ -43,6 +43,7 @@ from dbml_sharepoint.generators.reportgen import (
     generate_sql_views,
 )
 from dbml_sharepoint.model.env_file import (
+    ENTERPRISE_READER_PARAMETER,
     ENV_FILENAME,
     ENV_SETTINGS,
     NO_ENV_FILE,
@@ -623,7 +624,7 @@ def _resolve_env_settings(
             continue
         # Refuses rather than `continue`s: skipping an unwired key discarded
         # a value the file was asked to set, with no artefact recording it.
-        if setting.parameter != "enterprise_reader":
+        if setting.parameter != ENTERPRISE_READER_PARAMETER:
             raise UnwiredEnvSettingError(
                 f"{setting.key} sets execute_build's {setting.parameter!r} "
                 "parameter, which _resolve_env_settings does not know how "
