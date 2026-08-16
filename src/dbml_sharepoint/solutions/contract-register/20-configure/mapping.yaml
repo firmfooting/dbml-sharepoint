@@ -118,7 +118,7 @@ column_formatting:
       map:
         "Auto-renews": warning
         "Manual renewal": low
-        "Fixed term — no renewal": muted
+        "Fixed term, no renewal": muted
     # The register's deadline. Guarded on Exited: a date that keeps
     # shouting after the contract has ended trains people to ignore the
     # colour. Note the guard is NOT on Expiring: an expiring contract is
@@ -265,7 +265,7 @@ form_visibility:
     columns:
       NoticePeriodDays:
         when:
-          - { field: RenewalType, op: neq, value: "Fixed term — no renewal" }
+          - { field: RenewalType, op: neq, value: "Fixed term, no renewal" }
 
 # Per-column save rules. Each column carries its own formula and its own
 # message, and they all run, unlike list_validation, where a list has one
@@ -312,7 +312,7 @@ demo_items:
   Contract:
     - key: ct-cleaning
       values:
-        Title: "[DEMO] Office cleaning — Sparkle Facilities"
+        Title: "[DEMO] Office cleaning: Sparkle Facilities"
         Counterparty: "[DEMO] Sparkle Facilities Pty Ltd"
         ContractRef: "[DEMO] CT-2024-011"
         ContractType: "Services"
@@ -363,7 +363,7 @@ demo_items:
         Owner: "@me"
         StartDate: "today+30"
         EndDate: "today+395"
-        RenewalType: "Fixed term — no renewal"
+        RenewalType: "Fixed term, no renewal"
         AnnualValue: 12000
         Summary: "Demo row. Twelve-month fixed term with no renewal option; a fresh procurement at the end of it."
     - key: ct-telephony
@@ -376,6 +376,6 @@ demo_items:
         Owner: "@me"
         StartDate: "today-1460"
         EndDate: "today-120"
-        RenewalType: "Fixed term — no renewal"
+        RenewalType: "Fixed term, no renewal"
         AnnualValue: 8000
         Summary: "Demo row. Exited at the end of term when the desk handsets were retired."

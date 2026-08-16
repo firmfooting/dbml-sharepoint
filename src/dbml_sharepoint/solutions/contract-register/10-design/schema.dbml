@@ -25,7 +25,7 @@ Enum contract_status {
 Enum renewal_type {
   "Auto-renews"
   "Manual renewal"
-  "Fixed term — no renewal"
+  "Fixed term, no renewal"
 }
 
 Table Contract {
